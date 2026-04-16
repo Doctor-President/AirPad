@@ -6,17 +6,29 @@ struct ActionButtonFan: View {
 
     @Binding var isExpanded: Bool
 
+    /// When true the button is centered (empty-canvas state).
+    /// When false it fills available space so its bottomTrailing alignment pins it to the corner.
+    var isEmpty: Bool = false
+
     let onVoice:         () -> Void
     let onCamera:        () -> Void
     let onText:          () -> Void
     let onNodePicker:    () -> Void    // opens the recent-node tray
     let onAddToRecent:   () -> Void    // immediately targets the most-recent node
 
-    private let fanRadius: CGFloat = 80
+    private let fanRadius: CGFloat = 90
     private let bubbleSize: CGFloat = 52
+
+    // Extra bottom padding added to the inner ZStack when the fan is open.
+    // Lifts the + button and fan above the strip (which sits at padding(.bottom, 40)).
+    private let expandedLift: CGFloat = 88
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
+            // When nodes exist, fill all available space so bottomTrailing alignment
+            // anchors the button to the corner. When empty, let the ZStack hug the
+            // button so the parent ZStack centers it on screen.
+            if !isEmpty { Color.clear }  // spacer that expands the ZStack to fill the canvas
             // Dimming scrim
             if isExpanded {
                 Color.black.opacity(0.5)
@@ -26,7 +38,7 @@ struct ActionButtonFan: View {
                     .transition(.opacity)
             }
 
-            // Bottom strip: Add to Recent | New Node — appears when expanded
+            // Bottom strip: Add to Recent | New Node — just above safe area, always below fan
             if isExpanded {
                 VStack {
                     Spacer()
@@ -39,13 +51,13 @@ struct ActionButtonFan: View {
                         }
                     }
                     .padding(.horizontal, 24)
-                    .padding(.bottom, 100)
+                    .padding(.bottom, 40)   // just above home-indicator safe area
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            // Node picker circle — bottom-left, appears when expanded
+            // Recents circle — left of + button at the same vertical level when expanded
             if isExpanded {
                 VStack {
                     Spacer()
@@ -67,7 +79,9 @@ struct ActionButtonFan: View {
                             }
                         }
                         .padding(.leading, 28)
-                        .padding(.bottom, 28)
+                        // Match the inner ZStack's expanded bottom padding (24 base + 88 lift = 112)
+                        // so the Recents circle center aligns vertically with the + button center.
+                        .padding(.bottom, 112)
                         .bubbleTransition(delay: 0.12)
 
                         Spacer()
@@ -75,10 +89,13 @@ struct ActionButtonFan: View {
                 }
             }
 
-            // Capture bubbles + main button, anchored to bottom-right
+            // Capture bubbles + main button, anchored to bottom-right.
+            // expandedLift raises the whole group above the strip when the fan is open.
             ZStack(alignment: .bottomTrailing) {
                 if isExpanded {
-                    // Arc: 90° (up), 135° (up-left), 180° (left)
+                    // Arc: 90° (straight up), 130° (up-left), 160° (mostly left, some up).
+                    // All three angles have a positive upward component so the fan
+                    // fans upward-left with no purely-horizontal bubble.
                     FanBubble(icon: "mic.fill", label: "Voice",
                               size: bubbleSize, action: { onVoice(); collapse() })
                         .offset(x: -(fanRadius * cos90), y: -(fanRadius * sin90))
@@ -86,12 +103,12 @@ struct ActionButtonFan: View {
 
                     FanBubble(icon: "camera.fill", label: "Camera",
                               size: bubbleSize, action: { onCamera(); collapse() })
-                        .offset(x: -(fanRadius * cos135), y: -(fanRadius * sin135))
+                        .offset(x: -(fanRadius * cos130), y: -(fanRadius * sin130))
                         .bubbleTransition(delay: 0.05)
 
                     FanBubble(icon: "pencil", label: "Text",
                               size: bubbleSize, action: { onText(); collapse() })
-                        .offset(x: -(fanRadius * cos180), y: -(fanRadius * sin180))
+                        .offset(x: -(fanRadius * cos170), y: -(fanRadius * sin170))
                         .bubbleTransition(delay: 0.10)
                 }
 
@@ -122,7 +139,10 @@ struct ActionButtonFan: View {
                         }
                 )
             }
-            .padding(24)
+            .padding(.top, 24)
+            .padding(.leading, 24)
+            .padding(.trailing, 24)
+            .padding(.bottom, 24 + (isExpanded ? expandedLift : 0))
         }
     }
 
@@ -132,13 +152,17 @@ struct ActionButtonFan: View {
         }
     }
 
-    // Fan arc angles (positive x-axis, CCW; SwiftUI y-down so sin is negated for upward motion)
+    // Fan arc trig components. Angles are from the positive x-axis (CCW).
+    // x-offset = -(R * |cos θ|), y-offset = -(R * sin θ)  [SwiftUI: negative y = upward]
+    //   90°: straight up            — Voice
+    //  130°: up-left                — Camera  (|cos 50°| = 0.6428, sin 50° = 0.7660)
+    //  170°: nearly left, slight up — Text    (|cos 10°| = 0.9848, sin 10° = 0.1736)
     private let cos90:  CGFloat = 0
     private let sin90:  CGFloat = 1
-    private let cos135: CGFloat = 0.7071
-    private let sin135: CGFloat = 0.7071
-    private let cos180: CGFloat = 1
-    private let sin180: CGFloat = 0
+    private let cos130: CGFloat = 0.6428
+    private let sin130: CGFloat = 0.7660
+    private let cos170: CGFloat = 0.9848
+    private let sin170: CGFloat = 0.1736
 }
 
 // MARK: - Individual bubble

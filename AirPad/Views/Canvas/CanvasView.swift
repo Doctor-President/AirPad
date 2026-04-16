@@ -114,12 +114,12 @@ struct CanvasView: View {
                     onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
                 )
             }
-            // Toggle + filter bar is an overlay so it sits above the SpriteKit Metal layer.
-            // Placing these inside the ZStack is not sufficient — SpriteKit composites outside
-            // the SwiftUI layer hierarchy and will draw over ZStack children regardless of order.
-            .overlay(alignment: .top) {
-                HStack {
-                    // Filter button (left)
+            // Toggle + filter live in the navigation toolbar. UINavigationBar is a UIKit view
+            // that sits above the SpriteKit Metal layer in the UIKit hierarchy — the only
+            // guaranteed way to appear on top of SpriteKit from SwiftUI. toolbarBackground(.hidden)
+            // makes the bar invisible so the items appear to float above the canvas.
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         showingFilter = true
                     } label: {
@@ -135,21 +135,12 @@ struct CanvasView: View {
                             }
                         }
                     }
-                    .padding(.leading, 20)
-
-                    Spacer()
-
-                    ViewTogglePill()
-
-                    Spacer()
-
-                    // Mirror of filter button width to keep pill visually centred
-                    Color.clear
-                        .frame(width: 36, height: 36)
-                        .padding(.trailing, 20)
                 }
-                .padding(.top, 12)
+                ToolbarItem(placement: .principal) {
+                    ViewTogglePill()
+                }
             }
+            .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.25), value: store.viewMode)
             .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
             .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)

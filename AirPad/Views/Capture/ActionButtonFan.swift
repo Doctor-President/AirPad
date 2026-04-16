@@ -93,9 +93,8 @@ struct ActionButtonFan: View {
             // expandedLift raises the whole group above the strip when the fan is open.
             ZStack(alignment: .bottomTrailing) {
                 if isExpanded {
-                    // Arc: 90° (straight up), 130° (up-left), 160° (mostly left, some up).
-                    // All three angles have a positive upward component so the fan
-                    // fans upward-left with no purely-horizontal bubble.
+                    // Arc: 90° (straight up), 130° (up-left), 180° (pure left).
+                    // 40° gap between each bubble; Text sits directly left of + at R=90 → (-90, 0).
                     FanBubble(icon: "mic.fill", label: "Voice",
                               size: bubbleSize, action: { onVoice(); collapse() })
                         .offset(x: -(fanRadius * cos90), y: -(fanRadius * sin90))
@@ -108,7 +107,7 @@ struct ActionButtonFan: View {
 
                     FanBubble(icon: "pencil", label: "Text",
                               size: bubbleSize, action: { onText(); collapse() })
-                        .offset(x: -(fanRadius * cos170), y: -(fanRadius * sin170))
+                        .offset(x: -(fanRadius * cos180), y: -(fanRadius * sin180))
                         .bubbleTransition(delay: 0.10)
                 }
 
@@ -154,15 +153,15 @@ struct ActionButtonFan: View {
 
     // Fan arc trig components. Angles are from the positive x-axis (CCW).
     // x-offset = -(R * |cos θ|), y-offset = -(R * sin θ)  [SwiftUI: negative y = upward]
-    //   90°: straight up            — Voice
-    //  130°: up-left                — Camera  (|cos 50°| = 0.6428, sin 50° = 0.7660)
-    //  170°: nearly left, slight up — Text    (|cos 10°| = 0.9848, sin 10° = 0.1736)
+    //   90°: straight up   — Voice
+    //  130°: up-left       — Camera  (|cos 50°| = 0.6428, sin 50° = 0.7660)
+    //  180°: pure left     — Text    — at R=90: (-90, 0), 40° clear of Camera
     private let cos90:  CGFloat = 0
     private let sin90:  CGFloat = 1
     private let cos130: CGFloat = 0.6428
     private let sin130: CGFloat = 0.7660
-    private let cos170: CGFloat = 0.9848
-    private let sin170: CGFloat = 0.1736
+    private let cos180: CGFloat = 1
+    private let sin180: CGFloat = 0
 }
 
 // MARK: - Individual bubble

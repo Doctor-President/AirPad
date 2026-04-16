@@ -46,7 +46,6 @@ struct CanvasView: View {
                     // Physics canvas
                     SpriteView(scene: scene, options: [.allowsTransparency])
                         .ignoresSafeArea()
-                        .allowsHitTesting(false) // diagnostic: SKView was consuming all touches
                         .transition(.opacity)
 
                     // Node summary overlay — tap-to-select
@@ -193,9 +192,9 @@ struct ViewTogglePill: View {
             toggleSegment(label: "Graph", icon: "circle.hexagongrid", mode: .graph)
             toggleSegment(label: "List",  icon: "list.bullet",        mode: .list)
         }
-        .background(Color.white.opacity(0.08))
+        .background(Color(white: 0.18))
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+        .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.5))
     }
 
     private func toggleSegment(label: String, icon: String, mode: ViewMode) -> some View {
@@ -211,7 +210,7 @@ struct ViewTogglePill: View {
                 Text(label)
                     .font(.caption.weight(.medium))
             }
-            .foregroundStyle(selected ? .black : .white.opacity(0.55))
+            .foregroundStyle(selected ? .black : .white)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .background(selected ? Color.white : Color.clear)

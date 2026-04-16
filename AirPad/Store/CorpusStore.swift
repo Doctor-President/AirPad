@@ -18,6 +18,51 @@ final class CorpusStore {
     /// CanvasView observes this and presents TagCreationSheet.
     var pendingTagSuggestions: TagSuggestionContext? = nil
 
+    /// Active filter + view mode. Persisted to UserDefaults.
+    var filterState: FilterState = FilterState.load() {
+        didSet { filterState.save() }
+    }
+
+    /// Nodes after applying the active filter and sort order.
+    var filteredNodes: [Node] {
+        var result = nodes
+
+        if filterState.itemType != .all {
+            result = result.filter { node in
+                node.items.contains { item in
+                    switch filterState.itemType {
+                    case .all:      return true
+                    case .voice:    return item.type == .audio
+                    case .photo:    return item.type == .image
+                    case .video:    return item.type == .video
+                    case .text:     return item.type == .text
+                    case .link:     return item.type == .link
+                    case .document: return item.type == .document
+                    }
+                }
+            }
+        }
+
+        if let tag = filterState.tagName {
+            result = result.filter { $0.tags.contains(tag) }
+        }
+
+        switch filterState.threadStatus {
+        case .all:         break
+        case .threadsOnly: result = result.filter { !$0.threads.isEmpty || $0.isMeta }
+        case .pulledOnly:  result = result.filter { $0.isMeta }
+        }
+
+        switch filterState.sortOrder {
+        case .recency:
+            result = result.sorted { $0.createdAt > $1.createdAt }
+        case .thematic:
+            result = result.sorted { ($0.tags.first ?? "zzz") < ($1.tags.first ?? "zzz") }
+        }
+
+        return result
+    }
+
     private let service = iCloudDriveService()
 
     // MARK: - Lifecycle
@@ -216,7 +261,7 @@ final class CorpusStore {
     /// Runs Foundation Model processing on a node after capture (non-blocking).
     /// Updates title, summary, mood, domain, and applies / surfaces new tags.
     func processNodeWithAI(nodeID: String) async {
-        guard #available(iOS 18.1, *) else { return }
+        guard #available(iOS 26.0, *) else { return }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
 
         let currentTags = tags

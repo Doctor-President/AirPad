@@ -29,73 +29,36 @@ struct CanvasView: View {
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            ZStack {
-                Color.black.ignoresSafeArea()
+            canvasStack
+        }
+        .onAppear {
+            scene.scaleMode = .resizeFill
+            scene.backgroundColor = .clear
+            scene.canvasState = canvasState
+            previousNodeIDs = Set(store.filteredNodes.map { $0.id })
+            syncScene(nodes: store.filteredNodes)
+        }
+        .onChange(of: store.nodes) { _, newNodes in
+            // Track additions against the raw node list so newly captured nodes
+            // get the drop-in animation even if filteredNodes would include them.
+            let newIDs = Set(newNodes.map { $0.id })
+            let addedID = newIDs.subtracting(previousNodeIDs).first
+            previousNodeIDs = newIDs
+            syncScene(nodes: store.filteredNodes, newNodeID: addedID)
+        }
+        .onChange(of: store.filteredNodes) { _, filtered in
+            // Re-sync when filter state changes (tag filter, type filter, etc.)
+            syncScene(nodes: filtered)
+        }
+        .onChange(of: store.tags) { _, _ in
+            syncScene(nodes: store.filteredNodes)
+        }
+    }
 
-                // Empty state (behind the SpriteKit layer)
-                if store.nodes.isEmpty {
-                    GraphPaperEmptyView()
-                        .ignoresSafeArea()
-                        .transition(.opacity)
-                }
+    // MARK: - Canvas stack (extracted to keep body type-checkable)
 
-                // Physics canvas
-                SpriteView(scene: scene, options: [.allowsTransparency])
-                    .ignoresSafeArea()
-
-                // Node summary overlay — tap-to-select
-                if let id = canvasState.selectedNodeID,
-                   let node = store.nodes.first(where: { $0.id == id }) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { canvasState.selectedNodeID = nil }
-                        .ignoresSafeArea()
-
-                    NodeSummaryOverlay(
-                        node: node,
-                        namespace: zoomNamespace,
-                        onEnterDetail: {
-                            navigationPath.append(node)
-                        },
-                        onDismiss: {
-                            canvasState.selectedNodeID = nil
-                        }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                // Capture target indicator
-                if let targetID = captureTargetNodeID,
-                   let targetNode = store.nodes.first(where: { $0.id == targetID }) {
-                    VStack {
-                        HStack {
-                            Label("Adding to: \(targetNode.title)", systemImage: "arrow.up.circle")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 8)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Capsule())
-                                .padding(.top, 8)
-                                .onTapGesture { captureTargetNodeID = nil }
-                            Spacer()
-                        }
-                        .padding(.leading, 16)
-                        Spacer()
-                    }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-
-                // Capture fan
-                ActionButtonFan(
-                    isExpanded: $fanExpanded,
-                    onVoice:       { captureMode = .voice },
-                    onCamera:      { captureMode = .camera },
-                    onText:        { captureMode = .text },
-                    onNodePicker:  { showingNodePicker = true },
-                    onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
-                )
-            }
+    private var canvasStack: some View {
+        canvasZStack
             .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
             .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
             .animation(.spring(response: 0.28), value: captureTargetNodeID)
@@ -103,52 +66,101 @@ struct CanvasView: View {
                 NodeDetailView(nodeID: node.id)
                     .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
             }
-            // Capture sheet — passes target node ID into the capture view
-            .sheet(item: $captureMode) { mode in
-                switch mode {
-                case .voice:  VoiceCaptureSheet(targetNodeID: captureTargetNodeID)
-                case .text:   TextCaptureSheet(targetNodeID: captureTargetNodeID)
-                case .camera: CameraCaptureView(targetNodeID: captureTargetNodeID)
-                }
-            }
-            // Node picker sheet
+            .sheet(item: $captureMode, content: captureModeSheet)
             .sheet(isPresented: $showingNodePicker) {
                 NodePickerSheet(selectedNodeID: $captureTargetNodeID)
             }
-            // Tag creation sheet — presented when AI surfaces new tag suggestions
             .sheet(item: $localTagSuggestions) { context in
-                TagCreationSheet(context: context)
-                    .onDisappear {
-                        store.pendingTagSuggestions = nil
-                        localTagSuggestions = nil
-                    }
+                tagCreationSheet(context: context)
             }
             .onChange(of: store.pendingTagSuggestions) { _, new in
-                if let new, localTagSuggestions == nil {
-                    localTagSuggestions = new
-                }
+                if let new, localTagSuggestions == nil { localTagSuggestions = new }
             }
             .onChange(of: captureMode) { _, mode in
                 if mode != nil { fanExpanded = false }
-                // Clear target after capture sheet dismisses
                 if mode == nil { captureTargetNodeID = nil }
             }
+    }
+
+    private var canvasZStack: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if store.nodes.isEmpty {
+                GraphPaperEmptyView()
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+            SpriteView(scene: scene, options: [.allowsTransparency])
+                .ignoresSafeArea()
+            nodeSummaryLayer
+            captureTargetBanner
+            ActionButtonFan(
+                isExpanded: $fanExpanded,
+                isEmpty: store.nodes.isEmpty,
+                onVoice:       { captureMode = .voice },
+                onCamera:      { captureMode = .camera },
+                onText:        { captureMode = .text },
+                onNodePicker:  { showingNodePicker = true },
+                onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
+            )
         }
-        .onAppear {
-            scene.scaleMode = .resizeFill
-            scene.backgroundColor = .clear
-            scene.canvasState = canvasState
-            previousNodeIDs = Set(store.nodes.map { $0.id })
-            syncScene(nodes: store.nodes)
+    }
+
+    @ViewBuilder
+    private func captureModeSheet(_ mode: CaptureMode) -> some View {
+        switch mode {
+        case .voice:  VoiceCaptureSheet(targetNodeID: captureTargetNodeID)
+        case .text:   TextCaptureSheet(targetNodeID: captureTargetNodeID)
+        case .camera: CameraCaptureView(targetNodeID: captureTargetNodeID)
         }
-        .onChange(of: store.nodes) { _, newNodes in
-            let newIDs = Set(newNodes.map { $0.id })
-            let addedID = newIDs.subtracting(previousNodeIDs).first
-            previousNodeIDs = newIDs
-            syncScene(nodes: newNodes, newNodeID: addedID)
+    }
+
+    private func tagCreationSheet(context: TagSuggestionContext) -> some View {
+        TagCreationSheet(context: context)
+            .onDisappear {
+                store.pendingTagSuggestions = nil
+                localTagSuggestions = nil
+            }
+    }
+
+    @ViewBuilder
+    private var nodeSummaryLayer: some View {
+        if let id = canvasState.selectedNodeID,
+           let node = store.nodes.first(where: { $0.id == id }) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { canvasState.selectedNodeID = nil }
+                .ignoresSafeArea()
+            NodeSummaryOverlay(
+                node: node, namespace: zoomNamespace,
+                onEnterDetail: { navigationPath.append(node) },
+                onDismiss: { canvasState.selectedNodeID = nil }
+            )
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .onChange(of: store.tags) { _, _ in
-            syncScene(nodes: store.nodes)
+    }
+
+    @ViewBuilder
+    private var captureTargetBanner: some View {
+        if let targetID = captureTargetNodeID,
+           let targetNode = store.nodes.first(where: { $0.id == targetID }) {
+            VStack {
+                HStack {
+                    Label("Adding to: \(targetNode.title)", systemImage: "arrow.up.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .padding(.top, 8)
+                        .onTapGesture { captureTargetNodeID = nil }
+                    Spacer()
+                }
+                .padding(.leading, 16)
+                Spacer()
+            }
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

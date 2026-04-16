@@ -517,12 +517,9 @@ private struct DomainSuggestionCard: View {
                 Image(systemName: "sparkles")
                     .foregroundStyle(.yellow)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("This looks like a \(domain)")
+                    Text("This looks like \(domain) content — want me to optimise how it's stored?")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("Want me to optimise how it's catalogued?")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.6))
                 }
                 Spacer()
                 VStack(spacing: 6) {

@@ -68,7 +68,8 @@ struct TextCaptureSheet: View {
             location: nil,
             items: [.text(content: trimmed)],
             domain: nil,
-            domainConfirmed: false
+            domainConfirmed: false,
+            needsAIProcessing: false
         )
 
         // Slight random spread so nodes don't all stack at center

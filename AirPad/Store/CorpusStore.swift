@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
@@ -22,6 +23,11 @@ final class CorpusStore {
     var filterState: FilterState = FilterState.load() {
         didSet { filterState.save() }
     }
+
+    /// Thread suggestions waiting to be shown to the user (one at a time in UI).
+    var pendingThreads: [ThreadSuggestion] = []
+
+    private var dismissedThreadDescriptions: Set<String> = []
 
     /// Nodes after applying the active filter and sort order.
     var filteredNodes: [Node] {
@@ -79,6 +85,8 @@ final class CorpusStore {
     // MARK: - Load
 
     func load() async {
+        // Import any nodes staged by the share extension first
+        await importFromAppGroupInbox()
         do {
             let loaded = try await service.loadAllNodes()
             let layout = try await service.loadCanvasLayout()
@@ -89,6 +97,8 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Load error: \(error)")
         }
+        // Process any nodes that were captured by the share extension (no AI ran at capture time)
+        await scanForUnprocessedNodes()
     }
 
     // MARK: - Add new nodes
@@ -119,6 +129,10 @@ final class CorpusStore {
             canvasLayout = newLayout
         } catch {
             print("[CorpusStore] Save error: \(error)")
+        }
+        // Trigger corpus-wide thread analysis once we have enough nodes
+        if nodes.count >= 10 {
+            Task { await triggerThreadAnalysis() }
         }
     }
 
@@ -175,7 +189,6 @@ final class CorpusStore {
             description: description.isEmpty ? nil : description
         )
 
-        // Write image to temp file for copyItem
         let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         do {
             try imageData.write(to: tmpURL)
@@ -208,7 +221,8 @@ final class CorpusStore {
                 location: nil,
                 items: [item],
                 domain: nil,
-                domainConfirmed: false
+                domainConfirmed: false,
+                needsAIProcessing: false
             )
             do {
                 try await service.saveItemFile(nodeID: node.id, itemID: itemID, sourceURL: tmpURL, fileExtension: "jpg")
@@ -258,17 +272,22 @@ final class CorpusStore {
 
     // MARK: - AI processing
 
-    /// Runs Foundation Model processing on a node after capture (non-blocking).
-    /// Updates title, summary, mood, domain, and applies / surfaces new tags.
+    /// Runs on-device AI processing on a node after capture (non-blocking).
     func processNodeWithAI(nodeID: String) async {
-        guard #available(iOS 26.0, *) else { return }
+        guard #available(iOS 18.1, *) else { return }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
 
         let currentTags = tags
         let aiSvc = AIService()
-        guard let result = await aiSvc.processNode(node, tagVocabulary: currentTags) else { return }
+        guard let result = await aiSvc.processNode(node, tagVocabulary: currentTags) else {
+            // AI unavailable — clear the flag so we don't retry indefinitely
+            if var n = nodes.first(where: { $0.id == nodeID }), n.needsAIProcessing {
+                n.needsAIProcessing = false
+                await updateNode(n)
+            }
+            return
+        }
 
-        // Node may have changed while AI was running — refetch index
         guard var updated = nodes.first(where: { $0.id == nodeID }) else { return }
 
         updated.title   = result.title
@@ -279,7 +298,6 @@ final class CorpusStore {
             updated.domainConfirmed = false
         }
 
-        // Sort suggested tags into existing vs new
         var existingTagNames: [String] = []
         var newTagNames: [String] = []
         for name in result.tags {
@@ -290,15 +308,161 @@ final class CorpusStore {
             }
         }
         updated.tags = existingTagNames
+        updated.needsAIProcessing = false
         await updateNode(updated)
 
-        // Surface tag creation sheet for any new tags the AI invented
         if !newTagNames.isEmpty {
             pendingTagSuggestions = TagSuggestionContext(
                 nodeID: nodeID,
                 newTagNames: newTagNames,
                 existingTagNames: existingTagNames
             )
+        }
+    }
+
+    /// On launch, process any nodes captured via the share extension (no AI ran at capture time).
+    private func scanForUnprocessedNodes() async {
+        let unprocessed = nodes.filter { $0.needsAIProcessing }
+        for node in unprocessed {
+            await processNodeWithAI(nodeID: node.id)
+        }
+    }
+
+    // MARK: - Thread surfacing
+
+    /// Trigger corpus-wide thread analysis. Runs in background; never blocks node save.
+    private func triggerThreadAnalysis() async {
+        guard #available(iOS 26.0, *) else { return }
+        let currentNodes = nodes
+        let currentTags = tags
+        let dismissed = dismissedThreadDescriptions
+        let existingDescriptions = Set(pendingThreads.map { $0.description })
+
+        let threadSvc = ThreadService()
+        let suggestions = await threadSvc.analyzeCorpus(nodes: currentNodes, tags: currentTags)
+
+        let newSuggestions = suggestions.filter { s in
+            !dismissed.contains(s.description) && !existingDescriptions.contains(s.description)
+        }
+        if !newSuggestions.isEmpty {
+            pendingThreads.append(contentsOf: newSuggestions)
+        }
+    }
+
+    /// Accept a thread suggestion — creates a meta-node and updates source node thread arrays.
+    func pullThread(_ suggestion: ThreadSuggestion) async {
+        pendingThreads.removeAll { $0.id == suggestion.id }
+
+        let sourceNodes = suggestion.nodeIDs.compactMap { id in nodes.first { $0.id == id } }
+        let sourceTitles = sourceNodes.map { $0.title }.joined(separator: ", ")
+        let unionTags = Array(Set(sourceNodes.compactMap { $0.tags.first }))
+
+        let now = Date()
+        let metaNode = Node(
+            id: UUID().uuidString,
+            createdAt: now,
+            updatedAt: now,
+            title: suggestion.description,
+            summary: "Connected from \(sourceTitles)",
+            tags: unionTags,
+            mood: nil,
+            isMeta: true,
+            provenance: suggestion.nodeIDs,
+            threads: suggestion.nodeIDs,
+            location: nil,
+            items: [],
+            domain: nil,
+            domainConfirmed: false,
+            needsAIProcessing: false
+        )
+
+        // Place meta-node at centroid of source nodes
+        let positions = suggestion.nodeIDs.compactMap { canvasLayout.positions[$0] }
+        let centroid: CGPoint
+        if positions.isEmpty {
+            centroid = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
+        } else {
+            let cx = positions.map { $0.x }.reduce(0, +) / Double(positions.count)
+            let cy = positions.map { $0.y }.reduce(0, +) / Double(positions.count)
+            centroid = CGPoint(x: cx + Double.random(in: -25...25), y: cy + Double.random(in: -25...25))
+        }
+
+        // Bidirectional: update source nodes' threads arrays
+        for nodeID in suggestion.nodeIDs {
+            guard var source = nodes.first(where: { $0.id == nodeID }) else { continue }
+            if !source.threads.contains(metaNode.id) {
+                source.threads.append(metaNode.id)
+                await updateNode(source)
+            }
+        }
+
+        await addNode(metaNode, position: centroid)
+    }
+
+    /// Dismiss a thread suggestion — never show it again.
+    func dismissThread(_ suggestion: ThreadSuggestion) {
+        dismissedThreadDescriptions.insert(suggestion.description)
+        pendingThreads.removeAll { $0.id == suggestion.id }
+    }
+
+    /// Promote a meta-node to a true node. Irreversible.
+    func promoteMetaNode(nodeID: String) async {
+        guard var node = nodes.first(where: { $0.id == nodeID }), node.isMeta else { return }
+        node.isMeta = false
+        node.provenance = nil
+        node.updatedAt = Date()
+        await updateNode(node)
+    }
+
+    // MARK: - Share extension inbox import
+
+    /// Reads nodes staged by the share extension in the App Group container and imports them.
+    private func importFromAppGroupInbox() async {
+        guard let groupContainer = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: "group.com.doctorpresident.airpad"
+        ) else { return }
+
+        let inbox = groupContainer.appendingPathComponent("AirPad/inbox")
+        guard let dirs = try? FileManager.default.contentsOfDirectory(
+            at: inbox,
+            includingPropertiesForKeys: nil,
+            options: .skipsHiddenFiles
+        ) else { return }
+
+        for dir in dirs where dir.hasDirectoryPath {
+            let nodeFile = dir.appendingPathComponent("node.json")
+            guard let data = try? Data(contentsOf: nodeFile),
+                  let node = try? JSONDecoder.airPad.decode(Node.self, from: data) else { continue }
+
+            // Skip if already imported
+            guard !nodes.contains(where: { $0.id == node.id }) else {
+                try? FileManager.default.removeItem(at: dir)
+                continue
+            }
+
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] Inbox import error: \(error)")
+                continue
+            }
+
+            // Copy any media files staged alongside the node JSON
+            let itemsDir = dir.appendingPathComponent("items")
+            if let mediaFiles = try? FileManager.default.contentsOfDirectory(
+                at: itemsDir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+            ) {
+                for mediaFile in mediaFiles {
+                    let itemID = mediaFile.deletingPathExtension().lastPathComponent
+                    let ext = mediaFile.pathExtension
+                    try? await service.saveItemFile(
+                        nodeID: node.id, itemID: itemID, sourceURL: mediaFile, fileExtension: ext
+                    )
+                }
+            }
+
+            try? FileManager.default.removeItem(at: dir)
+            nodes.insert(node, at: 0)
         }
     }
 

@@ -4,6 +4,7 @@ struct ContentView: View {
 
     @Environment(CorpusStore.self) private var store
     @State private var showFilterPanel = false
+    @State private var showSettings = false
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
 
     var body: some View {
@@ -38,18 +39,50 @@ struct ContentView: View {
                         store.filterState = s
                     }
                     Spacer()
-                    FilterButton(activeCount: store.filterState.activeFilterCount) {
-                        showFilterPanel = true
+                    HStack(spacing: 10) {
+                        SettingsButton { showSettings = true }
+                        FilterButton(activeCount: store.filterState.activeFilterCount) {
+                            showFilterPanel = true
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 58)
                 Spacer()
             }
+
+            // Thread suggestion card — bottom of screen, above the action button
+            if let suggestion = store.pendingThreads.first {
+                let titles = suggestion.nodeIDs.compactMap { id in
+                    store.nodes.first { $0.id == id }?.title
+                }
+                VStack {
+                    Spacer()
+                    ThreadSuggestionCard(
+                        suggestion: suggestion,
+                        nodeTitles: titles,
+                        onPull: {
+                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                            Task { await store.pullThread(suggestion) }
+                        },
+                        onDismiss: {
+                            withAnimation(.spring(response: 0.3)) {
+                                store.dismissThread(suggestion)
+                            }
+                        }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 108)
+                }
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: store.pendingThreads.first?.id)
+            }
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
             FilterPanelView()
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView { showOnboarding = false }
@@ -86,6 +119,24 @@ private struct ViewTogglePill: View {
             .padding(.vertical, 8)
             .background(viewMode == mode ? Color.white : Color.clear)
             .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Settings button
+
+private struct SettingsButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(Color(white: 0.18))
+                .clipShape(Circle())
         }
         .buttonStyle(.plain)
     }

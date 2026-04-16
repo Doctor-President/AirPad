@@ -272,7 +272,8 @@ struct VoiceCaptureSheet: View {
                 transcript.isEmpty ? nil : .text(content: transcript)
             ].compactMap { $0 },
             domain: nil,
-            domainConfirmed: false
+            domainConfirmed: false,
+            needsAIProcessing: false
         )
 
         let position = CGPoint(

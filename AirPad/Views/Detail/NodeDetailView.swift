@@ -18,6 +18,7 @@ struct NodeDetailView: View {
 
     // "Add item" mini-fan state
     @State private var captureMode: CaptureMode? = nil
+    @State private var showPromoteConfirmation = false
 
     enum CaptureMode: String, Identifiable {
         case voice, text, camera
@@ -48,6 +49,18 @@ struct NodeDetailView: View {
         }
         .onDisappear {
             saveIfChanged()
+        }
+        .confirmationDialog(
+            "Make it permanent?",
+            isPresented: $showPromoteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Promote to true node", role: .destructive) {
+                Task { await store.promoteMetaNode(nodeID: nodeID) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This makes it a permanent part of your corpus. Can't be undone.")
         }
         .sheet(item: $captureMode) { mode in
             switch mode {
@@ -90,6 +103,11 @@ struct NodeDetailView: View {
                 // Domain suggestion card
                 if let domain = node.domain, !node.domainConfirmed {
                     DomainSuggestionCard(domain: domain, nodeID: nodeID)
+                }
+
+                // Meta-node provenance + promotion
+                if node.isMeta {
+                    MetaNodeBanner(nodeID: nodeID, showPromoteConfirmation: $showPromoteConfirmation)
                 }
 
                 // Add item
@@ -544,6 +562,81 @@ private struct DomainSuggestionCard: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.2), lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+}
+
+// MARK: - Meta-node banner
+
+private struct MetaNodeBanner: View {
+    let nodeID: String
+    @Binding var showPromoteConfirmation: Bool
+    @Environment(CorpusStore.self) private var store
+
+    private var provenanceNodes: [Node] {
+        guard let node = store.nodes.first(where: { $0.id == nodeID }),
+              let provenance = node.provenance else { return [] }
+        return provenance.compactMap { id in store.nodes.first { $0.id == id } }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Text("✦")
+                    .foregroundStyle(.purple.opacity(0.8))
+                Text("Thread node")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .textCase(.uppercase)
+                    .tracking(0.5)
+            }
+
+            let sources = provenanceNodes
+            if !sources.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Connected from")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.35))
+                    ForEach(sources) { source in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color.white.opacity(0.2))
+                                .frame(width: 5, height: 5)
+                            Text(source.title)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
+                    }
+                }
+            }
+
+            Button {
+                showPromoteConfirmation = true
+            } label: {
+                Text("Promote to true node")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.purple)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(Color.purple.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(Color.purple.opacity(0.06))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(
+                    style: StrokeStyle(lineWidth: 1, dash: [5, 4])
+                )
+                .foregroundStyle(Color.purple.opacity(0.4))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

@@ -48,6 +48,7 @@ targets:
       - sdk: FoundationModels.framework
       - sdk: PhotosUI.framework
       - sdk: AVKit.framework
+      - sdk: Security.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad
@@ -77,11 +78,14 @@ targets:
       - path: AirPadShare
         excludes:
           - "Info.plist"
+          - "*.entitlements"
+      - path: AirPad/Models
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share
         TARGETED_DEVICE_FAMILY: "1,2"
         DEVELOPMENT_TEAM: 8XM4B5F42Y
+        CODE_SIGN_ENTITLEMENTS: AirPadShare/AirPadShare.entitlements
     info:
       path: AirPadShare/Info.plist
       properties:

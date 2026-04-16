@@ -75,11 +75,22 @@ final class CorpusPhysicsScene: SKScene {
 
     private func addNodeSprite(_ node: Node, isNew: Bool) {
         let radius = bubbleRadius(for: node)
-        let shape = makeShape(radius: radius, fillColor: bubbleColor(for: node))
+        let shape = makeShape(radius: radius, fillColor: bubbleColor(for: node), isMeta: node.isMeta)
         shape.name = "node:\(node.id)"
 
         let label = makeTitleLabel(text: node.title, offsetY: -(radius + 6))
         shape.addChild(label)
+
+        if node.isMeta {
+            let spark = SKLabelNode(text: "✦")
+            spark.fontSize = 10
+            spark.fontColor = UIColor.white.withAlphaComponent(0.6)
+            spark.verticalAlignmentMode = .center
+            spark.horizontalAlignmentMode = .center
+            spark.position = .zero
+            spark.zPosition = 3
+            shape.addChild(spark)
+        }
 
         let body = SKPhysicsBody(circleOfRadius: radius)
         body.linearDamping = 0.6
@@ -120,10 +131,11 @@ final class CorpusPhysicsScene: SKScene {
 
     private func updateNodeSprite(_ node: Node) {
         guard let shape = nodeSprites[node.id] else { return }
-        shape.fillColor = bubbleColor(for: node)
-        // Title label update
-        if let label = shape.children.first(where: { $0 is SKLabelNode }) as? SKLabelNode {
-            label.text = node.title
+        shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
+        // Title label update (first label child = the title)
+        let labels = shape.children.compactMap { $0 as? SKLabelNode }
+        if let titleLabel = labels.first(where: { $0.position.y < 0 }) {
+            titleLabel.text = node.title
         }
     }
 
@@ -150,12 +162,23 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Helpers
 
-    private func makeShape(radius: CGFloat, fillColor: UIColor) -> SKShapeNode {
+    private func makeShape(radius: CGFloat, fillColor: UIColor, isMeta: Bool = false) -> SKShapeNode {
         let shape = SKShapeNode(circleOfRadius: radius)
-        shape.fillColor = fillColor
-        shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
-        shape.lineWidth = 1
+        shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         shape.zPosition = 1
+
+        if isMeta {
+            // Dashed border: use a UIBezierPath with dash pattern converted to CGPath
+            let bezier = UIBezierPath()
+            bezier.addArc(withCenter: .zero, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: true)
+            bezier.setLineDash([5, 4], count: 2, phase: 0)
+            shape.path = bezier.cgPath
+            shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
+            shape.lineWidth = 1.5
+        } else {
+            shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
+            shape.lineWidth = 1
+        }
         return shape
     }
 

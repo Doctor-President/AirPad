@@ -1,0 +1,4 @@
+Target dependency graph (2 targets)
+Target 'AirPad' in project 'AirPad'
+➜ Explicit dependency on target 'AirPadShare' in project 'AirPad'
+Target 'AirPadShare' in project 'AirPad' (no dependencies)

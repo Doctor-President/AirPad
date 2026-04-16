@@ -1,0 +1,61 @@
+{
+  "" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary.dia",
+    "emit-module-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary-emit-module.dia",
+    "pch" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPad-primary.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/App/AirPadApp.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPadApp.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPadApp.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/AirPadApp.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/App/ContentView.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/ContentView.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/CanvasLayout.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CanvasLayout.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CanvasLayout.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CanvasLayout.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/Node.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/Node.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/Node.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/Node.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/NodeItem.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/NodeItem.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/NodeItem.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/NodeItem.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/NodeItemType.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/NodeItemType.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/NodeItemType.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/NodeItemType.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Services/iCloudDriveService.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/iCloudDriveService.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/iCloudDriveService.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/iCloudDriveService.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Store/CorpusStore.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CorpusStore.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CorpusStore.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CorpusStore.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/CanvasPlaceholderView.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.o"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/TextCaptureSheet.swift" : {
+    "index-unit-output-path" : "/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/TextCaptureSheet.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/TextCaptureSheet.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphoneos/AirPad.build/Objects-normal/arm64/TextCaptureSheet.o"
+  }
+}

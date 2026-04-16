@@ -1,0 +1,93 @@
+name: AirPad
+
+options:
+  bundleIdPrefix: com.doctorpresident
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+schemes:
+  AirPad:
+    build:
+      targets:
+        AirPad: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: 8XM4B5F42Y
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+
+targets:
+  AirPad:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: AirPad
+        excludes:
+          - "Info.plist"
+          - "*.entitlements"
+    dependencies:
+      - target: AirPadShare
+        embed: true
+      - sdk: SpriteKit.framework
+      - sdk: AVFoundation.framework
+      - sdk: Speech.framework
+      - sdk: FoundationModels.framework
+      - sdk: PhotosUI.framework
+      - sdk: AVKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: AirPad/AirPad.entitlements
+        DEVELOPMENT_TEAM: 8XM4B5F42Y
+    info:
+      path: AirPad/Info.plist
+      properties:
+        CFBundleDisplayName: AirPad
+        UILaunchScreen: {}
+        NSUbiquitousContainers:
+          iCloud.com.doctorpresident.airpad:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: AirPad
+            NSUbiquitousContainerSupportedFolderLevels: Any
+        NSMicrophoneUsageDescription: "AirPad needs microphone access to record voice notes."
+        NSSpeechRecognitionUsageDescription: "AirPad uses speech recognition to transcribe your voice notes."
+        NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as ideas."
+        NSPhotoLibraryUsageDescription: "AirPad can add photos from your library to an idea."
+
+  AirPadShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: AirPadShare
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share
+        TARGETED_DEVICE_FAMILY: "1,2"
+        DEVELOPMENT_TEAM: 8XM4B5F42Y
+    info:
+      path: AirPadShare/Info.plist
+      properties:
+        CFBundleDisplayName: AirPad Share
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: TRUEPREDICATE

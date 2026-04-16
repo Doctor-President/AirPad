@@ -1,0 +1,641 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
+		0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA8C82636A7D9E2E115A203 /* AVKit.framework */; };
+		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
+		2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */; };
+		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
+		50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194292F01A21193B880F16FA /* ContentView.swift */; };
+		59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */; };
+		605B0E309C0A9624D7E38980 /* GraphPaperEmptyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */; };
+		6353A53FA1E910980685F823 /* ActionButtonFan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */; };
+		69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */; };
+		6ABE3E503556A6148E29F602 /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
+		6DA9E5E14E071618E0AEB602 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EAE9B78BB325C211A14551B /* PhotosUI.framework */; };
+		734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */; };
+		82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */; };
+		8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */; };
+		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
+		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
+		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
+		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
+		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
+		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
+		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
+		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
+		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
+		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
+		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
+		D5709E0DEA900DA3FA2CF236 /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */; };
+		D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */; };
+		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
+		FCC7997009DE3B635D382FFF /* VoiceCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		739EC8D6156E30C3FDE6CC62 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88710B490536A898E4AE3E9F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9F144B331C91B74D76253A80;
+			remoteInfo = AirPadShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		82DDF0000866D876B8509504 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasPlaceholderView.swift; sourceTree = "<group>"; };
+		0EAE9B78BB325C211A14551B /* PhotosUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PhotosUI.framework; path = System/Library/Frameworks/PhotosUI.framework; sourceTree = SDKROOT; };
+		1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusPhysicsScene.swift; sourceTree = "<group>"; };
+		1866B7173FCC4A9B1AE81AF1 /* Node.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Node.swift; sourceTree = "<group>"; };
+		194292F01A21193B880F16FA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		39E6876F450FCAC6F6B1A9CF /* Tag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tag.swift; sourceTree = "<group>"; };
+		3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureSheet.swift; sourceTree = "<group>"; };
+		4339BD7FF5450195EDF70A95 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
+		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
+		66610DC5B90AC2729F2B6F1D /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
+		6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButtonFan.swift; sourceTree = "<group>"; };
+		6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasLayout.swift; sourceTree = "<group>"; };
+		7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItemType.swift; sourceTree = "<group>"; };
+		7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCaptureSheet.swift; sourceTree = "<group>"; };
+		8E4F251A686080806C62E071 /* NodeItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItem.swift; sourceTree = "<group>"; };
+		8EA8C82636A7D9E2E115A203 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = System/Library/Frameworks/AVKit.framework; sourceTree = SDKROOT; };
+		8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9348EE6BAC36DA4236BB5780 /* CanvasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasState.swift; sourceTree = "<group>"; };
+		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
+		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
+		B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphPaperEmptyView.swift; sourceTree = "<group>"; };
+		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
+		C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureIntent.swift; sourceTree = "<group>"; };
+		C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FoundationModels.framework; path = System/Library/Frameworks/FoundationModels.framework; sourceTree = SDKROOT; };
+		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
+		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagCreationSheet.swift; sourceTree = "<group>"; };
+		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E5CCE4B7D4E3DC05629BA7C9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */,
+				B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */,
+				CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */,
+				D5709E0DEA900DA3FA2CF236 /* FoundationModels.framework in Frameworks */,
+				6DA9E5E14E071618E0AEB602 /* PhotosUI.framework in Frameworks */,
+				0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		01B3209F32045005E03F39C8 /* Tags */ = {
+			isa = PBXGroup;
+			children = (
+				F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */,
+			);
+			path = Tags;
+			sourceTree = "<group>";
+		};
+		1098DD62B5B4D5B3A78424EB /* Canvas */ = {
+			isa = PBXGroup;
+			children = (
+				9348EE6BAC36DA4236BB5780 /* CanvasState.swift */,
+				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
+				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
+				B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */,
+			);
+			path = Canvas;
+			sourceTree = "<group>";
+		};
+		3227935C1477D723C015BBFB /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				E617FBB5C1757939CF37710B /* AIService.swift */,
+				B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		4457977889C2B78493EC5AD7 /* Detail */ = {
+			isa = PBXGroup;
+			children = (
+				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
+			);
+			path = Detail;
+			sourceTree = "<group>";
+		};
+		60660408D5EEF211EB72BA7D /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */,
+				3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */,
+			);
+			path = Capture;
+			sourceTree = "<group>";
+		};
+		606CFA4703585800983C4127 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				E1C39505C0E8DDE7019D8F77 /* Camera */,
+				1098DD62B5B4D5B3A78424EB /* Canvas */,
+				60660408D5EEF211EB72BA7D /* Capture */,
+				4457977889C2B78493EC5AD7 /* Detail */,
+				01B3209F32045005E03F39C8 /* Tags */,
+				059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */,
+				801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		6876C92BB6761BB9D3907C40 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */,
+				8EA8C82636A7D9E2E115A203 /* AVKit.framework */,
+				C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */,
+				0EAE9B78BB325C211A14551B /* PhotosUI.framework */,
+				4339BD7FF5450195EDF70A95 /* Speech.framework */,
+				C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		772C30E361C97B9515651400 = {
+			isa = PBXGroup;
+			children = (
+				A055D36542F89044D66F6B90 /* AirPad */,
+				FDEDADDFC6788C80B33AEE44 /* AirPadShare */,
+				6876C92BB6761BB9D3907C40 /* Frameworks */,
+				95C31440F925CC38D4918A3D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		84008F6D3FD02352A4C35D02 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */,
+				1866B7173FCC4A9B1AE81AF1 /* Node.swift */,
+				8E4F251A686080806C62E071 /* NodeItem.swift */,
+				7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */,
+				39E6876F450FCAC6F6B1A9CF /* Tag.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		9515265A45A3D3B7B626E916 /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				ADDA79A05C807120913FCE5F /* CorpusStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		95C31440F925CC38D4918A3D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9D21AB3DEE91993C6F039833 /* AirPad.app */,
+				20ED1D435BF9E254D634DF37 /* AirPadShare.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A055D36542F89044D66F6B90 /* AirPad */ = {
+			isa = PBXGroup;
+			children = (
+				A2912D6657F7FC39ADEE0543 /* App */,
+				FDFA9E66B2F9280B7A074F62 /* Intents */,
+				84008F6D3FD02352A4C35D02 /* Models */,
+				3227935C1477D723C015BBFB /* Services */,
+				9515265A45A3D3B7B626E916 /* Store */,
+				606CFA4703585800983C4127 /* Views */,
+				8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */,
+			);
+			path = AirPad;
+			sourceTree = "<group>";
+		};
+		A2912D6657F7FC39ADEE0543 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */,
+				194292F01A21193B880F16FA /* ContentView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		E1C39505C0E8DDE7019D8F77 /* Camera */ = {
+			isa = PBXGroup;
+			children = (
+				FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */,
+			);
+			path = Camera;
+			sourceTree = "<group>";
+		};
+		FDEDADDFC6788C80B33AEE44 /* AirPadShare */ = {
+			isa = PBXGroup;
+			children = (
+				7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */,
+			);
+			path = AirPadShare;
+			sourceTree = "<group>";
+		};
+		FDFA9E66B2F9280B7A074F62 /* Intents */ = {
+			isa = PBXGroup;
+			children = (
+				C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */,
+			);
+			path = Intents;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		62C8055DB0F7AF52F9B3E615 /* AirPad */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 724E5D109A9BD9941149EF41 /* Build configuration list for PBXNativeTarget "AirPad" */;
+			buildPhases = (
+				7A201F7DE28F2BC68B00D7BD /* Sources */,
+				1DE6D0262700D4F43458D3DE /* Resources */,
+				E5CCE4B7D4E3DC05629BA7C9 /* Frameworks */,
+				82DDF0000866D876B8509504 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4C4FA9FB46FC1707AF3D3102 /* PBXTargetDependency */,
+			);
+			name = AirPad;
+			packageProductDependencies = (
+			);
+			productName = AirPad;
+			productReference = 9D21AB3DEE91993C6F039833 /* AirPad.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9F144B331C91B74D76253A80 /* AirPadShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 50C1C80C799EE7F631291186 /* Build configuration list for PBXNativeTarget "AirPadShare" */;
+			buildPhases = (
+				B651AE95E0BAEFCFFEF1DCEF /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AirPadShare;
+			packageProductDependencies = (
+			);
+			productName = AirPadShare;
+			productReference = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		88710B490536A898E4AE3E9F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					62C8055DB0F7AF52F9B3E615 = {
+						DevelopmentTeam = 8XM4B5F42Y;
+					};
+					9F144B331C91B74D76253A80 = {
+						DevelopmentTeam = 8XM4B5F42Y;
+					};
+				};
+			};
+			buildConfigurationList = 5B38874CB5721F6BC454D594 /* Build configuration list for PBXProject "AirPad" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 772C30E361C97B9515651400;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 95C31440F925CC38D4918A3D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				62C8055DB0F7AF52F9B3E615 /* AirPad */,
+				9F144B331C91B74D76253A80 /* AirPadShare */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		1DE6D0262700D4F43458D3DE /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7A201F7DE28F2BC68B00D7BD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */,
+				6353A53FA1E910980685F823 /* ActionButtonFan.swift in Sources */,
+				2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */,
+				D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */,
+				734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */,
+				69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */,
+				94765E10145D5017BDE18696 /* CanvasState.swift in Sources */,
+				14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */,
+				CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */,
+				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
+				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
+				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
+				605B0E309C0A9624D7E38980 /* GraphPaperEmptyView.swift in Sources */,
+				6ABE3E503556A6148E29F602 /* Node.swift in Sources */,
+				B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */,
+				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,
+				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,
+				072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */,
+				8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */,
+				2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */,
+				FCC7997009DE3B635D382FFF /* VoiceCaptureSheet.swift in Sources */,
+				B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B651AE95E0BAEFCFFEF1DCEF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4C4FA9FB46FC1707AF3D3102 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9F144B331C91B74D76253A80 /* AirPadShare */;
+			targetProxy = 739EC8D6156E30C3FDE6CC62 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		3FBCA2F86FFC3CA18EB2872E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				INFOPLIST_FILE = AirPadShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		59B4832112D2799C5485A624 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				INFOPLIST_FILE = AirPad/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		624667269BFF3CCA8914437D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				INFOPLIST_FILE = AirPadShare/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		886247D1B0A418D294C351B4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		B123521643E70F4FDECEC4C8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				INFOPLIST_FILE = AirPad/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B27FE73CB72B72670933BB24 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		50C1C80C799EE7F631291186 /* Build configuration list for PBXNativeTarget "AirPadShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3FBCA2F86FFC3CA18EB2872E /* Debug */,
+				624667269BFF3CCA8914437D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5B38874CB5721F6BC454D594 /* Build configuration list for PBXProject "AirPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				886247D1B0A418D294C351B4 /* Debug */,
+				B27FE73CB72B72670933BB24 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		724E5D109A9BD9941149EF41 /* Build configuration list for PBXNativeTarget "AirPad" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B123521643E70F4FDECEC4C8 /* Debug */,
+				59B4832112D2799C5485A624 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 88710B490536A898E4AE3E9F /* Project object */;
+}

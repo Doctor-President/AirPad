@@ -1,0 +1,239 @@
+{
+  "" : {
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPad-primary.dia",
+    "emit-module-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPad-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPad-primary-emit-module.dia",
+    "pch" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPad-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPad-primary.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/App/AirPadApp.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AirPadApp~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/App/ContentView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ContentView~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Intents/CaptureIntent.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/CanvasLayout.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasLayout~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/Node.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Node~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/NodeItem.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItem~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/NodeItemType.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeItemType~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/Tag.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/Tag~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Services/AIService.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/AIService~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Services/iCloudDriveService.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Store/CorpusStore.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusStore~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Camera/CameraCaptureView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CameraCaptureView~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/CanvasState.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/CanvasView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/CorpusPhysicsScene.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CorpusPhysicsScene~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/GraphPaperEmptyView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GraphPaperEmptyView~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/CanvasPlaceholderView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasPlaceholderView~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Capture/ActionButtonFan.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/ActionButtonFan~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Capture/VoiceCaptureSheet.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Detail/NodeDetailView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/NodeDetailView~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Tags/TagCreationSheet.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TagCreationSheet~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/TextCaptureSheet.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/TextCaptureSheet~partial.swiftmodule"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

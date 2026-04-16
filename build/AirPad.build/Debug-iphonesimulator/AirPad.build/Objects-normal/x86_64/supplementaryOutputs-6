@@ -1,0 +1,23 @@
+{
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Intents/CaptureIntent.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CaptureIntent.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/CanvasState.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasState.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/CanvasView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/CanvasView.swiftdeps"
+  }
+}

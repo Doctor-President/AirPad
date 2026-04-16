@@ -104,43 +104,6 @@ struct CanvasView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                // View toggle + filter button (top bar)
-                VStack {
-                    HStack {
-                        // Filter button (left)
-                        Button {
-                            showingFilter = true
-                        } label: {
-                            ZStack(alignment: .topTrailing) {
-                                Image(systemName: "line.3.horizontal.decrease.circle")
-                                    .font(.title3)
-                                    .foregroundStyle(.white.opacity(0.75))
-                                if store.filterState.isActive {
-                                    Circle()
-                                        .fill(Color.accentColor)
-                                        .frame(width: 8, height: 8)
-                                        .offset(x: 2, y: -2)
-                                }
-                            }
-                        }
-                        .padding(.leading, 20)
-
-                        Spacer()
-
-                        // Graph / List toggle pill (center-ish)
-                        ViewTogglePill()
-
-                        Spacer()
-
-                        // Placeholder spacer to visually center the pill
-                        Color.clear
-                            .frame(width: 36, height: 36)
-                            .padding(.trailing, 20)
-                    }
-                    .padding(.top, 12)
-                    Spacer()
-                }
-
                 // Capture fan — same in both graph and list modes
                 ActionButtonFan(
                     isExpanded: $fanExpanded,
@@ -150,6 +113,42 @@ struct CanvasView: View {
                     onNodePicker:  { showingNodePicker = true },
                     onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
                 )
+            }
+            // Toggle + filter bar is an overlay so it sits above the SpriteKit Metal layer.
+            // Placing these inside the ZStack is not sufficient — SpriteKit composites outside
+            // the SwiftUI layer hierarchy and will draw over ZStack children regardless of order.
+            .overlay(alignment: .top) {
+                HStack {
+                    // Filter button (left)
+                    Button {
+                        showingFilter = true
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.title3)
+                                .foregroundStyle(.white.opacity(0.75))
+                            if store.filterState.isActive {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: 2, y: -2)
+                            }
+                        }
+                    }
+                    .padding(.leading, 20)
+
+                    Spacer()
+
+                    ViewTogglePill()
+
+                    Spacer()
+
+                    // Mirror of filter button width to keep pill visually centred
+                    Color.clear
+                        .frame(width: 36, height: 36)
+                        .padding(.trailing, 20)
+                }
+                .padding(.top, 12)
             }
             .animation(.easeInOut(duration: 0.25), value: store.viewMode)
             .animation(.spring(response: 0.28), value: store.nodes.isEmpty)

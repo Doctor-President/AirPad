@@ -5,19 +5,65 @@ struct ContentView: View {
     @Environment(CorpusStore.self) private var store
 
     @State private var showOnboarding: Bool = false
+    @State private var showingFilter = false
 
     var body: some View {
         ZStack {
+            // ── Layer 0: canvas (SpriteKit) or list ──────────────────────────
             CanvasView()
-                .overlay(alignment: .top) {
-                    if store.iCloudUnavailable {
-                        iCloudUnavailableBanner()
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                            .padding(.top, 8)
-                    }
-                }
                 .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
 
+            // ── Layer 1: iCloud banner ───────────────────────────────────────
+            if store.iCloudUnavailable {
+                VStack {
+                    iCloudUnavailableBanner()
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            }
+
+            // ── Layer 2: Graph/List toggle + filter button ───────────────────
+            // Placed here at the UIHostingController root ZStack — above the
+            // UINavigationController (CanvasView) and all SpriteKit Metal layers.
+            if !showOnboarding {
+                VStack {
+                    HStack {
+                        // Filter button
+                        Button {
+                            showingFilter = true
+                        } label: {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                    .font(.title3)
+                                    .foregroundStyle(.white.opacity(0.75))
+                                if store.filterState.isActive {
+                                    Circle()
+                                        .fill(Color.accentColor)
+                                        .frame(width: 8, height: 8)
+                                        .offset(x: 2, y: -2)
+                                }
+                            }
+                        }
+                        .padding(.leading, 20)
+
+                        Spacer()
+
+                        ViewTogglePill()
+
+                        Spacer()
+
+                        // Mirror width so pill stays visually centred
+                        Color.clear
+                            .frame(width: 36, height: 36)
+                            .padding(.trailing, 20)
+                    }
+                    .padding(.top, 60)   // clears status bar / Dynamic Island
+                    Spacer()
+                }
+            }
+
+            // ── Layer 3: Onboarding (shown once, highest z) ──────────────────
             if showOnboarding {
                 OnboardingView {
                     withAnimation(.easeOut(duration: 0.4)) {
@@ -25,15 +71,20 @@ struct ContentView: View {
                     }
                 }
                 .transition(.opacity)
-                .zIndex(10)
             }
+        }
+        .animation(.spring(response: 0.28), value: store.iCloudUnavailable)
+        .sheet(isPresented: $showingFilter) {
+            FilterPanel()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.black)
         }
         .onAppear {
             let completed = UserDefaults.standard.bool(forKey: "onboardingComplete")
             showOnboarding = !completed && store.nodes.isEmpty
         }
         .onChange(of: store.nodes) { _, nodes in
-            // If user somehow lands nodes while onboarding is showing, dismiss it
             if showOnboarding && !nodes.isEmpty {
                 withAnimation(.easeOut(duration: 0.4)) {
                     showOnboarding = false

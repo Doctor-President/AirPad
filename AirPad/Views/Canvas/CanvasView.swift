@@ -15,7 +15,6 @@ struct CanvasView: View {
     @State private var previousNodeIDs: Set<String> = []
     @State private var navigationPath = NavigationPath()
     @State private var localTagSuggestions: TagSuggestionContext? = nil
-    @State private var showingFilter = false
 
     @Namespace private var zoomNamespace
 
@@ -139,12 +138,6 @@ struct CanvasView: View {
                         localTagSuggestions = nil
                     }
             }
-            .sheet(isPresented: $showingFilter) {
-                FilterPanel()
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
-                    .presentationBackground(.black)
-            }
             .onChange(of: store.pendingTagSuggestions) { _, new in
                 if let new, localTagSuggestions == nil {
                     localTagSuggestions = new
@@ -153,47 +146,6 @@ struct CanvasView: View {
             .onChange(of: captureMode) { _, mode in
                 if mode != nil { fanExpanded = false }
                 if mode == nil { captureTargetNodeID = nil }
-            }
-        }
-        // Overlay is on the NavigationStack (outside it), not on the ZStack inside it.
-        // This matters: the UIHostingController renders the NavigationStack as a UINavigationController
-        // subview, then adds the overlay as a SIBLING view after it in the UIKit hierarchy.
-        // That guarantees the overlay is above SpriteKit's CAMetalLayer, which is deep inside the
-        // UINavigationController's content view. An overlay on the ZStack inside the nav stack
-        // is still within the same UIView tree as the Metal layer and loses the z-ordering battle.
-        // Guard with navigationPath.isEmpty so it hides correctly during push transitions.
-        .overlay(alignment: .top) {
-            if navigationPath.isEmpty {
-                HStack {
-                    Button {
-                        showingFilter = true
-                    } label: {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.title3)
-                                .foregroundStyle(.white.opacity(0.75))
-                            if store.filterState.isActive {
-                                Circle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 8, height: 8)
-                                    .offset(x: 2, y: -2)
-                            }
-                        }
-                    }
-                    .padding(.leading, 20)
-
-                    Spacer()
-
-                    ViewTogglePill()
-
-                    Spacer()
-
-                    Color.clear
-                        .frame(width: 36, height: 36)
-                        .padding(.trailing, 20)
-                }
-                .padding(.top, 12)
-                .transition(.opacity.animation(.easeInOut(duration: 0.2)))
             }
         }
         .onAppear {
@@ -232,7 +184,7 @@ struct CanvasView: View {
 
 // MARK: - View toggle pill
 
-private struct ViewTogglePill: View {
+struct ViewTogglePill: View {
     @Environment(CorpusStore.self) private var store
 
     var body: some View {
@@ -270,7 +222,7 @@ private struct ViewTogglePill: View {
 
 // MARK: - Filter panel
 
-private struct FilterPanel: View {
+struct FilterPanel: View {
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 

@@ -46,6 +46,7 @@ struct CanvasView: View {
                     // Physics canvas
                     SpriteView(scene: scene, options: [.allowsTransparency])
                         .ignoresSafeArea()
+                        .allowsHitTesting(false) // diagnostic: SKView was consuming all touches
                         .transition(.opacity)
 
                     // Node summary overlay — tap-to-select

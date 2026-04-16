@@ -63,6 +63,12 @@ struct ContentView: View {
                 }
             }
 
+            // ── DIAGNOSTIC: remove before shipping ──────────────────────────
+            Text("TOGGLE TEST")
+                .foregroundColor(.red)
+                .font(.largeTitle)
+                .zIndex(100)
+
             // ── Layer 3: Onboarding (shown once, highest z) ──────────────────
             if showOnboarding {
                 OnboardingView {

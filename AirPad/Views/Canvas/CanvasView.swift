@@ -114,33 +114,6 @@ struct CanvasView: View {
                     onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
                 )
             }
-            // Toggle + filter live in the navigation toolbar. UINavigationBar is a UIKit view
-            // that sits above the SpriteKit Metal layer in the UIKit hierarchy — the only
-            // guaranteed way to appear on top of SpriteKit from SwiftUI. toolbarBackground(.hidden)
-            // makes the bar invisible so the items appear to float above the canvas.
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        showingFilter = true
-                    } label: {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.title3)
-                                .foregroundStyle(.white.opacity(0.75))
-                            if store.filterState.isActive {
-                                Circle()
-                                    .fill(Color.accentColor)
-                                    .frame(width: 8, height: 8)
-                                    .offset(x: 2, y: -2)
-                            }
-                        }
-                    }
-                }
-                ToolbarItem(placement: .principal) {
-                    ViewTogglePill()
-                }
-            }
-            .toolbarBackground(.hidden, for: .navigationBar)
             .animation(.easeInOut(duration: 0.25), value: store.viewMode)
             .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
             .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
@@ -180,6 +153,47 @@ struct CanvasView: View {
             .onChange(of: captureMode) { _, mode in
                 if mode != nil { fanExpanded = false }
                 if mode == nil { captureTargetNodeID = nil }
+            }
+        }
+        // Overlay is on the NavigationStack (outside it), not on the ZStack inside it.
+        // This matters: the UIHostingController renders the NavigationStack as a UINavigationController
+        // subview, then adds the overlay as a SIBLING view after it in the UIKit hierarchy.
+        // That guarantees the overlay is above SpriteKit's CAMetalLayer, which is deep inside the
+        // UINavigationController's content view. An overlay on the ZStack inside the nav stack
+        // is still within the same UIView tree as the Metal layer and loses the z-ordering battle.
+        // Guard with navigationPath.isEmpty so it hides correctly during push transitions.
+        .overlay(alignment: .top) {
+            if navigationPath.isEmpty {
+                HStack {
+                    Button {
+                        showingFilter = true
+                    } label: {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.title3)
+                                .foregroundStyle(.white.opacity(0.75))
+                            if store.filterState.isActive {
+                                Circle()
+                                    .fill(Color.accentColor)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: 2, y: -2)
+                            }
+                        }
+                    }
+                    .padding(.leading, 20)
+
+                    Spacer()
+
+                    ViewTogglePill()
+
+                    Spacer()
+
+                    Color.clear
+                        .frame(width: 36, height: 36)
+                        .padding(.trailing, 20)
+                }
+                .padding(.top, 12)
+                .transition(.opacity.animation(.easeInOut(duration: 0.2)))
             }
         }
         .onAppear {

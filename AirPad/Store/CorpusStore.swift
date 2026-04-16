@@ -1,6 +1,37 @@
 import Foundation
 import Observation
 
+// MARK: - Filter state
+
+enum ViewMode: String, CaseIterable {
+    case graph, list
+}
+
+enum SortOrder: String, CaseIterable {
+    case recency, thematic
+}
+
+enum MediaTypeFilter: String, CaseIterable {
+    case all, voice, photo, video, text, link, document
+}
+
+enum ThreadFilter: String, CaseIterable {
+    case all, threadsOnly, pulledOnly
+}
+
+struct FilterState {
+    var sortOrder: SortOrder = .recency
+    var mediaType: MediaTypeFilter = .all
+    var tagName: String? = nil          // nil = all tags
+    var threadFilter: ThreadFilter = .all
+
+    var isActive: Bool {
+        sortOrder != .recency || mediaType != .all || tagName != nil || threadFilter != .all
+    }
+}
+
+// MARK: - Store
+
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
 @Observable
@@ -11,6 +42,59 @@ final class CorpusStore {
     var tags: [Tag] = []
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
+    // MARK: - View state (persisted)
+
+    var viewMode: ViewMode {
+        didSet { UserDefaults.standard.set(viewMode.rawValue, forKey: "viewMode") }
+    }
+
+    var filterState: FilterState = FilterState() {
+        didSet { persistFilterState() }
+    }
+
+    /// Nodes after applying the active filter state.
+    var filteredNodes: [Node] {
+        var result = nodes
+
+        // Tag filter
+        if let tag = filterState.tagName {
+            result = result.filter { $0.tags.contains(tag) }
+        }
+
+        // Media type filter
+        switch filterState.mediaType {
+        case .all:      break
+        case .voice:    result = result.filter { $0.items.contains(where: { $0.type == .audio }) }
+        case .photo:    result = result.filter { $0.items.contains(where: { $0.type == .image }) }
+        case .video:    result = result.filter { $0.items.contains(where: { $0.type == .video }) }
+        case .text:     result = result.filter { $0.items.contains(where: { $0.type == .text }) }
+        case .link:     result = result.filter { $0.items.contains(where: { $0.type == .link }) }
+        case .document: result = result.filter { $0.items.contains(where: { $0.type == .document }) }
+        }
+
+        // Thread filter
+        switch filterState.threadFilter {
+        case .all:         break
+        case .threadsOnly: result = result.filter { !$0.threads.isEmpty || $0.isMeta }
+        case .pulledOnly:  result = result.filter { $0.isMeta }
+        }
+
+        // Sort order
+        switch filterState.sortOrder {
+        case .recency:
+            result.sort { $0.createdAt > $1.createdAt }
+        case .thematic:
+            result.sort { lhs, rhs in
+                let l = lhs.tags.first ?? ""
+                let r = rhs.tags.first ?? ""
+                if l == r { return lhs.createdAt > rhs.createdAt }
+                return l < r
+            }
+        }
+
+        return result
+    }
+
     /// True when iCloud is unavailable and the app is writing to local storage instead.
     var iCloudUnavailable = false
 
@@ -19,6 +103,26 @@ final class CorpusStore {
     var pendingTagSuggestions: TagSuggestionContext? = nil
 
     private let service = iCloudDriveService()
+
+    // MARK: - Init (restores persisted view/filter state)
+
+    init() {
+        let stored = UserDefaults.standard.string(forKey: "viewMode") ?? ""
+        viewMode = ViewMode(rawValue: stored) ?? .graph
+        filterState = FilterState(
+            sortOrder:    SortOrder(rawValue: UserDefaults.standard.string(forKey: "filter_sortOrder") ?? "") ?? .recency,
+            mediaType:    MediaTypeFilter(rawValue: UserDefaults.standard.string(forKey: "filter_mediaType") ?? "") ?? .all,
+            tagName:      UserDefaults.standard.string(forKey: "filter_tagName"),
+            threadFilter: ThreadFilter(rawValue: UserDefaults.standard.string(forKey: "filter_threadFilter") ?? "") ?? .all
+        )
+    }
+
+    private func persistFilterState() {
+        UserDefaults.standard.set(filterState.sortOrder.rawValue,    forKey: "filter_sortOrder")
+        UserDefaults.standard.set(filterState.mediaType.rawValue,    forKey: "filter_mediaType")
+        UserDefaults.standard.set(filterState.tagName,               forKey: "filter_tagName")
+        UserDefaults.standard.set(filterState.threadFilter.rawValue, forKey: "filter_threadFilter")
+    }
 
     // MARK: - Lifecycle
 

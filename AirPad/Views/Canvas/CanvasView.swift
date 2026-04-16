@@ -1,18 +1,21 @@
 import SwiftUI
 import SpriteKit
 
-/// The real canvas view for Session 2+. Wraps a SpriteKit physics scene with SwiftUI overlays.
+/// Top-level view host. Owns the NavigationStack for zoom transitions.
+/// Shows either the SpriteKit graph canvas or the drum-roll list — toggled by the user.
 struct CanvasView: View {
 
     @Environment(CorpusStore.self) private var store
+
     @State private var canvasState = CanvasState()
     @State private var fanExpanded = false
     @State private var captureMode: CaptureMode? = nil
-    @State private var captureTargetNodeID: String? = nil  // nil = create new node
+    @State private var captureTargetNodeID: String? = nil
     @State private var showingNodePicker = false
     @State private var previousNodeIDs: Set<String> = []
     @State private var navigationPath = NavigationPath()
     @State private var localTagSuggestions: TagSuggestionContext? = nil
+    @State private var showingFilter = false
 
     @Namespace private var zoomNamespace
 
@@ -32,40 +35,55 @@ struct CanvasView: View {
             ZStack {
                 Color.black.ignoresSafeArea()
 
-                // Empty state (behind the SpriteKit layer)
-                if store.nodes.isEmpty {
-                    GraphPaperEmptyView()
+                // ─── Graph mode ───────────────────────────────────────────────
+                if store.viewMode == .graph {
+                    // Empty state (behind SpriteKit)
+                    if store.nodes.isEmpty {
+                        GraphPaperEmptyView()
+                            .ignoresSafeArea()
+                            .transition(.opacity)
+                    }
+
+                    // Physics canvas
+                    SpriteView(scene: scene, options: [.allowsTransparency])
                         .ignoresSafeArea()
                         .transition(.opacity)
+
+                    // Node summary overlay — tap-to-select
+                    if let id = canvasState.selectedNodeID,
+                       let node = store.nodes.first(where: { $0.id == id }) {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { canvasState.selectedNodeID = nil }
+                            .ignoresSafeArea()
+
+                        NodeSummaryOverlay(
+                            node: node,
+                            namespace: zoomNamespace,
+                            onEnterDetail: { navigationPath.append(node) },
+                            onDismiss:     { canvasState.selectedNodeID = nil }
+                        )
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
 
-                // Physics canvas
-                SpriteView(scene: scene, options: [.allowsTransparency])
-                    .ignoresSafeArea()
-
-                // Node summary overlay — tap-to-select
-                if let id = canvasState.selectedNodeID,
-                   let node = store.nodes.first(where: { $0.id == id }) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { canvasState.selectedNodeID = nil }
-                        .ignoresSafeArea()
-
-                    NodeSummaryOverlay(
-                        node: node,
+                // ─── List mode ────────────────────────────────────────────────
+                if store.viewMode == .list {
+                    NodeListView(
                         namespace: zoomNamespace,
-                        onEnterDetail: {
+                        onSelectNode: { node in
                             navigationPath.append(node)
-                        },
-                        onDismiss: {
-                            canvasState.selectedNodeID = nil
                         }
                     )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .ignoresSafeArea(edges: .bottom)
+                    .transition(.opacity)
                 }
 
-                // Capture target indicator
-                if let targetID = captureTargetNodeID,
+                // ─── Persistent overlays ─────────────────────────────────────
+
+                // Capture target indicator (graph mode only)
+                if store.viewMode == .graph,
+                   let targetID = captureTargetNodeID,
                    let targetNode = store.nodes.first(where: { $0.id == targetID }) {
                     VStack {
                         HStack {
@@ -86,7 +104,44 @@ struct CanvasView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
-                // Capture fan
+                // View toggle + filter button (top bar)
+                VStack {
+                    HStack {
+                        // Filter button (left)
+                        Button {
+                            showingFilter = true
+                        } label: {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "line.3.horizontal.decrease.circle")
+                                    .font(.title3)
+                                    .foregroundStyle(.white.opacity(0.75))
+                                if store.filterState.isActive {
+                                    Circle()
+                                        .fill(Color.accentColor)
+                                        .frame(width: 8, height: 8)
+                                        .offset(x: 2, y: -2)
+                                }
+                            }
+                        }
+                        .padding(.leading, 20)
+
+                        Spacer()
+
+                        // Graph / List toggle pill (center-ish)
+                        ViewTogglePill()
+
+                        Spacer()
+
+                        // Placeholder spacer to visually center the pill
+                        Color.clear
+                            .frame(width: 36, height: 36)
+                            .padding(.trailing, 20)
+                    }
+                    .padding(.top, 12)
+                    Spacer()
+                }
+
+                // Capture fan — same in both graph and list modes
                 ActionButtonFan(
                     isExpanded: $fanExpanded,
                     onVoice:       { captureMode = .voice },
@@ -96,6 +151,7 @@ struct CanvasView: View {
                     onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
                 )
             }
+            .animation(.easeInOut(duration: 0.25), value: store.viewMode)
             .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
             .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
             .animation(.spring(response: 0.28), value: captureTargetNodeID)
@@ -103,7 +159,6 @@ struct CanvasView: View {
                 NodeDetailView(nodeID: node.id)
                     .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
             }
-            // Capture sheet — passes target node ID into the capture view
             .sheet(item: $captureMode) { mode in
                 switch mode {
                 case .voice:  VoiceCaptureSheet(targetNodeID: captureTargetNodeID)
@@ -111,17 +166,21 @@ struct CanvasView: View {
                 case .camera: CameraCaptureView(targetNodeID: captureTargetNodeID)
                 }
             }
-            // Node picker sheet
             .sheet(isPresented: $showingNodePicker) {
                 NodePickerSheet(selectedNodeID: $captureTargetNodeID)
             }
-            // Tag creation sheet — presented when AI surfaces new tag suggestions
             .sheet(item: $localTagSuggestions) { context in
                 TagCreationSheet(context: context)
                     .onDisappear {
                         store.pendingTagSuggestions = nil
                         localTagSuggestions = nil
                     }
+            }
+            .sheet(isPresented: $showingFilter) {
+                FilterPanel()
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.black)
             }
             .onChange(of: store.pendingTagSuggestions) { _, new in
                 if let new, localTagSuggestions == nil {
@@ -130,7 +189,6 @@ struct CanvasView: View {
             }
             .onChange(of: captureMode) { _, mode in
                 if mode != nil { fanExpanded = false }
-                // Clear target after capture sheet dismisses
                 if mode == nil { captureTargetNodeID = nil }
             }
         }
@@ -165,6 +223,257 @@ struct CanvasView: View {
             tagColors: tagColorMap,
             newNodeID: newNodeID
         )
+    }
+}
+
+// MARK: - View toggle pill
+
+private struct ViewTogglePill: View {
+    @Environment(CorpusStore.self) private var store
+
+    var body: some View {
+        HStack(spacing: 0) {
+            toggleSegment(label: "Graph", icon: "circle.hexagongrid", mode: .graph)
+            toggleSegment(label: "List",  icon: "list.bullet",        mode: .list)
+        }
+        .background(Color.white.opacity(0.08))
+        .clipShape(Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 0.5))
+    }
+
+    private func toggleSegment(label: String, icon: String, mode: ViewMode) -> some View {
+        let selected = store.viewMode == mode
+        return Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                store.viewMode = mode
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                Text(label)
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(selected ? .black : .white.opacity(0.55))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(selected ? Color.white : Color.clear)
+            .clipShape(Capsule())
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selected)
+        }
+    }
+}
+
+// MARK: - Filter panel
+
+private struct FilterPanel: View {
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+
+                    // Sort order
+                    filterSection("Sort") {
+                        HStack(spacing: 10) {
+                            ForEach([SortOrder.recency, .thematic], id: \.self) { order in
+                                pillToggle(
+                                    label: order == .recency ? "Recent" : "Thematic",
+                                    selected: store.filterState.sortOrder == order
+                                ) {
+                                    store.filterState.sortOrder = order
+                                }
+                            }
+                        }
+                    }
+
+                    // Media type
+                    filterSection("Type") {
+                        FlowPills(spacing: 10) {
+                            ForEach(MediaTypeFilter.allCases, id: \.self) { type in
+                                pillToggle(
+                                    label: type.displayName,
+                                    selected: store.filterState.mediaType == type
+                                ) {
+                                    store.filterState.mediaType = type
+                                }
+                            }
+                        }
+                    }
+
+                    // Tag filter
+                    if !store.tags.isEmpty {
+                        filterSection("Tag") {
+                            FlowPills(spacing: 10) {
+                                // "All" pill
+                                pillToggle(label: "All", selected: store.filterState.tagName == nil) {
+                                    store.filterState.tagName = nil
+                                }
+                                ForEach(store.tags) { tag in
+                                    pillToggle(
+                                        label: tag.name,
+                                        color: Color(hex: tag.colorHex),
+                                        selected: store.filterState.tagName == tag.name
+                                    ) {
+                                        store.filterState.tagName = tag.name
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Thread status
+                    filterSection("Threads") {
+                        HStack(spacing: 10) {
+                            ForEach([ThreadFilter.all, .threadsOnly, .pulledOnly], id: \.self) { f in
+                                pillToggle(label: f.displayName, selected: store.filterState.threadFilter == f) {
+                                    store.filterState.threadFilter = f
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
+            }
+            .background(Color.black.ignoresSafeArea())
+            .scrollContentBackground(.hidden)
+            .navigationTitle("Filter")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarBackground(.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Reset") {
+                        store.filterState = FilterState()
+                    }
+                    .foregroundStyle(store.filterState.isActive ? .red : .white.opacity(0.35))
+                    .disabled(!store.filterState.isActive)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .foregroundStyle(.white)
+                }
+            }
+        }
+    }
+
+    private func filterSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.35))
+                .kerning(0.8)
+            content()
+        }
+    }
+
+    private func pillToggle(label: String, color: Color? = nil, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let color {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 8, height: 8)
+                }
+                Text(label)
+                    .font(.subheadline.weight(selected ? .semibold : .regular))
+            }
+            .foregroundStyle(selected ? .black : .white.opacity(0.7))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(selected ? Color.white : Color.white.opacity(0.08))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(selected ? 0 : 0.12), lineWidth: 0.5))
+        }
+    }
+}
+
+// MARK: - Flow pills layout
+
+private struct FlowPills<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        // Wrap using a custom flow layout
+        _FlowLayout(spacing: spacing, content: content)
+    }
+}
+
+private struct _FlowLayout<Content: View>: View {
+    let spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        // SwiftUI Layout is iOS 16+, which we have.
+        // Use a simple wrapping HStack via a custom Layout.
+        CustomFlowLayout(spacing: spacing) { content() }
+    }
+}
+
+private struct CustomFlowLayout<Content: View>: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > width && x > 0 {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return CGSize(width: width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                y += rowHeight + spacing
+                x = bounds.minX
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+// MARK: - Display name extensions
+
+private extension MediaTypeFilter {
+    var displayName: String {
+        switch self {
+        case .all:      return "All"
+        case .voice:    return "Voice"
+        case .photo:    return "Photo"
+        case .video:    return "Video"
+        case .text:     return "Text"
+        case .link:     return "Link"
+        case .document: return "Document"
+        }
+    }
+}
+
+private extension ThreadFilter {
+    var displayName: String {
+        switch self {
+        case .all:         return "All"
+        case .threadsOnly: return "Threads"
+        case .pulledOnly:  return "Pulled"
+        }
     }
 }
 

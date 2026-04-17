@@ -35,6 +35,7 @@
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
 		97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
+		980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */; };
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */; };
 		A13084DE621F1F87415AC97F /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
@@ -112,6 +113,7 @@
 		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
 		B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadService.swift; sourceTree = "<group>"; };
+		B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodePickerSheet.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphPaperEmptyView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
@@ -197,6 +199,7 @@
 			isa = PBXGroup;
 			children = (
 				6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */,
+				B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */,
 				3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */,
 			);
 			path = Capture;
@@ -462,6 +465,7 @@
 				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,
 				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
+				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
 				C1C8DC076F70E06B15CEDF66 /* OnboardingView.swift in Sources */,
 				ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */,
 				072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */,

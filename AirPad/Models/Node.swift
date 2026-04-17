@@ -18,6 +18,10 @@ struct Node: Codable, Identifiable, Hashable {
     var needsAIProcessing: Bool
     /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
     var source: String?
+    /// Top-1 closest semantic neighbor by embedding similarity. Stored at processing time.
+    var nearestNeighborID: String?
+    /// Foundation Model embedding. Stored at processing time; nil until computed.
+    var embeddingVector: [Float]?
 
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
@@ -26,6 +30,8 @@ struct Node: Codable, Identifiable, Hashable {
         case isMeta = "is_meta"
         case domainConfirmed = "domain_confirmed"
         case needsAIProcessing = "needs_ai_processing"
+        case nearestNeighborID = "nearest_neighbor_id"
+        case embeddingVector = "embedding_vector"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -49,7 +55,9 @@ struct Node: Codable, Identifiable, Hashable {
         domain: String? = nil,
         domainConfirmed: Bool = false,
         needsAIProcessing: Bool = false,
-        source: String? = nil
+        source: String? = nil,
+        nearestNeighborID: String? = nil,
+        embeddingVector: [Float]? = nil
     ) {
         self.id                = id
         self.createdAt         = createdAt
@@ -65,8 +73,10 @@ struct Node: Codable, Identifiable, Hashable {
         self.items             = items
         self.domain            = domain
         self.domainConfirmed   = domainConfirmed
-        self.needsAIProcessing = needsAIProcessing
-        self.source            = source
+        self.needsAIProcessing  = needsAIProcessing
+        self.source             = source
+        self.nearestNeighborID  = nearestNeighborID
+        self.embeddingVector    = embeddingVector
     }
 }
 
@@ -89,8 +99,10 @@ extension Node {
         items             = try c.decode([NodeItem].self, forKey: .items)
         domain            = try c.decodeIfPresent(String.self,    forKey: .domain)
         domainConfirmed   = try c.decodeIfPresent(Bool.self,      forKey: .domainConfirmed) ?? false
-        needsAIProcessing = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
-        source            = try c.decodeIfPresent(String.self,    forKey: .source)
+        needsAIProcessing  = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
+        source             = try c.decodeIfPresent(String.self,    forKey: .source)
+        nearestNeighborID  = try c.decodeIfPresent(String.self,    forKey: .nearestNeighborID)
+        embeddingVector    = try c.decodeIfPresent([Float].self,   forKey: .embeddingVector)
     }
 }
 

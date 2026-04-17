@@ -1,18 +1,21 @@
 import SwiftUI
 import SpriteKit
+import CoreHaptics
 
 /// The real canvas view for Session 2+. Wraps a SpriteKit physics scene with SwiftUI overlays.
 struct CanvasView: View {
 
     @Environment(CorpusStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
     @State private var canvasState = CanvasState()
     @State private var fanExpanded = false
     @State private var captureMode: CaptureMode? = nil
-    @State private var captureTargetNodeID: String? = nil  // nil = create new node
+    @State private var captureTargetNodeID: String? = nil
     @State private var showingNodePicker = false
     @State private var previousNodeIDs: Set<String> = []
     @State private var navigationPath = NavigationPath()
     @State private var localTagSuggestions: TagSuggestionContext? = nil
+    @State private var hapticEngine: CHHapticEngine?
 
     @Namespace private var zoomNamespace
 
@@ -35,37 +38,35 @@ struct CanvasView: View {
             scene.scaleMode = .resizeFill
             scene.backgroundColor = .clear
             scene.canvasState = canvasState
+            scene.isDarkMode = colorScheme == .dark
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)
+            prepareHaptics()
+            // Apply initial canvas mode layout
+            rearrangeForMode(store.filterState.canvasViewMode, nodes: store.filteredNodes)
+        }
+        .onChange(of: colorScheme) { _, new in
+            scene.isDarkMode = new == .dark
         }
         .onChange(of: store.nodes) { old, newNodes in
-            // Track additions against the raw node list so newly captured nodes
-            // get the drop-in animation even if filteredNodes would include them.
             let newIDs = Set(newNodes.map { $0.id })
             let addedID = newIDs.subtracting(previousNodeIDs).first
             previousNodeIDs = newIDs
-            print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), filteredNodes=\(store.filteredNodes.count), layoutPositions=\(store.canvasLayout.positions.count)")
             syncScene(nodes: store.filteredNodes, newNodeID: addedID)
         }
-        .onChange(of: store.filteredNodes) { old, filtered in
-            // Re-sync when filter state changes (tag filter, type filter, etc.)
-            print("[Canvas] onChange(filteredNodes): \(old.count)→\(filtered.count)")
+        .onChange(of: store.filteredNodes) { _, filtered in
             syncScene(nodes: filtered)
         }
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.filteredNodes)
         }
-        .onChange(of: store.filterState.sortOrder) { _, newOrder in
-            rearrangeForSortOrder(newOrder, nodes: store.filteredNodes)
+        .onChange(of: store.filterState.canvasViewMode) { _, newMode in
+            rearrangeForMode(newMode, nodes: store.filteredNodes)
+            playModeTransitionHaptic()
         }
         .onChange(of: store.canvasNeedsSync) { _, _ in
-            // Fired by batchImportText after canvasLayout is updated with all new positions.
-            // Belt-and-suspenders: ensures the scene reflects the final store state even if
-            // the per-node onChange chain was coalesced or ran before canvasLayout was ready.
             previousNodeIDs = Set(store.nodes.map { $0.id })
-            print("[Canvas] canvasNeedsSync: forcing full resync — filteredNodes=\(store.filteredNodes.count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
             syncScene(nodes: store.filteredNodes)
-            print("[Canvas] canvasNeedsSync: after syncScene sprites=\(scene.spriteCount)")
         }
         .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
             withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
@@ -74,7 +75,7 @@ struct CanvasView: View {
         }
     }
 
-    // MARK: - Canvas stack (extracted to keep body type-checkable)
+    // MARK: - Canvas stack
 
     private var canvasStack: some View {
         canvasZStack
@@ -103,12 +104,8 @@ struct CanvasView: View {
 
     private var canvasZStack: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            if store.nodes.isEmpty {
-                GraphPaperEmptyView()
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-            }
+            // Background: void black (Solar Flare) or warm white (Cucumber Water)
+            canvasBackground.ignoresSafeArea()
             SpriteView(scene: scene, options: [.allowsTransparency])
                 .ignoresSafeArea()
             nodeSummaryLayer
@@ -122,6 +119,16 @@ struct CanvasView: View {
                 onNodePicker:  { showingNodePicker = true },
                 onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
             )
+        }
+    }
+
+    private var canvasBackground: some View {
+        Group {
+            if colorScheme == .dark {
+                Color.black
+            } else {
+                Color(red: 0.98, green: 0.97, blue: 0.955)
+            }
         }
     }
 
@@ -183,52 +190,132 @@ struct CanvasView: View {
         }
     }
 
-    private func rearrangeForSortOrder(_ order: SortOrder, nodes: [Node]) {
+    // MARK: - Mode layout
+
+    private func rearrangeForMode(_ mode: CanvasViewMode, nodes: [Node]) {
         guard !nodes.isEmpty else { return }
         var positions: [String: CGPoint] = [:]
 
-        switch order {
-        case .recency:
-            // Spiral outward from center — index 0 (most recent) near center.
-            let goldenAngle = 2.399963229728653  // radians ≈ 137.5°
-            for (index, node) in nodes.enumerated() {
-                let angle = Double(index) * goldenAngle
-                let radius = 40.0 + sqrt(Double(index)) * 38.0
+        switch mode {
+
+        case .temporal:
+            let sorted = nodes.sorted { $0.createdAt > $1.createdAt }
+            let goldenAngle = 2.399963229728653
+            for (i, node) in sorted.enumerated() {
+                let angle  = Double(i) * goldenAngle
+                let radius = 40.0 + sqrt(Double(i)) * 38.0
                 positions[node.id] = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
             }
 
         case .thematic:
-            // Group by primary tag; arrange group centers in a ring, nodes within each group
-            // in a smaller circle around the group center.
-            let groups = Dictionary(grouping: nodes) { $0.tags.first ?? "" }
-            let tagKeys = groups.keys.sorted()
-            let groupCount = tagKeys.count
-            let groupRadius = groupCount > 1 ? max(160.0, Double(groupCount) * 55.0) : 0.0
-            for (gi, tag) in tagKeys.enumerated() {
-                let groupAngle = groupCount > 1
-                    ? Double(gi) / Double(groupCount) * 2 * .pi
-                    : 0.0
-                let cx = cos(groupAngle) * groupRadius
-                let cy = sin(groupAngle) * groupRadius
-                let members = groups[tag] ?? []
-                let innerRadius = max(35.0, Double(members.count) * 12.0)
-                for (ni, node) in members.enumerated() {
-                    let nodeAngle = members.count > 1
-                        ? Double(ni) / Double(members.count) * 2 * .pi
-                        : 0.0
-                    positions[node.id] = CGPoint(
-                        x: cx + cos(nodeAngle) * innerRadius,
-                        y: cy + sin(nodeAngle) * innerRadius
-                    )
-                }
+            positions = thematicLayout(nodes: nodes, groupKey: { $0.tags.first ?? "" })
+
+        case .semantic:
+            // No embeddings yet — fall back to thematic
+            positions = thematicLayout(nodes: nodes, groupKey: { $0.tags.first ?? "" })
+
+        case .domain:
+            positions = thematicLayout(nodes: nodes, groupKey: { $0.domain ?? "Unknown" })
+
+        case .density:
+            let sorted = nodes.sorted { $0.items.count > $1.items.count }
+            let goldenAngle = 2.399963229728653
+            for (i, node) in sorted.enumerated() {
+                let angle  = Double(i) * goldenAngle
+                let radius = 20.0 + sqrt(Double(i)) * 42.0
+                positions[node.id] = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
             }
+
+        case .tension:
+            // Thematic base with random displacement (proxy until embeddings available)
+            var base = thematicLayout(nodes: nodes, groupKey: { $0.tags.first ?? "" })
+            for (id, pt) in base {
+                let tensionMag = Double.random(in: 0...45)
+                let tensionDir = Double.random(in: 0...2 * .pi)
+                base[id] = CGPoint(
+                    x: pt.x + CGFloat(cos(tensionDir) * tensionMag),
+                    y: pt.y + CGFloat(sin(tensionDir) * tensionMag)
+                )
+            }
+            positions = base
         }
 
         scene.rearrangeToPositions(positions)
     }
 
+    private func thematicLayout(nodes: [Node], groupKey: (Node) -> String) -> [String: CGPoint] {
+        var positions: [String: CGPoint] = [:]
+        let groups      = Dictionary(grouping: nodes, by: groupKey)
+        let keys        = groups.keys.sorted()
+        let groupCount  = keys.count
+        let groupRadius = groupCount > 1 ? max(160.0, Double(groupCount) * 55.0) : 0.0
+
+        for (gi, key) in keys.enumerated() {
+            let groupAngle = groupCount > 1
+                ? Double(gi) / Double(groupCount) * 2 * .pi
+                : 0.0
+            let cx = cos(groupAngle) * groupRadius
+            let cy = sin(groupAngle) * groupRadius
+            let members     = groups[key] ?? []
+            let innerRadius = max(35.0, Double(members.count) * 12.0)
+
+            for (ni, node) in members.enumerated() {
+                let nodeAngle = members.count > 1
+                    ? Double(ni) / Double(members.count) * 2 * .pi
+                    : 0.0
+                positions[node.id] = CGPoint(
+                    x: cx + cos(nodeAngle) * innerRadius,
+                    y: cy + sin(nodeAngle) * innerRadius
+                )
+            }
+        }
+        return positions
+    }
+
+    // MARK: - CoreHaptics
+
+    private func prepareHaptics() {
+        guard CHHapticEngine.capabilitiesForHardware().supportsHaptics else { return }
+        hapticEngine = try? CHHapticEngine()
+        try? hapticEngine?.start()
+    }
+
+    private func playModeTransitionHaptic() {
+        guard let engine = hapticEngine else { return }
+
+        var events: [CHHapticEvent] = []
+        // Initial firm thud
+        events.append(CHHapticEvent(
+            eventType: .hapticTransient,
+            parameters: [
+                CHHapticEventParameter(parameterID: .hapticIntensity, value: 0.88),
+                CHHapticEventParameter(parameterID: .hapticSharpness, value: 0.70)
+            ],
+            relativeTime: 0
+        ))
+        // Decaying pulse train — intensity and sharpness fall, interval grows
+        for i in 1...5 {
+            let intensity  = Float(0.88 * pow(0.58, Double(i)))
+            let sharpness  = Float(max(0.1, 0.5 - Double(i) * 0.07))
+            let relTime    = 0.13 * pow(1.45, Double(i))
+            events.append(CHHapticEvent(
+                eventType: .hapticTransient,
+                parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                ],
+                relativeTime: relTime
+            ))
+        }
+
+        guard let pattern = try? CHHapticPattern(events: events, parameters: []),
+              let player  = try? engine.makePlayer(with: pattern) else { return }
+        try? player.start(atTime: CHHapticTimeImmediate)
+    }
+
+    // MARK: - Scene sync
+
     private func syncScene(nodes: [Node], newNodeID: String? = nil) {
-        print("[Canvas] syncScene: \(nodes.count) nodes, \(store.canvasLayout.positions.count) positions, \(scene.spriteCount) sprites before")
         let tagColorMap = Dictionary(
             uniqueKeysWithValues: store.tags.compactMap { tag -> (String, UIColor)? in
                 guard let color = UIColor(hex: tag.colorHex) else { return nil }
@@ -241,7 +328,6 @@ struct CanvasView: View {
             tagColors: tagColorMap,
             newNodeID: newNodeID
         )
-        print("[Canvas] syncScene: \(scene.spriteCount) sprites after")
     }
 }
 
@@ -271,7 +357,6 @@ private struct NodeSummaryOverlay: View {
                         .lineLimit(2)
                 }
 
-                // Tags
                 if !node.tags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
@@ -356,4 +441,3 @@ private struct ItemCountsRow: View {
             .foregroundStyle(.white.opacity(0.55))
     }
 }
-

@@ -8,6 +8,21 @@ enum SortOrder: String, Codable {
     case recency, thematic
 }
 
+enum CanvasViewMode: String, Codable, CaseIterable {
+    case thematic, temporal, semantic, domain, density, tension
+
+    var displayName: String {
+        switch self {
+        case .thematic:  return "Thematic"
+        case .temporal:  return "Temporal"
+        case .semantic:  return "Semantic"
+        case .domain:    return "Domain"
+        case .density:   return "Density"
+        case .tension:   return "Tension"
+        }
+    }
+}
+
 enum ItemTypeFilter: String, Codable, CaseIterable {
     case all, voice, photo, video, text, link, document
 
@@ -51,13 +66,13 @@ enum ThreadStatusFilter: String, Codable, CaseIterable {
 struct FilterState: Codable {
     var viewMode: ViewMode = .graph
     var sortOrder: SortOrder = .recency
+    var canvasViewMode: CanvasViewMode = .thematic
     var itemType: ItemTypeFilter = .all
     var tagName: String? = nil
     var threadStatus: ThreadStatusFilter = .all
 
     var activeFilterCount: Int {
         var n = 0
-        if sortOrder != .recency        { n += 1 }
         if itemType != .all             { n += 1 }
         if tagName != nil               { n += 1 }
         if threadStatus != .all         { n += 1 }

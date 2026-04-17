@@ -9,7 +9,7 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            // Main content — switches between graph and list mode
+            // Main content
             Group {
                 if store.filterState.viewMode == .graph {
                     CanvasView()
@@ -29,9 +29,8 @@ struct ContentView: View {
                 }
             }
 
-            // Persistent top controls — CAMetalLayer rule: lives here in ContentView ZStack,
-            // never inside NavigationStack or SpriteKit hierarchy.
-            // Hidden while NodeDetailView is on screen to avoid overlap with node title.
+            // Persistent top controls
+            // CAMetalLayer rule: lives here in ContentView ZStack, never inside NavigationStack.
             if !store.isInDetailView {
                 VStack(spacing: 0) {
                     HStack(alignment: .center) {
@@ -50,9 +49,56 @@ struct ContentView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 58)
+
+                    // Canvas mode chip selector — graph mode only
+                    if store.filterState.viewMode == .graph {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(CanvasViewMode.allCases, id: \.self) { mode in
+                                    Button {
+                                        var s = store.filterState
+                                        s.canvasViewMode = mode
+                                        store.filterState = s
+                                    } label: {
+                                        Text(mode.displayName)
+                                            .font(.system(size: 11,
+                                                          weight: store.filterState.canvasViewMode == mode
+                                                              ? .semibold : .regular))
+                                            .foregroundStyle(
+                                                store.filterState.canvasViewMode == mode
+                                                    ? Color.black : Color.white.opacity(0.55)
+                                            )
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 5)
+                                            .background(
+                                                store.filterState.canvasViewMode == mode
+                                                    ? Color.white : Color.white.opacity(0.09)
+                                            )
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                        }
+                    }
+
                     Spacer()
                 }
                 .transition(.opacity.animation(.easeInOut(duration: 0.18)))
+            }
+
+            // Filter state visibility pill — graph mode, when non-default filters active
+            if store.filterState.activeFilterCount > 0
+               && store.filterState.viewMode == .graph
+               && !store.isInDetailView {
+                VStack {
+                    Color.clear.frame(height: store.filterState.viewMode == .graph ? 148 : 112)
+                    filterStatePill
+                    Spacer()
+                }
+                .transition(.opacity.animation(.easeInOut(duration: 0.2)))
             }
 
             // Import progress banner
@@ -66,7 +112,7 @@ struct ContentView: View {
                 .animation(.spring(response: 0.35), value: store.importBatchProgress != nil)
             }
 
-            // Thread suggestion card — bottom of screen, above the action button
+            // Thread suggestion card
             if let suggestion = store.pendingThreads.first {
                 let titles = suggestion.nodeIDs.compactMap { id in
                     store.nodes.first { $0.id == id }?.title
@@ -103,6 +149,39 @@ struct ContentView: View {
             OnboardingView { showOnboarding = false }
         }
     }
+
+    // MARK: - Filter state pill
+
+    private var filterStatePill: some View {
+        HStack(spacing: 8) {
+            Text(activeFilterLabel)
+                .font(.caption.weight(.medium))
+            Rectangle()
+                .fill(.white.opacity(0.3))
+                .frame(width: 1, height: 12)
+            Button("Clear") {
+                var s = store.filterState
+                s.itemType = .all
+                s.tagName = nil
+                s.threadStatus = .all
+                store.filterState = s
+            }
+            .font(.caption.weight(.semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+    }
+
+    private var activeFilterLabel: String {
+        var parts: [String] = []
+        if let tag = store.filterState.tagName    { parts.append(tag) }
+        if store.filterState.itemType != .all      { parts.append(store.filterState.itemType.displayName) }
+        if store.filterState.threadStatus != .all  { parts.append(store.filterState.threadStatus.displayName) }
+        return parts.isEmpty ? "Filtered" : parts.joined(separator: " · ")
+    }
 }
 
 // MARK: - View toggle pill
@@ -117,7 +196,7 @@ private struct ViewTogglePill: View {
             modeButton(.list,  icon: "list.bullet",             label: "List")
         }
         .padding(4)
-        .background(Color(white: 0.18))   // deliberately opaque — NOT opacity(0.08) which vanishes on black
+        .background(Color(white: 0.18))
         .clipShape(Capsule())
     }
 
@@ -198,10 +277,26 @@ struct FilterPanelView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    filterSection("Sort") {
-                        HStack(spacing: 8) {
-                            filterPill("Recent",   isActive: store.filterState.sortOrder == .recency)  { mutate { $0.sortOrder = .recency } }
-                            filterPill("Thematic", isActive: store.filterState.sortOrder == .thematic) { mutate { $0.sortOrder = .thematic } }
+                    // Sort (list mode) or Canvas Mode (graph mode)
+                    if store.filterState.viewMode == .graph {
+                        filterSection("Canvas Mode") {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(CanvasViewMode.allCases, id: \.self) { mode in
+                                        filterPill(mode.displayName,
+                                                   isActive: store.filterState.canvasViewMode == mode) {
+                                            mutate { $0.canvasViewMode = mode }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        filterSection("Sort") {
+                            HStack(spacing: 8) {
+                                filterPill("Recent",   isActive: store.filterState.sortOrder == .recency)  { mutate { $0.sortOrder = .recency } }
+                                filterPill("Thematic", isActive: store.filterState.sortOrder == .thematic) { mutate { $0.sortOrder = .thematic } }
+                            }
                         }
                     }
 

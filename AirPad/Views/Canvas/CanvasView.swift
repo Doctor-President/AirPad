@@ -31,6 +31,29 @@ struct CanvasView: View {
     // MARK: - Body
 
     var body: some View {
+        observedStack
+            .onChange(of: store.filteredNodes) { _, filtered in
+                syncScene(nodes: filtered)
+            }
+            .onChange(of: store.tags) { _, _ in
+                syncScene(nodes: store.filteredNodes)
+            }
+            .onChange(of: store.filterState.canvasViewMode) { _, newMode in
+                rearrangeForMode(newMode, nodes: store.filteredNodes)
+                playModeTransitionHaptic()
+            }
+            .onChange(of: store.canvasNeedsSync) { _, _ in
+                previousNodeIDs = Set(store.nodes.map { $0.id })
+                syncScene(nodes: store.filteredNodes)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
+                    fanExpanded = true
+                }
+            }
+    }
+
+    private var observedStack: some View {
         NavigationStack(path: $navigationPath) {
             canvasStack
         }
@@ -42,36 +65,16 @@ struct CanvasView: View {
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)
             prepareHaptics()
-            // Apply initial canvas mode layout
             rearrangeForMode(store.filterState.canvasViewMode, nodes: store.filteredNodes)
         }
         .onChange(of: colorScheme) { _, new in
             scene.isDarkMode = new == .dark
         }
-        .onChange(of: store.nodes) { old, newNodes in
-            let newIDs = Set(newNodes.map { $0.id })
-            let addedID = newIDs.subtracting(previousNodeIDs).first
+        .onChange(of: store.nodes) { _, newNodes in
+            let newIDs: Set<String> = Set(newNodes.map { $0.id })
+            let addedID: String? = newIDs.subtracting(previousNodeIDs).first
             previousNodeIDs = newIDs
             syncScene(nodes: store.filteredNodes, newNodeID: addedID)
-        }
-        .onChange(of: store.filteredNodes) { _, filtered in
-            syncScene(nodes: filtered)
-        }
-        .onChange(of: store.tags) { _, _ in
-            syncScene(nodes: store.filteredNodes)
-        }
-        .onChange(of: store.filterState.canvasViewMode) { _, newMode in
-            rearrangeForMode(newMode, nodes: store.filteredNodes)
-            playModeTransitionHaptic()
-        }
-        .onChange(of: store.canvasNeedsSync) { _, _ in
-            previousNodeIDs = Set(store.nodes.map { $0.id })
-            syncScene(nodes: store.filteredNodes)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
-                fanExpanded = true
-            }
         }
     }
 
@@ -130,14 +133,8 @@ struct CanvasView: View {
         }
     }
 
-    private var canvasBackground: some View {
-        Group {
-            if colorScheme == .dark {
-                Color.black
-            } else {
-                Color(red: 0.98, green: 0.97, blue: 0.955)
-            }
-        }
+    private var canvasBackground: Color {
+        colorScheme == .dark ? .black : Color(red: 0.98, green: 0.97, blue: 0.955)
     }
 
     @ViewBuilder

@@ -37,6 +37,12 @@ final class CorpusStore {
     /// with correct layout positions — belt-and-suspenders on top of onChange(of: nodes).
     var canvasNeedsSync = UUID()
 
+    /// Blocks that failed the quality gate during batch import.
+    /// Never silently discarded — user reviews from Settings.
+    var reviewQueue: [RejectedBlock] = [] {
+        didSet { saveReviewQueue() }
+    }
+
     private var dismissedThreadDescriptions: Set<String> = []
 
     /// Nodes after applying the active filter and sort order.
@@ -84,6 +90,7 @@ final class CorpusStore {
     // MARK: - Lifecycle
 
     func setup() async {
+        reviewQueue = loadReviewQueue()
         await service.setup()
         let fallback = await service.usingLocalFallback
         let available = await service.isAvailable
@@ -516,15 +523,75 @@ final class CorpusStore {
 
     /// Parses `text` into nodes and saves them all to iCloud. Non-blocking: progress is
     /// reflected in `importBatchProgress` so the canvas can show a banner.
+    /// Three-layer quality gate: (1) character threshold, (2) heuristic fragment detection,
+    /// (3) Foundation Model coherence check. Failures collect in `reviewQueue`.
     func batchImportText(_ text: String) async {
         let formatter = ISO8601DateFormatter()
         let timestamp = formatter.string(from: Date())
-        let parsedNodes = BatchParser.parse(text: text, importTimestamp: timestamp)
 
         print("[Batch] Input text length: \(text.count) chars")
-        print("[Batch] BatchParser produced \(parsedNodes.count) node(s)")
+
+        // Phase 0a — character threshold + heuristic fragment filter (synchronous)
+        let (candidateTexts, heuristicFragments) = BatchParser.partitionBlocks(text: text)
+        print("[Batch] Phase 0a: \(candidateTexts.count) candidates, \(heuristicFragments.count) heuristic fragments")
+
+        if !heuristicFragments.isEmpty {
+            let rejected = heuristicFragments.map {
+                RejectedBlock(id: UUID().uuidString, text: $0, reason: .heuristic,
+                              importTimestamp: timestamp, rejectedAt: Date())
+            }
+            reviewQueue.append(contentsOf: rejected)
+            print("[Batch] Phase 0a: added \(rejected.count) heuristic rejections to reviewQueue")
+        }
+
+        guard !candidateTexts.isEmpty else {
+            print("[Batch] Nothing passed heuristic gate — returning early")
+            return
+        }
+
+        // Phase 0b — Foundation Model coherence check (concurrent, iOS 26.0+ only)
+        var coherentTexts: [String] = candidateTexts
+        var incoherentTexts: [String] = []
+
+        if #available(iOS 26.0, *) {
+            let aiSvc = AIService()
+            importBatchProgress = (0, candidateTexts.count)
+            print("[Batch] Phase 0b: running coherence checks on \(candidateTexts.count) candidates")
+            var coherent: [String] = []
+            var incoherent: [String] = []
+            await withTaskGroup(of: (String, Bool?).self) { group in
+                for candidate in candidateTexts {
+                    group.addTask { await (candidate, aiSvc.checkCoherence(candidate)) }
+                }
+                var checked = 0
+                for await (candidateText, result) in group {
+                    checked += 1
+                    importBatchProgress = (checked, candidateTexts.count)
+                    if result == false {
+                        incoherent.append(candidateText)
+                        print("[Batch] Phase 0b: coherence FAIL (\(candidateText.prefix(40))…)")
+                    } else {
+                        coherent.append(candidateText)
+                    }
+                }
+            }
+            coherentTexts = coherent
+            incoherentTexts = incoherent
+        }
+
+        if !incoherentTexts.isEmpty {
+            let rejected = incoherentTexts.map {
+                RejectedBlock(id: UUID().uuidString, text: $0, reason: .coherence,
+                              importTimestamp: timestamp, rejectedAt: Date())
+            }
+            reviewQueue.append(contentsOf: rejected)
+            print("[Batch] Phase 0b: added \(rejected.count) coherence rejections to reviewQueue")
+        }
+
+        let parsedNodes = BatchParser.makeNodes(texts: coherentTexts, importTimestamp: timestamp)
+        print("[Batch] Phase 0 done: \(parsedNodes.count) nodes to import")
         guard !parsedNodes.isEmpty else {
-            print("[Batch] Nothing to import — returning early")
+            print("[Batch] Nothing passed coherence gate — returning early")
             return
         }
 
@@ -564,7 +631,17 @@ final class CorpusStore {
             print("[Batch] Phase 2 layout save ERROR: \(error)")
         }
 
-        // Phase 3 — bulk-insert all saved nodes into store.nodes.
+        // Phase 3 — reset any active filter so newly imported nodes (which have no tags yet)
+        // are visible immediately. Batch nodes have tags: [] — a tag filter would exclude all of them.
+        let hadActiveFilter = filterState.activeFilterCount > 0
+        if hadActiveFilter {
+            filterState.tagName = nil
+            filterState.itemType = .all
+            filterState.threadStatus = .all
+            print("[Batch] Cleared active filter so imported nodes are visible")
+        }
+
+        // Bulk-insert all saved nodes into store.nodes.
         // No await between inserts, so SwiftUI batches them into one onChange firing.
         // At this point canvasLayout is already correct, so syncScene will place nodes accurately.
         let beforeCount = nodes.count
@@ -595,6 +672,54 @@ final class CorpusStore {
             }
             print("[Batch][AI] All done")
         }
+    }
+
+    // MARK: - Destructive operations
+
+    func clearAllData() async {
+        do {
+            try await service.deleteAllData()
+        } catch {
+            print("[CorpusStore] clearAllData error: \(error)")
+        }
+        nodes = []
+        tags = []
+        canvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+        reviewQueue = []
+        canvasNeedsSync = UUID()
+    }
+
+    // MARK: - Review queue
+
+    func promoteRejectedBlock(_ block: RejectedBlock) async {
+        let node = BatchParser.makeNodes(texts: [block.text], importTimestamp: block.importTimestamp).first!
+        do {
+            try await service.saveNode(node)
+            nodes.insert(node, at: 0)
+            removeFromReviewQueue(id: block.id)
+            await processNodeWithAI(nodeID: node.id, suppressTagSheet: false)
+        } catch {
+            print("[ReviewQueue] Promote error: \(error)")
+        }
+    }
+
+    func removeFromReviewQueue(id: String) {
+        reviewQueue.removeAll { $0.id == id }
+    }
+
+    private static let reviewQueueUDKey = "com.airpad.reviewQueue"
+
+    private func saveReviewQueue() {
+        if let data = try? JSONEncoder().encode(reviewQueue) {
+            UserDefaults.standard.set(data, forKey: Self.reviewQueueUDKey)
+        }
+    }
+
+    private func loadReviewQueue() -> [RejectedBlock] {
+        guard let data = UserDefaults.standard.data(forKey: Self.reviewQueueUDKey),
+              let queue = try? JSONDecoder().decode([RejectedBlock].self, from: data)
+        else { return [] }
+        return queue
     }
 
     // MARK: - File resolution

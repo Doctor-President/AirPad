@@ -11,6 +11,7 @@
 		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA8C82636A7D9E2E115A203 /* AVKit.framework */; };
 		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
+		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
 		20A15CA3D0F6100CB85D8AA1 /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */; };
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
@@ -31,6 +32,7 @@
 		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
 		8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D539DCAE9FDB57420DF7460 /* NodeListView.swift */; };
+		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
@@ -49,6 +51,7 @@
 		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		D5709E0DEA900DA3FA2CF236 /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */; };
+		D5EB544A1177511F99074F74 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
@@ -95,6 +98,7 @@
 		3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureSheet.swift; sourceTree = "<group>"; };
 		4114EB82C1700492CF29C6AE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4339BD7FF5450195EDF70A95 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
+		463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RejectedBlock.swift; sourceTree = "<group>"; };
 		48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterState.swift; sourceTree = "<group>"; };
 		4D539DCAE9FDB57420DF7460 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
 		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
@@ -106,6 +110,7 @@
 		7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItemType.swift; sourceTree = "<group>"; };
 		7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCaptureSheet.swift; sourceTree = "<group>"; };
+		8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewQueueSheet.swift; sourceTree = "<group>"; };
 		8E4F251A686080806C62E071 /* NodeItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItem.swift; sourceTree = "<group>"; };
 		8EA8C82636A7D9E2E115A203 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = System/Library/Frameworks/AVKit.framework; sourceTree = SDKROOT; };
 		8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -170,6 +175,7 @@
 			isa = PBXGroup;
 			children = (
 				F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */,
+				8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */,
 				F7814673E5A10B9F5E391DA4 /* SettingsView.swift */,
 				18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */,
 			);
@@ -255,6 +261,7 @@
 				1866B7173FCC4A9B1AE81AF1 /* Node.swift */,
 				8E4F251A686080806C62E071 /* NodeItem.swift */,
 				7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */,
+				463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */,
 				39E6876F450FCAC6F6B1A9CF /* Tag.swift */,
 			);
 			path = Models;
@@ -467,6 +474,8 @@
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
 				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
 				C1C8DC076F70E06B15CEDF66 /* OnboardingView.swift in Sources */,
+				8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */,
+				1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */,
 				ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */,
 				072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */,
 				8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */,
@@ -488,6 +497,7 @@
 				0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */,
 				20A15CA3D0F6100CB85D8AA1 /* NodeItem.swift in Sources */,
 				F59A93CA70C8FE71BC12E118 /* NodeItemType.swift in Sources */,
+				D5EB544A1177511F99074F74 /* RejectedBlock.swift in Sources */,
 				82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */,
 				2733262BA259E300B3613CF3 /* Tag.swift in Sources */,
 			);

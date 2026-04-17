@@ -53,7 +53,6 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.filteredNodes)
         }
-        .onChange(of: navigationPath) { _, new in store.isInDetailView = !new.isEmpty }
         .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
             withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
                 fanExpanded = true
@@ -106,7 +105,6 @@ struct CanvasView: View {
                 onVoice:       { captureMode = .voice },
                 onCamera:      { captureMode = .camera },
                 onText:        { captureMode = .text },
-                onNewNode:     { captureTargetNodeID = nil; captureMode = .text },
                 onNodePicker:  { showingNodePicker = true },
                 onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
             )

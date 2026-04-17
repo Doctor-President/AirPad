@@ -43,7 +43,6 @@ struct NodeListView: View {
         }
         .onChange(of: store.filteredNodes) { _, _ in buildItems() }
         .onChange(of: store.filterState.sortOrder) { _, _ in buildItems() }
-        .onChange(of: navigationPath) { _, new in store.isInDetailView = !new.isEmpty }
     }
 
     // MARK: - Scroll content

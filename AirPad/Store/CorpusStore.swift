@@ -27,10 +27,6 @@ final class CorpusStore {
     /// Thread suggestions waiting to be shown to the user (one at a time in UI).
     var pendingThreads: [ThreadSuggestion] = []
 
-    /// True while a NodeDetailView is pushed in either CanvasView or NodeListView.
-    /// Written by the child view; read by ContentView to hide the top controls overlay.
-    var isInDetailView = false
-
     private var dismissedThreadDescriptions: Set<String> = []
 
     /// Nodes after applying the active filter and sort order.

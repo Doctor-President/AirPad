@@ -18,7 +18,6 @@ struct ContentView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: store.filterState.viewMode)
-            .onChange(of: store.filterState.viewMode) { _, _ in store.isInDetailView = false }
 
             // iCloud unavailable banner
             if store.iCloudUnavailable {
@@ -30,29 +29,26 @@ struct ContentView: View {
                 }
             }
 
-            // Persistent top controls — hidden when a detail view is pushed.
-            // CAMetalLayer rule: lives here in ContentView ZStack, never inside NavigationStack or SpriteKit.
-            if !store.isInDetailView {
-                VStack(spacing: 0) {
-                    HStack(alignment: .center) {
-                        ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
-                            var s = store.filterState
-                            s.viewMode = mode
-                            store.filterState = s
-                        }
-                        Spacer()
-                        HStack(spacing: 10) {
-                            SettingsButton { showSettings = true }
-                            FilterButton(activeCount: store.filterState.activeFilterCount) {
-                                showFilterPanel = true
-                            }
+            // Persistent top controls — CAMetalLayer rule: lives here in ContentView ZStack,
+            // never inside NavigationStack or SpriteKit hierarchy.
+            VStack(spacing: 0) {
+                HStack(alignment: .center) {
+                    ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
+                        var s = store.filterState
+                        s.viewMode = mode
+                        store.filterState = s
+                    }
+                    Spacer()
+                    HStack(spacing: 10) {
+                        SettingsButton { showSettings = true }
+                        FilterButton(activeCount: store.filterState.activeFilterCount) {
+                            showFilterPanel = true
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 58)
-                    Spacer()
                 }
-                .transition(.opacity)
+                .padding(.horizontal, 16)
+                .padding(.top, 58)
+                Spacer()
             }
 
             // Thread suggestion card — bottom of screen, above the action button

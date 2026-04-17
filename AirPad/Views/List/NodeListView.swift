@@ -20,6 +20,7 @@ struct NodeListView: View {
     @State private var scrolledID: String? = nil
     @State private var isJumping = false
 
+    @State private var scrollToFirstAfterSort = false
     @State private var fanExpanded = false
     @State private var captureMode: ListCaptureMode? = nil
     @State private var captureTargetNodeID: String? = nil
@@ -75,7 +76,10 @@ struct NodeListView: View {
             buildItems()
         }
         .onChange(of: store.filteredNodes) { _, _ in buildItems() }
-        .onChange(of: store.filterState.sortOrder) { _, _ in buildItems() }
+        .onChange(of: store.filterState.sortOrder) { _, _ in
+            buildItems()
+            scrollToFirstAfterSort = true
+        }
     }
 
     // MARK: - Scroll content
@@ -110,6 +114,13 @@ struct NodeListView: View {
                 guard let newID, !isJumping else { return }
                 haptic.selectionChanged()
                 handleLoopJump(to: newID, proxy: proxy)
+            }
+            .onChange(of: scrollToFirstAfterSort) { _, flag in
+                guard flag, let firstID = displayItems.first(where: { $0.isReal })?.id else { return }
+                scrollToFirstAfterSort = false
+                withAnimation(.spring(response: 0.4)) {
+                    proxy.scrollTo(firstID, anchor: .center)
+                }
             }
         }
     }

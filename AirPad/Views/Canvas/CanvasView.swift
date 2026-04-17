@@ -55,6 +55,9 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.filteredNodes)
         }
+        .onChange(of: store.filterState.sortOrder) { _, newOrder in
+            rearrangeForSortOrder(newOrder, nodes: store.filteredNodes)
+        }
         .onChange(of: store.canvasNeedsSync) { _, _ in
             // Fired by batchImportText after canvasLayout is updated with all new positions.
             // Belt-and-suspenders: ensures the scene reflects the final store state even if
@@ -178,6 +181,50 @@ struct CanvasView: View {
             }
             .transition(.move(edge: .top).combined(with: .opacity))
         }
+    }
+
+    private func rearrangeForSortOrder(_ order: SortOrder, nodes: [Node]) {
+        guard !nodes.isEmpty else { return }
+        var positions: [String: CGPoint] = [:]
+
+        switch order {
+        case .recency:
+            // Spiral outward from center — index 0 (most recent) near center.
+            let goldenAngle = 2.399963229728653  // radians ≈ 137.5°
+            for (index, node) in nodes.enumerated() {
+                let angle = Double(index) * goldenAngle
+                let radius = 40.0 + sqrt(Double(index)) * 38.0
+                positions[node.id] = CGPoint(x: cos(angle) * radius, y: sin(angle) * radius)
+            }
+
+        case .thematic:
+            // Group by primary tag; arrange group centers in a ring, nodes within each group
+            // in a smaller circle around the group center.
+            let groups = Dictionary(grouping: nodes) { $0.tags.first ?? "" }
+            let tagKeys = groups.keys.sorted()
+            let groupCount = tagKeys.count
+            let groupRadius = groupCount > 1 ? max(160.0, Double(groupCount) * 55.0) : 0.0
+            for (gi, tag) in tagKeys.enumerated() {
+                let groupAngle = groupCount > 1
+                    ? Double(gi) / Double(groupCount) * 2 * .pi
+                    : 0.0
+                let cx = cos(groupAngle) * groupRadius
+                let cy = sin(groupAngle) * groupRadius
+                let members = groups[tag] ?? []
+                let innerRadius = max(35.0, Double(members.count) * 12.0)
+                for (ni, node) in members.enumerated() {
+                    let nodeAngle = members.count > 1
+                        ? Double(ni) / Double(members.count) * 2 * .pi
+                        : 0.0
+                    positions[node.id] = CGPoint(
+                        x: cx + cos(nodeAngle) * innerRadius,
+                        y: cy + sin(nodeAngle) * innerRadius
+                    )
+                }
+            }
+        }
+
+        scene.rearrangeToPositions(positions)
     }
 
     private func syncScene(nodes: [Node], newNodeID: String? = nil) {

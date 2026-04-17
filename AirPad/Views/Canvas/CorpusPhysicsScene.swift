@@ -12,6 +12,19 @@ final class CorpusPhysicsScene: SKScene {
 
     var spriteCount: Int { nodeSprites.count }
 
+    /// Animate all existing sprites to new positions (view-only rearrangement; does not
+    /// mutate canvasLayout). Positions use SpriteKit convention (y-up from center).
+    func rearrangeToPositions(_ positions: [String: CGPoint]) {
+        for (nodeID, target) in positions {
+            guard let shape = nodeSprites[nodeID] else { continue }
+            shape.physicsBody?.velocity = .zero
+            shape.physicsBody?.angularVelocity = 0
+            let move = SKAction.move(to: target, duration: 0.55)
+            move.timingMode = .easeInOut
+            shape.run(move, withKey: "rearrange")
+        }
+    }
+
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
     func syncNodes(

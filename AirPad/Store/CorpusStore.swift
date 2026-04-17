@@ -279,8 +279,10 @@ final class CorpusStore {
     // MARK: - AI processing
 
     /// Runs on-device AI processing on a node after capture (non-blocking).
-    func processNodeWithAI(nodeID: String) async {
-        print("[AI] processNodeWithAI called for \(nodeID)")
+    /// Pass `suppressTagSheet: true` during batch import to auto-create new tags silently
+    /// instead of presenting TagCreationSheet to the user.
+    func processNodeWithAI(nodeID: String, suppressTagSheet: Bool = false) async {
+        print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet)")
         guard #available(iOS 26.0, *) else {
             print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
             return
@@ -333,11 +335,27 @@ final class CorpusStore {
         await updateNode(updated)
 
         if !newTagNames.isEmpty {
-            pendingTagSuggestions = TagSuggestionContext(
-                nodeID: nodeID,
-                newTagNames: newTagNames,
-                existingTagNames: existingTagNames
-            )
+            if suppressTagSheet {
+                // Batch-import path: auto-create new tags with neutral color, apply silently.
+                for name in newTagNames {
+                    let tag = Tag(
+                        id: UUID(),
+                        name: name,
+                        colorHex: Tag.neutralColorHex,
+                        createdAt: Date(),
+                        useCount: 1
+                    )
+                    await addTag(tag)
+                }
+                await applyTags(newTagNames, toNodeID: nodeID)
+                print("[AI] Silent tag apply for \(nodeID): \(newTagNames)")
+            } else {
+                pendingTagSuggestions = TagSuggestionContext(
+                    nodeID: nodeID,
+                    newTagNames: newTagNames,
+                    existingTagNames: existingTagNames
+                )
+            }
         }
     }
 
@@ -498,14 +516,21 @@ final class CorpusStore {
         let formatter = ISO8601DateFormatter()
         let timestamp = formatter.string(from: Date())
         let parsedNodes = BatchParser.parse(text: text, importTimestamp: timestamp)
-        guard !parsedNodes.isEmpty else { return }
+
+        print("[Batch] Input text length: \(text.count) chars")
+        print("[Batch] BatchParser produced \(parsedNodes.count) node(s)")
+        guard !parsedNodes.isEmpty else {
+            print("[Batch] Nothing to import — returning early")
+            return
+        }
 
         let total = parsedNodes.count
         importBatchProgress = (0, total)
+        print("[Batch] Starting import of \(total) node(s). iCloudUnavailable=\(iCloudUnavailable)")
 
+        var successCount = 0
         var newLayout = canvasLayout
         for (index, node) in parsedNodes.enumerated() {
-            // Scatter imported nodes in a spiral around the origin
             let angle = Double(index) / Double(total) * 2 * .pi * 2.5
             let radius = 80.0 + Double(index) * 8.0
             let pos = CanvasPosition(x: cos(angle) * radius, y: sin(angle) * radius)
@@ -514,31 +539,40 @@ final class CorpusStore {
             do {
                 try await service.saveNode(node)
                 nodes.insert(node, at: 0)
+                successCount += 1
+                print("[Batch] [\(index + 1)/\(total)] Saved node \(node.id) — store.nodes.count now \(nodes.count)")
             } catch {
-                print("[CorpusStore] Batch import save error: \(error)")
+                print("[Batch] [\(index + 1)/\(total)] SAVE ERROR for node \(node.id): \(error)")
             }
             importBatchProgress = (index + 1, total)
         }
 
+        print("[Batch] Save loop done. \(successCount)/\(total) nodes saved. Saving layout…")
         newLayout.updatedAt = Date()
         do {
             try await service.saveCanvasLayout(newLayout)
             canvasLayout = newLayout
+            print("[Batch] Layout saved OK")
         } catch {
-            print("[CorpusStore] Batch import layout save error: \(error)")
+            print("[Batch] Layout save ERROR: \(error)")
         }
 
         importBatchProgress = nil
+        print("[Batch] Progress cleared. Final store.nodes.count = \(nodes.count)")
 
         if nodes.count >= 10 {
             Task { await triggerThreadAnalysis() }
         }
 
-        // AI title/summary in background (non-blocking)
+        // AI title/summary in background — suppress tag sheet so new tags are auto-created silently
+        let savedIDs = parsedNodes.map { $0.id }
+        print("[Batch] Kicking off AI for \(savedIDs.count) node(s) with suppressTagSheet=true")
         Task {
-            for node in parsedNodes {
-                await processNodeWithAI(nodeID: node.id)
+            for id in savedIDs {
+                print("[Batch][AI] Processing node \(id)")
+                await processNodeWithAI(nodeID: id, suppressTagSheet: true)
             }
+            print("[Batch][AI] All AI processing complete")
         }
     }
 

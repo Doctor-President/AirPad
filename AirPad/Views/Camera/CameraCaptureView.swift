@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import AVFoundation
+import Vision
 
 /// Camera/photo-library capture sheet.
 /// Presents the system camera or photo picker, then saves the result as an image node (or appends to an existing node).
@@ -139,12 +140,25 @@ struct CameraCaptureView: View {
             description = ""
         }
 
+        // Vision OCR — run on background thread so it doesn't block UI
+        let ocrText = await Task.detached(priority: .userInitiated) {
+            Self.extractText(from: image)
+        }.value
+
         await store.addImageItem(
             toNodeID: targetNodeID,
             imageData: data,
             description: description,
             position: position
         )
+
+        // If OCR found text, append it as a text item alongside the image
+        if !ocrText.isEmpty {
+            let affectedNodeID = targetNodeID ?? store.nodes.first?.id
+            if let nodeID = affectedNodeID {
+                await store.appendItemToNode(nodeID: nodeID, item: .text(content: ocrText))
+            }
+        }
 
         // Trigger AI tagging on the resulting node
         if let nodeID = targetNodeID {
@@ -155,6 +169,17 @@ struct CameraCaptureView: View {
 
         isSaving = false
         dismiss()
+    }
+
+    private static func extractText(from image: UIImage) -> String {
+        guard let cgImage = image.cgImage else { return "" }
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        let handler = VNImageRequestHandler(cgImage: cgImage)
+        try? handler.perform([request])
+        let lines = request.results?.compactMap { $0.topCandidates(1).first?.string } ?? []
+        return lines.joined(separator: " ")
     }
 }
 

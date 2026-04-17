@@ -16,7 +16,7 @@ struct ActionButtonFan: View {
     let onNodePicker:    () -> Void    // opens the recent-node tray
     let onAddToRecent:   () -> Void    // immediately targets the most-recent node
 
-    private let fanRadius: CGFloat = 90
+    private let fanRadius: CGFloat = 100
     private let bubbleSize: CGFloat = 52
 
     // Extra bottom padding added to the inner ZStack when the fan is open.

@@ -53,6 +53,11 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.filteredNodes)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
+                fanExpanded = true
+            }
+        }
     }
 
     // MARK: - Canvas stack (extracted to keep body type-checkable)

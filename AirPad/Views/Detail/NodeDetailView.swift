@@ -16,6 +16,8 @@ struct NodeDetailView: View {
     @State private var editedSummary = ""
     @State private var editedTags: [String] = []
 
+    @FocusState private var focusedField: Bool
+
     // "Add item" mini-fan state
     @State private var captureMode: CaptureMode? = nil
     @State private var showPromoteConfirmation = false
@@ -81,6 +83,7 @@ struct NodeDetailView: View {
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
                     .tint(.white)
+                    .focused($focusedField)
 
                 // Summary
                 if !editedSummary.isEmpty || node.summary.isEmpty {
@@ -88,6 +91,7 @@ struct NodeDetailView: View {
                         .font(.body)
                         .foregroundStyle(.white.opacity(0.75))
                         .tint(.white)
+                        .focused($focusedField)
                 }
 
                 // Tags
@@ -121,6 +125,15 @@ struct NodeDetailView: View {
         .toolbarBackground(.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = false
+                }
+                .fontWeight(.semibold)
+            }
+        }
     }
 
     // MARK: - Tags row
@@ -244,6 +257,7 @@ private struct ItemRow: View {
     @State private var imageURL: URL? = nil
     @State private var editingText = ""
     @State private var isEditingText = false
+    @FocusState private var textEditorFocused: Bool
 
     var body: some View {
         switch item.type {
@@ -275,6 +289,16 @@ private struct ItemRow: View {
                     .padding(12)
                     .background(Color.white.opacity(0.07))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .focused($textEditorFocused)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") {
+                                textEditorFocused = false
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
             } else {
                 Text(item.content ?? "")
                     .font(.body)

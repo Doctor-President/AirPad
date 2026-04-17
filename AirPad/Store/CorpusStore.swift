@@ -222,7 +222,7 @@ final class CorpusStore {
                 items: [item],
                 domain: nil,
                 domainConfirmed: false,
-                needsAIProcessing: false
+                needsAIProcessing: true
             )
             do {
                 try await service.saveItemFile(nodeID: node.id, itemID: itemID, sourceURL: tmpURL, fileExtension: "jpg")
@@ -274,14 +274,29 @@ final class CorpusStore {
 
     /// Runs on-device AI processing on a node after capture (non-blocking).
     func processNodeWithAI(nodeID: String) async {
-        guard #available(iOS 26.0, *) else { return }
+        print("[AI] processNodeWithAI called for \(nodeID)")
+        guard #available(iOS 26.0, *) else {
+            print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
+            return
+        }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
 
         let currentTags = tags
         let aiSvc = AIService()
         guard let result = await aiSvc.processNode(node, tagVocabulary: currentTags) else {
-            // AI unavailable — clear the flag so we don't retry indefinitely
-            if var n = nodes.first(where: { $0.id == nodeID }), n.needsAIProcessing {
+            // AI unavailable — apply a fallback title from raw content so the node isn't blank
+            if var n = nodes.first(where: { $0.id == nodeID }) {
+                let fallback = n.items.compactMap { item -> String? in
+                    switch item.type {
+                    case .text:          return item.content
+                    case .audio, .video: return item.transcript
+                    case .link:          return item.title ?? item.url
+                    case .image, .document: return nil
+                    }
+                }.first(where: { !$0.isEmpty })
+                if let fallback, n.title.isEmpty || n.title == "Photo" || n.title == "Voice note" {
+                    n.title = String(fallback.prefix(40))
+                }
                 n.needsAIProcessing = false
                 await updateNode(n)
             }
@@ -301,8 +316,8 @@ final class CorpusStore {
         var existingTagNames: [String] = []
         var newTagNames: [String] = []
         for name in result.tags {
-            if currentTags.contains(where: { $0.name.lowercased() == name.lowercased() }) {
-                existingTagNames.append(name)
+            if let storedTag = currentTags.first(where: { $0.name.lowercased() == name.lowercased() }) {
+                existingTagNames.append(storedTag.name)  // use stored name to match tagColorMap keys exactly
             } else {
                 newTagNames.append(name)
             }
@@ -429,7 +444,10 @@ final class CorpusStore {
             options: .skipsHiddenFiles
         ) else { return }
 
-        for dir in dirs where dir.hasDirectoryPath {
+        for dir in dirs {
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: dir.path, isDirectory: &isDir), isDir.boolValue else { continue }
+
             let nodeFile = dir.appendingPathComponent("node.json")
             guard let data = try? Data(contentsOf: nodeFile),
                   let node = try? JSONDecoder.airPad.decode(Node.self, from: data) else { continue }

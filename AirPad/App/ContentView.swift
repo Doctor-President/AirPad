@@ -6,18 +6,20 @@ struct ContentView: View {
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
+    @State private var isShowingDetail = false
 
     var body: some View {
         ZStack {
             // Main content — switches between graph and list mode
             Group {
                 if store.filterState.viewMode == .graph {
-                    CanvasView()
+                    CanvasView(isShowingDetail: $isShowingDetail)
                 } else {
-                    NodeListView()
+                    NodeListView(isShowingDetail: $isShowingDetail)
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: store.filterState.viewMode)
+            .onChange(of: store.filterState.viewMode) { _, _ in isShowingDetail = false }
 
             // iCloud unavailable banner
             if store.iCloudUnavailable {
@@ -29,26 +31,29 @@ struct ContentView: View {
                 }
             }
 
-            // Persistent top controls — CAMetalLayer rule: lives here in ContentView ZStack,
-            // never inside NavigationStack or SpriteKit hierarchy.
-            VStack(spacing: 0) {
-                HStack(alignment: .center) {
-                    ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
-                        var s = store.filterState
-                        s.viewMode = mode
-                        store.filterState = s
-                    }
-                    Spacer()
-                    HStack(spacing: 10) {
-                        SettingsButton { showSettings = true }
-                        FilterButton(activeCount: store.filterState.activeFilterCount) {
-                            showFilterPanel = true
+            // Persistent top controls — hidden when a detail view is pushed.
+            // CAMetalLayer rule: lives here in ContentView ZStack, never inside NavigationStack or SpriteKit.
+            if !isShowingDetail {
+                VStack(spacing: 0) {
+                    HStack(alignment: .center) {
+                        ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
+                            var s = store.filterState
+                            s.viewMode = mode
+                            store.filterState = s
+                        }
+                        Spacer()
+                        HStack(spacing: 10) {
+                            SettingsButton { showSettings = true }
+                            FilterButton(activeCount: store.filterState.activeFilterCount) {
+                                showFilterPanel = true
+                            }
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 58)
+                    Spacer()
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 58)
-                Spacer()
+                .transition(.opacity)
             }
 
             // Thread suggestion card — bottom of screen, above the action button

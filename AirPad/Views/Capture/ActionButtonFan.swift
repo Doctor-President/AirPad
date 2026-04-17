@@ -13,6 +13,7 @@ struct ActionButtonFan: View {
     let onVoice:         () -> Void
     let onCamera:        () -> Void
     let onText:          () -> Void
+    let onNewNode:       () -> Void    // opens text capture for a fresh node
     let onNodePicker:    () -> Void    // opens the recent-node tray
     let onAddToRecent:   () -> Void    // immediately targets the most-recent node
 
@@ -47,7 +48,7 @@ struct ActionButtonFan: View {
                             onAddToRecent(); collapse()
                         }
                         StripButton(label: "New Node", icon: "plus.circle.fill", isPrimary: true) {
-                            collapse()  // default behavior — fan capture goes to new node
+                            onNewNode(); collapse()
                         }
                     }
                     .padding(.horizontal, 24)

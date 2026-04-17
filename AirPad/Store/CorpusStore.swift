@@ -108,9 +108,11 @@ final class CorpusStore {
             let loaded = try await service.loadAllNodes()
             let layout = try await service.loadCanvasLayout()
             let loadedTags = try await service.loadTags()
-            nodes = loaded.sorted { $0.createdAt > $1.createdAt }
-            canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            // Set tags and layout before nodes so that when onChange(of: nodes) fires
+            // in CanvasView, store.tags is already populated for tagColorMap building.
             tags = loadedTags
+            canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            nodes = loaded.sorted { $0.createdAt > $1.createdAt }
         } catch {
             print("[CorpusStore] Load error: \(error)")
         }

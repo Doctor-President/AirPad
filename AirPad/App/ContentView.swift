@@ -3,9 +3,23 @@ import SwiftUI
 struct ContentView: View {
 
     @Environment(CorpusStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
+
+    // Ghost query field
+    @State private var ghostPromptIndex = 0
+    @State private var ghostVisible = false
+    @State private var ghostActive = false
+    @State private var ghostText = ""
+
+    private let ghostPrompts = [
+        "What have I been thinking about most lately?",
+        "What ideas keep coming back that I haven't acted on?",
+        "What was I worried about last week?",
+        "What patterns show up in my work?"
+    ]
 
     var body: some View {
         ZStack {
@@ -55,26 +69,23 @@ struct ContentView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
                                 ForEach(CanvasViewMode.allCases, id: \.self) { mode in
+                                    let isSelected = store.filterState.canvasViewMode == mode
                                     Button {
                                         var s = store.filterState
                                         s.canvasViewMode = mode
                                         store.filterState = s
                                     } label: {
                                         Text(mode.displayName)
-                                            .font(.system(size: 11,
-                                                          weight: store.filterState.canvasViewMode == mode
-                                                              ? .semibold : .regular))
-                                            .foregroundStyle(
-                                                store.filterState.canvasViewMode == mode
-                                                    ? Color.black : Color.white.opacity(0.55)
-                                            )
+                                            .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                                            .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.7))
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 5)
-                                            .background(
-                                                store.filterState.canvasViewMode == mode
-                                                    ? Color.white : Color.white.opacity(0.09)
-                                            )
+                                            .background(isSelected ? Color.indigo : Color.primary.opacity(0.08))
                                             .clipShape(Capsule())
+                                            .overlay(
+                                                Capsule()
+                                                    .stroke(Color.primary.opacity(isSelected ? 0 : 0.18), lineWidth: 0.5)
+                                            )
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -110,6 +121,17 @@ struct ContentView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 .animation(.spring(response: 0.35), value: store.importBatchProgress != nil)
+            }
+
+            // Ghost Query Field — thumb zone, both graph and list views
+            if !store.isInDetailView {
+                VStack {
+                    Spacer()
+                    ghostQueryField
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 36)
+                }
+                .task { await runGhostCycle() }
             }
 
             // Thread suggestion card
@@ -148,6 +170,44 @@ struct ContentView: View {
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView { showOnboarding = false }
         }
+    }
+
+    // MARK: - Ghost Query Field
+
+    @ViewBuilder
+    private var ghostQueryField: some View {
+        if ghostActive {
+            TextField("", text: $ghostText)
+                .font(.body)
+                .foregroundStyle(Color.primary)
+                .multilineTextAlignment(.center)
+                .submitLabel(.done)
+                .onSubmit { ghostActive = false; ghostText = "" }
+                .padding(.vertical, 6)
+        } else {
+            Text(ghostPrompts[ghostPromptIndex])
+                .font(.body.italic())
+                .foregroundStyle(Color.primary.opacity(0.30))
+                .multilineTextAlignment(.center)
+                .opacity(ghostVisible ? 1 : 0)
+                .onTapGesture {
+                    ghostText = ghostPrompts[ghostPromptIndex]
+                    withAnimation(.easeInOut(duration: 0.2)) { ghostActive = true }
+                }
+        }
+    }
+
+    private func runGhostCycle() async {
+        do {
+            try await Task.sleep(for: .seconds(3))
+            while true {
+                withAnimation(.easeInOut(duration: 1.5)) { ghostVisible = true }
+                try await Task.sleep(for: .seconds(Double.random(in: 8...12)))
+                withAnimation(.easeInOut(duration: 1.5)) { ghostVisible = false }
+                try await Task.sleep(for: .seconds(2.5))
+                ghostPromptIndex = (ghostPromptIndex + 1) % ghostPrompts.count
+            }
+        } catch {}
     }
 
     // MARK: - Filter state pill

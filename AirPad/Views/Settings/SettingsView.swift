@@ -14,6 +14,9 @@ struct SettingsView: View {
     // Privacy
     @AppStorage("locationEnabled") private var locationEnabled = false
 
+    // Canvas theme override
+    @AppStorage("canvasThemeOverride") private var canvasThemeOverride: String = "system"
+
     // UI state
     @State private var connectionTestResult: String? = nil
     @State private var isTestingConnection = false
@@ -28,6 +31,8 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 32) {
                     aiModelSection
+                    Divider().background(Color.white.opacity(0.1))
+                    canvasThemeSection
                     Divider().background(Color.white.opacity(0.1))
                     privacySection
                     Divider().background(Color.white.opacity(0.1))
@@ -175,6 +180,39 @@ struct SettingsView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
         }
+    }
+
+    // MARK: - Canvas Theme
+
+    private var canvasThemeSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Canvas Theme")
+
+            HStack(spacing: 8) {
+                themeChip("System", value: "system")
+                themeChip("Solar Flare", value: "dark")
+                themeChip("Cucumber Water", value: "light")
+            }
+
+            Text("Solar Flare is dark-void with warm prismatic dots. Cucumber Water is soft white with cool iridescent dots.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.3))
+        }
+    }
+
+    private func themeChip(_ label: String, value: String) -> some View {
+        Button {
+            canvasThemeOverride = value
+        } label: {
+            Text(label)
+                .font(.system(size: 12, weight: canvasThemeOverride == value ? .semibold : .regular))
+                .foregroundStyle(canvasThemeOverride == value ? .black : .white.opacity(0.7))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(canvasThemeOverride == value ? Color.white : Color.white.opacity(0.09))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Privacy

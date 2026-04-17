@@ -16,7 +16,7 @@ final class CorpusPhysicsScene: SKScene {
         didSet { if oldValue != isDarkMode { rebuildDotField() } }
     }
 
-    /// Animate all existing sprites to new positions in a cascading wave.
+    /// Animate all existing sprites to new positions in a spring-settling cascade wave.
     func rearrangeToPositions(_ positions: [String: CGPoint]) {
         let ids = Array(positions.keys)
         for (index, nodeID) in ids.enumerated() {
@@ -25,9 +25,14 @@ final class CorpusPhysicsScene: SKScene {
             shape.physicsBody?.angularVelocity = 0
 
             let cascadeDelay = Double(index) / Double(max(ids.count, 1)) * 1.5
-            let jitter = Double.random(in: 0...0.15)
-            let move = SKAction.move(to: target, duration: 0.65)
-            move.timingMode = .easeInEaseOut
+            let jitter = Double.random(in: 0...0.2)
+            let duration = 1.8 + Double.random(in: 0...0.4)
+            let move = SKAction.move(to: target, duration: duration)
+            // Damped spring: f(t) = 1 - exp(-8t)·cos(12t) — overshoots ~12%, settles by t=1
+            move.timingFunction = { t in
+                let ft = 1.0 - exp(-8.0 * Double(t)) * cos(12.0 * Double(t))
+                return Float(ft)
+            }
             shape.run(.sequence([.wait(forDuration: cascadeDelay + jitter), move]),
                       withKey: "rearrange")
         }
@@ -74,6 +79,9 @@ final class CorpusPhysicsScene: SKScene {
     private var blobPaths: [String: CGPath] = [:]
     private var bubbleBaseRadii: [String: CGFloat] = [:]
 
+    // Per-node base hue for prismatic glow (untagged/neutral nodes)
+    private var nodeDefaultHues: [String: CGFloat] = [:]
+
     // Dot field
     private var dotFieldLayer = SKNode()
 
@@ -118,17 +126,18 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func buildDotField() {
-        let cols = 9
-        let rows = 14
-        let spacingX: CGFloat = 68
-        let spacingY: CGFloat = 68
+        // Moleskine dot journal aesthetic: tiny, dense, barely-perceptible grid
+        let cols = 24
+        let rows = 46
+        let spacingX: CGFloat = 20
+        let spacingY: CGFloat = 20
         let originX = -CGFloat(cols - 1) * spacingX / 2
         let originY = -CGFloat(rows - 1) * spacingY / 2
 
         for row in 0..<rows {
             for col in 0..<cols {
-                let jitterX = spacingX * CGFloat.random(in: -0.18...0.18)
-                let jitterY = spacingY * CGFloat.random(in: -0.18...0.18)
+                let jitterX = spacingX * CGFloat.random(in: -0.15...0.15)
+                let jitterY = spacingY * CGFloat.random(in: -0.15...0.15)
                 let position = CGPoint(
                     x: originX + CGFloat(col) * spacingX + jitterX,
                     y: originY + CGFloat(row) * spacingY + jitterY
@@ -142,30 +151,31 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func makeDotNode() -> SKShapeNode {
-        let dot = SKShapeNode(circleOfRadius: 2.2)
+        let radius = CGFloat.random(in: 1.5...2.0)
+        let dot = SKShapeNode(circleOfRadius: radius)
         dot.strokeColor = .clear
         if isDarkMode {
-            // Solar Flare: luminous prismatic — warm spectrum
-            let hue = CGFloat.random(in: 0.0...0.18)
-            let sat = CGFloat.random(in: 0.65...0.90)
+            // Solar Flare: warm prismatic — muted at small size
+            let hue = CGFloat.random(in: 0.0...0.20)
+            let sat = CGFloat.random(in: 0.55...0.80)
             dot.fillColor = UIColor(hue: hue, saturation: sat, brightness: 1.0,
-                                    alpha: CGFloat.random(in: 0.50...0.75))
+                                    alpha: CGFloat.random(in: 0.30...0.55))
         } else {
-            // Cucumber Water: barely-there iridescence — cool spectrum
+            // Cucumber Water: barely-there iridescent — cool spectrum
             let hue = CGFloat.random(in: 0.12...0.65)
-            let sat = CGFloat.random(in: 0.15...0.40)
-            dot.fillColor = UIColor(hue: hue, saturation: sat, brightness: 0.55,
-                                    alpha: CGFloat.random(in: 0.18...0.38))
+            let sat = CGFloat.random(in: 0.12...0.35)
+            dot.fillColor = UIColor(hue: hue, saturation: sat, brightness: 0.45,
+                                    alpha: CGFloat.random(in: 0.10...0.22))
         }
         return dot
     }
 
     private func animateDot(_ dot: SKShapeNode, origin: CGPoint) {
-        // Scale oscillation — random period and phase
-        let period = Double.random(in: 3.0...6.0)
+        // Subtle scale oscillation ±8% — Moleskine dots breathe, not pulse
+        let period = Double.random(in: 4.0...8.0)
         let phase  = Double.random(in: 0...period)
-        let hi: CGFloat = CGFloat.random(in: 1.3...1.65)
-        let lo: CGFloat = CGFloat.random(in: 0.55...0.80)
+        let hi: CGFloat = CGFloat.random(in: 1.05...1.08)
+        let lo: CGFloat = CGFloat.random(in: 0.92...0.95)
         let up = SKAction.scale(to: hi, duration: period / 2)
         up.timingMode = .easeInEaseOut
         let down = SKAction.scale(to: lo, duration: period / 2)
@@ -197,6 +207,10 @@ final class CorpusPhysicsScene: SKScene {
         let radius = bubbleRadius(for: node)
         bubbleBaseRadii[node.id] = radius
 
+        // Ensure a stable hue exists before calling bubbleColor (which reads nodeDefaultHues)
+        if nodeDefaultHues[node.id] == nil {
+            nodeDefaultHues[node.id] = randomPrismaticHue()
+        }
         let path = blobPath(for: node.id, radius: radius)
         let shape = makeBlobShape(path: path, fillColor: bubbleColor(for: node), isMeta: node.isMeta)
         shape.name = "node:\(node.id)"
@@ -228,6 +242,11 @@ final class CorpusPhysicsScene: SKScene {
 
         addBreathe(shape)
 
+        // Start prismatic cycle for untagged or neutral-colored nodes
+        if let hue = nodeDefaultHues[node.id], !hasTagColor(node) {
+            addPrismaticGlow(shape, baseHue: hue)
+        }
+
         if isNew {
             shape.position = CGPoint(x: finalPosition.x, y: finalPosition.y + 60)
             addChild(shape)
@@ -256,7 +275,17 @@ final class CorpusPhysicsScene: SKScene {
         let newRadius = bubbleRadius(for: node)
         let oldRadius = bubbleBaseRadii[node.id] ?? newRadius
 
-        shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
+        if hasTagColor(node) {
+            // Node now has a real tag color — stop prismatic cycle and use it
+            shape.removeAction(forKey: "prismCycle")
+            shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
+        } else {
+            // Still untagged/neutral — ensure prism cycle running
+            if nodeDefaultHues[node.id] == nil { nodeDefaultHues[node.id] = randomPrismaticHue() }
+            if shape.action(forKey: "prismCycle") == nil, let hue = nodeDefaultHues[node.id] {
+                addPrismaticGlow(shape, baseHue: hue)
+            }
+        }
 
         // Rebuild blob path if size changed meaningfully
         if abs(newRadius - oldRadius) > 2.0 {
@@ -420,12 +449,40 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func bubbleColor(for node: Node) -> UIColor {
-        if let primaryTag = node.tags.first, let color = tagColors[primaryTag] {
+        if let primaryTag = node.tags.first,
+           let color = tagColors[primaryTag],
+           !isNeutralGrey(color) {
             print("[AirPad][bubbleColor] ✓ node=\(node.id.prefix(6)) tag='\(primaryTag)' color=\(color)")
             return color
         }
-        print("[AirPad][bubbleColor] GREY node=\(node.id.prefix(6)) nodeTags=\(node.tags) availableKeys=\(Array(tagColors.keys))")
-        return UIColor(red: 0.556, green: 0.556, blue: 0.576, alpha: 1.0)
+        // Untagged or neutral-tagged: prismatic glow using per-node stored hue
+        let hue = nodeDefaultHues[node.id, default: randomPrismaticHue()]
+        print("[AirPad][bubbleColor] PRISMATIC node=\(node.id.prefix(6)) hue=\(String(format:"%.2f",hue)) nodeTags=\(node.tags) availableKeys=\(Array(tagColors.keys))")
+        return UIColor(hue: hue, saturation: 0.58, brightness: 0.78, alpha: 0.80)
+    }
+
+    private func isNeutralGrey(_ color: UIColor) -> Bool {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: nil)
+        return abs(r - g) < 0.04 && abs(g - b) < 0.04 && b > 0.45 && b < 0.70
+    }
+
+    private func hasTagColor(_ node: Node) -> Bool {
+        guard let primaryTag = node.tags.first, let color = tagColors[primaryTag] else { return false }
+        return !isNeutralGrey(color)
+    }
+
+    private func randomPrismaticHue() -> CGFloat { CGFloat.random(in: 0...1) }
+
+    private func addPrismaticGlow(_ shape: SKShapeNode, baseHue: CGFloat) {
+        let period = Double.random(in: 9.0...14.0)
+        let cycle = SKAction.customAction(withDuration: period) { node, elapsed in
+            guard let s = node as? SKShapeNode else { return }
+            let t = elapsed / CGFloat(period)
+            let hue = (baseHue + t * 0.15).truncatingRemainder(dividingBy: 1.0)
+            s.fillColor = UIColor(hue: hue, saturation: 0.58, brightness: 0.78, alpha: 0.80)
+        }
+        shape.run(SKAction.repeatForever(cycle), withKey: "prismCycle")
     }
 
     private func storedPosition(for nodeID: String) -> CGPoint {

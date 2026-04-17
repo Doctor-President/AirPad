@@ -7,6 +7,7 @@ struct CanvasView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("canvasThemeOverride") private var canvasThemeOverride: String = "system"
     @State private var canvasState = CanvasState()
     @State private var fanExpanded = false
     @State private var captureMode: CaptureMode? = nil
@@ -26,6 +27,14 @@ struct CanvasView: View {
     enum CaptureMode: String, Identifiable {
         case voice, text, camera
         var id: String { rawValue }
+    }
+
+    private var isDarkMode: Bool {
+        switch canvasThemeOverride {
+        case "dark":  return true
+        case "light": return false
+        default:      return colorScheme == .dark
+        }
     }
 
     // MARK: - Body
@@ -61,14 +70,17 @@ struct CanvasView: View {
             scene.scaleMode = .resizeFill
             scene.backgroundColor = .clear
             scene.canvasState = canvasState
-            scene.isDarkMode = colorScheme == .dark
+            scene.isDarkMode = isDarkMode
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)
             prepareHaptics()
             rearrangeForMode(store.filterState.canvasViewMode, nodes: store.filteredNodes)
         }
-        .onChange(of: colorScheme) { _, new in
-            scene.isDarkMode = new == .dark
+        .onChange(of: colorScheme) { _, _ in
+            scene.isDarkMode = isDarkMode
+        }
+        .onChange(of: canvasThemeOverride) { _, _ in
+            scene.isDarkMode = isDarkMode
         }
         .onChange(of: store.nodes) { _, newNodes in
             let newIDs: Set<String> = Set(newNodes.map { $0.id })
@@ -134,7 +146,7 @@ struct CanvasView: View {
     }
 
     private var canvasBackground: Color {
-        colorScheme == .dark ? .black : Color(red: 0.98, green: 0.97, blue: 0.955)
+        isDarkMode ? .black : Color(red: 0.98, green: 0.97, blue: 0.955)
     }
 
     @ViewBuilder

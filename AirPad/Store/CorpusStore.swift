@@ -274,7 +274,7 @@ final class CorpusStore {
 
     /// Runs on-device AI processing on a node after capture (non-blocking).
     func processNodeWithAI(nodeID: String) async {
-        guard #available(iOS 18.1, *) else { return }
+        guard #available(iOS 26.0, *) else { return }
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
 
         let currentTags = tags

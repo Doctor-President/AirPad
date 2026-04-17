@@ -29,7 +29,7 @@ struct NodeAIResult {
 @available(iOS 26.0, *)
 @Generable
 struct CoherenceCheck {
-    @Guide(description: "Is this a complete, standalone idea? Reply with exactly 'Yes' or 'No'.")
+    @Guide(description: "Is this a complete, standalone idea? Reply with exactly 'Yes', 'No', or 'Uncertain' if you genuinely cannot determine.")
     var answer: String
 }
 
@@ -82,17 +82,19 @@ actor AIService {
     }
 
     /// Checks whether a raw text block represents a complete, standalone idea.
-    /// Returns true (coherent), false (incoherent), or nil if the model is unavailable.
-    /// Callers should treat nil as "pass" — never block import when the model is offline.
-    func checkCoherence(_ text: String) async -> Bool? {
-        guard SystemLanguageModel.default.isAvailable else { return nil }
-        let prompt = "Is this a complete, standalone idea? Yes or No.\n\n\(text)"
+    /// Returns .unavailable when the model is offline — callers treat this as passing.
+    func checkCoherence(_ text: String) async -> CoherenceOutcome {
+        guard SystemLanguageModel.default.isAvailable else { return .unavailable }
+        let prompt = "Is this a complete, standalone idea? Yes, No, or Uncertain.\n\n\(text)"
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: CoherenceCheck.self)
-            return response.content.answer.lowercased().hasPrefix("yes")
+            let answer = response.content.answer.lowercased()
+            if answer.hasPrefix("yes") { return .coherent }
+            if answer.hasPrefix("no")  { return .incoherent }
+            return .uncertain
         } catch {
-            return nil
+            return .unavailable
         }
     }
 
@@ -116,7 +118,14 @@ actor AIService {
     }
 }
 
-// MARK: - Output type (no availability gate — CorpusStore can reference freely)
+// MARK: - Output types (no availability gate — CorpusStore can reference freely)
+
+enum CoherenceOutcome {
+    case coherent       // clear Yes  → create node
+    case incoherent     // clear No   → review queue, reason: .coherence
+    case uncertain      // Uncertain  → review queue, reason: .lowConfidence
+    case unavailable    // model offline → treat as coherent, never block import
+}
 
 struct NodeAIOutput {
     let title:   String

@@ -10,7 +10,8 @@ struct RejectedBlock: Codable, Identifiable {
     let rejectedAt: Date
 
     enum Reason: String, Codable {
-        case heuristic   // caught by fragment-detection heuristics before any model call
-        case coherence   // failed Foundation Model "complete standalone idea?" check
+        case heuristic      // caught by fragment-detection heuristics before any model call
+        case coherence      // failed Foundation Model "complete standalone idea?" check
+        case lowConfidence  // model returned uncertain — user decides
     }
 }

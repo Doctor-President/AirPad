@@ -125,12 +125,17 @@ private struct ReviewBlockRow: View {
     }
 
     private var reasonBadge: some View {
-        Text(block.reason == .heuristic ? "fragment" : "incomplete")
+        let (label, color): (String, Color) = switch block.reason {
+        case .heuristic:    ("fragment",    .orange)
+        case .coherence:    ("incomplete",  .yellow)
+        case .lowConfidence:("uncertain",   .blue)
+        }
+        return Text(label)
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(block.reason == .heuristic ? Color.orange : Color.yellow)
+            .foregroundStyle(color)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background((block.reason == .heuristic ? Color.orange : Color.yellow).opacity(0.15))
+            .background(color.opacity(0.15))
             .clipShape(Capsule())
     }
 }

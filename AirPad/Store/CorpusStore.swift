@@ -559,33 +559,50 @@ final class CorpusStore {
             print("[Batch] Phase 0b: running coherence checks on \(candidateTexts.count) candidates")
             var coherent: [String] = []
             var incoherent: [String] = []
-            await withTaskGroup(of: (String, Bool?).self) { group in
+            var uncertain: [String] = []
+            await withTaskGroup(of: (String, CoherenceOutcome).self) { group in
                 for candidate in candidateTexts {
                     group.addTask { await (candidate, aiSvc.checkCoherence(candidate)) }
                 }
                 var checked = 0
-                for await (candidateText, result) in group {
+                for await (candidateText, outcome) in group {
                     checked += 1
                     importBatchProgress = (checked, candidateTexts.count)
-                    if result == false {
+                    switch outcome {
+                    case .coherent, .unavailable:
+                        coherent.append(candidateText)
+                    case .incoherent:
                         incoherent.append(candidateText)
                         print("[Batch] Phase 0b: coherence FAIL (\(candidateText.prefix(40))…)")
-                    } else {
-                        coherent.append(candidateText)
+                    case .uncertain:
+                        uncertain.append(candidateText)
+                        print("[Batch] Phase 0b: coherence UNCERTAIN (\(candidateText.prefix(40))…)")
                     }
                 }
             }
             coherentTexts = coherent
-            incoherentTexts = incoherent
+            incoherentTexts = incoherent + uncertain  // both go to review queue
+
+            if !incoherent.isEmpty {
+                let rejected = incoherent.map {
+                    RejectedBlock(id: UUID().uuidString, text: $0, reason: .coherence,
+                                  importTimestamp: timestamp, rejectedAt: Date())
+                }
+                reviewQueue.append(contentsOf: rejected)
+                print("[Batch] Phase 0b: added \(rejected.count) coherence rejections")
+            }
+            if !uncertain.isEmpty {
+                let rejected = uncertain.map {
+                    RejectedBlock(id: UUID().uuidString, text: $0, reason: .lowConfidence,
+                                  importTimestamp: timestamp, rejectedAt: Date())
+                }
+                reviewQueue.append(contentsOf: rejected)
+                print("[Batch] Phase 0b: added \(rejected.count) low-confidence items to review queue")
+            }
         }
 
         if !incoherentTexts.isEmpty {
-            let rejected = incoherentTexts.map {
-                RejectedBlock(id: UUID().uuidString, text: $0, reason: .coherence,
-                              importTimestamp: timestamp, rejectedAt: Date())
-            }
-            reviewQueue.append(contentsOf: rejected)
-            print("[Batch] Phase 0b: added \(rejected.count) coherence rejections to reviewQueue")
+            print("[Batch] Phase 0b: \(incoherentTexts.count) total review-queue items")
         }
 
         let parsedNodes = BatchParser.makeNodes(texts: coherentTexts, importTimestamp: timestamp)

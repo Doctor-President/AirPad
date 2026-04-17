@@ -33,6 +33,10 @@ final class CorpusStore {
     /// Non-nil while a batch import is in progress. ContentView shows a progress banner.
     var importBatchProgress: (current: Int, total: Int)? = nil
 
+    /// Incremented when a batch import finishes. CanvasView observes this to force a full resync
+    /// with correct layout positions — belt-and-suspenders on top of onChange(of: nodes).
+    var canvasNeedsSync = UUID()
+
     private var dismissedThreadDescriptions: Set<String> = []
 
     /// Nodes after applying the active filter and sort order.
@@ -526,53 +530,70 @@ final class CorpusStore {
 
         let total = parsedNodes.count
         importBatchProgress = (0, total)
-        print("[Batch] Starting import of \(total) node(s). iCloudUnavailable=\(iCloudUnavailable)")
+        print("[Batch] Starting import. total=\(total) iCloudUnavailable=\(iCloudUnavailable)")
 
-        var successCount = 0
+        // Phase 1 — save all nodes to disk; accumulate successfully-saved set.
+        // Do NOT mutate store.nodes yet — we need canvasLayout ready first so that
+        // when nodes land in the store and onChange fires, syncScene has correct positions.
+        var savedNodes: [Node] = []
         var newLayout = canvasLayout
         for (index, node) in parsedNodes.enumerated() {
             let angle = Double(index) / Double(total) * 2 * .pi * 2.5
             let radius = 80.0 + Double(index) * 8.0
-            let pos = CanvasPosition(x: cos(angle) * radius, y: sin(angle) * radius)
-            newLayout.positions[node.id] = pos
+            newLayout.positions[node.id] = CanvasPosition(x: cos(angle) * radius, y: sin(angle) * radius)
 
             do {
                 try await service.saveNode(node)
-                nodes.insert(node, at: 0)
-                successCount += 1
-                print("[Batch] [\(index + 1)/\(total)] Saved node \(node.id) — store.nodes.count now \(nodes.count)")
+                savedNodes.append(node)
+                print("[Batch] [\(index + 1)/\(total)] Saved \(node.id)")
             } catch {
-                print("[Batch] [\(index + 1)/\(total)] SAVE ERROR for node \(node.id): \(error)")
+                print("[Batch] [\(index + 1)/\(total)] SAVE ERROR \(node.id): \(error)")
             }
             importBatchProgress = (index + 1, total)
         }
+        print("[Batch] Phase 1 done: \(savedNodes.count)/\(total) saved to disk")
 
-        print("[Batch] Save loop done. \(successCount)/\(total) nodes saved. Saving layout…")
+        // Phase 2 — persist layout first so store.canvasLayout has all positions
+        // before any onChange(of: store.nodes) fires in CanvasView.
         newLayout.updatedAt = Date()
         do {
             try await service.saveCanvasLayout(newLayout)
             canvasLayout = newLayout
-            print("[Batch] Layout saved OK")
+            print("[Batch] Phase 2 done: layout persisted (\(newLayout.positions.count) positions)")
         } catch {
-            print("[Batch] Layout save ERROR: \(error)")
+            print("[Batch] Phase 2 layout save ERROR: \(error)")
         }
 
+        // Phase 3 — bulk-insert all saved nodes into store.nodes.
+        // No await between inserts, so SwiftUI batches them into one onChange firing.
+        // At this point canvasLayout is already correct, so syncScene will place nodes accurately.
+        let beforeCount = nodes.count
+        for node in savedNodes.reversed() {
+            nodes.insert(node, at: 0)
+        }
+        print("[Batch] Phase 3 done: store.nodes \(beforeCount) → \(nodes.count)")
+
         importBatchProgress = nil
-        print("[Batch] Progress cleared. Final store.nodes.count = \(nodes.count)")
+
+        // Explicit sync token — fires onChange(of: store.canvasNeedsSync) in CanvasView
+        // as belt-and-suspenders in case the onChange(of: store.nodes) chain was coalesced
+        // or stale during the import.
+        canvasNeedsSync = UUID()
+        print("[Batch] canvasNeedsSync fired")
 
         if nodes.count >= 10 {
             Task { await triggerThreadAnalysis() }
         }
 
-        // AI title/summary in background — suppress tag sheet so new tags are auto-created silently
-        let savedIDs = parsedNodes.map { $0.id }
-        print("[Batch] Kicking off AI for \(savedIDs.count) node(s) with suppressTagSheet=true")
+        // Phase 4 — AI title/summary in background; suppress tag sheet for batch
+        let savedIDs = savedNodes.map { $0.id }
+        print("[Batch] Kicking off AI for \(savedIDs.count) nodes (suppressTagSheet=true)")
         Task {
             for id in savedIDs {
-                print("[Batch][AI] Processing node \(id)")
+                print("[Batch][AI] Processing \(id)")
                 await processNodeWithAI(nodeID: id, suppressTagSheet: true)
             }
-            print("[Batch][AI] All AI processing complete")
+            print("[Batch][AI] All done")
         }
     }
 

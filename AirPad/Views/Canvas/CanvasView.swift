@@ -38,20 +38,31 @@ struct CanvasView: View {
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)
         }
-        .onChange(of: store.nodes) { _, newNodes in
+        .onChange(of: store.nodes) { old, newNodes in
             // Track additions against the raw node list so newly captured nodes
             // get the drop-in animation even if filteredNodes would include them.
             let newIDs = Set(newNodes.map { $0.id })
             let addedID = newIDs.subtracting(previousNodeIDs).first
             previousNodeIDs = newIDs
+            print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), filteredNodes=\(store.filteredNodes.count), layoutPositions=\(store.canvasLayout.positions.count)")
             syncScene(nodes: store.filteredNodes, newNodeID: addedID)
         }
-        .onChange(of: store.filteredNodes) { _, filtered in
+        .onChange(of: store.filteredNodes) { old, filtered in
             // Re-sync when filter state changes (tag filter, type filter, etc.)
+            print("[Canvas] onChange(filteredNodes): \(old.count)→\(filtered.count)")
             syncScene(nodes: filtered)
         }
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.filteredNodes)
+        }
+        .onChange(of: store.canvasNeedsSync) { _, _ in
+            // Fired by batchImportText after canvasLayout is updated with all new positions.
+            // Belt-and-suspenders: ensures the scene reflects the final store state even if
+            // the per-node onChange chain was coalesced or ran before canvasLayout was ready.
+            previousNodeIDs = Set(store.nodes.map { $0.id })
+            print("[Canvas] canvasNeedsSync: forcing full resync — filteredNodes=\(store.filteredNodes.count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
+            syncScene(nodes: store.filteredNodes)
+            print("[Canvas] canvasNeedsSync: after syncScene sprites=\(scene.spriteCount)")
         }
         .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
             withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
@@ -170,6 +181,7 @@ struct CanvasView: View {
     }
 
     private func syncScene(nodes: [Node], newNodeID: String? = nil) {
+        print("[Canvas] syncScene: \(nodes.count) nodes, \(store.canvasLayout.positions.count) positions, \(scene.spriteCount) sprites before")
         let tagColorMap = Dictionary(
             uniqueKeysWithValues: store.tags.compactMap { tag -> (String, UIColor)? in
                 guard let color = UIColor(hex: tag.colorHex) else { return nil }
@@ -182,6 +194,7 @@ struct CanvasView: View {
             tagColors: tagColorMap,
             newNodeID: newNodeID
         )
+        print("[Canvas] syncScene: \(scene.spriteCount) sprites after")
     }
 }
 

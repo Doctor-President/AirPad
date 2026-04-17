@@ -10,6 +10,8 @@ final class CorpusPhysicsScene: SKScene {
     /// Set by CanvasView so the scene can report tap events.
     var canvasState: CanvasState?
 
+    var spriteCount: Int { nodeSprites.count }
+
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
     func syncNodes(

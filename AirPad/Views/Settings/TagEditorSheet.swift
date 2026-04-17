@@ -4,6 +4,7 @@ import SwiftUI
 struct TagEditorSheet: View {
 
     let existing: Tag?
+    var onCreated: ((String) -> Void)? = nil
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -19,8 +20,9 @@ struct TagEditorSheet: View {
         "#636366", "#8E8E93", "#FFFFFF", "#000000"
     ]
 
-    init(existing: Tag?) {
+    init(existing: Tag?, onCreated: ((String) -> Void)? = nil) {
         self.existing = existing
+        self.onCreated = onCreated
         _name     = State(initialValue: existing?.name ?? "")
         _colorHex = State(initialValue: existing?.colorHex ?? "#8E8E93")
     }
@@ -170,6 +172,7 @@ struct TagEditorSheet: View {
                     useCount: 0
                 )
                 await store.addTag(tag)
+                onCreated?(trimmed)
             }
             dismiss()
         }

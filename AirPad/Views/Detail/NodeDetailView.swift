@@ -21,6 +21,7 @@ struct NodeDetailView: View {
     // "Add item" mini-fan state
     @State private var captureMode: CaptureMode? = nil
     @State private var showPromoteConfirmation = false
+    @State private var showingNewTagSheet = false
 
     enum CaptureMode: String, Identifiable {
         case voice, text, camera
@@ -71,6 +72,13 @@ struct NodeDetailView: View {
             case .voice:  VoiceCaptureSheet(targetNodeID: nodeID)
             case .text:   TextCaptureSheet(targetNodeID: nodeID)
             case .camera: CameraCaptureView(targetNodeID: nodeID)
+            }
+        }
+        .sheet(isPresented: $showingNewTagSheet) {
+            TagEditorSheet(existing: nil) { createdName in
+                if !editedTags.contains(createdName) {
+                    editedTags.append(createdName)
+                }
             }
         }
     }
@@ -151,9 +159,7 @@ struct NodeDetailView: View {
                 // Add from vocabulary
                 Menu {
                     let available = store.tags.filter { !editedTags.contains($0.name) }
-                    if available.isEmpty {
-                        Text("No more tags in vocabulary")
-                    } else {
+                    if !available.isEmpty {
                         ForEach(available) { tag in
                             Button(tag.name) {
                                 if !editedTags.contains(tag.name) {
@@ -161,6 +167,12 @@ struct NodeDetailView: View {
                                 }
                             }
                         }
+                        Divider()
+                    }
+                    Button {
+                        showingNewTagSheet = true
+                    } label: {
+                        Label("New tag…", systemImage: "plus")
                     }
                 } label: {
                     Label("Add tag", systemImage: "plus")

@@ -564,7 +564,17 @@ final class CorpusStore {
             print("[Batch] Phase 2 layout save ERROR: \(error)")
         }
 
-        // Phase 3 — bulk-insert all saved nodes into store.nodes.
+        // Phase 3 — reset any active filter so newly imported nodes (which have no tags yet)
+        // are visible immediately. Batch nodes have tags: [] — a tag filter would exclude all of them.
+        let hadActiveFilter = filterState.activeFilterCount > 0
+        if hadActiveFilter {
+            filterState.tagName = nil
+            filterState.itemType = .all
+            filterState.threadStatus = .all
+            print("[Batch] Cleared active filter so imported nodes are visible")
+        }
+
+        // Bulk-insert all saved nodes into store.nodes.
         // No await between inserts, so SwiftUI batches them into one onChange firing.
         // At this point canvasLayout is already correct, so syncScene will place nodes accurately.
         let beforeCount = nodes.count

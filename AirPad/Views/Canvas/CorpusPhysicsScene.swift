@@ -169,7 +169,7 @@ final class CorpusPhysicsScene: SKScene {
         up.timingMode = .easeInEaseOut
         let down = SKAction.scale(to: lo, duration: period / 2)
         down.timingMode = .easeInEaseOut
-        dot.run(.sequence([.wait(forDuration: phase), .sequence([up, down]).repeatForever()]))
+        dot.run(.sequence([.wait(forDuration: phase), SKAction.repeatForever(.sequence([up, down]))]))
 
         // Positional drift — wander away from origin, never return to exactly same spot
         startDotDrift(dot, anchor: origin)
@@ -324,7 +324,7 @@ final class CorpusPhysicsScene: SKScene {
         let breatheOut = SKAction.scale(to: lo, duration: 2.2)
         breatheOut.timingMode = .easeInEaseOut
         shape.run(
-            .sequence([.wait(forDuration: phaseDelay), .sequence([breatheIn, breatheOut]).repeatForever()]),
+            .sequence([.wait(forDuration: phaseDelay), SKAction.repeatForever(.sequence([breatheIn, breatheOut]))]),
             withKey: "breathe"
         )
     }
@@ -338,7 +338,6 @@ final class CorpusPhysicsScene: SKScene {
         if isMeta {
             shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)
             shape.lineWidth = 1.5
-            shape.lineDashPattern = [5, 4]
         } else {
             shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
             shape.lineWidth = 1

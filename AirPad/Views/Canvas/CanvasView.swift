@@ -78,14 +78,18 @@ struct CanvasView: View {
     // MARK: - Canvas stack
 
     private var canvasStack: some View {
-        canvasZStack
-            .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
-            .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
-            .animation(.spring(response: 0.28), value: captureTargetNodeID)
-            .navigationDestination(for: Node.self) { node in
-                NodeDetailView(nodeID: node.id)
-                    .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
+        canvasStackWithSheets
+            .onChange(of: store.pendingTagSuggestions) { _, new in
+                if let new, localTagSuggestions == nil { localTagSuggestions = new }
             }
+            .onChange(of: captureMode) { _, mode in
+                if mode != nil { fanExpanded = false }
+                if mode == nil { captureTargetNodeID = nil }
+            }
+    }
+
+    private var canvasStackWithSheets: some View {
+        canvasStackAnimated
             .sheet(item: $captureMode, content: captureModeSheet)
             .sheet(isPresented: $showingNodePicker) {
                 NodePickerSheet(selectedNodeID: $captureTargetNodeID)
@@ -93,12 +97,16 @@ struct CanvasView: View {
             .sheet(item: $localTagSuggestions) { context in
                 tagCreationSheet(context: context)
             }
-            .onChange(of: store.pendingTagSuggestions) { _, new in
-                if let new, localTagSuggestions == nil { localTagSuggestions = new }
-            }
-            .onChange(of: captureMode) { _, mode in
-                if mode != nil { fanExpanded = false }
-                if mode == nil { captureTargetNodeID = nil }
+    }
+
+    private var canvasStackAnimated: some View {
+        canvasZStack
+            .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
+            .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
+            .animation(.spring(response: 0.28), value: captureTargetNodeID)
+            .navigationDestination(for: Node.self) { node in
+                NodeDetailView(nodeID: node.id)
+                    .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
             }
     }
 

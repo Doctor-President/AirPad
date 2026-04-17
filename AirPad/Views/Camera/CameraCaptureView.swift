@@ -108,7 +108,11 @@ struct CameraCaptureView: View {
         isSaving = true
 
         if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
-            let image = try? await result.itemProvider.loadObject(ofClass: UIImage.self) as? UIImage
+            let image: UIImage? = await withCheckedContinuation { continuation in
+                _ = result.itemProvider.loadObject(ofClass: UIImage.self) { reading, _ in
+                    continuation.resume(returning: reading as? UIImage)
+                }
+            }
             if let image {
                 await handleCapturedImage(image)
                 return
@@ -129,7 +133,7 @@ struct CameraCaptureView: View {
 
         // AI image description is stubbed in S3 — returns nil on simulator, device support added later.
         let description: String
-        if #available(iOS 18.1, *) {
+        if #available(iOS 26.0, *) {
             description = await AIService().describeImage(data) ?? ""
         } else {
             description = ""

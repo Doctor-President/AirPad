@@ -241,26 +241,34 @@ final class CorpusPhysicsScene: SKScene {
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
 
-        for touch in touches {
-            activeTouches[touch] = touch.location(in: view)
-        }
-
         let touchCount = activeTouches.count
 
-        if touchCount == 1, let touch = touches.first,
-           let prev = activeTouches[touch] {
-            // Pan: move camera opposite to drag so canvas follows finger
+        if touchCount == 1, let touch = touches.first {
+            // Read previous position BEFORE updating activeTouches — otherwise delta is always zero.
+            let prev = activeTouches[touch] ?? touch.location(in: view)
             let current = touch.location(in: view)
+            activeTouches[touch] = current
+
             let dx = current.x - prev.x
             let dy = current.y - prev.y
             cameraNode.position.x -= dx * cameraNode.xScale
             cameraNode.position.y += dy * cameraNode.yScale
-            activeTouches[touch] = current
+
+            // Cancel pending tap if finger moved beyond threshold
+            if let info = tapStartInfo {
+                let moved = hypot(current.x - info.screenPoint.x, current.y - info.screenPoint.y)
+                if moved > 8 { tapStartInfo = nil }
+            }
 
         } else if touchCount >= 2 {
+            // Pinch: use stored previous distance, then update positions.
+            let prevPinchDist = lastPinchDistance
+            for touch in touches {
+                activeTouches[touch] = touch.location(in: view)
+            }
             let pts = Array(activeTouches.values)
             let dist = hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
-            if let prev = lastPinchDistance, prev > 0 {
+            if let prev = prevPinchDist, prev > 0 {
                 // prevDist / currDist > 1 when pinching in → scale up camera (zoom out)
                 let factor = prev / dist
                 let newScale = (cameraNode.xScale * factor).clamped(to: 0.25...4.0)

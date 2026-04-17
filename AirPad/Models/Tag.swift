@@ -11,7 +11,7 @@ struct Tag: Codable, Identifiable, Equatable {
 }
 
 // Context passed to TagCreationSheet when AI suggests tags not yet in vocabulary.
-struct TagSuggestionContext: Identifiable {
+struct TagSuggestionContext: Identifiable, Equatable {
     let id = UUID()
     let nodeID: String
     let newTagNames: [String]       // AI-suggested names that don't exist yet — need color assignment

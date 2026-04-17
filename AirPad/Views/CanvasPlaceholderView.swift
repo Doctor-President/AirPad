@@ -147,22 +147,24 @@ private struct NodeTitleOverlay: View {
             if counts.image > 0 { Label("\(counts.image)", systemImage: "photo").font(.caption) }
             if counts.audio > 0 { Label("\(counts.audio)", systemImage: "mic").font(.caption) }
             if counts.video > 0 { Label("\(counts.video)", systemImage: "video").font(.caption) }
-            if counts.link > 0 { Label("\(counts.link)", systemImage: "link").font(.caption) }
+            if counts.link     > 0 { Label("\(counts.link)",     systemImage: "link").font(.caption) }
+            if counts.document > 0 { Label("\(counts.document)", systemImage: "doc").font(.caption) }
         }
         .foregroundStyle(.white.opacity(0.6))
     }
 }
 
 private struct ItemCounts {
-    var text = 0; var image = 0; var audio = 0; var video = 0; var link = 0
+    var text = 0; var image = 0; var audio = 0; var video = 0; var link = 0; var document = 0
     init(_ items: [NodeItem]) {
         for item in items {
             switch item.type {
-            case .text: text += 1
-            case .image: image += 1
-            case .audio: audio += 1
-            case .video: video += 1
-            case .link: link += 1
+            case .text:     text += 1
+            case .image:    image += 1
+            case .audio:    audio += 1
+            case .video:    video += 1
+            case .link:     link += 1
+            case .document: document += 1
             }
         }
     }

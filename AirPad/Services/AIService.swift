@@ -3,8 +3,11 @@ import FoundationModels
 
 // MARK: - Structured output type
 
-/// The structured result returned by the Foundation Model for each captured node.
-@available(iOS 18.1, *)
+/// Requires iOS 26.0 — @Generable and its synthesised types (GenerationSchema,
+/// GeneratedContent, ConvertibleToGeneratedContent) are all iOS 26.0+.
+/// Gating the actor at the same version means the macro expansion is always
+/// inside an @available(iOS 26.0, *) context, avoiding beta compiler leakage.
+@available(iOS 26.0, *)
 @Generable
 struct NodeAIResult {
     @Guide(description: "Concise idea title, under 60 characters. Functional, not poetic.")
@@ -26,9 +29,10 @@ struct NodeAIResult {
 // MARK: - Service
 
 /// On-device AI processing for nodes.
-/// Requires iOS 18.1+ / Apple Intelligence-capable device.
+/// LanguageModelSession and SystemLanguageModel are iOS 26.0+ — the entire
+/// actor is gated accordingly. Callers must use #available(iOS 26.0, *).
 /// Gracefully returns nil on unavailable hardware or errors — node saves are NEVER blocked.
-@available(iOS 18.1, *)
+@available(iOS 26.0, *)
 actor AIService {
 
     func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutput? {

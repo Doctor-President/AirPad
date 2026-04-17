@@ -16,9 +16,11 @@ struct Node: Codable, Identifiable, Hashable {
     var domain: String?
     var domainConfirmed: Bool
     var needsAIProcessing: Bool
+    /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
+    var source: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, summary, tags, mood, provenance, threads, location, items, domain
+        case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case isMeta = "is_meta"
@@ -46,7 +48,8 @@ struct Node: Codable, Identifiable, Hashable {
         items: [NodeItem] = [],
         domain: String? = nil,
         domainConfirmed: Bool = false,
-        needsAIProcessing: Bool = false
+        needsAIProcessing: Bool = false,
+        source: String? = nil
     ) {
         self.id                = id
         self.createdAt         = createdAt
@@ -63,6 +66,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.domain            = domain
         self.domainConfirmed   = domainConfirmed
         self.needsAIProcessing = needsAIProcessing
+        self.source            = source
     }
 }
 
@@ -86,6 +90,7 @@ extension Node {
         domain            = try c.decodeIfPresent(String.self,    forKey: .domain)
         domainConfirmed   = try c.decodeIfPresent(Bool.self,      forKey: .domainConfirmed) ?? false
         needsAIProcessing = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
+        source            = try c.decodeIfPresent(String.self,    forKey: .source)
     }
 }
 

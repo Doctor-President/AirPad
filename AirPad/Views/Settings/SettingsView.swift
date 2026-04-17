@@ -17,6 +17,9 @@ struct SettingsView: View {
     // UI state
     @State private var connectionTestResult: String? = nil
     @State private var isTestingConnection = false
+    @State private var showTagEditor = false
+    @State private var editingTag: Tag? = nil
+    @State private var showImportIdeas = false
 
     var body: some View {
         NavigationStack {
@@ -26,9 +29,14 @@ struct SettingsView: View {
                     Divider().background(Color.white.opacity(0.1))
                     privacySection
                     Divider().background(Color.white.opacity(0.1))
+                    tagsSection
+                    Divider().background(Color.white.opacity(0.1))
+                    importSection
+                    Divider().background(Color.white.opacity(0.1))
                     corpusSection
                     Divider().background(Color.white.opacity(0.1))
                     aboutSection
+                    developerSection
                 }
                 .padding(20)
             }
@@ -200,6 +208,121 @@ struct SettingsView: View {
         !anthropicKey.isEmpty || !openAIKey.isEmpty || !deepSeekKey.isEmpty
     }
 
+    // MARK: - Tags
+
+    private var tagsSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Tags")
+
+            if store.tags.isEmpty {
+                Text("No tags yet — AI will suggest them as you capture ideas.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.35))
+            } else {
+                FlowLayoutSettings(spacing: 8) {
+                    ForEach(store.tags) { tag in
+                        tagPill(tag)
+                    }
+                }
+            }
+
+            Button {
+                editingTag = nil
+                showTagEditor = true
+            } label: {
+                Label("New Tag", systemImage: "plus")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.75))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.09))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .sheet(isPresented: $showTagEditor) {
+            TagEditorSheet(existing: editingTag)
+        }
+    }
+
+    private func tagPill(_ tag: Tag) -> some View {
+        Button {
+            editingTag = tag
+            showTagEditor = true
+        } label: {
+            Text(tag.name)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background((Color(hex: tag.colorHex) ?? .gray).opacity(0.3))
+                .overlay(Capsule().stroke(Color(hex: tag.colorHex) ?? .gray, lineWidth: 1))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Import
+
+    private var importSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Import")
+
+            Button {
+                showImportIdeas = true
+            } label: {
+                HStack {
+                    Image(systemName: "square.and.arrow.down")
+                    Text("Import ideas")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showImportIdeas) {
+                ImportIdeasSheet()
+            }
+
+            Text("Paste a block of text or share a .txt / .md file — each paragraph becomes a node.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.3))
+        }
+    }
+
+    // MARK: - Developer (hidden)
+
+    private var developerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // TODO: remove before App Store release
+            Button {
+                simulateThread()
+            } label: {
+                Text("Simulate thread")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.2))
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 8)
+        }
+    }
+
+    private func simulateThread() {
+        guard store.nodes.count >= 2 else { return }
+        let ids = Array(store.nodes.prefix(2).map { $0.id })
+        let fake = ThreadSuggestion(
+            id: UUID(),
+            nodeIDs: ids,
+            description: "Simulated connection between first two nodes",
+            confidence: 0.99
+        )
+        store.pendingThreads.append(fake)
+    }
+
     // MARK: - Corpus
 
     private var corpusSection: some View {
@@ -308,6 +431,51 @@ struct SettingsView: View {
             try? await Task.sleep(for: .seconds(1))
             connectionTestResult = key.count > 10 ? "✓ Key saved" : "✗ Key too short"
             isTestingConnection = false
+        }
+    }
+}
+
+// MARK: - Wrapping flow layout for tag pills
+
+private struct FlowLayoutSettings: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var height: CGFloat = 0
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if rowWidth + size.width + (rowWidth > 0 ? spacing : 0) > maxWidth {
+                height += rowHeight + spacing
+                rowWidth = size.width
+                rowHeight = size.height
+            } else {
+                rowWidth += size.width + (rowWidth > 0 ? spacing : 0)
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+        height += rowHeight
+        return CGSize(width: maxWidth, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }

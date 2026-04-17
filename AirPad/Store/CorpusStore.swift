@@ -27,6 +27,12 @@ final class CorpusStore {
     /// Thread suggestions waiting to be shown to the user (one at a time in UI).
     var pendingThreads: [ThreadSuggestion] = []
 
+    /// True while NodeDetailView is on screen. ContentView reads this to hide the toggle pill.
+    var isInDetailView = false
+
+    /// Non-nil while a batch import is in progress. ContentView shows a progress banner.
+    var importBatchProgress: (current: Int, total: Int)? = nil
+
     private var dismissedThreadDescriptions: Set<String> = []
 
     /// Nodes after applying the active filter and sort order.
@@ -481,6 +487,58 @@ final class CorpusStore {
 
             try? FileManager.default.removeItem(at: dir)
             nodes.insert(node, at: 0)
+        }
+    }
+
+    // MARK: - Batch import
+
+    /// Parses `text` into nodes and saves them all to iCloud. Non-blocking: progress is
+    /// reflected in `importBatchProgress` so the canvas can show a banner.
+    func batchImportText(_ text: String) async {
+        let formatter = ISO8601DateFormatter()
+        let timestamp = formatter.string(from: Date())
+        let parsedNodes = BatchParser.parse(text: text, importTimestamp: timestamp)
+        guard !parsedNodes.isEmpty else { return }
+
+        let total = parsedNodes.count
+        importBatchProgress = (0, total)
+
+        var newLayout = canvasLayout
+        for (index, node) in parsedNodes.enumerated() {
+            // Scatter imported nodes in a spiral around the origin
+            let angle = Double(index) / Double(total) * 2 * .pi * 2.5
+            let radius = 80.0 + Double(index) * 8.0
+            let pos = CanvasPosition(x: cos(angle) * radius, y: sin(angle) * radius)
+            newLayout.positions[node.id] = pos
+
+            do {
+                try await service.saveNode(node)
+                nodes.insert(node, at: 0)
+            } catch {
+                print("[CorpusStore] Batch import save error: \(error)")
+            }
+            importBatchProgress = (index + 1, total)
+        }
+
+        newLayout.updatedAt = Date()
+        do {
+            try await service.saveCanvasLayout(newLayout)
+            canvasLayout = newLayout
+        } catch {
+            print("[CorpusStore] Batch import layout save error: \(error)")
+        }
+
+        importBatchProgress = nil
+
+        if nodes.count >= 10 {
+            Task { await triggerThreadAnalysis() }
+        }
+
+        // AI title/summary in background (non-blocking)
+        Task {
+            for node in parsedNodes {
+                await processNodeWithAI(nodeID: node.id)
+            }
         }
     }
 

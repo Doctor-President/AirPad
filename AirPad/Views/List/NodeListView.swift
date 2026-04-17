@@ -20,9 +20,19 @@ struct NodeListView: View {
     @State private var scrolledID: String? = nil
     @State private var isJumping = false
 
+    @State private var fanExpanded = false
+    @State private var captureMode: ListCaptureMode? = nil
+    @State private var captureTargetNodeID: String? = nil
+    @State private var showingNodePicker = false
+
     private let cardHeight: CGFloat = 168
     private let cardSpacing: CGFloat = 12
     private let haptic = UISelectionFeedbackGenerator()
+
+    enum ListCaptureMode: String, Identifiable {
+        case voice, text, camera
+        var id: String { rawValue }
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -30,10 +40,33 @@ struct NodeListView: View {
                 ZStack {
                     Color.black.ignoresSafeArea()
                     listContent(containerHeight: geo.size.height)
+                    ActionButtonFan(
+                        isExpanded: $fanExpanded,
+                        isEmpty: store.nodes.isEmpty,
+                        onVoice:       { captureMode = .voice },
+                        onCamera:      { captureMode = .camera },
+                        onText:        { captureMode = .text },
+                        onNodePicker:  { showingNodePicker = true },
+                        onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
+                    )
                 }
                 .navigationDestination(for: Node.self) { node in
                     NodeDetailView(nodeID: node.id)
                         .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
+                }
+                .sheet(item: $captureMode) { mode in
+                    switch mode {
+                    case .voice:  VoiceCaptureSheet(targetNodeID: captureTargetNodeID)
+                    case .text:   TextCaptureSheet(targetNodeID: captureTargetNodeID)
+                    case .camera: CameraCaptureView(targetNodeID: captureTargetNodeID)
+                    }
+                }
+                .sheet(isPresented: $showingNodePicker) {
+                    NodePickerSheet(selectedNodeID: $captureTargetNodeID)
+                }
+                .onChange(of: captureMode) { _, mode in
+                    if mode != nil { fanExpanded = false }
+                    if mode == nil { captureTargetNodeID = nil }
                 }
             }
         }

@@ -31,24 +31,39 @@ struct ContentView: View {
 
             // Persistent top controls — CAMetalLayer rule: lives here in ContentView ZStack,
             // never inside NavigationStack or SpriteKit hierarchy.
-            VStack(spacing: 0) {
-                HStack(alignment: .center) {
-                    ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
-                        var s = store.filterState
-                        s.viewMode = mode
-                        store.filterState = s
-                    }
-                    Spacer()
-                    HStack(spacing: 10) {
-                        SettingsButton { showSettings = true }
-                        FilterButton(activeCount: store.filterState.activeFilterCount) {
-                            showFilterPanel = true
+            // Hidden while NodeDetailView is on screen to avoid overlap with node title.
+            if !store.isInDetailView {
+                VStack(spacing: 0) {
+                    HStack(alignment: .center) {
+                        ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
+                            var s = store.filterState
+                            s.viewMode = mode
+                            store.filterState = s
+                        }
+                        Spacer()
+                        HStack(spacing: 10) {
+                            SettingsButton { showSettings = true }
+                            FilterButton(activeCount: store.filterState.activeFilterCount) {
+                                showFilterPanel = true
+                            }
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 58)
+                    Spacer()
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 58)
-                Spacer()
+                .transition(.opacity.animation(.easeInOut(duration: 0.18)))
+            }
+
+            // Import progress banner
+            if let progress = store.importBatchProgress {
+                VStack {
+                    Spacer()
+                    ImportProgressBanner(current: progress.current, total: progress.total)
+                        .padding(.bottom, 108)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+                .animation(.spring(response: 0.35), value: store.importBatchProgress != nil)
             }
 
             // Thread suggestion card — bottom of screen, above the action button
@@ -303,6 +318,28 @@ struct FilterPanelView: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Import progress banner
+
+private struct ImportProgressBanner: View {
+    let current: Int
+    let total: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ProgressView()
+                .tint(.white)
+                .scaleEffect(0.75)
+            Text("Importing \(total) ideas… (\(current)/\(total) processed)")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 9)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
     }
 }
 

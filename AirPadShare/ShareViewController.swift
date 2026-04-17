@@ -51,7 +51,13 @@ final class ShareViewController: SLComposeServiceViewController {
                     provider.loadItem(forTypeIdentifier: UTType.data.identifier) { item, _ in
                         defer { group.leave() }
                         guard let url = item as? URL else { return }
-                        nodes.append(Self.makeDocumentNode(fileURL: url))
+                        let ext = url.pathExtension.lowercased()
+                        if (ext == "txt" || ext == "md"),
+                           let content = try? String(contentsOf: url, encoding: .utf8) {
+                            nodes.append(contentsOf: Self.makeBatchNodes(text: content))
+                        } else {
+                            nodes.append(Self.makeDocumentNode(fileURL: url))
+                        }
                     }
                 }
             }
@@ -219,6 +225,12 @@ final class ShareViewController: SLComposeServiceViewController {
             stageMedia(nodeID: nodeID, itemID: itemID, data: data, ext: ext)
         }
         return node
+    }
+
+    private static func makeBatchNodes(text: String) -> [Node] {
+        let formatter = ISO8601DateFormatter()
+        let timestamp = formatter.string(from: Date())
+        return BatchParser.parse(text: text, importTimestamp: timestamp)
     }
 
     // MARK: - Staging helpers

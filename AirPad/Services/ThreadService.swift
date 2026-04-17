@@ -17,7 +17,7 @@ struct ThreadSuggestion: Identifiable, Equatable {
 struct ThreadSuggestionAI {
     @Guide(description: "IDs of the 2–4 connected nodes from the provided list, comma-separated. Must be exact IDs from the input.")
     var nodeIDsCSV: String
-    @Guide(description: "One specific sentence describing the latent connection between the nodes. Be concrete, not vague.")
+    @Guide(description: "One crisp observation sentence (max 20 words) describing the non-obvious connection between the nodes. Be concrete, not vague. No paragraph — one sentence only.")
     var description: String
     @Guide(description: "Confidence 0.0–1.0. Use 0.0 if the connection is weak or obvious.")
     var confidence: Double
@@ -28,21 +28,21 @@ struct ThreadSuggestionAI {
 struct CorpusAnalysisResult {
     @Guide(description: "Thread 1 node IDs, comma-separated. Empty string if no thread 1.")
     var thread1NodeIDs: String
-    @Guide(description: "Thread 1 description. Empty string if no thread 1.")
+    @Guide(description: "Thread 1: one crisp sentence (max 20 words) on the non-obvious connection. Empty string if no thread 1.")
     var thread1Description: String
     @Guide(description: "Thread 1 confidence 0.0–1.0. Use 0.0 if no thread 1.")
     var thread1Confidence: Double
 
     @Guide(description: "Thread 2 node IDs, comma-separated. Empty string if no thread 2.")
     var thread2NodeIDs: String
-    @Guide(description: "Thread 2 description. Empty string if no thread 2.")
+    @Guide(description: "Thread 2: one crisp sentence (max 20 words) on the non-obvious connection. Empty string if no thread 2.")
     var thread2Description: String
     @Guide(description: "Thread 2 confidence 0.0–1.0. Use 0.0 if no thread 2.")
     var thread2Confidence: Double
 
     @Guide(description: "Thread 3 node IDs, comma-separated. Empty string if no thread 3.")
     var thread3NodeIDs: String
-    @Guide(description: "Thread 3 description. Empty string if no thread 3.")
+    @Guide(description: "Thread 3: one crisp sentence (max 20 words) on the non-obvious connection. Empty string if no thread 3.")
     var thread3Description: String
     @Guide(description: "Thread 3 confidence 0.0–1.0. Use 0.0 if no thread 3.")
     var thread3Confidence: Double

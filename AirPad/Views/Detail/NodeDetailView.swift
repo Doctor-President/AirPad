@@ -43,6 +43,7 @@ struct NodeDetailView: View {
             }
         }
         .onAppear {
+            store.isInDetailView = true
             if let node {
                 editedTitle   = node.title
                 editedSummary = node.summary
@@ -50,6 +51,7 @@ struct NodeDetailView: View {
             }
         }
         .onDisappear {
+            store.isInDetailView = false
             saveIfChanged()
         }
         .confirmationDialog(

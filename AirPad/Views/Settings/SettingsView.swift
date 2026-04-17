@@ -20,6 +20,7 @@ struct SettingsView: View {
     @State private var showTagEditor = false
     @State private var editingTag: Tag? = nil
     @State private var showImportIdeas = false
+    @State private var showReviewQueue = false
 
     var body: some View {
         NavigationStack {
@@ -32,6 +33,8 @@ struct SettingsView: View {
                     tagsSection
                     Divider().background(Color.white.opacity(0.1))
                     importSection
+                    Divider().background(Color.white.opacity(0.1))
+                    reviewSection
                     Divider().background(Color.white.opacity(0.1))
                     corpusSection
                     Divider().background(Color.white.opacity(0.1))
@@ -288,6 +291,51 @@ struct SettingsView: View {
             }
 
             Text("Paste a block of text or share a .txt / .md file — each paragraph becomes a node.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.3))
+        }
+    }
+
+    // MARK: - Review queue
+
+    private var reviewSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            sectionHeader("Review")
+
+            Button {
+                showReviewQueue = true
+            } label: {
+                HStack {
+                    Image(systemName: "tray.and.arrow.down")
+                    Text("Flagged ideas")
+                    Spacer()
+                    if store.reviewQueue.isEmpty {
+                        Text("Clear")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.3))
+                    } else {
+                        Text("\(store.reviewQueue.count)")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.7))
+                            .clipShape(Capsule())
+                    }
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .sheet(isPresented: $showReviewQueue) {
+                ReviewQueueSheet()
+            }
+
+            Text("Ideas that didn't pass the quality gate during import. Promote or discard — nothing is lost.")
                 .font(.caption)
                 .foregroundStyle(.white.opacity(0.3))
         }

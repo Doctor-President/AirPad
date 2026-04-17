@@ -1,7 +1,7 @@
 import Foundation
 import FoundationModels
 
-// MARK: - Structured output type
+// MARK: - Structured output types
 
 /// Requires iOS 26.0 — @Generable and its synthesised types (GenerationSchema,
 /// GeneratedContent, ConvertibleToGeneratedContent) are all iOS 26.0+.
@@ -16,7 +16,7 @@ struct NodeAIResult {
     @Guide(description: "One to two sentence summary capturing the idea's core essence.")
     var summary: String
 
-    @Guide(description: "Array of 3 to 5 tag names. Use names from the provided vocabulary when they fit. Invent new names only if the vocabulary is empty or none of the existing tags apply.")
+    @Guide(description: "Tag names from the provided vocabulary that are genuinely relevant to this content. Return an empty array if no existing tag clearly applies — do not force a match.")
     var tags: [String]
 
     @Guide(description: "Emotional tone — exactly one word from this fixed set: curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.")
@@ -24,6 +24,13 @@ struct NodeAIResult {
 
     @Guide(description: "Domain classification — exactly one value from: Recipe, Legal, Medical, Nutrition, Dream, Travel, Work, Learning, Family, Art/Project. Use an empty string if none clearly apply.")
     var domain: String
+}
+
+@available(iOS 26.0, *)
+@Generable
+struct CoherenceCheck {
+    @Guide(description: "Is this a complete, standalone idea? Reply with exactly 'Yes' or 'No'.")
+    var answer: String
 }
 
 // MARK: - Service
@@ -51,6 +58,8 @@ actor AIService {
         let prompt = """
         Analyze this captured idea.
         \(vocabLine)
+        Only suggest tags from the vocabulary if they are genuinely relevant to this content. \
+        If no existing tags apply, return an empty tag list. Do not force a match.
 
         Idea:
         \(content)
@@ -72,12 +81,24 @@ actor AIService {
         }
     }
 
+    /// Checks whether a raw text block represents a complete, standalone idea.
+    /// Returns true (coherent), false (incoherent), or nil if the model is unavailable.
+    /// Callers should treat nil as "pass" — never block import when the model is offline.
+    func checkCoherence(_ text: String) async -> Bool? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+        let prompt = "Is this a complete, standalone idea? Yes or No.\n\n\(text)"
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt, generating: CoherenceCheck.self)
+            return response.content.answer.lowercased().hasPrefix("yes")
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Image description (stubbed — vision input added in later session)
 
     func describeImage(_ imageData: Data) async -> String? {
-        // Vision input requires a multimodal session.
-        // The on-device model supports image analysis; this will be wired in Session 4
-        // when the node detail view image enrichment flow is built.
         return nil
     }
 

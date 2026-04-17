@@ -674,6 +674,21 @@ final class CorpusStore {
         }
     }
 
+    // MARK: - Destructive operations
+
+    func clearAllData() async {
+        do {
+            try await service.deleteAllData()
+        } catch {
+            print("[CorpusStore] clearAllData error: \(error)")
+        }
+        nodes = []
+        tags = []
+        canvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+        reviewQueue = []
+        canvasNeedsSync = UUID()
+    }
+
     // MARK: - Review queue
 
     func promoteRejectedBlock(_ block: RejectedBlock) async {

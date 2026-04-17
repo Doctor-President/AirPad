@@ -150,6 +150,22 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode(CanvasLayout.self, from: data)
     }
 
+    // MARK: - Destructive operations
+
+    /// Deletes every node directory (and all contained media), then recreates an empty
+    /// `nodes/` folder, saves an empty canvas layout, and saves an empty tag list.
+    func deleteAllData() throws {
+        let root = try requireRoot()
+        let nodesDir = root.appendingPathComponent("nodes")
+        if FileManager.default.fileExists(atPath: nodesDir.path) {
+            try FileManager.default.removeItem(at: nodesDir)
+        }
+        try FileManager.default.createDirectory(at: nodesDir, withIntermediateDirectories: true)
+        let emptyLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+        try saveCanvasLayout(emptyLayout)
+        try saveTags([])
+    }
+
     // MARK: - Helpers
 
     private func requireRoot() throws -> URL {

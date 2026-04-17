@@ -21,6 +21,7 @@ struct SettingsView: View {
     @State private var editingTag: Tag? = nil
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
+    @State private var showClearConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -398,6 +399,33 @@ struct SettingsView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
+
+            Button {
+                showClearConfirmation = true
+            } label: {
+                HStack {
+                    Image(systemName: "trash")
+                    Text("Clear all nodes")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.red.opacity(0.75))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(Color.red.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .confirmationDialog(
+                "Clear all nodes?",
+                isPresented: $showClearConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Everything", role: .destructive) {
+                    Task { await store.clearAllData() }
+                }
+            } message: {
+                Text("This will permanently delete all nodes and cannot be undone.")
+            }
         }
     }
 

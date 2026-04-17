@@ -13,8 +13,6 @@ private struct ListItem: Identifiable {
 
 struct NodeListView: View {
 
-    @Binding var isShowingDetail: Bool
-
     @Environment(CorpusStore.self) private var store
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
@@ -45,7 +43,7 @@ struct NodeListView: View {
         }
         .onChange(of: store.filteredNodes) { _, _ in buildItems() }
         .onChange(of: store.filterState.sortOrder) { _, _ in buildItems() }
-        .onChange(of: navigationPath) { _, new in isShowingDetail = !new.isEmpty }
+        .onChange(of: navigationPath) { _, new in store.isInDetailView = !new.isEmpty }
     }
 
     // MARK: - Scroll content

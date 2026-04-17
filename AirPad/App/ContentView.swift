@@ -6,20 +6,19 @@ struct ContentView: View {
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
-    @State private var isShowingDetail = false
 
     var body: some View {
         ZStack {
             // Main content — switches between graph and list mode
             Group {
                 if store.filterState.viewMode == .graph {
-                    CanvasView(isShowingDetail: $isShowingDetail)
+                    CanvasView()
                 } else {
-                    NodeListView(isShowingDetail: $isShowingDetail)
+                    NodeListView()
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: store.filterState.viewMode)
-            .onChange(of: store.filterState.viewMode) { _, _ in isShowingDetail = false }
+            .onChange(of: store.filterState.viewMode) { _, _ in store.isInDetailView = false }
 
             // iCloud unavailable banner
             if store.iCloudUnavailable {
@@ -33,7 +32,7 @@ struct ContentView: View {
 
             // Persistent top controls — hidden when a detail view is pushed.
             // CAMetalLayer rule: lives here in ContentView ZStack, never inside NavigationStack or SpriteKit.
-            if !isShowingDetail {
+            if !store.isInDetailView {
                 VStack(spacing: 0) {
                     HStack(alignment: .center) {
                         ViewTogglePill(viewMode: store.filterState.viewMode) { mode in

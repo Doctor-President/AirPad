@@ -4,8 +4,6 @@ import SpriteKit
 /// The real canvas view for Session 2+. Wraps a SpriteKit physics scene with SwiftUI overlays.
 struct CanvasView: View {
 
-    @Binding var isShowingDetail: Bool
-
     @Environment(CorpusStore.self) private var store
     @State private var canvasState = CanvasState()
     @State private var fanExpanded = false
@@ -55,7 +53,7 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.filteredNodes)
         }
-        .onChange(of: navigationPath) { _, new in isShowingDetail = !new.isEmpty }
+        .onChange(of: navigationPath) { _, new in store.isInDetailView = !new.isEmpty }
         .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
             withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
                 fanExpanded = true

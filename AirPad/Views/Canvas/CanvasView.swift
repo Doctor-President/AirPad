@@ -327,6 +327,7 @@ struct CanvasView: View {
                 return (tag.name, color)
             }
         )
+        print("[AirPad][syncScene] nodes=\(nodes.count) storeTags=\(store.tags.count) tagColorMap=\(tagColorMap.count) tagColorMapKeys=\(Array(tagColorMap.keys))")
         scene.syncNodes(
             nodes,
             layoutPositions: store.canvasLayout.positions,

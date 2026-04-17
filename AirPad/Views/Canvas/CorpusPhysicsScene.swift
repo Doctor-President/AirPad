@@ -40,6 +40,7 @@ final class CorpusPhysicsScene: SKScene {
         tagColors: [String: UIColor] = [:],
         newNodeID: String? = nil
     ) {
+        print("[AirPad][syncNodes] nodes=\(nodes.count) tagColors=\(tagColors.count) keys=\(Array(tagColors.keys))")
         self.tagColors = tagColors
         positionMap = layoutPositions
 
@@ -420,8 +421,10 @@ final class CorpusPhysicsScene: SKScene {
 
     private func bubbleColor(for node: Node) -> UIColor {
         if let primaryTag = node.tags.first, let color = tagColors[primaryTag] {
+            print("[AirPad][bubbleColor] ✓ node=\(node.id.prefix(6)) tag='\(primaryTag)' color=\(color)")
             return color
         }
+        print("[AirPad][bubbleColor] GREY node=\(node.id.prefix(6)) nodeTags=\(node.tags) availableKeys=\(Array(tagColors.keys))")
         return UIColor(red: 0.556, green: 0.556, blue: 0.576, alpha: 1.0)
     }
 

@@ -1,5 +1,6 @@
 import SpriteKit
 import UIKit
+import CoreImage
 
 /// The SpriteKit physics canvas that renders nodes as floating blobs on a living dot-field substrate.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
@@ -57,6 +58,8 @@ final class CorpusPhysicsScene: SKScene {
             nodeSprites.removeValue(forKey: id)
             blobPaths.removeValue(forKey: id)
             bubbleBaseRadii.removeValue(forKey: id)
+            glowSprites[id]?.removeFromParent()
+            glowSprites.removeValue(forKey: id)
         }
 
         for node in nodes {
@@ -81,6 +84,9 @@ final class CorpusPhysicsScene: SKScene {
 
     // Per-node base hue for prismatic glow (untagged/neutral nodes)
     private var nodeDefaultHues: [String: CGFloat] = [:]
+
+    // Edge glow nodes — siblings of main sprites, synced in update()
+    private var glowSprites: [String: SKEffectNode] = [:]
 
     // Dot field
     private var dotFieldLayer = SKNode()
@@ -212,7 +218,7 @@ final class CorpusPhysicsScene: SKScene {
             nodeDefaultHues[node.id] = randomPrismaticHue()
         }
         let path = blobPath(for: node.id, radius: radius)
-        let shape = makeBlobShape(path: path, fillColor: bubbleColor(for: node), isMeta: node.isMeta)
+        let shape = makeBlobShape(path: path, fillColor: bubbleColor(for: node), isMeta: node.isMeta, radius: radius)
         shape.name = "node:\(node.id)"
 
         let label = makeTitleLabel(text: node.title, offsetY: -(radius + 6))
@@ -251,6 +257,7 @@ final class CorpusPhysicsScene: SKScene {
             shape.position = CGPoint(x: finalPosition.x, y: finalPosition.y + 60)
             addChild(shape)
             nodeSprites[node.id] = shape
+            if isDarkMode { addGlowNode(for: node.id, path: path, radius: radius) }
 
             let drop = SKAction.move(to: finalPosition, duration: 0.45)
             drop.timingMode = .easeOut
@@ -266,6 +273,7 @@ final class CorpusPhysicsScene: SKScene {
         } else {
             addChild(shape)
             nodeSprites[node.id] = shape
+            if isDarkMode { addGlowNode(for: node.id, path: path, radius: radius) }
         }
     }
 
@@ -319,11 +327,11 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func generateBlobPath(radius: CGFloat) -> CGPath {
-        let n = 7
+        let n = 8
         var pts: [CGPoint] = []
         for i in 0..<n {
             let angle = CGFloat(i) / CGFloat(n) * 2 * .pi - .pi / 2
-            let r = radius * CGFloat.random(in: 0.85...1.15)
+            let r = radius * CGFloat.random(in: 0.67...1.33)
             pts.append(CGPoint(x: cos(angle) * r, y: sin(angle) * r))
         }
 
@@ -361,7 +369,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Shape factory
 
-    private func makeBlobShape(path: CGPath, fillColor: UIColor, isMeta: Bool = false) -> SKShapeNode {
+    private func makeBlobShape(path: CGPath, fillColor: UIColor, isMeta: Bool = false, radius: CGFloat = 0) -> SKShapeNode {
         let shape = SKShapeNode(path: path)
         shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         shape.zPosition = 1
@@ -369,10 +377,62 @@ final class CorpusPhysicsScene: SKScene {
             shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)
             shape.lineWidth = 1.5
         } else {
-            shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
-            shape.lineWidth = 1
+            shape.strokeColor = UIColor.white.withAlphaComponent(0.08)
+            shape.lineWidth = 0.5
+        }
+        if isDarkMode && radius > 0 {
+            shape.fillShader = makeNodeFillShader(radius: radius)
         }
         return shape
+    }
+
+    // MARK: - Solar Flare gradient fill shader
+
+    private func makeNodeFillShader(radius: CGFloat) -> SKShader {
+        // v_tex_coord is in local node space (points) for SKShapeNode fillShader.
+        // u_radius passed so the shader can normalize coordinates to 0–1 UV space.
+        let src = """
+        uniform float u_radius;
+        void main() {
+            vec4 base = SKDefaultShading();
+            float r = u_radius * 1.55;
+            float ux = clamp((v_tex_coord.x / r) * 0.5 + 0.5, 0.0, 1.0);
+            float vy = clamp((v_tex_coord.y / r) * 0.5 + 0.5, 0.0, 1.0);
+            vec3 col = base.rgb;
+            // Amber bloom from top-right (SpriteKit y-up: v=1 is top)
+            float dTopRight = length(vec2(1.0 - ux, 1.0 - vy));
+            col = mix(col, vec3(0.98, 0.60, 0.22), smoothstep(0.85, 0.0, dTopRight) * 0.62);
+            // Dark maroon shadow at lower-right
+            float dLowRight = length(vec2(1.0 - ux, vy));
+            col = mix(col, vec3(0.18, 0.03, 0.06), smoothstep(0.55, 0.05, dLowRight) * 0.48);
+            // Light comes from perimeter: center darker, edges brighter
+            float dist = clamp(length(v_tex_coord) / r, 0.0, 1.0);
+            float bright = mix(0.58, 1.18, smoothstep(0.0, 0.70, dist));
+            col = clamp(col * bright, 0.0, 1.0);
+            gl_FragColor = vec4(col, base.a);
+        }
+        """
+        let shader = SKShader(source: src)
+        shader.uniforms = [SKUniform(name: "u_radius", float: Float(radius))]
+        return shader
+    }
+
+    // MARK: - Solar Flare edge glow
+
+    private func addGlowNode(for nodeID: String, path: CGPath, radius: CGFloat) {
+        let effect = SKEffectNode()
+        effect.shouldRasterize = true
+        effect.filter = CIFilter(name: "CIGaussianBlur", parameters: ["inputRadius": 11 as NSNumber])
+
+        let glowBlob = SKShapeNode(path: path)
+        glowBlob.fillColor = UIColor.white.withAlphaComponent(0.20)
+        glowBlob.strokeColor = .clear
+        glowBlob.setScale(1.22)
+        effect.addChild(glowBlob)
+
+        effect.zPosition = 0.8
+        addChild(effect)
+        glowSprites[nodeID] = effect
     }
 
     private func makeTitleLabel(text: String, offsetY: CGFloat) -> SKLabelNode {
@@ -418,6 +478,13 @@ final class CorpusPhysicsScene: SKScene {
         if abs(scale - lastLabelScale) > 0.06 {
             lastLabelScale = scale
             updateLabelVisibility(cameraScale: scale)
+        }
+
+        // Sync edge-glow positions to their blob sprites (Solar Flare only)
+        if isDarkMode {
+            for (id, shape) in nodeSprites {
+                glowSprites[id]?.position = shape.position
+            }
         }
 
         // Ambient drift — gentle impulses every few seconds

@@ -117,15 +117,23 @@ struct ActionButtonFan: View {
                         isExpanded.toggle()
                     }
                 } label: {
-                    Image(systemName: isExpanded ? "xmark" : "plus")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.black)
-                        .frame(width: 56, height: 56)
-                        .background(.white)
-                        .clipShape(Circle())
-                        .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
-                        .rotationEffect(.degrees(isExpanded ? 45 : 0))
-                        .animation(.spring(response: 0.32, dampingFraction: 0.68), value: isExpanded)
+                    ZStack {
+                        // Soft luminous halo — same light source as the nodes
+                        Circle()
+                            .fill(Color.white.opacity(0.12))
+                            .frame(width: 76, height: 76)
+                            .blur(radius: 10)
+
+                        Image(systemName: isExpanded ? "xmark" : "plus")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(.black)
+                            .frame(width: 56, height: 56)
+                            .background(.white)
+                            .clipShape(Circle())
+                            .shadow(color: .white.opacity(0.20), radius: 10, y: 2)
+                    }
+                    .rotationEffect(.degrees(isExpanded ? 45 : 0))
+                    .animation(.spring(response: 0.32, dampingFraction: 0.68), value: isExpanded)
                 }
                 .simultaneousGesture(
                     LongPressGesture(minimumDuration: 0.35)

@@ -9,6 +9,20 @@ private struct ListItem: Identifiable {
     var realNodeID: String { String(id.dropFirst(id.hasPrefix("real-") ? 5 : id.hasPrefix("sent-start-") ? 11 : 10)) }
 }
 
+// MARK: - Card palettes (Solar Flare token set from Claude Design)
+
+private struct CardPalette { let a, b, c, d: Color }
+
+private let cardPalettes: [CardPalette] = [
+    CardPalette(a: Color(hex: "#7A52FF")!, b: Color(hex: "#E36B4E")!, c: Color(hex: "#B857D4")!, d: Color(hex: "#C43C2A")!),
+    CardPalette(a: Color(hex: "#3B2AB8")!, b: Color(hex: "#B857D4")!, c: Color(hex: "#7A52FF")!, d: Color(hex: "#E36B4E")!),
+    CardPalette(a: Color(hex: "#C43C2A")!, b: Color(hex: "#E36B4E")!, c: Color(hex: "#B857D4")!, d: Color(hex: "#7A52FF")!),
+    CardPalette(a: Color(hex: "#5B21B6")!, b: Color(hex: "#C43C2A")!, c: Color(hex: "#7A52FF")!, d: Color(hex: "#E36B4E")!),
+    CardPalette(a: Color(hex: "#B857D4")!, b: Color(hex: "#E36B4E")!, c: Color(hex: "#C43C2A")!, d: Color(hex: "#FFD7C2")!),
+    CardPalette(a: Color(hex: "#1D3DBF")!, b: Color(hex: "#7A52FF")!, c: Color(hex: "#B857D4")!, d: Color(hex: "#C43C2A")!),
+    CardPalette(a: Color(hex: "#9D174D")!, b: Color(hex: "#B857D4")!, c: Color(hex: "#7A52FF")!, d: Color(hex: "#E36B4E")!),
+]
+
 // MARK: - NodeListView
 
 struct NodeListView: View {
@@ -92,8 +106,10 @@ struct NodeListView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: cardSpacing) {
                     ForEach(displayItems) { item in
+                        let paletteIndex = store.filteredNodes.firstIndex(where: { $0.id == item.realNodeID }) ?? 0
                         NodeCard(
                             node: item.node,
+                            paletteIndex: paletteIndex,
                             namespace: zoomNamespace,
                             screenMidY: screenMidY,
                             isSelected: scrolledID == item.id,
@@ -165,6 +181,7 @@ struct NodeListView: View {
 
 private struct NodeCard: View {
     let node: Node
+    let paletteIndex: Int
     let namespace: Namespace.ID
     let screenMidY: CGFloat
     let isSelected: Bool
@@ -172,32 +189,56 @@ private struct NodeCard: View {
 
     @Environment(CorpusStore.self) private var store
 
+    private let cornerR: CGFloat = 30
+    private var pal: CardPalette { cardPalettes[paletteIndex % cardPalettes.count] }
+    private var isFinished: Bool { !node.needsAIProcessing }
+
     var body: some View {
         ZStack {
-            // Luminous glow border — only for the centered/selected card
-            if isSelected {
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(primaryTagColor.opacity(0.30))
-                    .blur(radius: 12)
-                    .padding(-10)
+            // Outer bloom — soft radial glow behind the card face
+            if isFinished {
+                RoundedRectangle(cornerRadius: cornerR)
+                    .fill(
+                        RadialGradient(
+                            colors: [pal.a.opacity(0.53), .clear],
+                            center: .leading,
+                            startRadius: 0,
+                            endRadius: 200
+                        )
+                    )
+                    .blur(radius: isSelected ? 44 : 28)
+                    .opacity(isSelected ? 0.92 : 0.58)
+                    .padding(isSelected ? -56 : -32)
+                    .animation(.timingCurve(0.2, 0.7, 0.2, 1, duration: 0.5), value: isSelected)
             }
 
             // Card face
             ZStack(alignment: .trailing) {
-                // Gradient fill — tag color bleeding into warm amber/sienna
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(cardGradient)
-
-                // Inner perimeter light (silk-like bloom from edges)
-                RoundedRectangle(cornerRadius: 20)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1
-                    )
+                if isFinished {
+                    // Gradient fill — 3-stop palette, leading → trailing
+                    RoundedRectangle(cornerRadius: cornerR)
+                        .fill(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: pal.a, location: 0.00),
+                                    .init(color: pal.b, location: 0.45),
+                                    .init(color: pal.d, location: 1.00),
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .opacity(isSelected ? 1.0 : 0.72)
+                        .animation(.timingCurve(0.2, 0.7, 0.2, 1, duration: 0.38), value: isSelected)
+                } else {
+                    // Unfinished / needs-review: dark surface
+                    RoundedRectangle(cornerRadius: cornerR)
+                        .fill(Color(white: 0.063, opacity: 0.94))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cornerR)
+                                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                        )
+                }
 
                 // Photo thumbnail — bleeds into trailing edge when image items present
                 if let thumbnailImage = firstThumbnail {
@@ -206,11 +247,11 @@ private struct NodeCard: View {
                         Image(uiImage: thumbnailImage)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 88, height: 168)
+                            .frame(width: 88, height: cardHeight)
                             .clipped()
                             .overlay(
                                 LinearGradient(
-                                    colors: [primaryTagColor, .clear],
+                                    colors: [pal.a, .clear],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -220,7 +261,7 @@ private struct NodeCard: View {
                             .clipShape(
                                 .rect(
                                     topLeadingRadius: 0, bottomLeadingRadius: 0,
-                                    bottomTrailingRadius: 20, topTrailingRadius: 20
+                                    bottomTrailingRadius: cornerR, topTrailingRadius: cornerR
                                 )
                             )
                     }
@@ -232,11 +273,13 @@ private struct NodeCard: View {
                         .font(.headline)
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                        .shadow(color: .black.opacity(isFinished ? 0.4 : 0), radius: 3, y: 1)
 
                     Text(node.summary.isEmpty ? "—" : node.summary)
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.65))
+                        .foregroundStyle(.white.opacity(isFinished ? 0.84 : 0.60))
                         .lineLimit(2)
+                        .shadow(color: .black.opacity(isFinished ? 0.35 : 0), radius: 2, y: 1)
 
                     Spacer(minLength: 0)
 
@@ -253,13 +296,22 @@ private struct NodeCard: View {
                         } else {
                             Text(relativeTimestamp(node.createdAt))
                                 .font(.caption)
-                                .foregroundStyle(.white.opacity(0.38))
+                                .foregroundStyle(.white.opacity(isFinished ? 0.75 : 0.45))
                         }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
                 .padding(.trailing, firstThumbnail != nil ? 80 : 0)
+
+                // Inner rim glow — perimeter light, screen blend
+                if isFinished {
+                    RoundedRectangle(cornerRadius: cornerR)
+                        .stroke(Color.white.opacity(isSelected ? 0.60 : 0.35), lineWidth: 1.5)
+                        .blur(radius: 3)
+                        .blendMode(.overlay)
+                        .allowsHitTesting(false)
+                }
             }
         }
         .matchedTransitionSource(id: node.id, in: namespace)
@@ -276,46 +328,9 @@ private struct NodeCard: View {
         }
     }
 
-    // MARK: - Gradient
-
-    // Two-stop diagonal gradient: tag color on the left, warm amber on the right.
-    // No dark stop — the dark maroon in the previous version was eating too much
-    // of the card's visible area and making everything read as flat grey.
-    private var cardGradient: LinearGradient {
-        LinearGradient(
-            stops: [
-                .init(color: primaryTagColor, location: 0),
-                .init(color: warmAccentColor, location: 1)
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-    }
-
-    private var primaryTagColor: Color {
-        guard let name = node.tags.first,
-              let tag = store.tags.first(where: { $0.name == name })
-        else { return Color(hue: 0.72, saturation: 0.60, brightness: 0.72) }
-        return Color(hex: tag.colorHex) ?? Color(hue: 0.72, saturation: 0.60, brightness: 0.72)
-    }
-
-    // Warm amber/sienna secondary — always shifts toward orange-red regardless of tag
-    private var warmAccentColor: Color {
-        guard let name = node.tags.first,
-              let tag = store.tags.first(where: { $0.name == name }),
-              let base = UIColor(hex: tag.colorHex)
-        else { return Color(hue: 0.04, saturation: 0.80, brightness: 0.82) }
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        base.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        // Rotate hue toward warm (0.04 = orange-red); blend 70% toward warm + 30% original
-        let warmH = h * 0.30 + 0.04 * 0.70
-        return Color(UIColor(hue: warmH,
-                             saturation: min(s * 1.10, 1),
-                             brightness: min(b * 1.10, 1),
-                             alpha: a))
-    }
-
     // MARK: - Thumbnail
+
+    private var cardHeight: CGFloat { 168 }
 
     private var firstThumbnail: UIImage? {
         guard let item = node.items.first(where: { $0.type == .image }),

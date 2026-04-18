@@ -83,7 +83,7 @@ struct ContentView: View {
                                             .foregroundStyle(Color.white.opacity(isSelected ? 1.0 : 0.65))
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 5)
-                                            .background(Color.black.opacity(isSelected ? 0.50 : 0.30))
+                                            .background(Color.white.opacity(isSelected ? 0.08 : 0.03))
                                             .clipShape(Capsule())
                                             .overlay(
                                                 Capsule().stroke(
@@ -92,8 +92,8 @@ struct ContentView: View {
                                                         center: .center,
                                                         startAngle: .degrees(prismaticPhase * 360),
                                                         endAngle: .degrees(prismaticPhase * 360 + 360)
-                                                    ).opacity(isSelected ? 1.0 : 0.38),
-                                                    lineWidth: isSelected ? 1.5 : 1.0
+                                                    ).opacity(isSelected ? 1.0 : 0.40),
+                                                    lineWidth: isSelected ? 1.2 : 0.7
                                                 )
                                             )
                                     }
@@ -191,8 +191,10 @@ struct ContentView: View {
 
     private var ghostQueryField: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 24)
-                .fill(Color.black.opacity(0.35))
+            // Glass backdrop
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .opacity(0.55)
 
             if ghostActive {
                 TextField("", text: $ghostText)
@@ -208,11 +210,8 @@ struct ContentView: View {
                     .foregroundStyle(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.48),
-                                Color(
-                                    hue: (prismaticPhase * 0.4 + 0.65).truncatingRemainder(dividingBy: 1),
-                                    saturation: 0.55, brightness: 1.0
-                                ).opacity(0.52)
+                                Color(hex: "#B857D4")!.opacity(0.65),
+                                Color(hex: "#E36B4E")!.opacity(0.65),
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
@@ -229,16 +228,18 @@ struct ContentView: View {
         }
         .frame(height: 48)
         .overlay(
-            RoundedRectangle(cornerRadius: 24).stroke(
+            Capsule().stroke(
                 AngularGradient(
                     colors: solarPrismaticColors,
                     center: .center,
                     startAngle: .degrees(prismaticPhase * 360),
                     endAngle: .degrees(prismaticPhase * 360 + 360)
-                ).opacity(ghostActive ? 1.0 : 0.55),
-                lineWidth: ghostActive ? 1.5 : 1.0
+                ),
+                lineWidth: 0.8
             )
+            .opacity(0.55)
         )
+        .shadow(color: Color(hex: "#8A6EF0")!.opacity(0.18), radius: 24)
     }
 
     private let solarPrismaticColors: [Color] = [

@@ -118,7 +118,7 @@ struct ActionButtonFan: View {
                     }
                 } label: {
                     ZStack {
-                        // Soft luminous halo — same light source as the nodes
+                        // Soft white halo behind the button
                         Circle()
                             .fill(Color.white.opacity(0.12))
                             .frame(width: 76, height: 76)
@@ -126,11 +126,22 @@ struct ActionButtonFan: View {
 
                         Image(systemName: isExpanded ? "xmark" : "plus")
                             .font(.title2.weight(.semibold))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(.white)
                             .frame(width: 56, height: 56)
-                            .background(.white)
+                            .background(
+                                LinearGradient(
+                                    colors: [
+                                        Color(hex: "#7A52FF")!,
+                                        Color(hex: "#B857D4")!,
+                                        Color(hex: "#E36B4E")!,
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
                             .clipShape(Circle())
-                            .shadow(color: .white.opacity(0.20), radius: 10, y: 2)
+                            .shadow(color: Color(hex: "#B857D4")!.opacity(0.35), radius: 24, y: 6)
+                            .shadow(color: Color(hex: "#E36B4E")!.opacity(0.18), radius: 30)
                     }
                     .rotationEffect(.degrees(isExpanded ? 45 : 0))
                     .animation(.spring(response: 0.32, dampingFraction: 0.68), value: isExpanded)

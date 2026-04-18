@@ -385,6 +385,18 @@ final class CorpusPhysicsScene: SKScene {
             shape.fillTexture = whiteUVTexture
             shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
             shape.fillShader = nodeFillShader
+
+            // Inner edge glow — 92% scale blob in screen blend, warm cream colour
+            var innerTransform = CGAffineTransform(scaleX: 0.92, y: 0.92)
+            if let innerPath = path.copy(using: &innerTransform) {
+                let innerGlow = SKShapeNode(path: innerPath)
+                // #FFE8D5 — warm cream matching the token highlight colour
+                innerGlow.fillColor = UIColor(red: 1.0, green: 0.910, blue: 0.835, alpha: 0.55)
+                innerGlow.strokeColor = .clear
+                innerGlow.blendMode = .screen
+                innerGlow.zPosition = 2
+                shape.addChild(innerGlow)
+            }
         } else {
             shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         }
@@ -406,30 +418,42 @@ final class CorpusPhysicsScene: SKScene {
         return SKTexture(image: img)
     }()
 
-    // Gradient fill shader — works correctly only after fillTexture is set to a
-    // non-nil texture so v_tex_coord sweeps 0→1 across the shape's bounding box.
-    // SKDefaultShading() returns fillColor * fillTexture_sample; because the texture
-    // is all-white the result equals fillColor, so prismatic cycling still works.
+    // 4-corner palette gradient matching Claude Design tokens.
+    // v_tex_coord: (0,0) = bottom-left, (1,1) = top-right (SpriteKit y-up).
+    // Corner assignments:   top-left → purple, top-right → ember,
+    //                       bottom-left → magenta, bottom-right → coral.
+    // Centre is darkened; a warm highlight sheen sits slightly above mid.
+    // base.a is preserved so meta-node alpha (0.55) still applies.
     private func makeNodeFillShader() -> SKShader {
         let src = """
         void main() {
             vec4 base = SKDefaultShading();
-            // v_tex_coord is now valid UV: (0,0) = bottom-left of bounding box,
-            // (1,1) = top-right. SpriteKit uses y-up so v=1 is the top of the node.
-            float u = v_tex_coord.x;
-            float v = v_tex_coord.y;
-            vec3 col = base.rgb;
-            // Amber bloom from top-right (SpriteKit: u=1 right, v=1 top)
-            float dTopRight = length(vec2(1.0 - u, 1.0 - v));
-            col = mix(col, vec3(0.98, 0.60, 0.22), smoothstep(0.85, 0.0, dTopRight) * 0.62);
-            // Dark maroon shadow at lower-right (u=1, v=0)
-            float dLowRight = length(vec2(1.0 - u, v));
-            col = mix(col, vec3(0.18, 0.03, 0.06), smoothstep(0.55, 0.05, dLowRight) * 0.48);
-            // Light from perimeter: centre is darker, edges brighter
-            float dist = length(vec2(u - 0.5, v - 0.5)) * 1.414;
-            float bright = mix(0.58, 1.18, smoothstep(0.0, 0.70, dist));
-            col = clamp(col * bright, 0.0, 1.0);
-            gl_FragColor = vec4(col, base.a);
+            vec2 uv = v_tex_coord;
+
+            // Gradient palette — Solar Flare token colours
+            vec4 purple   = vec4(0.478, 0.322, 1.000, 1.0);  // #7A52FF top-left
+            vec4 coral    = vec4(0.890, 0.420, 0.306, 1.0);  // #E36B4E bottom-right
+            vec4 ember    = vec4(0.769, 0.235, 0.165, 1.0);  // #C43C2A top-right
+            vec4 magenta  = vec4(0.722, 0.341, 0.831, 1.0);  // #B857D4 bottom-left
+            vec4 hilight  = vec4(1.000, 0.843, 0.761, 1.0);  // #FFD7C2 sheen
+
+            // Bilinear corner weights
+            float tl = (1.0 - uv.x) * uv.y;        // top-left
+            float br = uv.x * (1.0 - uv.y);         // bottom-right
+            float tr = uv.x * uv.y;                 // top-right
+            float bl = (1.0 - uv.x) * (1.0 - uv.y);// bottom-left
+
+            vec4 col = purple * tl + coral * br + ember * tr + magenta * bl;
+
+            // Centre darkening — light comes from the perimeter
+            float dist = distance(uv, vec2(0.5));
+            col = mix(col * 0.62, col, smoothstep(0.0, 0.5, dist));
+
+            // Warm highlight sheen — slightly above centre
+            float sheen = exp(-distance(uv, vec2(0.5, 0.62)) * 8.0);
+            col += hilight * sheen * 0.45;
+
+            gl_FragColor = vec4(clamp(col.rgb, 0.0, 1.0), base.a);
         }
         """
         return SKShader(source: src)
@@ -443,7 +467,8 @@ final class CorpusPhysicsScene: SKScene {
     private func addGlowNode(for nodeID: String, path: CGPath, radius: CGFloat) {
         let effect = SKEffectNode()
         effect.shouldRasterize = true
-        effect.filter = CIFilter(name: "CIGaussianBlur", parameters: ["inputRadius": 11 as NSNumber])
+        // blurNodeHalo = 36px per token spec
+        effect.filter = CIFilter(name: "CIGaussianBlur", parameters: ["inputRadius": 36 as NSNumber])
 
         let glowBlob = SKShapeNode(path: path)
         glowBlob.fillColor = UIColor.white.withAlphaComponent(0.20)

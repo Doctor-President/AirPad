@@ -278,40 +278,41 @@ private struct NodeCard: View {
 
     // MARK: - Gradient
 
+    // Two-stop diagonal gradient: tag color on the left, warm amber on the right.
+    // No dark stop — the dark maroon in the previous version was eating too much
+    // of the card's visible area and making everything read as flat grey.
     private var cardGradient: LinearGradient {
         LinearGradient(
             stops: [
                 .init(color: primaryTagColor, location: 0),
-                .init(color: warmAccentColor, location: 0.55),
-                .init(color: darkShadowColor, location: 1)
+                .init(color: warmAccentColor, location: 1)
             ],
-            startPoint: .bottomLeading,
-            endPoint: .topTrailing
+            startPoint: .leading,
+            endPoint: .trailing
         )
     }
 
     private var primaryTagColor: Color {
         guard let name = node.tags.first,
               let tag = store.tags.first(where: { $0.name == name })
-        else { return Color(hue: 0.72, saturation: 0.55, brightness: 0.70) }
-        return Color(hex: tag.colorHex) ?? Color(hue: 0.72, saturation: 0.55, brightness: 0.70)
+        else { return Color(hue: 0.72, saturation: 0.60, brightness: 0.72) }
+        return Color(hex: tag.colorHex) ?? Color(hue: 0.72, saturation: 0.60, brightness: 0.72)
     }
 
-    // Warm amber/peach secondary — always toward orange-red regardless of tag
+    // Warm amber/sienna secondary — always shifts toward orange-red regardless of tag
     private var warmAccentColor: Color {
         guard let name = node.tags.first,
               let tag = store.tags.first(where: { $0.name == name }),
               let base = UIColor(hex: tag.colorHex)
-        else { return Color(hue: 0.05, saturation: 0.75, brightness: 0.80) }
+        else { return Color(hue: 0.04, saturation: 0.80, brightness: 0.82) }
         var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         base.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        let warmH = h * 0.25 + 0.04
-        return Color(UIColor(hue: warmH, saturation: min(s * 1.15, 1), brightness: min(b * 1.15, 1), alpha: a))
-    }
-
-    // Dark maroon edge shadow
-    private var darkShadowColor: Color {
-        Color(red: 0.12, green: 0.02, blue: 0.06)
+        // Rotate hue toward warm (0.04 = orange-red); blend 70% toward warm + 30% original
+        let warmH = h * 0.30 + 0.04 * 0.70
+        return Color(UIColor(hue: warmH,
+                             saturation: min(s * 1.10, 1),
+                             brightness: min(b * 1.10, 1),
+                             alpha: a))
     }
 
     // MARK: - Thumbnail

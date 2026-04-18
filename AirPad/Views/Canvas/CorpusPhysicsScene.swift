@@ -371,7 +371,6 @@ final class CorpusPhysicsScene: SKScene {
 
     private func makeBlobShape(path: CGPath, fillColor: UIColor, isMeta: Bool = false, radius: CGFloat = 0) -> SKShapeNode {
         let shape = SKShapeNode(path: path)
-        shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         shape.zPosition = 1
         if isMeta {
             shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)
@@ -380,42 +379,64 @@ final class CorpusPhysicsScene: SKScene {
             shape.strokeColor = UIColor.white.withAlphaComponent(0.08)
             shape.lineWidth = 0.5
         }
-        if isDarkMode && radius > 0 {
-            shape.fillShader = makeNodeFillShader(radius: radius)
+        if isDarkMode {
+            // fillTexture must be non-nil before assigning fillShader so the GPU
+            // emits valid v_tex_coord UV (0→1) instead of undefined zeros.
+            shape.fillTexture = whiteUVTexture
+            shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
+            shape.fillShader = nodeFillShader
+        } else {
+            shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         }
         return shape
     }
 
     // MARK: - Solar Flare gradient fill shader
 
-    private func makeNodeFillShader(radius: CGFloat) -> SKShader {
-        // v_tex_coord is in local node space (points) for SKShapeNode fillShader.
-        // u_radius passed so the shader can normalize coordinates to 0–1 UV space.
+    // A shared 128×128 all-white texture. Setting fillTexture on an SKShapeNode
+    // forces the GPU to emit proper 0→1 UV coordinates into v_tex_coord for every
+    // fragment. Without a fillTexture, v_tex_coord is undefined (effectively zero
+    // everywhere), which makes the shader produce a uniform colour instead of a gradient.
+    private lazy var whiteUVTexture: SKTexture = {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 128, height: 128))
+        let img = renderer.image { ctx in
+            UIColor.white.setFill()
+            ctx.fill(CGRect(origin: .zero, size: CGSize(width: 128, height: 128)))
+        }
+        return SKTexture(image: img)
+    }()
+
+    // Gradient fill shader — works correctly only after fillTexture is set to a
+    // non-nil texture so v_tex_coord sweeps 0→1 across the shape's bounding box.
+    // SKDefaultShading() returns fillColor * fillTexture_sample; because the texture
+    // is all-white the result equals fillColor, so prismatic cycling still works.
+    private func makeNodeFillShader() -> SKShader {
         let src = """
-        uniform float u_radius;
         void main() {
             vec4 base = SKDefaultShading();
-            float r = u_radius * 1.55;
-            float ux = clamp((v_tex_coord.x / r) * 0.5 + 0.5, 0.0, 1.0);
-            float vy = clamp((v_tex_coord.y / r) * 0.5 + 0.5, 0.0, 1.0);
+            // v_tex_coord is now valid UV: (0,0) = bottom-left of bounding box,
+            // (1,1) = top-right. SpriteKit uses y-up so v=1 is the top of the node.
+            float u = v_tex_coord.x;
+            float v = v_tex_coord.y;
             vec3 col = base.rgb;
-            // Amber bloom from top-right (SpriteKit y-up: v=1 is top)
-            float dTopRight = length(vec2(1.0 - ux, 1.0 - vy));
+            // Amber bloom from top-right (SpriteKit: u=1 right, v=1 top)
+            float dTopRight = length(vec2(1.0 - u, 1.0 - v));
             col = mix(col, vec3(0.98, 0.60, 0.22), smoothstep(0.85, 0.0, dTopRight) * 0.62);
-            // Dark maroon shadow at lower-right
-            float dLowRight = length(vec2(1.0 - ux, vy));
+            // Dark maroon shadow at lower-right (u=1, v=0)
+            float dLowRight = length(vec2(1.0 - u, v));
             col = mix(col, vec3(0.18, 0.03, 0.06), smoothstep(0.55, 0.05, dLowRight) * 0.48);
-            // Light comes from perimeter: center darker, edges brighter
-            float dist = clamp(length(v_tex_coord) / r, 0.0, 1.0);
+            // Light from perimeter: centre is darker, edges brighter
+            float dist = length(vec2(u - 0.5, v - 0.5)) * 1.414;
             float bright = mix(0.58, 1.18, smoothstep(0.0, 0.70, dist));
             col = clamp(col * bright, 0.0, 1.0);
             gl_FragColor = vec4(col, base.a);
         }
         """
-        let shader = SKShader(source: src)
-        shader.uniforms = [SKUniform(name: "u_radius", float: Float(radius))]
-        return shader
+        return SKShader(source: src)
     }
+
+    // Shared shader instance — create once, reuse across all nodes.
+    private lazy var nodeFillShader: SKShader = makeNodeFillShader()
 
     // MARK: - Solar Flare edge glow
 

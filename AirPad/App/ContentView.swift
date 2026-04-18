@@ -14,6 +14,9 @@ struct ContentView: View {
     @State private var ghostActive = false
     @State private var ghostText = ""
 
+    // Prismatic border animation — shared phase for chips + ghost field
+    @State private var prismaticPhase: Double = 0
+
     private let ghostPrompts = [
         "What have I been thinking about most lately?",
         "What ideas keep coming back that I haven't acted on?",
@@ -77,14 +80,21 @@ struct ContentView: View {
                                     } label: {
                                         Text(mode.displayName)
                                             .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                                            .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(0.7))
+                                            .foregroundStyle(Color.white.opacity(isSelected ? 1.0 : 0.65))
                                             .padding(.horizontal, 10)
                                             .padding(.vertical, 5)
-                                            .background(isSelected ? Color.indigo : Color.primary.opacity(0.08))
+                                            .background(Color.black.opacity(isSelected ? 0.50 : 0.30))
                                             .clipShape(Capsule())
                                             .overlay(
-                                                Capsule()
-                                                    .stroke(Color.primary.opacity(isSelected ? 0 : 0.18), lineWidth: 0.5)
+                                                Capsule().stroke(
+                                                    AngularGradient(
+                                                        colors: solarPrismaticColors,
+                                                        center: .center,
+                                                        startAngle: .degrees(prismaticPhase * 360),
+                                                        endAngle: .degrees(prismaticPhase * 360 + 360)
+                                                    ).opacity(isSelected ? 1.0 : 0.38),
+                                                    lineWidth: isSelected ? 1.5 : 1.0
+                                                )
                                             )
                                     }
                                     .buttonStyle(.plain)
@@ -131,7 +141,12 @@ struct ContentView: View {
                         .padding(.horizontal, 24)
                         .padding(.bottom, 36)
                 }
-                .task { await runGhostCycle() }
+                .task {
+                    withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) {
+                        prismaticPhase = 1
+                    }
+                    await runGhostCycle()
+                }
             }
 
             // Thread suggestion card
@@ -174,28 +189,69 @@ struct ContentView: View {
 
     // MARK: - Ghost Query Field
 
-    @ViewBuilder
     private var ghostQueryField: some View {
-        if ghostActive {
-            TextField("", text: $ghostText)
-                .font(.body)
-                .foregroundStyle(Color.primary)
-                .multilineTextAlignment(.center)
-                .submitLabel(.done)
-                .onSubmit { ghostActive = false; ghostText = "" }
-                .padding(.vertical, 6)
-        } else {
-            Text(ghostPrompts[ghostPromptIndex])
-                .font(.body.italic())
-                .foregroundStyle(Color.primary.opacity(0.30))
-                .multilineTextAlignment(.center)
-                .opacity(ghostVisible ? 1 : 0)
-                .onTapGesture {
-                    ghostText = ghostPrompts[ghostPromptIndex]
-                    withAnimation(.easeInOut(duration: 0.2)) { ghostActive = true }
-                }
+        ZStack {
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color.black.opacity(0.35))
+
+            if ghostActive {
+                TextField("", text: $ghostText)
+                    .font(.body)
+                    .foregroundStyle(Color.white)
+                    .multilineTextAlignment(.center)
+                    .submitLabel(.done)
+                    .onSubmit { ghostActive = false; ghostText = "" }
+                    .padding(.horizontal, 20)
+            } else {
+                Text(ghostPrompts[ghostPromptIndex])
+                    .font(.body.italic())
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.48),
+                                Color(
+                                    hue: (prismaticPhase * 0.4 + 0.65).truncatingRemainder(dividingBy: 1),
+                                    saturation: 0.55, brightness: 1.0
+                                ).opacity(0.52)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .multilineTextAlignment(.center)
+                    .opacity(ghostVisible ? 1 : 0)
+                    .padding(.horizontal, 20)
+                    .onTapGesture {
+                        ghostText = ghostPrompts[ghostPromptIndex]
+                        withAnimation(.easeInOut(duration: 0.2)) { ghostActive = true }
+                    }
+            }
         }
+        .frame(height: 48)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24).stroke(
+                AngularGradient(
+                    colors: solarPrismaticColors,
+                    center: .center,
+                    startAngle: .degrees(prismaticPhase * 360),
+                    endAngle: .degrees(prismaticPhase * 360 + 360)
+                ).opacity(ghostActive ? 1.0 : 0.55),
+                lineWidth: ghostActive ? 1.5 : 1.0
+            )
+        )
     }
+
+    private let solarPrismaticColors: [Color] = [
+        Color(hue: 0.75, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.60, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.45, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.30, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.12, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.04, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.95, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.85, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.75, saturation: 0.85, brightness: 1.0),
+    ]
 
     private func runGhostCycle() async {
         do {
@@ -250,14 +306,44 @@ private struct ViewTogglePill: View {
     let viewMode: ViewMode
     let onSelect: (ViewMode) -> Void
 
+    @State private var phase: Double = 0
+
+    private let prismaticColors: [Color] = [
+        Color(hue: 0.75, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.60, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.45, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.30, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.12, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.04, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.95, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.85, saturation: 0.85, brightness: 1.0),
+        Color(hue: 0.75, saturation: 0.85, brightness: 1.0),
+    ]
+
     var body: some View {
         HStack(spacing: 2) {
             modeButton(.graph, icon: "circle.hexagongrid.fill", label: "Graph")
             modeButton(.list,  icon: "list.bullet",             label: "List")
         }
         .padding(4)
-        .background(Color(white: 0.18))
+        .background(Color.black.opacity(0.25))
         .clipShape(Capsule())
+        .overlay(
+            Capsule().stroke(
+                AngularGradient(
+                    colors: prismaticColors,
+                    center: .center,
+                    startAngle: .degrees(phase * 360),
+                    endAngle: .degrees(phase * 360 + 360)
+                ),
+                lineWidth: 1.5
+            )
+        )
+        .onAppear {
+            withAnimation(.linear(duration: 14).repeatForever(autoreverses: false)) {
+                phase = 1
+            }
+        }
     }
 
     private func modeButton(_ mode: ViewMode, icon: String, label: String) -> some View {
@@ -268,10 +354,10 @@ private struct ViewTogglePill: View {
                 Text(label)
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(viewMode == mode ? .black : .white.opacity(0.55))
+            .foregroundStyle(viewMode == mode ? .white : .white.opacity(0.55))
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(viewMode == mode ? Color.white : Color.clear)
+            .background(viewMode == mode ? Color.white.opacity(0.15) : Color.clear)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

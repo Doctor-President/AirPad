@@ -96,6 +96,7 @@ struct NodeListView: View {
                             node: item.node,
                             namespace: zoomNamespace,
                             screenMidY: screenMidY,
+                            isSelected: scrolledID == item.id,
                             onTap: {
                                 guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
                                 navigationPath.append(real)
@@ -166,63 +167,161 @@ private struct NodeCard: View {
     let node: Node
     let namespace: Namespace.ID
     let screenMidY: CGFloat
+    let isSelected: Bool
     let onTap: () -> Void
 
     @Environment(CorpusStore.self) private var store
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Left color accent strip
-            Rectangle()
-                .fill(primaryTagColor)
-                .frame(width: 4)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(node.title.isEmpty ? "Untitled" : node.title)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-
-                Text(node.summary.isEmpty ? "—" : node.summary)
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
-                    .lineLimit(2)
-
-                Spacer(minLength: 0)
-
-                HStack(spacing: 0) {
-                    NodeCardItemCounts(items: node.items)
-                    Spacer()
-                    Text(relativeTimestamp(node.createdAt))
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.38))
-                }
+        ZStack {
+            // Luminous glow border — only for the centered/selected card
+            if isSelected {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(primaryTagColor.opacity(0.30))
+                    .blur(radius: 12)
+                    .padding(-10)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+
+            // Card face
+            ZStack(alignment: .trailing) {
+                // Gradient fill — tag color bleeding into warm amber/sienna
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(cardGradient)
+
+                // Inner perimeter light (silk-like bloom from edges)
+                RoundedRectangle(cornerRadius: 20)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.18), Color.white.opacity(0.04)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+
+                // Photo thumbnail — bleeds into trailing edge when image items present
+                if let thumbnailImage = firstThumbnail {
+                    HStack {
+                        Spacer()
+                        Image(uiImage: thumbnailImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 88, height: 168)
+                            .clipped()
+                            .overlay(
+                                LinearGradient(
+                                    colors: [primaryTagColor, .clear],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: 56)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            )
+                            .clipShape(
+                                .rect(
+                                    topLeadingRadius: 0, bottomLeadingRadius: 0,
+                                    bottomTrailingRadius: 20, topTrailingRadius: 20
+                                )
+                            )
+                    }
+                }
+
+                // Text content
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(node.title.isEmpty ? "Untitled" : node.title)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+
+                    Text(node.summary.isEmpty ? "—" : node.summary)
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.65))
+                        .lineLimit(2)
+
+                    Spacer(minLength: 0)
+
+                    HStack(spacing: 0) {
+                        NodeCardItemCounts(items: node.items)
+                        Spacer()
+                        if node.needsAIProcessing {
+                            HStack(spacing: 4) {
+                                Circle().fill(Color.orange).frame(width: 6, height: 6)
+                                Text("Needs review")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.orange)
+                            }
+                        } else {
+                            Text(relativeTimestamp(node.createdAt))
+                                .font(.caption)
+                                .foregroundStyle(.white.opacity(0.38))
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .padding(.trailing, firstThumbnail != nil ? 80 : 0)
+            }
         }
-        .background(primaryTagColor.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(primaryTagColor.opacity(0.22), lineWidth: 1))
         .matchedTransitionSource(id: node.id, in: namespace)
         .onTapGesture { onTap() }
-        // Perspective scale + opacity — fades/shrinks cards away from center.
-        // screenMidY is passed as a CGFloat (Sendable) to avoid UIScreen.main in a Sendable closure.
+        // Scale + opacity: selected card full brightness, others dimmed
         .visualEffect { content, proxy in
             let frame = proxy.frame(in: .global)
             let distance = abs(frame.midY - screenMidY)
             let t = min(distance / 420, 1.0)
+            let opacity = t < 0.12 ? 1.0 : (1.0 - min((t - 0.12) / 0.35, 1.0) * 0.35)
             return content
-                .scaleEffect(1.0 - t * 0.08, anchor: .center)
-                .opacity(1.0 - t * 0.28)
+                .scaleEffect(1.0 - t * 0.07, anchor: .center)
+                .opacity(opacity)
         }
+    }
+
+    // MARK: - Gradient
+
+    private var cardGradient: LinearGradient {
+        LinearGradient(
+            stops: [
+                .init(color: primaryTagColor, location: 0),
+                .init(color: warmAccentColor, location: 0.55),
+                .init(color: darkShadowColor, location: 1)
+            ],
+            startPoint: .bottomLeading,
+            endPoint: .topTrailing
+        )
     }
 
     private var primaryTagColor: Color {
         guard let name = node.tags.first,
               let tag = store.tags.first(where: { $0.name == name })
-        else { return Color(hex: "#8E8E93") ?? .gray }
-        return Color(hex: tag.colorHex) ?? .gray
+        else { return Color(hue: 0.72, saturation: 0.55, brightness: 0.70) }
+        return Color(hex: tag.colorHex) ?? Color(hue: 0.72, saturation: 0.55, brightness: 0.70)
+    }
+
+    // Warm amber/peach secondary — always toward orange-red regardless of tag
+    private var warmAccentColor: Color {
+        guard let name = node.tags.first,
+              let tag = store.tags.first(where: { $0.name == name }),
+              let base = UIColor(hex: tag.colorHex)
+        else { return Color(hue: 0.05, saturation: 0.75, brightness: 0.80) }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        base.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        let warmH = h * 0.25 + 0.04
+        return Color(UIColor(hue: warmH, saturation: min(s * 1.15, 1), brightness: min(b * 1.15, 1), alpha: a))
+    }
+
+    // Dark maroon edge shadow
+    private var darkShadowColor: Color {
+        Color(red: 0.12, green: 0.02, blue: 0.06)
+    }
+
+    // MARK: - Thumbnail
+
+    private var firstThumbnail: UIImage? {
+        guard let item = node.items.first(where: { $0.type == .image }),
+              let file = item.file,
+              let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+        else { return nil }
+        return UIImage(contentsOfFile: docsURL.appendingPathComponent(file).path)
     }
 
     private func relativeTimestamp(_ date: Date) -> String {

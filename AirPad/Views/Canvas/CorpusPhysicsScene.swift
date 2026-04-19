@@ -63,6 +63,50 @@ final class CorpusPhysicsScene: SKScene {
 
     private var tagColors: [String: UIColor] = [:]
 
+    // MARK: - Shared shader resources (lazy; created once, reused across all nodes)
+
+    /// 128×128 all-white texture — required so v_tex_coord carries valid 0→1 UV data
+    /// on SKShapeNode.fillShader (without fillTexture, v_tex_coord is always (0,0)).
+    private lazy var whiteUVTexture: SKTexture = {
+        let size = CGSize(width: 128, height: 128)
+        UIGraphicsBeginImageContext(size)
+        UIColor.white.setFill()
+        UIRectFill(CGRect(origin: .zero, size: size))
+        let img = UIGraphicsGetImageFromCurrentImageContext()!
+        UIGraphicsEndImageContext()
+        return SKTexture(image: img)
+    }()
+
+    /// 4-corner radial gradient:
+    ///   top-left  = purple  #7A52FF   top-right = coral   #E36B4E
+    ///   bot-left  = magenta #B857D4   bot-right = ember   #C43C2A
+    /// Center-darkened so light appears to radiate inward from the perimeter.
+    private lazy var nodeFillShader: SKShader = {
+        let src = """
+        void main() {
+            // SpriteKit UV: (0,0) = bottom-left, (1,1) = top-right
+            vec3 topLeft     = vec3(0.478, 0.322, 1.000);  // #7A52FF purple
+            vec3 topRight    = vec3(0.890, 0.420, 0.306);  // #E36B4E coral
+            vec3 bottomLeft  = vec3(0.722, 0.341, 0.831);  // #B857D4 magenta
+            vec3 bottomRight = vec3(0.769, 0.235, 0.165);  // #C43C2A ember
+
+            float u = v_tex_coord.x;
+            float v = v_tex_coord.y;
+
+            vec3 top    = mix(topLeft,    topRight,    u);
+            vec3 bottom = mix(bottomLeft, bottomRight, u);
+            vec3 color  = mix(bottom, top, v);
+
+            // Center darkening: 0.65 at center → 1.0 at circle edge
+            float dist = length(v_tex_coord - vec2(0.5)) / 0.5;
+            color *= 0.65 + 0.35 * clamp(dist, 0.0, 1.0);
+
+            gl_FragColor = vec4(color, 1.0);
+        }
+        """
+        return SKShader(source: src)
+    }()
+
     // Touch tracking
     private var activeTouches: [UITouch: CGPoint] = [:]    // screen-space positions
     private var tapStartInfo: (screenPoint: CGPoint, time: TimeInterval)?
@@ -193,6 +237,9 @@ final class CorpusPhysicsScene: SKScene {
         } else {
             shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
             shape.lineWidth = 1
+            // Gradient fill shader — requires a non-nil fillTexture so v_tex_coord is valid
+            shape.fillTexture = whiteUVTexture
+            shape.fillShader = nodeFillShader
         }
         return shape
     }

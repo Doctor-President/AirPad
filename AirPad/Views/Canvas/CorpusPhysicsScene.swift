@@ -20,7 +20,7 @@ final class CorpusPhysicsScene: SKScene {
             shape.physicsBody?.velocity = .zero
             shape.physicsBody?.angularVelocity = 0
             let move = SKAction.move(to: target, duration: 0.55)
-            move.timingMode = .easeInOut
+            move.timingMode = .easeInEaseOut
             shape.run(move, withKey: "rearrange")
         }
     }

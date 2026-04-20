@@ -78,78 +78,66 @@ final class CorpusPhysicsScene: SKScene {
         return SKTexture(image: img)
     }()
 
-    /// Multi-radial organic gradient matching blob.jsx design spec.
-    /// Uniforms:
-    ///   u_time: elapsed seconds (auto-incremented for sweep animation)
-    ///   u_rotation_speed: multiplier for sweep rate (default 1.0)
-    ///   u_color_intensity: gradient saturation multiplier (default 1.0)
-    ///   u_center_offset: vec2 x/y offset for gradient epicenter (default 0,0)
+    /// Gradient shader matching blob.jsx lines 45-50
     private lazy var nodeFillShader: SKShader = {
         let src = """
         void main() {
             // Token colors from tokens.jsx
             vec3 purple    = vec3(0.478, 0.322, 1.000);  // #7A52FF
-            vec3 indigo    = vec3(0.231, 0.165, 0.722);  // #3B2AB8
-            vec3 magenta   = vec3(0.722, 0.341, 0.831);  // #B857D4
             vec3 coral     = vec3(0.890, 0.420, 0.306);  // #E36B4E
             vec3 ember     = vec3(0.769, 0.235, 0.165);  // #C43C2A
+            vec3 magenta   = vec3(0.722, 0.341, 0.831);  // #B857D4
             vec3 highlight = vec3(1.000, 0.843, 0.761);  // #FFD7C2
+            vec3 indigo    = vec3(0.231, 0.165, 0.722);  // #3B2AB8
 
-            // Uniforms
-            float time = u_time * u_rotation_speed;
-            vec2 centerOffset = u_center_offset;
-
-            // UV: (0,0)=bottom-left, (1,1)=top-right. Center at (0.5, 0.5).
+            // UV: (0,0)=bottom-left in SpriteKit, but CSS uses top-left
+            // So flip Y: css_y = 1.0 - gl_y
             vec2 uv = v_tex_coord;
+            vec2 cssUV = vec2(uv.x, 1.0 - uv.y);
 
-            // Rotating/drifting gradient centers (mimics blob.jsx background-position animation)
-            float angle = time * 0.15;  // slow rotation over 9s cycle
-            mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+            // Base: linear-gradient(135deg, indigo, ember)
+            // 135deg = bottom-left to top-right diagonal
+            float diag = (cssUV.x + cssUV.y) * 0.5;
+            vec3 base = mix(indigo, ember, diag);
 
-            vec2 base = uv - vec2(0.5) + centerOffset;
-            vec2 p1 = rot * base + vec2(0.22, 0.70);  // top-left purple spot (flipped Y)
-            vec2 p2 = rot * base + vec2(0.78, 0.72);  // top-right coral spot
-            vec2 p3 = rot * base + vec2(0.72, 0.22);  // bottom-right ember spot
-            vec2 p4 = rot * base + vec2(0.28, 0.20);  // bottom-left magenta spot
-            vec2 p5 = rot * base + vec2(0.55, 0.55);  // center highlight
+            // Layer 1: radial-gradient(ellipse 70% 60% at 22% 30%, purple 0%, transparent 55%)
+            vec2 p1 = (cssUV - vec2(0.22, 0.30)) / vec2(0.70, 0.60);
+            float d1 = length(p1);
+            float a1 = smoothstep(0.55, 0.0, d1);
 
-            // Radial gradient layers (elliptical falloffs)
-            float r1 = length(p1 / vec2(0.70, 0.60));
-            float r2 = length(p2 / vec2(0.55, 0.55));
-            float r3 = length(p3 / vec2(0.65, 0.65));
-            float r4 = length(p4 / vec2(0.50, 0.60));
-            float r5 = length(p5 / vec2(0.50, 0.50));
+            // Layer 2: radial-gradient(ellipse 55% 55% at 78% 28%, coral 0%, transparent 60%)
+            vec2 p2 = (cssUV - vec2(0.78, 0.28)) / vec2(0.55, 0.55);
+            float d2 = length(p2);
+            float a2 = smoothstep(0.60, 0.0, d2);
 
-            float a1 = smoothstep(0.55, 0.0, r1);
-            float a2 = smoothstep(0.60, 0.0, r2);
-            float a3 = smoothstep(0.65, 0.0, r3);
-            float a4 = smoothstep(0.65, 0.0, r4);
-            float a5 = smoothstep(0.18, 0.0, r5);
+            // Layer 3: radial-gradient(ellipse 65% 65% at 72% 78%, ember 0%, transparent 65%)
+            vec2 p3 = (cssUV - vec2(0.72, 0.78)) / vec2(0.65, 0.65);
+            float d3 = length(p3);
+            float a3 = smoothstep(0.65, 0.0, d3);
 
-            // Base gradient (indigo → ember blend)
-            vec3 baseGrad = mix(indigo, ember, uv.x * 0.5 + uv.y * 0.5);
+            // Layer 4: radial-gradient(ellipse 50% 60% at 28% 80%, magenta 0%, transparent 65%)
+            vec2 p4 = (cssUV - vec2(0.28, 0.80)) / vec2(0.50, 0.60);
+            float d4 = length(p4);
+            float a4 = smoothstep(0.65, 0.0, d4);
 
-            // Composite radials on top (order matters: back to front)
-            vec3 color = baseGrad;
+            // Layer 5: radial-gradient(circle at 55% 45%, highlight 0%, transparent 18%)
+            vec2 p5 = cssUV - vec2(0.55, 0.45);
+            float d5 = length(p5);
+            float a5 = smoothstep(0.18, 0.0, d5);
+
+            // Composite layers (CSS default: over blending, back-to-front)
+            vec3 color = base;
             color = mix(color, purple,    a1);
             color = mix(color, coral,     a2);
             color = mix(color, ember,     a3);
             color = mix(color, magenta,   a4);
             color = mix(color, highlight, a5);
 
-            // Apply color intensity
-            color = mix(vec3(0.5), color, u_color_intensity);
-
             gl_FragColor = vec4(color, 1.0);
         }
         """
         let shader = SKShader(source: src)
-        shader.uniforms = [
-            SKUniform(name: "u_time", float: 0.0),
-            SKUniform(name: "u_rotation_speed", float: 1.0),
-            SKUniform(name: "u_color_intensity", float: 1.0),
-            SKUniform(name: "u_center_offset", vectorFloat2: vector_float2(0, 0))
-        ]
+        print("[Shader] Gradient shader created from blob.jsx spec")
         return shader
     }()
 
@@ -314,6 +302,7 @@ final class CorpusPhysicsScene: SKScene {
             // Gradient fill shader — requires a non-nil fillTexture so v_tex_coord is valid
             shape.fillTexture = whiteUVTexture
             shape.fillShader = nodeFillShader
+            print("[Shader] Applied to node - fillTexture: \(shape.fillTexture != nil), fillShader: \(shape.fillShader != nil), fillColor: \(shape.fillColor)")
         }
         return shape
     }

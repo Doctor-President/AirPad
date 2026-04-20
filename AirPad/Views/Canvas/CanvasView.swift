@@ -17,6 +17,7 @@ struct CanvasView: View {
     @Namespace private var zoomNamespace
 
     @State private var scene = CorpusPhysicsScene()
+    // @State private var showShaderDebugPanel = true  // visible by default for testing
 
     // MARK: - Capture mode
 
@@ -102,7 +103,7 @@ struct CanvasView: View {
     }
 
     private var canvasZStack: some View {
-        ZStack {
+        ZStack(alignment: .bottomTrailing) {
             Color.black.ignoresSafeArea()
             if store.nodes.isEmpty {
                 GraphPaperEmptyView()
@@ -113,6 +114,7 @@ struct CanvasView: View {
                 .ignoresSafeArea()
             nodeSummaryLayer
             captureTargetBanner
+            // shaderDebugPanelLayer  // TODO: add after testing shader
             ActionButtonFan(
                 isExpanded: $fanExpanded,
                 isEmpty: store.nodes.isEmpty,
@@ -124,6 +126,28 @@ struct CanvasView: View {
             )
         }
     }
+
+    // Debug panel temporarily disabled for shader testing
+    // @ViewBuilder
+    // private var shaderDebugPanelLayer: some View {
+    //     if showShaderDebugPanel {
+    //         VStack {
+    //             Spacer()
+    //             HStack {
+    //                 ShaderDebugPanel(
+    //                     isVisible: $showShaderDebugPanel,
+    //                     onRotationSpeedChange: { scene.setShaderRotationSpeed($0) },
+    //                     onColorIntensityChange: { scene.setShaderColorIntensity($0) },
+    //                     onCenterOffsetChange: { scene.setShaderCenterOffset($0) }
+    //                 )
+    //                 .padding(.leading, 16)
+    //                 .padding(.bottom, 16)
+    //                 Spacer()
+    //             }
+    //         }
+    //         .transition(.move(edge: .leading).combined(with: .opacity))
+    //     }
+    // }
 
     @ViewBuilder
     private func captureModeSheet(_ mode: CaptureMode) -> some View {

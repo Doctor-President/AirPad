@@ -38,7 +38,7 @@ struct NodeListView: View {
     var body: some View {
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
-                ZStack {
+                ZStack(alignment: .bottomTrailing) {
                     Color.black.ignoresSafeArea()
                     listContent(containerHeight: geo.size.height)
                     ActionButtonFan(

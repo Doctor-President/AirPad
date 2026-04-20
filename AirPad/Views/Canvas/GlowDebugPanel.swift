@@ -11,15 +11,24 @@ struct GlowDebugPanel: View {
     @State private var glowTintG: Float = 0.95
     @State private var glowTintB: Float = 0.9
 
+    @State private var displacementAmplitude: Float = 0.33
+    @State private var displacementSpeed: Float = 1.0
+    @State private var canvasNoiseFrequency: Float = 0.5
+    @State private var nodeDeformIntensity: Float = 1.0
+
     let onGlowReachChange: (Float) -> Void
     let onGlowIntensityChange: (Float) -> Void
     let onGlowFalloffChange: (Float) -> Void
     let onGlowTintChange: (vector_float3) -> Void
+    let onDisplacementAmplitudeChange: (Float) -> Void
+    let onDisplacementSpeedChange: (Float) -> Void
+    let onCanvasNoiseFrequencyChange: (Float) -> Void
+    let onNodeDeformIntensityChange: (Float) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Inner Glow Debug")
+                Text("Visual Debug Panel")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                 Spacer()
@@ -29,6 +38,10 @@ struct GlowDebugPanel: View {
                         .foregroundStyle(.white.opacity(0.6))
                 }
             }
+
+            Text("Inner Glow")
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.white.opacity(0.7))
 
             VStack(alignment: .leading, spacing: 8) {
                 sliderRow(
@@ -70,6 +83,52 @@ struct GlowDebugPanel: View {
                 .onChange(of: glowTintR) { _, _ in updateTint() }
                 .onChange(of: glowTintG) { _, _ in updateTint() }
                 .onChange(of: glowTintB) { _, _ in updateTint() }
+            }
+
+            Divider()
+                .background(Color.white.opacity(0.2))
+                .padding(.vertical, 4)
+
+            Text("Organic Displacement")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+
+            VStack(alignment: .leading, spacing: 8) {
+                sliderRow(
+                    label: "Amplitude",
+                    value: $displacementAmplitude,
+                    range: 0...1,
+                    step: 0.05,
+                    format: "%.2f",
+                    onChange: onDisplacementAmplitudeChange
+                )
+
+                sliderRow(
+                    label: "Speed",
+                    value: $displacementSpeed,
+                    range: 0...3,
+                    step: 0.1,
+                    format: "%.1fx",
+                    onChange: onDisplacementSpeedChange
+                )
+
+                sliderRow(
+                    label: "Canvas Noise Freq",
+                    value: $canvasNoiseFrequency,
+                    range: 0.1...2,
+                    step: 0.1,
+                    format: "%.1f",
+                    onChange: onCanvasNoiseFrequencyChange
+                )
+
+                sliderRow(
+                    label: "Node Deform",
+                    value: $nodeDeformIntensity,
+                    range: 0...2,
+                    step: 0.1,
+                    format: "%.1f",
+                    onChange: onNodeDeformIntensityChange
+                )
             }
 
             Button(action: { withAnimation { isVisible = false } }) {

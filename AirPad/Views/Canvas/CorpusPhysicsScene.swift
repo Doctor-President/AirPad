@@ -186,6 +186,19 @@ final class CorpusPhysicsScene: SKScene {
     private var shaderStartTime: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
 
+    // MARK: - Blob displacement state
+
+    /// Displacement amplitude (0 = perfect circle, 1 = full deformation)
+    private var displacementAmplitude: Float = 0.15
+    /// Displacement speed multiplier (affects breath rate)
+    private var displacementSpeed: Float = 1.0
+    /// Canvas-wide noise frequency (lower = slower ambient waves)
+    private var canvasNoiseFrequency: Float = 0.5
+    /// Per-node deformation intensity (0-1)
+    private var nodeDeformIntensity: Float = 1.0
+    /// Per-node phase offsets (randomized on init so nodes breathe differently)
+    private var nodePhaseOffsets: [String: Float] = [:]
+
     // MARK: - Scene lifecycle
 
     override func didMove(to view: SKView) {
@@ -246,11 +259,34 @@ final class CorpusPhysicsScene: SKScene {
         nodeFillShader.uniforms.first(where: { $0.name == "u_glow_tint" })?.vectorFloat3Value = tint
     }
 
+    // MARK: - Blob displacement debug controls
+
+    func setDisplacementAmplitude(_ amplitude: Float) {
+        displacementAmplitude = amplitude
+    }
+
+    func setDisplacementSpeed(_ speed: Float) {
+        displacementSpeed = speed
+    }
+
+    func setCanvasNoiseFrequency(_ frequency: Float) {
+        canvasNoiseFrequency = frequency
+    }
+
+    func setNodeDeformIntensity(_ intensity: Float) {
+        nodeDeformIntensity = intensity
+    }
+
     // MARK: - Node sprites
 
     private func addNodeSprite(_ node: Node, isNew: Bool) {
         let radius = bubbleRadius(for: node)
-        let shape = makeShape(radius: radius, fillColor: bubbleColor(for: node), isMeta: node.isMeta)
+        let shape = makeShape(
+            radius: radius,
+            fillColor: bubbleColor(for: node),
+            isMeta: node.isMeta,
+            nodeID: node.id
+        )
         shape.name = "node:\(node.id)"
 
         let label = makeTitleLabel(text: node.title, offsetY: -(radius + 6))
@@ -335,19 +371,163 @@ final class CorpusPhysicsScene: SKScene {
         ripple.run(.sequence([expand, .removeFromParent()]))
     }
 
+    // MARK: - Blob displacement helpers
+
+    /// Simple 2D Perlin-style noise (returns -1...1)
+    private func noise2D(x: Float, y: Float, seed: Float = 0) -> Float {
+        let ix = floor(x)
+        let iy = floor(y)
+        let fx = x - ix
+        let fy = y - iy
+
+        // Smoothstep interpolation
+        let u = fx * fx * (3 - 2 * fx)
+        let v = fy * fy * (3 - 2 * fy)
+
+        // Hash-based pseudo-random gradients
+        func hash(_ x: Float, _ y: Float, _ s: Float) -> Float {
+            let h = sin(x * 127.1 + y * 311.7 + s * 217.3) * 43758.5453
+            return h - floor(h) - 0.5  // range -0.5...0.5
+        }
+
+        let a = hash(ix, iy, seed)
+        let b = hash(ix + 1, iy, seed)
+        let c = hash(ix, iy + 1, seed)
+        let d = hash(ix + 1, iy + 1, seed)
+
+        return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v
+    }
+
+    /// Generate an organic blob path with smooth Catmull-Rom style curves
+    private func makeDeformedBlobPath(
+        radius: CGFloat,
+        nodeID: String,
+        time: TimeInterval
+    ) -> CGPath {
+        let numPoints = 16  // More points = smoother perimeter
+        let angleStep = 2 * CGFloat.pi / CGFloat(numPoints)
+
+        // Get or create phase offset for this node
+        if nodePhaseOffsets[nodeID] == nil {
+            nodePhaseOffsets[nodeID] = Float.random(in: 0...100)
+        }
+        let phaseOffset = nodePhaseOffsets[nodeID] ?? 0
+
+        // Canvas-wide noise (slow ambient breathing)
+        let canvasTime = Float(time) * canvasNoiseFrequency * displacementSpeed * 0.2
+        let canvasNoiseVal = noise2D(x: canvasTime, y: phaseOffset * 0.1)
+
+        // First pass: calculate all deformed points with noise-based radius variation
+        var points: [CGPoint] = []
+        for i in 0..<numPoints {
+            let baseAngle = angleStep * CGFloat(i)
+
+            // Per-node high-frequency deformation
+            let nodeTime = Float(time) * displacementSpeed + phaseOffset
+            let noiseX = cos(Float(baseAngle)) + nodeTime * 0.5
+            let noiseY = sin(Float(baseAngle)) + nodeTime * 0.5
+            let nodeNoiseVal = noise2D(x: noiseX, y: noiseY, seed: phaseOffset)
+
+            // Combine: canvas ambient + per-node deformation
+            let combinedNoise = canvasNoiseVal * 0.3 + nodeNoiseVal * 0.7 * nodeDeformIntensity
+            let displacement = CGFloat(combinedNoise) * CGFloat(displacementAmplitude)
+
+            let deformedRadius = radius * (1.0 + displacement)
+            let x = cos(baseAngle) * deformedRadius
+            let y = sin(baseAngle) * deformedRadius
+            points.append(CGPoint(x: x, y: y))
+        }
+
+        // Second pass: create ultra-smooth Catmull-Rom style cubic bezier path
+        // Control point handle length = 0.4× chord distance for river-worn stone smoothness
+        let bezier = UIBezierPath()
+        bezier.move(to: points[0])
+
+        for i in 0..<numPoints {
+            let current = points[i]
+            let next = points[(i + 1) % numPoints]
+            let prev = points[(i - 1 + numPoints) % numPoints]
+            let afterNext = points[(i + 2) % numPoints]
+
+            // Chord distance from current to next
+            let dx = next.x - current.x
+            let dy = next.y - current.y
+            let chordDistance = sqrt(dx * dx + dy * dy)
+            let handleLength = chordDistance * 0.4
+
+            // Tangent vector at current (normalized direction from prev to next)
+            let tangentX = next.x - prev.x
+            let tangentY = next.y - prev.y
+            let tangentLength = sqrt(tangentX * tangentX + tangentY * tangentY)
+            let normTangentX = tangentLength > 0 ? tangentX / tangentLength : 0
+            let normTangentY = tangentLength > 0 ? tangentY / tangentLength : 0
+
+            // Control point 1: extends from current along tangent
+            let cp1 = CGPoint(
+                x: current.x + normTangentX * handleLength,
+                y: current.y + normTangentY * handleLength
+            )
+
+            // Tangent vector at next (normalized direction from current to afterNext)
+            let tangentNextX = afterNext.x - current.x
+            let tangentNextY = afterNext.y - current.y
+            let tangentNextLength = sqrt(tangentNextX * tangentNextX + tangentNextY * tangentNextY)
+            let normTangentNextX = tangentNextLength > 0 ? tangentNextX / tangentNextLength : 0
+            let normTangentNextY = tangentNextLength > 0 ? tangentNextY / tangentNextLength : 0
+
+            // Control point 2: extends from next backward along its tangent
+            let cp2 = CGPoint(
+                x: next.x - normTangentNextX * handleLength,
+                y: next.y - normTangentNextY * handleLength
+            )
+
+            bezier.addCurve(to: next, controlPoint1: cp1, controlPoint2: cp2)
+        }
+
+        bezier.close()
+        return bezier.cgPath
+    }
+
+    /// Start breathing animation for a node shape
+    private func startBlobBreathing(for shape: SKShapeNode, nodeID: String, radius: CGFloat) {
+        let morphDuration = TimeInterval.random(in: 2.0...3.0)
+
+        let morphAction = SKAction.customAction(withDuration: morphDuration) { [weak self, weak shape] node, elapsed in
+            guard let self = self, let shape = shape else { return }
+            // Continuously regenerate path with advancing time for smooth organic motion
+            let currentTime = CACurrentMediaTime() - self.shaderStartTime
+            let newPath = self.makeDeformedBlobPath(radius: radius, nodeID: nodeID, time: currentTime)
+            shape.path = newPath
+        }
+        morphAction.timingMode = .easeInEaseOut
+
+        let wait = SKAction.wait(forDuration: 0.1)  // Brief pause between updates
+        let sequence = SKAction.sequence([morphAction, wait])
+        let forever = SKAction.repeatForever(sequence)
+
+        shape.run(forever, withKey: "blobBreathing")
+    }
+
     // MARK: - Helpers
 
-    private func makeShape(radius: CGFloat, fillColor: UIColor, isMeta: Bool = false) -> SKShapeNode {
-        let shape = SKShapeNode(circleOfRadius: radius)
+    private func makeShape(
+        radius: CGFloat,
+        fillColor: UIColor,
+        isMeta: Bool = false,
+        nodeID: String
+    ) -> SKShapeNode {
+        // Start with deformed blob path
+        let initialPath = makeDeformedBlobPath(
+            radius: radius,
+            nodeID: nodeID,
+            time: CACurrentMediaTime() - shaderStartTime
+        )
+
+        let shape = SKShapeNode(path: initialPath)
         shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         shape.zPosition = 1
 
         if isMeta {
-            // Dashed border: use a UIBezierPath with dash pattern converted to CGPath
-            let bezier = UIBezierPath()
-            bezier.addArc(withCenter: .zero, radius: radius, startAngle: 0, endAngle: 2 * .pi, clockwise: true)
-            bezier.setLineDash([5, 4], count: 2, phase: 0)
-            shape.path = bezier.cgPath
             shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
             shape.lineWidth = 1.5
         } else {
@@ -356,6 +536,10 @@ final class CorpusPhysicsScene: SKScene {
             // Gradient fill shader — requires a non-nil fillTexture so v_tex_coord is valid
             shape.fillTexture = whiteUVTexture
             shape.fillShader = nodeFillShader
+
+            // Start organic breathing animation
+            startBlobBreathing(for: shape, nodeID: nodeID, radius: radius)
+
             print("[Shader] Applied to node - fillTexture: \(shape.fillTexture != nil), fillShader: \(shape.fillShader != nil), fillColor: \(shape.fillColor)")
         }
         return shape

@@ -143,7 +143,11 @@ struct CanvasView: View {
                         onGlowReachChange: { scene.setGlowReach($0) },
                         onGlowIntensityChange: { scene.setGlowIntensity($0) },
                         onGlowFalloffChange: { scene.setGlowFalloff($0) },
-                        onGlowTintChange: { scene.setGlowTint($0) }
+                        onGlowTintChange: { scene.setGlowTint($0) },
+                        onDisplacementAmplitudeChange: { scene.setDisplacementAmplitude($0) },
+                        onDisplacementSpeedChange: { scene.setDisplacementSpeed($0) },
+                        onCanvasNoiseFrequencyChange: { scene.setCanvasNoiseFrequency($0) },
+                        onNodeDeformIntensityChange: { scene.setNodeDeformIntensity($0) }
                     )
                     .padding(.leading, 16)
                     .padding(.bottom, 16)
@@ -327,7 +331,7 @@ struct CanvasView: View {
 
             for (index, node) in testNodes.enumerated() {
                 let angle = Double(index) * (2 * .pi / Double(testNodes.count))
-                let radius = 120.0
+                let radius = 250.0  // Wide spacing to prevent overlap
                 let position = CGPoint(
                     x: cos(angle) * radius,
                     y: sin(angle) * radius

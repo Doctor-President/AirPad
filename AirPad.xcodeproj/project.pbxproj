@@ -32,6 +32,7 @@
 		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
 		8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D539DCAE9FDB57420DF7460 /* NodeListView.swift */; };
+		8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
@@ -125,6 +126,7 @@
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureIntent.swift; sourceTree = "<group>"; };
 		C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FoundationModels.framework; path = System/Library/Frameworks/FoundationModels.framework; sourceTree = SDKROOT; };
+		D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlowDebugPanel.swift; sourceTree = "<group>"; };
 		DD4733E2421E070A68925125 /* BatchParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchParser.swift; sourceTree = "<group>"; };
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
@@ -166,6 +168,7 @@
 				9348EE6BAC36DA4236BB5780 /* CanvasState.swift */,
 				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
+				D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */,
 				B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */,
 			);
 			path = Canvas;
@@ -464,6 +467,7 @@
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
+				8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */,
 				605B0E309C0A9624D7E38980 /* GraphPaperEmptyView.swift in Sources */,
 				9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,

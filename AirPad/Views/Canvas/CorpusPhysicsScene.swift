@@ -78,7 +78,7 @@ final class CorpusPhysicsScene: SKScene {
         return SKTexture(image: img)
     }()
 
-    /// Gradient shader matching blob.jsx lines 45-50
+    /// Gradient shader matching blob.jsx lines 45-50, with inner glow layer
     private lazy var nodeFillShader: SKShader = {
         let src = """
         void main() {
@@ -133,11 +133,47 @@ final class CorpusPhysicsScene: SKScene {
             color = mix(color, magenta,   a4);
             color = mix(color, highlight, a5);
 
+            // Inner glow: SDF distance-from-boundary falloff
+            // Circle in UV space: centered at (0.5, 0.5), radius 0.5
+            vec2 center = vec2(0.5, 0.5);
+            float circleRadius = 0.5;
+            float distFromCenter = length(cssUV - center);
+            // Distance inward from boundary (positive inside circle, near boundary)
+            float distFromBoundary = circleRadius - distFromCenter;
+
+            // Normalize by glow reach (in UV space: reach_px / node_diameter_px)
+            // Default reach: 12px, typical node diameter ~60-120px → ~0.1-0.2 in UV
+            float reachNormalized = u_glow_reach / 60.0;  // assuming 60px base diameter
+            float normalizedDist = distFromBoundary / reachNormalized;
+
+            // Exponential falloff: glow = exp(-dist * falloff) when dist > 0
+            float glowFalloff = u_glow_falloff;
+            float glowStrength = 0.0;
+            if (normalizedDist > 0.0 && normalizedDist < 1.0) {
+                glowStrength = exp(-normalizedDist * glowFalloff) * u_glow_intensity;
+            }
+
+            // Glow color: near-white with warm bias, tinted by u_glow_tint
+            vec3 glowBaseColor = vec3(1.0, 0.98, 0.94);  // warm white
+            vec3 glowColor = mix(glowBaseColor, u_glow_tint, 0.3);
+
+            // Layer glow on top using additive blending
+            color = color + glowColor * glowStrength;
+
             gl_FragColor = vec4(color, 1.0);
         }
         """
         let shader = SKShader(source: src)
-        print("[Shader] Gradient shader created from blob.jsx spec")
+
+        // Set default glow parameters
+        shader.uniforms = [
+            SKUniform(name: "u_glow_reach", float: 12.0),
+            SKUniform(name: "u_glow_intensity", float: 0.5),
+            SKUniform(name: "u_glow_falloff", float: 3.0),
+            SKUniform(name: "u_glow_tint", vectorFloat3: vector_float3(1.0, 0.95, 0.9))
+        ]
+
+        print("[Shader] Gradient + inner glow shader created")
         return shader
     }()
 
@@ -190,6 +226,24 @@ final class CorpusPhysicsScene: SKScene {
 
     func setShaderCenterOffset(_ offset: CGPoint) {
         nodeFillShader.uniforms.first(where: { $0.name == "u_center_offset" })?.vectorFloat2Value = vector_float2(Float(offset.x), Float(offset.y))
+    }
+
+    // MARK: - Inner glow debug controls
+
+    func setGlowReach(_ reach: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_glow_reach" })?.floatValue = reach
+    }
+
+    func setGlowIntensity(_ intensity: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_glow_intensity" })?.floatValue = intensity
+    }
+
+    func setGlowFalloff(_ falloff: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_glow_falloff" })?.floatValue = falloff
+    }
+
+    func setGlowTint(_ tint: vector_float3) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_glow_tint" })?.vectorFloat3Value = tint
     }
 
     // MARK: - Node sprites

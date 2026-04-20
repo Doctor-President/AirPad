@@ -17,7 +17,7 @@ struct CanvasView: View {
     @Namespace private var zoomNamespace
 
     @State private var scene = CorpusPhysicsScene()
-    // @State private var showShaderDebugPanel = true  // visible by default for testing
+    @State private var showGlowDebugPanel = true  // visible by default for testing
 
     // MARK: - Capture mode
 
@@ -38,6 +38,11 @@ struct CanvasView: View {
             scene.canvasState = canvasState
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)
+
+            // Inject test nodes for visual development
+            if showGlowDebugPanel && store.nodes.isEmpty {
+                injectTestNodes()
+            }
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Track additions against the raw node list so newly captured nodes
@@ -114,7 +119,7 @@ struct CanvasView: View {
                 .ignoresSafeArea()
             nodeSummaryLayer
             captureTargetBanner
-            // shaderDebugPanelLayer  // TODO: add after testing shader
+            glowDebugPanelLayer
             ActionButtonFan(
                 isExpanded: $fanExpanded,
                 isEmpty: store.nodes.isEmpty,
@@ -127,27 +132,27 @@ struct CanvasView: View {
         }
     }
 
-    // Debug panel temporarily disabled for shader testing
-    // @ViewBuilder
-    // private var shaderDebugPanelLayer: some View {
-    //     if showShaderDebugPanel {
-    //         VStack {
-    //             Spacer()
-    //             HStack {
-    //                 ShaderDebugPanel(
-    //                     isVisible: $showShaderDebugPanel,
-    //                     onRotationSpeedChange: { scene.setShaderRotationSpeed($0) },
-    //                     onColorIntensityChange: { scene.setShaderColorIntensity($0) },
-    //                     onCenterOffsetChange: { scene.setShaderCenterOffset($0) }
-    //                 )
-    //                 .padding(.leading, 16)
-    //                 .padding(.bottom, 16)
-    //                 Spacer()
-    //             }
-    //         }
-    //         .transition(.move(edge: .leading).combined(with: .opacity))
-    //     }
-    // }
+    @ViewBuilder
+    private var glowDebugPanelLayer: some View {
+        if showGlowDebugPanel {
+            VStack {
+                Spacer()
+                HStack {
+                    GlowDebugPanel(
+                        isVisible: $showGlowDebugPanel,
+                        onGlowReachChange: { scene.setGlowReach($0) },
+                        onGlowIntensityChange: { scene.setGlowIntensity($0) },
+                        onGlowFalloffChange: { scene.setGlowFalloff($0) },
+                        onGlowTintChange: { scene.setGlowTint($0) }
+                    )
+                    .padding(.leading, 16)
+                    .padding(.bottom, 16)
+                    Spacer()
+                }
+            }
+            .transition(.move(edge: .leading).combined(with: .opacity))
+        }
+    }
 
     @ViewBuilder
     private func captureModeSheet(_ mode: CaptureMode) -> some View {
@@ -266,6 +271,70 @@ struct CanvasView: View {
             newNodeID: newNodeID
         )
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after")
+    }
+
+    // MARK: - Test node injection
+
+    func injectTestNodes() {
+        Task {
+            let testNodes = [
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date(),
+                    updatedAt: Date(),
+                    title: "Design System",
+                    summary: "Exploring new visual language for nodes",
+                    tags: ["design"],
+                    items: []
+                ),
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date().addingTimeInterval(-3600),
+                    updatedAt: Date(),
+                    title: "Shader Implementation",
+                    summary: "Inner glow using SDF distance falloff",
+                    tags: ["dev"],
+                    items: []
+                ),
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date().addingTimeInterval(-7200),
+                    updatedAt: Date(),
+                    title: "User Feedback",
+                    summary: "Collected insights from beta testers",
+                    tags: ["research"],
+                    items: []
+                ),
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date().addingTimeInterval(-10800),
+                    updatedAt: Date(),
+                    title: "Visual Reference",
+                    summary: "Gradient and glow inspiration",
+                    tags: ["design"],
+                    items: []
+                ),
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date().addingTimeInterval(-14400),
+                    updatedAt: Date(),
+                    title: "Physics Tuning",
+                    summary: "Adjust damping for smoother movement",
+                    tags: ["dev"],
+                    items: []
+                )
+            ]
+
+            for (index, node) in testNodes.enumerated() {
+                let angle = Double(index) * (2 * .pi / Double(testNodes.count))
+                let radius = 120.0
+                let position = CGPoint(
+                    x: cos(angle) * radius,
+                    y: sin(angle) * radius
+                )
+                await store.addNode(node, position: position)
+            }
+        }
     }
 }
 

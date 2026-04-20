@@ -1,5 +1,6 @@
 import SpriteKit
 import UIKit
+import simd
 
 /// The SpriteKit physics canvas that renders nodes as floating bubbles.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
@@ -77,40 +78,89 @@ final class CorpusPhysicsScene: SKScene {
         return SKTexture(image: img)
     }()
 
-    /// 4-corner radial gradient:
-    ///   top-left  = purple  #7A52FF   top-right = coral   #E36B4E
-    ///   bot-left  = magenta #B857D4   bot-right = ember   #C43C2A
-    /// Center-darkened so light appears to radiate inward from the perimeter.
+    /// Multi-radial organic gradient matching blob.jsx design spec.
+    /// Uniforms:
+    ///   u_time: elapsed seconds (auto-incremented for sweep animation)
+    ///   u_rotation_speed: multiplier for sweep rate (default 1.0)
+    ///   u_color_intensity: gradient saturation multiplier (default 1.0)
+    ///   u_center_offset: vec2 x/y offset for gradient epicenter (default 0,0)
     private lazy var nodeFillShader: SKShader = {
         let src = """
         void main() {
-            // SpriteKit UV: (0,0) = bottom-left, (1,1) = top-right
-            vec3 topLeft     = vec3(0.478, 0.322, 1.000);  // #7A52FF purple
-            vec3 topRight    = vec3(0.890, 0.420, 0.306);  // #E36B4E coral
-            vec3 bottomLeft  = vec3(0.722, 0.341, 0.831);  // #B857D4 magenta
-            vec3 bottomRight = vec3(0.769, 0.235, 0.165);  // #C43C2A ember
+            // Token colors from tokens.jsx
+            vec3 purple    = vec3(0.478, 0.322, 1.000);  // #7A52FF
+            vec3 indigo    = vec3(0.231, 0.165, 0.722);  // #3B2AB8
+            vec3 magenta   = vec3(0.722, 0.341, 0.831);  // #B857D4
+            vec3 coral     = vec3(0.890, 0.420, 0.306);  // #E36B4E
+            vec3 ember     = vec3(0.769, 0.235, 0.165);  // #C43C2A
+            vec3 highlight = vec3(1.000, 0.843, 0.761);  // #FFD7C2
 
-            float u = v_tex_coord.x;
-            float v = v_tex_coord.y;
+            // Uniforms
+            float time = u_time * u_rotation_speed;
+            vec2 centerOffset = u_center_offset;
 
-            vec3 top    = mix(topLeft,    topRight,    u);
-            vec3 bottom = mix(bottomLeft, bottomRight, u);
-            vec3 color  = mix(bottom, top, v);
+            // UV: (0,0)=bottom-left, (1,1)=top-right. Center at (0.5, 0.5).
+            vec2 uv = v_tex_coord;
 
-            // Center darkening: 0.65 at center → 1.0 at circle edge
-            float dist = length(v_tex_coord - vec2(0.5)) / 0.5;
-            color *= 0.65 + 0.35 * clamp(dist, 0.0, 1.0);
+            // Rotating/drifting gradient centers (mimics blob.jsx background-position animation)
+            float angle = time * 0.15;  // slow rotation over 9s cycle
+            mat2 rot = mat2(cos(angle), -sin(angle), sin(angle), cos(angle));
+
+            vec2 base = uv - vec2(0.5) + centerOffset;
+            vec2 p1 = rot * base + vec2(0.22, 0.70);  // top-left purple spot (flipped Y)
+            vec2 p2 = rot * base + vec2(0.78, 0.72);  // top-right coral spot
+            vec2 p3 = rot * base + vec2(0.72, 0.22);  // bottom-right ember spot
+            vec2 p4 = rot * base + vec2(0.28, 0.20);  // bottom-left magenta spot
+            vec2 p5 = rot * base + vec2(0.55, 0.55);  // center highlight
+
+            // Radial gradient layers (elliptical falloffs)
+            float r1 = length(p1 / vec2(0.70, 0.60));
+            float r2 = length(p2 / vec2(0.55, 0.55));
+            float r3 = length(p3 / vec2(0.65, 0.65));
+            float r4 = length(p4 / vec2(0.50, 0.60));
+            float r5 = length(p5 / vec2(0.50, 0.50));
+
+            float a1 = smoothstep(0.55, 0.0, r1);
+            float a2 = smoothstep(0.60, 0.0, r2);
+            float a3 = smoothstep(0.65, 0.0, r3);
+            float a4 = smoothstep(0.65, 0.0, r4);
+            float a5 = smoothstep(0.18, 0.0, r5);
+
+            // Base gradient (indigo → ember blend)
+            vec3 baseGrad = mix(indigo, ember, uv.x * 0.5 + uv.y * 0.5);
+
+            // Composite radials on top (order matters: back to front)
+            vec3 color = baseGrad;
+            color = mix(color, purple,    a1);
+            color = mix(color, coral,     a2);
+            color = mix(color, ember,     a3);
+            color = mix(color, magenta,   a4);
+            color = mix(color, highlight, a5);
+
+            // Apply color intensity
+            color = mix(vec3(0.5), color, u_color_intensity);
 
             gl_FragColor = vec4(color, 1.0);
         }
         """
-        return SKShader(source: src)
+        let shader = SKShader(source: src)
+        shader.uniforms = [
+            SKUniform(name: "u_time", float: 0.0),
+            SKUniform(name: "u_rotation_speed", float: 1.0),
+            SKUniform(name: "u_color_intensity", float: 1.0),
+            SKUniform(name: "u_center_offset", vectorFloat2: vector_float2(0, 0))
+        ]
+        return shader
     }()
 
     // Touch tracking
     private var activeTouches: [UITouch: CGPoint] = [:]    // screen-space positions
     private var tapStartInfo: (screenPoint: CGPoint, time: TimeInterval)?
     private var lastPinchDistance: CGFloat?
+
+    // Shader animation state
+    private var shaderStartTime: TimeInterval = 0
+    private var lastUpdateTime: TimeInterval = 0
 
     // MARK: - Scene lifecycle
 
@@ -128,6 +178,30 @@ final class CorpusPhysicsScene: SKScene {
         physicsBody = SKPhysicsBody(edgeLoopFrom: boundary)
 
         view.isMultipleTouchEnabled = true
+
+        // Start shader animation clock
+        shaderStartTime = CACurrentMediaTime()
+        lastUpdateTime = shaderStartTime
+    }
+
+    override func update(_ currentTime: TimeInterval) {
+        // Update shader u_time uniform for gradient sweep animation
+        let elapsed = currentTime - shaderStartTime
+        nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+    }
+
+    // MARK: - Debug controls (called from external UI)
+
+    func setShaderRotationSpeed(_ speed: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_rotation_speed" })?.floatValue = speed
+    }
+
+    func setShaderColorIntensity(_ intensity: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_color_intensity" })?.floatValue = intensity
+    }
+
+    func setShaderCenterOffset(_ offset: CGPoint) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_center_offset" })?.vectorFloat2Value = vector_float2(Float(offset.x), Float(offset.y))
     }
 
     // MARK: - Node sprites

@@ -131,7 +131,7 @@ final class CorpusPhysicsScene: SKScene {
             color = mix(color, coral,     a2);
             color = mix(color, ember,     a3);
             color = mix(color, magenta,   a4);
-            color = mix(color, highlight, a5);
+            color = mix(color, highlight, a5 * 0.2);
 
             // Inner glow: SDF distance-from-boundary falloff
             // Circle in UV space: centered at (0.5, 0.5), radius 0.5

@@ -37,10 +37,6 @@ struct NodeListView: View {
     }
 
     var body: some View {
-        // TEMPORARY: Blur test view
-        CardBlurTest()
-
-        /*
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
@@ -85,7 +81,6 @@ struct NodeListView: View {
             buildItems()
             scrollToFirstAfterSort = true
         }
-        */
     }
 
     // MARK: - Scroll content

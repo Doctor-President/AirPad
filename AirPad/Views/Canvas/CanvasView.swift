@@ -147,7 +147,11 @@ struct CanvasView: View {
                         onDisplacementAmplitudeChange: { scene.setDisplacementAmplitude($0) },
                         onDisplacementSpeedChange: { scene.setDisplacementSpeed($0) },
                         onCanvasNoiseFrequencyChange: { scene.setCanvasNoiseFrequency($0) },
-                        onNodeDeformIntensityChange: { scene.setNodeDeformIntensity($0) }
+                        onNodeDeformIntensityChange: { scene.setNodeDeformIntensity($0) },
+                        onChromaticAberrationScaleChange: { scene.setChromaticAberrationScale($0) },
+                        onChromaticAberrationVelocityMultChange: { scene.setChromaticAberrationVelocityMult($0) },
+                        onChromaticAberrationDecayChange: { scene.setChromaticAberrationDecay($0) },
+                        onChromaticAberrationMaxChange: { scene.setChromaticAberrationMax($0) }
                     )
                     .padding(.leading, 16)
                     .padding(.bottom, 16)

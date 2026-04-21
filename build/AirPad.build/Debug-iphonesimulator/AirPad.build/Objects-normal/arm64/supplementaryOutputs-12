@@ -1,0 +1,30 @@
+{
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/CanvasLayout.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasLayout.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasLayout.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasLayout.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasLayout.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasLayout.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Camera/CameraCaptureView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CameraCaptureView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CameraCaptureView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CameraCaptureView.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CameraCaptureView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CameraCaptureView.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Canvas/CanvasState.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasState.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasState.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasState.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasState.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasState.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/CanvasPlaceholderView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/CanvasPlaceholderView.swiftdeps"
+  }
+}

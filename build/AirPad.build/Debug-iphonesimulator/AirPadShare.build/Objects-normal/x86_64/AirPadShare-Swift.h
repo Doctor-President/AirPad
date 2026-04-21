@@ -371,7 +371,6 @@ extern "C" {
 @class NSString;
 @class NSBundle;
 @class NSCoder;
-/// Scaffold only — share extension UI and node creation implemented in Session 2+.
 SWIFT_CLASS("_TtC11AirPadShare19ShareViewController")
 @interface ShareViewController : SLComposeServiceViewController
 - (BOOL)isContentValid SWIFT_WARN_UNUSED_RESULT;

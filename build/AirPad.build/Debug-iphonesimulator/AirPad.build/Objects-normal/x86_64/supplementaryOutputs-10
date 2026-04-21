@@ -1,0 +1,23 @@
+{
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Services/iCloudDriveService.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/iCloudDriveService.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Capture/VoiceCaptureSheet.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/VoiceCaptureSheet.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftdeps"
+  }
+}

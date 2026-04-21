@@ -1,0 +1,30 @@
+{
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/NodeItem.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItem.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItem.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItem.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItem.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItem.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Models/NodeItemType.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItemType.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItemType.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItemType.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItemType.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeItemType.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/Capture/NodePickerSheet.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodePickerSheet.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodePickerSheet.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodePickerSheet.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodePickerSheet.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodePickerSheet.swiftdeps"
+  },
+  "/Users/thomasjurgensen/Desktop/AirPad/AirPad/Views/List/NodeListView.swift" : {
+    "const-values" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeListView.swiftconstvalues",
+    "dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeListView.d",
+    "diagnostics" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeListView.dia",
+    "object" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeListView.o",
+    "swift-dependencies" : "/Users/thomasjurgensen/Desktop/AirPad/build/AirPad.build/Debug-iphonesimulator/AirPad.build/Objects-normal/arm64/NodeListView.swiftdeps"
+  }
+}

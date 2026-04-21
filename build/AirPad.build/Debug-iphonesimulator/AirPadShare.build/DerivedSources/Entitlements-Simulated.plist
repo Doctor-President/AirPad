@@ -4,5 +4,9 @@
 <dict>
 	<key>application-identifier</key>
 	<string>8XM4B5F42Y.com.doctorpresident.airpad.share</string>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.doctorpresident.airpad</string>
+	</array>
 </dict>
 </plist>

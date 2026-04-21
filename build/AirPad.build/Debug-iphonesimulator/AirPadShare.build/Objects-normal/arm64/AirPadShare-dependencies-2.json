@@ -181,385 +181,385 @@
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/Accessibility.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Accessibility-2VD0RKV8KHH9VI0G7CLIJ95J.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Accessibility-CQPQXNA9TRY6BFHQELVEBAF3B.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Accessibility"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CFNetwork.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CFNetwork-6KG6UYQRM0PMBDAZV7QOPJSE2.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CFNetwork-CWE40HXTWG6ZMQ0HWNDUEDEKV.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CFNetwork"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CoreFoundation.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreFoundation-842GPVO6M426CVOO4V429UCYB.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreFoundation-1MK5N5JT1X8XYVUPARSQDUECD.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CoreFoundation"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CoreGraphics.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreGraphics-8602RT88ZUUV6ITKIVIEIL1R4.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreGraphics-5900WX0DNM367UPWDVC6W84LK.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CoreGraphics"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CoreImage.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreImage-AMAGREEVT6X65VLZODXCB6FUQ.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreImage-3M3G008UXYCA1KW9E0QTL7SIW.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CoreImage"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CoreText.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreText-CBIEJWUI13X0XUQXI18KHKBJM.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreText-CD5QOO9ZBOLY1HVUSU17T2M1D.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CoreText"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CoreTransferable.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreTransferable-AFZUJALDQ5PV5GHRZ5QIKAOUK.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreTransferable-49LHYWQUV0811V55U2SILYZ89.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CoreTransferable"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/CoreVideo.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreVideo-6KDWACIBAFHRORLG1TD4NNVY1.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/CoreVideo-3IPR16NCBOJ2E44P4Y2GM1ETB.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "CoreVideo"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/Darwin.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Darwin-7YPYLU98LA3RY5O16TBLJKIWN.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Darwin-35QA8PEFWAV7EVCFHL9INDBUD.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Darwin"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/DataDetection.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/DataDetection-29AZ1ZKSQT4GKO68GQYL5QX6K.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/DataDetection-5H6AP7TBC6GX4S3RXYD6TYWVW.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "DataDetection"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/DeveloperToolsSupport.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/DeveloperToolsSupport-73MLCG2BKNRHFIRUMJ9TN1XRT.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/DeveloperToolsSupport-COAF26CBO79CISHBW0HZQINXM.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "DeveloperToolsSupport"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/dispatch.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Dispatch-F4KPYM1U3K7RS875G1VS9MU94.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Dispatch-961EH8FNTCD88WD0C9D0WKZWV.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Dispatch"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/FileProvider.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/FileProvider-EDPLYZNLWRZ8FSM1GCUHUHCVN.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/FileProvider-1HLNC2DOHG3F7WX3QVIA39ZNL.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "FileProvider"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/Foundation.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Foundation-43FNDHTMYNTH39O41JS9BIX7P.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Foundation-1JR7Q3TLAN00E59AXHWKLKAXY.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Foundation"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/IOSurface.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/IOSurface-DEB2PLVG3U3OJZJPQ9IE3986G.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/IOSurface-AXEMMC0QAQOYS8Y0E8BRP0RDC.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "IOSurface"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/ImageIO.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ImageIO-A4PIUCF362YDE1DN9X16HJR69.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ImageIO-3NTAIRJA8R3AFBZMB0F2QZPGU.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "ImageIO"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/DarwinBasic.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/MachO-7YSRYR266LMGADGFOC4TH7XR6.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/MachO-8TL6Q07NMHZ8C0D2N1K214S7Q.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "MachO"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/Metal.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Metal-D54BHE7JN5FY6BMNW0R9TUXMU.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Metal-918PARXVPRZBLMPKQJVQEA4S.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Metal"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/OSLog.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/OSLog-49UXPZV52OI9BFZMHWFZP1C10.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/OSLog-F07ECDLKQKLT1OWGGIZ3HAPC1.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "OSLog"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/ObjectiveC.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ObjectiveC-41LIEU7Q54C7V6NBQYA86CCYJ.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ObjectiveC-AJNA104TFQ6FMBID6JBVPHR6M.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "ObjectiveC"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/OpenGLES.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/OpenGLES-E3PDVADNWM5969UC90YGGJC35.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/OpenGLES-BYJ4DSDWY840FF2Y5Y4UA0O8L.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "OpenGLES"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/QuartzCore.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/QuartzCore-3N75HQ0CEU42EUDFT0UATEGY8.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/QuartzCore-5VZIR4PHT2E21YX07WRB64NI0.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "QuartzCore"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/Security.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Security-3AD9JMZR5P47S5VM4FS9VDD1D.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Security-289IUOQV27OMP37GKDWDY2I8Q.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Security"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/Social.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Social-5VUM4XM4ISJ4LPUAAURSEQW1C.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Social-8V0W264JKUKN4INUSXOT24U44.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Social"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/Spatial\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Spatial-E9FKE50QF6TDZ45DG24794TB8.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Spatial-92U49P8DP325IMXB4C4RT3OJN.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Spatial"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/lib\/swift\/shims\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/SwiftShims-31FJ48I9Z8DWUDI3TYQ1YLHDT.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/SwiftShims-7JA3MWSV3P6J1TQGCUB8W4BG7.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "SwiftShims"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/SwiftUICore.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/SwiftUICore-9DPUUW14EOSKTS2WTDSANLCWI.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/SwiftUICore-2N1ISI070E52H6UR5XK8WAPS0.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "SwiftUICore"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/Symbols.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Symbols-5ROLSZZFROSKYVZOS7DEN8CW9.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/Symbols-ACCHHLXIKUQ8D3ZGCICUYA2IK.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "Symbols"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/UIKit.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UIKit-AFI1T9E01OHPXFITCVEBT7860.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UIKit-DFOZ1JQHZ20UI3AP9SELRV9FR.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "UIKit"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/SubFrameworks\/UIUtilities.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UIUtilities-CNR1QSEQUDQTOEXOW8FUF59BR.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UIUtilities-CL75M1GZ723XSKSM85ZGSE52N.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "UIUtilities"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/UniformTypeIdentifiers.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UniformTypeIdentifiers-B312OQINHDDJQZPVCS8DSK1XF.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UniformTypeIdentifiers-7ARDUPVVSTEAS3CW8H5AYAP3G.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "UniformTypeIdentifiers"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/System\/Library\/Frameworks\/UserNotifications.framework\/Modules\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UserNotifications-5014GZTIFQ46ZYDGK1TCCP72C.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/UserNotifications-54Z8JD6ZVXOW70FL4UMHRNG01.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "UserNotifications"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/xpc.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/XPC-21KOFRW3O8UP82SVDUJZ853JT.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/XPC-5B75T7CYOEIC4BODQMBV04JV0.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "XPC"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/DarwinFoundation1.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_AvailabilityInternal-8VCCVX6B6KCIH64S4TK1AYX2E.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_AvailabilityInternal-AHZCJVD1JVSLYU010KKJOTR0F.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_AvailabilityInternal"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_float-AQDJSWV28QYT5UN3UJNURCIYD.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_float-EA6MXKYDSGXLG2UYZUW37BMTZ.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_float"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_intrinsics-75WODS36NJ7ZFYRW0H5K2KY1T.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_intrinsics-C6IV872PEJ4Q6YTJTB8TQ10H1.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_intrinsics"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_inttypes-BNEC7QSJPEZCGU8D03OF0K0YC.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_inttypes-EV368JK8PYKOZDK4QQ5YTQZMJ.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_inttypes"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_limits-G2I6GVY6UVKBA47H1G4IR6HA.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_limits-PPOAP0R3NG2T9IXMV0QA9SGB.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_limits"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdarg-EZ737NN73MTI2G8K7KYIM3UK8.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdarg-3Y4EY66J8J5HX0KYABQMC6QBZ.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_stdarg"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdatomic-AMVQVCZ3L7YNRARWHSC0Z293G.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdatomic-47YZOAE7VJA9BP5C32C50N8T0.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_stdatomic"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdbool-8U76J179KIVABOWX3TZNIUHXC.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdbool-C95LHXW2AQNMT6AK3K8NVFEHI.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_stdbool"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stddef-7OJX456EXIV7RIKVMX8FWTBB4.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stddef-DZH7DNC4NQWWL1MXJDMLBPZQN.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_stddef"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdint-9T8DRYXH8GCUDYJIQ8ZLEK7VT.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_stdint-9T1XD75FG7PE74N32H3RJS2Q3.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_stdint"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_tgmath-CRMX2KWV52IDZ2T38T5WAWLYC.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_Builtin_tgmath-1R6J8L19R40KN9BM00P7QEKCI.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_Builtin_tgmath"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/DarwinFoundation1.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation1-C04P2AJCXGTTTJ7BC9ZJT4GVF.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation1-5RAI5XZS164EQNBGGU4CYBLDD.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_DarwinFoundation1"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/DarwinFoundation2.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation2-CT8Y3DHVZFMD82HYSRCMLKGZX.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation2-78W9WATRDC4F4PUXQ2GAVEYYJ.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_DarwinFoundation2"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/DarwinFoundation3.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation3-2ESYRINGSRL7Y4Y3NSLTG0PGB.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_DarwinFoundation3-9BWIRJ8SXHPIXX1WO98TPYB4H.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_DarwinFoundation3"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/lib\/swift\/shims\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_SwiftConcurrencyShims-80VC4MPB8APVF08LJ5XHDQ5MI.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/_SwiftConcurrencyShims-9D1FAPDLRRLJA7YWD3VN47O17.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "_SwiftConcurrencyShims"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/os.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/os-7C7Q27J0YFWCJMCRD3J44L5ZG.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/os-6Y0O5S7DNMR2CJICED0PVNQU3.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "os"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/os.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/os_object-1906CUFURTOFYSR9G2S9AGJUY.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/os_object-AB8ILUK950746168L5DAGW3X3.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "os_object"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/os.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/os_workgroup-45IWH19U7KK1D641XOQ3IGIE1.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/os_workgroup-6AQRHLR2VQ9CHF3AXAG2QWH1.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "os_workgroup"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ptrauth-55WAW075KZKYXJP3XG13F8NA7.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ptrauth-CNYH8K0BGCMTUC1EOM3GX63C.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "ptrauth"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Toolchains\/XcodeDefault.xctoolchain\/usr\/lib\/clang\/21\/include\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ptrcheck-9HDXI5JXKHFBTFVRW4LK6ML64.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/ptrcheck-3S2FMED1SGEZC6HYNYSP5QCA0.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "ptrcheck"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/simd\/module.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/simd-9YFAS14PN0VS74KC1CDL4C01U.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/simd-B3JNAUMO78ZYWMVRTLR0XI2PG.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "simd"
   },
   {
     "clangModuleMapPath" : "\/Applications\/Xcode-26.5-beta.app\/Contents\/Developer\/Platforms\/iPhoneSimulator.platform\/Developer\/SDKs\/iPhoneSimulator.sdk\/usr\/include\/DarwinFoundation2.modulemap",
-    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/sys_types-EMZNYBO7G9LKVQL11WMPWN1UM.pcm",
+    "clangModulePath" : "\/Users\/thomasjurgensen\/Desktop\/AirPad\/build\/SwiftExplicitPrecompiledModules\/sys_types-2XS653CZ34QCO7SI4D3FD1HEH.pcm",
     "isBridgingHeaderDependency" : false,
     "isFramework" : false,
     "moduleName" : "sys_types"

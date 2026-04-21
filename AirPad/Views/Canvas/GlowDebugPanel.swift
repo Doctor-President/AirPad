@@ -16,6 +16,11 @@ struct GlowDebugPanel: View {
     @State private var canvasNoiseFrequency: Float = 0.5
     @State private var nodeDeformIntensity: Float = 1.0
 
+    @State private var chromaticAberrationScale: Float = 0.008
+    @State private var chromaticAberrationVelocityMult: Float = 2.0
+    @State private var chromaticAberrationDecay: Float = 1.0
+    @State private var chromaticAberrationMax: Float = 0.02
+
     let onGlowReachChange: (Float) -> Void
     let onGlowIntensityChange: (Float) -> Void
     let onGlowFalloffChange: (Float) -> Void
@@ -24,6 +29,10 @@ struct GlowDebugPanel: View {
     let onDisplacementSpeedChange: (Float) -> Void
     let onCanvasNoiseFrequencyChange: (Float) -> Void
     let onNodeDeformIntensityChange: (Float) -> Void
+    let onChromaticAberrationScaleChange: (Float) -> Void
+    let onChromaticAberrationVelocityMultChange: (Float) -> Void
+    let onChromaticAberrationDecayChange: (Float) -> Void
+    let onChromaticAberrationMaxChange: (Float) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -39,7 +48,9 @@ struct GlowDebugPanel: View {
                 }
             }
 
-            Text("Inner Glow")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Inner Glow")
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.white.opacity(0.7))
 
@@ -129,6 +140,54 @@ struct GlowDebugPanel: View {
                     format: "%.1f",
                     onChange: onNodeDeformIntensityChange
                 )
+            }
+
+            Divider()
+                .background(Color.white.opacity(0.2))
+                .padding(.vertical, 4)
+
+            Text("Chromatic Aberration")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+
+            VStack(alignment: .leading, spacing: 8) {
+                sliderRow(
+                    label: "Base Scale",
+                    value: $chromaticAberrationScale,
+                    range: 0...0.05,
+                    step: 0.001,
+                    format: "%.3f",
+                    onChange: onChromaticAberrationScaleChange
+                )
+
+                sliderRow(
+                    label: "Velocity Mult",
+                    value: $chromaticAberrationVelocityMult,
+                    range: 0...10,
+                    step: 0.5,
+                    format: "%.1f",
+                    onChange: onChromaticAberrationVelocityMultChange
+                )
+
+                sliderRow(
+                    label: "Decay Rate",
+                    value: $chromaticAberrationDecay,
+                    range: 0...5,
+                    step: 0.1,
+                    format: "%.1f",
+                    onChange: onChromaticAberrationDecayChange
+                )
+
+                sliderRow(
+                    label: "Max Cap",
+                    value: $chromaticAberrationMax,
+                    range: 0...0.1,
+                    step: 0.005,
+                    format: "%.3f",
+                    onChange: onChromaticAberrationMaxChange
+                )
+            }
+                }
             }
 
             Button(action: { withAnimation { isVisible = false } }) {

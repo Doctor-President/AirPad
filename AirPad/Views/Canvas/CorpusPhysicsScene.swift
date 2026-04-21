@@ -160,20 +160,29 @@ final class CorpusPhysicsScene: SKScene {
             // Layer glow on top using additive blending
             color = color + glowColor * glowStrength;
 
+            // Chromatic aberration: boundary-based RGB channel shift
+            vec2 aberrationDir = normalize(cssUV - center);
+            float aberrationMag = smoothstep(0.1, 0.0, distFromBoundary) * u_aberration_scale;
+            color.rg += aberrationDir * aberrationMag; color.b -= length(aberrationDir) * aberrationMag * 0.5;
+
             gl_FragColor = vec4(color, 1.0);
         }
         """
         let shader = SKShader(source: src)
 
-        // Set default glow parameters
+        // Set default glow and chromatic aberration parameters
         shader.uniforms = [
             SKUniform(name: "u_glow_reach", float: 12.0),
             SKUniform(name: "u_glow_intensity", float: 0.5),
             SKUniform(name: "u_glow_falloff", float: 3.0),
-            SKUniform(name: "u_glow_tint", vectorFloat3: vector_float3(1.0, 0.95, 0.9))
+            SKUniform(name: "u_glow_tint", vectorFloat3: vector_float3(1.0, 0.95, 0.9)),
+            SKUniform(name: "u_aberration_scale", float: 0.008),
+            SKUniform(name: "u_aberration_velocity_mult", float: 2.0),
+            SKUniform(name: "u_aberration_decay", float: 1.0),
+            SKUniform(name: "u_aberration_max", float: 0.02)
         ]
 
-        print("[Shader] Gradient + inner glow shader created")
+        print("[Shader] Gradient + inner glow + chromatic aberration shader created")
         return shader
     }()
 
@@ -275,6 +284,24 @@ final class CorpusPhysicsScene: SKScene {
 
     func setNodeDeformIntensity(_ intensity: Float) {
         nodeDeformIntensity = intensity
+    }
+
+    // MARK: - Chromatic aberration debug controls
+
+    func setChromaticAberrationScale(_ scale: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_aberration_scale" })?.floatValue = scale
+    }
+
+    func setChromaticAberrationVelocityMult(_ mult: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_aberration_velocity_mult" })?.floatValue = mult
+    }
+
+    func setChromaticAberrationDecay(_ decay: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_aberration_decay" })?.floatValue = decay
+    }
+
+    func setChromaticAberrationMax(_ max: Float) {
+        nodeFillShader.uniforms.first(where: { $0.name == "u_aberration_max" })?.floatValue = max
     }
 
     // MARK: - Node sprites

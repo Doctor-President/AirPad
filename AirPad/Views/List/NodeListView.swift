@@ -25,6 +25,7 @@ struct NodeListView: View {
     @State private var captureMode: ListCaptureMode? = nil
     @State private var captureTargetNodeID: String? = nil
     @State private var showingNodePicker = false
+    @State private var centerIdx = 0
 
     private let cardHeight: CGFloat = 168
     private let cardSpacing: CGFloat = 12
@@ -36,6 +37,10 @@ struct NodeListView: View {
     }
 
     var body: some View {
+        // TEMPORARY: Blur test view
+        CardBlurTest()
+
+        /*
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
@@ -80,6 +85,7 @@ struct NodeListView: View {
             buildItems()
             scrollToFirstAfterSort = true
         }
+        */
     }
 
     // MARK: - Scroll content
@@ -91,18 +97,28 @@ struct NodeListView: View {
         return ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: cardSpacing) {
-                    ForEach(displayItems) { item in
-                        NodeCard(
+                    ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, item in
+                        let dist = abs(index - centerIdx)
+                        let scale = max(0.75, 1.0 - Double(dist) * 0.088)
+                        let opacity = max(0.55, 1.0 - Double(dist) * 0.2)
+
+                        NodeCardView(
                             node: item.node,
-                            namespace: zoomNamespace,
-                            screenMidY: screenMidY,
-                            onTap: {
-                                guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
-                                navigationPath.append(real)
-                            }
+                            paletteIndex: paletteIndexForNode(item.node),
+                            selected: index == centerIdx,
+                            dist: dist
                         )
                         .frame(height: cardHeight)
+                        .scaleEffect(scale)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
+                        .opacity(opacity)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .id(item.id)
+                        .matchedTransitionSource(id: item.node.id, in: zoomNamespace)
+                        .onTapGesture {
+                            guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
+                            navigationPath.append(real)
+                        }
                     }
                 }
                 .scrollTargetLayout()
@@ -112,6 +128,9 @@ struct NodeListView: View {
             .scrollPosition(id: $scrolledID)
             .onChange(of: scrolledID) { _, newID in
                 guard let newID, !isJumping else { return }
+                if let index = displayItems.firstIndex(where: { $0.id == newID }) {
+                    centerIdx = index
+                }
                 haptic.selectionChanged()
                 handleLoopJump(to: newID, proxy: proxy)
             }
@@ -136,6 +155,26 @@ struct NodeListView: View {
         isJumping = true
         proxy.scrollTo(target.id, anchor: .center)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { isJumping = false }
+    }
+
+    // MARK: - Palette selection
+
+    private func paletteIndexForNode(_ node: Node) -> Int {
+        guard let tagName = node.tags.first else { return 0 }
+
+        // Map tag names to palette indices 0-6
+        switch tagName {
+        case "pal0": return 0
+        case "pal1": return 1
+        case "pal2": return 2
+        case "pal3": return 3
+        case "pal4": return 4
+        case "pal5": return 5
+        case "pal6": return 6
+        default:
+            // For other tags, use hash-based selection
+            return abs(tagName.hashValue) % 7
+        }
     }
 
     // MARK: - Build display items
@@ -271,5 +310,19 @@ private struct NodeCardItemCounts: View {
         Label("\(count)", systemImage: icon)
             .font(.caption)
             .foregroundStyle(.white.opacity(0.48))
+    }
+}
+
+// MARK: - Node extension for relativeTimestamp
+
+extension Node {
+    var relativeTimestamp: String {
+        let diff = Date().timeIntervalSince(createdAt)
+        switch diff {
+        case ..<3600:        return "\(max(1, Int(diff / 60)))m ago"
+        case ..<86400:       return "\(Int(diff / 3600))h ago"
+        case ..<604800:      return "\(Int(diff / 86400))d ago"
+        default:             return "\(Int(diff / 604800))w ago"
+        }
     }
 }

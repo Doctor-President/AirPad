@@ -285,50 +285,86 @@ struct CanvasView: View {
 
     func injectTestNodes() {
         Task {
+            // Create test tags cycling through palette indices 0-6
+            let testTags = [
+                Tag(id: UUID(), name: "pal0", colorHex: "#2D0A5E", createdAt: Date(), useCount: 0),
+                Tag(id: UUID(), name: "pal1", colorHex: "#041E2A", createdAt: Date(), useCount: 0),
+                Tag(id: UUID(), name: "pal2", colorHex: "#071A0A", createdAt: Date(), useCount: 0),
+                Tag(id: UUID(), name: "pal3", colorHex: "#0A0520", createdAt: Date(), useCount: 0),
+                Tag(id: UUID(), name: "pal4", colorHex: "#0A1020", createdAt: Date(), useCount: 0),
+                Tag(id: UUID(), name: "pal5", colorHex: "#041A1A", createdAt: Date(), useCount: 0),
+                Tag(id: UUID(), name: "pal6", colorHex: "#030A1A", createdAt: Date(), useCount: 0),
+            ]
+
+            // Add tags if they don't exist
+            for tag in testTags {
+                if !store.tags.contains(where: { $0.name == tag.name }) {
+                    await store.addTag(tag)
+                }
+            }
+
             let testNodes = [
                 Node(
                     id: "test-\(UUID().uuidString)",
                     createdAt: Date(),
                     updatedAt: Date(),
-                    title: "Design System",
-                    summary: "Exploring new visual language for nodes",
-                    tags: ["design"],
+                    title: "Optimistic Adventures",
+                    summary: "A journey through whimsical landscapes and curious encounters",
+                    tags: ["pal0"],
                     items: []
                 ),
                 Node(
                     id: "test-\(UUID().uuidString)",
                     createdAt: Date().addingTimeInterval(-3600),
                     updatedAt: Date(),
-                    title: "Shader Implementation",
-                    summary: "Inner glow using SDF distance falloff",
-                    tags: ["dev"],
+                    title: "Emergence in Darkness",
+                    summary: "A group of individuals track themselves in a dark, empty void",
+                    tags: ["pal1"],
                     items: []
                 ),
                 Node(
                     id: "test-\(UUID().uuidString)",
                     createdAt: Date().addingTimeInterval(-7200),
                     updatedAt: Date(),
-                    title: "User Feedback",
-                    summary: "Collected insights from beta testers",
-                    tags: ["research"],
+                    title: "Dog days of summer",
+                    summary: "A summer adventure with friends and family",
+                    tags: ["pal2"],
                     items: []
                 ),
                 Node(
                     id: "test-\(UUID().uuidString)",
                     createdAt: Date().addingTimeInterval(-10800),
                     updatedAt: Date(),
-                    title: "Visual Reference",
-                    summary: "Gradient and glow inspiration",
-                    tags: ["design"],
+                    title: "God Macro Level Story",
+                    summary: "A story pretext is a god macro level (Biblical apocalypse)",
+                    tags: ["pal3"],
                     items: []
                 ),
                 Node(
                     id: "test-\(UUID().uuidString)",
                     createdAt: Date().addingTimeInterval(-14400),
                     updatedAt: Date(),
-                    title: "Physics Tuning",
-                    summary: "Adjust damping for smoother movement",
-                    tags: ["dev"],
+                    title: "Whole List",
+                    summary: "Collecting all the pieces together",
+                    tags: ["pal4"],
+                    items: []
+                ),
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date().addingTimeInterval(-18000),
+                    updatedAt: Date(),
+                    title: "Midnight Chronicles",
+                    summary: "Tales from the edge of twilight",
+                    tags: ["pal5"],
+                    items: []
+                ),
+                Node(
+                    id: "test-\(UUID().uuidString)",
+                    createdAt: Date().addingTimeInterval(-21600),
+                    updatedAt: Date(),
+                    title: "Ocean Depths",
+                    summary: "Exploring the mysteries beneath the waves",
+                    tags: ["pal6"],
                     items: []
                 )
             ]

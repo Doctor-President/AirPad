@@ -22,6 +22,7 @@
 		59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */; };
 		605B0E309C0A9624D7E38980 /* GraphPaperEmptyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */; };
 		6353A53FA1E910980685F823 /* ActionButtonFan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */; };
+		679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD659A40CE161F15D371C285 /* NodeCardView.swift */; };
 		69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */; };
 		6ABE3E503556A6148E29F602 /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729D9028EBF447A0241ABFD /* KeychainHelper.swift */; };
@@ -42,6 +43,7 @@
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */; };
 		A13084DE621F1F87415AC97F /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
+		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7814673E5A10B9F5E391DA4 /* SettingsView.swift */; };
 		AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
@@ -121,6 +123,7 @@
 		B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadService.swift; sourceTree = "<group>"; };
 		B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodePickerSheet.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
+		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
 		B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphPaperEmptyView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
@@ -134,6 +137,7 @@
 		F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagCreationSheet.swift; sourceTree = "<group>"; };
 		F7814673E5A10B9F5E391DA4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
+		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -338,6 +342,8 @@
 		E2DA2EA8F4AA00E1FCC24AFC /* List */ = {
 			isa = PBXGroup;
 			children = (
+				B65719255B960A7B6876EC2A /* CardBlurTest.swift */,
+				FD659A40CE161F15D371C285 /* NodeCardView.swift */,
 				4D539DCAE9FDB57420DF7460 /* NodeListView.swift */,
 			);
 			path = List;
@@ -463,6 +469,7 @@
 				94765E10145D5017BDE18696 /* CanvasState.swift in Sources */,
 				14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */,
 				CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */,
+				A795741744098AF3B305335B /* CardBlurTest.swift in Sources */,
 				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
@@ -472,6 +479,7 @@
 				9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				6ABE3E503556A6148E29F602 /* Node.swift in Sources */,
+				679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */,
 				B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */,
 				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,
 				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,

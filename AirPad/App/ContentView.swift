@@ -91,6 +91,21 @@ struct ContentView: View {
                 }
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: store.pendingThreads.first?.id)
             }
+
+            // Ghost Query Field — persistent bottom pill, visible in both graph and list views
+            if !store.isInDetailView {
+                VStack {
+                    Spacer()
+                    HStack(spacing: 12) {
+                        GhostQueryField()
+                            .frame(maxWidth: .infinity)
+                        Spacer()
+                            .frame(width: 56) // reserve space for ActionButtonFan + button
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 28)
+                }
+            }
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {

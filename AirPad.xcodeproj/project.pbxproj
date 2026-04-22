@@ -10,6 +10,7 @@
 		0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA8C82636A7D9E2E115A203 /* AVKit.framework */; };
+		0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */; };
 		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
 		20A15CA3D0F6100CB85D8AA1 /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
@@ -122,6 +123,7 @@
 		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
 		B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadService.swift; sourceTree = "<group>"; };
 		B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodePickerSheet.swift; sourceTree = "<group>"; };
+		B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostQueryField.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
 		B84C39933847320977B98BB5 /* GraphPaperEmptyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GraphPaperEmptyView.swift; sourceTree = "<group>"; };
@@ -228,6 +230,7 @@
 				E2DA2EA8F4AA00E1FCC24AFC /* List */,
 				D6D2C1A623E85338DBC2E0AF /* Onboarding */,
 				2B9615A52E1C8DCD63462128 /* Settings */,
+				DF9CD6E4FF1185B7CEF053EE /* Shared */,
 				01B3209F32045005E03F39C8 /* Tags */,
 				CF874724BE8A2033D58ADCC8 /* Threads */,
 				059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */,
@@ -329,6 +332,14 @@
 				4114EB82C1700492CF29C6AE /* OnboardingView.swift */,
 			);
 			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		DF9CD6E4FF1185B7CEF053EE /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		E1C39505C0E8DDE7019D8F77 /* Camera */ = {
@@ -474,6 +485,7 @@
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
+				0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */,
 				8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */,
 				605B0E309C0A9624D7E38980 /* GraphPaperEmptyView.swift in Sources */,
 				9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */,

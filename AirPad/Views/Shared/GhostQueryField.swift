@@ -1,10 +1,14 @@
 import SwiftUI
+import FoundationModels
 
 struct GhostQueryField: View {
 
+    @Environment(CorpusStore.self) private var store
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
     @State private var gradientRotation: Double = 0
+    @State private var corpusWhispers: [String] = []
+    @State private var isGeneratingWhispers = false
 
     private let whispers = [
         "What have I been thinking about most lately?",
@@ -13,6 +17,10 @@ struct GhostQueryField: View {
         "What patterns show up in my work?",
         "Who was Jolene?"
     ]
+
+    private var activeWhispers: [String] {
+        corpusWhispers.isEmpty ? whispers : corpusWhispers + whispers
+    }
 
     var body: some View {
         ZStack {
@@ -38,7 +46,7 @@ struct GhostQueryField: View {
                 )
 
             // Ghost text
-            Text(whispers[currentWhisperIndex])
+            Text(activeWhispers[currentWhisperIndex])
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(.white)
                 .opacity(textOpacity)
@@ -48,6 +56,12 @@ struct GhostQueryField: View {
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
+            Task { await generateCorpusWhispers() }
+        }
+        .onChange(of: store.nodes.count) { _, count in
+            if count >= 10 && corpusWhispers.isEmpty {
+                Task { await generateCorpusWhispers() }
+            }
         }
     }
 
@@ -71,11 +85,70 @@ struct GhostQueryField: View {
 
         // Swap text after fade out completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            currentWhisperIndex = (currentWhisperIndex + 1) % whispers.count
+            currentWhisperIndex = (currentWhisperIndex + 1) % activeWhispers.count
 
             // Fade in
             withAnimation(.easeInOut(duration: 0.6)) {
                 textOpacity = 0.55
+            }
+        }
+    }
+
+    private func generateCorpusWhispers() async {
+        guard store.nodes.count >= 10, !isGeneratingWhispers else { return }
+        isGeneratingWhispers = true
+        defer { isGeneratingWhispers = false }
+
+        // Build corpus summary for the model
+        let tagFrequency = Dictionary(grouping: store.nodes.flatMap { $0.tags }, by: { $0 })
+            .mapValues { $0.count }
+            .sorted { $0.value > $1.value }
+            .prefix(5)
+            .map { "\($0.key) (\($0.value))" }
+            .joined(separator: ", ")
+
+        let domains = store.nodes.compactMap { $0.domain }
+        let domainFrequency = Dictionary(grouping: domains, by: { $0 })
+            .mapValues { $0.count }
+            .sorted { $0.value > $1.value }
+            .prefix(3)
+            .map { $0.key }
+            .joined(separator: ", ")
+
+        let nodeCount = store.nodes.count
+
+        let prompt = """
+        You are analyzing a personal idea corpus with \(nodeCount) nodes.
+        Top tags by frequency: \(tagFrequency.isEmpty ? "none yet" : tagFrequency)
+        Top domains: \(domainFrequency.isEmpty ? "none yet" : domainFrequency)
+
+        Generate 3 short, reflective questions (under 10 words each) that invite the person to reflect on patterns in their thinking. These are "Whispers" — gentle invitations, not search queries. Make them specific to the tags and domains above.
+
+        Respond with exactly 3 questions, one per line, no numbering, no punctuation at the end.
+        """
+
+        if #available(iOS 26.0, *) {
+            guard SystemLanguageModel.default.isAvailable else { return }
+
+            do {
+                let session = LanguageModelSession()
+                let response = try await session.respond(to: prompt)
+                let responseText = response.content
+                let lines: [String] = responseText
+                    .components(separatedBy: "\n")
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .prefix(3)
+                    .map { String($0) }
+
+                if !lines.isEmpty {
+                    await MainActor.run {
+                        corpusWhispers = Array(lines)
+                    }
+                }
+            } catch {
+                // Gracefully fail — generic whispers continue cycling
+                return
             }
         }
     }

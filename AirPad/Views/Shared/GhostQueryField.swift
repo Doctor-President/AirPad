@@ -9,6 +9,9 @@ struct GhostQueryField: View {
     @State private var gradientRotation: Double = 0
     @State private var corpusWhispers: [String] = []
     @State private var isGeneratingWhispers = false
+    @State private var showQuerySheet = false
+    @State private var querySheetInitialText = ""
+    @State private var sheetDetent: PresentationDetent = .medium
 
     private let whispers = [
         "What have I been thinking about most lately?",
@@ -53,6 +56,10 @@ struct GhostQueryField: View {
                 .padding(.horizontal, 20)
         }
         .frame(height: 52)
+        .onTapGesture {
+            querySheetInitialText = activeWhispers[currentWhisperIndex]
+            showQuerySheet = true
+        }
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
@@ -62,6 +69,11 @@ struct GhostQueryField: View {
             if count >= 10 && corpusWhispers.isEmpty {
                 Task { await generateCorpusWhispers() }
             }
+        }
+        .sheet(isPresented: $showQuerySheet) {
+            CorpusQuerySheet(isPresented: $showQuerySheet, initialQuery: querySheetInitialText)
+                .presentationDetents([.medium, .large], selection: $sheetDetent)
+                .presentationBackground(Color(red: 0.04, green: 0.04, blue: 0.06))
         }
     }
 

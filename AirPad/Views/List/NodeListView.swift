@@ -6,7 +6,7 @@ private struct ListItem: Identifiable {
     let id: String        // "real-<nodeID>" | "sent-start-<nodeID>" | "sent-end-<nodeID>"
     let node: Node
     var isReal: Bool { id.hasPrefix("real-") }
-    var realNodeID: String { String(id.dropFirst(id.hasPrefix("real-") ? 5 : id.hasPrefix("sent-start-") ? 11 : 10)) }
+    var realNodeID: String { String(id.dropFirst(id.hasPrefix("real-") ? 5 : id.hasPrefix("sent-start-") ? 11 : 9)) }
 }
 
 // MARK: - NodeListView
@@ -28,8 +28,8 @@ struct NodeListView: View {
     @State private var centerIdx = 0
 
     private let cardHeight: CGFloat = 168
-    private let cardSpacing: CGFloat = 12
-    private let haptic = UISelectionFeedbackGenerator()
+    private let cardSpacing: CGFloat = 8
+    private let haptic = UIImpactFeedbackGenerator(style: .medium)
 
     enum ListCaptureMode: String, Identifiable {
         case voice, text, camera
@@ -110,12 +110,14 @@ struct NodeListView: View {
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .id(item.id)
                         .matchedTransitionSource(id: item.node.id, in: zoomNamespace)
+                        .contentShape(Rectangle())
                         .onTapGesture {
                             guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
                             navigationPath.append(real)
                         }
                     }
                 }
+                .padding(.horizontal, UIScreen.main.bounds.width * 0.05)
                 .scrollTargetLayout()
             }
             .contentMargins(.vertical, margin, for: .scrollContent)
@@ -126,7 +128,7 @@ struct NodeListView: View {
                 if let index = displayItems.firstIndex(where: { $0.id == newID }) {
                     centerIdx = index
                 }
-                haptic.selectionChanged()
+                haptic.impactOccurred()
                 handleLoopJump(to: newID, proxy: proxy)
             }
             .onChange(of: scrollToFirstAfterSort) { _, flag in

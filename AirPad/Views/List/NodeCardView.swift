@@ -63,6 +63,7 @@ struct NodeCardView: View {
             // Three radial gradients: pal.a at 30%/50%, pal.b at 72%/50%, pal.c at 50%/50%
             outerBloom
                 .padding(selected ? -56 : -32)
+                .allowsHitTesting(false)
 
             // LAYER 2: Card surface with gradient + content + inner glow
             ZStack {

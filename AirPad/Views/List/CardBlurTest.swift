@@ -98,9 +98,7 @@ struct CardItemView: View {
                     Image(uiImage: glow)
                         .resizable()
                         .frame(width: 560, height: 360)
-                        .offset(x: 0, y: 0)
                         .blendMode(.overlay)
-                        .allowsHitTesting(false)
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -158,30 +156,16 @@ struct CardItemView: View {
             UIColor.white.setStroke(); p.lineWidth = 3; p.stroke(); p.stroke(); p.stroke()
         }
         let ctx = CIContext()
-        let softCI = CIImage(image: softImg)!
-        let crispCI = CIImage(image: crispImg)!
+        let softCI = CIImage(cgImage: softImg.cgImage!)
+        let crispCI = CIImage(cgImage: crispImg.cgImage!)
         let softBlur = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputImageKey: softCI, kCIInputRadiusKey: 40])!
         let crispBlur = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputImageKey: crispCI, kCIInputRadiusKey: 4])!
-        guard let softOut = softBlur.outputImage,
-              let crispOut = crispBlur.outputImage else { return softImg }
-
-        let canvasRect = CIVector(x: 0, y: 0, z: w, w: h)
-
-        let softCrop = CIFilter(name: "CICrop", parameters: [kCIInputImageKey: softOut, "inputRectangle": canvasRect])!
-        let crispCrop = CIFilter(name: "CICrop", parameters: [kCIInputImageKey: crispOut, "inputRectangle": canvasRect])!
-
-        guard let softCropped = softCrop.outputImage,
-              let crispCropped = crispCrop.outputImage,
-              let softCG = ctx.createCGImage(softCropped, from: CGRect(x: 0, y: 0, width: w, height: h)),
-              let crispCG = ctx.createCGImage(crispCropped, from: CGRect(x: 0, y: 0, width: w, height: h)) else { return softImg }
-        let finalSize = CGSize(width: w, height: h)
-        let flipped = UIGraphicsImageRenderer(size: finalSize).image { ctx in
-            let cgCtx = ctx.cgContext
-            cgCtx.translateBy(x: 0, y: finalSize.height)
-            cgCtx.scaleBy(x: 1, y: -1)
+        guard let softOut = softBlur.outputImage, let crispOut = crispBlur.outputImage,
+              let softCG = ctx.createCGImage(softOut, from: softCI.extent),
+              let crispCG = ctx.createCGImage(crispOut, from: crispCI.extent) else { return softImg }
+        return UIGraphicsImageRenderer(size: CGSize(width: w, height: h)).image { _ in
             UIImage(cgImage: softCG).draw(at: .zero)
             UIImage(cgImage: crispCG).draw(at: .zero)
         }
-        return flipped
     }
 }

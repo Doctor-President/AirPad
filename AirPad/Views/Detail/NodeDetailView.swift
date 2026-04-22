@@ -23,6 +23,53 @@ struct NodeDetailView: View {
     @State private var showPromoteConfirmation = false
     @State private var showingNewTagSheet = false
 
+    @State private var bgPhase: Double = 0
+
+    private let circleColors: [(String, String, String)] = [
+        ("9B6FE8", "F5C5A3", "E36B4E"),
+        ("5B8FFF", "A78BFA", "F472B6"),
+        ("34D399", "60A5FA", "A78BFA"),
+        ("FB923C", "FBBF24", "E36B4E"),
+        ("F472B6", "FB7185", "C084FC"),
+        ("22D3EE", "34D399", "60A5FA"),
+        ("A78BFA", "818CF8", "E36B4E"),
+    ]
+
+    private var paletteIndex: Int {
+        guard let node, let tagName = node.tags.first else { return 0 }
+        return abs(tagName.hashValue) % 7
+    }
+
+    @ViewBuilder
+    private var animatedBackground: some View {
+        let colors = circleColors[paletteIndex % circleColors.count]
+        TimelineView(.animation) { timeline in
+            ZStack {
+                Color(red: 0.027, green: 0.027, blue: 0.039)
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                Circle()
+                    .fill(Color(hexString: colors.0))
+                    .frame(width: 320, height: 320)
+                    .blur(radius: 80)
+                    .offset(x: -80 + sin(time * 0.2 + bgPhase * 1.3) * 40,
+                            y: -200 + cos(time * 0.15 + bgPhase * 0.9) * 40)
+                Circle()
+                    .fill(Color(hexString: colors.1))
+                    .frame(width: 280, height: 280)
+                    .blur(radius: 80)
+                    .offset(x: 60 + sin(time * 0.25 + bgPhase * 1.7) * 40,
+                            y: 100 + cos(time * 0.2 + bgPhase * 1.1) * 40)
+                Circle()
+                    .fill(Color(hexString: colors.2))
+                    .frame(width: 240, height: 240)
+                    .blur(radius: 80)
+                    .offset(x: sin(time * 0.3 + bgPhase * 2.1) * 40,
+                            y: 350 + cos(time * 0.25 + bgPhase * 0.7) * 40)
+            }
+        }
+        .ignoresSafeArea()
+    }
+
     enum CaptureMode: String, Identifiable {
         case voice, text, camera
         var id: String { rawValue }
@@ -50,6 +97,7 @@ struct NodeDetailView: View {
                 editedSummary = node.summary
                 editedTags    = node.tags
             }
+            bgPhase = Double.random(in: 0...100)
         }
         .onDisappear {
             store.isInDetailView = false
@@ -129,11 +177,10 @@ struct NodeDetailView: View {
             }
             .padding(20)
         }
-        .background(Color.black.ignoresSafeArea())
+        .background { animatedBackground }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {

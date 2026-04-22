@@ -52,100 +52,59 @@ struct NodeCardView: View {
     let selected: Bool
     let dist: Int
 
+    @State private var phase: Double = 0
+
+    private let circleColors: [(String, String, String)] = [
+        ("9B6FE8", "F5C5A3", "E36B4E"),
+        ("5B8FFF", "A78BFA", "F472B6"),
+        ("34D399", "60A5FA", "A78BFA"),
+        ("FB923C", "FBBF24", "E36B4E"),
+        ("F472B6", "FB7185", "C084FC"),
+        ("22D3EE", "34D399", "60A5FA"),
+        ("A78BFA", "818CF8", "E36B4E"),
+    ]
+
     private var palette: CardPalette {
         CardPalette.all[paletteIndex % CardPalette.all.count]
     }
 
     var body: some View {
         ZStack {
-            // LAYER 1: Outer bloom
-            // Source: position absolute, inset -32/-56, blur 28px/44px, opacity 0.58/0.92
-            // Three radial gradients: pal.a at 30%/50%, pal.b at 72%/50%, pal.c at 50%/50%
-            outerBloom
-                .padding(selected ? -56 : -32)
-                .allowsHitTesting(false)
-
-            // LAYER 2: Card surface with gradient + content + inner glow
-            ZStack {
-                gradientFill
-                cardContent
-                innerGlow.blendMode(.overlay)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 36))
+            gradientFill
+            cardContent
+            innerGlow.blendMode(.overlay)
         }
-        .shadow(
-            color: selected ? .black.opacity(0.58) : .black.opacity(0.32),
-            radius: selected ? 28 : 12,
-            x: 0,
-            y: selected ? 8 : 4
-        )
-    }
-
-    // OUTER BLOOM
-    // Source: BarrelCard outer bloom div, list_view.jsx
-    // radial-gradient(ellipse 70% 65% at 30% 50%, pal.a + "88") — 0x88/0xFF = 0.533 opacity
-    // radial-gradient(ellipse 70% 65% at 72% 50%, pal.b + "77") — 0x77/0xFF = 0.467 opacity
-    // radial-gradient(ellipse 80% 80% at 50% 50%, pal.c + "44") — 0x44/0xFF = 0.267 opacity
-    // filter: blur(44px) selected / blur(28px) unselected
-    // opacity: 0.92 selected / 0.58 unselected
-    private var outerBloom: some View {
-        GeometryReader { geo in
-            ZStack {
-                RadialGradient(
-                    colors: [palette.a.opacity(0.533), .clear],
-                    center: UnitPoint(x: 0.30, y: 0.50),
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.70
-                )
-                RadialGradient(
-                    colors: [palette.b.opacity(0.467), .clear],
-                    center: UnitPoint(x: 0.72, y: 0.50),
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.70
-                )
-                RadialGradient(
-                    colors: [palette.c.opacity(0.267), .clear],
-                    center: UnitPoint(x: 0.50, y: 0.50),
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.80
-                )
-            }
-            .blur(radius: selected ? 44 : 28)
-            .opacity(selected ? 0.92 : 0.58)
-            .frame(width: geo.size.width, height: geo.size.height)
-        }
+        .clipShape(RoundedRectangle(cornerRadius: 36))
+        .onAppear { phase = Double.random(in: 0...100) }
+        .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
     }
 
     // GRADIENT FILL
-    // Source: gradient fill div, list_view.jsx lines ~180-196
-    // Exact layer order and positions preserved:
-    // 1. linear-gradient(110deg, pal.a, pal.d) — base
-    // 2. radial-gradient(ellipse 65% 85% at 15% 50%, pal.a 0%, transparent 55%)
-    // 3. radial-gradient(ellipse 60% 85% at 85% 50%, pal.b 0%, transparent 58%)
-    // 4. radial-gradient(ellipse 75% 70% at 50% 110%, pal.d 0%, transparent 60%)
-    // 5. radial-gradient(ellipse 55% 70% at 50% -10%, pal.c 0%, transparent 60%)
-    // 6. radial-gradient(circle at 55% 40%, rgba(255,230,210,0.55) 0%, transparent 28%)
     private var gradientFill: some View {
-        GeometryReader { geo in
+        let colors = circleColors[paletteIndex % circleColors.count]
+        return TimelineView(.animation) { timeline in
             ZStack {
                 Color(red: 0.027, green: 0.027, blue: 0.039)
+                let time = timeline.date.timeIntervalSinceReferenceDate
                 Circle()
-                    .fill(palette.a)
-                    .frame(width: geo.size.width * 0.85, height: geo.size.width * 0.85)
-                    .offset(x: -geo.size.width * 0.2, y: 0)
-                    .blur(radius: geo.size.width * 0.18)
+                    .fill(Color(hexString: colors.0))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 40)
+                    .offset(x: -80 + sin(time * 0.3 + phase * 1.3) * 30,
+                            y: cos(time * 0.25 + phase * 0.9) * 30)
                 Circle()
-                    .fill(palette.b)
-                    .frame(width: geo.size.width * 0.78, height: geo.size.width * 0.78)
-                    .offset(x: geo.size.width * 0.22, y: geo.size.height * 0.1)
-                    .blur(radius: geo.size.width * 0.16)
+                    .fill(Color(hexString: colors.1))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 40)
+                    .offset(x: sin(time * 0.35 + phase * 1.7) * 30,
+                            y: cos(time * 0.3 + phase * 1.1) * 30)
                 Circle()
-                    .fill(palette.c)
-                    .frame(width: geo.size.width * 0.6, height: geo.size.width * 0.6)
-                    .offset(x: 0, y: geo.size.height * 0.2)
-                    .blur(radius: geo.size.width * 0.14)
+                    .fill(Color(hexString: colors.2))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 40)
+                    .offset(x: 80 + sin(time * 0.4 + phase * 2.1) * 30,
+                            y: cos(time * 0.35 + phase * 0.7) * 30)
             }
-            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 

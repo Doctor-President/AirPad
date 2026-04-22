@@ -28,7 +28,7 @@ struct NodeListView: View {
     @State private var centerIdx = 0
 
     private let cardHeight: CGFloat = 168
-    private let cardSpacing: CGFloat = 8
+    private let cardSpacing: CGFloat = 12
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
 
     enum ListCaptureMode: String, Identifiable {

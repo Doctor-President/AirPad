@@ -17,7 +17,7 @@ struct CanvasView: View {
     @Namespace private var zoomNamespace
 
     @State private var scene = CorpusPhysicsScene()
-    @State private var showGlowDebugPanel = true  // visible by default for testing
+    @State private var showGlowDebugPanel = false
 
     // MARK: - Capture mode
 
@@ -120,6 +120,7 @@ struct CanvasView: View {
             nodeSummaryLayer
             captureTargetBanner
             glowDebugPanelLayer
+            debugPanelToggleButton
             ActionButtonFan(
                 isExpanded: $fanExpanded,
                 isEmpty: store.nodes.isEmpty,
@@ -136,8 +137,8 @@ struct CanvasView: View {
     private var glowDebugPanelLayer: some View {
         if showGlowDebugPanel {
             VStack {
-                Spacer()
                 HStack {
+                    Spacer()
                     GlowDebugPanel(
                         isVisible: $showGlowDebugPanel,
                         onGlowReachChange: { scene.setGlowReach($0) },
@@ -153,12 +154,36 @@ struct CanvasView: View {
                         onChromaticAberrationDecayChange: { scene.setChromaticAberrationDecay($0) },
                         onChromaticAberrationMaxChange: { scene.setChromaticAberrationMax($0) }
                     )
-                    .padding(.leading, 16)
-                    .padding(.bottom, 16)
-                    Spacer()
+                    .padding(.trailing, 16)
+                    .padding(.top, 150)
                 }
+                Spacer()
             }
-            .transition(.move(edge: .leading).combined(with: .opacity))
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
+    private var debugPanelToggleButton: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button {
+                    withAnimation(.spring(response: 0.3)) {
+                        showGlowDebugPanel.toggle()
+                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 28, height: 28)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
+                }
+                .padding(.trailing, 16)
+                .padding(.top, 120)
+            }
+            Spacer()
         }
     }
 

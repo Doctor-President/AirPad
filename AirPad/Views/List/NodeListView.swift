@@ -29,6 +29,7 @@ struct NodeListView: View {
 
     private let cardHeight: CGFloat = 168
     private let cardSpacing: CGFloat = 12
+    private let topBarHeight: CGFloat = 110  // Graph/List toggle bar + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
 
     enum ListCaptureMode: String, Identifiable {
@@ -123,6 +124,9 @@ struct NodeListView: View {
             .contentMargins(.vertical, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
+            .safeAreaInset(edge: .top) {
+                Color.clear.frame(height: topBarHeight)
+            }
             .onChange(of: scrolledID) { _, newID in
                 guard let newID, !isJumping else { return }
                 if let index = displayItems.firstIndex(where: { $0.id == newID }) {

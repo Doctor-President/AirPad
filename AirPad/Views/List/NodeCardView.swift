@@ -51,6 +51,7 @@ struct NodeCardView: View {
     let paletteIndex: Int
     let selected: Bool
     let dist: Int
+    let scale: Double
 
     @State private var phase: Double = 0
 
@@ -77,6 +78,7 @@ struct NodeCardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 36))
         .onAppear { phase = Double.random(in: 0...100) }
         .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
+        .scaleEffect(scale)
     }
 
     // GRADIENT FILL

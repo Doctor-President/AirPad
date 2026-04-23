@@ -101,10 +101,10 @@ struct NodeListView: View {
                             node: item.node,
                             paletteIndex: paletteIndexForNode(item.node),
                             selected: index == centerIdx,
-                            dist: dist
+                            dist: dist,
+                            scale: scale
                         )
                         .frame(height: cardHeight)
-                        .scaleEffect(scale)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .opacity(opacity)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)

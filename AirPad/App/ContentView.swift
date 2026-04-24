@@ -49,7 +49,7 @@ struct ContentView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 58)
+                    .padding(.top, 12)
                     Spacer()
                 }
                 .transition(.opacity.animation(.easeInOut(duration: 0.18)))
@@ -146,7 +146,7 @@ private struct ViewTogglePill: View {
             }
             .foregroundStyle(viewMode == mode ? .black : .white.opacity(0.55))
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .padding(.vertical, 13)
             .background(viewMode == mode ? Color.white : Color.clear)
             .clipShape(Capsule())
         }
@@ -162,9 +162,9 @@ private struct SettingsButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "gearshape.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
+                .frame(width: 48, height: 48)
                 .background(Color(white: 0.18))
                 .clipShape(Circle())
         }
@@ -182,9 +182,9 @@ private struct FilterButton: View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 48, height: 48)
                     .background(Color(white: 0.18))
                     .clipShape(Circle())
 

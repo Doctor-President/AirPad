@@ -43,6 +43,27 @@ struct NodeListView: View {
                 ZStack(alignment: .bottomTrailing) {
                     Color.black.ignoresSafeArea()
                     listContent(containerHeight: geo.size.height)
+                    VStack(spacing: 0) {
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 100)
+                        .allowsHitTesting(false)
+
+                        Spacer()
+
+                        LinearGradient(
+                            colors: [.clear, .black],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 100)
+                        .allowsHitTesting(false)
+                    }
+                    .allowsHitTesting(false)
+                    .ignoresSafeArea()
                     ActionButtonFan(
                         isExpanded: $fanExpanded,
                         isEmpty: store.nodes.isEmpty,
@@ -95,21 +116,45 @@ struct NodeListView: View {
                 LazyVStack(spacing: cardSpacing) {
                     ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, item in
                         let dist = abs(index - centerIdx)
-                        let scale = max(0.75, 1.0 - Double(dist) * 0.088)
-                        let opacity = max(0.55, 1.0 - Double(dist) * 0.2)
 
                         NodeCardView(
                             node: item.node,
                             paletteIndex: paletteIndexForNode(item.node),
                             selected: index == centerIdx,
-                            dist: dist,
-                            scale: scale
+                            dist: dist
                         )
                         .frame(height: cardHeight)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
-                        .opacity(opacity)
-                        .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .id(item.id)
+                        .visualEffect { content, proxy in
+                            let frame = proxy.frame(in: .global)
+                            let screenHeight = UIScreen.main.bounds.height
+                            let screenMidY = screenHeight / 2.0
+
+                            // Vignette effect — top and bottom chrome zones
+                            let topZoneBottom: CGFloat = 175
+                            let bottomZoneTop: CGFloat = screenHeight - 140
+                            let transitionWidth: CGFloat = 240
+
+                            let distanceFromTop = max(0, topZoneBottom - frame.minY)
+                            let distanceFromBottom = max(0, frame.maxY - bottomZoneTop)
+
+                            let tTop = min(distanceFromTop / transitionWidth, 1.0)
+                            let tBottom = min(distanceFromBottom / transitionWidth, 1.0)
+                            let t = max(tTop, tBottom)
+                            let tEased = t * t * (3 - 2 * t)
+
+                            let vignetteOpacity = max(1.0, 1.0 - (tEased * 1.4))
+
+                            // Scale effect — same curve as before, driven by pixel distance from center
+                            let distanceFromCenter = abs(frame.midY - screenMidY)
+                            let scaleT = min(distanceFromCenter / 420, 1.0)
+                            let scale = max(0.75, 1.0 - scaleT * 0.25)
+
+                            return content
+                                .opacity(vignetteOpacity)
+                                .scaleEffect(scale, anchor: .center)
+                        }
                         .matchedTransitionSource(id: item.node.id, in: zoomNamespace)
                         .contentShape(Rectangle())
                         .onTapGesture {
@@ -124,9 +169,6 @@ struct NodeListView: View {
             .contentMargins(.vertical, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
-            .safeAreaInset(edge: .top) {
-                Color.clear.frame(height: topBarHeight)
-            }
             .onChange(of: scrolledID) { _, newID in
                 guard let newID, !isJumping else { return }
                 if let index = displayItems.firstIndex(where: { $0.id == newID }) {

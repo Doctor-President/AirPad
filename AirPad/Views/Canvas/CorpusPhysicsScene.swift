@@ -321,6 +321,78 @@ final class CorpusPhysicsScene: SKScene {
         return shader
     }()
 
+    /// Create Über-node gradient shader with 3 drifting color blobs (per-instance).
+    private func makeUberNodeShader(colors: [UIColor]) -> SKShader {
+        let src = """
+        void main() {
+            vec2 uv = v_tex_coord;
+            vec2 cssUV = vec2(uv.x, 1.0 - uv.y);
+            vec2 center = vec2(0.5, 0.5);
+
+            // Dark base color
+            vec3 base = vec3(0.03, 0.03, 0.04);
+
+            // 3 drifting Gaussian-falloff color blobs
+            // Blob 1: top-left drift
+            vec2 offset1 = vec2(
+                0.3 + sin(u_time * 0.3 + u_phase_1) * 0.2,
+                0.3 + cos(u_time * 0.25 + u_phase_1 * 0.9) * 0.2
+            );
+            float d1 = length(cssUV - offset1);
+            float strength1 = exp(-d1 * d1 / 0.15);
+
+            // Blob 2: center drift
+            vec2 offset2 = vec2(
+                0.5 + sin(u_time * 0.35 + u_phase_2) * 0.15,
+                0.5 + cos(u_time * 0.3 + u_phase_2 * 1.1) * 0.15
+            );
+            float d2 = length(cssUV - offset2);
+            float strength2 = exp(-d2 * d2 / 0.18);
+
+            // Blob 3: bottom-right drift
+            vec2 offset3 = vec2(
+                0.7 + sin(u_time * 0.4 + u_phase_3) * 0.2,
+                0.7 + cos(u_time * 0.35 + u_phase_3 * 0.7) * 0.2
+            );
+            float d3 = length(cssUV - offset3);
+            float strength3 = exp(-d3 * d3 / 0.16);
+
+            // Sum blobs
+            vec3 color = base;
+            color += u_color_1 * strength1;
+            color += u_color_2 * strength2;
+            color += u_color_3 * strength3;
+
+            gl_FragColor = vec4(color, 1.0);
+        }
+        """
+
+        let shader = SKShader(source: src)
+
+        // Convert UIColors to vec3
+        func colorToVec3(_ color: UIColor) -> vector_float3 {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return vector_float3(Float(r), Float(g), Float(b))
+        }
+
+        let color1 = colors.count > 0 ? colorToVec3(colors[0]) : vector_float3(0.5, 0.5, 0.5)
+        let color2 = colors.count > 1 ? colorToVec3(colors[1]) : vector_float3(0.5, 0.5, 0.5)
+        let color3 = colors.count > 2 ? colorToVec3(colors[2]) : vector_float3(0.5, 0.5, 0.5)
+
+        shader.uniforms = [
+            SKUniform(name: "u_time", float: 0.0),
+            SKUniform(name: "u_color_1", vectorFloat3: color1),
+            SKUniform(name: "u_color_2", vectorFloat3: color2),
+            SKUniform(name: "u_color_3", vectorFloat3: color3),
+            SKUniform(name: "u_phase_1", float: Float.random(in: 0...100)),
+            SKUniform(name: "u_phase_2", float: Float.random(in: 0...100)),
+            SKUniform(name: "u_phase_3", float: Float.random(in: 0...100))
+        ]
+
+        return shader
+    }
+
     // Touch tracking
     private var activeTouches: [UITouch: CGPoint] = [:]    // screen-space positions
     private var tapStartInfo: (screenPoint: CGPoint, time: TimeInterval)?
@@ -372,6 +444,11 @@ final class CorpusPhysicsScene: SKScene {
         if isPaused { return }
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+
+        // Update u_time for each Über-node shader
+        for (_, shape) in uberNodeSprites {
+            shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+        }
 
         let scale = cameraNode.xScale
         let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
@@ -919,7 +996,7 @@ final class CorpusPhysicsScene: SKScene {
         return shape
     }
 
-    /// Create Über-node shape with blended child colors (no shader).
+    /// Create Über-node shape with GLSL gradient shader using child colors.
     private func makeUberNodeShape(
         radius: CGFloat,
         colors: [UIColor],
@@ -934,19 +1011,9 @@ final class CorpusPhysicsScene: SKScene {
 
         let shape = SKShapeNode(path: initialPath)
 
-        // Blend the dominant colors from child nodes
-        let blendedColor: UIColor
-        if colors.count == 1 {
-            blendedColor = colors[0]
-        } else if colors.count == 2 {
-            blendedColor = blendColors(colors[0], colors[1], ratio: 0.5)
-        } else {
-            // Blend top 3 colors with equal weighting
-            let blend01 = blendColors(colors[0], colors[1], ratio: 0.5)
-            blendedColor = blendColors(blend01, colors[2], ratio: 0.33)
-        }
-
-        shape.fillColor = blendedColor.withAlphaComponent(0.8)
+        // Apply per-instance shader with child node colors
+        shape.fillTexture = whiteUVTexture
+        shape.fillShader = makeUberNodeShader(colors: colors)
         shape.strokeColor = UIColor.white.withAlphaComponent(0.2)
         shape.lineWidth = 1.5
         shape.zPosition = 1

@@ -115,7 +115,7 @@ struct CanvasView: View {
                     .ignoresSafeArea()
                     .transition(.opacity)
             }
-            SpriteView(scene: scene)
+            SpriteKitView(scene: scene)
                 .ignoresSafeArea()
                 .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
                 .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)

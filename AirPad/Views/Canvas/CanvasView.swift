@@ -310,13 +310,15 @@ struct CanvasView: View {
                 return (tag.name, color)
             }
         )
+        let uberClusters = store.uberNodeCache?.clusters ?? []
         scene.syncNodes(
             nodes,
             layoutPositions: store.canvasLayout.positions,
             tagColors: tagColorMap,
-            newNodeID: newNodeID
+            newNodeID: newNodeID,
+            uberNodeClusters: uberClusters
         )
-        print("[Canvas] syncScene: \(scene.spriteCount) sprites after")
+        print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
     }
 
     // MARK: - Test node injection

@@ -133,7 +133,8 @@ final class CorpusPhysicsScene: SKScene {
         _ nodes: [Node],
         layoutPositions: [String: CanvasPosition],
         tagColors: [String: UIColor] = [:],
-        newNodeID: String? = nil
+        newNodeID: String? = nil,
+        uberNodeClusters: [UberNodeCluster] = []
     ) {
         self.tagColors = tagColors
         positionMap = layoutPositions
@@ -141,21 +142,41 @@ final class CorpusPhysicsScene: SKScene {
         // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
 
-        let incomingIDs = Set(nodes.map { $0.id })
-        let existingIDs = Set(nodeSprites.keys)
+        // Sync regular nodes
+        let incomingNodeIDs = Set(nodes.map { $0.id })
+        let existingNodeIDs = Set(nodeSprites.keys)
 
         // Remove deleted nodes
-        for id in existingIDs.subtracting(incomingIDs) {
+        for id in existingNodeIDs.subtracting(incomingNodeIDs) {
             nodeSprites[id]?.removeFromParent()
             nodeSprites.removeValue(forKey: id)
         }
 
-        // Add or update
+        // Add or update regular nodes
         for node in nodes {
             if nodeSprites[node.id] == nil {
                 addNodeSprite(node, isNew: node.id == newNodeID)
             } else {
                 updateNodeSprite(node)
+            }
+        }
+
+        // Sync Über-nodes
+        let incomingUberIDs = Set(uberNodeClusters.map { $0.id })
+        let existingUberIDs = Set(uberNodeSprites.keys)
+
+        // Remove deleted Über-nodes
+        for id in existingUberIDs.subtracting(incomingUberIDs) {
+            uberNodeSprites[id]?.removeFromParent()
+            uberNodeSprites.removeValue(forKey: id)
+        }
+
+        // Add or update Über-nodes
+        for cluster in uberNodeClusters {
+            if uberNodeSprites[cluster.id] == nil {
+                addUberNodeSprite(cluster, childNodes: nodes)
+            } else {
+                updateUberNodeSprite(cluster, childNodes: nodes)
             }
         }
     }
@@ -164,6 +185,7 @@ final class CorpusPhysicsScene: SKScene {
 
     private var cameraNode = SKCameraNode()
     private var nodeSprites: [String: SKShapeNode] = [:]
+    private var uberNodeSprites: [String: SKShapeNode] = [:]
     private var positionMap: [String: CanvasPosition] = [:]
 
     private var tagColors: [String: UIColor] = [:]
@@ -535,6 +557,115 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    // MARK: - Über-node sprites
+
+    private func addUberNodeSprite(_ cluster: UberNodeCluster, childNodes: [Node]) {
+        let childCount = cluster.childNodeIDs.count
+        let radius = uberNodeRadius(for: childCount)
+        let colors = sampleChildColors(cluster: cluster, childNodes: childNodes)
+
+        let shape = makeUberNodeShape(
+            radius: radius,
+            colors: colors,
+            clusterID: cluster.id
+        )
+        shape.name = "uber:\(cluster.id)"
+
+        // Title label (cluster title, e.g., "Work (12)")
+        let titleLabel = SKLabelNode(text: cluster.title)
+        titleLabel.fontSize = 11
+        titleLabel.fontName = "HelveticaNeue-Medium"
+        titleLabel.fontColor = UIColor.white.withAlphaComponent(0.85)
+        titleLabel.verticalAlignmentMode = .center
+        titleLabel.horizontalAlignmentMode = .center
+        titleLabel.position = .zero
+        titleLabel.zPosition = 2
+        titleLabel.name = "titleLabel"
+        titleLabel.userData = ["fullTitle": cluster.title]
+        shape.addChild(titleLabel)
+
+        // Physics body (heavier than regular nodes)
+        let body = SKPhysicsBody(circleOfRadius: radius)
+        body.linearDamping = 0.7  // Slightly higher damping (slower drift)
+        body.angularDamping = 0.8
+        body.friction = 0.1
+        body.restitution = 0.25
+        body.mass = CGFloat(max(1.0, Float(radius / 20)))  // Heavier
+        shape.physicsBody = body
+
+        // Position: random near center (no stored layout for Über-nodes yet)
+        let finalPosition = CGPoint(
+            x: CGFloat.random(in: -80...80),
+            y: CGFloat.random(in: -80...80)
+        )
+        shape.position = finalPosition
+
+        addChild(shape)
+        uberNodeSprites[cluster.id] = shape
+
+        // Slower breathing animation
+        startUberNodeBreathing(for: shape, clusterID: cluster.id, radius: radius)
+    }
+
+    private func updateUberNodeSprite(_ cluster: UberNodeCluster, childNodes: [Node]) {
+        guard let shape = uberNodeSprites[cluster.id] else { return }
+        // Update title if cluster membership changed
+        if let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
+            label.text = cluster.title
+            label.userData = ["fullTitle": cluster.title]
+        }
+    }
+
+    /// Calculate Über-node radius based on child count.
+    /// Base radius 40pt, +2pt per child, max 80pt.
+    private func uberNodeRadius(for childCount: Int) -> CGFloat {
+        let extra = CGFloat(max(0, childCount - 2)) * 2.0
+        return min(40.0 + extra, 80.0)
+    }
+
+    /// Sample top 3 dominant colors from child nodes' primary tags.
+    private func sampleChildColors(cluster: UberNodeCluster, childNodes: [Node]) -> [UIColor] {
+        let children = childNodes.filter { cluster.childNodeIDs.contains($0.id) }
+        var colorCounts: [UIColor: Int] = [:]
+
+        for child in children {
+            if let tag = child.tags.first, let color = tagColors[tag] {
+                colorCounts[color, default: 0] += 1
+            }
+        }
+
+        // Sort by frequency, take top 3
+        let topColors = colorCounts.sorted { $0.value > $1.value }
+            .prefix(3)
+            .map { $0.key }
+
+        // Fallback to neutral if no colors found
+        if topColors.isEmpty {
+            return [UIColor(red: 0.556, green: 0.556, blue: 0.576, alpha: 1.0)]
+        }
+
+        return Array(topColors)
+    }
+
+    /// Start slower breathing animation for Über-node (1.5× duration of regular nodes).
+    private func startUberNodeBreathing(for shape: SKShapeNode, clusterID: String, radius: CGFloat) {
+        let morphDuration = TimeInterval.random(in: 3.0...4.5)  // Slower than regular (2-3s)
+
+        let morphAction = SKAction.customAction(withDuration: morphDuration) { [weak self, weak shape] node, elapsed in
+            guard let self = self, let shape = shape else { return }
+            let currentTime = CACurrentMediaTime() - self.shaderStartTime
+            let newPath = self.makeDeformedBlobPath(radius: radius, nodeID: clusterID, time: currentTime)
+            shape.path = newPath
+        }
+        morphAction.timingMode = .easeInEaseOut
+
+        let wait = SKAction.wait(forDuration: 0.1)
+        let sequence = SKAction.sequence([morphAction, wait])
+        let forever = SKAction.repeatForever(sequence)
+
+        shape.run(forever, withKey: "blobBreathing")
+    }
+
     // MARK: - Landing ripple
 
     private func playRipple(at position: CGPoint, radius: CGFloat) {
@@ -726,6 +857,57 @@ final class CorpusPhysicsScene: SKScene {
             startBlobBreathing(for: shape, nodeID: nodeID, radius: radius)
         }
         return shape
+    }
+
+    /// Create Über-node shape with blended child colors (no shader).
+    private func makeUberNodeShape(
+        radius: CGFloat,
+        colors: [UIColor],
+        clusterID: String
+    ) -> SKShapeNode {
+        // Start with deformed blob path
+        let initialPath = makeDeformedBlobPath(
+            radius: radius,
+            nodeID: clusterID,
+            time: CACurrentMediaTime() - shaderStartTime
+        )
+
+        let shape = SKShapeNode(path: initialPath)
+
+        // Blend the dominant colors from child nodes
+        let blendedColor: UIColor
+        if colors.count == 1 {
+            blendedColor = colors[0]
+        } else if colors.count == 2 {
+            blendedColor = blendColors(colors[0], colors[1], ratio: 0.5)
+        } else {
+            // Blend top 3 colors with equal weighting
+            let blend01 = blendColors(colors[0], colors[1], ratio: 0.5)
+            blendedColor = blendColors(blend01, colors[2], ratio: 0.33)
+        }
+
+        shape.fillColor = blendedColor.withAlphaComponent(0.8)
+        shape.strokeColor = UIColor.white.withAlphaComponent(0.2)
+        shape.lineWidth = 1.5
+        shape.zPosition = 1
+
+        return shape
+    }
+
+    /// Blend two UIColors with the given ratio (0.0 = all color1, 1.0 = all color2).
+    private func blendColors(_ color1: UIColor, _ color2: UIColor, ratio: CGFloat) -> UIColor {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+
+        color1.getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        color2.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+
+        return UIColor(
+            red: r1 * (1 - ratio) + r2 * ratio,
+            green: g1 * (1 - ratio) + g2 * ratio,
+            blue: b1 * (1 - ratio) + b2 * ratio,
+            alpha: a1 * (1 - ratio) + a2 * ratio
+        )
     }
 
     private func makeTitleLabel(text: String, radius: CGFloat) -> SKLabelNode {

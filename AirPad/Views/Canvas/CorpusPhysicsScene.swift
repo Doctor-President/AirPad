@@ -36,9 +36,9 @@ final class CorpusPhysicsScene: SKScene {
         originalCameraScale = cameraNode.xScale
         zoomedNodeID = nodeID
 
-        // Stop any physics on the node
-        shape.physicsBody?.velocity = .zero
-        shape.physicsBody?.angularVelocity = 0
+        // Save physics body and remove it (node becomes static while zoomed)
+        savedPhysicsBody = shape.physicsBody
+        shape.physicsBody = nil
 
         // Animate camera to center on node
         let cameraMove = SKAction.move(to: shape.position, duration: 0.38)
@@ -72,6 +72,7 @@ final class CorpusPhysicsScene: SKScene {
                 self?.canvasState?.isZoomed = false
                 self?.canvasState?.selectedNodeID = nil
             }
+            savedPhysicsBody = nil
             return
         }
 
@@ -83,8 +84,15 @@ final class CorpusPhysicsScene: SKScene {
         let nodeScale = SKAction.scale(to: 1.0, duration: 0.38)
         nodeScale.timingMode = .easeInEaseOut
 
+        // Restore physics body after animation completes
+        let restorePhysics = SKAction.run { [weak self, weak shape] in
+            guard let self = self, let shape = shape else { return }
+            shape.physicsBody = self.savedPhysicsBody
+            self.savedPhysicsBody = nil
+        }
+
         cameraNode.run(cameraMove)
-        shape.run(nodeScale, withKey: "zoom")
+        shape.run(.sequence([nodeScale, restorePhysics]), withKey: "zoom")
 
         zoomedNodeID = nil
 
@@ -137,6 +145,7 @@ final class CorpusPhysicsScene: SKScene {
     private var originalCameraPosition: CGPoint = .zero
     private var originalCameraScale: CGFloat = 1.0
     private var zoomedNodeID: String? = nil
+    private var savedPhysicsBody: SKPhysicsBody? = nil
 
     // MARK: - Shared shader resources (lazy; created once, reused across all nodes)
 

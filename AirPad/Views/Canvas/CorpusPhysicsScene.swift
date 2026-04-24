@@ -325,6 +325,8 @@ final class CorpusPhysicsScene: SKScene {
     private var activeTouches: [UITouch: CGPoint] = [:]    // screen-space positions
     private var tapStartInfo: (screenPoint: CGPoint, time: TimeInterval)?
     private var lastPinchDistance: CGFloat?
+    private var lastTapTime: TimeInterval = 0
+    private var lastTapLocation: CGPoint = .zero
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -559,6 +561,59 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Über-node sprites
 
+    /// Drill into an Über-node: remove it and spread child nodes outward.
+    private func drillIntoUberNode(clusterID: String) {
+        guard let uberShape = uberNodeSprites[clusterID],
+              let name = uberShape.name,
+              name.hasPrefix("uber:") else { return }
+
+        // Find the cluster to get child node IDs
+        // We need access to the cluster data - store it in userData
+        guard let childNodeIDs = uberShape.userData?["childNodeIDs"] as? [String] else { return }
+
+        let uberPosition = uberShape.position
+
+        // Remove Über-node sprite with fade-out animation
+        let fadeOut = SKAction.fadeAlpha(to: 0, duration: 0.25)
+        let remove = SKAction.removeFromParent()
+        uberShape.run(.sequence([fadeOut, remove]))
+        uberNodeSprites.removeValue(forKey: clusterID)
+
+        // Spread child nodes outward from Über-node position
+        for childID in childNodeIDs {
+            guard let childShape = nodeSprites[childID] else { continue }
+
+            // Calculate direction from Über-node to child
+            let dx = childShape.position.x - uberPosition.x
+            let dy = childShape.position.y - uberPosition.y
+            let distance = hypot(dx, dy)
+
+            // Normalize and apply outward impulse
+            if distance > 0 {
+                let impulseStrength: CGFloat = 80
+                let impulseDx = (dx / distance) * impulseStrength
+                let impulseDy = (dy / distance) * impulseStrength
+                childShape.physicsBody?.applyImpulse(CGVector(dx: impulseDx, dy: impulseDy))
+            } else {
+                // If child is exactly at Über-node position, push in random direction
+                let randomAngle = CGFloat.random(in: 0...(2 * .pi))
+                let impulseStrength: CGFloat = 80
+                childShape.physicsBody?.applyImpulse(CGVector(
+                    dx: cos(randomAngle) * impulseStrength,
+                    dy: sin(randomAngle) * impulseStrength
+                ))
+            }
+        }
+
+        // Play expansion ripple at Über-node position
+        playRipple(at: uberPosition, radius: uberShape.frame.width / 2)
+
+        // Haptic feedback
+        DispatchQueue.main.async {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
     private func addUberNodeSprite(_ cluster: UberNodeCluster, childNodes: [Node]) {
         let childCount = cluster.childNodeIDs.count
         let radius = uberNodeRadius(for: childCount)
@@ -570,6 +625,7 @@ final class CorpusPhysicsScene: SKScene {
             clusterID: cluster.id
         )
         shape.name = "uber:\(cluster.id)"
+        shape.userData = ["childNodeIDs": cluster.childNodeIDs]
 
         // Title label (cluster title, e.g., "Work (12)")
         let titleLabel = SKLabelNode(text: cluster.title)
@@ -1032,9 +1088,38 @@ final class CorpusPhysicsScene: SKScene {
 
         // Convert screen point to scene coordinates (accounts for camera position + scale)
         let scenePoint = convertPoint(fromView: endPoint)
-        if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
+
+        // Check for double-tap (within 0.3s of last tap, within 30pt radius)
+        let currentTime = CACurrentMediaTime()
+        let timeSinceLastTap = currentTime - lastTapTime
+        let distFromLastTap = hypot(scenePoint.x - lastTapLocation.x, scenePoint.y - lastTapLocation.y)
+        let isDoubleTap = timeSinceLastTap < 0.3 && distFromLastTap < 30
+
+        // Update last tap tracking
+        lastTapTime = currentTime
+        lastTapLocation = scenePoint
+
+        // Check for Über-node tap first
+        if let shape = uberNodeSprites.values.first(where: { $0.contains(scenePoint) }),
            let name = shape.name,
-           name.hasPrefix("node:") {
+           name.hasPrefix("uber:") {
+            let clusterID = String(name.dropFirst(5))
+
+            if isDoubleTap {
+                // Double-tap: drill in (expand Über-node into constituent nodes)
+                drillIntoUberNode(clusterID: clusterID)
+            } else {
+                // Single tap: center and zoom (universal behavior)
+                if zoomedNodeID == nil {
+                    centerAndZoomNode(clusterID)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.canvasState?.selectedNodeID = clusterID
+                    }
+                }
+            }
+        } else if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
+                  let name = shape.name,
+                  name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
 
             // If already zoomed, tapping the zoomed node does nothing

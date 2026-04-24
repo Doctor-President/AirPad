@@ -12,6 +12,9 @@ final class CorpusStore {
     var tags: [Tag] = []
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
+    /// Cached Über-node clusters (Tier 1: tag-only). Regenerates on invalidation.
+    var uberNodeCache: UberNodeCache? = nil
+
     /// True when iCloud is unavailable and the app is writing to local storage instead.
     var iCloudUnavailable = false
 
@@ -114,6 +117,8 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Load error: \(error)")
         }
+        // Generate initial Über-node clusters
+        refreshUberNodeClusters()
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
     }
@@ -147,6 +152,8 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Save error: \(error)")
         }
+        // Refresh Über-node clusters (auto-invalidates at 5+ new nodes)
+        refreshUberNodeClusters()
         // Trigger corpus-wide thread analysis once we have enough nodes
         if nodes.count >= 10 {
             Task { await triggerThreadAnalysis() }
@@ -720,6 +727,34 @@ final class CorpusStore {
               let queue = try? JSONDecoder().decode([RejectedBlock].self, from: data)
         else { return [] }
         return queue
+    }
+
+    // MARK: - Über-node clustering (Tier 1: tag-only)
+
+    /// Generate or refresh Über-node clusters if needed.
+    /// Called automatically after node additions when invalidation threshold is met.
+    func refreshUberNodeClusters() {
+        // Check if cache exists and is still valid
+        if let cache = uberNodeCache,
+           !cache.shouldInvalidate(currentNodeCount: nodes.count) {
+            return  // Cache is still fresh
+        }
+
+        // Generate new clusters
+        let service = UberNodeService()
+        uberNodeCache = service.generateClusters(from: nodes)
+
+        if let cache = uberNodeCache {
+            print("[UberNode] Generated \(cache.clusters.count) clusters from \(nodes.count) nodes")
+        } else {
+            print("[UberNode] No viable clusters (need 2+ nodes per tag)")
+        }
+    }
+
+    /// Force regeneration of Über-node clusters (ignores cache validity).
+    func invalidateUberNodeClusters() {
+        uberNodeCache = nil
+        refreshUberNodeClusters()
     }
 
     // MARK: - File resolution

@@ -100,10 +100,10 @@ struct ContentView: View {
                         GhostQueryField()
                             .frame(maxWidth: .infinity)
                         Spacer()
-                            .frame(width: 56) // reserve space for ActionButtonFan + button
+                            .frame(width: 68) // reserve space for ActionButtonFan + button
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 28)
+                    .padding(.bottom, 24)
                 }
             }
         }

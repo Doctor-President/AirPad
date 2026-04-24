@@ -26,6 +26,75 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Center camera on a node and scale it up for detail preview
+    func centerAndZoomNode(_ nodeID: String) {
+        guard let shape = nodeSprites[nodeID],
+              let view = self.view else { return }
+
+        // Save original state
+        originalCameraPosition = cameraNode.position
+        originalCameraScale = cameraNode.xScale
+        zoomedNodeID = nodeID
+
+        // Stop any physics on the node
+        shape.physicsBody?.velocity = .zero
+        shape.physicsBody?.angularVelocity = 0
+
+        // Animate camera to center on node
+        let cameraMove = SKAction.move(to: shape.position, duration: 0.38)
+        cameraMove.timingMode = .easeInEaseOut
+
+        // Scale up the node
+        let nodeScale = SKAction.scale(to: 2.5, duration: 0.38)
+        nodeScale.timingMode = .easeInEaseOut
+
+        cameraNode.run(cameraMove)
+        shape.run(nodeScale, withKey: "zoom")
+
+        // Update canvas state for overlay positioning
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.canvasState?.isZoomed = true
+            // Center of screen in view coordinates
+            self.canvasState?.zoomedNodeScreenPosition = CGPoint(
+                x: view.bounds.midX,
+                y: view.bounds.midY
+            )
+        }
+    }
+
+    /// Reset camera and node scale to original state
+    func resetZoom() {
+        guard let nodeID = zoomedNodeID,
+              let shape = nodeSprites[nodeID] else {
+            // If no zoomed node, just update state
+            DispatchQueue.main.async { [weak self] in
+                self?.canvasState?.isZoomed = false
+                self?.canvasState?.selectedNodeID = nil
+            }
+            return
+        }
+
+        // Animate camera back
+        let cameraMove = SKAction.move(to: originalCameraPosition, duration: 0.38)
+        cameraMove.timingMode = .easeInEaseOut
+
+        // Scale node back to normal
+        let nodeScale = SKAction.scale(to: 1.0, duration: 0.38)
+        nodeScale.timingMode = .easeInEaseOut
+
+        cameraNode.run(cameraMove)
+        shape.run(nodeScale, withKey: "zoom")
+
+        zoomedNodeID = nil
+
+        // Update canvas state
+        DispatchQueue.main.async { [weak self] in
+            self?.canvasState?.isZoomed = false
+            self?.canvasState?.selectedNodeID = nil
+        }
+    }
+
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
     func syncNodes(
@@ -63,6 +132,11 @@ final class CorpusPhysicsScene: SKScene {
     private var positionMap: [String: CanvasPosition] = [:]
 
     private var tagColors: [String: UIColor] = [:]
+
+    // Zoom state
+    private var originalCameraPosition: CGPoint = .zero
+    private var originalCameraScale: CGFloat = 1.0
+    private var zoomedNodeID: String? = nil
 
     // MARK: - Shared shader resources (lazy; created once, reused across all nodes)
 
@@ -696,13 +770,24 @@ final class CorpusPhysicsScene: SKScene {
            let name = shape.name,
            name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
-            DispatchQueue.main.async { [weak self] in
-                self?.canvasState?.selectedNodeID = nodeID
+
+            // If already zoomed, tapping the zoomed node does nothing
+            // (tap outside will dismiss via the else branch)
+            if zoomedNodeID == nil {
+                // Zoom in on this node
+                centerAndZoomNode(nodeID)
+                DispatchQueue.main.async { [weak self] in
+                    self?.canvasState?.selectedNodeID = nodeID
+                }
             }
         } else {
-            // Tap on empty space — deselect
-            DispatchQueue.main.async { [weak self] in
-                self?.canvasState?.selectedNodeID = nil
+            // Tap on empty space — if zoomed, reset; otherwise deselect
+            if zoomedNodeID != nil {
+                resetZoom()
+            } else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.canvasState?.selectedNodeID = nil
+                }
             }
         }
     }

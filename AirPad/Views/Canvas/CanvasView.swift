@@ -206,18 +206,18 @@ struct CanvasView: View {
 
     @ViewBuilder
     private var nodeSummaryLayer: some View {
-        if let id = canvasState.selectedNodeID,
+        if canvasState.isZoomed,
+           let id = canvasState.selectedNodeID,
            let node = store.nodes.first(where: { $0.id == id }) {
+            // Full-screen tap target for dismissal
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture { canvasState.selectedNodeID = nil }
+                .onTapGesture { scene.resetZoom() }
                 .ignoresSafeArea()
-            NodeSummaryOverlay(
-                node: node, namespace: zoomNamespace,
-                onEnterDetail: { navigationPath.append(node) },
-                onDismiss: { canvasState.selectedNodeID = nil }
-            )
-            .transition(.move(edge: .bottom).combined(with: .opacity))
+
+            // Detail content overlay positioned at node center
+            NodeDetailOverlay(node: node)
+                .transition(.opacity)
         }
     }
 
@@ -407,77 +407,48 @@ struct CanvasView: View {
     }
 }
 
-// MARK: - Node summary overlay
+// MARK: - Node detail overlay (on-node preview)
 
-private struct NodeSummaryOverlay: View {
+private struct NodeDetailOverlay: View {
     let node: Node
-    let namespace: Namespace.ID
-    let onEnterDetail: () -> Void
-    let onDismiss: () -> Void
 
     @Environment(CorpusStore.self) private var store
 
     var body: some View {
-        VStack {
-            Spacer()
-            VStack(alignment: .leading, spacing: 10) {
-                Text(node.title)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
+        VStack(spacing: 8) {
+            // Title
+            Text(node.title)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 2)
 
-                if !node.summary.isEmpty {
-                    Text(node.summary)
-                        .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.65))
-                        .lineLimit(2)
-                }
-
-                // Tags
-                if !node.tags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(node.tags, id: \.self) { name in
-                                let color = tagColor(for: name)
-                                Text(name)
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(color.opacity(0.3))
-                                    .clipShape(Capsule())
-                            }
-                        }
-                    }
-                }
-
-                HStack(spacing: 14) {
-                    ItemCountsRow(items: node.items)
-                    Spacer()
-                    Text(node.createdAt, style: .relative)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.40))
-                    + Text(" ago")
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.40))
-                }
+            // Summary
+            if !node.summary.isEmpty {
+                Text(node.summary)
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.center)
+                    .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 2)
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .padding(.horizontal, 16)
-            .padding(.bottom, 100)
-            .matchedTransitionSource(id: node.id, in: namespace)
-            .onTapGesture { onEnterDetail() }
-        }
-    }
 
-    private func tagColor(for name: String) -> Color {
-        if let tag = store.tags.first(where: { $0.name == name }) {
-            return Color(hex: tag.colorHex) ?? .gray
+            // Type icon and timestamp
+            HStack(spacing: 16) {
+                ItemCountsRow(items: node.items)
+
+                Text(node.createdAt, style: .relative)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.65))
+                + Text(" ago")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.65))
+            }
+            .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 1)
         }
-        return .gray
+        .padding(.horizontal, 40)
+        .frame(maxWidth: 400)
     }
 }
 

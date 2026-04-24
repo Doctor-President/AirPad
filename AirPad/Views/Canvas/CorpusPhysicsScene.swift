@@ -350,6 +350,7 @@ final class CorpusPhysicsScene: SKScene {
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
+        print("[didMove] scene size: \(self.size) isPaused: \(self.isPaused)")
     }
 
     override func update(_ currentTime: TimeInterval) {

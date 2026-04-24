@@ -351,15 +351,6 @@ private struct ItemRow: View {
                     .background(Color.white.opacity(0.07))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                     .focused($textEditorFocused)
-                    .toolbar {
-                        ToolbarItemGroup(placement: .keyboard) {
-                            Spacer()
-                            Button("Done") {
-                                textEditorFocused = false
-                            }
-                            .fontWeight(.semibold)
-                        }
-                    }
             } else {
                 Text(item.content ?? "")
                     .font(.body)

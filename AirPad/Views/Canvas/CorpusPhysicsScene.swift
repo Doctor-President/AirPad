@@ -395,12 +395,14 @@ final class CorpusPhysicsScene: SKScene {
                 // Tier 1: 2 words
                 label.isHidden = false
                 let words = fullTitle.split(separator: " ")
-                label.text = words.prefix(2).joined(separator: " ")
+                let newText = words.prefix(2).joined(separator: " ")
+                if label.text != newText { label.text = newText }
             case 2:
                 // Tier 2: 3 words
                 label.isHidden = false
                 let words = fullTitle.split(separator: " ")
-                label.text = words.prefix(3).joined(separator: " ")
+                let newText = words.prefix(3).joined(separator: " ")
+                if label.text != newText { label.text = newText }
             default:
                 break
             }
@@ -518,6 +520,7 @@ final class CorpusPhysicsScene: SKScene {
         body.friction = 0.1
         body.restitution = 0.25
         body.mass = CGFloat(max(0.5, Float(radius / 30)))
+        body.allowsRotation = false
         shape.physicsBody = body
 
         // Position: stored layout or random near center
@@ -647,6 +650,7 @@ final class CorpusPhysicsScene: SKScene {
         body.friction = 0.1
         body.restitution = 0.25
         body.mass = CGFloat(max(1.0, Float(radius / 20)))  // Heavier
+        body.allowsRotation = false
         shape.physicsBody = body
 
         // Position: random near center (no stored layout for Über-nodes yet)
@@ -968,7 +972,9 @@ final class CorpusPhysicsScene: SKScene {
 
     private func makeTitleLabel(text: String, radius: CGFloat) -> SKLabelNode {
         let label = SKLabelNode(text: text)
-        label.fontSize = 10
+        label.fontSize = 48  // High-res rasterization
+        label.xScale = 10.0 / 48.0  // Scale down to 10pt visual size
+        label.yScale = 10.0 / 48.0
         label.fontName = "HelveticaNeue"
         label.fontColor = UIColor.white.withAlphaComponent(0.65)
         label.verticalAlignmentMode = .center

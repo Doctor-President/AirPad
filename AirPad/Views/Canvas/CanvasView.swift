@@ -17,7 +17,12 @@ struct CanvasView: View {
 
     @Namespace private var zoomNamespace
 
-    @State private var scene = CorpusPhysicsScene()
+    @State private var scene: CorpusPhysicsScene = {
+        let s = CorpusPhysicsScene(size: CGSize(width: 393, height: 852))
+        s.scaleMode = .resizeFill
+        s.backgroundColor = UIColor(red: 0.027, green: 0.027, blue: 0.039, alpha: 1.0)
+        return s
+    }()
     @State private var showGlowDebugPanel = false
 
     // MARK: - Capture mode
@@ -34,8 +39,6 @@ struct CanvasView: View {
             canvasStack
         }
         .onAppear {
-            scene.scaleMode = .resizeFill
-            scene.backgroundColor = UIColor(red: 0.027, green: 0.027, blue: 0.039, alpha: 1.0)
             scene.canvasState = canvasState
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)

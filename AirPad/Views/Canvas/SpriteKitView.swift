@@ -7,6 +7,7 @@ struct SpriteKitView: UIViewRepresentable {
     func makeUIView(context: Context) -> SKView {
         let view = SKView()
         scene.isPaused = false
+        view.preferredFramesPerSecond = 120
         view.presentScene(scene)
         view.ignoresSiblingOrder = true
         view.isPaused = false

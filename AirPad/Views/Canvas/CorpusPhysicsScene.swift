@@ -40,6 +40,10 @@ final class CorpusPhysicsScene: SKScene {
         savedPhysicsBody = shape.physicsBody
         shape.physicsBody = nil
 
+        // Save zPosition and bring node to front
+        savedZPosition = shape.zPosition
+        shape.zPosition = 1000
+
         // Animate camera to center on node
         let cameraMove = SKAction.move(to: shape.position, duration: 0.38)
         cameraMove.timingMode = .easeInEaseOut
@@ -73,6 +77,7 @@ final class CorpusPhysicsScene: SKScene {
                 self?.canvasState?.selectedNodeID = nil
             }
             savedPhysicsBody = nil
+            savedZPosition = 0
             return
         }
 
@@ -84,10 +89,11 @@ final class CorpusPhysicsScene: SKScene {
         let nodeScale = SKAction.scale(to: 1.0, duration: 0.38)
         nodeScale.timingMode = .easeInEaseOut
 
-        // Restore physics body after animation completes
+        // Restore physics body and zPosition after animation completes
         let restorePhysics = SKAction.run { [weak self, weak shape] in
             guard let self = self, let shape = shape else { return }
             shape.physicsBody = self.savedPhysicsBody
+            shape.zPosition = self.savedZPosition
             self.savedPhysicsBody = nil
         }
 
@@ -146,6 +152,7 @@ final class CorpusPhysicsScene: SKScene {
     private var originalCameraScale: CGFloat = 1.0
     private var zoomedNodeID: String? = nil
     private var savedPhysicsBody: SKPhysicsBody? = nil
+    private var savedZPosition: CGFloat = 0
 
     // MARK: - Shared shader resources (lazy; created once, reused across all nodes)
 

@@ -943,7 +943,11 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Start breathing animation for a node shape
     private func startBlobBreathing(for shape: SKShapeNode, nodeID: String, radius: CGFloat) {
-        let morphDuration = TimeInterval.random(in: 2.0...3.0)
+        // Über-nodes breathe slower than regular nodes
+        let isUberNode = shape.name?.hasPrefix("uber:") ?? false
+        let morphDuration = isUberNode
+            ? TimeInterval.random(in: 3.5...5.0)
+            : TimeInterval.random(in: 2.0...3.0)
 
         let morphAction = SKAction.customAction(withDuration: morphDuration) { [weak self, weak shape] node, elapsed in
             guard let self = self, let shape = shape else { return }

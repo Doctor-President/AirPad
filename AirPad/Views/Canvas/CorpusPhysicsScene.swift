@@ -980,7 +980,7 @@ final class CorpusPhysicsScene: SKScene {
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
         label.position = .zero
-        label.preferredMaxLayoutWidth = radius * 1.4
+        label.preferredMaxLayoutWidth = radius * 6.72  // pre-scale local coordinates: visible width = radius * 1.4, divided by xScale (10/48)
         label.numberOfLines = 2
         label.zPosition = 2
         label.name = "titleLabel"

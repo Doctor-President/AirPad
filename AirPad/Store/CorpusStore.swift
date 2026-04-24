@@ -722,6 +722,45 @@ final class CorpusStore {
         return queue
     }
 
+    // MARK: - Über-node latency test
+
+    /// Test Foundation Model latency with representative node data.
+    /// Returns (totalTime, avgTime, successCount) for 10 node texts.
+    func testFoundationModelLatency() async -> (total: TimeInterval, average: TimeInterval, successCount: Int)? {
+        guard #available(iOS 26.0, *) else { return nil }
+
+        // Prepare 10 representative texts from existing nodes, or use synthetic data
+        let testTexts: [String]
+        if nodes.count >= 10 {
+            testTexts = nodes.prefix(10).map { "\($0.title). \($0.summary)" }
+        } else {
+            // Synthetic test data if corpus is too small
+            testTexts = [
+                "Morning routine ideas. Plan a productive start to the day with exercise and meditation.",
+                "Recipe for pasta carbonara. Classic Italian dish with eggs, cheese, and pancetta.",
+                "Meeting notes from product review. Discussed roadmap priorities and Q2 goals.",
+                "Dream journal entry. Vivid imagery of flying over mountains and forests.",
+                "Travel itinerary for Tokyo. Visit temples, markets, and cherry blossom spots.",
+                "Work project deadline. Complete design mockups by end of week.",
+                "Family gathering photos. Captured moments from weekend barbecue.",
+                "Art project sketch. Abstract composition exploring color theory.",
+                "Learning Swift concurrency. Understanding async/await patterns and actors.",
+                "Health tracking data. Daily steps, sleep quality, and nutrition goals."
+            ]
+        }
+
+        let aiService = AIService()
+        let result = await aiService.testFoundationModelLatency(texts: testTexts)
+
+        if let result = result {
+            print("[LatencyTest] Total: \(String(format: "%.2f", result.total))s, Avg: \(String(format: "%.3f", result.average))s, Success: \(result.successCount)/\(testTexts.count)")
+        } else {
+            print("[LatencyTest] Foundation Model unavailable")
+        }
+
+        return result
+    }
+
     // MARK: - File resolution
 
     func itemFileURL(for item: NodeItem, nodeID: String) async -> URL? {

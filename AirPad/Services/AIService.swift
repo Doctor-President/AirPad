@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import QuartzCore
 
 // MARK: - Structured output types
 
@@ -94,6 +95,41 @@ actor AIService {
         } catch {
             return nil
         }
+    }
+
+    // MARK: - Embedding generation (for Über-node clustering)
+
+    /// Latency test proxy: use Foundation Model summarization as a latency benchmark.
+    /// Embedding API not yet exposed in iOS 26 beta — this proxy measures similar
+    /// on-device inference cost. Returns (totalTime, avgPerText, successCount) or nil.
+    @Generable
+    struct EmbeddingTestSummary {
+        @Guide(description: "Two-word summary of the text")
+        var summary: String
+    }
+
+    func testFoundationModelLatency(texts: [String]) async -> (total: TimeInterval, average: TimeInterval, successCount: Int)? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+
+        let startTime = CACurrentMediaTime()
+        var successCount = 0
+
+        for text in texts {
+            do {
+                let session = LanguageModelSession()
+                let _ = try await session.respond(to: "Summarize in 2 words: \(text)", generating: EmbeddingTestSummary.self)
+                successCount += 1
+            } catch {
+                // Skip failures, continue measuring
+                continue
+            }
+        }
+
+        let endTime = CACurrentMediaTime()
+        let totalTime = endTime - startTime
+        let avgTime = successCount > 0 ? totalTime / Double(successCount) : 0
+
+        return (totalTime, avgTime, successCount)
     }
 
     // MARK: - Image description (stubbed — vision input added in later session)

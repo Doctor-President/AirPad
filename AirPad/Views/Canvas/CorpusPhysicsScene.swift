@@ -357,6 +357,7 @@ final class CorpusPhysicsScene: SKScene {
 
         let scale = cameraNode.xScale
         let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
+
         guard tier != currentLabelTier else { return }
         currentLabelTier = tier
         applyLabelTier(tier)
@@ -364,8 +365,7 @@ final class CorpusPhysicsScene: SKScene {
 
     private func applyLabelTier(_ tier: Int) {
         for (_, shape) in nodeSprites {
-            guard let cropNode = shape.children.first(where: { $0 is SKCropNode }) as? SKCropNode,
-                  let label = cropNode.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
+            guard let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
                   let fullTitle = label.userData?["fullTitle"] as? String else {
                 continue
             }
@@ -373,15 +373,15 @@ final class CorpusPhysicsScene: SKScene {
             switch tier {
             case 0:
                 // Tier 0: Hidden
-                cropNode.isHidden = true
+                label.isHidden = true
             case 1:
                 // Tier 1: 2 words
-                cropNode.isHidden = false
+                label.isHidden = false
                 let words = fullTitle.split(separator: " ")
                 label.text = words.prefix(2).joined(separator: " ")
             case 2:
                 // Tier 2: 3 words
-                cropNode.isHidden = false
+                label.isHidden = false
                 let words = fullTitle.split(separator: " ")
                 label.text = words.prefix(3).joined(separator: " ")
             default:
@@ -470,18 +470,17 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
-        let labelCropNode = makeTitleLabel(text: node.title, offsetY: 0, radius: radius)
-        shape.addChild(labelCropNode)
+        let labelNode = makeTitleLabel(text: node.title, radius: radius)
+        shape.addChild(labelNode)
 
         // Apply current label tier immediately on add
         if currentLabelTier == 0 {
-            labelCropNode.isHidden = true
+            labelNode.isHidden = true
         } else {
-            labelCropNode.isHidden = false
-            if let label = labelCropNode.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
-               let fullTitle = label.userData?["fullTitle"] as? String {
+            labelNode.isHidden = false
+            if let fullTitle = labelNode.userData?["fullTitle"] as? String {
                 let words = fullTitle.split(separator: " ")
-                label.text = words.prefix(currentLabelTier == 1 ? 2 : 3).joined(separator: " ")
+                labelNode.text = words.prefix(currentLabelTier == 1 ? 2 : 3).joined(separator: " ")
             }
         }
 
@@ -536,9 +535,8 @@ final class CorpusPhysicsScene: SKScene {
     private func updateNodeSprite(_ node: Node) {
         guard let shape = nodeSprites[node.id] else { return }
         shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
-        // Title label update (now inside SKCropNode)
-        if let cropNode = shape.children.first(where: { $0 is SKCropNode }) as? SKCropNode,
-           let label = cropNode.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
+        // Title label update
+        if let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
             label.text = node.title
             label.userData = ["fullTitle": node.title]
         }
@@ -739,7 +737,7 @@ final class CorpusPhysicsScene: SKScene {
         return shape
     }
 
-    private func makeTitleLabel(text: String, offsetY: CGFloat, radius: CGFloat) -> SKCropNode {
+    private func makeTitleLabel(text: String, radius: CGFloat) -> SKLabelNode {
         let label = SKLabelNode(text: text)
         label.fontSize = 10
         label.fontName = "HelveticaNeue"
@@ -747,23 +745,12 @@ final class CorpusPhysicsScene: SKScene {
         label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
         label.position = .zero
-        label.preferredMaxLayoutWidth = radius * 1.6
+        label.preferredMaxLayoutWidth = radius * 1.4
         label.numberOfLines = 2
         label.zPosition = 2
         label.name = "titleLabel"
-
-        // Store full title in userData for zoom-aware truncation
         label.userData = ["fullTitle": text]
-
-        // Wrap in SKCropNode with circular mask to clip to node boundary
-        let cropNode = SKCropNode()
-        let circleMask = SKShapeNode(circleOfRadius: radius)
-        circleMask.fillColor = .white
-        cropNode.maskNode = circleMask
-        cropNode.addChild(label)
-        cropNode.zPosition = 2
-
-        return cropNode
+        return label
     }
 
     private func bubbleRadius(for node: Node) -> CGFloat {

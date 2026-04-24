@@ -13,6 +13,7 @@ struct CanvasView: View {
     @State private var previousNodeIDs: Set<String> = []
     @State private var navigationPath = NavigationPath()
     @State private var localTagSuggestions: TagSuggestionContext? = nil
+    @State private var isDismissing = false
 
     @Namespace private var zoomNamespace
 
@@ -206,18 +207,27 @@ struct CanvasView: View {
 
     @ViewBuilder
     private var nodeSummaryLayer: some View {
-        if canvasState.isZoomed,
+        if (canvasState.isZoomed || isDismissing),
            let id = canvasState.selectedNodeID,
            let node = store.nodes.first(where: { $0.id == id }) {
-            // Full-screen tap target for dismissal
+            // Full-screen tap target for dismissal (disabled to allow card tap)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { scene.resetZoom() }
                 .ignoresSafeArea()
+                .allowsHitTesting(false)
 
-            // Detail content overlay positioned at node center
-            NodeDetailOverlay(node: node)
-                .transition(.opacity)
+            // Detail content overlay positioned at screen center
+            NodeDetailOverlay(
+                node: node,
+                canvasState: canvasState,
+                isDismissing: $isDismissing,
+                navigationPath: $navigationPath,
+                scene: scene
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
+            .transition(.opacity)
         }
     }
 
@@ -407,48 +417,245 @@ struct CanvasView: View {
     }
 }
 
-// MARK: - Node detail overlay (on-node preview)
+// MARK: - Node detail overlay (animated gradient card, morphs from circle)
 
 private struct NodeDetailOverlay: View {
     let node: Node
+    @Bindable var canvasState: CanvasState
+    @Binding var isDismissing: Bool
+    @Binding var navigationPath: NavigationPath
+    let scene: CorpusPhysicsScene
 
     @Environment(CorpusStore.self) private var store
+    @State private var isExpanded = false
+    @State private var showText = false
+    @State private var phase: Double = 0
+
+    // Same circleColors table as NodeCardView
+    private let circleColors: [(String, String, String)] = [
+        ("9B6FE8", "F5C5A3", "E36B4E"),
+        ("5B8FFF", "A78BFA", "F472B6"),
+        ("34D399", "60A5FA", "A78BFA"),
+        ("FB923C", "FBBF24", "E36B4E"),
+        ("F472B6", "FB7185", "C084FC"),
+        ("22D3EE", "34D399", "60A5FA"),
+        ("A78BFA", "818CF8", "E36B4E"),
+    ]
+
+    // Derive palette index from node's primary tag (same logic as paletteIndexForNode)
+    private var paletteIndex: Int {
+        guard let tagName = node.tags.first else { return 0 }
+        switch tagName {
+        case "pal0": return 0
+        case "pal1": return 1
+        case "pal2": return 2
+        case "pal3": return 3
+        case "pal4": return 4
+        case "pal5": return 5
+        case "pal6": return 6
+        default:
+            return abs(tagName.hashValue) % 7
+        }
+    }
+
+    // Calculate initial node diameter based on item count (matches bubbleRadius logic)
+    private var initialDiameter: CGFloat {
+        let radius = {
+            let extra = CGFloat(max(0, node.items.count - 1)) * 4.0
+            return min(30.0 + extra, 60.0)
+        }()
+        return radius * 2
+    }
+
+    // Overlay dimensions: screen width minus 80pt (40pt padding each side)
+    private var finalWidth: CGFloat {
+        UIScreen.main.bounds.width - 80
+    }
+
+    private var finalHeight: CGFloat {
+        finalWidth * 0.75  // More content room than previous 0.6
+    }
 
     var body: some View {
-        VStack(spacing: 8) {
-            // Title
-            Text(node.title)
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 2)
+        ZStack {
+            // Animated gradient fill (replicated from NodeCardView)
+            gradientFill
+                .frame(
+                    width: isExpanded ? finalWidth : initialDiameter,
+                    height: isExpanded ? finalHeight : initialDiameter
+                )
+                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 32 : initialDiameter / 2))
+                .opacity(isExpanded ? 1.0 : 0.0)
 
-            // Summary
-            if !node.summary.isEmpty {
-                Text(node.summary)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(3)
-                    .multilineTextAlignment(.center)
-                    .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 2)
+            // Inner glow overlay (animates with shape)
+            innerGlow(cornerRadius: isExpanded ? 32 : initialDiameter / 2)
+                .frame(
+                    width: isExpanded ? finalWidth : initialDiameter,
+                    height: isExpanded ? finalHeight : initialDiameter
+                )
+                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 32 : initialDiameter / 2))
+                .blendMode(.overlay)
+                .opacity(isExpanded ? 1.0 : 0.0)
+
+            // Text content: fades in after morph completes
+            if showText {
+                VStack(alignment: .leading, spacing: 12) {
+                    // Title
+                    Text(node.title)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Summary
+                    if !node.summary.isEmpty {
+                        Text(node.summary)
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Spacer()
+
+                    // Item counts and timestamp
+                    HStack(spacing: 16) {
+                        ItemCountsRow(items: node.items)
+
+                        Text(node.createdAt, style: .relative)
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.65))
+                        + Text(" ago")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.65))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 32)
+                .padding(.vertical, 24)
+                .frame(width: finalWidth, height: finalHeight)
+                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
             }
 
-            // Type icon and timestamp
-            HStack(spacing: 16) {
-                ItemCountsRow(items: node.items)
-
-                Text(node.createdAt, style: .relative)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.65))
-                + Text(" ago")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.65))
+            // X dismiss button (fades in with text)
+            if showText {
+                ZStack(alignment: .topTrailing) {
+                    Color.clear
+                    Button {
+                        scene.resetZoom()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .frame(width: 28, height: 28)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Circle())
+                    }
+                    .padding(.top, 12)
+                    .padding(.trailing, 12)
+                }
+                .frame(width: finalWidth, height: finalHeight)
+                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
             }
-            .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 1)
         }
-        .padding(.horizontal, 40)
-        .frame(maxWidth: 400)
+        .drawingGroup()
+        .onTapGesture {
+            // Tap card to navigate to NodeDetailView
+            navigationPath.append(node)
+            scene.resetZoom()
+        }
+        .onAppear {
+            // Randomize phase for animation uniqueness
+            phase = Double.random(in: 0...100)
+
+            // Phase 1: Morph shape from circle to rounded rect (0.25s)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isExpanded = true
+            }
+
+            // Phase 2: Fade in text after morph completes (0.25s delay, 0.1s duration)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    showText = true
+                }
+            }
+        }
+        .onChange(of: canvasState.isZoomed) { wasZoomed, isZoomed in
+            // Detect dismiss trigger (zoom → not zoomed)
+            if wasZoomed && !isZoomed {
+                // Keep overlay visible during dismiss animation
+                isDismissing = true
+
+                // Phase 1: Fade out text (0.1s)
+                withAnimation(.easeInOut(duration: 0.1)) {
+                    showText = false
+                }
+
+                // Phase 2: Collapse shape back to circle after text fades (0.1s delay, 0.25s duration)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isExpanded = false
+                    }
+                }
+
+                // Phase 3: Remove overlay after full animation sequence (0.35s total)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    isDismissing = false
+                }
+            }
+        }
+        .onDisappear {
+            // Reset state for next appearance
+            isExpanded = false
+            showText = false
+        }
+    }
+
+    // GRADIENT FILL (replicated from NodeCardView exactly)
+    private var gradientFill: some View {
+        let colors = circleColors[paletteIndex % circleColors.count]
+        return TimelineView(.animation) { timeline in
+            ZStack {
+                Color(red: 0.027, green: 0.027, blue: 0.039)
+                let time = timeline.date.timeIntervalSinceReferenceDate
+                Circle()
+                    .fill(Color(hexString: colors.0))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 40)
+                    .offset(x: -80 + sin(time * 0.3 + phase * 1.3) * 30,
+                            y: cos(time * 0.25 + phase * 0.9) * 30)
+                Circle()
+                    .fill(Color(hexString: colors.1))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 40)
+                    .offset(x: sin(time * 0.35 + phase * 1.7) * 30,
+                            y: cos(time * 0.3 + phase * 1.1) * 30)
+                Circle()
+                    .fill(Color(hexString: colors.2))
+                    .frame(width: 180, height: 180)
+                    .blur(radius: 40)
+                    .offset(x: 80 + sin(time * 0.4 + phase * 2.1) * 30,
+                            y: cos(time * 0.35 + phase * 0.7) * 30)
+            }
+        }
+    }
+
+    // INNER GLOW (replicated from NodeCardView)
+    private func innerGlow(cornerRadius: CGFloat) -> some View {
+        GeometryReader { geo in
+            ZStack {
+                RadialGradient(
+                    colors: [.black, Color.white.opacity(0.85)],
+                    center: .center,
+                    startRadius: geo.size.width * 0.15,
+                    endRadius: geo.size.width * 0.72
+                )
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5)
+            }
+        }
     }
 }
 

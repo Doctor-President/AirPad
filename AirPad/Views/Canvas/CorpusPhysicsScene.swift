@@ -48,12 +48,20 @@ final class CorpusPhysicsScene: SKScene {
         let cameraMove = SKAction.move(to: shape.position, duration: 0.38)
         cameraMove.timingMode = .easeInEaseOut
 
-        // Scale up the node
-        let nodeScale = SKAction.scale(to: 2.5, duration: 0.38)
+        // Calculate dynamic scale to match card height
+        let currentNodeWidth = shape.frame.width
+        let screenWidth = view.bounds.width
+        let targetWidth = (screenWidth - 80) * 0.75
+        let scaleMultiplier = targetWidth / currentNodeWidth
+
+        let nodeScale = SKAction.scale(to: scaleMultiplier, duration: 0.38)
         nodeScale.timingMode = .easeInEaseOut
 
+        let nodeFade = SKAction.fadeAlpha(to: 0, duration: 0.38)
+        nodeFade.timingMode = .easeInEaseOut
+
         cameraNode.run(cameraMove)
-        shape.run(nodeScale, withKey: "zoom")
+        shape.run(.group([nodeScale, nodeFade]), withKey: "zoom")
 
         // Update canvas state for overlay positioning
         DispatchQueue.main.async { [weak self] in
@@ -74,6 +82,9 @@ final class CorpusPhysicsScene: SKScene {
             // If no zoomed node, just update state
             DispatchQueue.main.async { [weak self] in
                 self?.canvasState?.isZoomed = false
+            }
+            // Delay clearing selectedNodeID to allow dismiss animation to complete
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
                 self?.canvasState?.selectedNodeID = nil
             }
             savedPhysicsBody = nil
@@ -85,9 +96,12 @@ final class CorpusPhysicsScene: SKScene {
         let cameraMove = SKAction.move(to: originalCameraPosition, duration: 0.38)
         cameraMove.timingMode = .easeInEaseOut
 
-        // Scale node back to normal
+        // Scale node back to normal and fade back in
         let nodeScale = SKAction.scale(to: 1.0, duration: 0.38)
         nodeScale.timingMode = .easeInEaseOut
+
+        let nodeFade = SKAction.fadeAlpha(to: 1, duration: 0.38)
+        nodeFade.timingMode = .easeInEaseOut
 
         // Restore physics body and zPosition after animation completes
         let restorePhysics = SKAction.run { [weak self, weak shape] in
@@ -98,13 +112,17 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         cameraNode.run(cameraMove)
-        shape.run(.sequence([nodeScale, restorePhysics]), withKey: "zoom")
+        shape.run(.sequence([.group([nodeScale, nodeFade]), restorePhysics]), withKey: "zoom")
 
         zoomedNodeID = nil
 
-        // Update canvas state
+        // Update canvas state: set isZoomed false immediately for dismiss animation trigger
         DispatchQueue.main.async { [weak self] in
             self?.canvasState?.isZoomed = false
+        }
+
+        // Delay clearing selectedNodeID to allow dismiss animation to complete (0.53s + buffer)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
             self?.canvasState?.selectedNodeID = nil
         }
     }
@@ -119,6 +137,16 @@ final class CorpusPhysicsScene: SKScene {
     ) {
         self.tagColors = tagColors
         positionMap = layoutPositions
+
+        // Reset and reapply label tier to ensure existing nodes get correct tier
+        currentLabelTier = -1
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            let scale = self.cameraNode.xScale
+            let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
+            self.currentLabelTier = tier
+            self.applyLabelTier(tier)
+        }
 
         let incomingIDs = Set(nodes.map { $0.id })
         let existingIDs = Set(nodeSprites.keys)
@@ -153,6 +181,9 @@ final class CorpusPhysicsScene: SKScene {
     private var zoomedNodeID: String? = nil
     private var savedPhysicsBody: SKPhysicsBody? = nil
     private var savedZPosition: CGFloat = 0
+
+    // Label tier state (for zoom-aware visibility)
+    private var currentLabelTier: Int = -1
 
     // MARK: - Shared shader resources (lazy; created once, reused across all nodes)
 
@@ -321,9 +352,42 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     override func update(_ currentTime: TimeInterval) {
-        // Update shader u_time uniform for gradient sweep animation
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+
+        let scale = cameraNode.xScale
+        let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
+        guard tier != currentLabelTier else { return }
+        currentLabelTier = tier
+        applyLabelTier(tier)
+    }
+
+    private func applyLabelTier(_ tier: Int) {
+        for (_, shape) in nodeSprites {
+            guard let cropNode = shape.children.first(where: { $0 is SKCropNode }) as? SKCropNode,
+                  let label = cropNode.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
+                  let fullTitle = label.userData?["fullTitle"] as? String else {
+                continue
+            }
+
+            switch tier {
+            case 0:
+                // Tier 0: Hidden
+                cropNode.isHidden = true
+            case 1:
+                // Tier 1: 2 words
+                cropNode.isHidden = false
+                let words = fullTitle.split(separator: " ")
+                label.text = words.prefix(2).joined(separator: " ")
+            case 2:
+                // Tier 2: 3 words
+                cropNode.isHidden = false
+                let words = fullTitle.split(separator: " ")
+                label.text = words.prefix(3).joined(separator: " ")
+            default:
+                break
+            }
+        }
     }
 
     // MARK: - Debug controls (called from external UI)
@@ -406,8 +470,20 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
-        let label = makeTitleLabel(text: node.title, offsetY: -(radius + 6))
-        shape.addChild(label)
+        let labelCropNode = makeTitleLabel(text: node.title, offsetY: 0, radius: radius)
+        shape.addChild(labelCropNode)
+
+        // Apply current label tier immediately on add
+        if currentLabelTier == 0 {
+            labelCropNode.isHidden = true
+        } else {
+            labelCropNode.isHidden = false
+            if let label = labelCropNode.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
+               let fullTitle = label.userData?["fullTitle"] as? String {
+                let words = fullTitle.split(separator: " ")
+                label.text = words.prefix(currentLabelTier == 1 ? 2 : 3).joined(separator: " ")
+            }
+        }
 
         if node.isMeta {
             let spark = SKLabelNode(text: "✦")
@@ -460,10 +536,11 @@ final class CorpusPhysicsScene: SKScene {
     private func updateNodeSprite(_ node: Node) {
         guard let shape = nodeSprites[node.id] else { return }
         shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
-        // Title label update (first label child = the title)
-        let labels = shape.children.compactMap { $0 as? SKLabelNode }
-        if let titleLabel = labels.first(where: { $0.position.y < 0 }) {
-            titleLabel.text = node.title
+        // Title label update (now inside SKCropNode)
+        if let cropNode = shape.children.first(where: { $0 is SKCropNode }) as? SKCropNode,
+           let label = cropNode.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
+            label.text = node.title
+            label.userData = ["fullTitle": node.title]
         }
     }
 
@@ -662,18 +739,31 @@ final class CorpusPhysicsScene: SKScene {
         return shape
     }
 
-    private func makeTitleLabel(text: String, offsetY: CGFloat) -> SKLabelNode {
+    private func makeTitleLabel(text: String, offsetY: CGFloat, radius: CGFloat) -> SKCropNode {
         let label = SKLabelNode(text: text)
         label.fontSize = 10
         label.fontName = "HelveticaNeue"
         label.fontColor = UIColor.white.withAlphaComponent(0.65)
-        label.verticalAlignmentMode = .top
+        label.verticalAlignmentMode = .center
         label.horizontalAlignmentMode = .center
-        label.position = CGPoint(x: 0, y: offsetY)
-        label.preferredMaxLayoutWidth = 80
-        label.numberOfLines = 1
+        label.position = .zero
+        label.preferredMaxLayoutWidth = radius * 1.6
+        label.numberOfLines = 2
         label.zPosition = 2
-        return label
+        label.name = "titleLabel"
+
+        // Store full title in userData for zoom-aware truncation
+        label.userData = ["fullTitle": text]
+
+        // Wrap in SKCropNode with circular mask to clip to node boundary
+        let cropNode = SKCropNode()
+        let circleMask = SKShapeNode(circleOfRadius: radius)
+        circleMask.fillColor = .white
+        cropNode.maskNode = circleMask
+        cropNode.addChild(label)
+        cropNode.zPosition = 2
+
+        return cropNode
     }
 
     private func bubbleRadius(for node: Node) -> CGFloat {

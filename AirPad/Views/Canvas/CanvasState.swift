@@ -15,4 +15,7 @@ final class CanvasState {
 
     /// Screen position of the zoomed node (for overlay positioning).
     var zoomedNodeScreenPosition: CGPoint = .zero
+
+    /// Screen diameter of the zoomed node (for overlay sizing).
+    var zoomedNodeDiameter: CGFloat = 0
 }

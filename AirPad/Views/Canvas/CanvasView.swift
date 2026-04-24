@@ -35,7 +35,7 @@ struct CanvasView: View {
         }
         .onAppear {
             scene.scaleMode = .resizeFill
-            scene.backgroundColor = .clear
+            scene.backgroundColor = UIColor(red: 0.027, green: 0.027, blue: 0.039, alpha: 1.0)
             scene.canvasState = canvasState
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.filteredNodes)
@@ -110,14 +110,21 @@ struct CanvasView: View {
 
     private var canvasZStack: some View {
         ZStack(alignment: .bottomTrailing) {
-            Color.black.ignoresSafeArea()
             if store.nodes.isEmpty {
                 GraphPaperEmptyView()
                     .ignoresSafeArea()
                     .transition(.opacity)
             }
-            SpriteView(scene: scene, options: [.allowsTransparency])
+            SpriteView(scene: scene)
                 .ignoresSafeArea()
+            if canvasState.isZoomed || isDismissing {
+                Color.clear
+                    .background(.ultraThinMaterial)
+                    .ignoresSafeArea()
+                    .onTapGesture { scene.resetZoom() }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+            }
             nodeSummaryLayer
             captureTargetBanner
             glowDebugPanelLayer
@@ -210,13 +217,6 @@ struct CanvasView: View {
         if (canvasState.isZoomed || isDismissing),
            let id = canvasState.selectedNodeID,
            let node = store.nodes.first(where: { $0.id == id }) {
-            // Full-screen tap target for dismissal (disabled to allow card tap)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { scene.resetZoom() }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-
             // Detail content overlay positioned at screen center
             NodeDetailOverlay(
                 node: node,

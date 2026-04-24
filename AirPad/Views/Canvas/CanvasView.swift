@@ -24,8 +24,6 @@ struct CanvasView: View {
         return s
     }()
     @State private var showGlowDebugPanel = false
-    @State private var latencyTestResult: String? = nil
-    @State private var isRunningLatencyTest = false
 
     // MARK: - Capture mode
 
@@ -48,6 +46,11 @@ struct CanvasView: View {
             // Inject test nodes for visual development
             if showGlowDebugPanel && store.nodes.isEmpty {
                 injectTestNodes()
+            }
+
+            // Run latency test on launch
+            Task {
+                await store.testFoundationModelLatency()
             }
         }
         .onChange(of: store.nodes) { old, newNodes in
@@ -175,64 +178,17 @@ struct CanvasView: View {
         VStack {
             HStack {
                 Spacer()
-                VStack(spacing: 8) {
-                    // Visual debug panel toggle
-                    Button {
-                        withAnimation(.spring(response: 0.3)) {
-                            showGlowDebugPanel.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .frame(width: 28, height: 28)
-                            .background(.ultraThinMaterial)
-                            .clipShape(Circle())
+                Button {
+                    withAnimation(.spring(response: 0.3)) {
+                        showGlowDebugPanel.toggle()
                     }
-
-                    // Latency test button
-                    Button {
-                        Task {
-                            isRunningLatencyTest = true
-                            latencyTestResult = nil
-                            if let result = await store.testFoundationModelLatency() {
-                                let totalFormatted = String(format: "%.2f", result.total)
-                                let avgFormatted = String(format: "%.3f", result.average)
-                                latencyTestResult = "Total: \(totalFormatted)s\nAvg: \(avgFormatted)s\n\(result.successCount)/10"
-                            } else {
-                                latencyTestResult = "Model\nUnavailable"
-                            }
-                            isRunningLatencyTest = false
-                        }
-                    } label: {
-                        if isRunningLatencyTest {
-                            ProgressView()
-                                .controlSize(.small)
-                                .tint(.white)
-                                .frame(width: 28, height: 28)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                        } else {
-                            Image(systemName: "timer")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.6))
-                                .frame(width: 28, height: 28)
-                                .background(.ultraThinMaterial)
-                                .clipShape(Circle())
-                        }
-                    }
-                    .disabled(isRunningLatencyTest)
-
-                    // Show latency result if available
-                    if let result = latencyTestResult {
-                        Text(result)
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.white)
-                            .padding(6)
-                            .background(.ultraThinMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .transition(.scale.combined(with: .opacity))
-                    }
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 28, height: 28)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Circle())
                 }
                 .padding(.trailing, 16)
                 .padding(.top, 120)

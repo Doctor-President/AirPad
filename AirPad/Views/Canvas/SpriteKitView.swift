@@ -6,6 +6,7 @@ struct SpriteKitView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SKView {
         let view = SKView()
+        scene.isPaused = false
         view.presentScene(scene)
         view.ignoresSiblingOrder = true
         view.isPaused = false
@@ -16,5 +17,6 @@ struct SpriteKitView: UIViewRepresentable {
     func updateUIView(_ uiView: SKView, context: Context) {
         // Keep unpaused on every SwiftUI update
         uiView.isPaused = false
+        uiView.scene?.isPaused = false
     }
 }

@@ -332,6 +332,7 @@ final class CorpusPhysicsScene: SKScene {
     // MARK: - Scene lifecycle
 
     override func didMove(to view: SKView) {
+        self.isPaused = false
         backgroundColor = .clear
         physicsWorld.gravity = .zero
         physicsWorld.speed = 1.0
@@ -349,7 +350,6 @@ final class CorpusPhysicsScene: SKScene {
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
-        self.isPaused = false
     }
 
     override func update(_ currentTime: TimeInterval) {

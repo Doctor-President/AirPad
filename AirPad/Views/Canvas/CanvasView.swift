@@ -118,7 +118,9 @@ struct CanvasView: View {
             SpriteView(scene: scene)
                 .ignoresSafeArea()
             if canvasState.isZoomed || isDismissing {
-                Color.black.opacity(0.55)
+                Color.clear
+                    .background(.ultraThinMaterial)
+                    .opacity(0.5)
                     .ignoresSafeArea()
                     .onTapGesture { scene.resetZoom() }
                     .transition(.opacity)

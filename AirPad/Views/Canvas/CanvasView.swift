@@ -117,15 +117,8 @@ struct CanvasView: View {
             }
             SpriteView(scene: scene)
                 .ignoresSafeArea()
-            if canvasState.isZoomed || isDismissing {
-                Color.clear
-                    .background(.ultraThinMaterial)
-                    .opacity(0.5)
-                    .ignoresSafeArea()
-                    .onTapGesture { scene.resetZoom() }
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
-            }
+                .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
+                .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
             nodeSummaryLayer
             captureTargetBanner
             glowDebugPanelLayer
@@ -218,6 +211,12 @@ struct CanvasView: View {
         if (canvasState.isZoomed || isDismissing),
            let id = canvasState.selectedNodeID,
            let node = store.nodes.first(where: { $0.id == id }) {
+            // Full-screen tap target for dismiss
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { scene.resetZoom() }
+                .ignoresSafeArea()
+
             // Detail content overlay positioned at screen center
             NodeDetailOverlay(
                 node: node,

@@ -138,15 +138,8 @@ final class CorpusPhysicsScene: SKScene {
         self.tagColors = tagColors
         positionMap = layoutPositions
 
-        // Reset and reapply label tier to ensure existing nodes get correct tier
+        // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            let scale = self.cameraNode.xScale
-            let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
-            self.currentLabelTier = tier
-            self.applyLabelTier(tier)
-        }
 
         let incomingIDs = Set(nodes.map { $0.id })
         let existingIDs = Set(nodeSprites.keys)

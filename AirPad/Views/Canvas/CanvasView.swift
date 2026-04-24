@@ -47,11 +47,6 @@ struct CanvasView: View {
             if showGlowDebugPanel && store.nodes.isEmpty {
                 injectTestNodes()
             }
-
-            // Run latency test on launch
-            Task {
-                await store.testFoundationModelLatency()
-            }
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Track additions against the raw node list so newly captured nodes

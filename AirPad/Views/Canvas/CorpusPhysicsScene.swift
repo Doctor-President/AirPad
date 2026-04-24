@@ -303,7 +303,6 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_aberration_max", float: 0.02)
         ]
 
-        print("[Shader] Gradient + inner glow + chromatic aberration shader created")
         return shader
     }()
 
@@ -350,12 +349,10 @@ final class CorpusPhysicsScene: SKScene {
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
-        print("[didMove] scene size: \(self.size) isPaused: \(self.isPaused)")
     }
 
     override func update(_ currentTime: TimeInterval) {
-        print("[Update] fired")
-        if isPaused { print("[Scene] PAUSED"); return }
+        if isPaused { return }
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
 
@@ -363,13 +360,11 @@ final class CorpusPhysicsScene: SKScene {
         let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
 
         currentLabelTier = tier
-        print("[Scale] scale=\(scale) tier=\(tier) current=\(currentLabelTier)")
         applyLabelTier(tier)
     }
 
     private func applyLabelTier(_ tier: Int) {
         for (_, shape) in nodeSprites {
-            print("[Tier] shape=\(shape.name ?? "nil") children=\(shape.children.count) labelFound=\(shape.children.first(where: { $0.name == "titleLabel" }) != nil)")
             guard let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
                   let fullTitle = label.userData?["fullTitle"] as? String else {
                 continue
@@ -736,8 +731,6 @@ final class CorpusPhysicsScene: SKScene {
 
             // Start organic breathing animation
             startBlobBreathing(for: shape, nodeID: nodeID, radius: radius)
-
-            print("[Shader] Applied to node - fillTexture: \(shape.fillTexture != nil), fillShader: \(shape.fillShader != nil), fillColor: \(shape.fillColor)")
         }
         return shape
     }

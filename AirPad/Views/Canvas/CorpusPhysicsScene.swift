@@ -408,6 +408,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // Hover-browse state
     private weak var hoveredNode: SKShapeNode?
+    private var snapBackPositions: [SKShapeNode: CGPoint] = [:]
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -1172,6 +1173,27 @@ final class CorpusPhysicsScene: SKScene {
 
                     // Update reference
                     hoveredNode = node
+                }
+
+                // Lazy neighbor position snapshotting (runs every frame while hovering)
+                if let hovered = hoveredNode {
+                    let threshold = 150 / cameraNode.xScale
+                    for (_, neighborShape) in nodeSprites {
+                        // Skip the hovered node itself
+                        if neighborShape === hovered { continue }
+                        // Skip if already snapshotted
+                        if snapBackPositions[neighborShape] != nil { continue }
+
+                        // Check distance
+                        let dx = neighborShape.position.x - hovered.position.x
+                        let dy = neighborShape.position.y - hovered.position.y
+                        let distance = sqrt(dx * dx + dy * dy)
+
+                        if distance <= threshold {
+                            snapBackPositions[neighborShape] = neighborShape.position
+                            print("[HoverBrowse] Snapshotted neighbor at distance \(distance)")
+                        }
+                    }
                 }
             } else {
                 // No node under touch, reset any hovered node

@@ -408,6 +408,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // Hover-browse state
     private weak var hoveredNode: SKShapeNode?
+    private var savedHoveredPhysicsBody: SKPhysicsBody?
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -582,12 +583,6 @@ final class CorpusPhysicsScene: SKScene {
             nodeID: node.id
         )
         shape.name = "node:\(node.id)"
-
-        // Store original radius for hover-browse physics body restoration
-        if shape.userData == nil {
-            shape.userData = NSMutableDictionary()
-        }
-        shape.userData?["originalRadius"] = radius
 
         let labelNode = makeTitleLabel(text: node.title, radius: radius)
         shape.addChild(labelNode)
@@ -1117,27 +1112,6 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    // MARK: - Hover-browse physics restoration
-
-    /// Restore physics body to original radius after visual scaling.
-    /// Visual scale should not affect physics — body must stay at original size.
-    private func restorePhysicsBody(for node: SKShapeNode) {
-        guard let originalRadius = node.userData?["originalRadius"] as? CGFloat,
-              let body = node.physicsBody else { return }
-
-        let newBody = SKPhysicsBody(circleOfRadius: originalRadius)
-        newBody.linearDamping = body.linearDamping
-        newBody.angularDamping = body.angularDamping
-        newBody.friction = body.friction
-        newBody.restitution = body.restitution
-        newBody.mass = body.mass
-        newBody.allowsRotation = false
-        newBody.isDynamic = true
-        newBody.velocity = body.velocity
-        newBody.angularVelocity = body.angularVelocity
-        node.physicsBody = newBody
-    }
-
     // MARK: - Touch handling
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -1175,15 +1149,20 @@ final class CorpusPhysicsScene: SKScene {
                         let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
                         scaleDown.timingMode = .easeInEaseOut
                         prevNode.run(scaleDown)
-                        restorePhysicsBody(for: prevNode)
+                        // Restore physics (mirror tap-to-zoom pattern)
+                        prevNode.physicsBody = savedHoveredPhysicsBody
+                        savedHoveredPhysicsBody = nil
                         prevNode.userData?["forceLabelTier"] = nil
                     }
+
+                    // Save physics body and remove it (node becomes static while hovered)
+                    savedHoveredPhysicsBody = node.physicsBody
+                    node.physicsBody = nil
 
                     // Scale up new node with easing
                     let scaleUp = SKAction.scale(to: 3.0, duration: 0.2)
                     scaleUp.timingMode = .easeInEaseOut
                     node.run(scaleUp)
-                    restorePhysicsBody(for: node)
 
                     // Set force label tier
                     if node.userData == nil {
@@ -1203,7 +1182,9 @@ final class CorpusPhysicsScene: SKScene {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
                     scaleDown.timingMode = .easeInEaseOut
                     prevNode.run(scaleDown)
-                    restorePhysicsBody(for: prevNode)
+                    // Restore physics (mirror tap-to-zoom pattern)
+                    prevNode.physicsBody = savedHoveredPhysicsBody
+                    savedHoveredPhysicsBody = nil
                     prevNode.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
                 }
@@ -1247,7 +1228,9 @@ final class CorpusPhysicsScene: SKScene {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
                     scaleDown.timingMode = .easeInEaseOut
                     node.run(scaleDown)
-                    restorePhysicsBody(for: node)
+                    // Restore physics (mirror tap-to-zoom pattern)
+                    node.physicsBody = savedHoveredPhysicsBody
+                    savedHoveredPhysicsBody = nil
                     node.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
                 }
@@ -1341,7 +1324,9 @@ final class CorpusPhysicsScene: SKScene {
             let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
             scaleDown.timingMode = .easeInEaseOut
             node.run(scaleDown)
-            restorePhysicsBody(for: node)
+            // Restore physics (mirror tap-to-zoom pattern)
+            node.physicsBody = savedHoveredPhysicsBody
+            savedHoveredPhysicsBody = nil
             node.userData?["forceLabelTier"] = nil
             hoveredNode = nil
         }

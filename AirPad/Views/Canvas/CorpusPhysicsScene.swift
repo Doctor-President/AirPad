@@ -1239,6 +1239,14 @@ final class CorpusPhysicsScene: SKScene {
             if activeTouches.isEmpty {
                 lastPinchDistance = nil
                 tapStartInfo = nil
+
+                // Clean up hover-browse state
+                if let node = hoveredNode {
+                    node.run(SKAction.scale(to: 1.0, duration: 0.12))
+                    node.userData?["forceLabelTier"] = nil
+                    hoveredNode = nil
+                }
+                smoothedVelocity = 0
             }
         }
 
@@ -1323,6 +1331,14 @@ final class CorpusPhysicsScene: SKScene {
         for touch in touches { activeTouches.removeValue(forKey: touch) }
         lastPinchDistance = nil
         tapStartInfo = nil
+
+        // Clean up hover-browse state
+        if let node = hoveredNode {
+            node.run(SKAction.scale(to: 1.0, duration: 0.12))
+            node.userData?["forceLabelTier"] = nil
+            hoveredNode = nil
+        }
+        smoothedVelocity = 0
     }
 }
 

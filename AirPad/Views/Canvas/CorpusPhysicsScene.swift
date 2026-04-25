@@ -1184,20 +1184,16 @@ final class CorpusPhysicsScene: SKScene {
 
                     // Update reference
                     hoveredNode = node
-                }
 
-                // Lazy neighbor position snapshotting (runs every frame while hovering)
-                if let hovered = hoveredNode {
-                    let threshold = 150 / cameraNode.xScale
+                    // One-shot neighbor position snapshotting at hover entry
+                    let threshold = 350 / cameraNode.xScale
                     for (_, neighborShape) in nodeSprites {
                         // Skip the hovered node itself
-                        if neighborShape === hovered { continue }
-                        // Skip if already snapshotted
-                        if snapBackPositions[neighborShape] != nil { continue }
+                        if neighborShape === node { continue }
 
                         // Check distance
-                        let dx = neighborShape.position.x - hovered.position.x
-                        let dy = neighborShape.position.y - hovered.position.y
+                        let dx = neighborShape.position.x - node.position.x
+                        let dy = neighborShape.position.y - node.position.y
                         let distance = sqrt(dx * dx + dy * dy)
 
                         if distance <= threshold {

@@ -1152,6 +1152,17 @@ final class CorpusPhysicsScene: SKScene {
                         // Re-enable physics
                         prevNode.physicsBody?.isDynamic = true
                         prevNode.userData?["forceLabelTier"] = nil
+
+                        // Snap back displaced neighbors
+                        for (neighbor, storedPosition) in snapBackPositions {
+                            neighbor.physicsBody?.isDynamic = false
+                            let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
+                            moveBack.timingMode = .easeOut
+                            neighbor.run(moveBack) {
+                                neighbor.physicsBody?.isDynamic = true
+                            }
+                        }
+                        snapBackPositions.removeAll()
                     }
 
                     // Freeze physics (node becomes static while hovered)
@@ -1205,6 +1216,17 @@ final class CorpusPhysicsScene: SKScene {
                     prevNode.physicsBody?.isDynamic = true
                     prevNode.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
+
+                    // Snap back displaced neighbors
+                    for (neighbor, storedPosition) in snapBackPositions {
+                        neighbor.physicsBody?.isDynamic = false
+                        let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
+                        moveBack.timingMode = .easeOut
+                        neighbor.run(moveBack) {
+                            neighbor.physicsBody?.isDynamic = true
+                        }
+                    }
+                    snapBackPositions.removeAll()
                 }
             }
 
@@ -1250,6 +1272,17 @@ final class CorpusPhysicsScene: SKScene {
                     node.physicsBody?.isDynamic = true
                     node.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
+
+                    // Snap back displaced neighbors
+                    for (neighbor, storedPosition) in snapBackPositions {
+                        neighbor.physicsBody?.isDynamic = false
+                        let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
+                        moveBack.timingMode = .easeOut
+                        neighbor.run(moveBack) {
+                            neighbor.physicsBody?.isDynamic = true
+                        }
+                    }
+                    snapBackPositions.removeAll()
                 }
             }
         }
@@ -1345,6 +1378,17 @@ final class CorpusPhysicsScene: SKScene {
             node.physicsBody?.isDynamic = true
             node.userData?["forceLabelTier"] = nil
             hoveredNode = nil
+
+            // Snap back displaced neighbors
+            for (neighbor, storedPosition) in snapBackPositions {
+                neighbor.physicsBody?.isDynamic = false
+                let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
+                moveBack.timingMode = .easeOut
+                neighbor.run(moveBack) {
+                    neighbor.physicsBody?.isDynamic = true
+                }
+            }
+            snapBackPositions.removeAll()
         }
     }
 }

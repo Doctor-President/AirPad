@@ -406,6 +406,11 @@ final class CorpusPhysicsScene: SKScene {
     private var lastTapTime: TimeInterval = 0
     private var lastTapLocation: CGPoint = .zero
 
+    // Hover-browse velocity tracking
+    private var lastTouchPosition: CGPoint = .zero
+    private var lastTouchTime: TimeInterval = 0
+    private var smoothedVelocity: CGFloat = 0
+
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
@@ -1109,6 +1114,8 @@ final class CorpusPhysicsScene: SKScene {
         }
         if activeTouches.count == 1, let touch = touches.first {
             tapStartInfo = (screenPoint: touch.location(in: view), time: CACurrentMediaTime())
+            lastTouchPosition = touch.location(in: view)
+            lastTouchTime = touch.timestamp
         }
         if activeTouches.count >= 2 {
             let pts = Array(activeTouches.values)
@@ -1128,10 +1135,31 @@ final class CorpusPhysicsScene: SKScene {
             let current = touch.location(in: view)
             activeTouches[touch] = current
 
-            let dx = current.x - prev.x
-            let dy = current.y - prev.y
-            cameraNode.position.x -= dx * cameraNode.xScale
-            cameraNode.position.y += dy * cameraNode.yScale
+            // Compute velocity for hover-browse classification
+            let delta = hypot(current.x - lastTouchPosition.x, current.y - lastTouchPosition.y)
+            let timeDelta = touch.timestamp - lastTouchTime
+            let instantVelocity = timeDelta > 0 ? delta / timeDelta : 0
+            smoothedVelocity = smoothedVelocity * 0.7 + instantVelocity * 0.3
+
+            // Classify: below 200 pts/sec = hover, above = pan
+            if smoothedVelocity < 200 {
+                // Hover mode
+                print("[HoverBrowse] hover")
+                // Store position for next frame
+                lastTouchPosition = current
+                lastTouchTime = touch.timestamp
+            } else {
+                // Pan mode
+                print("[HoverBrowse] pan")
+                let dx = current.x - prev.x
+                let dy = current.y - prev.y
+                cameraNode.position.x -= dx * cameraNode.xScale
+                cameraNode.position.y += dy * cameraNode.yScale
+
+                // Store position for next frame
+                lastTouchPosition = current
+                lastTouchTime = touch.timestamp
+            }
 
             // Cancel pending tap if finger moved beyond threshold
             if let info = tapStartInfo {

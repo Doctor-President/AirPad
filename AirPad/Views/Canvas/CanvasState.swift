@@ -18,4 +18,7 @@ final class CanvasState {
 
     /// Screen diameter of the zoomed node (for overlay sizing).
     var zoomedNodeDiameter: CGFloat = 0
+
+    /// ID of the Über-node the user has drilled into, or nil when viewing the full canvas.
+    var drilledInto: String? = nil
 }

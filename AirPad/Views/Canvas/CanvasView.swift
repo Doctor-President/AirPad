@@ -40,8 +40,9 @@ struct CanvasView: View {
         }
         .onAppear {
             scene.canvasState = canvasState
+            store.canvasState = canvasState
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
-            syncScene(nodes: store.filteredNodes)
+            syncScene(nodes: store.visibleNodes)
 
             // Inject test nodes for visual development
             if showGlowDebugPanel && store.nodes.isEmpty {
@@ -54,28 +55,49 @@ struct CanvasView: View {
             let newIDs = Set(newNodes.map { $0.id })
             let addedID = newIDs.subtracting(previousNodeIDs).first
             previousNodeIDs = newIDs
-            print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), filteredNodes=\(store.filteredNodes.count), layoutPositions=\(store.canvasLayout.positions.count)")
-            syncScene(nodes: store.filteredNodes, newNodeID: addedID)
+            print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), visibleNodes=\(store.visibleNodes.count), layoutPositions=\(store.canvasLayout.positions.count)")
+            syncScene(nodes: store.visibleNodes, newNodeID: addedID)
         }
         .onChange(of: store.filteredNodes) { old, filtered in
             // Re-sync when filter state changes (tag filter, type filter, etc.)
-            print("[Canvas] onChange(filteredNodes): \(old.count)→\(filtered.count)")
-            syncScene(nodes: filtered)
+            print("[Canvas] onChange(filteredNodes): \(old.count)→\(filtered.count), visibleNodes=\(store.visibleNodes.count)")
+            syncScene(nodes: store.visibleNodes)
         }
         .onChange(of: store.tags) { _, _ in
-            syncScene(nodes: store.filteredNodes)
+            syncScene(nodes: store.visibleNodes)
         }
         .onChange(of: store.filterState.sortOrder) { _, newOrder in
-            rearrangeForSortOrder(newOrder, nodes: store.filteredNodes)
+            rearrangeForSortOrder(newOrder, nodes: store.visibleNodes)
         }
         .onChange(of: store.canvasNeedsSync) { _, _ in
             // Fired by batchImportText after canvasLayout is updated with all new positions.
             // Belt-and-suspenders: ensures the scene reflects the final store state even if
             // the per-node onChange chain was coalesced or ran before canvasLayout was ready.
             previousNodeIDs = Set(store.nodes.map { $0.id })
-            print("[Canvas] canvasNeedsSync: forcing full resync — filteredNodes=\(store.filteredNodes.count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
-            syncScene(nodes: store.filteredNodes)
+            print("[Canvas] canvasNeedsSync: forcing full resync — visibleNodes=\(store.visibleNodes.count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
+            syncScene(nodes: store.visibleNodes)
             print("[Canvas] canvasNeedsSync: after syncScene sprites=\(scene.spriteCount)")
+        }
+        .onChange(of: canvasState.drilledInto) { oldValue, newValue in
+            // Drill-down state changed — resync to show only child nodes or full canvas
+            print("[Canvas] onChange(drilledInto): \(newValue ?? "nil"), visibleNodes=\(store.visibleNodes.count)")
+
+            // Find Über-node position for expansion animation
+            let expandingFrom: CGPoint?
+            if let drilledClusterID = newValue,
+               let uberSprite = scene.uberNodeSprites[drilledClusterID] {
+                expandingFrom = uberSprite.position
+                // Freeze physics during transition
+                scene.physicsWorld.speed = 0
+                // Restore after 0.5s
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    scene.physicsWorld.speed = 1.0
+                }
+            } else {
+                expandingFrom = nil
+            }
+
+            syncScene(nodes: store.visibleNodes, expandingFrom: expandingFrom)
         }
         .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
             withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
@@ -124,6 +146,7 @@ struct CanvasView: View {
                 .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
             nodeSummaryLayer
             captureTargetBanner
+            drillDownBackButton
             glowDebugPanelLayer
             debugPanelToggleButton
             ActionButtonFan(
@@ -189,6 +212,39 @@ struct CanvasView: View {
                 .padding(.top, 120)
             }
             Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private var drillDownBackButton: some View {
+        if let drilledClusterID = canvasState.drilledInto,
+           let cluster = store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) {
+            VStack {
+                HStack {
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            canvasState.drilledInto = nil
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text(cluster.title)
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 60)
+                    Spacer()
+                }
+                Spacer()
+            }
+            .transition(.move(edge: .leading).combined(with: .opacity))
         }
     }
 
@@ -302,23 +358,54 @@ struct CanvasView: View {
         scene.rearrangeToPositions(positions)
     }
 
-    private func syncScene(nodes: [Node], newNodeID: String? = nil) {
-        print("[Canvas] syncScene: \(nodes.count) nodes, \(store.canvasLayout.positions.count) positions, \(scene.spriteCount) sprites before")
+    private func syncScene(nodes: [Node], newNodeID: String? = nil, expandingFrom: CGPoint? = nil) {
+        print("[Canvas] syncScene: \(nodes.count) nodes, expandingFrom=\(expandingFrom != nil), sprites before=\(scene.spriteCount)")
+
         let tagColorMap = Dictionary(
             uniqueKeysWithValues: store.tags.compactMap { tag -> (String, UIColor)? in
                 guard let color = UIColor(hex: tag.colorHex) else { return nil }
                 return (tag.name, color)
             }
         )
-        let uberClusters = store.uberNodeCache?.clusters ?? []
+
+        // Compute layout: radial when drilled in, canonical otherwise
+        let layoutPositions: [String: CanvasPosition]
+        if let drilledClusterID = canvasState.drilledInto,
+           let cluster = store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }),
+           let centerPos = expandingFrom {
+            // Radial layout around Über-node position
+            layoutPositions = computeRadialLayout(nodes: nodes, center: centerPos)
+        } else {
+            layoutPositions = store.canvasLayout.positions
+        }
+
+        let uberClusters = canvasState.drilledInto == nil ? (store.uberNodeCache?.clusters ?? []) : []
+
         scene.syncNodes(
             nodes,
-            layoutPositions: store.canvasLayout.positions,
+            layoutPositions: layoutPositions,
             tagColors: tagColorMap,
             newNodeID: newNodeID,
-            uberNodeClusters: uberClusters
+            uberNodeClusters: uberClusters,
+            expandingFrom: expandingFrom
         )
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
+    }
+
+    /// Compute radial layout for drilled-in child nodes around center point.
+    private func computeRadialLayout(nodes: [Node], center: CGPoint) -> [String: CanvasPosition] {
+        var positions: [String: CanvasPosition] = [:]
+        let count = nodes.count
+        let baseRadius: Double = 120.0
+
+        for (index, node) in nodes.enumerated() {
+            let angle = (Double(index) / Double(max(count, 1))) * 2 * .pi
+            let x = center.x + cos(angle) * baseRadius
+            let y = center.y + sin(angle) * baseRadius
+            positions[node.id] = CanvasPosition(x: x, y: -y)  // Flip Y for SpriteKit
+        }
+
+        return positions
     }
 
     // MARK: - Test node injection

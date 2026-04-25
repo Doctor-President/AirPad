@@ -129,12 +129,14 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
+    /// expandingFrom: spawn point for drill-down expansion animation.
     func syncNodes(
         _ nodes: [Node],
         layoutPositions: [String: CanvasPosition],
         tagColors: [String: UIColor] = [:],
         newNodeID: String? = nil,
-        uberNodeClusters: [UberNodeCluster] = []
+        uberNodeClusters: [UberNodeCluster] = [],
+        expandingFrom: CGPoint? = nil
     ) {
         self.tagColors = tagColors
         positionMap = layoutPositions
@@ -153,9 +155,13 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         // Add or update regular nodes
-        for node in nodes {
+        let newlyAddedIDs = incomingNodeIDs.subtracting(existingNodeIDs)
+        for (index, node) in nodes.enumerated() {
             if nodeSprites[node.id] == nil {
-                addNodeSprite(node, isNew: node.id == newNodeID)
+                let isNew = node.id == newNodeID
+                let spawnPoint = expandingFrom != nil && newlyAddedIDs.contains(node.id) ? expandingFrom : nil
+                let stagger = expandingFrom != nil ? TimeInterval(index) * 0.03 : 0
+                addNodeSprite(node, isNew: isNew, spawnPoint: spawnPoint, stagger: stagger)
             } else {
                 updateNodeSprite(node)
             }
@@ -185,7 +191,7 @@ final class CorpusPhysicsScene: SKScene {
 
     private var cameraNode = SKCameraNode()
     private var nodeSprites: [String: SKShapeNode] = [:]
-    private var uberNodeSprites: [String: SKShapeNode] = [:]
+    var uberNodeSprites: [String: SKShapeNode] = [:]  // Accessed by CanvasView for drill-down
     private var positionMap: [String: CanvasPosition] = [:]
 
     private var tagColors: [String: UIColor] = [:]
@@ -556,7 +562,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Node sprites
 
-    private func addNodeSprite(_ node: Node, isNew: Bool) {
+    private func addNodeSprite(_ node: Node, isNew: Bool, spawnPoint: CGPoint? = nil, stagger: TimeInterval = 0) {
         let radius = bubbleRadius(for: node)
         let shape = makeShape(
             radius: radius,
@@ -602,9 +608,18 @@ final class CorpusPhysicsScene: SKScene {
 
         // Position: stored layout or random near center
         let finalPosition = storedPosition(for: node.id)
-        shape.position = finalPosition
 
-        if isNew {
+        if let spawn = spawnPoint {
+            // Drill-down expansion: spawn at Über-node position, animate to radial layout
+            shape.position = spawn
+            addChild(shape)
+            nodeSprites[node.id] = shape
+
+            let move = SKAction.move(to: finalPosition, duration: 0.35)
+            move.timingMode = .easeOut
+            let wait = SKAction.wait(forDuration: stagger)
+            shape.run(.sequence([wait, move]))
+        } else if isNew {
             // Drop-in from above, then ripple + haptic
             shape.position = CGPoint(x: finalPosition.x, y: finalPosition.y + 60)
             addChild(shape)
@@ -624,6 +639,7 @@ final class CorpusPhysicsScene: SKScene {
             let dy = CGFloat.random(in: -20...20)
             shape.physicsBody?.applyImpulse(CGVector(dx: dx, dy: dy))
         } else {
+            shape.position = finalPosition
             addChild(shape)
             nodeSprites[node.id] = shape
         }
@@ -1183,8 +1199,10 @@ final class CorpusPhysicsScene: SKScene {
             let clusterID = String(name.dropFirst(5))
 
             if isDoubleTap {
-                // Double-tap: drill in (expand Über-node into constituent nodes)
-                drillIntoUberNode(clusterID: clusterID)
+                // Double-tap: drill into Über-node
+                DispatchQueue.main.async { [weak self] in
+                    self?.canvasState?.drilledInto = clusterID
+                }
             } else {
                 // Single tap: center and zoom (universal behavior)
                 if zoomedNodeID == nil {
@@ -1209,10 +1227,17 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         } else {
-            // Tap on empty space — if zoomed, reset; otherwise deselect
-            if zoomedNodeID != nil {
+            // Tap on empty space
+            if isDoubleTap && canvasState?.drilledInto != nil {
+                // Double-tap on empty space while drilled in: exit drill-down
+                DispatchQueue.main.async { [weak self] in
+                    self?.canvasState?.drilledInto = nil
+                }
+            } else if zoomedNodeID != nil {
+                // Single tap: reset zoom
                 resetZoom()
             } else {
+                // Single tap: deselect
                 DispatchQueue.main.async { [weak self] in
                     self?.canvasState?.selectedNodeID = nil
                 }

@@ -15,6 +15,9 @@ final class CorpusStore {
     /// Cached Über-node clusters (Tier 1: tag-only). Regenerates on invalidation.
     var uberNodeCache: UberNodeCache? = nil
 
+    /// Reference to CanvasState for drill-down filtering.
+    var canvasState: CanvasState? = nil
+
     /// True when iCloud is unavailable and the app is writing to local storage instead.
     var iCloudUnavailable = false
 
@@ -86,6 +89,18 @@ final class CorpusStore {
         }
 
         return result
+    }
+
+    /// Nodes visible on canvas after applying filters and drill-down state.
+    /// When drilled into an Über-node, returns only its child nodes.
+    var visibleNodes: [Node] {
+        guard let drilledClusterID = canvasState?.drilledInto,
+              let cluster = uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) else {
+            return filteredNodes
+        }
+        // Filter to only child nodes of the drilled-into cluster
+        let childIDs = Set(cluster.childNodeIDs)
+        return filteredNodes.filter { childIDs.contains($0.id) }
     }
 
     private let service = iCloudDriveService()

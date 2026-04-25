@@ -553,8 +553,57 @@ final class CorpusStore {
 
         print("[Batch] Input text length: \(text.count) chars")
 
+        // INSTRUMENTATION: Set up gate diagnostic log
+        let logDateFormatter = DateFormatter()
+        logDateFormatter.dateFormat = "yyyyMMdd"
+        let logDate = logDateFormatter.string(from: Date())
+        let logPath = NSHomeDirectory() + "/Documents/AirPad/Logs/gate_diagnostic_\(logDate).log"
+        var logEntries: [String] = []
+
         // Phase 0a — character threshold + heuristic fragment filter (synchronous)
-        let (candidateTexts, heuristicFragments) = BatchParser.partitionBlocks(text: text)
+        // INSTRUMENTED VERSION: track every entry through all layers
+        let rawBlocks = text
+            .components(separatedBy: "\n\n")
+            .map { block -> String in
+                block
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .replacingOccurrences(of: "^[\\-•\\*]\\s*", with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            .filter { !$0.isEmpty }
+
+        var candidateTexts: [String] = []
+        var heuristicFragments: [String] = []
+
+        for block in rawBlocks {
+            let inputTruncated = String(block.prefix(150))
+            let inputLength = block.count
+
+            // Layer 1: Character threshold
+            let layer1Pass = inputLength >= BatchParser.minChars
+            let layer1Result = layer1Pass ? "pass" : "fail_too_short"
+
+            if !layer1Pass {
+                // Silently dropped by char threshold
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"\(layer1Result)\",\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"silently_dropped\"}"
+                logEntries.append(logLine)
+                continue
+            }
+
+            // Layer 2: Heuristic fragment filter
+            let layer2Pass = !BatchParser.isFragment(block)
+            let layer2Result = layer2Pass ? "pass" : "fail_fragment"
+
+            if layer2Pass {
+                candidateTexts.append(block)
+                // Don't log yet - Layer 3 decision pending
+            } else {
+                heuristicFragments.append(block)
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"\(layer1Result)\",\"layer_2_result\":\"\(layer2Result)\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"review_queue_heuristic\"}"
+                logEntries.append(logLine)
+            }
+        }
+
         print("[Batch] Phase 0a: \(candidateTexts.count) candidates, \(heuristicFragments.count) heuristic fragments")
 
         if !heuristicFragments.isEmpty {
@@ -567,6 +616,15 @@ final class CorpusStore {
         }
 
         guard !candidateTexts.isEmpty else {
+            // INSTRUMENTATION: Write log even on early return
+            do {
+                let logContent = logEntries.joined(separator: "\n")
+                try logContent.write(toFile: logPath, atomically: true, encoding: .utf8)
+                print("[Batch][DIAGNOSTIC] Gate log written to: \(logPath)")
+                print("[Batch][DIAGNOSTIC] Total entries logged: \(logEntries.count)")
+            } catch {
+                print("[Batch][DIAGNOSTIC] Failed to write log: \(error)")
+            }
             print("[Batch] Nothing passed heuristic gate — returning early")
             return
         }
@@ -581,6 +639,8 @@ final class CorpusStore {
             print("[Batch] Phase 0b: running coherence checks on \(candidateTexts.count) candidates")
             var coherent: [String] = []
             var incoherent: [String] = []
+            // INSTRUMENTATION: Track Layer 3 results for logging
+            var layer3Results: [String: Bool?] = [:]
             await withTaskGroup(of: (String, Bool?).self) { group in
                 for candidate in candidateTexts {
                     group.addTask { await (candidate, aiSvc.checkCoherence(candidate)) }
@@ -589,6 +649,7 @@ final class CorpusStore {
                 for await (candidateText, result) in group {
                     checked += 1
                     importBatchProgress = (checked, candidateTexts.count)
+                    layer3Results[candidateText] = result
                     if result == false {
                         incoherent.append(candidateText)
                         print("[Batch] Phase 0b: coherence FAIL (\(candidateText.prefix(40))…)")
@@ -599,6 +660,38 @@ final class CorpusStore {
             }
             coherentTexts = coherent
             incoherentTexts = incoherent
+
+            // INSTRUMENTATION: Log all candidates with Layer 3 results
+            for candidate in candidateTexts {
+                let inputTruncated = String(candidate.prefix(150))
+                let inputLength = candidate.count
+                let layer3Result = layer3Results[candidate]
+                let layer3ResultStr: String
+                let finalDecision: String
+                let finalState: String
+
+                if let result = layer3Result {
+                    layer3ResultStr = result ? "pass_coherent" : "fail_incoherent"
+                    finalDecision = result ? "commit" : "reject"
+                    finalState = result ? "in_corpus" : "review_queue_coherence"
+                } else {
+                    // nil means model unavailable - treated as pass
+                    layer3ResultStr = "null_model_unavailable"
+                    finalDecision = "commit"
+                    finalState = "in_corpus"
+                }
+
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"pass\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":true,\"layer_3_result\":\"\(layer3ResultStr)\",\"final_decision\":\"\(finalDecision)\",\"final_state\":\"\(finalState)\"}"
+                logEntries.append(logLine)
+            }
+        } else {
+            // INSTRUMENTATION: iOS < 26.0 - Layer 3 not available
+            for candidate in candidateTexts {
+                let inputTruncated = String(candidate.prefix(150))
+                let inputLength = candidate.count
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"pass\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":false,\"layer_3_result\":\"skipped_ios_version\",\"final_decision\":\"commit\",\"final_state\":\"in_corpus\"}"
+                logEntries.append(logLine)
+            }
         }
 
         if !incoherentTexts.isEmpty {
@@ -612,7 +705,17 @@ final class CorpusStore {
 
         let parsedNodes = BatchParser.makeNodes(texts: coherentTexts, importTimestamp: timestamp)
         print("[Batch] Phase 0 done: \(parsedNodes.count) nodes to import")
-        guard !parsedNodes.isEmpty else {
+
+        // INSTRUMENTATION: Write log even on early return
+        if parsedNodes.isEmpty {
+            do {
+                let logContent = logEntries.joined(separator: "\n")
+                try logContent.write(toFile: logPath, atomically: true, encoding: .utf8)
+                print("[Batch][DIAGNOSTIC] Gate log written to: \(logPath)")
+                print("[Batch][DIAGNOSTIC] Total entries logged: \(logEntries.count)")
+            } catch {
+                print("[Batch][DIAGNOSTIC] Failed to write log: \(error)")
+            }
             print("[Batch] Nothing passed coherence gate — returning early")
             return
         }
@@ -684,6 +787,16 @@ final class CorpusStore {
             Task { await triggerThreadAnalysis() }
         }
 
+        // INSTRUMENTATION: Write diagnostic log
+        do {
+            let logContent = logEntries.joined(separator: "\n")
+            try logContent.write(toFile: logPath, atomically: true, encoding: .utf8)
+            print("[Batch][DIAGNOSTIC] Gate log written to: \(logPath)")
+            print("[Batch][DIAGNOSTIC] Total entries logged: \(logEntries.count)")
+        } catch {
+            print("[Batch][DIAGNOSTIC] Failed to write log: \(error)")
+        }
+
         // Phase 4 — AI title/summary in background; suppress tag sheet for batch
         let savedIDs = savedNodes.map { $0.id }
         print("[Batch] Kicking off AI for \(savedIDs.count) nodes (suppressTagSheet=true)")
@@ -694,6 +807,18 @@ final class CorpusStore {
             }
             print("[Batch][AI] All done")
         }
+    }
+
+    // MARK: - Gate diagnostic helpers
+
+    /// Escapes a string for JSON embedding (replaces quotes, backslashes, newlines)
+    private func escapeJSON(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\t", with: "\\t")
     }
 
     // MARK: - Destructive operations

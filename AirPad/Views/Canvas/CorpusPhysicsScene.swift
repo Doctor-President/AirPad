@@ -406,10 +406,7 @@ final class CorpusPhysicsScene: SKScene {
     private var lastTapTime: TimeInterval = 0
     private var lastTapLocation: CGPoint = .zero
 
-    // Hover-browse velocity tracking
-    private var lastTouchPosition: CGPoint = .zero
-    private var lastTouchTime: TimeInterval = 0
-    private var smoothedVelocity: CGFloat = 0
+    // Hover-browse state
     private weak var hoveredNode: SKShapeNode?
 
     // Shader animation state
@@ -1123,8 +1120,6 @@ final class CorpusPhysicsScene: SKScene {
         }
         if activeTouches.count == 1, let touch = touches.first {
             tapStartInfo = (screenPoint: touch.location(in: view), time: CACurrentMediaTime())
-            lastTouchPosition = touch.location(in: view)
-            lastTouchTime = touch.timestamp
         }
         if activeTouches.count >= 2 {
             let pts = Array(activeTouches.values)
@@ -1139,72 +1134,43 @@ final class CorpusPhysicsScene: SKScene {
         let touchCount = activeTouches.count
 
         if touchCount == 1, let touch = touches.first {
-            // Read previous position BEFORE updating activeTouches — otherwise delta is always zero.
-            let prev = activeTouches[touch] ?? touch.location(in: view)
             let current = touch.location(in: view)
             activeTouches[touch] = current
 
-            // Compute velocity for hover-browse classification
-            let delta = hypot(current.x - lastTouchPosition.x, current.y - lastTouchPosition.y)
-            let timeDelta = touch.timestamp - lastTouchTime
-            let instantVelocity = timeDelta > 0 ? delta / timeDelta : 0
-            smoothedVelocity = smoothedVelocity * 0.7 + instantVelocity * 0.3
-
-            // Classify: below 200 pts/sec = hover, above = pan
-            if smoothedVelocity < 200 {
-                // Hover mode
-                print("[HoverBrowse] hover")
-
-                // Hit-test for node under touch
-                let touchLocation = touch.location(in: self)
-                if let body = physicsWorld.body(at: touchLocation),
-                   let node = body.node as? SKShapeNode {
-                    // Found a node under touch
-                    if node != hoveredNode {
-                        // Reset previous hovered node
-                        if let prevNode = hoveredNode {
-                            prevNode.run(SKAction.scale(to: 1.0, duration: 0.12))
-                            prevNode.userData?["forceLabelTier"] = nil
-                        }
-
-                        // Scale up new node
-                        node.run(SKAction.scale(to: 2.2, duration: 0.12))
-
-                        // Set force label tier
-                        if node.userData == nil {
-                            node.userData = NSMutableDictionary()
-                        }
-                        node.userData?["forceLabelTier"] = 2
-
-                        // Haptic feedback
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-
-                        // Update reference
-                        hoveredNode = node
-                    }
-                } else {
-                    // No node under touch, reset any hovered node
+            // Hover-browse mode: hit-test for node under touch
+            let touchLocation = touch.location(in: self)
+            if let body = physicsWorld.body(at: touchLocation),
+               let node = body.node as? SKShapeNode {
+                // Found a node under touch
+                if node != hoveredNode {
+                    // Reset previous hovered node
                     if let prevNode = hoveredNode {
                         prevNode.run(SKAction.scale(to: 1.0, duration: 0.12))
                         prevNode.userData?["forceLabelTier"] = nil
-                        hoveredNode = nil
                     }
+
+                    // Scale up new node
+                    node.run(SKAction.scale(to: 3.0, duration: 0.12))
+
+                    // Set force label tier
+                    if node.userData == nil {
+                        node.userData = NSMutableDictionary()
+                    }
+                    node.userData?["forceLabelTier"] = 2
+
+                    // Haptic feedback
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+
+                    // Update reference
+                    hoveredNode = node
                 }
-
-                // Store position for next frame
-                lastTouchPosition = current
-                lastTouchTime = touch.timestamp
             } else {
-                // Pan mode
-                print("[HoverBrowse] pan")
-                let dx = current.x - prev.x
-                let dy = current.y - prev.y
-                cameraNode.position.x -= dx * cameraNode.xScale
-                cameraNode.position.y += dy * cameraNode.yScale
-
-                // Store position for next frame
-                lastTouchPosition = current
-                lastTouchTime = touch.timestamp
+                // No node under touch, reset any hovered node
+                if let prevNode = hoveredNode {
+                    prevNode.run(SKAction.scale(to: 1.0, duration: 0.12))
+                    prevNode.userData?["forceLabelTier"] = nil
+                    hoveredNode = nil
+                }
             }
 
             // Cancel pending tap if finger moved beyond threshold
@@ -1246,7 +1212,6 @@ final class CorpusPhysicsScene: SKScene {
                     node.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
                 }
-                smoothedVelocity = 0
             }
         }
 
@@ -1338,7 +1303,6 @@ final class CorpusPhysicsScene: SKScene {
             node.userData?["forceLabelTier"] = nil
             hoveredNode = nil
         }
-        smoothedVelocity = 0
     }
 }
 

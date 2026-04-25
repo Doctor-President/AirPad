@@ -583,6 +583,12 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
+        // Store original radius for hover-browse physics body restoration
+        if shape.userData == nil {
+            shape.userData = NSMutableDictionary()
+        }
+        shape.userData?["originalRadius"] = radius
+
         let labelNode = makeTitleLabel(text: node.title, radius: radius)
         shape.addChild(labelNode)
 
@@ -1145,12 +1151,31 @@ final class CorpusPhysicsScene: SKScene {
                 if node != hoveredNode {
                     // Reset previous hovered node
                     if let prevNode = hoveredNode {
-                        prevNode.run(SKAction.scale(to: 1.0, duration: 0.12))
+                        let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
+                        scaleDown.timingMode = .easeInEaseOut
+                        prevNode.run(scaleDown)
                         prevNode.userData?["forceLabelTier"] = nil
                     }
 
-                    // Scale up new node
-                    node.run(SKAction.scale(to: 3.0, duration: 0.12))
+                    // Scale up new node with easing
+                    let scaleUp = SKAction.scale(to: 3.0, duration: 0.2)
+                    scaleUp.timingMode = .easeInEaseOut
+                    node.run(scaleUp)
+
+                    // Restore physics body to original radius (visual scale should not affect physics)
+                    if let originalRadius = node.userData?["originalRadius"] as? CGFloat,
+                       let body = node.physicsBody {
+                        let newBody = SKPhysicsBody(circleOfRadius: originalRadius)
+                        newBody.linearDamping = body.linearDamping
+                        newBody.angularDamping = body.angularDamping
+                        newBody.friction = body.friction
+                        newBody.restitution = body.restitution
+                        newBody.mass = body.mass
+                        newBody.allowsRotation = false
+                        newBody.velocity = body.velocity
+                        newBody.angularVelocity = body.angularVelocity
+                        node.physicsBody = newBody
+                    }
 
                     // Set force label tier
                     if node.userData == nil {
@@ -1167,7 +1192,9 @@ final class CorpusPhysicsScene: SKScene {
             } else {
                 // No node under touch, reset any hovered node
                 if let prevNode = hoveredNode {
-                    prevNode.run(SKAction.scale(to: 1.0, duration: 0.12))
+                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
+                    scaleDown.timingMode = .easeInEaseOut
+                    prevNode.run(scaleDown)
                     prevNode.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
                 }
@@ -1208,7 +1235,9 @@ final class CorpusPhysicsScene: SKScene {
 
                 // Clean up hover-browse state
                 if let node = hoveredNode {
-                    node.run(SKAction.scale(to: 1.0, duration: 0.12))
+                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
+                    scaleDown.timingMode = .easeInEaseOut
+                    node.run(scaleDown)
                     node.userData?["forceLabelTier"] = nil
                     hoveredNode = nil
                 }
@@ -1299,7 +1328,9 @@ final class CorpusPhysicsScene: SKScene {
 
         // Clean up hover-browse state
         if let node = hoveredNode {
-            node.run(SKAction.scale(to: 1.0, duration: 0.12))
+            let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
+            scaleDown.timingMode = .easeInEaseOut
+            node.run(scaleDown)
             node.userData?["forceLabelTier"] = nil
             hoveredNode = nil
         }

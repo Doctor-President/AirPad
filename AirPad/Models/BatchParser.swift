@@ -6,6 +6,34 @@ enum BatchParser {
     static let maxNodes = 200
     static let minChars = 50
 
+    // MARK: - Quarantine storage
+
+    /// In-memory store for quarantined entries. Thread-safe via lock.
+    private static var quarantineStorage: [QuarantinedEntry] = []
+    private static let quarantineLock = NSLock()
+
+    /// Returns current quarantined entries (for UI display).
+    static var quarantinedEntries: [QuarantinedEntry] {
+        quarantineLock.lock()
+        defer { quarantineLock.unlock() }
+        return quarantineStorage
+    }
+
+    /// Stores a quarantined entry.
+    static func storeQuarantined(_ entry: QuarantinedEntry) {
+        quarantineLock.lock()
+        defer { quarantineLock.unlock() }
+        quarantineStorage.append(entry)
+    }
+
+    /// Removes entries older than 48 hours.
+    static func pruneExpiredQuarantined() {
+        quarantineLock.lock()
+        defer { quarantineLock.unlock() }
+        let cutoff = Date().addingTimeInterval(-48 * 60 * 60)  // 48 hours ago
+        quarantineStorage.removeAll { $0.importedAt < cutoff }
+    }
+
     // MARK: - Public API
 
     /// Splits raw text into Node objects ready for import.
@@ -23,8 +51,10 @@ enum BatchParser {
         // Create nodes from defer_fm (needs AI processing, no review flag yet)
         nodes.append(contentsOf: makeNodes(texts: result.deferredToFM, importTimestamp: importTimestamp, needsReview: false))
 
-        // Quarantined entries are NOT converted to nodes
-        // TODO: Store quarantined entries separately for UI review
+        // Store quarantined entries (NOT converted to nodes)
+        for entry in result.quarantined {
+            storeQuarantined(entry)
+        }
 
         return Array(nodes.prefix(maxNodes))
     }
@@ -511,6 +541,11 @@ enum BatchParser {
 
         // Rule: starts with "Episode premise:" + length<50 → commit_with_review_flag
         if text.hasPrefix("Episode premise:") && text.count < 50 {
+            return .commitWithReviewFlag
+        }
+
+        // Rule: starts with "TikTok topic:" → commit_with_review_flag
+        if text.hasPrefix("TikTok topic:") {
             return .commitWithReviewFlag
         }
 

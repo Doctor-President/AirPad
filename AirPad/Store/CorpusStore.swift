@@ -626,6 +626,9 @@ final class CorpusStore {
 
         print("[Batch] Input text length: \(text.count) chars")
 
+        // Prune expired quarantine entries (48-hour TTL)
+        BatchParser.pruneExpiredQuarantined()
+
         // Run text through the Router pipeline (Session 2+)
         let result = BatchParser.processText(text)
 
@@ -643,8 +646,10 @@ final class CorpusStore {
         let deferredNodeIDs = deferredNodes.map { $0.id }
         parsedNodes.append(contentsOf: deferredNodes)
 
-        // TODO: Store quarantined entries separately for UI review (Session 3)
-        // result.quarantined contains QuarantinedEntry instances
+        // Store quarantined entries (NOT converted to nodes)
+        for entry in result.quarantined {
+            BatchParser.storeQuarantined(entry)
+        }
 
         print("[Batch] Created \(parsedNodes.count) nodes to import")
 

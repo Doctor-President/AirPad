@@ -80,7 +80,8 @@ enum BatchParser {
 
     /// Process raw text through the full L0→L1→L2→Router pipeline.
     /// Returns categorized results for each routing outcome.
-    static func processText(_ text: String) -> ProcessingResult {
+    /// - Parameter depth: Recursion depth for split handling. Max depth is 1.
+    static func processText(_ text: String, depth: Int = 0) -> ProcessingResult {
         let segments = splitText(text)
         let now = Date()
 
@@ -125,10 +126,21 @@ enum BatchParser {
             case .deferToFM:
                 deferredToFM.append(normalized)
 
-            case .split(let segments):
-                // For Session 2, treat split as deferToFM
-                // Actual split execution is Session 3
-                deferredToFM.append(contentsOf: segments)
+            case .split(let childSegments):
+                // Recursion depth limit: max 1 level
+                if depth > 0 {
+                    // Already at max depth — route to deferToFM instead of splitting again
+                    deferredToFM.append(contentsOf: childSegments)
+                } else {
+                    // Re-enter pipeline for each child segment
+                    for child in childSegments {
+                        let childResult = processText(child, depth: depth + 1)
+                        commitClean.append(contentsOf: childResult.commitClean)
+                        commitWithReview.append(contentsOf: childResult.commitWithReview)
+                        quarantined.append(contentsOf: childResult.quarantined)
+                        deferredToFM.append(contentsOf: childResult.deferredToFM)
+                    }
+                }
             }
         }
 
@@ -146,22 +158,6 @@ enum BatchParser {
             quarantined: quarantined,
             deferredToFM: deferredToFM
         )
-    }
-
-    /// DEPRECATED: Legacy function from Session 1.
-    /// Partitions raw text using old heuristics (50-char threshold + fragment detection).
-    /// Use processText() for new code - it runs the full L0→L1→L2→Router pipeline.
-    static func partitionBlocks(text: String) -> (candidates: [String], fragments: [String]) {
-        let blocks = splitText(text)
-            .filter { $0.count >= minChars }
-
-        var candidates: [String] = []
-        var fragments: [String] = []
-        for block in blocks {
-            if isFragment(block) { fragments.append(block) }
-            else { candidates.append(block) }
-        }
-        return (Array(candidates.prefix(maxNodes)), fragments)
     }
 
     /// Constructs Node objects from pre-filtered text blocks.

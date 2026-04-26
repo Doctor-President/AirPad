@@ -357,6 +357,18 @@ struct SettingsView: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 8)
+
+            Button {
+                Task {
+                    await store.runGateDiagnosticTest()
+                }
+            } label: {
+                Text("Run Gate Diagnostic Test")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 

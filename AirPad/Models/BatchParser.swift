@@ -73,6 +73,145 @@ enum BatchParser {
             .count
     }
 
+    // MARK: - Layer 0: Structural normalization
+
+    enum Layer0Result {
+        case pass(String)           // normalized text ready for L1
+        case filteredSeparator      // separator-only line (---, ===, etc.)
+        case filteredEmpty          // empty after normalization
+    }
+
+    // MARK: - Layer 1: Classification labels
+
+    enum LengthBucket: String {
+        case micro = "micro"             // 1-10
+        case short = "short"             // 11-50
+        case medium = "medium"           // 51-200
+        case long = "long"               // 201-500
+        case veryLong = "very_long"      // >500
+    }
+
+    enum Format: String {
+        case prose = "prose"
+        case fragment = "fragment"
+        case listItem = "list_item"
+        case url = "url"
+        case hashtag = "hashtag"
+        case dateOnly = "date_only"
+        case code = "code"
+        case header = "header"
+        case parenthetical = "parenthetical"
+        case bracketedMetadata = "bracketed_metadata"
+    }
+
+    enum Completeness: String {
+        case terminalPunct = "terminal_punct"
+        case noTerminal = "no_terminal"
+    }
+
+    enum Capitalization: String {
+        case startsCapital = "starts_capital"
+        case startsLower = "starts_lower"
+        case nonAlpha = "non_alpha"
+    }
+
+    struct Layer1Labels {
+        let lengthBucket: LengthBucket
+        let format: Format
+        let completeness: Completeness
+        let capitalization: Capitalization
+    }
+
+    /// Layer 1 classification: analyzes normalized text and returns structural labels.
+    /// No pass/fail decision - just classification.
+    static func classifyLayer1(_ text: String) -> Layer1Labels {
+        let length = text.count
+
+        // Length bucket
+        let lengthBucket: LengthBucket
+        switch length {
+        case 1...10: lengthBucket = .micro
+        case 11...50: lengthBucket = .short
+        case 51...200: lengthBucket = .medium
+        case 201...500: lengthBucket = .long
+        default: lengthBucket = .veryLong
+        }
+
+        // Format detection (regex/structural)
+        let format: Format
+        if text.hasPrefix("#") && !text.contains(" ") {
+            format = .hashtag
+        } else if text.hasPrefix("[") && text.hasSuffix("]") {
+            format = .bracketedMetadata
+        } else if text.hasPrefix("(") && text.hasSuffix(")") {
+            format = .parenthetical
+        } else if text.hasPrefix("#") && text.contains(" ") {
+            format = .header  // markdown header
+        } else if text.range(of: "^(https?://|www\\.)", options: .regularExpression) != nil {
+            format = .url
+        } else if text.range(of: "^[\\-•\\*]\\s+", options: .regularExpression) != nil {
+            format = .listItem
+        } else if text.range(of: "^\\d{1,2}/\\d{1,2}(/\\d{2,4})?$", options: .regularExpression) != nil {
+            format = .dateOnly
+        } else if text.range(of: "^```|^\\s{4,}|^\\t", options: .regularExpression) != nil {
+            format = .code
+        } else if isFragment(text) {
+            format = .fragment
+        } else {
+            format = .prose
+        }
+
+        // Completeness - check for terminal punctuation
+        let terminalPunctSet = CharacterSet(charactersIn: ".!?。！？")
+        let completeness: Completeness = text.unicodeScalars.last.map { terminalPunctSet.contains($0) } ?? false
+            ? .terminalPunct
+            : .noTerminal
+
+        // Capitalization - check first character
+        let capitalization: Capitalization
+        if let first = text.first {
+            if first.isUppercase {
+                capitalization = .startsCapital
+            } else if first.isLowercase {
+                capitalization = .startsLower
+            } else {
+                capitalization = .nonAlpha
+            }
+        } else {
+            capitalization = .nonAlpha
+        }
+
+        return Layer1Labels(
+            lengthBucket: lengthBucket,
+            format: format,
+            completeness: completeness,
+            capitalization: capitalization
+        )
+    }
+
+    /// Layer 0 normalization: filters separators and normalizes whitespace.
+    /// A line is a separator if and only if, after stripping whitespace,
+    /// it contains exclusively characters from {-, =, *, _} and is ≥3 chars.
+    static func normalizeLayer0(_ text: String) -> Layer0Result {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Empty after trimming
+        guard !trimmed.isEmpty else {
+            return .filteredEmpty
+        }
+
+        // Check if separator-only (≥3 chars, exclusively from {-, =, *, _})
+        if trimmed.count >= 3 {
+            let separatorSet = CharacterSet(charactersIn: "-=*_")
+            let allCharactersAreSeparators = trimmed.unicodeScalars.allSatisfy { separatorSet.contains($0) }
+            if allCharactersAreSeparators {
+                return .filteredSeparator
+            }
+        }
+
+        return .pass(trimmed)
+    }
+
     // MARK: - Heuristic fragment detection
 
     /// Returns true if the block looks like a fragment (pure reaction, apology, exclamation)

@@ -560,8 +560,7 @@ final class CorpusStore {
         let logPath = NSHomeDirectory() + "/Documents/AirPad/Logs/gate_diagnostic_\(logDate).log"
         var logEntries: [String] = []
 
-        // Phase 0a — character threshold + heuristic fragment filter (synchronous)
-        // INSTRUMENTED VERSION: track every entry through all layers
+        // Phase 0 — Layer 0 + Layer 1 classification with behavior preservation
         let rawBlocks = text
             .components(separatedBy: "\n\n")
             .map { block -> String in
@@ -574,33 +573,57 @@ final class CorpusStore {
 
         var candidateTexts: [String] = []
         var heuristicFragments: [String] = []
+        var candidateLayer1Labels: [String: BatchParser.Layer1Labels] = [:]  // Track L1 labels for L3 logging
 
         for block in rawBlocks {
-            let inputTruncated = String(block.prefix(150))
-            let inputLength = block.count
+            // Layer 0: Structural normalization
+            let layer0Result = BatchParser.normalizeLayer0(block)
 
-            // Layer 1: Character threshold
-            let layer1Pass = inputLength >= BatchParser.minChars
-            let layer1Result = layer1Pass ? "pass" : "fail_too_short"
-
-            if !layer1Pass {
-                // Silently dropped by char threshold
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"\(layer1Result)\",\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"silently_dropped\"}"
+            switch layer0Result {
+            case .filteredSeparator:
+                // Separator line filtered at Layer 0
+                let inputTruncated = String(block.prefix(150))
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(block.count),\"layer_0_result\":\"filtered_separator\",\"layer_1_length_bucket\":null,\"layer_1_format\":null,\"layer_1_completeness\":null,\"layer_1_capitalization\":null,\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"filtered_layer_0\"}"
                 logEntries.append(logLine)
                 continue
-            }
 
-            // Layer 2: Heuristic fragment filter
-            let layer2Pass = !BatchParser.isFragment(block)
-            let layer2Result = layer2Pass ? "pass" : "fail_fragment"
-
-            if layer2Pass {
-                candidateTexts.append(block)
-                // Don't log yet - Layer 3 decision pending
-            } else {
-                heuristicFragments.append(block)
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"\(layer1Result)\",\"layer_2_result\":\"\(layer2Result)\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"review_queue_heuristic\"}"
+            case .filteredEmpty:
+                // Empty after normalization
+                let inputTruncated = String(block.prefix(150))
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(block.count),\"layer_0_result\":\"filtered_empty\",\"layer_1_length_bucket\":null,\"layer_1_format\":null,\"layer_1_completeness\":null,\"layer_1_capitalization\":null,\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"filtered_layer_0\"}"
                 logEntries.append(logLine)
+                continue
+
+            case .pass(let normalizedText):
+                // Layer 1: Classification
+                let layer1Labels = BatchParser.classifyLayer1(normalizedText)
+                let inputTruncated = String(normalizedText.prefix(150))
+                let inputLength = normalizedText.count
+
+                // TODO: Remove in SB56-Session2-Router
+                // Behavior preservation shim: translate L1 labels to old pass/fail
+                let shouldDropPerOldLogic = inputLength < BatchParser.minChars
+
+                if shouldDropPerOldLogic {
+                    // Would have been silently dropped by old 50-char threshold
+                    let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"silently_dropped\"}"
+                    logEntries.append(logLine)
+                    continue
+                }
+
+                // Layer 2: Heuristic fragment filter
+                let layer2Pass = !BatchParser.isFragment(normalizedText)
+                let layer2Result = layer2Pass ? "pass" : "fail_fragment"
+
+                if layer2Pass {
+                    candidateTexts.append(normalizedText)
+                    candidateLayer1Labels[normalizedText] = layer1Labels  // Store for L3 logging
+                    // Don't log yet - Layer 3 decision pending
+                } else {
+                    heuristicFragments.append(normalizedText)
+                    let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"\(layer2Result)\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"review_queue_heuristic\"}"
+                    logEntries.append(logLine)
+                }
             }
         }
 
@@ -665,6 +688,7 @@ final class CorpusStore {
             for candidate in candidateTexts {
                 let inputTruncated = String(candidate.prefix(150))
                 let inputLength = candidate.count
+                let layer1Labels = candidateLayer1Labels[candidate]!
                 let layer3Result = layer3Results[candidate]
                 let layer3ResultStr: String
                 let finalDecision: String
@@ -681,7 +705,7 @@ final class CorpusStore {
                     finalState = "in_corpus"
                 }
 
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"pass\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":true,\"layer_3_result\":\"\(layer3ResultStr)\",\"final_decision\":\"\(finalDecision)\",\"final_state\":\"\(finalState)\"}"
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":true,\"layer_3_result\":\"\(layer3ResultStr)\",\"final_decision\":\"\(finalDecision)\",\"final_state\":\"\(finalState)\"}"
                 logEntries.append(logLine)
             }
         } else {
@@ -689,7 +713,8 @@ final class CorpusStore {
             for candidate in candidateTexts {
                 let inputTruncated = String(candidate.prefix(150))
                 let inputLength = candidate.count
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_1_result\":\"pass\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":false,\"layer_3_result\":\"skipped_ios_version\",\"final_decision\":\"commit\",\"final_state\":\"in_corpus\"}"
+                let layer1Labels = candidateLayer1Labels[candidate]!
+                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":false,\"layer_3_result\":\"skipped_ios_version\",\"final_decision\":\"commit\",\"final_state\":\"in_corpus\"}"
                 logEntries.append(logLine)
             }
         }

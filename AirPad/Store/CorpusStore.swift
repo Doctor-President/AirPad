@@ -400,6 +400,79 @@ final class CorpusStore {
         }
     }
 
+    /// Async FM coherence check for nodes deferred by the Router.
+    /// Runs in background after import. Updates nodes based on FM verdict:
+    /// - Coherent: leave as-is (normal AI processing will happen)
+    /// - Incoherent: set needsReview flag for user confirmation
+    /// - Model unavailable: treat as pass (don't block)
+    private func processDeferredNodesWithFM(nodeIDs: [String]) async {
+        guard #available(iOS 26.0, *) else {
+            print("[FM] iOS 26.0 unavailable — skipping FM check for \(nodeIDs.count) nodes")
+            return
+        }
+
+        print("[FM] Starting FM coherence check for \(nodeIDs.count) deferred nodes")
+        let aiSvc = AIService()
+
+        // Process in batches of 10 to avoid overwhelming the model
+        let batchSize = 10
+        for batchStart in stride(from: 0, to: nodeIDs.count, by: batchSize) {
+            let batchEnd = min(batchStart + batchSize, nodeIDs.count)
+            let batch = Array(nodeIDs[batchStart..<batchEnd])
+
+            await withTaskGroup(of: (String, Bool?).self) { group in
+                for nodeID in batch {
+                    group.addTask {
+                        // Get node text
+                        guard let node = await self.nodes.first(where: { $0.id == nodeID }) else {
+                            return (nodeID, nil)
+                        }
+                        let text = node.items.compactMap { item -> String? in
+                            switch item.type {
+                            case .text: return item.content
+                            case .audio, .video: return item.transcript
+                            case .link: return item.title ?? item.url
+                            case .image, .document: return item.description
+                            }
+                        }.filter { !$0.isEmpty }.joined(separator: "\n")
+
+                        guard !text.isEmpty else {
+                            return (nodeID, nil)
+                        }
+
+                        // Run FM coherence check
+                        let result = await aiSvc.checkCoherence(text)
+                        return (nodeID, result)
+                    }
+                }
+
+                // Process results
+                for await (nodeID, coherenceResult) in group {
+                    guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { continue }
+                    var node = nodes[idx]
+
+                    switch coherenceResult {
+                    case true:
+                        // FM says coherent — leave node as-is, normal AI will process it
+                        print("[FM] \(nodeID): COHERENT — keeping in corpus")
+
+                    case false:
+                        // FM says incoherent — flag for user review
+                        print("[FM] \(nodeID): INCOHERENT — setting needsReview flag")
+                        node.needsReview = true
+                        await updateNode(node)
+
+                    case nil:
+                        // Model unavailable — treat as pass
+                        print("[FM] \(nodeID): model unavailable — treating as pass")
+                    }
+                }
+            }
+        }
+
+        print("[FM] FM coherence check complete for \(nodeIDs.count) nodes")
+    }
+
     // MARK: - Thread surfacing
 
     /// Trigger corpus-wide thread analysis. Runs in background; never blocks node save.
@@ -553,195 +626,30 @@ final class CorpusStore {
 
         print("[Batch] Input text length: \(text.count) chars")
 
-        // INSTRUMENTATION: Set up gate diagnostic log
-        let logDateFormatter = DateFormatter()
-        logDateFormatter.dateFormat = "yyyyMMdd"
-        let logDate = logDateFormatter.string(from: Date())
-        let logPath = NSHomeDirectory() + "/Documents/AirPad/Logs/gate_diagnostic_\(logDate).log"
-        var logEntries: [String] = []
+        // Run text through the Router pipeline (Session 2+)
+        let result = BatchParser.processText(text)
 
-        // Phase 0 — Layer 0 + Layer 1 classification with behavior preservation
-        let rawBlocks = text
-            .components(separatedBy: "\n\n")
-            .map { block -> String in
-                block
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .replacingOccurrences(of: "^[\\-•\\*]\\s*", with: "", options: .regularExpression)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-            .filter { !$0.isEmpty }
+        print("[Batch] Router results: clean=\(result.commitClean.count), review=\(result.commitWithReview.count), quarantined=\(result.quarantined.count), deferredToFM=\(result.deferredToFM.count)")
 
-        var candidateTexts: [String] = []
-        var heuristicFragments: [String] = []
-        var candidateLayer1Labels: [String: BatchParser.Layer1Labels] = [:]  // Track L1 labels for L3 logging
+        // Create nodes from Router outcomes
+        // commitClean: nodes without review flag
+        var parsedNodes = BatchParser.makeNodes(texts: result.commitClean, importTimestamp: timestamp, needsReview: false)
 
-        for block in rawBlocks {
-            // Layer 0: Structural normalization
-            let layer0Result = BatchParser.normalizeLayer0(block)
+        // commitWithReview: nodes with review flag set
+        parsedNodes.append(contentsOf: BatchParser.makeNodes(texts: result.commitWithReview, importTimestamp: timestamp, needsReview: true))
 
-            switch layer0Result {
-            case .filteredSeparator:
-                // Separator line filtered at Layer 0
-                let inputTruncated = String(block.prefix(150))
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(block.count),\"layer_0_result\":\"filtered_separator\",\"layer_1_length_bucket\":null,\"layer_1_format\":null,\"layer_1_completeness\":null,\"layer_1_capitalization\":null,\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"filtered_layer_0\"}"
-                logEntries.append(logLine)
-                continue
+        // deferredToFM: create nodes immediately, process with FM asynchronously after import
+        let deferredNodes = BatchParser.makeNodes(texts: result.deferredToFM, importTimestamp: timestamp, needsReview: false)
+        let deferredNodeIDs = deferredNodes.map { $0.id }
+        parsedNodes.append(contentsOf: deferredNodes)
 
-            case .filteredEmpty:
-                // Empty after normalization
-                let inputTruncated = String(block.prefix(150))
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(block.count),\"layer_0_result\":\"filtered_empty\",\"layer_1_length_bucket\":null,\"layer_1_format\":null,\"layer_1_completeness\":null,\"layer_1_capitalization\":null,\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"filtered_layer_0\"}"
-                logEntries.append(logLine)
-                continue
+        // TODO: Store quarantined entries separately for UI review (Session 3)
+        // result.quarantined contains QuarantinedEntry instances
 
-            case .pass(let normalizedText):
-                // Layer 1: Classification
-                let layer1Labels = BatchParser.classifyLayer1(normalizedText)
-                let inputTruncated = String(normalizedText.prefix(150))
-                let inputLength = normalizedText.count
+        print("[Batch] Created \(parsedNodes.count) nodes to import")
 
-                // TODO: Remove in SB56-Session2-Router
-                // Behavior preservation shim: translate L1 labels to old pass/fail
-                let shouldDropPerOldLogic = inputLength < BatchParser.minChars
-
-                if shouldDropPerOldLogic {
-                    // Would have been silently dropped by old 50-char threshold
-                    let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"skipped\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"silently_dropped\"}"
-                    logEntries.append(logLine)
-                    continue
-                }
-
-                // Layer 2: Heuristic fragment filter
-                let layer2Pass = !BatchParser.isFragment(normalizedText)
-                let layer2Result = layer2Pass ? "pass" : "fail_fragment"
-
-                if layer2Pass {
-                    candidateTexts.append(normalizedText)
-                    candidateLayer1Labels[normalizedText] = layer1Labels  // Store for L3 logging
-                    // Don't log yet - Layer 3 decision pending
-                } else {
-                    heuristicFragments.append(normalizedText)
-                    let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"\(layer2Result)\",\"layer_3_invoked\":false,\"layer_3_result\":null,\"final_decision\":\"reject\",\"final_state\":\"review_queue_heuristic\"}"
-                    logEntries.append(logLine)
-                }
-            }
-        }
-
-        print("[Batch] Phase 0a: \(candidateTexts.count) candidates, \(heuristicFragments.count) heuristic fragments")
-
-        if !heuristicFragments.isEmpty {
-            let rejected = heuristicFragments.map {
-                RejectedBlock(id: UUID().uuidString, text: $0, reason: .heuristic,
-                              importTimestamp: timestamp, rejectedAt: Date())
-            }
-            reviewQueue.append(contentsOf: rejected)
-            print("[Batch] Phase 0a: added \(rejected.count) heuristic rejections to reviewQueue")
-        }
-
-        guard !candidateTexts.isEmpty else {
-            // INSTRUMENTATION: Write log even on early return
-            do {
-                let logContent = logEntries.joined(separator: "\n")
-                try logContent.write(toFile: logPath, atomically: true, encoding: .utf8)
-                print("[Batch][DIAGNOSTIC] Gate log written to: \(logPath)")
-                print("[Batch][DIAGNOSTIC] Total entries logged: \(logEntries.count)")
-            } catch {
-                print("[Batch][DIAGNOSTIC] Failed to write log: \(error)")
-            }
-            print("[Batch] Nothing passed heuristic gate — returning early")
-            return
-        }
-
-        // Phase 0b — Foundation Model coherence check (concurrent, iOS 26.0+ only)
-        var coherentTexts: [String] = candidateTexts
-        var incoherentTexts: [String] = []
-
-        if #available(iOS 26.0, *) {
-            let aiSvc = AIService()
-            importBatchProgress = (0, candidateTexts.count)
-            print("[Batch] Phase 0b: running coherence checks on \(candidateTexts.count) candidates")
-            var coherent: [String] = []
-            var incoherent: [String] = []
-            // INSTRUMENTATION: Track Layer 3 results for logging
-            var layer3Results: [String: Bool?] = [:]
-            await withTaskGroup(of: (String, Bool?).self) { group in
-                for candidate in candidateTexts {
-                    group.addTask { await (candidate, aiSvc.checkCoherence(candidate)) }
-                }
-                var checked = 0
-                for await (candidateText, result) in group {
-                    checked += 1
-                    importBatchProgress = (checked, candidateTexts.count)
-                    layer3Results[candidateText] = result
-                    if result == false {
-                        incoherent.append(candidateText)
-                        print("[Batch] Phase 0b: coherence FAIL (\(candidateText.prefix(40))…)")
-                    } else {
-                        coherent.append(candidateText)
-                    }
-                }
-            }
-            coherentTexts = coherent
-            incoherentTexts = incoherent
-
-            // INSTRUMENTATION: Log all candidates with Layer 3 results
-            for candidate in candidateTexts {
-                let inputTruncated = String(candidate.prefix(150))
-                let inputLength = candidate.count
-                let layer1Labels = candidateLayer1Labels[candidate]!
-                let layer3Result = layer3Results[candidate]
-                let layer3ResultStr: String
-                let finalDecision: String
-                let finalState: String
-
-                if let result = layer3Result {
-                    layer3ResultStr = result ? "pass_coherent" : "fail_incoherent"
-                    finalDecision = result ? "commit" : "reject"
-                    finalState = result ? "in_corpus" : "review_queue_coherence"
-                } else {
-                    // nil means model unavailable - treated as pass
-                    layer3ResultStr = "null_model_unavailable"
-                    finalDecision = "commit"
-                    finalState = "in_corpus"
-                }
-
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":true,\"layer_3_result\":\"\(layer3ResultStr)\",\"final_decision\":\"\(finalDecision)\",\"final_state\":\"\(finalState)\"}"
-                logEntries.append(logLine)
-            }
-        } else {
-            // INSTRUMENTATION: iOS < 26.0 - Layer 3 not available
-            for candidate in candidateTexts {
-                let inputTruncated = String(candidate.prefix(150))
-                let inputLength = candidate.count
-                let layer1Labels = candidateLayer1Labels[candidate]!
-                let logLine = "{\"input_text\":\"\(escapeJSON(inputTruncated))\",\"input_length\":\(inputLength),\"layer_0_result\":\"pass\",\"layer_1_length_bucket\":\"\(layer1Labels.lengthBucket.rawValue)\",\"layer_1_format\":\"\(layer1Labels.format.rawValue)\",\"layer_1_completeness\":\"\(layer1Labels.completeness.rawValue)\",\"layer_1_capitalization\":\"\(layer1Labels.capitalization.rawValue)\",\"layer_2_result\":\"pass\",\"layer_3_invoked\":false,\"layer_3_result\":\"skipped_ios_version\",\"final_decision\":\"commit\",\"final_state\":\"in_corpus\"}"
-                logEntries.append(logLine)
-            }
-        }
-
-        if !incoherentTexts.isEmpty {
-            let rejected = incoherentTexts.map {
-                RejectedBlock(id: UUID().uuidString, text: $0, reason: .coherence,
-                              importTimestamp: timestamp, rejectedAt: Date())
-            }
-            reviewQueue.append(contentsOf: rejected)
-            print("[Batch] Phase 0b: added \(rejected.count) coherence rejections to reviewQueue")
-        }
-
-        let parsedNodes = BatchParser.makeNodes(texts: coherentTexts, importTimestamp: timestamp)
-        print("[Batch] Phase 0 done: \(parsedNodes.count) nodes to import")
-
-        // INSTRUMENTATION: Write log even on early return
-        if parsedNodes.isEmpty {
-            do {
-                let logContent = logEntries.joined(separator: "\n")
-                try logContent.write(toFile: logPath, atomically: true, encoding: .utf8)
-                print("[Batch][DIAGNOSTIC] Gate log written to: \(logPath)")
-                print("[Batch][DIAGNOSTIC] Total entries logged: \(logEntries.count)")
-            } catch {
-                print("[Batch][DIAGNOSTIC] Failed to write log: \(error)")
-            }
-            print("[Batch] Nothing passed coherence gate — returning early")
+        guard !parsedNodes.isEmpty else {
+            print("[Batch] No nodes to import — returning early")
             return
         }
 
@@ -812,16 +720,6 @@ final class CorpusStore {
             Task { await triggerThreadAnalysis() }
         }
 
-        // INSTRUMENTATION: Write diagnostic log
-        do {
-            let logContent = logEntries.joined(separator: "\n")
-            try logContent.write(toFile: logPath, atomically: true, encoding: .utf8)
-            print("[Batch][DIAGNOSTIC] Gate log written to: \(logPath)")
-            print("[Batch][DIAGNOSTIC] Total entries logged: \(logEntries.count)")
-        } catch {
-            print("[Batch][DIAGNOSTIC] Failed to write log: \(error)")
-        }
-
         // Phase 4 — AI title/summary in background; suppress tag sheet for batch
         let savedIDs = savedNodes.map { $0.id }
         print("[Batch] Kicking off AI for \(savedIDs.count) nodes (suppressTagSheet=true)")
@@ -832,21 +730,20 @@ final class CorpusStore {
             }
             print("[Batch][AI] All done")
         }
+
+        // Phase 5 — Async FM coherence check for deferred entries
+        if !deferredNodeIDs.isEmpty {
+            let deferredIDs = deferredNodeIDs.filter { id in savedNodes.contains { $0.id == id } }
+            print("[Batch] Kicking off async FM check for \(deferredIDs.count) deferred nodes")
+            Task {
+                await processDeferredNodesWithFM(nodeIDs: deferredIDs)
+            }
+        }
     }
 
     // MARK: - Gate diagnostic helpers
 
-    /// Escapes a string for JSON embedding (replaces quotes, backslashes, newlines)
-    private func escapeJSON(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-            .replacingOccurrences(of: "\t", with: "\\t")
-    }
-
-    /// TEST RUNNER: Process the test corpus through the instrumented gate
+    /// TEST RUNNER: Process the test corpus through the Router pipeline
     func runGateDiagnosticTest() async {
         let testCorpusPath = NSHomeDirectory() + "/Desktop/AirPad/test_fixturess/corpus_test_master.md"
 

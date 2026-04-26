@@ -821,6 +821,23 @@ final class CorpusStore {
             .replacingOccurrences(of: "\t", with: "\\t")
     }
 
+    /// TEST RUNNER: Process the test corpus through the instrumented gate
+    func runGateDiagnosticTest() async {
+        let testCorpusPath = NSHomeDirectory() + "/Desktop/AirPad/test_fixturess/corpus_test_master.md"
+
+        guard let rawText = try? String(contentsOfFile: testCorpusPath, encoding: .utf8) else {
+            print("[DIAGNOSTIC] Failed to read test corpus at: \(testCorpusPath)")
+            return
+        }
+
+        print("[DIAGNOSTIC] Loaded test corpus: \(rawText.count) chars")
+        print("[DIAGNOSTIC] Starting batch import through instrumented gate...")
+
+        await batchImportText(rawText)
+
+        print("[DIAGNOSTIC] Test run complete. Check log file for results.")
+    }
+
     // MARK: - Destructive operations
 
     func clearAllData() async {

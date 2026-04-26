@@ -16,6 +16,8 @@ struct Node: Codable, Identifiable, Hashable {
     var domain: String?
     var domainConfirmed: Bool
     var needsAIProcessing: Bool
+    /// Router flag: system isn't confident this belongs in corpus, user should confirm.
+    var needsReview: Bool
     /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
     var source: String?
 
@@ -26,6 +28,7 @@ struct Node: Codable, Identifiable, Hashable {
         case isMeta = "is_meta"
         case domainConfirmed = "domain_confirmed"
         case needsAIProcessing = "needs_ai_processing"
+        case needsReview = "needs_review"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -49,6 +52,7 @@ struct Node: Codable, Identifiable, Hashable {
         domain: String? = nil,
         domainConfirmed: Bool = false,
         needsAIProcessing: Bool = false,
+        needsReview: Bool = false,
         source: String? = nil
     ) {
         self.id                = id
@@ -66,6 +70,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.domain            = domain
         self.domainConfirmed   = domainConfirmed
         self.needsAIProcessing = needsAIProcessing
+        self.needsReview       = needsReview
         self.source            = source
     }
 }
@@ -90,6 +95,7 @@ extension Node {
         domain            = try c.decodeIfPresent(String.self,    forKey: .domain)
         domainConfirmed   = try c.decodeIfPresent(Bool.self,      forKey: .domainConfirmed) ?? false
         needsAIProcessing = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
+        needsReview       = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
         source            = try c.decodeIfPresent(String.self,    forKey: .source)
     }
 }

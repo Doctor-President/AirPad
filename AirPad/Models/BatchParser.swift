@@ -9,12 +9,24 @@ enum BatchParser {
     // MARK: - Public API
 
     /// Splits raw text into Node objects ready for import.
-    /// Applies character threshold and heuristic fragment filter.
-    /// Used by the share extension (no model coherence check available there).
+    /// Uses full L0→L1→L2→Router pipeline (Session 2).
     /// Returns at most `maxNodes` nodes.
     static func parse(text: String, importTimestamp: String) -> [Node] {
-        let (candidates, _) = partitionBlocks(text: text)
-        return makeNodes(texts: candidates, importTimestamp: importTimestamp)
+        let result = processText(text)
+
+        // Create nodes from commit_clean (no review flag)
+        var nodes = makeNodes(texts: result.commitClean, importTimestamp: importTimestamp, needsReview: false)
+
+        // Create nodes from commit_review (with review flag)
+        nodes.append(contentsOf: makeNodes(texts: result.commitWithReview, importTimestamp: importTimestamp, needsReview: true))
+
+        // Create nodes from defer_fm (needs AI processing, no review flag yet)
+        nodes.append(contentsOf: makeNodes(texts: result.deferredToFM, importTimestamp: importTimestamp, needsReview: false))
+
+        // Quarantined entries are NOT converted to nodes
+        // TODO: Store quarantined entries separately for UI review
+
+        return Array(nodes.prefix(maxNodes))
     }
 
     /// Two-pass splitter: first splits on separator lines, then on \n\n within segments.
@@ -136,9 +148,9 @@ enum BatchParser {
         )
     }
 
-    /// Partitions raw text into candidate blocks (pass heuristics) and fragment blocks (fail).
-    /// The main app uses this so heuristic failures can be routed to the review queue.
-    /// NOTE: Legacy function - use processText for new code with full Router pipeline.
+    /// DEPRECATED: Legacy function from Session 1.
+    /// Partitions raw text using old heuristics (50-char threshold + fragment detection).
+    /// Use processText() for new code - it runs the full L0→L1→L2→Router pipeline.
     static func partitionBlocks(text: String) -> (candidates: [String], fragments: [String]) {
         let blocks = splitText(text)
             .filter { $0.count >= minChars }
@@ -153,7 +165,7 @@ enum BatchParser {
     }
 
     /// Constructs Node objects from pre-filtered text blocks.
-    static func makeNodes(texts: [String], importTimestamp: String) -> [Node] {
+    static func makeNodes(texts: [String], importTimestamp: String, needsReview: Bool = false) -> [Node] {
         let source = "import-\(importTimestamp)"
         let now = Date()
         return texts.map { blockText in
@@ -173,6 +185,7 @@ enum BatchParser {
                 tags: [],
                 items: [item],
                 needsAIProcessing: true,
+                needsReview: needsReview,
                 source: source
             )
         }

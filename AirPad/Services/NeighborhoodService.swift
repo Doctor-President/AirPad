@@ -11,6 +11,13 @@ final class NeighborhoodService {
         // Edge case: empty or trivial corpus
         guard nodes.count >= 2 else { return nil }
 
+        // Skip compute if too few nodes have tags (avoids singleton explosion at startup)
+        let taggedNodeCount = nodes.filter { !$0.tags.isEmpty }.count
+        guard taggedNodeCount >= 5 else {
+            print("[Neighborhood] Skipping compute — only \(taggedNodeCount) tagged nodes")
+            return nil
+        }
+
         // Build tag frequency map for TF-IDF weighting
         let tagFrequency = computeTagFrequency(nodes: nodes)
 

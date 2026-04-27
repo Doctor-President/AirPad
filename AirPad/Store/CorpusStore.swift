@@ -929,6 +929,7 @@ final class CorpusStore {
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
             refreshUberNodeClusters()
+            refreshNeighborhoods()
         }
     }
 
@@ -937,6 +938,7 @@ final class CorpusStore {
         clusterRefreshTask?.cancel()
         clusterRefreshTask = nil
         refreshUberNodeClusters()
+        refreshNeighborhoods()
     }
 
     // MARK: - Neighborhood detection
@@ -951,8 +953,12 @@ final class CorpusStore {
         // Check if cache exists and is still valid
         if let cache = neighborhoodCache,
            !cache.shouldInvalidate(currentFingerprint: currentFingerprint) {
+            print("[Neighborhood] refreshNeighborhoods() called — cache valid: true, fingerprint match: true")
             return  // Cache is still fresh
         }
+
+        let hadCache = neighborhoodCache != nil
+        print("[Neighborhood] refreshNeighborhoods() called — cache valid: false, fingerprint match: \(hadCache ? "false" : "n/a (no cache)")")
 
         // Generate new neighborhoods
         neighborhoodCache = service.generateNeighborhoods(from: nodes, layoutPositions: canvasLayout.positions)

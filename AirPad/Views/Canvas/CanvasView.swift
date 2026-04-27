@@ -362,10 +362,11 @@ struct CanvasView: View {
         print("[Canvas] syncScene: \(nodes.count) nodes, expandingFrom=\(expandingFrom != nil), sprites before=\(scene.spriteCount)")
 
         let tagColorMap = Dictionary(
-            uniqueKeysWithValues: store.tags.compactMap { tag -> (String, UIColor)? in
+            store.tags.compactMap { tag -> (String, UIColor)? in
                 guard let color = UIColor(hex: tag.colorHex) else { return nil }
                 return (tag.name, color)
-            }
+            },
+            uniquingKeysWith: { first, _ in first }
         )
 
         // Compute layout: radial when drilled in, canonical otherwise
@@ -593,7 +594,7 @@ private struct NodeDetailOverlay: View {
             if showText {
                 VStack(alignment: .leading, spacing: 12) {
                     // Title
-                    Text(node.title)
+                    Text(node.title.isEmpty ? (node.items.first?.content ?? "Untitled") : node.title)
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(.white)
                         .lineLimit(2)

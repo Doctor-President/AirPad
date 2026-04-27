@@ -235,7 +235,7 @@ enum BatchParser {
 
     // MARK: - Layer 1: Classification labels
 
-    enum LengthBucket: String {
+    enum LengthBucket: String, Codable {
         case micro = "micro"             // 1-10
         case short = "short"             // 11-50
         case medium = "medium"           // 51-200
@@ -243,7 +243,7 @@ enum BatchParser {
         case veryLong = "very_long"      // >500
     }
 
-    enum Format: String {
+    enum Format: String, Codable {
         case prose = "prose"
         case fragment = "fragment"
         case listItem = "list_item"
@@ -256,12 +256,12 @@ enum BatchParser {
         case bracketedMetadata = "bracketed_metadata"
     }
 
-    enum Completeness: String {
+    enum Completeness: String, Codable {
         case terminalPunct = "terminal_punct"
         case noTerminal = "no_terminal"
     }
 
-    enum Capitalization: String {
+    enum Capitalization: String, Codable {
         case startsCapital = "starts_capital"
         case startsLower = "starts_lower"
         case nonAlpha = "non_alpha"

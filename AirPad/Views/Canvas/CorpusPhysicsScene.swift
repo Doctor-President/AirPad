@@ -584,7 +584,8 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
-        let labelNode = makeTitleLabel(text: node.title, radius: radius)
+        let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+        let labelNode = makeTitleLabel(text: displayText, radius: radius)
         shape.addChild(labelNode)
 
         // Apply current label tier immediately on add
@@ -662,8 +663,9 @@ final class CorpusPhysicsScene: SKScene {
         shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
         // Title label update
         if let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
-            label.text = node.title
-            label.userData = ["fullTitle": node.title]
+            let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+            label.text = displayText
+            label.userData = ["fullTitle": displayText]
         }
     }
 

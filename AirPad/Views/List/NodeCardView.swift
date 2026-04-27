@@ -135,7 +135,7 @@ struct NodeCardView: View {
     // Source: content div, list_view.jsx
     private var cardContent: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(node.title.isEmpty ? "Untitled" : node.title)
+            Text(node.title.isEmpty ? (node.items.first?.content ?? "Untitled") : node.title)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(.white)
                 .shadow(color: .black.opacity(0.4), radius: 3, x: 0, y: 1)

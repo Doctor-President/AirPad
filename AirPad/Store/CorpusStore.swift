@@ -54,6 +54,9 @@ final class CorpusStore {
 
     private var dismissedThreadDescriptions: Set<String> = []
 
+    /// Debounced cluster refresh task (Task 3)
+    private var clusterRefreshTask: Task<Void, Never>?
+
     /// Nodes after applying the active filter and sort order.
     var filteredNodes: [Node] {
         var result = nodes
@@ -685,9 +688,13 @@ final class CorpusStore {
         var savedNodes: [Node] = []
         var newLayout = canvasLayout
         for (index, node) in parsedNodes.enumerated() {
-            let angle = Double(index) / Double(total) * 2 * .pi * 2.5
-            let radius = 80.0 + Double(index) * 8.0
-            newLayout.positions[node.id] = CanvasPosition(x: cos(angle) * radius, y: sin(angle) * radius)
+            // Task 4: Tag-overlap-aware placement instead of spiral
+            newLayout.positions[node.id] = semanticPosition(
+                for: node,
+                existingLayout: newLayout,
+                index: index,
+                total: total
+            )
 
             do {
                 try await service.saveNode(node)
@@ -751,7 +758,9 @@ final class CorpusStore {
             for id in savedIDs {
                 print("[Batch][AI] Processing \(id)")
                 await processNodeWithAI(nodeID: id, suppressTagSheet: true)
+                scheduleClusterRefresh()  // Task 3: debounced refresh
             }
+            await flushClusterRefresh()  // Task 3: final guaranteed refresh
             print("[Batch][AI] All done")
         }
 
@@ -879,20 +888,23 @@ final class CorpusStore {
     /// Generate or refresh Über-node clusters if needed.
     /// Called automatically after node additions when invalidation threshold is met.
     func refreshUberNodeClusters() {
+        // Compute current fingerprint
+        let service = UberNodeService()
+        let currentFingerprint = service.corpusHash(from: nodes)
+
         // Check if cache exists and is still valid
         if let cache = uberNodeCache,
-           !cache.shouldInvalidate(currentNodeCount: nodes.count) {
+           !cache.shouldInvalidate(currentFingerprint: currentFingerprint) {
             return  // Cache is still fresh
         }
 
         // Generate new clusters
-        let service = UberNodeService()
         uberNodeCache = service.generateClusters(from: nodes)
 
         if let cache = uberNodeCache {
             print("[UberNode] Generated \(cache.clusters.count) clusters from \(nodes.count) nodes")
         } else {
-            print("[UberNode] No viable clusters (need 2+ nodes per tag)")
+            print("[UberNode] No viable clusters (need weighted count >= 2.0)")
         }
     }
 
@@ -902,10 +914,95 @@ final class CorpusStore {
         refreshUberNodeClusters()
     }
 
+    /// Schedule a debounced cluster refresh (Task 3: 500ms debounce).
+    private func scheduleClusterRefresh() {
+        clusterRefreshTask?.cancel()
+        clusterRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            refreshUberNodeClusters()
+        }
+    }
+
+    /// Flush any pending debounced refresh and run immediately (Task 3).
+    private func flushClusterRefresh() async {
+        clusterRefreshTask?.cancel()
+        clusterRefreshTask = nil
+        refreshUberNodeClusters()
+    }
+
     // MARK: - File resolution
 
     func itemFileURL(for item: NodeItem, nodeID: String) async -> URL? {
         guard let file = item.file else { return nil }
         return await service.resolveItemPath(nodeID: nodeID, relativePath: file)
+    }
+
+    // MARK: - Semantic placement (Task 4)
+
+    /// Computes tag-overlap-aware position for a new node.
+    /// - First import: organic scatter
+    /// - Subsequent: near existing nodes with shared tags
+    /// - No overlap: unoccupied region
+    private func semanticPosition(for newNode: Node, existingLayout: CanvasLayout, index: Int, total: Int) -> CanvasPosition {
+        let existingPositions = existingLayout.positions
+
+        // First import (empty corpus) — relaxed organic scatter
+        guard !existingPositions.isEmpty else {
+            let jitterRadius = 200.0
+            let jitterAngle = Double.random(in: 0...(2 * .pi))
+            let jitterDist = Double.random(in: 0...jitterRadius)
+            return CanvasPosition(
+                x: cos(jitterAngle) * jitterDist,
+                y: sin(jitterAngle) * jitterDist
+            )
+        }
+
+        // If node has tags, find existing nodes with overlap
+        if !newNode.tags.isEmpty {
+            let nodesWithOverlap = nodes.filter { existingNode in
+                existingPositions[existingNode.id] != nil &&
+                !Set(existingNode.tags).isDisjoint(with: newNode.tags)
+            }
+
+            if !nodesWithOverlap.isEmpty {
+                // Place near centroid of overlapping nodes
+                let positions = nodesWithOverlap.compactMap { existingPositions[$0.id] }
+                let cx = positions.map { $0.x }.reduce(0, +) / Double(positions.count)
+                let cy = positions.map { $0.y }.reduce(0, +) / Double(positions.count)
+
+                let offsetRadius = Double.random(in: 80...120)
+                let offsetAngle = Double.random(in: 0...(2 * .pi))
+                return CanvasPosition(
+                    x: cx + cos(offsetAngle) * offsetRadius,
+                    y: cy + sin(offsetAngle) * offsetRadius
+                )
+            }
+        }
+
+        // No tag overlap or no tags yet — find unoccupied region
+        // Simple strategy: sample angles and pick one farthest from existing nodes
+        var bestPosition = CanvasPosition(x: 0, y: 0)
+        var maxMinDistance = 0.0
+
+        for _ in 0..<8 {
+            let angle = Double.random(in: 0...(2 * .pi))
+            let radius = Double.random(in: 300...500)
+            let candidate = CanvasPosition(x: cos(angle) * radius, y: sin(angle) * radius)
+
+            // Find min distance to any existing node
+            let minDist = existingPositions.values.map { pos in
+                let dx = pos.x - candidate.x
+                let dy = pos.y - candidate.y
+                return sqrt(dx*dx + dy*dy)
+            }.min() ?? .infinity
+
+            if minDist > maxMinDistance {
+                maxMinDistance = minDist
+                bestPosition = candidate
+            }
+        }
+
+        return bestPosition
     }
 }

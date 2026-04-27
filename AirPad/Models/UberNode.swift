@@ -22,12 +22,13 @@ struct UberNodeCluster: Codable, Identifiable, Hashable {
 /// Cache container for Über-node clustering results.
 struct UberNodeCache: Codable {
     var clusters: [UberNodeCluster]
-    var nodeCountAtGeneration: Int  // Track corpus size for invalidation
+    var nodeCountAtGeneration: Int  // Diagnostic only
     var generatedAt: Date
 
     /// Check if cache should be invalidated.
-    /// Returns true if 5+ nodes have been added since generation.
-    func shouldInvalidate(currentNodeCount: Int) -> Bool {
-        return currentNodeCount >= nodeCountAtGeneration + 5
+    /// Returns true if current corpus fingerprint differs from any cluster's stored hash.
+    func shouldInvalidate(currentFingerprint: String) -> Bool {
+        guard let firstCluster = clusters.first else { return true }
+        return firstCluster.corpusHash != currentFingerprint
     }
 }

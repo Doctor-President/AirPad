@@ -151,13 +151,10 @@ final class CorpusPhysicsScene: SKScene {
         let incomingNodeIDs = Set(nodes.map { $0.id })
         let existingNodeIDs = Set(nodeSprites.keys)
 
-        // Wake physics if new nodes are being added
+        // Resting state: physics wake removed (continuous forces disabled)
         let hasNewNodes = !incomingNodeIDs.subtracting(existingNodeIDs).isEmpty
-        if hasNewNodes {
-            wakePhysics(reason: "new nodes added")
-            if nodeSprites.isEmpty {
-                print("[Neighborhood] Cohesion physics started for \(nodes.count) nodes")
-            }
+        if hasNewNodes && nodeSprites.isEmpty {
+            print("[Layout] Initial sync for \(nodes.count) nodes")
         }
 
         // Remove deleted nodes
@@ -176,6 +173,8 @@ final class CorpusPhysicsScene: SKScene {
                 addNodeSprite(node, isNew: isNew, spawnPoint: spawnPoint, stagger: stagger)
             } else {
                 updateNodeSprite(node)
+                // Animate to new position if changed
+                animateSpriteIfNeeded(nodeID: node.id)
             }
         }
 
@@ -435,6 +434,11 @@ final class CorpusPhysicsScene: SKScene {
     private let convergenceThreshold: CGFloat = 0.5  // pt/sec
     private let convergenceFrames = 30
 
+    // MARK: - Newcomer halo state
+
+    private var enableNewcomerHalo: Bool = true
+    private let haloFadeDuration: TimeInterval = 300  // 5 minutes
+
     // MARK: - Blob displacement state
 
     /// Displacement amplitude (0 = perfect circle, 1 = full deformation)
@@ -487,12 +491,13 @@ final class CorpusPhysicsScene: SKScene {
         currentLabelTier = tier
         applyLabelTier(tier)
 
-        // Neighborhood cohesion forces (skip if physics is sleeping)
-        if !physicsIsSleeping {
-            let deltaTime = currentTime - lastUpdateTime
-            applyNeighborhoodForces(deltaTime: deltaTime)
-            checkConvergence()
+        // Update newcomer halos
+        if enableNewcomerHalo {
+            updateNewcomerHalos(currentTime: currentTime)
         }
+
+        // Resting state: continuous physics disabled (forces governed by algorithmic layout)
+        // applyNeighborhoodForces and checkConvergence removed
         lastUpdateTime = currentTime
     }
 
@@ -650,6 +655,7 @@ final class CorpusPhysicsScene: SKScene {
         body.restitution = 0.25
         body.mass = CGFloat(max(0.5, Float(radius / 30)))
         body.allowsRotation = false
+        body.isDynamic = false  // Resting state: no continuous physics
         shape.physicsBody = body
 
         // Position: stored layout or random near center
@@ -689,6 +695,11 @@ final class CorpusPhysicsScene: SKScene {
             addChild(shape)
             nodeSprites[node.id] = shape
         }
+
+        // Add newcomer halo for new nodes
+        if isNew && enableNewcomerHalo {
+            addNewcomerHalo(to: shape, radius: radius)
+        }
     }
 
     private func updateNodeSprite(_ node: Node) {
@@ -706,6 +717,68 @@ final class CorpusPhysicsScene: SKScene {
             let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
             label.text = displayText
             label.userData = ["fullTitle": displayText]
+        }
+    }
+
+    /// Animate sprite to target position if it has changed.
+    private func animateSpriteIfNeeded(nodeID: String) {
+        guard let sprite = nodeSprites[nodeID] else { return }
+        let targetPosition = storedPosition(for: nodeID)
+
+        // Check if position has changed (within tolerance)
+        let dx = sprite.position.x - targetPosition.x
+        let dy = sprite.position.y - targetPosition.y
+        let distance = sqrt(dx * dx + dy * dy)
+
+        guard distance > 5 else { return }  // Skip if within 5pt tolerance
+
+        // Animate to new position
+        let move = SKAction.move(to: targetPosition, duration: 1.5)
+        move.timingMode = .easeOut
+        sprite.run(move, withKey: "algorithmicLayout")
+    }
+
+    /// Add newcomer halo to a sprite.
+    private func addNewcomerHalo(to sprite: SKShapeNode, radius: CGFloat) {
+        let haloRadius = radius + 12
+        let halo = SKShapeNode(circleOfRadius: haloRadius)
+        halo.strokeColor = UIColor.white.withAlphaComponent(0.5)
+        halo.fillColor = .clear
+        halo.lineWidth = 2
+        halo.zPosition = -0.5
+        halo.name = "newcomerHalo"
+
+        // Store creation timestamp
+        if sprite.userData == nil {
+            sprite.userData = NSMutableDictionary()
+        }
+        sprite.userData?["haloCreatedAt"] = CACurrentMediaTime()
+
+        sprite.addChild(halo)
+        print("[Halo] Newcomer halo spawned for node \(sprite.name ?? "unknown")")
+    }
+
+    /// Update newcomer halo opacity based on elapsed time.
+    private func updateNewcomerHalos(currentTime: TimeInterval) {
+        for (_, sprite) in nodeSprites {
+            guard let halo = sprite.children.first(where: { $0.name == "newcomerHalo" }) as? SKShapeNode,
+                  let createdAt = sprite.userData?["haloCreatedAt"] as? TimeInterval else {
+                continue
+            }
+
+            let elapsed = currentTime - createdAt
+            let progress = min(elapsed / haloFadeDuration, 1.0)
+
+            if progress >= 1.0 {
+                // Halo expired — remove it
+                halo.removeFromParent()
+                sprite.userData?["haloCreatedAt"] = nil
+                print("[Halo] Newcomer halo expired for node \(sprite.name ?? "unknown")")
+            } else {
+                // Decay opacity from 0.5 to 0.0
+                let opacity = 0.5 * (1.0 - progress)
+                halo.strokeColor = UIColor.white.withAlphaComponent(opacity)
+            }
         }
     }
 
@@ -798,6 +871,7 @@ final class CorpusPhysicsScene: SKScene {
         body.restitution = 0.25
         body.mass = CGFloat(max(1.0, Float(radius / 20)))  // Heavier
         body.allowsRotation = false
+        body.isDynamic = false  // Resting state: no continuous physics
         shape.physicsBody = body
 
         // Position: random near center (no stored layout for Über-nodes yet)
@@ -1317,8 +1391,7 @@ final class CorpusPhysicsScene: SKScene {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
 
-        // Wake physics on user gesture
-        wakePhysics(reason: "user gesture")
+        // Resting state: no physics wake needed (continuous forces disabled)
 
         for touch in touches {
             activeTouches[touch] = touch.location(in: view)

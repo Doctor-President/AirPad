@@ -113,6 +113,7 @@ final class CorpusStore {
     }
 
     private let service = iCloudDriveService()
+    private let layoutService = LayoutService()
 
     // MARK: - Lifecycle
 
@@ -180,8 +181,10 @@ final class CorpusStore {
         }
         // Refresh Über-node clusters (auto-invalidates at 5+ new nodes)
         refreshUberNodeClusters()
-        // Refresh neighborhoods
+        // Refresh neighborhoods (may trigger layout recompute if structure changes)
         refreshNeighborhoods()
+        // Single-node capture: recompute layout (inertia keeps existing nodes stable)
+        recomputeAlgorithmicLayout(reason: "single-node capture")
         // Trigger corpus-wide thread analysis once we have enough nodes
         if nodes.count >= 10 {
             Task { await triggerThreadAnalysis() }
@@ -769,6 +772,7 @@ final class CorpusStore {
             }
             await flushClusterRefresh()  // Task 3: final guaranteed refresh
             refreshNeighborhoods()  // Refresh after all AI processing complete
+            recomputeAlgorithmicLayout(reason: "batch import complete")  // Algorithmic layout after import
             print("[Batch][AI] All done")
         }
 
@@ -958,14 +962,27 @@ final class CorpusStore {
         }
 
         let hadCache = neighborhoodCache != nil
+        let previousNeighborhoodCount = neighborhoodCache?.neighborhoods.count ?? 0
+        let previousLargestMemberCount = neighborhoodCache?.neighborhoods.first?.memberCount ?? 0
         print("[Neighborhood] refreshNeighborhoods() called — cache valid: false, fingerprint match: \(hadCache ? "false" : "n/a (no cache)")")
 
         // Generate new neighborhoods
         neighborhoodCache = service.generateNeighborhoods(from: nodes, layoutPositions: canvasLayout.positions)
 
         if let cache = neighborhoodCache {
-            let largestCount = cache.neighborhoods.first?.memberCount ?? 0
-            print("[Neighborhood] Computed \(cache.neighborhoods.count) neighborhoods from \(nodes.count) nodes (largest: \(largestCount) members)")
+            let newNeighborhoodCount = cache.neighborhoods.count
+            let newLargestMemberCount = cache.neighborhoods.first?.memberCount ?? 0
+            print("[Neighborhood] Computed \(newNeighborhoodCount) neighborhoods from \(nodes.count) nodes (largest: \(newLargestMemberCount) members)")
+
+            // Check if neighborhood structure changed significantly
+            let countDelta = abs(newNeighborhoodCount - previousNeighborhoodCount)
+            let largestCountChange = previousLargestMemberCount > 0 ?
+                abs(Double(newLargestMemberCount - previousLargestMemberCount)) / Double(previousLargestMemberCount) : 0
+
+            if countDelta >= 3 || largestCountChange >= 0.3 {
+                print("[Neighborhood] Significant structure change detected (count Δ\(countDelta), largest member Δ\(String(format: "%.1f", largestCountChange * 100))%)")
+                recomputeAlgorithmicLayout(reason: "neighborhood structure change")
+            }
         } else {
             print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
         }
@@ -975,6 +992,45 @@ final class CorpusStore {
     func invalidateNeighborhoods() {
         neighborhoodCache = nil
         refreshNeighborhoods()
+    }
+
+    // MARK: - Algorithmic layout
+
+    /// Recompute layout using LayoutService and update canvasLayout.
+    /// Converts from SpriteKit (y-up) to SwiftUI (y-down) convention.
+    private func recomputeAlgorithmicLayout(reason: String) {
+        print("[Layout] Computing algorithmic layout for \(nodes.count) nodes across \(neighborhoodCache?.neighborhoods.count ?? 0) neighborhoods — reason: \(reason)")
+
+        // Convert existing layout to SpriteKit convention (y-up)
+        let existingPositionsSK = canvasLayout.positions.mapValues { pos in
+            CGPoint(x: pos.x, y: -pos.y)
+        }
+
+        // Compute new layout
+        let newPositionsSK = layoutService.computeAlgorithmicLayout(
+            nodes: nodes,
+            neighborhoodCache: neighborhoodCache,
+            existingPositions: existingPositionsSK
+        )
+
+        // Convert back to SwiftUI convention (y-down) and update canvasLayout
+        var newLayout = canvasLayout
+        for (nodeID, posSK) in newPositionsSK {
+            newLayout.positions[nodeID] = CanvasPosition(x: posSK.x, y: -posSK.y)
+        }
+        newLayout.updatedAt = Date()
+
+        // Persist to disk
+        Task {
+            do {
+                try await service.saveCanvasLayout(newLayout)
+                canvasLayout = newLayout
+                canvasNeedsSync = UUID()
+                print("[Layout] Animating \(newPositionsSK.count) node positions")
+            } catch {
+                print("[Layout] ERROR saving layout: \(error)")
+            }
+        }
     }
 
     // MARK: - File resolution

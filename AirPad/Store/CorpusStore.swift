@@ -49,6 +49,9 @@ final class CorpusStore {
         didSet { saveReviewQueue() }
     }
 
+    /// Reference to QuarantineStore for syncing quarantined entries.
+    var quarantineStore: QuarantineStore?
+
     private var dismissedThreadDescriptions: Set<String> = []
 
     /// Nodes after applying the active filter and sort order.
@@ -626,13 +629,26 @@ final class CorpusStore {
 
         print("[Batch] Input text length: \(text.count) chars")
 
+        // Diagnostic: Count segments from splitter
+        let segments = BatchParser.splitText(text)
+        print("[Batch] Splitter produced \(segments.count) segments from input text")
+
         // Prune expired quarantine entries (48-hour TTL)
         BatchParser.pruneExpiredQuarantined()
+        quarantineStore?.pruneExpired()
 
         // Run text through the Router pipeline (Session 2+)
         let result = BatchParser.processText(text)
 
         print("[Batch] Router results: clean=\(result.commitClean.count), review=\(result.commitWithReview.count), quarantined=\(result.quarantined.count), deferredToFM=\(result.deferredToFM.count)")
+
+        // Diagnostic: Log quarantined entry details
+        if !result.quarantined.isEmpty {
+            print("[Batch] Quarantined entries detail:")
+            for (index, entry) in result.quarantined.enumerated() {
+                print("[Batch]   [\(index+1)] reason=\(entry.reason), text=\(entry.rawText.prefix(50))...")
+            }
+        }
 
         // Create nodes from Router outcomes
         // commitClean: nodes without review flag
@@ -649,6 +665,7 @@ final class CorpusStore {
         // Store quarantined entries (NOT converted to nodes)
         for entry in result.quarantined {
             BatchParser.storeQuarantined(entry)
+            quarantineStore?.add(entry)
         }
 
         print("[Batch] Created \(parsedNodes.count) nodes to import")
@@ -711,7 +728,9 @@ final class CorpusStore {
         for node in savedNodes.reversed() {
             nodes.insert(node, at: 0)
         }
-        print("[Batch] Phase 3 done: store.nodes \(beforeCount) → \(nodes.count)")
+        let insertedCount = nodes.count - beforeCount
+        print("[Batch] Phase 3 done: store.nodes \(beforeCount) → \(nodes.count) (inserted \(insertedCount) nodes)")
+        print("[Batch] === IMPORT SUMMARY: \(segments.count) segments → \(result.commitClean.count) clean + \(result.commitWithReview.count) review + \(result.deferredToFM.count) deferred = \(parsedNodes.count) total nodes → \(insertedCount) successfully inserted, \(result.quarantined.count) quarantined ===")
 
         importBatchProgress = nil
 
@@ -796,6 +815,48 @@ final class CorpusStore {
 
     func removeFromReviewQueue(id: String) {
         reviewQueue.removeAll { $0.id == id }
+    }
+
+    /// Rescues a quarantined entry by creating a Node and adding it to the corpus.
+    /// Does NOT re-run through Router (user override).
+    func rescueQuarantinedEntry(_ entry: BatchParser.QuarantinedEntry) async {
+        let formatter = ISO8601DateFormatter()
+        let timestamp = formatter.string(from: Date())
+        let source = "quarantine-rescue-\(timestamp)"
+
+        // Create node directly from raw text
+        let nodeID = UUID().uuidString
+        let now = Date()
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .text,
+            createdAt: now,
+            content: entry.rawText
+        )
+        let node = Node(
+            id: nodeID,
+            createdAt: now,
+            updatedAt: now,
+            title: "",
+            summary: "",
+            tags: [],
+            items: [item],
+            needsAIProcessing: true,
+            needsReview: false,
+            source: source
+        )
+
+        // Save to disk and add to store
+        do {
+            try await service.saveNode(node)
+            nodes.insert(node, at: 0)
+            quarantineStore?.remove(entry)
+            print("[Quarantine] Rescued entry as node \(nodeID)")
+            // Process with AI (no tag sheet since these are usually low-quality)
+            await processNodeWithAI(nodeID: node.id, suppressTagSheet: true)
+        } catch {
+            print("[Quarantine] ERROR rescuing entry: \(error)")
+        }
     }
 
     private static let reviewQueueUDKey = "com.airpad.reviewQueue"

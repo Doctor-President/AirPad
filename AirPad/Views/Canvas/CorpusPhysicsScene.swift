@@ -148,6 +148,15 @@ final class CorpusPhysicsScene: SKScene {
         let incomingNodeIDs = Set(nodes.map { $0.id })
         let existingNodeIDs = Set(nodeSprites.keys)
 
+        // Wake physics if new nodes are being added
+        let hasNewNodes = !incomingNodeIDs.subtracting(existingNodeIDs).isEmpty
+        if hasNewNodes {
+            wakePhysics(reason: "new nodes added")
+            if nodeSprites.isEmpty {
+                print("[Neighborhood] Cohesion physics started for \(nodes.count) nodes")
+            }
+        }
+
         // Remove deleted nodes
         for id in existingNodeIDs.subtracting(incomingNodeIDs) {
             nodeSprites[id]?.removeFromParent()
@@ -414,6 +423,14 @@ final class CorpusPhysicsScene: SKScene {
     private var shaderStartTime: TimeInterval = 0
     private var lastUpdateTime: TimeInterval = 0
 
+    // MARK: - Neighborhood cohesion state
+
+    /// Track velocity for convergence detection
+    private var velocityHistory: [CGFloat] = []
+    private var physicsIsSleeping = false
+    private let convergenceThreshold: CGFloat = 0.5  // pt/sec
+    private let convergenceFrames = 30
+
     // MARK: - Blob displacement state
 
     /// Displacement amplitude (0 = perfect circle, 1 = full deformation)
@@ -455,16 +472,24 @@ final class CorpusPhysicsScene: SKScene {
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
 
-        // Update u_time for each Über-node shader
-        for (_, shape) in uberNodeSprites {
-            shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
-        }
+        // Über-node shader updates disabled (sprites not rendered)
+        // for (_, shape) in uberNodeSprites {
+        //     shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+        // }
 
         let scale = cameraNode.xScale
         let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
 
         currentLabelTier = tier
         applyLabelTier(tier)
+
+        // Neighborhood cohesion forces (skip if physics is sleeping)
+        if !physicsIsSleeping {
+            let deltaTime = currentTime - lastUpdateTime
+            applyNeighborhoodForces(deltaTime: deltaTime)
+            checkConvergence()
+        }
+        lastUpdateTime = currentTime
     }
 
     private func applyLabelTier(_ tier: Int) {
@@ -584,6 +609,10 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
+        // Cache primary tag for neighborhood cohesion forces
+        shape.userData = NSMutableDictionary()
+        shape.userData?["primaryTag"] = node.tags.first
+
         let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
         let labelNode = makeTitleLabel(text: displayText, radius: radius)
         shape.addChild(labelNode)
@@ -661,6 +690,13 @@ final class CorpusPhysicsScene: SKScene {
     private func updateNodeSprite(_ node: Node) {
         guard let shape = nodeSprites[node.id] else { return }
         shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
+
+        // Update cached primary tag
+        if shape.userData == nil {
+            shape.userData = NSMutableDictionary()
+        }
+        shape.userData?["primaryTag"] = node.tags.first
+
         // Title label update
         if let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
             let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
@@ -767,11 +803,12 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.position = finalPosition
 
-        addChild(shape)
+        // Disable cluster bubble rendering (keep data structure for honeycomb)
+        // addChild(shape)
         uberNodeSprites[cluster.id] = shape
 
-        // Slower breathing animation
-        startUberNodeBreathing(for: shape, clusterID: cluster.id, radius: radius)
+        // Slower breathing animation (disabled since sprite not added to scene)
+        // startUberNodeBreathing(for: shape, clusterID: cluster.id, radius: radius)
     }
 
     private func updateUberNodeSprite(_ cluster: UberNodeCluster, childNodes: [Node]) {
@@ -995,6 +1032,163 @@ final class CorpusPhysicsScene: SKScene {
         shape.run(forever, withKey: "blobBreathing")
     }
 
+    // MARK: - Neighborhood cohesion physics
+
+    private func applyNeighborhoodForces(deltaTime: TimeInterval) {
+        let dt = CGFloat(deltaTime)
+
+        // Force parameters (tunable)
+        let centrAttractionStrength: CGFloat = 0.02
+        let maxCentroidImpulse: CGFloat = 5.0
+        let repulsionStrength: CGFloat = 50.0
+        let repulsionThreshold: CGFloat = 200.0
+        let maxRepulsionImpulse: CGFloat = 3.0
+
+        // Group nodes by primary tag to calculate centroids
+        var tagGroups: [String: [SKShapeNode]] = [:]
+        for (_, sprite) in nodeSprites {
+            guard let tag = sprite.userData?["primaryTag"] as? String else { continue }
+            tagGroups[tag, default: []].append(sprite)
+        }
+
+        // Pass 1: Centroid attraction
+        for (tag, group) in tagGroups where group.count > 1 {
+            for sprite in group {
+                guard let body = sprite.physicsBody, body.isDynamic else { continue }
+
+                // Calculate centroid of other nodes in this group
+                var centroidX: CGFloat = 0
+                var centroidY: CGFloat = 0
+                var count = 0
+
+                for other in group where other !== sprite {
+                    centroidX += other.position.x
+                    centroidY += other.position.y
+                    count += 1
+                }
+
+                guard count > 0 else { continue }
+                centroidX /= CGFloat(count)
+                centroidY /= CGFloat(count)
+
+                // Vector toward centroid
+                let dx = centroidX - sprite.position.x
+                let dy = centroidY - sprite.position.y
+                let distance = sqrt(dx * dx + dy * dy)
+
+                if distance > 0 {
+                    // Impulse proportional to distance, clamped
+                    let rawMagnitude = distance * centrAttractionStrength
+                    let magnitude = min(rawMagnitude, maxCentroidImpulse)
+                    let impulse = CGVector(
+                        dx: (dx / distance) * magnitude * dt,
+                        dy: (dy / distance) * magnitude * dt
+                    )
+                    body.applyImpulse(impulse)
+                }
+            }
+        }
+
+        // Pass 2: Inter-neighborhood repulsion
+        let sprites = Array(nodeSprites.values)
+        for i in 0..<sprites.count {
+            let sprite1 = sprites[i]
+            guard let body1 = sprite1.physicsBody, body1.isDynamic else { continue }
+            guard let tag1 = sprite1.userData?["primaryTag"] as? String else { continue }
+
+            for j in (i+1)..<sprites.count {
+                let sprite2 = sprites[j]
+                guard let body2 = sprite2.physicsBody, body2.isDynamic else { continue }
+                guard let tag2 = sprite2.userData?["primaryTag"] as? String else { continue }
+
+                // Only repel if different tags
+                guard tag1 != tag2 else { continue }
+
+                let dx = sprite2.position.x - sprite1.position.x
+                let dy = sprite2.position.y - sprite1.position.y
+                let distance = sqrt(dx * dx + dy * dy)
+
+                // Only repel if within threshold
+                guard distance > 0 && distance < repulsionThreshold else { continue }
+
+                // Inverse square law, clamped
+                let rawMagnitude = repulsionStrength / (distance * distance)
+                let magnitude = min(rawMagnitude, maxRepulsionImpulse)
+
+                let impulse1 = CGVector(
+                    dx: -(dx / distance) * magnitude * dt,
+                    dy: -(dy / distance) * magnitude * dt
+                )
+                let impulse2 = CGVector(
+                    dx: (dx / distance) * magnitude * dt,
+                    dy: (dy / distance) * magnitude * dt
+                )
+
+                body1.applyImpulse(impulse1)
+                body2.applyImpulse(impulse2)
+            }
+        }
+    }
+
+    private func checkConvergence() {
+        // Calculate mean velocity magnitude
+        var totalVelocity: CGFloat = 0
+        var count = 0
+
+        for (_, sprite) in nodeSprites {
+            guard let body = sprite.physicsBody, body.isDynamic else { continue }
+            let vel = body.velocity
+            let magnitude = sqrt(vel.dx * vel.dx + vel.dy * vel.dy)
+            totalVelocity += magnitude
+            count += 1
+        }
+
+        guard count > 0 else { return }
+        let meanVelocity = totalVelocity / CGFloat(count)
+
+        // Track history
+        velocityHistory.append(meanVelocity)
+        if velocityHistory.count > convergenceFrames {
+            velocityHistory.removeFirst()
+        }
+
+        // Check if converged (all recent frames below threshold)
+        if velocityHistory.count == convergenceFrames {
+            let allBelowThreshold = velocityHistory.allSatisfy { $0 < convergenceThreshold }
+            if allBelowThreshold && !physicsIsSleeping {
+                sleepPhysics()
+            }
+        }
+    }
+
+    private func sleepPhysics() {
+        physicsIsSleeping = true
+        let elapsedTime = velocityHistory.count > 0 ? Double(velocityHistory.count) / 60.0 : 0
+        print("[Neighborhood] Converged in \(String(format: "%.1f", elapsedTime))s, sleeping")
+
+        // Set all non-interacting nodes to static
+        for (_, sprite) in nodeSprites {
+            guard let body = sprite.physicsBody else { continue }
+            // Skip if node is currently being manipulated (hoveredNode, zoomedNode, etc.)
+            if sprite === hoveredNode || sprite.name == "node:\(zoomedNodeID ?? "")" {
+                continue
+            }
+            body.isDynamic = false
+        }
+    }
+
+    private func wakePhysics(reason: String) {
+        guard physicsIsSleeping else { return }
+        physicsIsSleeping = false
+        velocityHistory.removeAll()
+        print("[Neighborhood] Woken by \(reason)")
+
+        // Set all nodes back to dynamic
+        for (_, sprite) in nodeSprites {
+            sprite.physicsBody?.isDynamic = true
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeShape(
@@ -1118,6 +1312,10 @@ final class CorpusPhysicsScene: SKScene {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
+
+        // Wake physics on user gesture
+        wakePhysics(reason: "user gesture")
+
         for touch in touches {
             activeTouches[touch] = touch.location(in: view)
         }
@@ -1309,27 +1507,28 @@ final class CorpusPhysicsScene: SKScene {
         lastTapTime = currentTime
         lastTapLocation = scenePoint
 
-        // Check for Über-node tap first
-        if let shape = uberNodeSprites.values.first(where: { $0.contains(scenePoint) }),
-           let name = shape.name,
-           name.hasPrefix("uber:") {
-            let clusterID = String(name.dropFirst(5))
-
-            if isDoubleTap {
-                // Double-tap: drill into Über-node
-                DispatchQueue.main.async { [weak self] in
-                    self?.canvasState?.drilledInto = clusterID
-                }
-            } else {
-                // Single tap: center and zoom (universal behavior)
-                if zoomedNodeID == nil {
-                    centerAndZoomNode(clusterID)
-                    DispatchQueue.main.async { [weak self] in
-                        self?.canvasState?.selectedNodeID = clusterID
-                    }
-                }
-            }
-        } else if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
+        // Cluster bubble drill-in disabled (bubbles no longer rendered)
+        // if let shape = uberNodeSprites.values.first(where: { $0.contains(scenePoint) }),
+        //    let name = shape.name,
+        //    name.hasPrefix("uber:") {
+        //     let clusterID = String(name.dropFirst(5))
+        //
+        //     if isDoubleTap {
+        //         // Double-tap: drill into Über-node
+        //         DispatchQueue.main.async { [weak self] in
+        //             self?.canvasState?.drilledInto = clusterID
+        //         }
+        //     } else {
+        //         // Single tap: center and zoom (universal behavior)
+        //         if zoomedNodeID == nil {
+        //             centerAndZoomNode(clusterID)
+        //             DispatchQueue.main.async { [weak self] in
+        //                 self?.canvasState?.selectedNodeID = clusterID
+        //             }
+        //         }
+        //     }
+        // } else
+        if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
                   let name = shape.name,
                   name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))

@@ -3,8 +3,10 @@ import SwiftUI
 struct ContentView: View {
 
     @Environment(CorpusStore.self) private var store
+    @Environment(QuarantineStore.self) private var quarantineStore
     @State private var showFilterPanel = false
     @State private var showSettings = false
+    @State private var showQuarantineReview = false
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
 
     var body: some View {
@@ -42,6 +44,11 @@ struct ContentView: View {
                         }
                         Spacer()
                         HStack(spacing: 10) {
+                            if quarantineStore.entries.count > 0 {
+                                QuarantineWarningIcon(count: quarantineStore.entries.count) {
+                                    showQuarantineReview = true
+                                }
+                            }
                             SettingsButton { showSettings = true }
                             FilterButton(activeCount: store.filterState.activeFilterCount) {
                                 showFilterPanel = true
@@ -113,6 +120,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(isPresented: $showQuarantineReview) {
+            QuarantineReviewSheet()
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView { showOnboarding = false }

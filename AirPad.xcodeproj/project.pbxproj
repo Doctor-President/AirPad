@@ -17,6 +17,9 @@
 		20A15CA3D0F6100CB85D8AA1 /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */; };
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
+		2633E4A22F9EBDA7009D5708 /* QuarantineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2633E4A12F9EBDA7009D5708 /* QuarantineStore.swift */; };
+		2633E4A52F9EBEC9009D5708 /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2633E4A32F9EBEC9009D5708 /* QuarantineReviewSheet.swift */; };
+		2633E4A62F9EBEC9009D5708 /* QuarantineWarningIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2633E4A42F9EBEC9009D5708 /* QuarantineWarningIcon.swift */; };
 		2733262BA259E300B3613CF3 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
 		481B80E93834B0485E835938 /* CorpusQuerySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */; };
@@ -102,7 +105,10 @@
 		1866B7173FCC4A9B1AE81AF1 /* Node.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Node.swift; sourceTree = "<group>"; };
 		18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorSheet.swift; sourceTree = "<group>"; };
 		194292F01A21193B880F16FA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.extensionkit-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2633E4A12F9EBDA7009D5708 /* QuarantineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarantineStore.swift; sourceTree = "<group>"; };
+		2633E4A32F9EBEC9009D5708 /* QuarantineReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarantineReviewSheet.swift; sourceTree = "<group>"; };
+		2633E4A42F9EBEC9009D5708 /* QuarantineWarningIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarantineWarningIcon.swift; sourceTree = "<group>"; };
 		2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSuggestionCard.swift; sourceTree = "<group>"; };
 		323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteKitView.swift; sourceTree = "<group>"; };
 		39E6876F450FCAC6F6B1A9CF /* Tag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tag.swift; sourceTree = "<group>"; };
@@ -294,6 +300,7 @@
 			children = (
 				ADDA79A05C807120913FCE5F /* CorpusStore.swift */,
 				48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */,
+				2633E4A12F9EBDA7009D5708 /* QuarantineStore.swift */,
 			);
 			path = Store;
 			sourceTree = "<group>";
@@ -351,6 +358,8 @@
 			children = (
 				A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */,
 				B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */,
+				2633E4A32F9EBEC9009D5708 /* QuarantineReviewSheet.swift */,
+				2633E4A42F9EBEC9009D5708 /* QuarantineWarningIcon.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -516,10 +525,13 @@
 				1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */,
 				ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */,
 				7701571E5153DEFA1B4F4D82 /* SpriteKitView.swift in Sources */,
+				2633E4A22F9EBDA7009D5708 /* QuarantineStore.swift in Sources */,
 				072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */,
 				8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */,
 				AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */,
 				2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */,
+				2633E4A52F9EBEC9009D5708 /* QuarantineReviewSheet.swift in Sources */,
+				2633E4A62F9EBEC9009D5708 /* QuarantineWarningIcon.swift in Sources */,
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,
 				E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */,
 				9EB9E29886AAC3A0626B456C /* UberNode.swift in Sources */,

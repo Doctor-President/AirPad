@@ -130,16 +130,19 @@ final class CorpusPhysicsScene: SKScene {
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
     /// expandingFrom: spawn point for drill-down expansion animation.
+    /// neighborhoodCache: neighborhood assignments for cohesion forces.
     func syncNodes(
         _ nodes: [Node],
         layoutPositions: [String: CanvasPosition],
         tagColors: [String: UIColor] = [:],
         newNodeID: String? = nil,
         uberNodeClusters: [UberNodeCluster] = [],
-        expandingFrom: CGPoint? = nil
+        expandingFrom: CGPoint? = nil,
+        neighborhoodCache: NeighborhoodCache? = nil
     ) {
         self.tagColors = tagColors
         positionMap = layoutPositions
+        self.neighborhoodCache = neighborhoodCache
 
         // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
@@ -204,6 +207,7 @@ final class CorpusPhysicsScene: SKScene {
     private var positionMap: [String: CanvasPosition] = [:]
 
     private var tagColors: [String: UIColor] = [:]
+    private var neighborhoodCache: NeighborhoodCache? = nil
 
     // Zoom state
     private var originalCameraPosition: CGPoint = .zero
@@ -609,9 +613,9 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
-        // Cache primary tag for neighborhood cohesion forces
+        // Cache neighborhoodID for cohesion forces
         shape.userData = NSMutableDictionary()
-        shape.userData?["primaryTag"] = node.tags.first
+        shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
 
         let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
         let labelNode = makeTitleLabel(text: displayText, radius: radius)
@@ -691,11 +695,11 @@ final class CorpusPhysicsScene: SKScene {
         guard let shape = nodeSprites[node.id] else { return }
         shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
 
-        // Update cached primary tag
+        // Update cached neighborhoodID
         if shape.userData == nil {
             shape.userData = NSMutableDictionary()
         }
-        shape.userData?["primaryTag"] = node.tags.first
+        shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
 
         // Title label update
         if let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
@@ -1044,15 +1048,15 @@ final class CorpusPhysicsScene: SKScene {
         let repulsionThreshold: CGFloat = 200.0
         let maxRepulsionImpulse: CGFloat = 3.0
 
-        // Group nodes by primary tag to calculate centroids
-        var tagGroups: [String: [SKShapeNode]] = [:]
+        // Group nodes by neighborhoodID to calculate centroids
+        var neighborhoodGroups: [String: [SKShapeNode]] = [:]
         for (_, sprite) in nodeSprites {
-            guard let tag = sprite.userData?["primaryTag"] as? String else { continue }
-            tagGroups[tag, default: []].append(sprite)
+            guard let neighborhoodID = sprite.userData?["neighborhoodID"] as? String else { continue }
+            neighborhoodGroups[neighborhoodID, default: []].append(sprite)
         }
 
         // Pass 1: Centroid attraction
-        for (tag, group) in tagGroups where group.count > 1 {
+        for (neighborhoodID, group) in neighborhoodGroups where group.count > 1 {
             for sprite in group {
                 guard let body = sprite.physicsBody, body.isDynamic else { continue }
 
@@ -1094,15 +1098,15 @@ final class CorpusPhysicsScene: SKScene {
         for i in 0..<sprites.count {
             let sprite1 = sprites[i]
             guard let body1 = sprite1.physicsBody, body1.isDynamic else { continue }
-            guard let tag1 = sprite1.userData?["primaryTag"] as? String else { continue }
+            guard let neighborhoodID1 = sprite1.userData?["neighborhoodID"] as? String else { continue }
 
             for j in (i+1)..<sprites.count {
                 let sprite2 = sprites[j]
                 guard let body2 = sprite2.physicsBody, body2.isDynamic else { continue }
-                guard let tag2 = sprite2.userData?["primaryTag"] as? String else { continue }
+                guard let neighborhoodID2 = sprite2.userData?["neighborhoodID"] as? String else { continue }
 
-                // Only repel if different tags
-                guard tag1 != tag2 else { continue }
+                // Only repel if different neighborhoods
+                guard neighborhoodID1 != neighborhoodID2 else { continue }
 
                 let dx = sprite2.position.x - sprite1.position.x
                 let dy = sprite2.position.y - sprite1.position.y

@@ -15,6 +15,9 @@ final class CorpusStore {
     /// Cached Über-node clusters (Tier 1: tag-only). Regenerates on invalidation.
     var uberNodeCache: UberNodeCache? = nil
 
+    /// Cached neighborhoods (Louvain communities over tag co-occurrence). Regenerates on invalidation.
+    var neighborhoodCache: NeighborhoodCache? = nil
+
     /// Reference to CanvasState for drill-down filtering.
     var canvasState: CanvasState? = nil
 
@@ -140,6 +143,8 @@ final class CorpusStore {
         }
         // Generate initial Über-node clusters
         refreshUberNodeClusters()
+        // Generate initial neighborhoods
+        refreshNeighborhoods()
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
     }
@@ -175,6 +180,8 @@ final class CorpusStore {
         }
         // Refresh Über-node clusters (auto-invalidates at 5+ new nodes)
         refreshUberNodeClusters()
+        // Refresh neighborhoods
+        refreshNeighborhoods()
         // Trigger corpus-wide thread analysis once we have enough nodes
         if nodes.count >= 10 {
             Task { await triggerThreadAnalysis() }
@@ -761,6 +768,7 @@ final class CorpusStore {
                 scheduleClusterRefresh()  // Task 3: debounced refresh
             }
             await flushClusterRefresh()  // Task 3: final guaranteed refresh
+            refreshNeighborhoods()  // Refresh after all AI processing complete
             print("[Batch][AI] All done")
         }
 
@@ -929,6 +937,38 @@ final class CorpusStore {
         clusterRefreshTask?.cancel()
         clusterRefreshTask = nil
         refreshUberNodeClusters()
+    }
+
+    // MARK: - Neighborhood detection
+
+    /// Generate or refresh neighborhoods if needed.
+    /// Called automatically after node additions when invalidation threshold is met.
+    func refreshNeighborhoods() {
+        // Compute current fingerprint
+        let service = NeighborhoodService()
+        let currentFingerprint = service.corpusFingerprint(from: nodes)
+
+        // Check if cache exists and is still valid
+        if let cache = neighborhoodCache,
+           !cache.shouldInvalidate(currentFingerprint: currentFingerprint) {
+            return  // Cache is still fresh
+        }
+
+        // Generate new neighborhoods
+        neighborhoodCache = service.generateNeighborhoods(from: nodes, layoutPositions: canvasLayout.positions)
+
+        if let cache = neighborhoodCache {
+            let largestCount = cache.neighborhoods.first?.memberCount ?? 0
+            print("[Neighborhood] Computed \(cache.neighborhoods.count) neighborhoods from \(nodes.count) nodes (largest: \(largestCount) members)")
+        } else {
+            print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
+        }
+    }
+
+    /// Force regeneration of neighborhoods (ignores cache validity).
+    func invalidateNeighborhoods() {
+        neighborhoodCache = nil
+        refreshNeighborhoods()
     }
 
     // MARK: - File resolution

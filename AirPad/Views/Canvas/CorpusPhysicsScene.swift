@@ -146,6 +146,7 @@ final class CorpusPhysicsScene: SKScene {
         positionMap = layoutPositions
         self.neighborhoodCache = neighborhoodCache
         self.nodeRadii = nodeRadii
+        self.currentNodes = nodes  // Cache for relatedness computation
 
         // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
@@ -211,6 +212,12 @@ final class CorpusPhysicsScene: SKScene {
     private var tagColors: [String: UIColor] = [:]
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
+
+    // Strand layer state
+    private var focalNodeID: String? = nil
+    private var strandLayer: SKNode? = nil
+    private let relatednessService = RelatednessService()
+    private var currentNodes: [Node] = []  // Cached for relatedness computation
 
     // Zoom state
     private var originalCameraPosition: CGPoint = .zero
@@ -474,6 +481,11 @@ final class CorpusPhysicsScene: SKScene {
 
         view.isMultipleTouchEnabled = true
 
+        // Strand layer (below sprites)
+        strandLayer = SKNode()
+        strandLayer?.zPosition = -1
+        addChild(strandLayer!)
+
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
@@ -498,6 +510,19 @@ final class CorpusPhysicsScene: SKScene {
         // Update newcomer halos
         if enableNewcomerHalo {
             updateNewcomerHalos(currentTime: currentTime)
+        }
+
+        // Update strand paths if focal node is set
+        if let focalID = focalNodeID, let focalSprite = nodeSprites[focalID] {
+            for strand in strandLayer?.children ?? [] {
+                guard let line = strand as? SKShapeNode,
+                      let relatedID = line.userData?["relatedID"] as? String,
+                      let relatedSprite = nodeSprites[relatedID] else { continue }
+                let path = CGMutablePath()
+                path.move(to: focalSprite.position)
+                path.addLine(to: relatedSprite.position)
+                line.path = path
+            }
         }
 
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
@@ -608,6 +633,97 @@ final class CorpusPhysicsScene: SKScene {
 
     func setChromaticAberrationMax(_ max: Float) {
         nodeFillShader.uniforms.first(where: { $0.name == "u_aberration_max" })?.floatValue = max
+    }
+
+    // MARK: - Strand layer
+
+    /// Set the focal node and render strands to its top-related nodes.
+    /// Pass nil to clear the focal node and fade out all strands.
+    func setFocalNode(_ nodeID: String?) {
+        // Clear focal if nil
+        guard let nodeID = nodeID else {
+            focalNodeID = nil
+            clearStrands()
+            print("[Strand] Focal cleared")
+            return
+        }
+
+        // No-op if same node
+        guard nodeID != focalNodeID else { return }
+
+        // Set new focal
+        focalNodeID = nodeID
+        renderStrands(forFocalID: nodeID)
+    }
+
+    private func renderStrands(forFocalID focalID: String) {
+        // Clear existing strands first (fast removal, no animation)
+        strandLayer?.removeAllChildren()
+
+        // Find focal sprite
+        guard let focalSprite = nodeSprites[focalID] else {
+            print("[Strand] Focal node \(focalID) not found in sprites")
+            return
+        }
+
+        // Query related nodes
+        let related = relatednessService.topRelated(
+            forNodeID: focalID,
+            in: currentNodes,
+            limit: 5
+        )
+
+        guard !related.isEmpty else {
+            print("[Strand] Focal set to node \(focalID) — 0 related nodes found")
+            return
+        }
+
+        print("[Strand] Focal set to node \(focalID) — \(related.count) related nodes found")
+
+        // Render strands
+        for (relatedID, score) in related {
+            guard let relatedSprite = nodeSprites[relatedID] else { continue }
+
+            // Create line from focal to related
+            let path = CGMutablePath()
+            path.move(to: focalSprite.position)
+            path.addLine(to: relatedSprite.position)
+
+            let line = SKShapeNode(path: path)
+            line.strokeColor = UIColor.white.withAlphaComponent(0.0)  // Start transparent
+            line.lineWidth = 1.0
+            line.zPosition = -1
+
+            // Store related ID in userData for path updates
+            line.userData = NSMutableDictionary()
+            line.userData?["relatedID"] = relatedID
+
+            strandLayer?.addChild(line)
+
+            // Fade in to 0.3 opacity
+            let fadeIn = SKAction.fadeAlpha(to: 0.3, duration: 0.4)
+            fadeIn.timingMode = .easeOut
+            line.run(fadeIn)
+        }
+
+        print("[Strand] Rendered \(related.count) strands (fade-in 0.4s)")
+    }
+
+    private func clearStrands() {
+        guard let strandLayer = strandLayer else { return }
+
+        let childCount = strandLayer.children.count
+        guard childCount > 0 else { return }
+
+        print("[Strand] Cleared \(childCount) strands (fade-out 0.3s)")
+
+        // Fade out each strand
+        for child in strandLayer.children {
+            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
+            fadeOut.timingMode = .easeIn
+            let remove = SKAction.removeFromParent()
+            child.run(.sequence([fadeOut, remove]))
+        }
     }
 
     // MARK: - Node sprites
@@ -1657,6 +1773,9 @@ final class CorpusPhysicsScene: SKScene {
                   name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
 
+            // Tap on node: set focal (test affordance for strand layer)
+            setFocalNode(nodeID)
+
             // If already zoomed, tapping the zoomed node does nothing
             // (tap outside will dismiss via the else branch)
             if zoomedNodeID == nil {
@@ -1667,7 +1786,9 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         } else {
-            // Tap on empty space
+            // Tap on empty space: clear focal
+            setFocalNode(nil)
+
             if isDoubleTap && canvasState?.drilledInto != nil {
                 // Double-tap on empty space while drilled in: exit drill-down
                 DispatchQueue.main.async { [weak self] in

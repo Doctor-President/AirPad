@@ -164,23 +164,18 @@ final class CorpusPhysicsScene: SKScene {
             }
 
             print("[Hex Debug] Enabled — snapshotted \(preHexSnapshot.count) sprites, applying hex layout")
-            guard let view = view else { return }
-
-            // Compute uniform baseline scale
-            let baselineScreenRadius = view.bounds.width * hexBaselineScreenWidth / 2
-            let baselineWorldRadius = baselineScreenRadius / cameraNode.xScale
 
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = false
 
                 // Position: hex coord → world space
                 if let hexCoord = nodeHexCoords[nodeID] {
-                    sprite.position = hexToWorld(hexCoord, cellSize: currentHexSpacing)
+                    sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
                 }
 
-                // Size: uniform baseline (screen-space invariant)
+                // Size: uniform baseline (fixed world-space)
                 let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
-                let targetScale = baselineWorldRadius / currentSpriteRadius
+                let targetScale = hexBaselineRadius / currentSpriteRadius
                 sprite.setScale(targetScale)
             }
         } else {
@@ -296,22 +291,23 @@ final class CorpusPhysicsScene: SKScene {
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
 
-    // MARK: - Hex grid state (SB80a-fix4: global grid, screen-space, zoom-invariant)
+    // MARK: - Hex grid state (SB80a-fix6: world-space, single coordinate system)
 
     private var nodeHexCoords: [String: HexCoord] = [:]
-    private let hexSpacingScreenWidth: CGFloat = 0.07  // 7% of view width between adjacent cells
-    private let hexBaselineScreenWidth: CGFloat = 0.05  // 5% of view width per node (baseline)
+
+    /// Fixed world-space cell size for the hex grid. Matches the natural
+    /// nearest-neighbor density of the algorithmic resting layout.
+    private let hexCellSize: CGFloat = 60.0
+
+    /// Fixed world-space radius for nodes in hex view. Sized to fit
+    /// comfortably within hexCellSize spacing.
+    private let hexBaselineRadius: CGFloat = 22.0  // ~37% of cell size
+
     private var debugShowHexLayout: Bool = false  // Toggle for debug visualization
 
     /// Snapshot of sprite state captured before hex debug mode is entered.
     /// Used to cleanly restore on exit. Cleared on exit.
     private var preHexSnapshot: [String: (position: CGPoint, scale: CGFloat)] = [:]
-
-    /// Screen-space hex spacing, adjusted for current camera zoom
-    private var currentHexSpacing: CGFloat {
-        guard let view = view else { return 56.0 }
-        return (view.bounds.width * hexSpacingScreenWidth) / cameraNode.xScale
-    }
 
     // Strand layer state
     private var focalNodeID: String? = nil
@@ -642,25 +638,19 @@ final class CorpusPhysicsScene: SKScene {
         //     shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
         // }
 
-        // SB80a-fix4: Debug hex layout visualization (per-frame, zoom-invariant)
+        // SB80a-fix6: Debug hex layout visualization (per-frame, world-space)
         if debugShowHexLayout {
-            guard let view = view else { return }
-
-            // Compute uniform baseline scale (screen-space, adjusted for zoom)
-            let baselineScreenRadius = view.bounds.width * hexBaselineScreenWidth / 2
-            let baselineWorldRadius = baselineScreenRadius / cameraNode.xScale
-
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = false
 
-                // Position: recompute from hex coord every frame (spacing adjusts with zoom)
+                // Position: hex coord → world space (fixed cell size)
                 if let hexCoord = nodeHexCoords[nodeID] {
-                    sprite.position = hexToWorld(hexCoord, cellSize: currentHexSpacing)
+                    sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
                 }
 
-                // Size: uniform baseline (recomputed every frame for zoom invariance)
+                // Size: uniform baseline (fixed world-space)
                 let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
-                let targetScale = baselineWorldRadius / currentSpriteRadius
+                let targetScale = hexBaselineRadius / currentSpriteRadius
                 sprite.setScale(targetScale)
             }
             return  // Skip normal update logic
@@ -2160,9 +2150,9 @@ final class CorpusPhysicsScene: SKScene {
             height: (maxY - minY) + 2 * padding
         )
 
-        // Step 2: Generate hex cell centers covering bounding box (unit cellSize = 1)
-        // We'll use unit spacing and store abstract coords, then scale per-frame
-        let unitSpacing: CGFloat = 60.0  // Reference spacing for grid generation
+        // Step 2: Generate hex cell centers covering bounding box
+        // Use the shared world-space cell size for layout and rendering
+        let unitSpacing = hexCellSize
         var hexCells: [HexCoord] = []
         var hexCellCenters: [HexCoord: CGPoint] = [:]
 

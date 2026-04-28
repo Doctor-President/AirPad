@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0284EB1329A9A5B1C0DF85D6 /* NeighborhoodService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */; };
+		7C6A7FA1701F46A585A1117F /* RelatednessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75695A5692E9443C97FE212B /* RelatednessService.swift */; };
 		0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		07CB581F48846F9CC3814049 /* UberNodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */; };
@@ -19,6 +20,7 @@
 		20A15CA3D0F6100CB85D8AA1 /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */; };
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
+		2633E4A82FA0315B009D5708 /* LayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2633E4A72FA0315B009D5708 /* LayoutService.swift */; };
 		2733262BA259E300B3613CF3 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
 		481B80E93834B0485E835938 /* CorpusQuerySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */; };
@@ -110,10 +112,12 @@
 		1866B7173FCC4A9B1AE81AF1 /* Node.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Node.swift; sourceTree = "<group>"; };
 		18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorSheet.swift; sourceTree = "<group>"; };
 		194292F01A21193B880F16FA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.extensionkit-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2633E4A72FA0315B009D5708 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSuggestionCard.swift; sourceTree = "<group>"; };
 		323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteKitView.swift; sourceTree = "<group>"; };
 		38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodService.swift; sourceTree = "<group>"; };
+		75695A5692E9443C97FE212B /* RelatednessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatednessService.swift; sourceTree = "<group>"; };
 		39E6876F450FCAC6F6B1A9CF /* Tag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tag.swift; sourceTree = "<group>"; };
 		3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureSheet.swift; sourceTree = "<group>"; };
 		4114EB82C1700492CF29C6AE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -215,10 +219,12 @@
 		3227935C1477D723C015BBFB /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				2633E4A72FA0315B009D5708 /* LayoutService.swift */,
 				E617FBB5C1757939CF37710B /* AIService.swift */,
 				B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */,
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */,
+				75695A5692E9443C97FE212B /* RelatednessService.swift */,
 				B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */,
 				1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */,
 			);
@@ -512,6 +518,7 @@
 				A795741744098AF3B305335B /* CardBlurTest.swift in Sources */,
 				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
+				2633E4A82FA0315B009D5708 /* LayoutService.swift in Sources */,
 				481B80E93834B0485E835938 /* CorpusQuerySheet.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
@@ -522,6 +529,7 @@
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */,
 				0284EB1329A9A5B1C0DF85D6 /* NeighborhoodService.swift in Sources */,
+				7C6A7FA1701F46A585A1117F /* RelatednessService.swift in Sources */,
 				6ABE3E503556A6148E29F602 /* Node.swift in Sources */,
 				679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */,
 				B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */,

@@ -456,6 +456,7 @@ final class CorpusPhysicsScene: SKScene {
     private var restingScales: [String: CGFloat] = [:]
     private var nodeBaseRadii: [String: CGFloat] = [:]
     private var displacementActive: Bool = false
+    private var honeycombFirstFrame: Bool = false
     private var driftExcludedIDs: Set<String> = []
     private let breathingGap: CGFloat = 10.0
     private let lerpFactor: CGFloat = 0.20
@@ -678,7 +679,7 @@ final class CorpusPhysicsScene: SKScene {
                 candidates.sort { $0.restingDistance < $1.restingDistance }
 
                 // Universal scaling: camera-zoom-invariant dimensions
-                let cameraScale = camera?.xScale ?? 1.0
+                let cameraScale = cameraNode.xScale
                 let scaleFactor = 1.0 / cameraScale
 
                 // Step 3: Phase A - assign each candidate to a ring (by resting distance, already sorted)
@@ -763,19 +764,27 @@ final class CorpusPhysicsScene: SKScene {
                 for assignment in finalAssignments {
                     guard let sprite = nodeSprites[assignment.nodeID] else { continue }
 
-                    let currentPos = sprite.position
-                    let lerpedPos = CGPoint(
-                        x: currentPos.x + (assignment.slotPos.x - currentPos.x) * lerpFactor,
-                        y: currentPos.y + (assignment.slotPos.y - currentPos.y) * lerpFactor
-                    )
-                    sprite.position = lerpedPos
-
                     // Apply ring-specific scale
                     let restingScale = restingScales[assignment.nodeID] ?? 1.0
                     let targetScale = restingScale * nodeScaleForRing(assignment.ring)
-                    let currentScale = sprite.xScale
-                    let lerpedScale = currentScale + (targetScale - currentScale) * lerpFactor
-                    sprite.setScale(lerpedScale)
+
+                    if honeycombFirstFrame {
+                        // Snap directly to slot position and target scale on first engagement
+                        sprite.position = assignment.slotPos
+                        sprite.setScale(targetScale)
+                    } else {
+                        // Steady-state: fluid lerp toward slot position
+                        let currentPos = sprite.position
+                        let lerpedPos = CGPoint(
+                            x: currentPos.x + (assignment.slotPos.x - currentPos.x) * lerpFactor,
+                            y: currentPos.y + (assignment.slotPos.y - currentPos.y) * lerpFactor
+                        )
+                        sprite.position = lerpedPos
+
+                        let currentScale = sprite.xScale
+                        let lerpedScale = currentScale + (targetScale - currentScale) * lerpFactor
+                        sprite.setScale(lerpedScale)
+                    }
                 }
 
                 // Step 6: far nodes lerp back to resting position and resting scale
@@ -784,17 +793,24 @@ final class CorpusPhysicsScene: SKScene {
                           let restingPos = restingPositions[nodeID] else { continue }
                     let restingScale = restingScales[nodeID] ?? 1.0
 
-                    let currentPos = sprite.position
-                    let lerpedPos = CGPoint(
-                        x: currentPos.x + (restingPos.x - currentPos.x) * lerpFactor,
-                        y: currentPos.y + (restingPos.y - currentPos.y) * lerpFactor
-                    )
-                    sprite.position = lerpedPos
+                    if honeycombFirstFrame {
+                        sprite.position = restingPos
+                        sprite.setScale(restingScale)
+                    } else {
+                        let currentPos = sprite.position
+                        let lerpedPos = CGPoint(
+                            x: currentPos.x + (restingPos.x - currentPos.x) * lerpFactor,
+                            y: currentPos.y + (restingPos.y - currentPos.y) * lerpFactor
+                        )
+                        sprite.position = lerpedPos
 
-                    let currentScale = sprite.xScale
-                    let lerpedScale = currentScale + (restingScale - currentScale) * lerpFactor
-                    sprite.setScale(lerpedScale)
+                        let currentScale = sprite.xScale
+                        let lerpedScale = currentScale + (restingScale - currentScale) * lerpFactor
+                        sprite.setScale(lerpedScale)
+                    }
                 }
+
+                honeycombFirstFrame = false
             }
 
         case .gracePeriod(let focalID, let expiresAt):
@@ -820,6 +836,7 @@ final class CorpusPhysicsScene: SKScene {
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
                     displacementActive = false
+                    honeycombFirstFrame = false
                 }
 
                 // Clear everything
@@ -2059,6 +2076,7 @@ final class CorpusPhysicsScene: SKScene {
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
                     displacementActive = false
+                    honeycombFirstFrame = false
                 }
 
                 // Clear everything
@@ -2151,6 +2169,7 @@ final class CorpusPhysicsScene: SKScene {
                         nodeBaseRadii[nodeID] = (sprite.frame.width / 2) / sprite.xScale
                     }
                     displacementActive = true
+                    honeycombFirstFrame = true
 
                     print("[Honeycomb] Engaged (drag threshold exceeded)")
                 }
@@ -2254,6 +2273,7 @@ final class CorpusPhysicsScene: SKScene {
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
                     displacementActive = false
+                    honeycombFirstFrame = false
                 }
 
                 // Scale down focal if one was tracked
@@ -2349,6 +2369,7 @@ final class CorpusPhysicsScene: SKScene {
                 nodeBaseRadii.removeAll()
                 driftExcludedIDs.removeAll()
                 displacementActive = false
+                honeycombFirstFrame = false
             }
 
             clearStrands()

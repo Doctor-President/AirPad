@@ -536,7 +536,7 @@ final class CorpusPhysicsScene: SKScene {
     private var gestureState: GestureState = .idle
     private let dragThreshold: CGFloat = 10.0
     private let holdThreshold: TimeInterval = 0.7
-    private let gracePeriodDuration: TimeInterval = 1.5
+    private let gracePeriodDuration: TimeInterval = 2.0  // SB80b-fix2: bumped from 1.5
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
@@ -561,14 +561,22 @@ final class CorpusPhysicsScene: SKScene {
     private var restingScales: [String: CGFloat] = [:]
     private var driftExcludedIDs: Set<String> = []
 
-    // Scale lens constants (tunable)
-    private let focalScale: CGFloat = 4.0
-    private let ring1Scale: CGFloat = 1.4
-    private let ring2Scale: CGFloat = 1.15
-    private let baselineScale: CGFloat = 1.0
+    // Screen-space scale lens (SB80b-fix2)
+    private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
+    private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
+    private let scaleSigmoidSteepness: CGFloat = 1.2      // steeper = sharper focal-to-neighbor drop
+    private let scaleSigmoidMidpoint: CGFloat = 2.5       // hex distance at which curve is at midpoint
+
+    // Radial position compression
+    private let positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
+    private let positionCompressionFalloff: CGFloat = 3.0    // hex distance at which compression effect halves
+
+    // Lerp factors (preserved from SB80b)
     private let engagementLerp: CGFloat = 0.30
     private let steadyStateLerp: CGFloat = 0.20
     private let cameraFollowLerp: CGFloat = 0.10
+
+    // Convergence tolerances (preserved)
     private let positionMatchTolerance: CGFloat = 2.0
     private let scaleMatchTolerance: CGFloat = 0.05
 
@@ -755,142 +763,17 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-            // Per-frame hex grid engagement (SB80b)
-            switch engagementState {
-            case .engaging(let focalID), .engaged(let focalID):
-                guard let focalCoord = nodeHexCoords[focalID] else { break }
-
-                // Determine lerp factor based on state
-                let lerpFactor: CGFloat
-                if case .engaging = engagementState {
-                    lerpFactor = engagementLerp
-                } else {
-                    lerpFactor = steadyStateLerp
-                }
-
-                // Track convergence for state transition
-                var allPositionsConverged = true
-                var allScalesConverged = true
-
-                // Apply hex grid positions + scale lens
-                for (nodeID, sprite) in nodeSprites {
-                    guard !driftExcludedIDs.contains(nodeID),
-                          let nodeCoord = nodeHexCoords[nodeID] else { continue }
-
-                    // Target position: hex coord → world space
-                    let targetPos = hexToWorld(nodeCoord, cellSize: hexCellSize)
-
-                    // Target scale: hex distance → lens multiplier
-                    let hexDist = hexDistance(focalCoord, nodeCoord)
-                    let lensMultiplier = scaleMultiplierForHexDistance(hexDist)
-                    let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
-                    let targetWorldRadius = hexBaselineRadius * lensMultiplier
-                    let targetScale = targetWorldRadius / currentSpriteRadius
-
-                    // Lerp position
-                    let currentPos = sprite.position
-                    let dx = targetPos.x - currentPos.x
-                    let dy = targetPos.y - currentPos.y
-                    let lerpedPos = CGPoint(
-                        x: currentPos.x + dx * lerpFactor,
-                        y: currentPos.y + dy * lerpFactor
-                    )
-                    sprite.position = lerpedPos
-
-                    // Check position convergence
-                    if hypot(dx, dy) > positionMatchTolerance {
-                        allPositionsConverged = false
-                    }
-
-                    // Lerp scale
-                    let currentScale = sprite.xScale
-                    let scaleDiff = targetScale - currentScale
-                    let lerpedScale = currentScale + scaleDiff * lerpFactor
-                    sprite.setScale(lerpedScale)
-
-                    // Check scale convergence
-                    if abs(scaleDiff) > scaleMatchTolerance {
-                        allScalesConverged = false
-                    }
-                }
-
-                // Camera follow (engaged state only)
-                if case .engaged = engagementState {
-                    let focalWorldPos = hexToWorld(focalCoord, cellSize: hexCellSize)
-                    let camDx = focalWorldPos.x - cameraNode.position.x
-                    let camDy = focalWorldPos.y - cameraNode.position.y
-                    cameraNode.position = CGPoint(
-                        x: cameraNode.position.x + camDx * cameraFollowLerp,
-                        y: cameraNode.position.y + camDy * cameraFollowLerp
-                    )
-                }
-
-                // State transition: engaging → engaged
-                if case .engaging = engagementState, allPositionsConverged && allScalesConverged {
-                    engagementState = .engaged(focal: focalID)
-                    print("[Honeycomb] State: engaging → engaged")
-                }
-
-            case .disengaging:
-                var allPositionsConverged = true
-                var allScalesConverged = true
-
-                for (nodeID, sprite) in nodeSprites {
-                    guard let restingPos = restingPositions[nodeID] else { continue }
-                    let restingScale = restingScales[nodeID] ?? 1.0
-
-                    // Lerp toward resting state
-                    let currentPos = sprite.position
-                    let dx = restingPos.x - currentPos.x
-                    let dy = restingPos.y - currentPos.y
-                    let lerpedPos = CGPoint(
-                        x: currentPos.x + dx * engagementLerp,
-                        y: currentPos.y + dy * engagementLerp
-                    )
-                    sprite.position = lerpedPos
-
-                    if hypot(dx, dy) > positionMatchTolerance {
-                        allPositionsConverged = false
-                    }
-
-                    let currentScale = sprite.xScale
-                    let scaleDiff = restingScale - currentScale
-                    let lerpedScale = currentScale + scaleDiff * engagementLerp
-                    sprite.setScale(lerpedScale)
-
-                    if abs(scaleDiff) > scaleMatchTolerance {
-                        allScalesConverged = false
-                    }
-                }
-
-                // State transition: disengaging → idle
-                if allPositionsConverged && allScalesConverged {
-                    engagementState = .idle
-                    restingPositions.removeAll()
-                    restingScales.removeAll()
-                    driftExcludedIDs.removeAll()
-                    print("[Honeycomb] State: disengaging → idle")
-                }
-
-            default:
-                break
-            }
-
         case .gracePeriod(let focalID, let expiresAt):
             // Check if grace period expired
             if currentTime >= expiresAt {
-                print("[Honeycomb] State: engaged → disengaging")
+                print("[Honeycomb] State: gracePeriod → disengaging")
 
                 // Clear strands and drift
                 clearStrands()
                 unwindDrift()
 
-                // Scale focal back and restore zPosition
+                // Restore focal zPosition
                 if let focalSprite = nodeSprites[focalID] {
-                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
-                    scaleDown.timingMode = .easeOut
-                    focalSprite.run(scaleDown)
-
                     if let savedZ = savedFocalZPositions[focalID] {
                         focalSprite.zPosition = savedZ
                         savedFocalZPositions.removeValue(forKey: focalID)
@@ -905,7 +788,7 @@ final class CorpusPhysicsScene: SKScene {
                     gracePromptLabel = nil
                 }
 
-                // Transition to disengaging (per-frame lerp back handled in switch above)
+                // Transition to disengaging
                 engagementState = .disengaging
                 gestureState = .idle
                 currentFocalNodeID = nil
@@ -916,19 +799,182 @@ final class CorpusPhysicsScene: SKScene {
             break
         }
 
+        // Engagement state machine: runs independently every frame (SB80b-fix2)
+        switch engagementState {
+        case .engaging(let focalID), .engaged(let focalID):
+            guard let focalCoord = nodeHexCoords[focalID],
+                  let view = view else { break }
+
+            // Determine lerp factor based on state
+            let lerpFactor: CGFloat
+            if case .engaging = engagementState {
+                lerpFactor = engagementLerp
+            } else {
+                lerpFactor = steadyStateLerp
+            }
+
+            // Track convergence for state transition
+            var allPositionsConverged = true
+            var allScalesConverged = true
+
+            let screenWidth = view.bounds.width
+            let cameraScale = cameraNode.xScale
+
+            // Apply hex grid positions + screen-space scale lens + radial compression
+            for (nodeID, sprite) in nodeSprites {
+                guard !driftExcludedIDs.contains(nodeID),
+                      let nodeCoord = nodeHexCoords[nodeID] else { continue }
+
+                // Target position: compressed hex position (radial pull toward focal)
+                let targetPos = compressedHexPosition(nodeCoord: nodeCoord, focalCoord: focalCoord)
+
+                // Target scale: screen-space sigmoid → world-space
+                let hexDist = hexDistance(focalCoord, nodeCoord)
+                let targetScreenDiameter = screenWidth * screenFractionForHexDistance(hexDist)
+                let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
+                let intrinsicRadius = sprite.frame.width / 2 / sprite.xScale
+                let targetScale = targetWorldRadius / intrinsicRadius
+
+                // Lerp position
+                let currentPos = sprite.position
+                let dx = targetPos.x - currentPos.x
+                let dy = targetPos.y - currentPos.y
+                let lerpedPos = CGPoint(
+                    x: currentPos.x + dx * lerpFactor,
+                    y: currentPos.y + dy * lerpFactor
+                )
+                sprite.position = lerpedPos
+
+                // Check position convergence
+                if hypot(dx, dy) > positionMatchTolerance {
+                    allPositionsConverged = false
+                }
+
+                // Lerp scale
+                let currentScale = sprite.xScale
+                let scaleDiff = targetScale - currentScale
+                let lerpedScale = currentScale + scaleDiff * lerpFactor
+                sprite.setScale(lerpedScale)
+
+                // Check scale convergence
+                if abs(scaleDiff) > scaleMatchTolerance {
+                    allScalesConverged = false
+                }
+            }
+
+            // Camera follow (engaged state only, not during engaging)
+            if case .engaged = engagementState {
+                let focalWorldPos = compressedHexPosition(nodeCoord: focalCoord, focalCoord: focalCoord)
+                let camDx = focalWorldPos.x - cameraNode.position.x
+                let camDy = focalWorldPos.y - cameraNode.position.y
+                cameraNode.position = CGPoint(
+                    x: cameraNode.position.x + camDx * cameraFollowLerp,
+                    y: cameraNode.position.y + camDy * cameraFollowLerp
+                )
+            }
+
+            // State transition: engaging → engaged
+            if case .engaging = engagementState, allPositionsConverged && allScalesConverged {
+                engagementState = .engaged(focal: focalID)
+                print("[Honeycomb] State: engaging → engaged")
+            }
+
+        case .gracePeriod(let focalID, _):
+            // During grace period: hex grid stays frozen (no position/scale updates)
+            // Camera does NOT follow during grace
+            // Rendering is handled by touch gesture layer (prompt label, tap detection)
+            // The grid is already at target state from .engaged, so no per-frame updates needed
+            break
+
+        case .disengaging:
+            var allPositionsConverged = true
+            var allScalesConverged = true
+
+            for (nodeID, sprite) in nodeSprites {
+                guard let restingPos = restingPositions[nodeID] else { continue }
+                let restingScale = restingScales[nodeID] ?? 1.0
+
+                // Lerp toward resting state
+                let currentPos = sprite.position
+                let dx = restingPos.x - currentPos.x
+                let dy = restingPos.y - currentPos.y
+                let lerpedPos = CGPoint(
+                    x: currentPos.x + dx * engagementLerp,
+                    y: currentPos.y + dy * engagementLerp
+                )
+                sprite.position = lerpedPos
+
+                if hypot(dx, dy) > positionMatchTolerance {
+                    allPositionsConverged = false
+                }
+
+                let currentScale = sprite.xScale
+                let scaleDiff = restingScale - currentScale
+                let lerpedScale = currentScale + scaleDiff * engagementLerp
+                sprite.setScale(lerpedScale)
+
+                if abs(scaleDiff) > scaleMatchTolerance {
+                    allScalesConverged = false
+                }
+            }
+
+            // State transition: disengaging → idle
+            if allPositionsConverged && allScalesConverged {
+                engagementState = .idle
+                restingPositions.removeAll()
+                restingScales.removeAll()
+                driftExcludedIDs.removeAll()
+                print("[Honeycomb] State: disengaging → idle")
+            }
+
+        case .idle:
+            break
+        }
+
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
         lastUpdateTime = currentTime
     }
 
-    /// Scale lens helper: compute scale multiplier based on hex distance from focal
-    private func scaleMultiplierForHexDistance(_ d: Int) -> CGFloat {
-        switch d {
-        case 0: return focalScale          // 4.0 — focal large
-        case 1: return ring1Scale          // 1.4 — immediate neighbors slightly bigger
-        case 2: return ring2Scale          // 1.15 — distance-2 ring subtle lift
-        default: return baselineScale      // 1.0 — grid baseline
-        }
+    /// Sigmoid scale falloff: focal large, smooth taper, asymptotic to baseline.
+    /// `d` is hex distance from focal (0 = focal itself).
+    /// Returns: target screen-space diameter as fraction of screen width.
+    private func screenFractionForHexDistance(_ d: Int) -> CGFloat {
+        let x = CGFloat(d)
+        // Logistic sigmoid: 1 at x=0, smoothly transitions to 0 as x grows past midpoint
+        let sigmoid = 1.0 / (1.0 + exp(scaleSigmoidSteepness * (x - scaleSigmoidMidpoint)))
+        // Map sigmoid output to range [baselineScreenFraction, focalScreenFraction]
+        return baselineScreenFraction + (focalScreenFraction - baselineScreenFraction) * sigmoid
+    }
+
+    /// Compute compressed render position for a node.
+    /// Hex coordinate is unchanged; this is purely visual.
+    private func compressedHexPosition(
+        nodeCoord: HexCoord,
+        focalCoord: HexCoord
+    ) -> CGPoint {
+        let rawHexPos = hexToWorld(nodeCoord, cellSize: hexCellSize)
+        let focalHexPos = hexToWorld(focalCoord, cellSize: hexCellSize)
+        let d = hexDistance(focalCoord, nodeCoord)
+
+        if d == 0 { return focalHexPos }  // focal stays at its hex position
+
+        // Vector from focal to node in raw hex space
+        let dx = rawHexPos.x - focalHexPos.x
+        let dy = rawHexPos.y - focalHexPos.y
+
+        // Compression factor: stronger near focal, weaker far away
+        // At d=1: significant compression. At d→∞: compression approaches 0.
+        let compressionFactor = positionCompressionStrength * exp(-CGFloat(d - 1) / positionCompressionFalloff)
+
+        // Pull node toward focal by compressionFactor of its distance
+        let compressedDx = dx * (1.0 - compressionFactor)
+        let compressedDy = dy * (1.0 - compressionFactor)
+
+        return CGPoint(
+            x: focalHexPos.x + compressedDx,
+            y: focalHexPos.y + compressedDy
+        )
     }
 
     private func applyLabelTier(_ tier: Int) {
@@ -2184,61 +2230,7 @@ final class CorpusPhysicsScene: SKScene {
             let screenPoint = touch.location(in: view)
             tapStartInfo = (screenPoint: screenPoint, time: CACurrentMediaTime())
 
-            // Honeycomb: check for grace period tap
-            if case .gracePeriod(let focalID, _) = gestureState {
-                // Detect which sprite was tapped (convert to scene coordinates)
-                let scenePoint = convertPoint(fromView: screenPoint)
-                let tappedNodeID: String
-                if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
-                   let name = shape.name,
-                   name.hasPrefix("node:") {
-                    tappedNodeID = String(name.dropFirst(5))
-                    print("[Honeycomb] Grace period: NodeDetailView opened for tapped node \(tappedNodeID)")
-                } else {
-                    tappedNodeID = focalID
-                    print("[Honeycomb] Grace period: NodeDetailView opened for focal \(focalID)")
-                }
-
-                // Transition to disengaging (per-frame lerp handled in update loop)
-                engagementState = .disengaging
-
-                // Clear strands and drift
-                clearStrands()
-                unwindDrift()
-
-                // Scale focal back and restore zPosition
-                if let focalSprite = nodeSprites[focalID] {
-                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
-                    scaleDown.timingMode = .easeOut
-                    focalSprite.run(scaleDown)
-
-                    if let savedZ = savedFocalZPositions[focalID] {
-                        focalSprite.zPosition = savedZ
-                        savedFocalZPositions.removeValue(forKey: focalID)
-                    }
-                }
-
-                // Fade out prompt
-                if let prompt = gracePromptLabel {
-                    let fadeOut = SKAction.fadeOut(withDuration: 0.2)
-                    let remove = SKAction.removeFromParent()
-                    prompt.run(.sequence([fadeOut, remove]))
-                    gracePromptLabel = nil
-                }
-
-                // Open detail view
-                DispatchQueue.main.async { [weak self] in
-                    self?.canvasState?.selectedNodeID = tappedNodeID
-                }
-
-                // Return to idle
-                gestureState = .idle
-                currentFocalNodeID = nil
-                holdCompleted = false
-                return
-            }
-
-            // Otherwise, start tap candidate
+            // Start tap candidate (grace period tap handling moved to touchesEnded)
             gestureState = .tapCandidate(
                 initialPosition: screenPoint,
                 startTime: CACurrentMediaTime()
@@ -2311,6 +2303,32 @@ final class CorpusPhysicsScene: SKScene {
                     lastPanPosition: current
                 )
 
+            case .gracePeriod(let focalID, _):
+                // Drag during grace period: cancel grace and re-enter engagement (SB80b-fix2)
+                print("[Honeycomb] Drag during grace - canceling grace, re-entering engagement")
+
+                // Fade out prompt
+                if let prompt = gracePromptLabel {
+                    let fadeOut = SKAction.fadeOut(withDuration: 0.1)
+                    let remove = SKAction.removeFromParent()
+                    prompt.run(.sequence([fadeOut, remove]))
+                    gracePromptLabel = nil
+                }
+
+                // Transition to honeycomb mode
+                gestureState = .honeycomb(
+                    initialPosition: current,
+                    lastPanPosition: current
+                )
+                holdTimerStart = CACurrentMediaTime()
+                holdCompleted = false
+
+                // Engagement state: re-enter engaging
+                // Note: restingPositions/restingScales already captured from original engagement
+                engagementState = .engaging(focal: focalID)
+
+                print("[Honeycomb] State: gracePeriod → engaging(focal: \(focalID))")
+
             default:
                 break
             }
@@ -2344,13 +2362,54 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        // Honeycomb: handle lift from honeycomb mode
+        // Grace period: handle tap on focal to open NodeDetailView (SB80b-fix2)
+        if case .gracePeriod(let focalID, let expiresAt) = engagementState {
+            // Check if this is a single tap
+            guard activeTouches.count == 1,
+                  let touch = touches.first,
+                  let info = tapStartInfo else {
+                // Not a tap - check if drag is starting (cancel grace)
+                return
+            }
+
+            let endPoint = touch.location(in: view)
+            let duration = CACurrentMediaTime() - info.time
+            let dist = hypot(endPoint.x - info.screenPoint.x, endPoint.y - info.screenPoint.y)
+
+            // Valid tap criteria
+            if duration < 0.3 && dist < 14 {
+                let scenePoint = convertPoint(fromView: endPoint)
+
+                // Check if tap is on the focal node
+                if let focalSprite = nodeSprites[focalID], focalSprite.contains(scenePoint) {
+                    print("[Honeycomb] Focal tapped during grace - opening NodeDetailView")
+
+                    // Open NodeDetailView
+                    DispatchQueue.main.async { [weak self] in
+                        self?.canvasState?.selectedNodeID = focalID
+                    }
+
+                    // Reset grace timer (when NodeDetailView dismisses, user gets a fresh grace window)
+                    let newExpiresAt = CACurrentMediaTime() + gracePeriodDuration
+                    engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
+                    gestureState = .gracePeriod(focalID: focalID, expiresAt: newExpiresAt)
+
+                    return
+                }
+            }
+
+            // Tap was outside focal or not a valid tap - ignore
+            return
+        }
+
+        // Honeycomb: handle lift from honeycomb mode (SB80b-fix2: grace on every release)
         if case .honeycomb(_, _) = gestureState {
-            if let focalID = currentFocalNodeID, holdCompleted {
+            if let focalID = currentFocalNodeID {
                 print("[Honeycomb] Grace period entered for \(focalID)")
 
-                // Enter grace period
+                // Enter grace period (engagement state + gesture state)
                 let expiresAt = CACurrentMediaTime() + gracePeriodDuration
+                engagementState = .gracePeriod(focal: focalID, expiresAt: expiresAt)
                 gestureState = .gracePeriod(focalID: focalID, expiresAt: expiresAt)
 
                 // Create prompt label near focal sprite
@@ -2374,25 +2433,9 @@ final class CorpusPhysicsScene: SKScene {
                     prompt.run(fadeIn)
                 }
             } else {
-                // Hold not completed or no focal - return to idle silently
+                // No focal tracked - return to idle
                 print("[Honeycomb] State: engaged → disengaging")
-
-                // Transition to disengaging (per-frame lerp back handled in update loop)
                 engagementState = .disengaging
-
-                // Scale down focal if one was tracked
-                if let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
-                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.4)
-                    scaleDown.timingMode = .easeOut
-                    focalSprite.run(scaleDown)
-
-                    // Restore original zPosition
-                    if let savedZ = savedFocalZPositions[focalID] {
-                        focalSprite.zPosition = savedZ
-                        savedFocalZPositions.removeValue(forKey: focalID)
-                    }
-                }
-
                 gestureState = .idle
                 currentFocalNodeID = nil
                 holdCompleted = false

@@ -167,8 +167,8 @@ final class CorpusPhysicsScene: SKScene {
             // Re-enable physics and return all sprites to resting positions
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = true
-                if let restingPos = positionMap[nodeID]?.point {
-                    sprite.position = restingPos
+                if let pos = positionMap[nodeID] {
+                    sprite.position = CGPoint(x: pos.x, y: -pos.y)
                 }
             }
         }
@@ -638,7 +638,7 @@ final class CorpusPhysicsScene: SKScene {
 
         // Honeycomb gesture state updates
         switch gestureState {
-        case .honeycomb(let initialPosition, let lastPanPosition):
+        case .honeycomb(_, _):
             // Track focal node (nearest to camera center)
             let newFocalID = findNearestNodeToCamera()
             if newFocalID != currentFocalNodeID {
@@ -2398,12 +2398,11 @@ final class CorpusPhysicsScene: SKScene {
 
         if touchCount == 1, let touch = touches.first {
             let current = touch.location(in: view)
-            let previous = activeTouches[touch] ?? current
             activeTouches[touch] = current
 
             // Honeycomb gesture state machine
             switch gestureState {
-            case .tapCandidate(let initialPosition, let startTime):
+            case .tapCandidate(let initialPosition, _):
                 // Check if drag threshold exceeded
                 let dx = current.x - initialPosition.x
                 let dy = current.y - initialPosition.y

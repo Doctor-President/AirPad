@@ -19,10 +19,10 @@ final class LayoutService {
     private let floaterRadius: CGFloat = 900
 
     // Node sizing
-    private let minRadius: CGFloat = 16.0
-    private let maxRadius: CGFloat = 36.0
+    private let minRadius: CGFloat = 12.0
+    private let maxRadius: CGFloat = 48.0
     private let mediaWordEquivalent: Double = 20.0
-    private let centralityCoefficient: Double = 0.15
+    private let centralityCoefficient: Double = 0.25
     private let minSeparationGap: CGFloat = 4.0
 
     // MARK: - Public API
@@ -261,7 +261,7 @@ final class LayoutService {
     func radius(forSignificance significance: Double, corpusMaxSignificance: Double) -> CGFloat {
         guard corpusMaxSignificance > 0 && significance > 0 else { return minRadius }
 
-        let normalized = log(1 + significance) / log(1 + corpusMaxSignificance)
+        let normalized = pow(log(1 + significance) / log(1 + corpusMaxSignificance), 0.7)
         return minRadius + (maxRadius - minRadius) * CGFloat(normalized)
     }
 

@@ -458,6 +458,7 @@ final class CorpusPhysicsScene: SKScene {
     private var displacementActive: Bool = false
     private var honeycombFirstFrame: Bool = false
     private var driftExcludedIDs: Set<String> = []
+    private var slotAssignments: [String: (ring: Int, index: Int)] = [:]
     private let breathingGap: CGFloat = 10.0
     private let lerpFactor: CGFloat = 0.20
     private let hysteresisThreshold: CGFloat = 20.0
@@ -653,6 +654,11 @@ final class CorpusPhysicsScene: SKScene {
                     let restingDistance: CGFloat
                     let restingAngle: CGFloat
                 }
+
+                struct SlotID: Hashable {
+                    let ring: Int
+                    let index: Int
+                }
                 var allCandidates: [HexCandidate] = []
 
                 for (nodeID, _) in nodeSprites {
@@ -683,101 +689,161 @@ final class CorpusPhysicsScene: SKScene {
                 let cameraScale = cameraNode.xScale
                 let scaleFactor = 1.0 / cameraScale
 
-                // Step 3: Phase A - assign each candidate to a ring (by resting distance, already sorted)
-                var ringMembers: [Int: [HexCandidate]] = [1: [], 2: [], 3: []]
-                for (index, candidate) in candidates.enumerated() {
-                    let ring = ringForCandidateIndex(index)
-                    // With always-72 recruitment, ring should never be >= 4, but handle gracefully
-                    if ring < 4 {
-                        ringMembers[ring, default: []].append(candidate)
-                    }
-                }
-
-                // Step 4: Phase B - within each ring, assign candidates to slots by nearest-vacancy
-                var finalAssignments: [(nodeID: String, ring: Int, slotPos: CGPoint)] = []
-
-                // Helper: compute ring radius with universal scaling
-                func ringRadiusFor(_ ring: Int) -> CGFloat {
-                    let effectiveCell1 = ring1CellRadius * scaleFactor
-                    let effectiveCell2 = ring2CellRadius * scaleFactor
-                    let effectiveCell3 = ring3CellRadius * scaleFactor
-                    let effectiveSpacing = cellSpacing * scaleFactor
-                    let effectiveBreathingGap = breathingGap * scaleFactor
-
-                    switch ring {
-                    case 1:
-                        return focalRadius + effectiveBreathingGap + effectiveCell1
-                    case 2:
-                        return focalRadius + effectiveBreathingGap + effectiveCell1 + effectiveCell1 + effectiveCell2 + effectiveSpacing
-                    case 3:
-                        return focalRadius + effectiveBreathingGap + effectiveCell1 + effectiveCell1 + effectiveCell2 + effectiveCell2 + effectiveCell3 + effectiveSpacing * 2
-                    default:
-                        return 0
-                    }
-                }
-
-                for ring in 1...3 {
-                    let members = ringMembers[ring] ?? []
-                    if members.isEmpty { continue }
-
-                    let slotCount = slotsInRing(ring)
-                    let slotAngularWidth = (2 * .pi) / CGFloat(slotCount)
-                    let ringRadius = ringRadiusFor(ring)
-
-                    // Compute all slot positions for this ring
-                    var availableSlots: [(slotIndex: Int, position: CGPoint)] = []
-                    for slotIndex in 0..<slotCount {
-                        let slotAngle = CGFloat(slotIndex) * slotAngularWidth
-                        let slotPos = CGPoint(
-                            x: focalPos.x + cos(slotAngle) * ringRadius,
-                            y: focalPos.y + sin(slotAngle) * ringRadius
-                        )
-                        availableSlots.append((slotIndex, slotPos))
+                // Step 3: Determine slot assignments (persistent or fresh)
+                if honeycombFirstFrame {
+                    // First engagement: Phase A + Phase B + populate slotAssignments
+                    var ringMembers: [Int: [HexCandidate]] = [1: [], 2: [], 3: []]
+                    for (index, candidate) in candidates.enumerated() {
+                        let ring = ringForCandidateIndex(index)
+                        if ring < 4 {
+                            ringMembers[ring, default: []].append(candidate)
+                        }
                     }
 
-                    // Greedy nearest-vacancy assignment
-                    for member in members {
-                        guard let sprite = nodeSprites[member.nodeID] else { continue }
+                    // Phase B: nearest-vacancy within each ring
+                    for ring in 1...3 {
+                        let members = ringMembers[ring] ?? []
+                        if members.isEmpty { continue }
+
+                        let slotCount = slotsInRing(ring)
+                        var availableSlots: [(slotIndex: Int, position: CGPoint)] = []
+                        for slotIndex in 0..<slotCount {
+                            let pos = slotPosition(ring: ring, slotIndex: slotIndex, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
+                            availableSlots.append((slotIndex, pos))
+                        }
+
+                        for member in members {
+                            guard let sprite = nodeSprites[member.nodeID] else { continue }
+                            let currentPos = sprite.position
+
+                            var bestIndex = -1
+                            var bestDist = CGFloat.greatestFiniteMagnitude
+                            for (i, slot) in availableSlots.enumerated() {
+                                let dx = slot.position.x - currentPos.x
+                                let dy = slot.position.y - currentPos.y
+                                let dist = hypot(dx, dy)
+                                if dist < bestDist {
+                                    bestDist = dist
+                                    bestIndex = i
+                                }
+                            }
+
+                            if bestIndex >= 0 {
+                                let slotIdx = availableSlots[bestIndex].slotIndex
+                                slotAssignments[member.nodeID] = (ring: ring, index: slotIdx)
+                                availableSlots.remove(at: bestIndex)
+                            }
+                        }
+                    }
+                } else {
+                    // Subsequent focal change: incremental update
+                    let newCandidateSet = Set(candidates.map { $0.nodeID })
+
+                    // Step 3.1: Identify departures
+                    var departureCount = 0
+                    for nodeID in slotAssignments.keys {
+                        if !newCandidateSet.contains(nodeID) {
+                            slotAssignments.removeValue(forKey: nodeID)
+                            departureCount += 1
+                        }
+                    }
+
+                    // Step 3.2: Identify newcomers and handle promotions
+                    var newcomers: [HexCandidate] = []
+                    var promotionCount = 0
+
+                    for candidate in candidates {
+                        if let existing = slotAssignments[candidate.nodeID] {
+                            // Check for promotion (closer ring available)
+                            let currentRing = existing.ring
+                            let preferredRing = ringForCandidateIndex(candidates.firstIndex(where: { $0.nodeID == candidate.nodeID }) ?? 0)
+                            if preferredRing < currentRing {
+                                // Promote: remove current assignment, treat as newcomer
+                                slotAssignments.removeValue(forKey: candidate.nodeID)
+                                newcomers.append(candidate)
+                                promotionCount += 1
+                            }
+                            // No demotion: keep existing assignment
+                        } else {
+                            // Newcomer (including old focal if still in nearest-72)
+                            newcomers.append(candidate)
+                        }
+                    }
+
+                    // Diagnostic print (only if churn detected)
+                    if departureCount > 0 || newcomers.count > 0 || promotionCount > 0 {
+                        print("[Honeycomb] Departures: \(departureCount), Newcomers: \(newcomers.count), Promotions: \(promotionCount)")
+                    }
+
+                    // Step 3.3: Compute available slots
+                    var occupiedSlots: Set<SlotID> = []
+                    for (_, slot) in slotAssignments {
+                        occupiedSlots.insert(SlotID(ring: slot.ring, index: slot.index))
+                    }
+
+                    // Step 3.4: Assign newcomers to available slots
+                    for newcomer in newcomers {
+                        guard let sprite = nodeSprites[newcomer.nodeID] else { continue }
                         let currentPos = sprite.position
+                        let preferredRing = ringForCandidateIndex(candidates.firstIndex(where: { $0.nodeID == newcomer.nodeID }) ?? 0)
 
-                        // Find closest available slot
-                        var bestIndex = -1
+                        var bestSlot: SlotID? = nil
                         var bestDist = CGFloat.greatestFiniteMagnitude
-                        for (i, slot) in availableSlots.enumerated() {
-                            let dx = slot.position.x - currentPos.x
-                            let dy = slot.position.y - currentPos.y
+
+                        // Try preferred ring first
+                        for slotIdx in 0..<slotsInRing(preferredRing) {
+                            let slotID = SlotID(ring: preferredRing, index: slotIdx)
+                            if occupiedSlots.contains(slotID) { continue }
+                            let pos = slotPosition(ring: preferredRing, slotIndex: slotIdx, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
+                            let dx = pos.x - currentPos.x
+                            let dy = pos.y - currentPos.y
                             let dist = hypot(dx, dy)
                             if dist < bestDist {
                                 bestDist = dist
-                                bestIndex = i
+                                bestSlot = slotID
                             }
                         }
 
-                        if bestIndex >= 0 {
-                            finalAssignments.append((member.nodeID, ring, availableSlots[bestIndex].position))
-                            availableSlots.remove(at: bestIndex)
+                        // Fallback to other rings if preferred is full
+                        if bestSlot == nil {
+                            for ring in 1...3 where ring != preferredRing {
+                                for slotIdx in 0..<slotsInRing(ring) {
+                                    let slotID = SlotID(ring: ring, index: slotIdx)
+                                    if occupiedSlots.contains(slotID) { continue }
+                                    let pos = slotPosition(ring: ring, slotIndex: slotIdx, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
+                                    let dx = pos.x - currentPos.x
+                                    let dy = pos.y - currentPos.y
+                                    let dist = hypot(dx, dy)
+                                    if dist < bestDist {
+                                        bestDist = dist
+                                        bestSlot = slotID
+                                    }
+                                }
+                            }
+                        }
+
+                        if let slot = bestSlot {
+                            slotAssignments[newcomer.nodeID] = (ring: slot.ring, index: slot.index)
+                            occupiedSlots.insert(slot)
                         }
                     }
                 }
 
-                // Step 5: Lerp each sprite toward its target position and ring-appropriate scale
-                for assignment in finalAssignments {
-                    guard let sprite = nodeSprites[assignment.nodeID] else { continue }
-
-                    // Apply ring-specific scale
-                    let restingScale = restingScales[assignment.nodeID] ?? 1.0
-                    let targetScale = restingScale * nodeScaleForRing(assignment.ring)
+                // Step 4: Apply positions and scales
+                for (nodeID, slot) in slotAssignments {
+                    guard let sprite = nodeSprites[nodeID] else { continue }
+                    let targetPos = slotPosition(ring: slot.ring, slotIndex: slot.index, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
+                    let restingScale = restingScales[nodeID] ?? 1.0
+                    let targetScale = restingScale * nodeScaleForRing(slot.ring)
 
                     if honeycombFirstFrame {
-                        // Snap directly to slot position and target scale on first engagement
-                        sprite.position = assignment.slotPos
+                        sprite.position = targetPos
                         sprite.setScale(targetScale)
                     } else {
-                        // Steady-state: fluid lerp toward slot position
                         let currentPos = sprite.position
                         let lerpedPos = CGPoint(
-                            x: currentPos.x + (assignment.slotPos.x - currentPos.x) * lerpFactor,
-                            y: currentPos.y + (assignment.slotPos.y - currentPos.y) * lerpFactor
+                            x: currentPos.x + (targetPos.x - currentPos.x) * lerpFactor,
+                            y: currentPos.y + (targetPos.y - currentPos.y) * lerpFactor
                         )
                         sprite.position = lerpedPos
 
@@ -787,7 +853,7 @@ final class CorpusPhysicsScene: SKScene {
                     }
                 }
 
-                // Step 6: far nodes lerp back to resting position and resting scale
+                // Step 5: far nodes lerp back to resting position
                 for nodeID in farNodes {
                     guard let sprite = nodeSprites[nodeID],
                           let restingPos = restingPositions[nodeID] else { continue }
@@ -835,6 +901,7 @@ final class CorpusPhysicsScene: SKScene {
                     restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
+                    slotAssignments.removeAll()
                     displacementActive = false
                     honeycombFirstFrame = false
                 }
@@ -924,6 +991,36 @@ final class CorpusPhysicsScene: SKScene {
         case 3: return ring3NodeScale
         default: return 1.0
         }
+    }
+
+    /// Compute world-space position for a given slot, anchored at focalPos with zoom-invariant scaling
+    private func slotPosition(ring: Int, slotIndex: Int, focalPos: CGPoint, focalRadius: CGFloat, scaleFactor: CGFloat) -> CGPoint {
+        let slotCount = slotsInRing(ring)
+        let slotAngularWidth = (2 * .pi) / CGFloat(slotCount)
+        let slotAngle = CGFloat(slotIndex) * slotAngularWidth
+
+        let effectiveCell1 = ring1CellRadius * scaleFactor
+        let effectiveCell2 = ring2CellRadius * scaleFactor
+        let effectiveCell3 = ring3CellRadius * scaleFactor
+        let effectiveSpacing = cellSpacing * scaleFactor
+        let effectiveBreathingGap = breathingGap * scaleFactor
+
+        let ringRadius: CGFloat
+        switch ring {
+        case 1:
+            ringRadius = focalRadius + effectiveBreathingGap + effectiveCell1
+        case 2:
+            ringRadius = focalRadius + effectiveBreathingGap + effectiveCell1 + effectiveCell1 + effectiveCell2 + effectiveSpacing
+        case 3:
+            ringRadius = focalRadius + effectiveBreathingGap + effectiveCell1 + effectiveCell1 + effectiveCell2 + effectiveCell2 + effectiveCell3 + effectiveSpacing * 2
+        default:
+            ringRadius = 0
+        }
+
+        return CGPoint(
+            x: focalPos.x + cos(slotAngle) * ringRadius,
+            y: focalPos.y + sin(slotAngle) * ringRadius
+        )
     }
 
     private func applyLabelTier(_ tier: Int) {
@@ -2075,6 +2172,7 @@ final class CorpusPhysicsScene: SKScene {
                     restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
+                    slotAssignments.removeAll()
                     displacementActive = false
                     honeycombFirstFrame = false
                 }
@@ -2272,6 +2370,7 @@ final class CorpusPhysicsScene: SKScene {
                     restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
+                    slotAssignments.removeAll()
                     displacementActive = false
                     honeycombFirstFrame = false
                 }
@@ -2368,6 +2467,7 @@ final class CorpusPhysicsScene: SKScene {
                 restingPositions.removeAll()
                 nodeBaseRadii.removeAll()
                 driftExcludedIDs.removeAll()
+                slotAssignments.removeAll()
                 displacementActive = false
                 honeycombFirstFrame = false
             }

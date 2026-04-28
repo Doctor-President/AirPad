@@ -2,6 +2,28 @@ import SpriteKit
 import UIKit
 import simd
 
+// MARK: - Hex Coordinate System (SB80a)
+
+/// Axial hex coordinate (pointy-top orientation)
+struct HexCoord: Hashable {
+    let q: Int
+    let r: Int
+}
+
+/// Convert axial hex coordinate to world position
+func hexToWorld(_ coord: HexCoord, cellSize: CGFloat) -> CGPoint {
+    let x = cellSize * sqrt(3.0) * (CGFloat(coord.q) + CGFloat(coord.r) / 2.0)
+    let y = cellSize * 1.5 * CGFloat(coord.r)
+    return CGPoint(x: x, y: y)
+}
+
+/// Manhattan distance between two hex coordinates
+func hexDistance(_ a: HexCoord, _ b: HexCoord) -> Int {
+    let dq = a.q - b.q
+    let dr = a.r - b.r
+    return (abs(dq) + abs(dr) + abs(dq + dr)) / 2
+}
+
 /// The SpriteKit physics canvas that renders nodes as floating bubbles.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
 final class CorpusPhysicsScene: SKScene {
@@ -127,6 +149,31 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Toggle hex layout debug visualization (SB80a)
+    func toggleHexDebugMode() {
+        debugShowHexLayout.toggle()
+        if debugShowHexLayout {
+            print("[Hex Debug] Enabled - showing hex grid layout")
+            // Immediately position all sprites at hex coordinates and disable physics
+            for (nodeID, sprite) in nodeSprites {
+                sprite.physicsBody?.isDynamic = false
+                if let hexCoord = hexCoordinates[nodeID] {
+                    let hexPos = hexToWorld(hexCoord, cellSize: hexCellSize)
+                    sprite.position = hexPos
+                }
+            }
+        } else {
+            print("[Hex Debug] Disabled - returning to resting positions")
+            // Re-enable physics and return all sprites to resting positions
+            for (nodeID, sprite) in nodeSprites {
+                sprite.physicsBody?.isDynamic = true
+                if let restingPos = positionMap[nodeID]?.point {
+                    sprite.position = restingPos
+                }
+            }
+        }
+    }
+
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
     /// expandingFrom: spawn point for drill-down expansion animation.
@@ -150,6 +197,11 @@ final class CorpusPhysicsScene: SKScene {
 
         // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
+
+        // Recompute hex layout when neighborhood structure changes (SB80a)
+        if neighborhoodCache != nil {
+            computeNeighborhoodHexLayout()
+        }
 
         // Sync regular nodes
         let incomingNodeIDs = Set(nodes.map { $0.id })
@@ -212,6 +264,12 @@ final class CorpusPhysicsScene: SKScene {
     private var tagColors: [String: UIColor] = [:]
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
+
+    // MARK: - Hex grid state (SB80a)
+
+    private var hexCoordinates: [String: HexCoord] = [:]
+    private let hexCellSize: CGFloat = 56.0  // Tune on device
+    private var debugShowHexLayout: Bool = false  // Toggle for debug visualization
 
     // Strand layer state
     private var focalNodeID: String? = nil
@@ -541,6 +599,18 @@ final class CorpusPhysicsScene: SKScene {
         // for (_, shape) in uberNodeSprites {
         //     shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
         // }
+
+        // SB80a: Debug hex layout visualization
+        if debugShowHexLayout {
+            // Override all positions to hex grid, disable physics
+            for (nodeID, sprite) in nodeSprites {
+                sprite.physicsBody?.isDynamic = false
+                if let hexCoord = hexCoordinates[nodeID] {
+                    sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
+                }
+            }
+            return  // Skip normal update logic
+        }
 
         let scale = cameraNode.xScale
         let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
@@ -2004,6 +2074,98 @@ final class CorpusPhysicsScene: SKScene {
         for (_, sprite) in nodeSprites {
             sprite.physicsBody?.isDynamic = true
         }
+    }
+
+    // MARK: - Hex Grid Layout (SB80a)
+
+    /// Compute hex coordinates for all nodes, clustering by neighborhood
+    private func computeNeighborhoodHexLayout() {
+        guard let cache = neighborhoodCache else {
+            hexCoordinates.removeAll()
+            return
+        }
+
+        // Build neighborhood → [nodeID] mapping
+        var neighborhoodMembers: [String: [String]] = [:]
+        for (nodeID, _) in nodeSprites {
+            if let neighborhoodID = cache.neighborhoodID(forNodeID: nodeID) {
+                neighborhoodMembers[neighborhoodID, default: []].append(nodeID)
+            }
+        }
+
+        // Sort neighborhoods by size (largest first)
+        let sortedNeighborhoods = neighborhoodMembers.sorted { $0.value.count > $1.value.count }
+
+        var newHexCoords: [String: HexCoord] = [:]
+        var nextAvailableCell: HexCoord = HexCoord(q: 0, r: 0)  // Start at center
+
+        for (_, members) in sortedNeighborhoods {
+            // Sort members by nodeID for stable assignment across recomputations
+            let sortedMembers = members.sorted()
+
+            // Assign hex coordinates in spiral order from nextAvailableCell
+            for (index, nodeID) in sortedMembers.enumerated() {
+                let coord = spiralHexCoord(index: index, center: nextAvailableCell)
+                newHexCoords[nodeID] = coord
+            }
+
+            // Advance nextAvailableCell for next neighborhood
+            // Place next neighborhood in a new ring to avoid overlap
+            let ringRadius = Int(ceil(sqrt(Double(members.count) / 3.5)))
+            nextAvailableCell = HexCoord(
+                q: nextAvailableCell.q + ringRadius * 2,
+                r: nextAvailableCell.r
+            )
+        }
+
+        hexCoordinates = newHexCoords
+        print("[Hex] Assigned hex coordinates to \(hexCoordinates.count) nodes across \(sortedNeighborhoods.count) neighborhoods")
+    }
+
+    /// Generate hex coordinate in spiral order (index 0 = center, then spiral outward)
+    private func spiralHexCoord(index: Int, center: HexCoord) -> HexCoord {
+        if index == 0 {
+            return center
+        }
+
+        // Determine which ring (1, 2, 3, ...) this index falls into
+        var ring = 1
+        var cellsBeforeRing = 1  // center
+        while cellsBeforeRing + (ring * 6) < index + 1 {
+            cellsBeforeRing += ring * 6
+            ring += 1
+        }
+
+        // Index within this ring
+        let indexInRing = index - cellsBeforeRing
+
+        // Hex directions (counter-clockwise from East)
+        let directions: [(Int, Int)] = [
+            (1, 0),    // E
+            (0, 1),    // NE
+            (-1, 1),   // NW
+            (-1, 0),   // W
+            (0, -1),   // SW
+            (1, -1)    // SE
+        ]
+
+        // Start at (center.q + ring, center.r) - the eastmost point of this ring
+        var q = center.q + ring
+        var r = center.r
+
+        // Walk around the ring
+        var stepsRemaining = indexInRing
+        for (dq, dr) in directions {
+            let stepsInThisDirection = min(ring, stepsRemaining)
+            q += dq * stepsInThisDirection
+            r += dr * stepsInThisDirection
+            stepsRemaining -= stepsInThisDirection
+            if stepsRemaining == 0 {
+                break
+            }
+        }
+
+        return HexCoord(q: q, r: r)
     }
 
     // MARK: - Helpers

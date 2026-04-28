@@ -131,6 +131,7 @@ final class CorpusPhysicsScene: SKScene {
     /// tagColors: map of tag name → UIColor for bubble coloring.
     /// expandingFrom: spawn point for drill-down expansion animation.
     /// neighborhoodCache: neighborhood assignments for cohesion forces.
+    /// nodeRadii: computed radii for each node (from LayoutService)
     func syncNodes(
         _ nodes: [Node],
         layoutPositions: [String: CanvasPosition],
@@ -138,11 +139,13 @@ final class CorpusPhysicsScene: SKScene {
         newNodeID: String? = nil,
         uberNodeClusters: [UberNodeCluster] = [],
         expandingFrom: CGPoint? = nil,
-        neighborhoodCache: NeighborhoodCache? = nil
+        neighborhoodCache: NeighborhoodCache? = nil,
+        nodeRadii: [String: CGFloat] = [:]
     ) {
         self.tagColors = tagColors
         positionMap = layoutPositions
         self.neighborhoodCache = neighborhoodCache
+        self.nodeRadii = nodeRadii
 
         // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
@@ -207,6 +210,7 @@ final class CorpusPhysicsScene: SKScene {
 
     private var tagColors: [String: UIColor] = [:]
     private var neighborhoodCache: NeighborhoodCache? = nil
+    private var nodeRadii: [String: CGFloat] = [:]
 
     // Zoom state
     private var originalCameraPosition: CGPoint = .zero
@@ -609,7 +613,8 @@ final class CorpusPhysicsScene: SKScene {
     // MARK: - Node sprites
 
     private func addNodeSprite(_ node: Node, isNew: Bool, spawnPoint: CGPoint? = nil, stagger: TimeInterval = 0) {
-        let radius = bubbleRadius(for: node)
+        // Use computed radius from LayoutService, fallback to old formula if not available
+        let radius = nodeRadii[node.id] ?? bubbleRadius(for: node)
         let shape = makeShape(
             radius: radius,
             fillColor: bubbleColor(for: node),
@@ -618,9 +623,10 @@ final class CorpusPhysicsScene: SKScene {
         )
         shape.name = "node:\(node.id)"
 
-        // Cache neighborhoodID for cohesion forces
+        // Cache neighborhoodID and radius
         shape.userData = NSMutableDictionary()
         shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
+        shape.userData?["radius"] = radius
 
         let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
         let labelNode = makeTitleLabel(text: displayText, radius: radius)
@@ -720,7 +726,7 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Animate sprite to target position if it has changed.
+    /// Animate sprite to target position and radius if they have changed.
     private func animateSpriteIfNeeded(nodeID: String) {
         guard let sprite = nodeSprites[nodeID] else { return }
         let targetPosition = storedPosition(for: nodeID)
@@ -729,13 +735,54 @@ final class CorpusPhysicsScene: SKScene {
         let dx = sprite.position.x - targetPosition.x
         let dy = sprite.position.y - targetPosition.y
         let distance = sqrt(dx * dx + dy * dy)
+        let positionChanged = distance > 5  // 5pt tolerance
 
-        guard distance > 5 else { return }  // Skip if within 5pt tolerance
+        // Check if radius has changed
+        var radiusChanged = false
+        var newRadius: CGFloat = 30  // default
+        if let radius = nodeRadii[nodeID] {
+            newRadius = radius
+            if let oldRadius = sprite.userData?["radius"] as? CGFloat {
+                radiusChanged = abs(radius - oldRadius) > 0.5
+            } else {
+                radiusChanged = true  // First time setting radius
+            }
+        }
 
-        // Animate to new position
-        let move = SKAction.move(to: targetPosition, duration: 1.5)
-        move.timingMode = .easeOut
-        sprite.run(move, withKey: "algorithmicLayout")
+        guard positionChanged || radiusChanged else { return }
+
+        // Animate position if changed
+        if positionChanged {
+            let move = SKAction.move(to: targetPosition, duration: 1.5)
+            move.timingMode = .easeOut
+            sprite.run(move, withKey: "algorithmicLayout")
+        }
+
+        // Animate radius if changed
+        if radiusChanged {
+            let oldRadius = (sprite.userData?["radius"] as? CGFloat) ?? 30.0
+            let scaleRatio = newRadius / oldRadius
+
+            let scaleAction = SKAction.scale(to: scaleRatio, duration: 1.5)
+            scaleAction.timingMode = .easeOut
+            sprite.run(scaleAction, withKey: "scaleAnimation")
+
+            // Update physics body to match new radius
+            sprite.physicsBody = SKPhysicsBody(circleOfRadius: newRadius)
+            sprite.physicsBody?.linearDamping = 0.6
+            sprite.physicsBody?.angularDamping = 0.8
+            sprite.physicsBody?.friction = 0.1
+            sprite.physicsBody?.restitution = 0.25
+            sprite.physicsBody?.mass = CGFloat(max(0.5, Float(newRadius / 30)))
+            sprite.physicsBody?.allowsRotation = false
+            sprite.physicsBody?.isDynamic = false
+
+            // Cache new radius
+            if sprite.userData == nil {
+                sprite.userData = NSMutableDictionary()
+            }
+            sprite.userData?["radius"] = newRadius
+        }
     }
 
     /// Add newcomer halo to a sprite.

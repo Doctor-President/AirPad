@@ -389,7 +389,8 @@ struct CanvasView: View {
             newNodeID: newNodeID,
             uberNodeClusters: uberClusters,
             expandingFrom: expandingFrom,
-            neighborhoodCache: store.neighborhoodCache
+            neighborhoodCache: store.neighborhoodCache,
+            nodeRadii: store.nodeRadii
         )
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
     }

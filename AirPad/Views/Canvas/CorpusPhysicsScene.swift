@@ -675,7 +675,7 @@ final class CorpusPhysicsScene: SKScene {
                 var index = 0
                 for candidate in candidates {
                     let ring = ringForCandidateIndex(index)
-                    let ringCapacity = 6 * ring
+                    let ringCapacity = 12 * ring
 
                     let slotsInRing = ringCapacity
                     let slotAngularWidth = (2 * .pi) / CGFloat(slotsInRing)
@@ -707,7 +707,7 @@ final class CorpusPhysicsScene: SKScene {
 
                 // Step 4: compute target positions and lerp
                 for (ring, members) in ringAssignments {
-                    let slotsInRing = 6 * ring
+                    let slotsInRing = 12 * ring
                     let slotAngularWidth = (2 * .pi) / CGFloat(slotsInRing)
                     let ringRadius = focalRadius + breathingGap + hexCellRadius + CGFloat(ring - 1) * (2 * hexCellRadius + hexCellSpacing)
 
@@ -807,10 +807,10 @@ final class CorpusPhysicsScene: SKScene {
     /// Ring 1 holds indices 0..5, ring 2 holds 6..17, ring 3 holds 18..35, etc.
     private func ringForCandidateIndex(_ index: Int) -> Int {
         var ring = 1
-        var cumulative = 6
+        var cumulative = 12
         while index >= cumulative {
             ring += 1
-            cumulative += 6 * ring
+            cumulative += 12 * ring
         }
         return ring
     }
@@ -819,7 +819,8 @@ final class CorpusPhysicsScene: SKScene {
     /// Used to compute index-within-ring.
     private func cumulativeCapacityBeforeRing(_ ring: Int) -> Int {
         guard ring > 1 else { return 0 }
-        return 3 * (ring - 1) * ring
+        // Sum of 12 * k for k in 1..(ring-1) = 12 * (ring-1) * ring / 2 = 6 * (ring-1) * ring
+        return 6 * (ring - 1) * ring
     }
 
     private func applyLabelTier(_ tier: Int) {

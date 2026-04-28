@@ -445,12 +445,9 @@ final class CorpusPhysicsScene: SKScene {
 
     private var currentFocalNodeID: String? = nil
     private var holdTimerStart: TimeInterval? = nil
+    private var holdCompleted: Bool = false
     private var driftedRelatedIDs: [String: CGPoint] = [:]
     private var gracePromptLabel: SKLabelNode? = nil
-
-    // Hover-browse state
-    private weak var hoveredNode: SKShapeNode?
-    private var snapBackPositions: [SKShapeNode: CGPoint] = [:]
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -553,7 +550,7 @@ final class CorpusPhysicsScene: SKScene {
                 // Focal changed
                 if let oldFocalID = currentFocalNodeID, let oldSprite = nodeSprites[oldFocalID] {
                     // Scale down old focal
-                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
+                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.4)
                     scaleDown.timingMode = .easeOut
                     oldSprite.run(scaleDown, withKey: "honeycombFocal")
                 }
@@ -561,15 +558,20 @@ final class CorpusPhysicsScene: SKScene {
                 currentFocalNodeID = newFocalID
 
                 if let newFocalID = newFocalID, let newSprite = nodeSprites[newFocalID] {
-                    // Scale up new focal
-                    let scaleUp = SKAction.scale(to: 1.5, duration: 0.3)
+                    // Scale up new focal - compute scale to 70% of screen width
+                    let baseDiameter = (nodeRadii[newFocalID] ?? 30.0) * 2.0
+                    let targetWidth = (view?.bounds.width ?? 375.0) * 0.7
+                    let focalScale = targetWidth / baseDiameter
+
+                    let scaleUp = SKAction.scale(to: focalScale, duration: 0.4)
                     scaleUp.timingMode = .easeOut
                     newSprite.run(scaleUp, withKey: "honeycombFocal")
 
                     print("[Honeycomb] Focal changed to \(newFocalID)")
 
-                    // Reset hold timer
+                    // Reset hold timer and completion flag
                     holdTimerStart = currentTime
+                    holdCompleted = false
 
                     // Clear strands if any
                     clearStrands()
@@ -596,6 +598,9 @@ final class CorpusPhysicsScene: SKScene {
                         let relatedIDs = related.map { $0.0 }
                         startDrift(towardFocalID: focalID, relatedIDs: relatedIDs)
                     }
+
+                    // Mark hold as completed
+                    holdCompleted = true
 
                     // Reset timer to prevent re-triggering
                     holdTimerStart = nil
@@ -629,6 +634,7 @@ final class CorpusPhysicsScene: SKScene {
                 // Return to idle
                 gestureState = .idle
                 currentFocalNodeID = nil
+                holdCompleted = false
             }
 
         default:
@@ -1580,8 +1586,8 @@ final class CorpusPhysicsScene: SKScene {
         // Set all non-interacting nodes to static
         for (_, sprite) in nodeSprites {
             guard let body = sprite.physicsBody else { continue }
-            // Skip if node is currently being manipulated (hoveredNode, zoomedNode, etc.)
-            if sprite === hoveredNode || sprite.name == "node:\(zoomedNodeID ?? "")" {
+            // Skip if node is currently being manipulated (zoomedNode, etc.)
+            if sprite.name == "node:\(zoomedNodeID ?? "")" {
                 continue
             }
             body.isDynamic = false
@@ -1766,6 +1772,7 @@ final class CorpusPhysicsScene: SKScene {
                 // Return to idle
                 gestureState = .idle
                 currentFocalNodeID = nil
+                holdCompleted = false
                 return
             }
 
@@ -1809,6 +1816,7 @@ final class CorpusPhysicsScene: SKScene {
                         lastPanPosition: current
                     )
                     holdTimerStart = CACurrentMediaTime()
+                    holdCompleted = false
                     print("[Honeycomb] Engaged (drag threshold exceeded)")
                 }
 
@@ -1828,100 +1836,7 @@ final class CorpusPhysicsScene: SKScene {
                 )
 
             default:
-                // Legacy hover-browse mode (disabled during honeycomb)
-                // Hover-browse mode: hit-test for node under touch
-                let touchLocation = touch.location(in: self)
-                if let body = physicsWorld.body(at: touchLocation),
-                   let node = body.node as? SKShapeNode {
-                    // Found a node under touch
-                    if node != hoveredNode {
-                        // Reset previous hovered node
-                        if let prevNode = hoveredNode {
-                            let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
-                            scaleDown.timingMode = .easeInEaseOut
-                            prevNode.run(scaleDown)
-                            // Re-enable physics
-                            prevNode.physicsBody?.isDynamic = true
-                            prevNode.userData?["forceLabelTier"] = nil
-
-                            // Snap back displaced neighbors
-                            for (neighbor, storedPosition) in snapBackPositions {
-                                neighbor.physicsBody?.isDynamic = false
-                                let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
-                                moveBack.timingMode = .easeOut
-                                neighbor.run(moveBack) {
-                                    neighbor.physicsBody?.isDynamic = true
-                                }
-                            }
-                            snapBackPositions.removeAll()
-                        }
-
-                        // Freeze physics (node becomes static while hovered)
-                        node.physicsBody?.isDynamic = false
-
-                        // Scale up new node with easing
-                        let scaleUp = SKAction.scale(to: 3.0, duration: 0.2)
-                        scaleUp.timingMode = .easeInEaseOut
-                        node.run(scaleUp)
-
-                        // Set force label tier
-                        if node.userData == nil {
-                            node.userData = NSMutableDictionary()
-                        }
-                        node.userData?["forceLabelTier"] = 2
-
-                        // Haptic feedback
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-
-                        // Update reference
-                        hoveredNode = node
-
-                        // One-shot neighbor position snapshotting at hover entry
-                        let threshold = 350 / cameraNode.xScale
-                        for (_, neighborShape) in nodeSprites {
-                            // Skip the hovered node itself
-                            if neighborShape === node { continue }
-
-                            // Check distance
-                            let dx = neighborShape.position.x - node.position.x
-                            let dy = neighborShape.position.y - node.position.y
-                            let distance = sqrt(dx * dx + dy * dy)
-
-                            if distance <= threshold {
-                                snapBackPositions[neighborShape] = neighborShape.position
-                                print("[HoverBrowse] Snapshotted neighbor at distance \(distance)")
-                            }
-                        }
-                    }
-                } else {
-                    // No node under touch, reset any hovered node
-                    if let prevNode = hoveredNode {
-                        let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
-                        scaleDown.timingMode = .easeInEaseOut
-                        prevNode.run(scaleDown)
-                        // Re-enable physics
-                        prevNode.physicsBody?.isDynamic = true
-                        prevNode.userData?["forceLabelTier"] = nil
-                        hoveredNode = nil
-
-                        // Snap back displaced neighbors
-                        for (neighbor, storedPosition) in snapBackPositions {
-                            neighbor.physicsBody?.isDynamic = false
-                            let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
-                            moveBack.timingMode = .easeOut
-                            neighbor.run(moveBack) {
-                                neighbor.physicsBody?.isDynamic = true
-                            }
-                        }
-                        snapBackPositions.removeAll()
-                    }
-                }
-
-                // Cancel pending tap if finger moved beyond threshold
-                if let info = tapStartInfo {
-                    let moved = hypot(current.x - info.screenPoint.x, current.y - info.screenPoint.y)
-                    if moved > 8 { tapStartInfo = nil }
-                }
+                break
             }
 
         } else if touchCount >= 2 {
@@ -1950,34 +1865,12 @@ final class CorpusPhysicsScene: SKScene {
             if activeTouches.isEmpty {
                 lastPinchDistance = nil
                 tapStartInfo = nil
-
-                // Clean up hover-browse state
-                if let node = hoveredNode {
-                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
-                    scaleDown.timingMode = .easeInEaseOut
-                    node.run(scaleDown)
-                    // Re-enable physics
-                    node.physicsBody?.isDynamic = true
-                    node.userData?["forceLabelTier"] = nil
-                    hoveredNode = nil
-
-                    // Snap back displaced neighbors
-                    for (neighbor, storedPosition) in snapBackPositions {
-                        neighbor.physicsBody?.isDynamic = false
-                        let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
-                        moveBack.timingMode = .easeOut
-                        neighbor.run(moveBack) {
-                            neighbor.physicsBody?.isDynamic = true
-                        }
-                    }
-                    snapBackPositions.removeAll()
-                }
             }
         }
 
         // Honeycomb: handle lift from honeycomb mode
         if case .honeycomb(_, _) = gestureState {
-            if let focalID = currentFocalNodeID {
+            if let focalID = currentFocalNodeID, holdCompleted {
                 print("[Honeycomb] Grace period entered for \(focalID)")
 
                 // Enter grace period
@@ -2005,8 +1898,11 @@ final class CorpusPhysicsScene: SKScene {
                     prompt.run(fadeIn)
                 }
             } else {
-                // No focal - just return to idle
+                // Hold not completed or no focal - return to idle silently
+                print("[Honeycomb] Quick drag-and-flick, returning to idle")
                 gestureState = .idle
+                currentFocalNodeID = nil
+                holdCompleted = false
             }
             return
         }
@@ -2040,14 +1936,10 @@ final class CorpusPhysicsScene: SKScene {
                   name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
 
-            // Double-tap on node: open NodeDetailView (preserved)
-            if isDoubleTap {
-                DispatchQueue.main.async { [weak self] in
-                    self?.canvasState?.selectedNodeID = nodeID
-                }
+            // Single-tap on node: open NodeDetailView
+            DispatchQueue.main.async { [weak self] in
+                self?.canvasState?.selectedNodeID = nodeID
             }
-            // Single-tap on node: DEPRECATED, no-op (outside grace period)
-            // (Inside grace period is handled in touchesBegan)
 
         } else {
             // Tap on empty canvas
@@ -2085,28 +1977,7 @@ final class CorpusPhysicsScene: SKScene {
             currentFocalNodeID = nil
         }
         gestureState = .idle
-
-        // Clean up hover-browse state
-        if let node = hoveredNode {
-            let scaleDown = SKAction.scale(to: 1.0, duration: 0.2)
-            scaleDown.timingMode = .easeInEaseOut
-            node.run(scaleDown)
-            // Re-enable physics
-            node.physicsBody?.isDynamic = true
-            node.userData?["forceLabelTier"] = nil
-            hoveredNode = nil
-
-            // Snap back displaced neighbors
-            for (neighbor, storedPosition) in snapBackPositions {
-                neighbor.physicsBody?.isDynamic = false
-                let moveBack = SKAction.move(to: storedPosition, duration: 0.3)
-                moveBack.timingMode = .easeOut
-                neighbor.run(moveBack) {
-                    neighbor.physicsBody?.isDynamic = true
-                }
-            }
-            snapBackPositions.removeAll()
-        }
+        holdCompleted = false
     }
 }
 

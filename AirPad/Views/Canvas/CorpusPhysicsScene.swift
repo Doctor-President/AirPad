@@ -547,28 +547,32 @@ final class CorpusPhysicsScene: SKScene {
     private var gracePromptLabel: SKLabelNode? = nil
     private var savedFocalZPositions: [String: CGFloat] = [:]
 
-    // Perimeter displacement state
+    // Engagement state (SB80b: hex grid + scale lens)
+    private enum EngagementState {
+        case idle
+        case engaging(focal: String)
+        case engaged(focal: String)
+        case gracePeriod(focal: String, expiresAt: TimeInterval)
+        case disengaging
+    }
+
+    private var engagementState: EngagementState = .idle
     private var restingPositions: [String: CGPoint] = [:]
     private var restingScales: [String: CGFloat] = [:]
-    private var nodeBaseRadii: [String: CGFloat] = [:]
-    private var displacementActive: Bool = false
-    private var honeycombFirstFrame: Bool = false
     private var driftExcludedIDs: Set<String> = []
-    private var slotAssignments: [String: (ring: Int, index: Int)] = [:]
-    private let breathingGap: CGFloat = 10.0
-    private let lerpFactor: CGFloat = 0.20
+
+    // Scale lens constants (tunable)
+    private let focalScale: CGFloat = 4.0
+    private let ring1Scale: CGFloat = 1.4
+    private let ring2Scale: CGFloat = 1.15
+    private let baselineScale: CGFloat = 1.0
+    private let engagementLerp: CGFloat = 0.30
+    private let steadyStateLerp: CGFloat = 0.20
+    private let cameraFollowLerp: CGFloat = 0.10
+    private let positionMatchTolerance: CGFloat = 2.0
+    private let scaleMatchTolerance: CGFloat = 0.05
+
     private let hysteresisThreshold: CGFloat = 20.0
-    // private let hexInfluenceRadiusMultiplier: CGFloat = 2.0  // SB78: no longer used, always recruit nearest 72
-    private let maxNodeRadius: CGFloat = 48.0
-    private let ring1CellRadius: CGFloat = 48.0   // 100% scale
-    private let ring2CellRadius: CGFloat = 24.0   // 50% scale
-    private let ring3CellRadius: CGFloat = 14.0   // ~30% scale
-    private let cellSpacing: CGFloat = 4.0
-    private let ring1SlotCount: Int = 12
-    private let ring2SlotCount: Int = 24
-    private let ring3SlotCount: Int = 36
-    private let ring2NodeScale: CGFloat = 0.50
-    private let ring3NodeScale: CGFloat = 0.30
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -683,16 +687,11 @@ final class CorpusPhysicsScene: SKScene {
         // Honeycomb gesture state updates
         switch gestureState {
         case .honeycomb(_, _):
-            // Track focal node (nearest to camera center)
+            // Track focal node (nearest to camera center) with hysteresis
             let newFocalID = findNearestNodeToCamera()
             if newFocalID != currentFocalNodeID {
                 // Focal changed
                 if let oldFocalID = currentFocalNodeID, let oldSprite = nodeSprites[oldFocalID] {
-                    // Scale down old focal
-                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.4)
-                    scaleDown.timingMode = .easeOut
-                    oldSprite.run(scaleDown, withKey: "honeycombFocal")
-
                     // Restore original zPosition
                     if let savedZ = savedFocalZPositions[oldFocalID] {
                         oldSprite.zPosition = savedZ
@@ -707,17 +706,14 @@ final class CorpusPhysicsScene: SKScene {
                     savedFocalZPositions[newFocalID] = newSprite.zPosition
                     newSprite.zPosition = focalZPosition
 
-                    // Scale up new focal - compute scale to 60% of screen width (camera-zoom-invariant)
-                    let baseDiameter = (nodeRadii[newFocalID] ?? 30.0) * 2.0
-                    let cameraScale = cameraNode.xScale
-                    let targetWidth = ((view?.bounds.width ?? 375.0) * 0.6) / cameraScale
-                    let focalScale = targetWidth / baseDiameter
+                    print("[Honeycomb] Focal: \(oldFocalID ?? "nil") → \(newFocalID)")
 
-                    let scaleUp = SKAction.scale(to: focalScale, duration: 0.4)
-                    scaleUp.timingMode = .easeOut
-                    newSprite.run(scaleUp, withKey: "honeycombFocal")
-
-                    print("[Honeycomb] Focal changed to \(newFocalID)")
+                    // Update engagement state to new focal (scale field will redistribute, positions stay rigid)
+                    if case .engaged = engagementState {
+                        engagementState = .engaged(focal: newFocalID)
+                    } else if case .engaging = engagementState {
+                        engagementState = .engaging(focal: newFocalID)
+                    }
 
                     // Reset hold timer and completion flag
                     holdTimerStart = currentTime
@@ -757,280 +753,140 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-            // Per-frame hex tessellation
-            if displacementActive, let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
-                let focalRadius = focalSprite.frame.width / 2
-                let focalPos = focalSprite.position
+            // Per-frame hex grid engagement (SB80b)
+            switch engagementState {
+            case .engaging(let focalID), .engaged(let focalID):
+                guard let focalCoord = nodeHexCoords[focalID] else { break }
 
-                // Step 1: collect all non-focal nodes by resting distance
-                struct HexCandidate {
-                    let nodeID: String
-                    let restingDistance: CGFloat
-                    let restingAngle: CGFloat
-                }
+                // Determine lerp factor based on state
+                let lerpFactor = (engagementState is EngagementState) ? {
+                    if case .engaging = engagementState { return engagementLerp }
+                    else { return steadyStateLerp }
+                }() : steadyStateLerp
 
-                struct SlotID: Hashable {
-                    let ring: Int
-                    let index: Int
-                }
-                var allCandidates: [HexCandidate] = []
+                // Track convergence for state transition
+                var allPositionsConverged = true
+                var allScalesConverged = true
 
-                for (nodeID, _) in nodeSprites {
-                    guard nodeID != focalID,
-                          !driftExcludedIDs.contains(nodeID),
-                          let restingPos = restingPositions[nodeID] else { continue }
+                // Apply hex grid positions + scale lens
+                for (nodeID, sprite) in nodeSprites {
+                    guard !driftExcludedIDs.contains(nodeID),
+                          let nodeCoord = nodeHexCoords[nodeID] else { continue }
 
-                    let dx = restingPos.x - focalPos.x
-                    let dy = restingPos.y - focalPos.y
-                    let dist = hypot(dx, dy)
+                    // Target position: hex coord → world space
+                    let targetPos = hexToWorld(nodeCoord, cellSize: hexCellSize)
 
-                    let rawAngle = atan2(dy, dx)
-                    let angle = rawAngle < 0 ? rawAngle + 2 * .pi : rawAngle
-                    allCandidates.append(HexCandidate(nodeID: nodeID, restingDistance: dist, restingAngle: angle))
-                }
+                    // Target scale: hex distance → lens multiplier
+                    let hexDist = hexDistance(focalCoord, nodeCoord)
+                    let lensMultiplier = scaleMultiplierForHexDistance(hexDist)
+                    let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
+                    let targetWorldRadius = hexBaselineRadius * lensMultiplier
+                    let targetScale = targetWorldRadius / currentSpriteRadius
 
-                // Step 2: sort by resting distance and take nearest 72
-                allCandidates.sort { $0.restingDistance < $1.restingDistance }
+                    // Lerp position
+                    let currentPos = sprite.position
+                    let dx = targetPos.x - currentPos.x
+                    let dy = targetPos.y - currentPos.y
+                    let lerpedPos = CGPoint(
+                        x: currentPos.x + dx * lerpFactor,
+                        y: currentPos.y + dy * lerpFactor
+                    )
+                    sprite.position = lerpedPos
 
-                let maxRecruits = ring1SlotCount + ring2SlotCount + ring3SlotCount  // 72
-                let recruitCount = min(allCandidates.count, maxRecruits)
-                let candidates = Array(allCandidates.prefix(recruitCount))
-                let farNodes = allCandidates.dropFirst(recruitCount).map { $0.nodeID }
-
-                print("[Honeycomb] Recruited \(candidates.count) candidates")
-
-                // Universal scaling: camera-zoom-invariant dimensions
-                let cameraScale = cameraNode.xScale
-                let scaleFactor = 1.0 / cameraScale
-
-                // Step 3: Determine slot assignments (persistent or fresh)
-                if honeycombFirstFrame {
-                    // First engagement: Phase A + Phase B + populate slotAssignments
-                    var ringMembers: [Int: [HexCandidate]] = [1: [], 2: [], 3: []]
-                    for (index, candidate) in candidates.enumerated() {
-                        let ring = ringForCandidateIndex(index)
-                        if ring < 4 {
-                            ringMembers[ring, default: []].append(candidate)
-                        }
+                    // Check position convergence
+                    if hypot(dx, dy) > positionMatchTolerance {
+                        allPositionsConverged = false
                     }
 
-                    // Phase B: nearest-vacancy within each ring
-                    for ring in 1...3 {
-                        let members = ringMembers[ring] ?? []
-                        if members.isEmpty { continue }
+                    // Lerp scale
+                    let currentScale = sprite.xScale
+                    let scaleDiff = targetScale - currentScale
+                    let lerpedScale = currentScale + scaleDiff * lerpFactor
+                    sprite.setScale(lerpedScale)
 
-                        let slotCount = slotsInRing(ring)
-                        var availableSlots: [(slotIndex: Int, position: CGPoint)] = []
-                        for slotIndex in 0..<slotCount {
-                            let pos = slotPosition(ring: ring, slotIndex: slotIndex, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
-                            availableSlots.append((slotIndex, pos))
-                        }
-
-                        for member in members {
-                            guard let sprite = nodeSprites[member.nodeID] else { continue }
-                            let currentPos = sprite.position
-
-                            var bestIndex = -1
-                            var bestDist = CGFloat.greatestFiniteMagnitude
-                            for (i, slot) in availableSlots.enumerated() {
-                                let dx = slot.position.x - currentPos.x
-                                let dy = slot.position.y - currentPos.y
-                                let dist = hypot(dx, dy)
-                                if dist < bestDist {
-                                    bestDist = dist
-                                    bestIndex = i
-                                }
-                            }
-
-                            if bestIndex >= 0 {
-                                let slotIdx = availableSlots[bestIndex].slotIndex
-                                slotAssignments[member.nodeID] = (ring: ring, index: slotIdx)
-                                availableSlots.remove(at: bestIndex)
-                            }
-                        }
-                    }
-                } else {
-                    // Subsequent focal change: incremental update
-                    let newCandidateSet = Set(candidates.map { $0.nodeID })
-
-                    // Step 3.1: Identify departures
-                    var departureCount = 0
-                    for nodeID in slotAssignments.keys {
-                        if !newCandidateSet.contains(nodeID) {
-                            slotAssignments.removeValue(forKey: nodeID)
-                            departureCount += 1
-                        }
-                    }
-
-                    // Step 3.2: Identify newcomers and handle promotions
-                    var newcomers: [HexCandidate] = []
-                    var promotionCount = 0
-
-                    for candidate in candidates {
-                        if let existing = slotAssignments[candidate.nodeID] {
-                            // Check for promotion (closer ring available)
-                            let currentRing = existing.ring
-                            let preferredRing = ringForCandidateIndex(candidates.firstIndex(where: { $0.nodeID == candidate.nodeID }) ?? 0)
-                            if preferredRing < currentRing {
-                                // Promote: remove current assignment, treat as newcomer
-                                slotAssignments.removeValue(forKey: candidate.nodeID)
-                                newcomers.append(candidate)
-                                promotionCount += 1
-                            }
-                            // No demotion: keep existing assignment
-                        } else {
-                            // Newcomer (including old focal if still in nearest-72)
-                            newcomers.append(candidate)
-                        }
-                    }
-
-                    // Diagnostic print (only if churn detected)
-                    if departureCount > 0 || newcomers.count > 0 || promotionCount > 0 {
-                        print("[Honeycomb] Departures: \(departureCount), Newcomers: \(newcomers.count), Promotions: \(promotionCount)")
-                    }
-
-                    // Step 3.3: Compute available slots
-                    var occupiedSlots: Set<SlotID> = []
-                    for (_, slot) in slotAssignments {
-                        occupiedSlots.insert(SlotID(ring: slot.ring, index: slot.index))
-                    }
-
-                    // Step 3.4: Assign newcomers to available slots
-                    for newcomer in newcomers {
-                        guard let sprite = nodeSprites[newcomer.nodeID] else { continue }
-                        let currentPos = sprite.position
-                        let preferredRing = ringForCandidateIndex(candidates.firstIndex(where: { $0.nodeID == newcomer.nodeID }) ?? 0)
-
-                        var bestSlot: SlotID? = nil
-                        var bestDist = CGFloat.greatestFiniteMagnitude
-
-                        // Try preferred ring first
-                        for slotIdx in 0..<slotsInRing(preferredRing) {
-                            let slotID = SlotID(ring: preferredRing, index: slotIdx)
-                            if occupiedSlots.contains(slotID) { continue }
-                            let pos = slotPosition(ring: preferredRing, slotIndex: slotIdx, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
-                            let dx = pos.x - currentPos.x
-                            let dy = pos.y - currentPos.y
-                            let dist = hypot(dx, dy)
-                            if dist < bestDist {
-                                bestDist = dist
-                                bestSlot = slotID
-                            }
-                        }
-
-                        // Fallback to other rings if preferred is full
-                        if bestSlot == nil {
-                            for ring in 1...3 where ring != preferredRing {
-                                for slotIdx in 0..<slotsInRing(ring) {
-                                    let slotID = SlotID(ring: ring, index: slotIdx)
-                                    if occupiedSlots.contains(slotID) { continue }
-                                    let pos = slotPosition(ring: ring, slotIndex: slotIdx, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
-                                    let dx = pos.x - currentPos.x
-                                    let dy = pos.y - currentPos.y
-                                    let dist = hypot(dx, dy)
-                                    if dist < bestDist {
-                                        bestDist = dist
-                                        bestSlot = slotID
-                                    }
-                                }
-                            }
-                        }
-
-                        if let slot = bestSlot {
-                            slotAssignments[newcomer.nodeID] = (ring: slot.ring, index: slot.index)
-                            occupiedSlots.insert(slot)
-                        }
+                    // Check scale convergence
+                    if abs(scaleDiff) > scaleMatchTolerance {
+                        allScalesConverged = false
                     }
                 }
 
-                // Step 4: Apply positions and scales
-                for (nodeID, slot) in slotAssignments {
-                    guard let sprite = nodeSprites[nodeID] else { continue }
-                    let targetPos = slotPosition(ring: slot.ring, slotIndex: slot.index, focalPos: focalPos, focalRadius: focalRadius, scaleFactor: scaleFactor)
-                    let restingScale = restingScales[nodeID] ?? 1.0
-                    let targetScale = restingScale * nodeScaleForRing(slot.ring)
-
-                    if honeycombFirstFrame {
-                        sprite.position = targetPos
-                        sprite.setScale(targetScale)
-                    } else {
-                        let currentPos = sprite.position
-                        let lerpedPos = CGPoint(
-                            x: currentPos.x + (targetPos.x - currentPos.x) * lerpFactor,
-                            y: currentPos.y + (targetPos.y - currentPos.y) * lerpFactor
-                        )
-                        sprite.position = lerpedPos
-
-                        let currentScale = sprite.xScale
-                        let lerpedScale = currentScale + (targetScale - currentScale) * lerpFactor
-                        sprite.setScale(lerpedScale)
-                    }
+                // Camera follow (engaged state only)
+                if case .engaged = engagementState {
+                    let focalWorldPos = hexToWorld(focalCoord, cellSize: hexCellSize)
+                    let camDx = focalWorldPos.x - cameraNode.position.x
+                    let camDy = focalWorldPos.y - cameraNode.position.y
+                    cameraNode.position = CGPoint(
+                        x: cameraNode.position.x + camDx * cameraFollowLerp,
+                        y: cameraNode.position.y + camDy * cameraFollowLerp
+                    )
                 }
 
-                // Step 5: far nodes lerp back to resting position
-                for nodeID in farNodes {
-                    guard let sprite = nodeSprites[nodeID],
-                          let restingPos = restingPositions[nodeID] else { continue }
+                // State transition: engaging → engaged
+                if case .engaging = engagementState, allPositionsConverged && allScalesConverged {
+                    engagementState = .engaged(focal: focalID)
+                    print("[Honeycomb] State: engaging → engaged")
+                }
+
+            case .disengaging:
+                var allPositionsConverged = true
+                var allScalesConverged = true
+
+                for (nodeID, sprite) in nodeSprites {
+                    guard let restingPos = restingPositions[nodeID] else { continue }
                     let restingScale = restingScales[nodeID] ?? 1.0
 
-                    if honeycombFirstFrame {
-                        sprite.position = restingPos
-                        sprite.setScale(restingScale)
-                    } else {
-                        let currentPos = sprite.position
-                        let lerpedPos = CGPoint(
-                            x: currentPos.x + (restingPos.x - currentPos.x) * lerpFactor,
-                            y: currentPos.y + (restingPos.y - currentPos.y) * lerpFactor
-                        )
-                        sprite.position = lerpedPos
+                    // Lerp toward resting state
+                    let currentPos = sprite.position
+                    let dx = restingPos.x - currentPos.x
+                    let dy = restingPos.y - currentPos.y
+                    let lerpedPos = CGPoint(
+                        x: currentPos.x + dx * engagementLerp,
+                        y: currentPos.y + dy * engagementLerp
+                    )
+                    sprite.position = lerpedPos
 
-                        let currentScale = sprite.xScale
-                        let lerpedScale = currentScale + (restingScale - currentScale) * lerpFactor
-                        sprite.setScale(lerpedScale)
+                    if hypot(dx, dy) > positionMatchTolerance {
+                        allPositionsConverged = false
+                    }
+
+                    let currentScale = sprite.xScale
+                    let scaleDiff = restingScale - currentScale
+                    let lerpedScale = currentScale + scaleDiff * engagementLerp
+                    sprite.setScale(lerpedScale)
+
+                    if abs(scaleDiff) > scaleMatchTolerance {
+                        allScalesConverged = false
                     }
                 }
 
-                honeycombFirstFrame = false
+                // State transition: disengaging → idle
+                if allPositionsConverged && allScalesConverged {
+                    engagementState = .idle
+                    restingPositions.removeAll()
+                    restingScales.removeAll()
+                    driftExcludedIDs.removeAll()
+                    print("[Honeycomb] State: disengaging → idle")
+                }
+
+            default:
+                break
             }
 
         case .gracePeriod(let focalID, let expiresAt):
             // Check if grace period expired
             if currentTime >= expiresAt {
-                print("[Honeycomb] Grace period expired — returning to resting state")
+                print("[Honeycomb] State: engaged → disengaging")
 
-                // Restore all displaced nodes to resting position and scale
-                if displacementActive {
-                    for (nodeID, sprite) in nodeSprites {
-                        guard let restingPos = restingPositions[nodeID] else { continue }
-                        let restingScale = restingScales[nodeID] ?? 1.0
-
-                        let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
-                        restoreMove.timingMode = .easeOut
-                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
-                        restoreScale.timingMode = .easeOut
-
-                        sprite.run(SKAction.group([restoreMove, restoreScale]), withKey: "honeycombRestore")
-                    }
-                    restingPositions.removeAll()
-                    restingScales.removeAll()
-                    nodeBaseRadii.removeAll()
-                    driftExcludedIDs.removeAll()
-                    slotAssignments.removeAll()
-                    displacementActive = false
-                    honeycombFirstFrame = false
-                }
-
-                // Clear everything
+                // Clear strands and drift
                 clearStrands()
                 unwindDrift()
 
-                // Scale focal back
+                // Scale focal back and restore zPosition
                 if let focalSprite = nodeSprites[focalID] {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
                     scaleDown.timingMode = .easeOut
                     focalSprite.run(scaleDown)
 
-                    // Restore original zPosition
                     if let savedZ = savedFocalZPositions[focalID] {
                         focalSprite.zPosition = savedZ
                         savedFocalZPositions.removeValue(forKey: focalID)
@@ -1045,7 +901,8 @@ final class CorpusPhysicsScene: SKScene {
                     gracePromptLabel = nil
                 }
 
-                // Return to idle
+                // Transition to disengaging (per-frame lerp back handled in switch above)
+                engagementState = .disengaging
                 gestureState = .idle
                 currentFocalNodeID = nil
                 holdCompleted = false
@@ -1060,81 +917,14 @@ final class CorpusPhysicsScene: SKScene {
         lastUpdateTime = currentTime
     }
 
-    /// Given a 0-indexed candidate position, return which ring it belongs to (1-indexed).
-    /// Ring 1 holds indices 0..11, ring 2 holds 12..35, ring 3 holds 36..71, ring 4+ (overflow) is treated as far node.
-    private func ringForCandidateIndex(_ index: Int) -> Int {
-        if index < ring1SlotCount { return 1 }
-        if index < ring1SlotCount + ring2SlotCount { return 2 }
-        if index < ring1SlotCount + ring2SlotCount + ring3SlotCount { return 3 }
-        return 4   // sentinel: ring 4+ doesn't exist; caller should skip
-    }
-
-    /// Total slot capacity of all rings strictly before the given ring.
-    /// Used to compute index-within-ring.
-    private func cumulativeCapacityBeforeRing(_ ring: Int) -> Int {
-        switch ring {
-        case 1: return 0
-        case 2: return ring1SlotCount
-        case 3: return ring1SlotCount + ring2SlotCount
-        default: return ring1SlotCount + ring2SlotCount + ring3SlotCount
+    /// Scale lens helper: compute scale multiplier based on hex distance from focal
+    private func scaleMultiplierForHexDistance(_ d: Int) -> CGFloat {
+        switch d {
+        case 0: return focalScale          // 4.0 — focal large
+        case 1: return ring1Scale          // 1.4 — immediate neighbors slightly bigger
+        case 2: return ring2Scale          // 1.15 — distance-2 ring subtle lift
+        default: return baselineScale      // 1.0 — grid baseline
         }
-    }
-
-    private func slotsInRing(_ ring: Int) -> Int {
-        switch ring {
-        case 1: return ring1SlotCount
-        case 2: return ring2SlotCount
-        case 3: return ring3SlotCount
-        default: return 0
-        }
-    }
-
-    private func cellRadiusForRing(_ ring: Int) -> CGFloat {
-        switch ring {
-        case 1: return ring1CellRadius
-        case 2: return ring2CellRadius
-        case 3: return ring3CellRadius
-        default: return ring1CellRadius
-        }
-    }
-
-    private func nodeScaleForRing(_ ring: Int) -> CGFloat {
-        switch ring {
-        case 1: return 1.0
-        case 2: return ring2NodeScale
-        case 3: return ring3NodeScale
-        default: return 1.0
-        }
-    }
-
-    /// Compute world-space position for a given slot, anchored at focalPos with zoom-invariant scaling
-    private func slotPosition(ring: Int, slotIndex: Int, focalPos: CGPoint, focalRadius: CGFloat, scaleFactor: CGFloat) -> CGPoint {
-        let slotCount = slotsInRing(ring)
-        let slotAngularWidth = (2 * .pi) / CGFloat(slotCount)
-        let slotAngle = CGFloat(slotIndex) * slotAngularWidth
-
-        let effectiveCell1 = ring1CellRadius * scaleFactor
-        let effectiveCell2 = ring2CellRadius * scaleFactor
-        let effectiveCell3 = ring3CellRadius * scaleFactor
-        let effectiveSpacing = cellSpacing * scaleFactor
-        let effectiveBreathingGap = breathingGap * scaleFactor
-
-        let ringRadius: CGFloat
-        switch ring {
-        case 1:
-            ringRadius = focalRadius + effectiveBreathingGap + effectiveCell1
-        case 2:
-            ringRadius = focalRadius + effectiveBreathingGap + effectiveCell1 + effectiveCell1 + effectiveCell2 + effectiveSpacing
-        case 3:
-            ringRadius = focalRadius + effectiveBreathingGap + effectiveCell1 + effectiveCell1 + effectiveCell2 + effectiveCell2 + effectiveCell3 + effectiveSpacing * 2
-        default:
-            ringRadius = 0
-        }
-
-        return CGPoint(
-            x: focalPos.x + cos(slotAngle) * ringRadius,
-            y: focalPos.y + sin(slotAngle) * ringRadius
-        )
     }
 
     private func applyLabelTier(_ tier: Int) {
@@ -2405,39 +2195,19 @@ final class CorpusPhysicsScene: SKScene {
                     print("[Honeycomb] Grace period: NodeDetailView opened for focal \(focalID)")
                 }
 
-                // Restore all displaced nodes to resting position and scale
-                if displacementActive {
-                    for (nodeID, sprite) in nodeSprites {
-                        guard let restingPos = restingPositions[nodeID] else { continue }
-                        let restingScale = restingScales[nodeID] ?? 1.0
+                // Transition to disengaging (per-frame lerp handled in update loop)
+                engagementState = .disengaging
 
-                        let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
-                        restoreMove.timingMode = .easeOut
-                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
-                        restoreScale.timingMode = .easeOut
-
-                        sprite.run(SKAction.group([restoreMove, restoreScale]), withKey: "honeycombRestore")
-                    }
-                    restingPositions.removeAll()
-                    restingScales.removeAll()
-                    nodeBaseRadii.removeAll()
-                    driftExcludedIDs.removeAll()
-                    slotAssignments.removeAll()
-                    displacementActive = false
-                    honeycombFirstFrame = false
-                }
-
-                // Clear everything
+                // Clear strands and drift
                 clearStrands()
                 unwindDrift()
 
-                // Scale focal back
+                // Scale focal back and restore zPosition
                 if let focalSprite = nodeSprites[focalID] {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
                     scaleDown.timingMode = .easeOut
                     focalSprite.run(scaleDown)
 
-                    // Restore original zPosition
                     if let savedZ = savedFocalZPositions[focalID] {
                         focalSprite.zPosition = savedZ
                         savedFocalZPositions.removeValue(forKey: focalID)
@@ -2497,6 +2267,9 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
+                    // Identify focal node
+                    let focalID = findNearestNodeToCamera() ?? ""
+
                     // Transition to honeycomb mode
                     gestureState = .honeycomb(
                         initialPosition: initialPosition,
@@ -2508,17 +2281,15 @@ final class CorpusPhysicsScene: SKScene {
                     // Snapshot resting state for all nodes
                     restingPositions.removeAll()
                     restingScales.removeAll()
-                    nodeBaseRadii.removeAll()
                     for (nodeID, sprite) in nodeSprites {
                         restingPositions[nodeID] = sprite.position
                         restingScales[nodeID] = sprite.xScale
-                        // Base radius = sprite's frame width / 2 / current xScale — gives the unscaled radius
-                        nodeBaseRadii[nodeID] = (sprite.frame.width / 2) / sprite.xScale
                     }
-                    displacementActive = true
-                    honeycombFirstFrame = true
 
-                    print("[Honeycomb] Engaged (drag threshold exceeded)")
+                    // Transition to engaging state
+                    engagementState = .engaging(focal: focalID)
+
+                    print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
                 }
 
             case .honeycomb(let initialPosition, let lastPanPosition):
@@ -2600,29 +2371,10 @@ final class CorpusPhysicsScene: SKScene {
                 }
             } else {
                 // Hold not completed or no focal - return to idle silently
-                print("[Honeycomb] Quick drag-and-flick, returning to idle")
+                print("[Honeycomb] State: engaged → disengaging")
 
-                // Restore all displaced nodes to resting position and scale
-                if displacementActive {
-                    for (nodeID, sprite) in nodeSprites {
-                        guard let restingPos = restingPositions[nodeID] else { continue }
-                        let restingScale = restingScales[nodeID] ?? 1.0
-
-                        let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
-                        restoreMove.timingMode = .easeOut
-                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
-                        restoreScale.timingMode = .easeOut
-
-                        sprite.run(SKAction.group([restoreMove, restoreScale]), withKey: "honeycombRestore")
-                    }
-                    restingPositions.removeAll()
-                    restingScales.removeAll()
-                    nodeBaseRadii.removeAll()
-                    driftExcludedIDs.removeAll()
-                    slotAssignments.removeAll()
-                    displacementActive = false
-                    honeycombFirstFrame = false
-                }
+                // Transition to disengaging (per-frame lerp back handled in update loop)
+                engagementState = .disengaging
 
                 // Scale down focal if one was tracked
                 if let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
@@ -2704,22 +2456,8 @@ final class CorpusPhysicsScene: SKScene {
 
         // Clean up honeycomb state
         if case .honeycomb(_, _) = gestureState {
-            // Restore all displaced nodes to resting position
-            if displacementActive {
-                for (nodeID, sprite) in nodeSprites {
-                    guard let restingPos = restingPositions[nodeID] else { continue }
-
-                    let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
-                    restoreMove.timingMode = .easeOut
-                    sprite.run(restoreMove, withKey: "honeycombRestore")
-                }
-                restingPositions.removeAll()
-                nodeBaseRadii.removeAll()
-                driftExcludedIDs.removeAll()
-                slotAssignments.removeAll()
-                displacementActive = false
-                honeycombFirstFrame = false
-            }
+            // Transition to disengaging
+            engagementState = .disengaging
 
             clearStrands()
             unwindDrift()

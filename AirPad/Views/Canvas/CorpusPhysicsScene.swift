@@ -442,12 +442,20 @@ final class CorpusPhysicsScene: SKScene {
     private let holdThreshold: TimeInterval = 0.7
     private let gracePeriodDuration: TimeInterval = 1.5
     private let panMultiplier: CGFloat = 1.5
+    private let focalZPosition: CGFloat = 1000
 
     private var currentFocalNodeID: String? = nil
     private var holdTimerStart: TimeInterval? = nil
     private var holdCompleted: Bool = false
     private var driftedRelatedIDs: [String: CGPoint] = [:]
     private var gracePromptLabel: SKLabelNode? = nil
+    private var savedFocalZPositions: [String: CGFloat] = [:]
+
+    // Fisheye falloff state
+    private var restingPositions: [String: CGPoint] = [:]
+    private var restingScales: [String: CGFloat] = [:]
+    private var falloffActive: Bool = false
+    private var driftExcludedIDs: Set<String> = []
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -553,11 +561,21 @@ final class CorpusPhysicsScene: SKScene {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.4)
                     scaleDown.timingMode = .easeOut
                     oldSprite.run(scaleDown, withKey: "honeycombFocal")
+
+                    // Restore original zPosition
+                    if let savedZ = savedFocalZPositions[oldFocalID] {
+                        oldSprite.zPosition = savedZ
+                        savedFocalZPositions.removeValue(forKey: oldFocalID)
+                    }
                 }
 
                 currentFocalNodeID = newFocalID
 
                 if let newFocalID = newFocalID, let newSprite = nodeSprites[newFocalID] {
+                    // Save original zPosition before lifting
+                    savedFocalZPositions[newFocalID] = newSprite.zPosition
+                    newSprite.zPosition = focalZPosition
+
                     // Scale up new focal - compute scale to 70% of screen width
                     let baseDiameter = (nodeRadii[newFocalID] ?? 30.0) * 2.0
                     let targetWidth = (view?.bounds.width ?? 375.0) * 0.7
@@ -607,10 +625,58 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
+            // Per-frame fisheye falloff
+            if falloffActive, let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
+                let maxRadius = (view?.bounds.width ?? 390) * 1.5
+                let minScale: CGFloat = 0.20
+                let maxNeighborScale: CGFloat = 0.60
+                let pullStrength: CGFloat = 0.04
+
+                for (nodeID, sprite) in nodeSprites {
+                    guard nodeID != focalID, !driftExcludedIDs.contains(nodeID) else { continue }
+                    guard let restingPos = restingPositions[nodeID],
+                          let restingScale = restingScales[nodeID] else { continue }
+
+                    let distance = hypot(restingPos.x - focalSprite.position.x,
+                                         restingPos.y - focalSprite.position.y)
+                    let normalized = min(distance / maxRadius, 1.0)
+                    let t = normalized * normalized
+                    let scaleFactor = maxNeighborScale - (maxNeighborScale - minScale) * t
+                    let targetScale = restingScale * scaleFactor
+
+                    let dx = (focalSprite.position.x - restingPos.x) * pullStrength * (1.0 - normalized)
+                    let dy = (focalSprite.position.y - restingPos.y) * pullStrength * (1.0 - normalized)
+                    let targetPosition = CGPoint(x: restingPos.x + dx, y: restingPos.y + dy)
+
+                    // Direct assignment — no SKAction. Per-frame interpolation comes from
+                    // the focal sprite's own movement (it's the input to this function).
+                    sprite.setScale(targetScale)
+                    sprite.position = targetPosition
+                }
+            }
+
         case .gracePeriod(let focalID, let expiresAt):
             // Check if grace period expired
             if currentTime >= expiresAt {
                 print("[Honeycomb] Grace period expired — returning to resting state")
+
+                // Restore all nodes to resting state
+                if falloffActive {
+                    for (nodeID, sprite) in nodeSprites {
+                        guard let restingPos = restingPositions[nodeID],
+                              let restingScale = restingScales[nodeID] else { continue }
+
+                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                        let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
+                        restoreScale.timingMode = .easeOut
+                        restoreMove.timingMode = .easeOut
+                        sprite.run(.group([restoreScale, restoreMove]), withKey: "honeycombRestore")
+                    }
+                    restingPositions.removeAll()
+                    restingScales.removeAll()
+                    driftExcludedIDs.removeAll()
+                    falloffActive = false
+                }
 
                 // Clear everything
                 clearStrands()
@@ -621,6 +687,12 @@ final class CorpusPhysicsScene: SKScene {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
                     scaleDown.timingMode = .easeOut
                     focalSprite.run(scaleDown)
+
+                    // Restore original zPosition
+                    if let savedZ = savedFocalZPositions[focalID] {
+                        focalSprite.zPosition = savedZ
+                        savedFocalZPositions.removeValue(forKey: focalID)
+                    }
                 }
 
                 // Fade out prompt
@@ -868,6 +940,9 @@ final class CorpusPhysicsScene: SKScene {
     private func startDrift(towardFocalID focalID: String, relatedIDs: [String]) {
         guard let focalSprite = nodeSprites[focalID] else { return }
 
+        // Exclude drifting nodes from falloff loop
+        driftExcludedIDs = Set(relatedIDs)
+
         for relatedID in relatedIDs {
             guard let relatedSprite = nodeSprites[relatedID] else { continue }
 
@@ -900,6 +975,7 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         driftedRelatedIDs.removeAll()
+        driftExcludedIDs.removeAll()
     }
 
     // MARK: - Node sprites
@@ -1745,6 +1821,24 @@ final class CorpusPhysicsScene: SKScene {
                 // Tap during grace period - open NodeDetailView
                 print("[Honeycomb] Grace period: NodeDetailView opened for \(focalID)")
 
+                // Restore all nodes to resting state
+                if falloffActive {
+                    for (nodeID, sprite) in nodeSprites {
+                        guard let restingPos = restingPositions[nodeID],
+                              let restingScale = restingScales[nodeID] else { continue }
+
+                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                        let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
+                        restoreScale.timingMode = .easeOut
+                        restoreMove.timingMode = .easeOut
+                        sprite.run(.group([restoreScale, restoreMove]), withKey: "honeycombRestore")
+                    }
+                    restingPositions.removeAll()
+                    restingScales.removeAll()
+                    driftExcludedIDs.removeAll()
+                    falloffActive = false
+                }
+
                 // Clear everything
                 clearStrands()
                 unwindDrift()
@@ -1754,6 +1848,12 @@ final class CorpusPhysicsScene: SKScene {
                     let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
                     scaleDown.timingMode = .easeOut
                     focalSprite.run(scaleDown)
+
+                    // Restore original zPosition
+                    if let savedZ = savedFocalZPositions[focalID] {
+                        focalSprite.zPosition = savedZ
+                        savedFocalZPositions.removeValue(forKey: focalID)
+                    }
                 }
 
                 // Fade out prompt
@@ -1817,6 +1917,16 @@ final class CorpusPhysicsScene: SKScene {
                     )
                     holdTimerStart = CACurrentMediaTime()
                     holdCompleted = false
+
+                    // Snapshot resting state for all nodes
+                    restingPositions.removeAll()
+                    restingScales.removeAll()
+                    for (nodeID, sprite) in nodeSprites {
+                        restingPositions[nodeID] = sprite.position
+                        restingScales[nodeID] = sprite.xScale
+                    }
+                    falloffActive = true
+
                     print("[Honeycomb] Engaged (drag threshold exceeded)")
                 }
 
@@ -1900,6 +2010,38 @@ final class CorpusPhysicsScene: SKScene {
             } else {
                 // Hold not completed or no focal - return to idle silently
                 print("[Honeycomb] Quick drag-and-flick, returning to idle")
+
+                // Restore all nodes to resting state
+                if falloffActive {
+                    for (nodeID, sprite) in nodeSprites {
+                        guard let restingPos = restingPositions[nodeID],
+                              let restingScale = restingScales[nodeID] else { continue }
+
+                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                        let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
+                        restoreScale.timingMode = .easeOut
+                        restoreMove.timingMode = .easeOut
+                        sprite.run(.group([restoreScale, restoreMove]), withKey: "honeycombRestore")
+                    }
+                    restingPositions.removeAll()
+                    restingScales.removeAll()
+                    driftExcludedIDs.removeAll()
+                    falloffActive = false
+                }
+
+                // Scale down focal if one was tracked
+                if let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
+                    let scaleDown = SKAction.scale(to: 1.0, duration: 0.4)
+                    scaleDown.timingMode = .easeOut
+                    focalSprite.run(scaleDown)
+
+                    // Restore original zPosition
+                    if let savedZ = savedFocalZPositions[focalID] {
+                        focalSprite.zPosition = savedZ
+                        savedFocalZPositions.removeValue(forKey: focalID)
+                    }
+                }
+
                 gestureState = .idle
                 currentFocalNodeID = nil
                 holdCompleted = false
@@ -1967,12 +2109,36 @@ final class CorpusPhysicsScene: SKScene {
 
         // Clean up honeycomb state
         if case .honeycomb(_, _) = gestureState {
+            // Restore all nodes to resting state
+            if falloffActive {
+                for (nodeID, sprite) in nodeSprites {
+                    guard let restingPos = restingPositions[nodeID],
+                          let restingScale = restingScales[nodeID] else { continue }
+
+                    let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                    let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
+                    restoreScale.timingMode = .easeOut
+                    restoreMove.timingMode = .easeOut
+                    sprite.run(.group([restoreScale, restoreMove]), withKey: "honeycombRestore")
+                }
+                restingPositions.removeAll()
+                restingScales.removeAll()
+                driftExcludedIDs.removeAll()
+                falloffActive = false
+            }
+
             clearStrands()
             unwindDrift()
             if let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
                 let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
                 scaleDown.timingMode = .easeOut
                 focalSprite.run(scaleDown)
+
+                // Restore original zPosition
+                if let savedZ = savedFocalZPositions[focalID] {
+                    focalSprite.zPosition = savedZ
+                    savedFocalZPositions.removeValue(forKey: focalID)
+                }
             }
             currentFocalNodeID = nil
         }

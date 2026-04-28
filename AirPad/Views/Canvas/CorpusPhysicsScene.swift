@@ -149,11 +149,21 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Toggle hex layout debug visualization (SB80a-fix4)
+    /// Toggle hex layout debug visualization (SB80a-fix5)
     func toggleHexDebugMode() {
         debugShowHexLayout.toggle()
+
         if debugShowHexLayout {
-            print("[Hex Debug] Enabled - showing hex grid layout (uniform size, screen-space)")
+            // Snapshot current sprite state BEFORE applying hex transformations
+            preHexSnapshot.removeAll()
+            for (nodeID, sprite) in nodeSprites {
+                preHexSnapshot[nodeID] = (
+                    position: sprite.position,
+                    scale: sprite.xScale
+                )
+            }
+
+            print("[Hex Debug] Enabled — snapshotted \(preHexSnapshot.count) sprites, applying hex layout")
             guard let view = view else { return }
 
             // Compute uniform baseline scale
@@ -174,20 +184,24 @@ final class CorpusPhysicsScene: SKScene {
                 sprite.setScale(targetScale)
             }
         } else {
-            print("[Hex Debug] Disabled - returning to resting positions and sizes")
-            // Re-enable physics and return all sprites to resting state
+            print("[Hex Debug] Disabled — restoring \(preHexSnapshot.count) sprites from snapshot")
+
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = true
-                if let pos = positionMap[nodeID] {
-                    sprite.position = CGPoint(x: pos.x, y: -pos.y)
-                }
-                // Restore original scale (stored in restingScales if available)
-                if let restingScale = restingScales[nodeID] {
-                    sprite.setScale(restingScale)
+
+                if let snapshot = preHexSnapshot[nodeID] {
+                    sprite.position = snapshot.position
+                    sprite.setScale(snapshot.scale)
                 } else {
-                    sprite.setScale(1.0)
+                    // Fallback if snapshot missing (e.g., sprite added during hex mode)
+                    if let pos = positionMap[nodeID] {
+                        sprite.position = CGPoint(x: pos.x, y: -pos.y)
+                    }
+                    sprite.setScale(restingScales[nodeID] ?? 1.0)
                 }
             }
+
+            preHexSnapshot.removeAll()
         }
     }
 
@@ -288,6 +302,10 @@ final class CorpusPhysicsScene: SKScene {
     private let hexSpacingScreenWidth: CGFloat = 0.07  // 7% of view width between adjacent cells
     private let hexBaselineScreenWidth: CGFloat = 0.05  // 5% of view width per node (baseline)
     private var debugShowHexLayout: Bool = false  // Toggle for debug visualization
+
+    /// Snapshot of sprite state captured before hex debug mode is entered.
+    /// Used to cleanly restore on exit. Cleared on exit.
+    private var preHexSnapshot: [String: (position: CGPoint, scale: CGFloat)] = [:]
 
     /// Screen-space hex spacing, adjusted for current camera zoom
     private var currentHexSpacing: CGFloat {

@@ -453,6 +453,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // Perimeter displacement state
     private var restingPositions: [String: CGPoint] = [:]
+    private var restingScales: [String: CGFloat] = [:]
     private var nodeBaseRadii: [String: CGFloat] = [:]
     private var displacementActive: Bool = false
     private var driftExcludedIDs: Set<String> = []
@@ -462,7 +463,10 @@ final class CorpusPhysicsScene: SKScene {
     private let hexInfluenceRadiusMultiplier: CGFloat = 2.0
     private let maxNodeRadius: CGFloat = 48.0
     private let hexCellRadius: CGFloat = 48.0
+    private let ring2CellRadius: CGFloat = 22.0
     private let hexCellSpacing: CGFloat = 4.0
+    private let ring1SlotCount: Int = 12
+    private let ring2SlotCount: Int = 30
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -583,9 +587,9 @@ final class CorpusPhysicsScene: SKScene {
                     savedFocalZPositions[newFocalID] = newSprite.zPosition
                     newSprite.zPosition = focalZPosition
 
-                    // Scale up new focal - compute scale to 70% of screen width
+                    // Scale up new focal - compute scale to 60% of screen width
                     let baseDiameter = (nodeRadii[newFocalID] ?? 30.0) * 2.0
-                    let targetWidth = (view?.bounds.width ?? 375.0) * 0.7
+                    let targetWidth = (view?.bounds.width ?? 375.0) * 0.6
                     let focalScale = targetWidth / baseDiameter
 
                     let scaleUp = SKAction.scale(to: focalScale, duration: 0.4)
@@ -675,9 +679,15 @@ final class CorpusPhysicsScene: SKScene {
                 var index = 0
                 for candidate in candidates {
                     let ring = ringForCandidateIndex(index)
-                    let ringCapacity = 12 * ring
 
-                    let slotsInRing = ringCapacity
+                    // Cap participation at ring 2 — nodes beyond stay at resting
+                    if ring >= 3 {
+                        farNodes.append(candidate.nodeID)
+                        index += 1
+                        continue
+                    }
+
+                    let slotsInRing = (ring == 1) ? ring1SlotCount : ring2SlotCount
                     let slotAngularWidth = (2 * .pi) / CGFloat(slotsInRing)
                     let preferredSlot = Int(round(candidate.restingAngle / slotAngularWidth)) % slotsInRing
 
@@ -707,9 +717,16 @@ final class CorpusPhysicsScene: SKScene {
 
                 // Step 4: compute target positions and lerp
                 for (ring, members) in ringAssignments {
-                    let slotsInRing = 12 * ring
+                    let slotsInRing = (ring == 1) ? ring1SlotCount : ring2SlotCount
                     let slotAngularWidth = (2 * .pi) / CGFloat(slotsInRing)
-                    let ringRadius = focalRadius + breathingGap + hexCellRadius + CGFloat(ring - 1) * (2 * hexCellRadius + hexCellSpacing)
+
+                    let ringRadius: CGFloat
+                    if ring == 1 {
+                        ringRadius = focalRadius + breathingGap + hexCellRadius
+                    } else {
+                        // ring 2: step out from ring 1 by ring 1 cell radius + ring 2 cell radius + spacing
+                        ringRadius = focalRadius + breathingGap + hexCellRadius + (hexCellRadius + ring2CellRadius + hexCellSpacing)
+                    }
 
                     for member in members {
                         guard let sprite = nodeSprites[member.candidate.nodeID] else { continue }
@@ -726,6 +743,15 @@ final class CorpusPhysicsScene: SKScene {
                             y: currentPos.y + (targetPos.y - currentPos.y) * lerpFactor
                         )
                         sprite.position = lerpedPos
+
+                        // Scale ring 2 nodes to 45% of resting scale
+                        if ring == 2 {
+                            let restingScale = restingScales[member.candidate.nodeID] ?? 1.0
+                            let targetScale = restingScale * 0.45
+                            let currentScale = sprite.xScale
+                            let lerpedScale = currentScale + (targetScale - currentScale) * lerpFactor
+                            sprite.setScale(lerpedScale)
+                        }
                     }
                 }
 
@@ -748,16 +774,21 @@ final class CorpusPhysicsScene: SKScene {
             if currentTime >= expiresAt {
                 print("[Honeycomb] Grace period expired — returning to resting state")
 
-                // Restore all displaced nodes to resting position
+                // Restore all displaced nodes to resting position and scale
                 if displacementActive {
                     for (nodeID, sprite) in nodeSprites {
                         guard let restingPos = restingPositions[nodeID] else { continue }
+                        let restingScale = restingScales[nodeID] ?? 1.0
 
                         let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
                         restoreMove.timingMode = .easeOut
-                        sprite.run(restoreMove, withKey: "honeycombRestore")
+                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                        restoreScale.timingMode = .easeOut
+
+                        sprite.run(SKAction.group([restoreMove, restoreScale]), withKey: "honeycombRestore")
                     }
                     restingPositions.removeAll()
+                    restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
                     displacementActive = false
@@ -804,23 +835,21 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Given a 0-indexed candidate position, return which ring it belongs to (1-indexed).
-    /// Ring 1 holds indices 0..5, ring 2 holds 6..17, ring 3 holds 18..35, etc.
+    /// Ring 1 holds indices 0..11, ring 2 holds 12..41, ring 3+ (overflow) is treated as far node.
     private func ringForCandidateIndex(_ index: Int) -> Int {
-        var ring = 1
-        var cumulative = 12
-        while index >= cumulative {
-            ring += 1
-            cumulative += 12 * ring
-        }
-        return ring
+        if index < ring1SlotCount { return 1 }
+        if index < ring1SlotCount + ring2SlotCount { return 2 }
+        return 3   // sentinel: ring 3+ doesn't exist; caller should skip
     }
 
     /// Total slot capacity of all rings strictly before the given ring.
     /// Used to compute index-within-ring.
     private func cumulativeCapacityBeforeRing(_ ring: Int) -> Int {
-        guard ring > 1 else { return 0 }
-        // Sum of 12 * k for k in 1..(ring-1) = 12 * (ring-1) * ring / 2 = 6 * (ring-1) * ring
-        return 6 * (ring - 1) * ring
+        switch ring {
+        case 1: return 0
+        case 2: return ring1SlotCount
+        default: return ring1SlotCount + ring2SlotCount
+        }
     }
 
     private func applyLabelTier(_ tier: Int) {
@@ -1942,19 +1971,34 @@ final class CorpusPhysicsScene: SKScene {
 
             // Honeycomb: check for grace period tap
             if case .gracePeriod(let focalID, _) = gestureState {
-                // Tap during grace period - open NodeDetailView
-                print("[Honeycomb] Grace period: NodeDetailView opened for \(focalID)")
+                // Detect which sprite was tapped (convert to scene coordinates)
+                let scenePoint = convertPoint(fromView: screenPoint)
+                let tappedNodeID: String
+                if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
+                   let name = shape.name,
+                   name.hasPrefix("node:") {
+                    tappedNodeID = String(name.dropFirst(5))
+                    print("[Honeycomb] Grace period: NodeDetailView opened for tapped node \(tappedNodeID)")
+                } else {
+                    tappedNodeID = focalID
+                    print("[Honeycomb] Grace period: NodeDetailView opened for focal \(focalID)")
+                }
 
-                // Restore all displaced nodes to resting position
+                // Restore all displaced nodes to resting position and scale
                 if displacementActive {
                     for (nodeID, sprite) in nodeSprites {
                         guard let restingPos = restingPositions[nodeID] else { continue }
+                        let restingScale = restingScales[nodeID] ?? 1.0
 
                         let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
                         restoreMove.timingMode = .easeOut
-                        sprite.run(restoreMove, withKey: "honeycombRestore")
+                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                        restoreScale.timingMode = .easeOut
+
+                        sprite.run(SKAction.group([restoreMove, restoreScale]), withKey: "honeycombRestore")
                     }
                     restingPositions.removeAll()
+                    restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
                     displacementActive = false
@@ -1987,7 +2031,7 @@ final class CorpusPhysicsScene: SKScene {
 
                 // Open detail view
                 DispatchQueue.main.async { [weak self] in
-                    self?.canvasState?.selectedNodeID = focalID
+                    self?.canvasState?.selectedNodeID = tappedNodeID
                 }
 
                 // Return to idle
@@ -2041,9 +2085,11 @@ final class CorpusPhysicsScene: SKScene {
 
                     // Snapshot resting state for all nodes
                     restingPositions.removeAll()
+                    restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     for (nodeID, sprite) in nodeSprites {
                         restingPositions[nodeID] = sprite.position
+                        restingScales[nodeID] = sprite.xScale
                         // Base radius = sprite's frame width / 2 / current xScale — gives the unscaled radius
                         nodeBaseRadii[nodeID] = (sprite.frame.width / 2) / sprite.xScale
                     }
@@ -2133,16 +2179,21 @@ final class CorpusPhysicsScene: SKScene {
                 // Hold not completed or no focal - return to idle silently
                 print("[Honeycomb] Quick drag-and-flick, returning to idle")
 
-                // Restore all displaced nodes to resting position
+                // Restore all displaced nodes to resting position and scale
                 if displacementActive {
                     for (nodeID, sprite) in nodeSprites {
                         guard let restingPos = restingPositions[nodeID] else { continue }
+                        let restingScale = restingScales[nodeID] ?? 1.0
 
                         let restoreMove = SKAction.move(to: restingPos, duration: 0.4)
                         restoreMove.timingMode = .easeOut
-                        sprite.run(restoreMove, withKey: "honeycombRestore")
+                        let restoreScale = SKAction.scale(to: restingScale, duration: 0.4)
+                        restoreScale.timingMode = .easeOut
+
+                        sprite.run(SKAction.group([restoreMove, restoreScale]), withKey: "honeycombRestore")
                     }
                     restingPositions.removeAll()
+                    restingScales.removeAll()
                     nodeBaseRadii.removeAll()
                     driftExcludedIDs.removeAll()
                     displacementActive = false

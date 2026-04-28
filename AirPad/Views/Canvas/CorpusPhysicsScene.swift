@@ -459,10 +459,10 @@ final class CorpusPhysicsScene: SKScene {
     private let breathingGap: CGFloat = 10.0
     private let lerpFactor: CGFloat = 0.20
     private let hysteresisThreshold: CGFloat = 20.0
-    private let slotCount: Int = 12
-    private let slotBreathingGap: CGFloat = 6.0
-    private let influenceRadiusMultiplier: CGFloat = 1.4
-    private let slotLateralBuffer: CGFloat = 12.0
+    private let hexInfluenceRadiusMultiplier: CGFloat = 2.0
+    private let maxNodeRadius: CGFloat = 48.0
+    private let hexCellRadius: CGFloat = 48.0
+    private let hexCellSpacing: CGFloat = 4.0
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -632,14 +632,21 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-            // Per-frame angular slotting
+            // Per-frame hex tessellation
             if displacementActive, let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
-                let focalRadius = (focalSprite.frame.width / 2)  // current visible radius (includes scale)
+                let focalRadius = focalSprite.frame.width / 2
                 let focalPos = focalSprite.position
-                let influenceRadius = focalRadius * influenceRadiusMultiplier
+                let influenceRadius = focalRadius * hexInfluenceRadiusMultiplier
 
-                // Group nodes by slot index
-                var slotAssignments: [Int: [(nodeID: String, restingDistance: CGFloat)]] = [:]
+                // Step 1: collect hex candidates
+                struct HexCandidate {
+                    let nodeID: String
+                    let restingDistance: CGFloat
+                    let restingAngle: CGFloat
+                }
+                var candidates: [HexCandidate] = []
+                var farNodes: [String] = []
+
                 for (nodeID, _) in nodeSprites {
                     guard nodeID != focalID,
                           !driftExcludedIDs.contains(nodeID),
@@ -647,40 +654,72 @@ final class CorpusPhysicsScene: SKScene {
 
                     let dx = restingPos.x - focalPos.x
                     let dy = restingPos.y - focalPos.y
-                    let restingDistance = hypot(dx, dy)
+                    let dist = hypot(dx, dy)
 
-                    // Far nodes don't participate
-                    guard restingDistance < influenceRadius else { continue }
-
-                    let angle = atan2(dy, dx)  // -π to π
-                    let normalizedAngle = angle < 0 ? angle + 2 * .pi : angle  // 0 to 2π
-                    let slotIndex = Int(round(normalizedAngle / (.pi / 6))) % slotCount
-
-                    slotAssignments[slotIndex, default: []].append((nodeID, restingDistance))
+                    if dist >= influenceRadius {
+                        farNodes.append(nodeID)
+                    } else {
+                        let rawAngle = atan2(dy, dx)
+                        let angle = rawAngle < 0 ? rawAngle + 2 * .pi : rawAngle
+                        candidates.append(HexCandidate(nodeID: nodeID, restingDistance: dist, restingAngle: angle))
+                    }
                 }
 
-                // Within each slot, sort by resting distance and assign ring positions
-                for (slotIndex, var members) in slotAssignments {
-                    members.sort { $0.restingDistance < $1.restingDistance }
+                // Step 2: sort by resting distance
+                candidates.sort { $0.restingDistance < $1.restingDistance }
 
-                    let slotAngle = CGFloat(slotIndex) * (.pi / 6)
-                    let slotDirX = cos(slotAngle)
-                    let slotDirY = sin(slotAngle)
+                // Step 3: assign to hex rings + slots
+                var ringAssignments: [Int: [(slot: Int, candidate: HexCandidate)]] = [:]
+                var slotsTakenPerRing: [Int: Set<Int>] = [:]
 
-                    for (ringIndex, member) in members.enumerated() {
-                        guard let sprite = nodeSprites[member.nodeID],
-                              let nodeRadius = nodeBaseRadii[member.nodeID] else { continue }
+                var index = 0
+                for candidate in candidates {
+                    let ring = ringForCandidateIndex(index)
+                    let ringCapacity = 6 * ring
 
-                        let baseDistance = focalRadius + breathingGap + nodeRadius + slotLateralBuffer
-                        let ringOffset = CGFloat(ringIndex) * (2 * nodeRadius + slotBreathingGap)
-                        let targetDistance = baseDistance + ringOffset
+                    let slotsInRing = ringCapacity
+                    let slotAngularWidth = (2 * .pi) / CGFloat(slotsInRing)
+                    let preferredSlot = Int(round(candidate.restingAngle / slotAngularWidth)) % slotsInRing
 
+                    var taken = slotsTakenPerRing[ring] ?? []
+                    let assignedSlot: Int
+                    if !taken.contains(preferredSlot) {
+                        assignedSlot = preferredSlot
+                    } else {
+                        var offset = 1
+                        var found: Int? = nil
+                        while offset <= slotsInRing / 2 {
+                            let candidateUp = (preferredSlot + offset) % slotsInRing
+                            let candidateDown = (preferredSlot - offset + slotsInRing) % slotsInRing
+                            if !taken.contains(candidateUp) { found = candidateUp; break }
+                            if !taken.contains(candidateDown) { found = candidateDown; break }
+                            offset += 1
+                        }
+                        assignedSlot = found ?? preferredSlot
+                    }
+
+                    taken.insert(assignedSlot)
+                    slotsTakenPerRing[ring] = taken
+                    ringAssignments[ring, default: []].append((slot: assignedSlot, candidate: candidate))
+
+                    index += 1
+                }
+
+                // Step 4: compute target positions and lerp
+                for (ring, members) in ringAssignments {
+                    let slotsInRing = 6 * ring
+                    let slotAngularWidth = (2 * .pi) / CGFloat(slotsInRing)
+                    let ringRadius = focalRadius + breathingGap + hexCellRadius + CGFloat(ring - 1) * (2 * hexCellRadius + hexCellSpacing)
+
+                    for member in members {
+                        guard let sprite = nodeSprites[member.candidate.nodeID] else { continue }
+
+                        let slotAngle = CGFloat(member.slot) * slotAngularWidth
                         let targetPos = CGPoint(
-                            x: focalPos.x + slotDirX * targetDistance,
-                            y: focalPos.y + slotDirY * targetDistance
+                            x: focalPos.x + cos(slotAngle) * ringRadius,
+                            y: focalPos.y + sin(slotAngle) * ringRadius
                         )
 
-                        // Lerp current position toward target (preserves viscous feel)
                         let currentPos = sprite.position
                         let lerpedPos = CGPoint(
                             x: currentPos.x + (targetPos.x - currentPos.x) * lerpFactor,
@@ -690,25 +729,17 @@ final class CorpusPhysicsScene: SKScene {
                     }
                 }
 
-                // Nodes outside influence radius stay at resting position
-                for (nodeID, sprite) in nodeSprites {
-                    guard nodeID != focalID,
-                          !driftExcludedIDs.contains(nodeID),
+                // Step 5: far nodes lerp back to resting
+                for nodeID in farNodes {
+                    guard let sprite = nodeSprites[nodeID],
                           let restingPos = restingPositions[nodeID] else { continue }
 
-                    let dx = restingPos.x - focalPos.x
-                    let dy = restingPos.y - focalPos.y
-                    let restingDistance = hypot(dx, dy)
-
-                    // If outside influence radius and not in a slot, stay at resting
-                    if restingDistance >= influenceRadius {
-                        let currentPos = sprite.position
-                        let lerpedPos = CGPoint(
-                            x: currentPos.x + (restingPos.x - currentPos.x) * lerpFactor,
-                            y: currentPos.y + (restingPos.y - currentPos.y) * lerpFactor
-                        )
-                        sprite.position = lerpedPos
-                    }
+                    let currentPos = sprite.position
+                    let lerpedPos = CGPoint(
+                        x: currentPos.x + (restingPos.x - currentPos.x) * lerpFactor,
+                        y: currentPos.y + (restingPos.y - currentPos.y) * lerpFactor
+                    )
+                    sprite.position = lerpedPos
                 }
             }
 
@@ -770,6 +801,25 @@ final class CorpusPhysicsScene: SKScene {
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
         lastUpdateTime = currentTime
+    }
+
+    /// Given a 0-indexed candidate position, return which ring it belongs to (1-indexed).
+    /// Ring 1 holds indices 0..5, ring 2 holds 6..17, ring 3 holds 18..35, etc.
+    private func ringForCandidateIndex(_ index: Int) -> Int {
+        var ring = 1
+        var cumulative = 6
+        while index >= cumulative {
+            ring += 1
+            cumulative += 6 * ring
+        }
+        return ring
+    }
+
+    /// Total slot capacity of all rings strictly before the given ring.
+    /// Used to compute index-within-ring.
+    private func cumulativeCapacityBeforeRing(_ ring: Int) -> Int {
+        guard ring > 1 else { return 0 }
+        return 3 * (ring - 1) * ring
     }
 
     private func applyLabelTier(_ tier: Int) {

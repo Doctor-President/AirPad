@@ -12,6 +12,9 @@ final class CorpusStore {
     var tags: [Tag] = []
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
+    /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
+    var nodeRadii: [String: CGFloat] = [:]
+
     /// Cached Über-node clusters (Tier 1: tag-only). Regenerates on invalidation.
     var uberNodeCache: UberNodeCache? = nil
 
@@ -1006,16 +1009,19 @@ final class CorpusStore {
             CGPoint(x: pos.x, y: -pos.y)
         }
 
-        // Compute new layout
-        let newPositionsSK = layoutService.computeAlgorithmicLayout(
+        // Compute new layout (positions + radii)
+        let layoutResult = layoutService.computeAlgorithmicLayout(
             nodes: nodes,
             neighborhoodCache: neighborhoodCache,
             existingPositions: existingPositionsSK
         )
 
+        // Store radii (not persisted; recomputed each pass)
+        nodeRadii = layoutResult.radii
+
         // Convert back to SwiftUI convention (y-down) and update canvasLayout
         var newLayout = canvasLayout
-        for (nodeID, posSK) in newPositionsSK {
+        for (nodeID, posSK) in layoutResult.positions {
             newLayout.positions[nodeID] = CanvasPosition(x: posSK.x, y: -posSK.y)
         }
         newLayout.updatedAt = Date()
@@ -1026,7 +1032,7 @@ final class CorpusStore {
                 try await service.saveCanvasLayout(newLayout)
                 canvasLayout = newLayout
                 canvasNeedsSync = UUID()
-                print("[Layout] Animating \(newPositionsSK.count) node positions")
+                print("[Layout] Animating \(layoutResult.positions.count) node positions")
             } catch {
                 print("[Layout] ERROR saving layout: \(error)")
             }

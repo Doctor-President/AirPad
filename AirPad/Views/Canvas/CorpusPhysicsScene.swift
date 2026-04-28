@@ -149,25 +149,43 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Toggle hex layout debug visualization (SB80a)
+    /// Toggle hex layout debug visualization (SB80a-fix4)
     func toggleHexDebugMode() {
         debugShowHexLayout.toggle()
         if debugShowHexLayout {
-            print("[Hex Debug] Enabled - showing hex grid layout")
-            // Immediately position all sprites at hex world positions and disable physics
+            print("[Hex Debug] Enabled - showing hex grid layout (uniform size, screen-space)")
+            guard let view = view else { return }
+
+            // Compute uniform baseline scale
+            let baselineScreenRadius = view.bounds.width * hexBaselineScreenWidth / 2
+            let baselineWorldRadius = baselineScreenRadius / cameraNode.xScale
+
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = false
-                if let hexPos = hexWorldPositions[nodeID] {
-                    sprite.position = hexPos
+
+                // Position: hex coord → world space
+                if let hexCoord = nodeHexCoords[nodeID] {
+                    sprite.position = hexToWorld(hexCoord, cellSize: currentHexSpacing)
                 }
+
+                // Size: uniform baseline (screen-space invariant)
+                let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
+                let targetScale = baselineWorldRadius / currentSpriteRadius
+                sprite.setScale(targetScale)
             }
         } else {
-            print("[Hex Debug] Disabled - returning to resting positions")
-            // Re-enable physics and return all sprites to resting positions
+            print("[Hex Debug] Disabled - returning to resting positions and sizes")
+            // Re-enable physics and return all sprites to resting state
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = true
                 if let pos = positionMap[nodeID] {
                     sprite.position = CGPoint(x: pos.x, y: -pos.y)
+                }
+                // Restore original scale (stored in restingScales if available)
+                if let restingScale = restingScales[nodeID] {
+                    sprite.setScale(restingScale)
+                } else {
+                    sprite.setScale(1.0)
                 }
             }
         }
@@ -264,11 +282,18 @@ final class CorpusPhysicsScene: SKScene {
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
 
-    // MARK: - Hex grid state (SB80a)
+    // MARK: - Hex grid state (SB80a-fix4: global grid, screen-space, zoom-invariant)
 
-    private var hexWorldPositions: [String: CGPoint] = [:]  // SB80a-fix3: centroid-anchored
-    private let hexCellSize: CGFloat = 56.0  // Tune on device
+    private var nodeHexCoords: [String: HexCoord] = [:]
+    private let hexSpacingScreenWidth: CGFloat = 0.07  // 7% of view width between adjacent cells
+    private let hexBaselineScreenWidth: CGFloat = 0.05  // 5% of view width per node (baseline)
     private var debugShowHexLayout: Bool = false  // Toggle for debug visualization
+
+    /// Screen-space hex spacing, adjusted for current camera zoom
+    private var currentHexSpacing: CGFloat {
+        guard let view = view else { return 56.0 }
+        return (view.bounds.width * hexSpacingScreenWidth) / cameraNode.xScale
+    }
 
     // Strand layer state
     private var focalNodeID: String? = nil
@@ -599,14 +624,26 @@ final class CorpusPhysicsScene: SKScene {
         //     shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
         // }
 
-        // SB80a: Debug hex layout visualization
+        // SB80a-fix4: Debug hex layout visualization (per-frame, zoom-invariant)
         if debugShowHexLayout {
-            // Override all positions to hex world positions, disable physics
+            guard let view = view else { return }
+
+            // Compute uniform baseline scale (screen-space, adjusted for zoom)
+            let baselineScreenRadius = view.bounds.width * hexBaselineScreenWidth / 2
+            let baselineWorldRadius = baselineScreenRadius / cameraNode.xScale
+
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = false
-                if let hexPos = hexWorldPositions[nodeID] {
-                    sprite.position = hexPos
+
+                // Position: recompute from hex coord every frame (spacing adjusts with zoom)
+                if let hexCoord = nodeHexCoords[nodeID] {
+                    sprite.position = hexToWorld(hexCoord, cellSize: currentHexSpacing)
                 }
+
+                // Size: uniform baseline (recomputed every frame for zoom invariance)
+                let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
+                let targetScale = baselineWorldRadius / currentSpriteRadius
+                sprite.setScale(targetScale)
             }
             return  // Skip normal update logic
         }
@@ -2075,56 +2112,94 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    // MARK: - Hex Grid Layout (SB80a-fix3: centroid-anchored)
+    // MARK: - Hex Grid Layout (SB80a-fix4: global grid, nearest-cell snap)
 
-    /// Compute hex world positions for all nodes, with each neighborhood clustered around its centroid
+    /// Compute hex coordinates for all nodes on a global grid covering the canvas
     private func computeNeighborhoodHexLayout() {
-        guard let cache = neighborhoodCache else {
-            hexWorldPositions.removeAll()
-            return
+        nodeHexCoords.removeAll()
+
+        // Collect all resting positions
+        var restingPositions: [String: CGPoint] = [:]
+        for (nodeID, sprite) in nodeSprites {
+            restingPositions[nodeID] = sprite.position
         }
 
-        // Build neighborhood → [nodeID] mapping
-        var neighborhoodMembers: [String: [String]] = [:]
-        for (nodeID, _) in nodeSprites {
-            if let neighborhoodID = cache.neighborhoodID(forNodeID: nodeID) {
-                neighborhoodMembers[neighborhoodID, default: []].append(nodeID)
+        guard !restingPositions.isEmpty else { return }
+
+        // Step 1: Compute bounding box
+        let positions = Array(restingPositions.values)
+        let minX = positions.map { $0.x }.min()!
+        let maxX = positions.map { $0.x }.max()!
+        let minY = positions.map { $0.y }.min()!
+        let maxY = positions.map { $0.y }.max()!
+
+        // Add padding (one cell radius)
+        let padding: CGFloat = 60.0  // Approximate cell radius
+        let bbox = CGRect(
+            x: minX - padding,
+            y: minY - padding,
+            width: (maxX - minX) + 2 * padding,
+            height: (maxY - minY) + 2 * padding
+        )
+
+        // Step 2: Generate hex cell centers covering bounding box (unit cellSize = 1)
+        // We'll use unit spacing and store abstract coords, then scale per-frame
+        let unitSpacing: CGFloat = 60.0  // Reference spacing for grid generation
+        var hexCells: [HexCoord] = []
+        var hexCellCenters: [HexCoord: CGPoint] = [:]
+
+        // Generate hex coords that cover the bounding box
+        let qMin = Int(floor(bbox.minX / (unitSpacing * sqrt(3.0)))) - 2
+        let qMax = Int(ceil(bbox.maxX / (unitSpacing * sqrt(3.0)))) + 2
+        let rMin = Int(floor(bbox.minY / (unitSpacing * 1.5))) - 2
+        let rMax = Int(ceil(bbox.maxY / (unitSpacing * 1.5))) + 2
+
+        for q in qMin...qMax {
+            for r in rMin...rMax {
+                let coord = HexCoord(q: q, r: r)
+                let center = hexToWorld(coord, cellSize: unitSpacing)
+                if bbox.contains(center) || bbox.insetBy(dx: -padding, dy: -padding).contains(center) {
+                    hexCells.append(coord)
+                    hexCellCenters[coord] = center
+                }
             }
         }
 
-        var newHexWorldPositions: [String: CGPoint] = [:]
+        // Step 3: Sort nodes by distance from canvas centroid (center-out assignment)
+        let canvasCentroid = CGPoint(
+            x: (minX + maxX) / 2,
+            y: (minY + maxY) / 2
+        )
 
-        for (_, members) in neighborhoodMembers {
-            // Step 1: Compute centroid from resting positions
-            let memberPositions = members.compactMap { nodeSprites[$0]?.position }
-            guard !memberPositions.isEmpty else { continue }
+        let sortedNodes = restingPositions.sorted { lhs, rhs in
+            let dist1 = hypot(lhs.value.x - canvasCentroid.x, lhs.value.y - canvasCentroid.y)
+            let dist2 = hypot(rhs.value.x - canvasCentroid.x, rhs.value.y - canvasCentroid.y)
+            return dist1 < dist2
+        }
 
-            let centroid = CGPoint(
-                x: memberPositions.map { $0.x }.reduce(0, +) / CGFloat(memberPositions.count),
-                y: memberPositions.map { $0.y }.reduce(0, +) / CGFloat(memberPositions.count)
-            )
+        // Step 4: Greedy nearest-cell assignment
+        var claimedCells = Set<HexCoord>()
+        for (nodeID, restingPos) in sortedNodes {
+            // Find nearest unclaimed hex cell
+            var nearestCell: HexCoord?
+            var nearestDist: CGFloat = .infinity
 
-            // Step 2: Assign each member to a hex cell within a compact cluster
-            let sortedMembers = members.sorted()  // Stable order
-            for (index, nodeID) in sortedMembers.enumerated() {
-                // Local hex coordinate (centered at origin)
-                let localHexCoord = spiralHexCoord(index: index)
+            for coord in hexCells where !claimedCells.contains(coord) {
+                let cellCenter = hexCellCenters[coord]!
+                let dist = hypot(cellCenter.x - restingPos.x, cellCenter.y - restingPos.y)
+                if dist < nearestDist {
+                    nearestDist = dist
+                    nearestCell = coord
+                }
+            }
 
-                // Convert to world offset
-                let localWorldOffset = hexToWorld(localHexCoord, cellSize: hexCellSize)
-
-                // Position = centroid + offset
-                let nodeWorldPosition = CGPoint(
-                    x: centroid.x + localWorldOffset.x,
-                    y: centroid.y + localWorldOffset.y
-                )
-
-                newHexWorldPositions[nodeID] = nodeWorldPosition
+            if let cell = nearestCell {
+                nodeHexCoords[nodeID] = cell
+                claimedCells.insert(cell)
             }
         }
 
-        hexWorldPositions = newHexWorldPositions
-        print("[Hex] Assigned hex positions to \(hexWorldPositions.count) nodes across \(neighborhoodMembers.count) neighborhoods (centroid-anchored)")
+        print("[Hex] Assigned \(nodeHexCoords.count) nodes to global hex grid (\(hexCells.count) cells generated)")
     }
 
     /// Generate hex coordinate in spiral order from origin (index 0 = (0,0), then spiral outward)

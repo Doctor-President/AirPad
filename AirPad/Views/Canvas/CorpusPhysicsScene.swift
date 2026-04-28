@@ -458,6 +458,10 @@ final class CorpusPhysicsScene: SKScene {
     private var driftExcludedIDs: Set<String> = []
     private let breathingGap: CGFloat = 10.0
     private let lerpFactor: CGFloat = 0.20
+    private let hysteresisThreshold: CGFloat = 20.0
+    private let slotCount: Int = 12
+    private let slotBreathingGap: CGFloat = 6.0
+    private let influenceRadiusMultiplier: CGFloat = 1.4
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -627,43 +631,83 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-            // Per-frame perimeter displacement
+            // Per-frame angular slotting
             if displacementActive, let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
                 let focalRadius = (focalSprite.frame.width / 2)  // current visible radius (includes scale)
                 let focalPos = focalSprite.position
+                let influenceRadius = focalRadius * influenceRadiusMultiplier
 
-                for (nodeID, sprite) in nodeSprites {
-                    guard nodeID != focalID, !driftExcludedIDs.contains(nodeID) else { continue }
-                    guard let restingPos = restingPositions[nodeID],
-                          let nodeRadius = nodeBaseRadii[nodeID] else { continue }
+                // Group nodes by slot index
+                var slotAssignments: [Int: [(nodeID: String, restingDistance: CGFloat)]] = [:]
+                for (nodeID, _) in nodeSprites {
+                    guard nodeID != focalID,
+                          !driftExcludedIDs.contains(nodeID),
+                          let restingPos = restingPositions[nodeID] else { continue }
 
-                    let exclusionRadius = focalRadius + breathingGap + nodeRadius
-
-                    // Vector from focal to resting position
                     let dx = restingPos.x - focalPos.x
                     let dy = restingPos.y - focalPos.y
                     let restingDistance = hypot(dx, dy)
 
-                    let targetPos: CGPoint
-                    if restingDistance >= exclusionRadius || restingDistance < 0.001 {
-                        // Outside displacement zone (or coincident with focal — degenerate, leave at rest)
-                        targetPos = restingPos
-                    } else {
-                        // Inside zone — push outward along original angle to sit tangent
-                        let scale = exclusionRadius / restingDistance
-                        targetPos = CGPoint(
-                            x: focalPos.x + dx * scale,
-                            y: focalPos.y + dy * scale
-                        )
-                    }
+                    // Far nodes don't participate
+                    guard restingDistance < influenceRadius else { continue }
 
-                    // Lerp current position toward target (viscous feel)
-                    let currentPos = sprite.position
-                    let lerpedPos = CGPoint(
-                        x: currentPos.x + (targetPos.x - currentPos.x) * lerpFactor,
-                        y: currentPos.y + (targetPos.y - currentPos.y) * lerpFactor
-                    )
-                    sprite.position = lerpedPos
+                    let angle = atan2(dy, dx)  // -π to π
+                    let normalizedAngle = angle < 0 ? angle + 2 * .pi : angle  // 0 to 2π
+                    let slotIndex = Int(round(normalizedAngle / (.pi / 6))) % slotCount
+
+                    slotAssignments[slotIndex, default: []].append((nodeID, restingDistance))
+                }
+
+                // Within each slot, sort by resting distance and assign ring positions
+                for (slotIndex, var members) in slotAssignments {
+                    members.sort { $0.restingDistance < $1.restingDistance }
+
+                    let slotAngle = CGFloat(slotIndex) * (.pi / 6)
+                    let slotDirX = cos(slotAngle)
+                    let slotDirY = sin(slotAngle)
+
+                    for (ringIndex, member) in members.enumerated() {
+                        guard let sprite = nodeSprites[member.nodeID],
+                              let nodeRadius = nodeBaseRadii[member.nodeID] else { continue }
+
+                        let baseDistance = focalRadius + breathingGap + nodeRadius
+                        let ringOffset = CGFloat(ringIndex) * (2 * nodeRadius + slotBreathingGap)
+                        let targetDistance = baseDistance + ringOffset
+
+                        let targetPos = CGPoint(
+                            x: focalPos.x + slotDirX * targetDistance,
+                            y: focalPos.y + slotDirY * targetDistance
+                        )
+
+                        // Lerp current position toward target (preserves viscous feel)
+                        let currentPos = sprite.position
+                        let lerpedPos = CGPoint(
+                            x: currentPos.x + (targetPos.x - currentPos.x) * lerpFactor,
+                            y: currentPos.y + (targetPos.y - currentPos.y) * lerpFactor
+                        )
+                        sprite.position = lerpedPos
+                    }
+                }
+
+                // Nodes outside influence radius stay at resting position
+                for (nodeID, sprite) in nodeSprites {
+                    guard nodeID != focalID,
+                          !driftExcludedIDs.contains(nodeID),
+                          let restingPos = restingPositions[nodeID] else { continue }
+
+                    let dx = restingPos.x - focalPos.x
+                    let dy = restingPos.y - focalPos.y
+                    let restingDistance = hypot(dx, dy)
+
+                    // If outside influence radius and not in a slot, stay at resting
+                    if restingDistance >= influenceRadius {
+                        let currentPos = sprite.position
+                        let lerpedPos = CGPoint(
+                            x: currentPos.x + (restingPos.x - currentPos.x) * lerpFactor,
+                            y: currentPos.y + (restingPos.y - currentPos.y) * lerpFactor
+                        )
+                        sprite.position = lerpedPos
+                    }
                 }
             }
 
@@ -925,7 +969,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Honeycomb helpers
 
-    /// Find the node sprite nearest to the camera center.
+    /// Find the node sprite nearest to the camera center with hysteresis.
     private func findNearestNodeToCamera() -> String? {
         let cameraCenter = cameraNode.position
         var nearestID: String? = nil
@@ -942,7 +986,26 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        return nearestID
+        // Apply hysteresis if there's a current focal
+        if let currentID = currentFocalNodeID,
+           let currentSprite = nodeSprites[currentID] {
+            let currentDx = currentSprite.position.x - cameraCenter.x
+            let currentDy = currentSprite.position.y - cameraCenter.y
+            let currentDistance = sqrt(currentDx * currentDx + currentDy * currentDy)
+
+            if let candidate = nearestID,
+               candidate != currentID,
+               nearestDistance < currentDistance - hysteresisThreshold {
+                // New candidate is at least 20pt closer — switch
+                return candidate
+            } else {
+                // Stay with current focal
+                return currentID
+            }
+        } else {
+            // No current focal — take the nearest
+            return nearestID
+        }
     }
 
     /// Start drift animation: move related nodes 8% toward focal.

@@ -690,8 +690,10 @@ final class CorpusPhysicsScene: SKScene {
             // Track focal node (nearest to camera center) with hysteresis
             let newFocalID = findNearestNodeToCamera()
             if newFocalID != currentFocalNodeID {
-                // Focal changed
-                if let oldFocalID = currentFocalNodeID, let oldSprite = nodeSprites[oldFocalID] {
+                // Focal changed - capture old focal before updating
+                let oldFocalID = currentFocalNodeID
+
+                if let oldFocalID = oldFocalID, let oldSprite = nodeSprites[oldFocalID] {
                     // Restore original zPosition
                     if let savedZ = savedFocalZPositions[oldFocalID] {
                         oldSprite.zPosition = savedZ
@@ -759,10 +761,12 @@ final class CorpusPhysicsScene: SKScene {
                 guard let focalCoord = nodeHexCoords[focalID] else { break }
 
                 // Determine lerp factor based on state
-                let lerpFactor = (engagementState is EngagementState) ? {
-                    if case .engaging = engagementState { return engagementLerp }
-                    else { return steadyStateLerp }
-                }() : steadyStateLerp
+                let lerpFactor: CGFloat
+                if case .engaging = engagementState {
+                    lerpFactor = engagementLerp
+                } else {
+                    lerpFactor = steadyStateLerp
+                }
 
                 // Track convergence for state transition
                 var allPositionsConverged = true
@@ -1078,7 +1082,7 @@ final class CorpusPhysicsScene: SKScene {
         print("[Strand] Focal set to node \(focalID) — \(related.count) related nodes found")
 
         // Render strands
-        for (relatedID, score) in related {
+        for (relatedID, _) in related {
             guard let relatedSprite = nodeSprites[relatedID] else { continue }
 
             // Create line from focal to related
@@ -1768,12 +1772,12 @@ final class CorpusPhysicsScene: SKScene {
         // Group nodes by neighborhoodID to calculate centroids
         var neighborhoodGroups: [String: [SKShapeNode]] = [:]
         for (_, sprite) in nodeSprites {
-            guard let neighborhoodID = sprite.userData?["neighborhoodID"] as? String else { continue }
-            neighborhoodGroups[neighborhoodID, default: []].append(sprite)
+            guard let _neighborhoodID = sprite.userData?["neighborhoodID"] as? String else { continue }
+            neighborhoodGroups[_neighborhoodID, default: []].append(sprite)
         }
 
         // Pass 1: Centroid attraction
-        for (neighborhoodID, group) in neighborhoodGroups where group.count > 1 {
+        for (_, group) in neighborhoodGroups where group.count > 1 {
             for sprite in group {
                 guard let body = sprite.physicsBody, body.isDynamic else { continue }
 
@@ -1815,15 +1819,15 @@ final class CorpusPhysicsScene: SKScene {
         for i in 0..<sprites.count {
             let sprite1 = sprites[i]
             guard let body1 = sprite1.physicsBody, body1.isDynamic else { continue }
-            guard let neighborhoodID1 = sprite1.userData?["neighborhoodID"] as? String else { continue }
+            guard let _neighborhoodID1 = sprite1.userData?["neighborhoodID"] as? String else { continue }
 
             for j in (i+1)..<sprites.count {
                 let sprite2 = sprites[j]
                 guard let body2 = sprite2.physicsBody, body2.isDynamic else { continue }
-                guard let neighborhoodID2 = sprite2.userData?["neighborhoodID"] as? String else { continue }
+                guard let _neighborhoodID2 = sprite2.userData?["neighborhoodID"] as? String else { continue }
 
                 // Only repel if different neighborhoods
-                guard neighborhoodID1 != neighborhoodID2 else { continue }
+                guard _neighborhoodID1 != _neighborhoodID2 else { continue }
 
                 let dx = sprite2.position.x - sprite1.position.x
                 let dy = sprite2.position.y - sprite1.position.y

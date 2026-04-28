@@ -461,7 +461,7 @@ final class CorpusPhysicsScene: SKScene {
     private let breathingGap: CGFloat = 10.0
     private let lerpFactor: CGFloat = 0.20
     private let hysteresisThreshold: CGFloat = 20.0
-    private let hexInfluenceRadiusMultiplier: CGFloat = 2.0
+    // private let hexInfluenceRadiusMultiplier: CGFloat = 2.0  // SB78: no longer used, always recruit nearest 72
     private let maxNodeRadius: CGFloat = 48.0
     private let ring1CellRadius: CGFloat = 48.0   // 100% scale
     private let ring2CellRadius: CGFloat = 24.0   // 50% scale
@@ -646,16 +646,14 @@ final class CorpusPhysicsScene: SKScene {
             if displacementActive, let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
                 let focalRadius = focalSprite.frame.width / 2
                 let focalPos = focalSprite.position
-                let influenceRadius = focalRadius * hexInfluenceRadiusMultiplier
 
-                // Step 1: collect hex candidates
+                // Step 1: collect all non-focal nodes by resting distance
                 struct HexCandidate {
                     let nodeID: String
                     let restingDistance: CGFloat
                     let restingAngle: CGFloat
                 }
-                var candidates: [HexCandidate] = []
-                var farNodes: [String] = []
+                var allCandidates: [HexCandidate] = []
 
                 for (nodeID, _) in nodeSprites {
                     guard nodeID != focalID,
@@ -666,17 +664,20 @@ final class CorpusPhysicsScene: SKScene {
                     let dy = restingPos.y - focalPos.y
                     let dist = hypot(dx, dy)
 
-                    if dist >= influenceRadius {
-                        farNodes.append(nodeID)
-                    } else {
-                        let rawAngle = atan2(dy, dx)
-                        let angle = rawAngle < 0 ? rawAngle + 2 * .pi : rawAngle
-                        candidates.append(HexCandidate(nodeID: nodeID, restingDistance: dist, restingAngle: angle))
-                    }
+                    let rawAngle = atan2(dy, dx)
+                    let angle = rawAngle < 0 ? rawAngle + 2 * .pi : rawAngle
+                    allCandidates.append(HexCandidate(nodeID: nodeID, restingDistance: dist, restingAngle: angle))
                 }
 
-                // Step 2: sort by resting distance
-                candidates.sort { $0.restingDistance < $1.restingDistance }
+                // Step 2: sort by resting distance and take nearest 72
+                allCandidates.sort { $0.restingDistance < $1.restingDistance }
+
+                let maxRecruits = ring1SlotCount + ring2SlotCount + ring3SlotCount  // 72
+                let recruitCount = min(allCandidates.count, maxRecruits)
+                let candidates = Array(allCandidates.prefix(recruitCount))
+                let farNodes = allCandidates.dropFirst(recruitCount).map { $0.nodeID }
+
+                print("[Honeycomb] Recruited \(candidates.count) candidates")
 
                 // Universal scaling: camera-zoom-invariant dimensions
                 let cameraScale = cameraNode.xScale
@@ -686,9 +687,8 @@ final class CorpusPhysicsScene: SKScene {
                 var ringMembers: [Int: [HexCandidate]] = [1: [], 2: [], 3: []]
                 for (index, candidate) in candidates.enumerated() {
                     let ring = ringForCandidateIndex(index)
-                    if ring >= 4 {
-                        farNodes.append(candidate.nodeID)
-                    } else {
+                    // With always-72 recruitment, ring should never be >= 4, but handle gracefully
+                    if ring < 4 {
                         ringMembers[ring, default: []].append(candidate)
                     }
                 }

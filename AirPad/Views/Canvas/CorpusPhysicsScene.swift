@@ -462,6 +462,7 @@ final class CorpusPhysicsScene: SKScene {
     private let slotCount: Int = 12
     private let slotBreathingGap: CGFloat = 6.0
     private let influenceRadiusMultiplier: CGFloat = 1.4
+    private let slotLateralBuffer: CGFloat = 12.0
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -670,7 +671,7 @@ final class CorpusPhysicsScene: SKScene {
                         guard let sprite = nodeSprites[member.nodeID],
                               let nodeRadius = nodeBaseRadii[member.nodeID] else { continue }
 
-                        let baseDistance = focalRadius + breathingGap + nodeRadius
+                        let baseDistance = focalRadius + breathingGap + nodeRadius + slotLateralBuffer
                         let ringOffset = CGFloat(ringIndex) * (2 * nodeRadius + slotBreathingGap)
                         let targetDistance = baseDistance + ringOffset
 

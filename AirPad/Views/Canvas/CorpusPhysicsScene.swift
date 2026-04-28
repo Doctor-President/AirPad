@@ -154,11 +154,10 @@ final class CorpusPhysicsScene: SKScene {
         debugShowHexLayout.toggle()
         if debugShowHexLayout {
             print("[Hex Debug] Enabled - showing hex grid layout")
-            // Immediately position all sprites at hex coordinates and disable physics
+            // Immediately position all sprites at hex world positions and disable physics
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = false
-                if let hexCoord = hexCoordinates[nodeID] {
-                    let hexPos = hexToWorld(hexCoord, cellSize: hexCellSize)
+                if let hexPos = hexWorldPositions[nodeID] {
                     sprite.position = hexPos
                 }
             }
@@ -267,7 +266,7 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Hex grid state (SB80a)
 
-    private var hexCoordinates: [String: HexCoord] = [:]
+    private var hexWorldPositions: [String: CGPoint] = [:]  // SB80a-fix3: centroid-anchored
     private let hexCellSize: CGFloat = 56.0  // Tune on device
     private var debugShowHexLayout: Bool = false  // Toggle for debug visualization
 
@@ -602,11 +601,11 @@ final class CorpusPhysicsScene: SKScene {
 
         // SB80a: Debug hex layout visualization
         if debugShowHexLayout {
-            // Override all positions to hex grid, disable physics
+            // Override all positions to hex world positions, disable physics
             for (nodeID, sprite) in nodeSprites {
                 sprite.physicsBody?.isDynamic = false
-                if let hexCoord = hexCoordinates[nodeID] {
-                    sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
+                if let hexPos = hexWorldPositions[nodeID] {
+                    sprite.position = hexPos
                 }
             }
             return  // Skip normal update logic
@@ -2076,12 +2075,12 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    // MARK: - Hex Grid Layout (SB80a)
+    // MARK: - Hex Grid Layout (SB80a-fix3: centroid-anchored)
 
-    /// Compute hex coordinates for all nodes, clustering by neighborhood
+    /// Compute hex world positions for all nodes, with each neighborhood clustered around its centroid
     private func computeNeighborhoodHexLayout() {
         guard let cache = neighborhoodCache else {
-            hexCoordinates.removeAll()
+            hexWorldPositions.removeAll()
             return
         }
 
@@ -2093,39 +2092,45 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        // Sort neighborhoods by size (largest first)
-        let sortedNeighborhoods = neighborhoodMembers.sorted { $0.value.count > $1.value.count }
+        var newHexWorldPositions: [String: CGPoint] = [:]
 
-        var newHexCoords: [String: HexCoord] = [:]
-        var nextAvailableCell: HexCoord = HexCoord(q: 0, r: 0)  // Start at center
+        for (_, members) in neighborhoodMembers {
+            // Step 1: Compute centroid from resting positions
+            let memberPositions = members.compactMap { nodeSprites[$0]?.position }
+            guard !memberPositions.isEmpty else { continue }
 
-        for (_, members) in sortedNeighborhoods {
-            // Sort members by nodeID for stable assignment across recomputations
-            let sortedMembers = members.sorted()
-
-            // Assign hex coordinates in spiral order from nextAvailableCell
-            for (index, nodeID) in sortedMembers.enumerated() {
-                let coord = spiralHexCoord(index: index, center: nextAvailableCell)
-                newHexCoords[nodeID] = coord
-            }
-
-            // Advance nextAvailableCell for next neighborhood
-            // Place next neighborhood in a new ring to avoid overlap
-            let ringRadius = Int(ceil(sqrt(Double(members.count) / 3.5)))
-            nextAvailableCell = HexCoord(
-                q: nextAvailableCell.q + ringRadius * 2,
-                r: nextAvailableCell.r
+            let centroid = CGPoint(
+                x: memberPositions.map { $0.x }.reduce(0, +) / CGFloat(memberPositions.count),
+                y: memberPositions.map { $0.y }.reduce(0, +) / CGFloat(memberPositions.count)
             )
+
+            // Step 2: Assign each member to a hex cell within a compact cluster
+            let sortedMembers = members.sorted()  // Stable order
+            for (index, nodeID) in sortedMembers.enumerated() {
+                // Local hex coordinate (centered at origin)
+                let localHexCoord = spiralHexCoord(index: index)
+
+                // Convert to world offset
+                let localWorldOffset = hexToWorld(localHexCoord, cellSize: hexCellSize)
+
+                // Position = centroid + offset
+                let nodeWorldPosition = CGPoint(
+                    x: centroid.x + localWorldOffset.x,
+                    y: centroid.y + localWorldOffset.y
+                )
+
+                newHexWorldPositions[nodeID] = nodeWorldPosition
+            }
         }
 
-        hexCoordinates = newHexCoords
-        print("[Hex] Assigned hex coordinates to \(hexCoordinates.count) nodes across \(sortedNeighborhoods.count) neighborhoods")
+        hexWorldPositions = newHexWorldPositions
+        print("[Hex] Assigned hex positions to \(hexWorldPositions.count) nodes across \(neighborhoodMembers.count) neighborhoods (centroid-anchored)")
     }
 
-    /// Generate hex coordinate in spiral order (index 0 = center, then spiral outward)
-    private func spiralHexCoord(index: Int, center: HexCoord) -> HexCoord {
+    /// Generate hex coordinate in spiral order from origin (index 0 = (0,0), then spiral outward)
+    private func spiralHexCoord(index: Int) -> HexCoord {
         if index == 0 {
-            return center
+            return HexCoord(q: 0, r: 0)
         }
 
         // Determine which ring (1, 2, 3, ...) this index falls into
@@ -2149,9 +2154,9 @@ final class CorpusPhysicsScene: SKScene {
             (1, -1)    // SE
         ]
 
-        // Start at (center.q + ring, center.r) - the eastmost point of this ring
-        var q = center.q + ring
-        var r = center.r
+        // Start at (ring, 0) - the eastmost point of this ring
+        var q = ring
+        var r = 0
 
         // Walk around the ring
         var stepsRemaining = indexInRing

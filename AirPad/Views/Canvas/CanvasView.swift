@@ -231,7 +231,12 @@ struct CanvasView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(hexDebugModeActive ? .green : .white.opacity(0.6))
                         .frame(width: 28, height: 28)
-                        .background(hexDebugModeActive ? .green.opacity(0.2) : .ultraThinMaterial)
+                        .background(.ultraThinMaterial)
+                        .overlay {
+                            if hexDebugModeActive {
+                                Circle().fill(.green.opacity(0.2))
+                            }
+                        }
                         .clipShape(Circle())
                 }
                 .padding(.trailing, 16)
@@ -398,7 +403,7 @@ struct CanvasView: View {
         // Compute layout: radial when drilled in, canonical otherwise
         let layoutPositions: [String: CanvasPosition]
         if let drilledClusterID = canvasState.drilledInto,
-           let cluster = store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }),
+           store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) != nil,
            let centerPos = expandingFrom {
             // Radial layout around Über-node position
             layoutPositions = computeRadialLayout(nodes: nodes, center: centerPos)

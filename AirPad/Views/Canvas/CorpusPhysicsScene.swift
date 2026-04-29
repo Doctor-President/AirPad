@@ -576,7 +576,7 @@ final class CorpusPhysicsScene: SKScene {
     private let coastFriction: CGFloat = 0.95
     private let coastStopThreshold: CGFloat = 0.5
     private let coastLaunchThreshold: CGFloat = 2.0
-    // True only when the drag started from idle navigation (not a drag-during-grace re-engagement).
+    // SB83d: True for any tapCandidate → honeycomb transition (idle navigation OR grace-exit pan).
     private var momentumEligible: Bool = false
 
     private var currentFocalNodeID: String? = nil
@@ -2391,23 +2391,30 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
-                    // Pick focal: if engagement is mid-grace, preserve the grace focal so
-                    // a drag-during-grace seamlessly continues the same engagement. Otherwise
-                    // pick the nearest node to camera.
-                    let focalID: String
-                    let priorState: String
+                    // SB83d: Drag during grace exits grace cleanly — focal collapses back
+                    // via .disengaging, and the drag itself becomes a fresh pan gesture.
+                    // Otherwise (idle), engage the nearest node as the new focal.
                     if case .gracePeriod(let graceFocal, _) = engagementState {
-                        focalID = graceFocal
-                        priorState = "gracePeriod"
+                        clearStrands()
+                        unwindDrift()
+                        if let focalSprite = nodeSprites[graceFocal],
+                           let savedZ = savedFocalZPositions[graceFocal] {
+                            focalSprite.zPosition = savedZ
+                            savedFocalZPositions.removeValue(forKey: graceFocal)
+                        }
                         if let prompt = gracePromptLabel {
                             let fadeOut = SKAction.fadeOut(withDuration: 0.1)
                             let remove = SKAction.removeFromParent()
                             prompt.run(.sequence([fadeOut, remove]))
                             gracePromptLabel = nil
                         }
+                        engagementState = .disengaging
+                        currentFocalNodeID = nil
+                        print("[Honeycomb] State: gracePeriod → disengaging (drag exit)")
                     } else {
-                        focalID = findNearestNodeToCamera() ?? ""
-                        priorState = "idle"
+                        let focalID = findNearestNodeToCamera() ?? ""
+                        engagementState = .engaging(focal: focalID)
+                        print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
                     }
 
                     // Transition to honeycomb mode
@@ -2418,15 +2425,9 @@ final class CorpusPhysicsScene: SKScene {
                     holdTimerStart = CACurrentMediaTime()
                     holdCompleted = false
 
-                    // No per-drag capture — `nodeRestingPositions` / `nodeRestingScales`
-                    // are populated from the layout in `captureRestingState()`.
-                    engagementState = .engaging(focal: focalID)
-
-                    // SB83c: Only idle-state navigation gets momentum on release.
-                    // Drag-during-grace is an engagement-mode drag — no coast.
-                    momentumEligible = (priorState == "idle")
-
-                    print("[Honeycomb] State: \(priorState) → engaging(focal: \(focalID))")
+                    // SB83d: Any tapCandidate → honeycomb transition is pan-eligible
+                    // (idle navigation OR grace-exit pan).
+                    momentumEligible = true
                 }
 
             case .honeycomb(let initialPosition, let lastPanPosition):
@@ -2488,8 +2489,8 @@ final class CorpusPhysicsScene: SKScene {
 
         // Honeycomb: handle lift from honeycomb mode (SB80b-fix2: grace on every release)
         if case .honeycomb(_, _) = gestureState {
-            // SB83c: Launch coast from windowed velocity. Eligibility was set at the
-            // tapCandidate→honeycomb transition (idle-state navigation only).
+            // SB83d: Launch coast from windowed velocity. Eligibility is set at the
+            // tapCandidate→honeycomb transition (always true for pan gestures).
             if momentumEligible, let first = panSamples.first, let last = panSamples.last {
                 let dt = last.time - first.time
                 if dt > 0 {

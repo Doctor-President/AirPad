@@ -2286,7 +2286,7 @@ final class CorpusPhysicsScene: SKScene {
                     print("[Honeycomb] Grace tap on node \(tappedNodeID)")
 
                     DispatchQueue.main.async { [weak self] in
-                        self?.canvasState?.selectedNodeID = tappedNodeID
+                        self?.canvasState?.pendingNavigationNodeID = tappedNodeID
                     }
 
                     // Stay in .gracePeriod with a fresh expiry. Detail view will dismiss

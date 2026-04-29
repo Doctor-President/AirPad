@@ -100,6 +100,11 @@ struct CanvasView: View {
 
             syncScene(nodes: store.visibleNodes, expandingFrom: expandingFrom)
         }
+        .onChange(of: canvasState.pendingNavigationNodeID) { _, nodeID in
+            guard let nodeID, let node = store.nodes.first(where: { $0.id == nodeID }) else { return }
+            navigationPath.append(node)
+            canvasState.pendingNavigationNodeID = nil
+        }
         .onReceive(NotificationCenter.default.publisher(for: .airPadActionButtonPressed)) { _ in
             withAnimation(.spring(response: 0.32, dampingFraction: 0.68)) {
                 fanExpanded = true

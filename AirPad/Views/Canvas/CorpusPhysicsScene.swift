@@ -547,6 +547,11 @@ final class CorpusPhysicsScene: SKScene {
     private var lastTapTime: TimeInterval = 0
     private var lastTapLocation: CGPoint = .zero
 
+    // SB83b: Grace-period double-tap tracking (single tap arms, second tap within window opens detail)
+    private let doubleTapWindow: TimeInterval = 0.35
+    private var lastGraceTapTime: TimeInterval = 0
+    private var lastGraceTapNodeID: String? = nil
+
     // Honeycomb gesture state machine.
     // Note: grace period lives on `engagementState` only (single source of truth).
     private enum GestureState {
@@ -2295,15 +2300,25 @@ final class CorpusPhysicsScene: SKScene {
                    let name = shape.name,
                    name.hasPrefix("node:") {
                     let tappedNodeID = String(name.dropFirst(5))
-                    print("[Honeycomb] Grace tap on node \(tappedNodeID)")
+                    let now = CACurrentMediaTime()
+                    let isDoubleTap = (tappedNodeID == lastGraceTapNodeID) &&
+                                      (now - lastGraceTapTime < doubleTapWindow)
 
-                    DispatchQueue.main.async { [weak self] in
-                        self?.canvasState?.pendingNavigationNodeID = tappedNodeID
+                    if isDoubleTap {
+                        print("[Honeycomb] Grace double-tap on node \(tappedNodeID) → detail")
+                        DispatchQueue.main.async { [weak self] in
+                            self?.canvasState?.pendingNavigationNodeID = tappedNodeID
+                        }
+                        lastGraceTapNodeID = nil
+                        lastGraceTapTime = 0
+                    } else {
+                        print("[Honeycomb] Grace tap on node \(tappedNodeID) (awaiting second tap)")
+                        lastGraceTapNodeID = tappedNodeID
+                        lastGraceTapTime = now
                     }
 
-                    // Stay in .gracePeriod with a fresh expiry. Detail view will dismiss
-                    // and the canvas remains engaged with a full grace window.
-                    let newExpiresAt = CACurrentMediaTime() + gracePeriodDuration
+                    // Stay in .gracePeriod with a fresh expiry so the second tap stays in window.
+                    let newExpiresAt = now + gracePeriodDuration
                     engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
                     return
                 }

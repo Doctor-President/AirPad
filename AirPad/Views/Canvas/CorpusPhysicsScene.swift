@@ -2385,8 +2385,8 @@ final class CorpusPhysicsScene: SKScene {
                 let panDy = (current.y - lastPanPosition.y) * panMultiplier
 
                 // Update camera position (inverted: drag right = pan left in scene)
-                cameraNode.position.x -= panDx / cameraNode.xScale
-                cameraNode.position.y += panDy / cameraNode.xScale  // y-inverted in SpriteKit
+                cameraNode.position.x -= panDx * cameraNode.xScale
+                cameraNode.position.y += panDy * cameraNode.xScale  // y-inverted in SpriteKit
 
                 // Update state with new pan position
                 gestureState = .honeycomb(

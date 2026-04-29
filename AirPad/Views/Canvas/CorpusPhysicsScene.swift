@@ -602,6 +602,7 @@ final class CorpusPhysicsScene: SKScene {
     // Radial position compression
     private let positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
     private let positionCompressionFalloff: CGFloat = 3.0    // hex distance at which compression effect halves
+    private let neighborBreathingGap: CGFloat = 8.0          // world-space gap between focal edge and neighbor edge
 
     // Lerp factors (preserved from SB80b)
     private let engagementLerp: CGFloat = 0.30
@@ -973,6 +974,14 @@ final class CorpusPhysicsScene: SKScene {
         return baselineScreenFraction + (focalScreenFraction - baselineScreenFraction) * sigmoid
     }
 
+    /// Rendered world-space radius for a node at hex distance `d` from focal.
+    /// Mirrors the screen-space scale lens used in the engagement render block.
+    private func renderedWorldRadius(forHexDistance d: Int) -> CGFloat {
+        guard let view = view else { return 0 }
+        let screenDiameter = view.bounds.width * screenFractionForHexDistance(d)
+        return (screenDiameter / 2.0) * cameraNode.xScale
+    }
+
     /// Compute compressed render position for a node.
     /// Hex coordinate is unchanged; this is purely visual.
     private func compressedHexPosition(
@@ -988,18 +997,25 @@ final class CorpusPhysicsScene: SKScene {
         // Vector from focal to node in raw hex space
         let dx = rawHexPos.x - focalHexPos.x
         let dy = rawHexPos.y - focalHexPos.y
+        let rawDistance = hypot(dx, dy)
 
-        // Compression factor: stronger near focal, weaker far away
-        // At d=1: significant compression. At d→∞: compression approaches 0.
+        // Percentage compression: stronger near focal, weaker far away.
         let compressionFactor = positionCompressionStrength * exp(-CGFloat(d - 1) / positionCompressionFalloff)
+        let percentageCompressedDistance = rawDistance * (1.0 - compressionFactor)
 
-        // Pull node toward focal by compressionFactor of its distance
-        let compressedDx = dx * (1.0 - compressionFactor)
-        let compressedDy = dy * (1.0 - compressionFactor)
+        // Minimum spacing based on rendered sizes — guarantees no overlap regardless
+        // of how aggressive the percentage compression is.
+        let focalRadius = renderedWorldRadius(forHexDistance: 0)
+        let neighborRadius = renderedWorldRadius(forHexDistance: d)
+        let minimumSpacing = focalRadius + neighborRadius + neighborBreathingGap
 
+        let finalDistance = max(percentageCompressedDistance, minimumSpacing)
+
+        // Place node along the original angle from focal so hex angular structure is preserved.
+        let angle = atan2(dy, dx)
         return CGPoint(
-            x: focalHexPos.x + compressedDx,
-            y: focalHexPos.y + compressedDy
+            x: focalHexPos.x + cos(angle) * finalDistance,
+            y: focalHexPos.y + sin(angle) * finalDistance
         )
     }
 
@@ -2257,7 +2273,34 @@ final class CorpusPhysicsScene: SKScene {
             let screenPoint = touch.location(in: view)
             tapStartInfo = (screenPoint: screenPoint, time: CACurrentMediaTime())
 
-            // Start tap candidate (grace period tap handling moved to touchesEnded)
+            // Grace-period tap detection (touch-down for immediate response).
+            // engagementState is the single source of truth for grace.
+            if case .gracePeriod(let focalID, _) = engagementState {
+                let scenePoint = convertPoint(fromView: screenPoint)
+
+                // Permissive sprite-walk: any node hit opens its detail view.
+                if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
+                   let name = shape.name,
+                   name.hasPrefix("node:") {
+                    let tappedNodeID = String(name.dropFirst(5))
+                    print("[Honeycomb] Grace tap on node \(tappedNodeID)")
+
+                    DispatchQueue.main.async { [weak self] in
+                        self?.canvasState?.selectedNodeID = tappedNodeID
+                    }
+
+                    // Stay in .gracePeriod with a fresh expiry. Detail view will dismiss
+                    // and the canvas remains engaged with a full grace window.
+                    let newExpiresAt = CACurrentMediaTime() + gracePeriodDuration
+                    engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
+                    return
+                }
+
+                // Empty-space tap during grace: fall through to tapCandidate so a follow-up
+                // drag can trigger the drag-during-grace re-engagement path.
+            }
+
+            // Start tap candidate
             gestureState = .tapCandidate(
                 initialPosition: screenPoint,
                 startTime: CACurrentMediaTime()
@@ -2372,45 +2415,8 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        // Grace period: handle tap on focal to open NodeDetailView (SB80b-fix2)
-        if case .gracePeriod(let focalID, let expiresAt) = engagementState {
-            // Check if this is a single tap
-            guard activeTouches.count == 1,
-                  let touch = touches.first,
-                  let info = tapStartInfo else {
-                // Not a tap - check if drag is starting (cancel grace)
-                return
-            }
-
-            let endPoint = touch.location(in: view)
-            let duration = CACurrentMediaTime() - info.time
-            let dist = hypot(endPoint.x - info.screenPoint.x, endPoint.y - info.screenPoint.y)
-
-            // Valid tap criteria
-            if duration < 0.3 && dist < 14 {
-                let scenePoint = convertPoint(fromView: endPoint)
-
-                // Check if tap is on the focal node
-                if let focalSprite = nodeSprites[focalID], focalSprite.contains(scenePoint) {
-                    print("[Honeycomb] Focal tapped during grace - opening NodeDetailView")
-
-                    // Open NodeDetailView
-                    DispatchQueue.main.async { [weak self] in
-                        self?.canvasState?.selectedNodeID = focalID
-                    }
-
-                    // Reset grace timer (when NodeDetailView dismisses, user gets a fresh grace window).
-                    // engagementState is the only owner of grace.
-                    let newExpiresAt = CACurrentMediaTime() + gracePeriodDuration
-                    engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
-
-                    return
-                }
-            }
-
-            // Tap was outside focal or not a valid tap - ignore
-            return
-        }
+        // Grace-period tap detection lives in touchesBegan (touch-down for immediate response).
+        // Lifts during grace with no preceding drag are no-ops here.
 
         // Honeycomb: handle lift from honeycomb mode (SB80b-fix2: grace on every release)
         if case .honeycomb(_, _) = gestureState {

@@ -597,6 +597,15 @@ final class CorpusPhysicsScene: SKScene {
 
     private var engagementState: EngagementState = .idle
 
+    /// SB83g: True only during active engagement states. Focal-tracking during pan/disengage
+    /// would otherwise mutate `currentFocalNodeID` and cause spurious grace entry on lift.
+    private var isInActiveEngagement: Bool {
+        switch engagementState {
+        case .engaging, .engaged, .gracePeriod: return true
+        case .idle, .disengaging: return false
+        }
+    }
+
     /// Canonical resting fingerprint — target positions from the algorithmic layout.
     /// Captured at sprite creation, on layout recompute, and persists across engagement cycles.
     /// Never captured per-drag, never cleared on disengage.
@@ -758,7 +767,9 @@ final class CorpusPhysicsScene: SKScene {
 
         // Honeycomb gesture state updates
         switch gestureState {
-        case .honeycomb(_, _):
+        case .honeycomb(_, _) where isInActiveEngagement:
+            // SB83g: Only track focal during active engagement. Pan/disengage gestures
+            // must not mutate currentFocalNodeID — that would cause spurious grace on lift.
             // Track focal node (nearest to camera center) with hysteresis
             let newFocalID = findNearestNodeToCamera()
             if newFocalID != currentFocalNodeID {

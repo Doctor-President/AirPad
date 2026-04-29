@@ -982,6 +982,20 @@ final class CorpusPhysicsScene: SKScene {
         return (screenDiameter / 2.0) * cameraNode.xScale
     }
 
+    /// Monotonic minimum world-space spacing from focal center to a node at hex distance `d`.
+    /// Walks outward ring by ring so spacing(d) is always strictly greater than spacing(d-1) —
+    /// prevents ring inversion when the sigmoid lens makes outer rings smaller than inner rings.
+    private func minimumSpacingFromFocal(forHexDistance d: Int) -> CGFloat {
+        guard d > 0 else { return 0 }
+        var spacing: CGFloat = 0
+        for k in 1...d {
+            let innerRadius = renderedWorldRadius(forHexDistance: k - 1)
+            let outerRadius = renderedWorldRadius(forHexDistance: k)
+            spacing += innerRadius + outerRadius + neighborBreathingGap
+        }
+        return spacing
+    }
+
     /// Compute compressed render position for a node.
     /// Hex coordinate is unchanged; this is purely visual.
     private func compressedHexPosition(
@@ -1005,9 +1019,7 @@ final class CorpusPhysicsScene: SKScene {
 
         // Minimum spacing based on rendered sizes — guarantees no overlap regardless
         // of how aggressive the percentage compression is.
-        let focalRadius = renderedWorldRadius(forHexDistance: 0)
-        let neighborRadius = renderedWorldRadius(forHexDistance: d)
-        let minimumSpacing = focalRadius + neighborRadius + neighborBreathingGap
+        let minimumSpacing = minimumSpacingFromFocal(forHexDistance: d)
 
         let finalDistance = max(percentageCompressedDistance, minimumSpacing)
 

@@ -21,4 +21,7 @@ final class CanvasState {
 
     /// ID of the Über-node the user has drilled into, or nil when viewing the full canvas.
     var drilledInto: String? = nil
+
+    /// Node ID to push to detail view via navigationPath (set by grace tap).
+    var pendingNavigationNodeID: String? = nil
 }

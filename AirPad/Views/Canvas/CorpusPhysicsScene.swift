@@ -567,6 +567,18 @@ final class CorpusPhysicsScene: SKScene {
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
+    // SB83c: Momentum scrolling on pan release.
+    // Samples are screen-space touch positions; velocity is screen px/frame.
+    // Coast applies the same `* panMultiplier * cameraNode.xScale` math as touchesMoved (SB83a).
+    private var panSamples: [(time: TimeInterval, position: CGPoint)] = []
+    private let panSampleWindow: TimeInterval = 0.1
+    private var coastVelocity: CGPoint = .zero
+    private let coastFriction: CGFloat = 0.95
+    private let coastStopThreshold: CGFloat = 0.5
+    private let coastLaunchThreshold: CGFloat = 2.0
+    // True only when the drag started from idle navigation (not a drag-during-grace re-engagement).
+    private var momentumEligible: Bool = false
+
     private var currentFocalNodeID: String? = nil
     private var holdTimerStart: TimeInterval? = nil
     private var holdCompleted: Bool = false
@@ -680,6 +692,20 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+
+        // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
+        if coastVelocity != .zero {
+            let panDx = coastVelocity.x * panMultiplier
+            let panDy = coastVelocity.y * panMultiplier
+            cameraNode.position.x -= panDx * cameraNode.xScale
+            cameraNode.position.y += panDy * cameraNode.xScale
+            coastVelocity.x *= coastFriction
+            coastVelocity.y *= coastFriction
+            if hypot(coastVelocity.x, coastVelocity.y) < coastStopThreshold {
+                coastVelocity = .zero
+            }
+        }
+
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
 
@@ -2280,6 +2306,11 @@ final class CorpusPhysicsScene: SKScene {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let view else { return }
 
+        // SB83c: Touch-down kills momentum unconditionally — every touch, no exceptions.
+        coastVelocity = .zero
+        panSamples.removeAll()
+        momentumEligible = false
+
         // Resting state: no physics wake needed (continuous forces disabled)
 
         for touch in touches {
@@ -2391,6 +2422,10 @@ final class CorpusPhysicsScene: SKScene {
                     // are populated from the layout in `captureRestingState()`.
                     engagementState = .engaging(focal: focalID)
 
+                    // SB83c: Only idle-state navigation gets momentum on release.
+                    // Drag-during-grace is an engagement-mode drag — no coast.
+                    momentumEligible = (priorState == "idle")
+
                     print("[Honeycomb] State: \(priorState) → engaging(focal: \(focalID))")
                 }
 
@@ -2402,6 +2437,12 @@ final class CorpusPhysicsScene: SKScene {
                 // Update camera position (inverted: drag right = pan left in scene)
                 cameraNode.position.x -= panDx * cameraNode.xScale
                 cameraNode.position.y += panDy * cameraNode.xScale  // y-inverted in SpriteKit
+
+                // SB83c: Sample touch position into the 100ms ring buffer for velocity calc on release.
+                let sampleTime = CACurrentMediaTime()
+                panSamples.append((time: sampleTime, position: current))
+                let cutoff = sampleTime - panSampleWindow
+                panSamples.removeAll(where: { $0.time < cutoff })
 
                 // Update state with new pan position
                 gestureState = .honeycomb(
@@ -2447,6 +2488,23 @@ final class CorpusPhysicsScene: SKScene {
 
         // Honeycomb: handle lift from honeycomb mode (SB80b-fix2: grace on every release)
         if case .honeycomb(_, _) = gestureState {
+            // SB83c: Launch coast from windowed velocity. Eligibility was set at the
+            // tapCandidate→honeycomb transition (idle-state navigation only).
+            if momentumEligible, let first = panSamples.first, let last = panSamples.last {
+                let dt = last.time - first.time
+                if dt > 0 {
+                    let vxPerSec = (last.position.x - first.position.x) / CGFloat(dt)
+                    let vyPerSec = (last.position.y - first.position.y) / CGFloat(dt)
+                    let vxPerFrame = vxPerSec / 60.0
+                    let vyPerFrame = vyPerSec / 60.0
+                    if hypot(vxPerFrame, vyPerFrame) >= coastLaunchThreshold {
+                        coastVelocity = CGPoint(x: vxPerFrame, y: vyPerFrame)
+                    }
+                }
+            }
+            panSamples.removeAll()
+            momentumEligible = false
+
             if let focalID = currentFocalNodeID {
                 print("[Honeycomb] Grace period entered for \(focalID)")
 

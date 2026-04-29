@@ -2,28 +2,6 @@ import SpriteKit
 import UIKit
 import simd
 
-// MARK: - Hex Coordinate System (SB80a)
-
-/// Axial hex coordinate (pointy-top orientation)
-struct HexCoord: Hashable {
-    let q: Int
-    let r: Int
-}
-
-/// Convert axial hex coordinate to world position
-func hexToWorld(_ coord: HexCoord, cellSize: CGFloat) -> CGPoint {
-    let x = cellSize * sqrt(3.0) * (CGFloat(coord.q) + CGFloat(coord.r) / 2.0)
-    let y = cellSize * 1.5 * CGFloat(coord.r)
-    return CGPoint(x: x, y: y)
-}
-
-/// Manhattan distance between two hex coordinates
-func hexDistance(_ a: HexCoord, _ b: HexCoord) -> Int {
-    let dq = a.q - b.q
-    let dr = a.r - b.r
-    return (abs(dq) + abs(dr) + abs(dq + dr)) / 2
-}
-
 /// The SpriteKit physics canvas that renders nodes as floating bubbles.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
 final class CorpusPhysicsScene: SKScene {
@@ -149,57 +127,6 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Toggle hex layout debug visualization (SB80a-fix5)
-    func toggleHexDebugMode() {
-        debugShowHexLayout.toggle()
-
-        if debugShowHexLayout {
-            // Snapshot current sprite state BEFORE applying hex transformations
-            preHexSnapshot.removeAll()
-            for (nodeID, sprite) in nodeSprites {
-                preHexSnapshot[nodeID] = (
-                    position: sprite.position,
-                    scale: sprite.xScale
-                )
-            }
-
-            print("[Hex Debug] Enabled — snapshotted \(preHexSnapshot.count) sprites, applying hex layout")
-
-            for (nodeID, sprite) in nodeSprites {
-                sprite.physicsBody?.isDynamic = false
-
-                // Position: hex coord → world space
-                if let hexCoord = nodeHexCoords[nodeID] {
-                    sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
-                }
-
-                // Size: uniform baseline (fixed world-space)
-                if let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0 {
-                    sprite.setScale(hexBaselineRadius / intrinsicRadius)
-                }
-            }
-        } else {
-            print("[Hex Debug] Disabled — restoring \(preHexSnapshot.count) sprites from snapshot")
-
-            for (nodeID, sprite) in nodeSprites {
-                sprite.physicsBody?.isDynamic = true
-
-                if let snapshot = preHexSnapshot[nodeID] {
-                    sprite.position = snapshot.position
-                    sprite.setScale(snapshot.scale)
-                } else {
-                    // Fallback if snapshot missing (e.g., sprite added during hex mode)
-                    if let pos = positionMap[nodeID] {
-                        sprite.position = CGPoint(x: pos.x, y: -pos.y)
-                    }
-                    sprite.setScale(nodeRestingScales[nodeID] ?? 1.0)
-                }
-            }
-
-            preHexSnapshot.removeAll()
-        }
-    }
-
     /// Call whenever CorpusStore.nodes or tags change.
     /// tagColors: map of tag name → UIColor for bubble coloring.
     /// expandingFrom: spawn point for drill-down expansion animation.
@@ -223,11 +150,6 @@ final class CorpusPhysicsScene: SKScene {
 
         // Reset label tier to force re-evaluation on next update() frame
         currentLabelTier = -1
-
-        // Recompute hex layout when neighborhood structure changes (SB80a)
-        if neighborhoodCache != nil {
-            computeNeighborhoodHexLayout()
-        }
 
         // Sync regular nodes
         let incomingNodeIDs = Set(nodes.map { $0.id })
@@ -300,6 +222,7 @@ final class CorpusPhysicsScene: SKScene {
                 nodeRestingScales[nodeID] = target / intrinsic
             }
         }
+        computeCharacteristicSpacing()
     }
 
     // MARK: - Private state
@@ -312,24 +235,6 @@ final class CorpusPhysicsScene: SKScene {
     private var tagColors: [String: UIColor] = [:]
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
-
-    // MARK: - Hex grid state (SB80a-fix6: world-space, single coordinate system)
-
-    private var nodeHexCoords: [String: HexCoord] = [:]
-
-    /// Fixed world-space cell size for the hex grid. Matches the natural
-    /// nearest-neighbor density of the algorithmic resting layout.
-    private let hexCellSize: CGFloat = 60.0
-
-    /// Fixed world-space radius for nodes in hex view. Sized to fit
-    /// comfortably within hexCellSize spacing.
-    private let hexBaselineRadius: CGFloat = 22.0  // ~37% of cell size
-
-    private var debugShowHexLayout: Bool = false  // Toggle for debug visualization
-
-    /// Snapshot of sprite state captured before hex debug mode is entered.
-    /// Used to cleanly restore on exit. Cleared on exit.
-    private var preHexSnapshot: [String: (position: CGPoint, scale: CGFloat)] = [:]
 
     // Strand layer state
     private var focalNodeID: String? = nil
@@ -617,21 +522,27 @@ final class CorpusPhysicsScene: SKScene {
     /// Intrinsic (unscaled) sprite radius, captured once at creation. Pure value, never frame-derived.
     private var nodeIntrinsicRadii: [String: CGFloat] = [:]
 
+    /// Median nearest-neighbor distance among fingerprint resting positions.
+    /// Used to normalize euclidean distance for the sigmoid lens and radial compression
+    /// so the lens behaves consistently across layouts of different densities.
+    private var characteristicSpacing: CGFloat = 60.0
+
     private var driftExcludedIDs: Set<String> = []
 
-    // Screen-space scale lens (SB80b-fix2)
+    // Screen-space scale lens (SB80b-fix2 — sigmoid math preserved; input is now
+    // euclidean distance from focal normalized by `characteristicSpacing`)
     private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
     private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
     private let scaleSigmoidSteepness: CGFloat = 3.0      // steeper = sharper focal-to-neighbor drop
-    private let scaleSigmoidMidpoint: CGFloat = 0.7       // hex distance at which curve is at midpoint
+    private let scaleSigmoidMidpoint: CGFloat = 0.7       // normalized distance at which curve is at midpoint
 
     // Radial position compression
     private let positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
-    private let positionCompressionFalloff: CGFloat = 3.0    // hex distance at which compression effect halves
+    private let positionCompressionFalloff: CGFloat = 3.0    // normalized distance at which compression effect halves
     private let neighborBreathingGap: CGFloat = 8.0          // world-space gap between focal edge and neighbor edge
 
     // Lerp factors (preserved from SB80b)
-    private let engagementLerp: CGFloat = 0.30
+    private let engagementLerp: CGFloat = 0.12
     private let steadyStateLerp: CGFloat = 0.20
     private let cameraFollowLerp: CGFloat = 0.10
 
@@ -722,24 +633,6 @@ final class CorpusPhysicsScene: SKScene {
         // for (_, shape) in uberNodeSprites {
         //     shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
         // }
-
-        // SB80a-fix6: Debug hex layout visualization (per-frame, world-space)
-        if debugShowHexLayout {
-            for (nodeID, sprite) in nodeSprites {
-                sprite.physicsBody?.isDynamic = false
-
-                // Position: hex coord → world space (fixed cell size)
-                if let hexCoord = nodeHexCoords[nodeID] {
-                    sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
-                }
-
-                // Size: uniform baseline (fixed world-space) — pure math, no frame reads.
-                if let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0 {
-                    sprite.setScale(hexBaselineRadius / intrinsicRadius)
-                }
-            }
-            return  // Skip normal update logic
-        }
 
         let scale = cameraNode.xScale
         let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
@@ -845,7 +738,7 @@ final class CorpusPhysicsScene: SKScene {
         // Engagement state machine: runs independently every frame (SB80b-fix2)
         switch engagementState {
         case .engaging(let focalID), .engaged(let focalID):
-            guard let focalCoord = nodeHexCoords[focalID],
+            guard let focalRestingPos = nodeRestingPositions[focalID],
                   let view = view else { break }
 
             // Determine lerp factor based on state
@@ -863,22 +756,31 @@ final class CorpusPhysicsScene: SKScene {
             let screenWidth = view.bounds.width
             let cameraScale = cameraNode.xScale
 
-            // Apply hex grid positions + screen-space scale lens + radial compression
+            // Apply lens to fingerprint resting positions: euclidean distance from focal
+            // drives both the sigmoid scale lens and radial position compression.
             for (nodeID, sprite) in nodeSprites {
                 guard !driftExcludedIDs.contains(nodeID),
-                      let nodeCoord = nodeHexCoords[nodeID],
+                      let restingPos = nodeRestingPositions[nodeID],
                       let intrinsicRadius = nodeIntrinsicRadii[nodeID],
                       intrinsicRadius > 0 else { continue }
 
-                // Target position: compressed hex position (radial pull toward focal)
-                let targetPos = compressedHexPosition(nodeCoord: nodeCoord, focalCoord: focalCoord)
+                // Target position: fingerprint resting position pushed radially outward
+                // from focal to make room for the focal's enlarged size.
+                let targetPos = applyRadialCompression(
+                    nodePos: restingPos,
+                    focalPos: focalRestingPos,
+                    strength: positionCompressionStrength,
+                    falloff: positionCompressionFalloff
+                )
 
                 // Target scale: screen-space sigmoid → world-space, divided by stable intrinsic.
-                // No frame-derived reads — `intrinsicRadius` is captured at sprite creation
-                // and never updated, so positive feedback (lerp → frame.width → larger target)
-                // cannot accumulate.
-                let hexDist = hexDistance(focalCoord, nodeCoord)
-                let targetScreenDiameter = screenWidth * screenFractionForHexDistance(hexDist)
+                // `intrinsicRadius` is captured at sprite creation and never updated, so
+                // positive feedback (lerp → frame.width → larger target) cannot accumulate.
+                let dxWorld = restingPos.x - focalRestingPos.x
+                let dyWorld = restingPos.y - focalRestingPos.y
+                let worldDist = hypot(dxWorld, dyWorld)
+                let normalizedDist = worldDist / characteristicSpacing
+                let targetScreenDiameter = screenWidth * screenFractionForNormalizedDistance(normalizedDist)
                 let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
                 let targetScale = targetWorldRadius / intrinsicRadius
 
@@ -909,11 +811,12 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-            // Camera follow (engaged state only, not during engaging)
+            // Camera follow (engaged state only, not during engaging).
+            // Focal stays at its own resting position — applyRadialCompression is a no-op
+            // when nodePos == focalPos, so the focal's target equals its fingerprint pos.
             if case .engaged = engagementState {
-                let focalWorldPos = compressedHexPosition(nodeCoord: focalCoord, focalCoord: focalCoord)
-                let camDx = focalWorldPos.x - cameraNode.position.x
-                let camDy = focalWorldPos.y - cameraNode.position.y
+                let camDx = focalRestingPos.x - cameraNode.position.x
+                let camDy = focalRestingPos.y - cameraNode.position.y
                 cameraNode.position = CGPoint(
                     x: cameraNode.position.x + camDx * cameraFollowLerp,
                     y: cameraNode.position.y + camDy * cameraFollowLerp
@@ -927,7 +830,7 @@ final class CorpusPhysicsScene: SKScene {
             }
 
         case .gracePeriod(let focalID, let expiresAt):
-            // During grace: hex grid stays frozen at engaged target state.
+            // During grace: lens stays frozen at engaged target state.
             // engagementState owns grace expiry — gestureState no longer mirrors this.
             if currentTime >= expiresAt {
                 print("[Honeycomb] State: gracePeriod → disengaging")
@@ -1006,71 +909,79 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Sigmoid scale falloff: focal large, smooth taper, asymptotic to baseline.
-    /// `d` is hex distance from focal (0 = focal itself).
+    /// Input is euclidean distance from focal divided by `characteristicSpacing`.
     /// Returns: target screen-space diameter as fraction of screen width.
-    private func screenFractionForHexDistance(_ d: Int) -> CGFloat {
-        let x = CGFloat(d)
+    private func screenFractionForNormalizedDistance(_ x: CGFloat) -> CGFloat {
         // Logistic sigmoid: 1 at x=0, smoothly transitions to 0 as x grows past midpoint
         let sigmoid = 1.0 / (1.0 + exp(scaleSigmoidSteepness * (x - scaleSigmoidMidpoint)))
         // Map sigmoid output to range [baselineScreenFraction, focalScreenFraction]
         return baselineScreenFraction + (focalScreenFraction - baselineScreenFraction) * sigmoid
     }
 
-    /// Rendered world-space radius for a node at hex distance `d` from focal.
-    /// Mirrors the screen-space scale lens used in the engagement render block.
-    private func renderedWorldRadius(forHexDistance d: Int) -> CGFloat {
-        guard let view = view else { return 0 }
-        let screenDiameter = view.bounds.width * screenFractionForHexDistance(d)
-        return (screenDiameter / 2.0) * cameraNode.xScale
-    }
-
-    /// Monotonic minimum world-space spacing from focal center to a node at hex distance `d`.
-    /// Walks outward ring by ring so spacing(d) is always strictly greater than spacing(d-1) —
-    /// prevents ring inversion when the sigmoid lens makes outer rings smaller than inner rings.
-    private func minimumSpacingFromFocal(forHexDistance d: Int) -> CGFloat {
-        guard d > 0 else { return 0 }
-        var spacing: CGFloat = 0
-        for k in 1...d {
-            let innerRadius = renderedWorldRadius(forHexDistance: k - 1)
-            let outerRadius = renderedWorldRadius(forHexDistance: k)
-            spacing += innerRadius + outerRadius + neighborBreathingGap
-        }
-        return spacing
-    }
-
-    /// Compute compressed render position for a node.
-    /// Hex coordinate is unchanged; this is purely visual.
-    private func compressedHexPosition(
-        nodeCoord: HexCoord,
-        focalCoord: HexCoord
+    /// Push the node radially outward from focal so the focal's enlarged size has
+    /// breathing room. Compression is exponential in normalized distance — close
+    /// neighbors get pushed most, distant nodes barely move.
+    private func applyRadialCompression(
+        nodePos: CGPoint,
+        focalPos: CGPoint,
+        strength: CGFloat,
+        falloff: CGFloat
     ) -> CGPoint {
-        let rawHexPos = hexToWorld(nodeCoord, cellSize: hexCellSize)
-        let focalHexPos = hexToWorld(focalCoord, cellSize: hexCellSize)
-        let d = hexDistance(focalCoord, nodeCoord)
+        let dxWorld = nodePos.x - focalPos.x
+        let dyWorld = nodePos.y - focalPos.y
+        let worldDist = hypot(dxWorld, dyWorld)
+        guard worldDist > 0.001 else { return nodePos }
 
-        if d == 0 { return focalHexPos }  // focal stays at its hex position
+        let normalizedDist = worldDist / characteristicSpacing
+        let compressionFactor = strength * exp(-normalizedDist / falloff)
+        let pushWorldDist = characteristicSpacing * compressionFactor
 
-        // Vector from focal to node in raw hex space
-        let dx = rawHexPos.x - focalHexPos.x
-        let dy = rawHexPos.y - focalHexPos.y
-        let rawDistance = hypot(dx, dy)
+        let dirX = dxWorld / worldDist
+        let dirY = dyWorld / worldDist
 
-        // Percentage compression: stronger near focal, weaker far away.
-        let compressionFactor = positionCompressionStrength * exp(-CGFloat(d - 1) / positionCompressionFalloff)
-        let percentageCompressedDistance = rawDistance * (1.0 - compressionFactor)
-
-        // Minimum spacing based on rendered sizes — guarantees no overlap regardless
-        // of how aggressive the percentage compression is.
-        let minimumSpacing = minimumSpacingFromFocal(forHexDistance: d)
-
-        let finalDistance = max(percentageCompressedDistance, minimumSpacing)
-
-        // Place node along the original angle from focal so hex angular structure is preserved.
-        let angle = atan2(dy, dx)
         return CGPoint(
-            x: focalHexPos.x + cos(angle) * finalDistance,
-            y: focalHexPos.y + sin(angle) * finalDistance
+            x: nodePos.x + dirX * pushWorldDist,
+            y: nodePos.y + dirY * pushWorldDist
         )
+    }
+
+    /// Compute median nearest-neighbor distance across all fingerprint resting positions.
+    /// Sets `characteristicSpacing` so the sigmoid lens and radial compression are
+    /// scale-invariant across layouts. Falls back to 60.0 if too few nodes exist.
+    private func computeCharacteristicSpacing() {
+        let positions = Array(nodeRestingPositions.values)
+        guard positions.count > 1 else {
+            characteristicSpacing = 60.0
+            return
+        }
+
+        var nearestDistances: [CGFloat] = []
+        nearestDistances.reserveCapacity(positions.count)
+        for i in 0..<positions.count {
+            var nearest: CGFloat = .infinity
+            for j in 0..<positions.count where j != i {
+                let dx = positions[i].x - positions[j].x
+                let dy = positions[i].y - positions[j].y
+                let d = hypot(dx, dy)
+                if d < nearest { nearest = d }
+            }
+            if nearest.isFinite { nearestDistances.append(nearest) }
+        }
+
+        guard !nearestDistances.isEmpty else {
+            characteristicSpacing = 60.0
+            return
+        }
+
+        nearestDistances.sort()
+        let mid = nearestDistances.count / 2
+        let median: CGFloat
+        if nearestDistances.count % 2 == 0 {
+            median = (nearestDistances[mid - 1] + nearestDistances[mid]) / 2
+        } else {
+            median = nearestDistances[mid]
+        }
+        characteristicSpacing = max(median, 1.0)
     }
 
     private func applyLabelTier(_ tier: Int) {
@@ -2055,142 +1966,6 @@ final class CorpusPhysicsScene: SKScene {
         for (_, sprite) in nodeSprites {
             sprite.physicsBody?.isDynamic = true
         }
-    }
-
-    // MARK: - Hex Grid Layout (SB80a-fix4: global grid, nearest-cell snap)
-
-    /// Compute hex coordinates for all nodes on a global grid covering the canvas
-    private func computeNeighborhoodHexLayout() {
-        nodeHexCoords.removeAll()
-
-        // Collect all resting positions
-        var restingPositions: [String: CGPoint] = [:]
-        for (nodeID, sprite) in nodeSprites {
-            restingPositions[nodeID] = sprite.position
-        }
-
-        guard !restingPositions.isEmpty else { return }
-
-        // Step 1: Compute bounding box
-        let positions = Array(restingPositions.values)
-        let minX = positions.map { $0.x }.min()!
-        let maxX = positions.map { $0.x }.max()!
-        let minY = positions.map { $0.y }.min()!
-        let maxY = positions.map { $0.y }.max()!
-
-        // Add padding (one cell radius)
-        let padding: CGFloat = 60.0  // Approximate cell radius
-        let bbox = CGRect(
-            x: minX - padding,
-            y: minY - padding,
-            width: (maxX - minX) + 2 * padding,
-            height: (maxY - minY) + 2 * padding
-        )
-
-        // Step 2: Generate hex cell centers covering bounding box
-        // Use the shared world-space cell size for layout and rendering
-        let unitSpacing = hexCellSize
-        var hexCells: [HexCoord] = []
-        var hexCellCenters: [HexCoord: CGPoint] = [:]
-
-        // Generate hex coords that cover the bounding box
-        let qMin = Int(floor(bbox.minX / (unitSpacing * sqrt(3.0)))) - 2
-        let qMax = Int(ceil(bbox.maxX / (unitSpacing * sqrt(3.0)))) + 2
-        let rMin = Int(floor(bbox.minY / (unitSpacing * 1.5))) - 2
-        let rMax = Int(ceil(bbox.maxY / (unitSpacing * 1.5))) + 2
-
-        for q in qMin...qMax {
-            for r in rMin...rMax {
-                let coord = HexCoord(q: q, r: r)
-                let center = hexToWorld(coord, cellSize: unitSpacing)
-                if bbox.contains(center) || bbox.insetBy(dx: -padding, dy: -padding).contains(center) {
-                    hexCells.append(coord)
-                    hexCellCenters[coord] = center
-                }
-            }
-        }
-
-        // Step 3: Sort nodes by distance from canvas centroid (center-out assignment)
-        let canvasCentroid = CGPoint(
-            x: (minX + maxX) / 2,
-            y: (minY + maxY) / 2
-        )
-
-        let sortedNodes = restingPositions.sorted { lhs, rhs in
-            let dist1 = hypot(lhs.value.x - canvasCentroid.x, lhs.value.y - canvasCentroid.y)
-            let dist2 = hypot(rhs.value.x - canvasCentroid.x, rhs.value.y - canvasCentroid.y)
-            return dist1 < dist2
-        }
-
-        // Step 4: Greedy nearest-cell assignment
-        var claimedCells = Set<HexCoord>()
-        for (nodeID, restingPos) in sortedNodes {
-            // Find nearest unclaimed hex cell
-            var nearestCell: HexCoord?
-            var nearestDist: CGFloat = .infinity
-
-            for coord in hexCells where !claimedCells.contains(coord) {
-                let cellCenter = hexCellCenters[coord]!
-                let dist = hypot(cellCenter.x - restingPos.x, cellCenter.y - restingPos.y)
-                if dist < nearestDist {
-                    nearestDist = dist
-                    nearestCell = coord
-                }
-            }
-
-            if let cell = nearestCell {
-                nodeHexCoords[nodeID] = cell
-                claimedCells.insert(cell)
-            }
-        }
-
-        print("[Hex] Assigned \(nodeHexCoords.count) nodes to global hex grid (\(hexCells.count) cells generated)")
-    }
-
-    /// Generate hex coordinate in spiral order from origin (index 0 = (0,0), then spiral outward)
-    private func spiralHexCoord(index: Int) -> HexCoord {
-        if index == 0 {
-            return HexCoord(q: 0, r: 0)
-        }
-
-        // Determine which ring (1, 2, 3, ...) this index falls into
-        var ring = 1
-        var cellsBeforeRing = 1  // center
-        while cellsBeforeRing + (ring * 6) < index + 1 {
-            cellsBeforeRing += ring * 6
-            ring += 1
-        }
-
-        // Index within this ring
-        let indexInRing = index - cellsBeforeRing
-
-        // Hex directions (counter-clockwise from East)
-        let directions: [(Int, Int)] = [
-            (1, 0),    // E
-            (0, 1),    // NE
-            (-1, 1),   // NW
-            (-1, 0),   // W
-            (0, -1),   // SW
-            (1, -1)    // SE
-        ]
-
-        // Start at (ring, 0) - the eastmost point of this ring
-        var q = ring
-        var r = 0
-
-        // Walk around the ring
-        var stepsRemaining = indexInRing
-        for (dq, dr) in directions {
-            let stepsInThisDirection = min(ring, stepsRemaining)
-            q += dq * stepsInThisDirection
-            r += dr * stepsInThisDirection
-            stepsRemaining -= stepsInThisDirection
-            if stepsRemaining == 0 {
-                break
-            }
-        }
-
-        return HexCoord(q: q, r: r)
     }
 
     // MARK: - Helpers

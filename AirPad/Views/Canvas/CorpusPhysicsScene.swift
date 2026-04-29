@@ -174,9 +174,9 @@ final class CorpusPhysicsScene: SKScene {
                 }
 
                 // Size: uniform baseline (fixed world-space)
-                let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
-                let targetScale = hexBaselineRadius / currentSpriteRadius
-                sprite.setScale(targetScale)
+                if let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0 {
+                    sprite.setScale(hexBaselineRadius / intrinsicRadius)
+                }
             }
         } else {
             print("[Hex Debug] Disabled — restoring \(preHexSnapshot.count) sprites from snapshot")
@@ -192,7 +192,7 @@ final class CorpusPhysicsScene: SKScene {
                     if let pos = positionMap[nodeID] {
                         sprite.position = CGPoint(x: pos.x, y: -pos.y)
                     }
-                    sprite.setScale(restingScales[nodeID] ?? 1.0)
+                    sprite.setScale(nodeRestingScales[nodeID] ?? 1.0)
                 }
             }
 
@@ -243,6 +243,9 @@ final class CorpusPhysicsScene: SKScene {
         for id in existingNodeIDs.subtracting(incomingNodeIDs) {
             nodeSprites[id]?.removeFromParent()
             nodeSprites.removeValue(forKey: id)
+            nodeIntrinsicRadii.removeValue(forKey: id)
+            nodeRestingPositions.removeValue(forKey: id)
+            nodeRestingScales.removeValue(forKey: id)
         }
 
         // Add or update regular nodes
@@ -276,6 +279,25 @@ final class CorpusPhysicsScene: SKScene {
                 addUberNodeSprite(cluster, childNodes: nodes)
             } else {
                 updateUberNodeSprite(cluster, childNodes: nodes)
+            }
+        }
+
+        // Canonical resting state: capture target positions and scales from the layout.
+        // Reads `positionMap` / `nodeRadii` (the layout's target outputs), not mid-animation
+        // sprite state — so engagements during a layout transition still resolve to the
+        // correct fingerprint when they disengage.
+        captureRestingState()
+    }
+
+    /// Populate `nodeRestingPositions` / `nodeRestingScales` from the current layout's
+    /// target outputs. Called at the end of every `syncNodes` (initial sync and recompute).
+    /// Never call from gesture paths.
+    private func captureRestingState() {
+        for nodeID in nodeSprites.keys {
+            nodeRestingPositions[nodeID] = storedPosition(for: nodeID)
+            if let intrinsic = nodeIntrinsicRadii[nodeID], intrinsic > 0 {
+                let target = nodeRadii[nodeID] ?? intrinsic
+                nodeRestingScales[nodeID] = target / intrinsic
             }
         }
     }
@@ -525,12 +547,12 @@ final class CorpusPhysicsScene: SKScene {
     private var lastTapTime: TimeInterval = 0
     private var lastTapLocation: CGPoint = .zero
 
-    // Honeycomb gesture state machine
+    // Honeycomb gesture state machine.
+    // Note: grace period lives on `engagementState` only (single source of truth).
     private enum GestureState {
         case idle
         case tapCandidate(initialPosition: CGPoint, startTime: TimeInterval)
         case honeycomb(initialPosition: CGPoint, lastPanPosition: CGPoint)
-        case gracePeriod(focalID: String, expiresAt: TimeInterval)
     }
 
     private var gestureState: GestureState = .idle
@@ -557,8 +579,18 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var engagementState: EngagementState = .idle
-    private var restingPositions: [String: CGPoint] = [:]
-    private var restingScales: [String: CGFloat] = [:]
+
+    /// Canonical resting fingerprint — target positions from the algorithmic layout.
+    /// Captured at sprite creation, on layout recompute, and persists across engagement cycles.
+    /// Never captured per-drag, never cleared on disengage.
+    private var nodeRestingPositions: [String: CGPoint] = [:]
+
+    /// Canonical resting fingerprint — target xScale (layout radius / intrinsic radius).
+    private var nodeRestingScales: [String: CGFloat] = [:]
+
+    /// Intrinsic (unscaled) sprite radius, captured once at creation. Pure value, never frame-derived.
+    private var nodeIntrinsicRadii: [String: CGFloat] = [:]
+
     private var driftExcludedIDs: Set<String> = []
 
     // Screen-space scale lens (SB80b-fix2)
@@ -660,10 +692,10 @@ final class CorpusPhysicsScene: SKScene {
                     sprite.position = hexToWorld(hexCoord, cellSize: hexCellSize)
                 }
 
-                // Size: uniform baseline (fixed world-space)
-                let currentSpriteRadius = sprite.frame.width / 2 / sprite.xScale
-                let targetScale = hexBaselineRadius / currentSpriteRadius
-                sprite.setScale(targetScale)
+                // Size: uniform baseline (fixed world-space) — pure math, no frame reads.
+                if let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0 {
+                    sprite.setScale(hexBaselineRadius / intrinsicRadius)
+                }
             }
             return  // Skip normal update logic
         }
@@ -763,38 +795,6 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-        case .gracePeriod(let focalID, let expiresAt):
-            // Check if grace period expired
-            if currentTime >= expiresAt {
-                print("[Honeycomb] State: gracePeriod → disengaging")
-
-                // Clear strands and drift
-                clearStrands()
-                unwindDrift()
-
-                // Restore focal zPosition
-                if let focalSprite = nodeSprites[focalID] {
-                    if let savedZ = savedFocalZPositions[focalID] {
-                        focalSprite.zPosition = savedZ
-                        savedFocalZPositions.removeValue(forKey: focalID)
-                    }
-                }
-
-                // Fade out prompt
-                if let prompt = gracePromptLabel {
-                    let fadeOut = SKAction.fadeOut(withDuration: 0.2)
-                    let remove = SKAction.removeFromParent()
-                    prompt.run(.sequence([fadeOut, remove]))
-                    gracePromptLabel = nil
-                }
-
-                // Transition to disengaging
-                engagementState = .disengaging
-                gestureState = .idle
-                currentFocalNodeID = nil
-                holdCompleted = false
-            }
-
         default:
             break
         }
@@ -823,16 +823,20 @@ final class CorpusPhysicsScene: SKScene {
             // Apply hex grid positions + screen-space scale lens + radial compression
             for (nodeID, sprite) in nodeSprites {
                 guard !driftExcludedIDs.contains(nodeID),
-                      let nodeCoord = nodeHexCoords[nodeID] else { continue }
+                      let nodeCoord = nodeHexCoords[nodeID],
+                      let intrinsicRadius = nodeIntrinsicRadii[nodeID],
+                      intrinsicRadius > 0 else { continue }
 
                 // Target position: compressed hex position (radial pull toward focal)
                 let targetPos = compressedHexPosition(nodeCoord: nodeCoord, focalCoord: focalCoord)
 
-                // Target scale: screen-space sigmoid → world-space
+                // Target scale: screen-space sigmoid → world-space, divided by stable intrinsic.
+                // No frame-derived reads — `intrinsicRadius` is captured at sprite creation
+                // and never updated, so positive feedback (lerp → frame.width → larger target)
+                // cannot accumulate.
                 let hexDist = hexDistance(focalCoord, nodeCoord)
                 let targetScreenDiameter = screenWidth * screenFractionForHexDistance(hexDist)
                 let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
-                let intrinsicRadius = sprite.frame.width / 2 / sprite.xScale
                 let targetScale = targetWorldRadius / intrinsicRadius
 
                 // Lerp position
@@ -879,25 +883,46 @@ final class CorpusPhysicsScene: SKScene {
                 print("[Honeycomb] State: engaging → engaged")
             }
 
-        case .gracePeriod(let focalID, _):
-            // During grace period: hex grid stays frozen (no position/scale updates)
-            // Camera does NOT follow during grace
-            // Rendering is handled by touch gesture layer (prompt label, tap detection)
-            // The grid is already at target state from .engaged, so no per-frame updates needed
-            break
+        case .gracePeriod(let focalID, let expiresAt):
+            // During grace: hex grid stays frozen at engaged target state.
+            // engagementState owns grace expiry — gestureState no longer mirrors this.
+            if currentTime >= expiresAt {
+                print("[Honeycomb] State: gracePeriod → disengaging")
+
+                clearStrands()
+                unwindDrift()
+
+                if let focalSprite = nodeSprites[focalID] {
+                    if let savedZ = savedFocalZPositions[focalID] {
+                        focalSprite.zPosition = savedZ
+                        savedFocalZPositions.removeValue(forKey: focalID)
+                    }
+                }
+
+                if let prompt = gracePromptLabel {
+                    let fadeOut = SKAction.fadeOut(withDuration: 0.2)
+                    let remove = SKAction.removeFromParent()
+                    prompt.run(.sequence([fadeOut, remove]))
+                    gracePromptLabel = nil
+                }
+
+                engagementState = .disengaging
+                currentFocalNodeID = nil
+                holdCompleted = false
+            }
 
         case .disengaging:
             var allPositionsConverged = true
             var allScalesConverged = true
 
             for (nodeID, sprite) in nodeSprites {
-                guard let restingPos = restingPositions[nodeID] else { continue }
-                let restingScale = restingScales[nodeID] ?? 1.0
+                guard let targetPos = nodeRestingPositions[nodeID],
+                      let targetScale = nodeRestingScales[nodeID] else { continue }
 
-                // Lerp toward resting state
+                // Lerp toward canonical resting state (the layout's target fingerprint).
                 let currentPos = sprite.position
-                let dx = restingPos.x - currentPos.x
-                let dy = restingPos.y - currentPos.y
+                let dx = targetPos.x - currentPos.x
+                let dy = targetPos.y - currentPos.y
                 let lerpedPos = CGPoint(
                     x: currentPos.x + dx * engagementLerp,
                     y: currentPos.y + dy * engagementLerp
@@ -909,7 +934,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
 
                 let currentScale = sprite.xScale
-                let scaleDiff = restingScale - currentScale
+                let scaleDiff = targetScale - currentScale
                 let lerpedScale = currentScale + scaleDiff * engagementLerp
                 sprite.setScale(lerpedScale)
 
@@ -918,11 +943,12 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
 
-            // State transition: disengaging → idle
+            // State transition: disengaging → idle.
+            // Do NOT clear nodeRestingPositions / nodeRestingScales — those are canonical
+            // and persist across engagement cycles. Clearing them caused the next disengage
+            // to skip every node and instantly transition without animating.
             if allPositionsConverged && allScalesConverged {
                 engagementState = .idle
-                restingPositions.removeAll()
-                restingScales.removeAll()
                 driftExcludedIDs.removeAll()
                 print("[Honeycomb] State: disengaging → idle")
             }
@@ -1261,6 +1287,7 @@ final class CorpusPhysicsScene: SKScene {
     private func addNodeSprite(_ node: Node, isNew: Bool, spawnPoint: CGPoint? = nil, stagger: TimeInterval = 0) {
         // Use computed radius from LayoutService, fallback to old formula if not available
         let radius = nodeRadii[node.id] ?? bubbleRadius(for: node)
+        nodeIntrinsicRadii[node.id] = radius
         let shape = makeShape(
             radius: radius,
             fillColor: bubbleColor(for: node),
@@ -2263,8 +2290,24 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
-                    // Identify focal node
-                    let focalID = findNearestNodeToCamera() ?? ""
+                    // Pick focal: if engagement is mid-grace, preserve the grace focal so
+                    // a drag-during-grace seamlessly continues the same engagement. Otherwise
+                    // pick the nearest node to camera.
+                    let focalID: String
+                    let priorState: String
+                    if case .gracePeriod(let graceFocal, _) = engagementState {
+                        focalID = graceFocal
+                        priorState = "gracePeriod"
+                        if let prompt = gracePromptLabel {
+                            let fadeOut = SKAction.fadeOut(withDuration: 0.1)
+                            let remove = SKAction.removeFromParent()
+                            prompt.run(.sequence([fadeOut, remove]))
+                            gracePromptLabel = nil
+                        }
+                    } else {
+                        focalID = findNearestNodeToCamera() ?? ""
+                        priorState = "idle"
+                    }
 
                     // Transition to honeycomb mode
                     gestureState = .honeycomb(
@@ -2274,18 +2317,11 @@ final class CorpusPhysicsScene: SKScene {
                     holdTimerStart = CACurrentMediaTime()
                     holdCompleted = false
 
-                    // Snapshot resting state for all nodes
-                    restingPositions.removeAll()
-                    restingScales.removeAll()
-                    for (nodeID, sprite) in nodeSprites {
-                        restingPositions[nodeID] = sprite.position
-                        restingScales[nodeID] = sprite.xScale
-                    }
-
-                    // Transition to engaging state
+                    // No per-drag capture — `nodeRestingPositions` / `nodeRestingScales`
+                    // are populated from the layout in `captureRestingState()`.
                     engagementState = .engaging(focal: focalID)
 
-                    print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
+                    print("[Honeycomb] State: \(priorState) → engaging(focal: \(focalID))")
                 }
 
             case .honeycomb(let initialPosition, let lastPanPosition):
@@ -2302,32 +2338,6 @@ final class CorpusPhysicsScene: SKScene {
                     initialPosition: initialPosition,
                     lastPanPosition: current
                 )
-
-            case .gracePeriod(let focalID, _):
-                // Drag during grace period: cancel grace and re-enter engagement (SB80b-fix2)
-                print("[Honeycomb] Drag during grace - canceling grace, re-entering engagement")
-
-                // Fade out prompt
-                if let prompt = gracePromptLabel {
-                    let fadeOut = SKAction.fadeOut(withDuration: 0.1)
-                    let remove = SKAction.removeFromParent()
-                    prompt.run(.sequence([fadeOut, remove]))
-                    gracePromptLabel = nil
-                }
-
-                // Transition to honeycomb mode
-                gestureState = .honeycomb(
-                    initialPosition: current,
-                    lastPanPosition: current
-                )
-                holdTimerStart = CACurrentMediaTime()
-                holdCompleted = false
-
-                // Engagement state: re-enter engaging
-                // Note: restingPositions/restingScales already captured from original engagement
-                engagementState = .engaging(focal: focalID)
-
-                print("[Honeycomb] State: gracePeriod → engaging(focal: \(focalID))")
 
             default:
                 break
@@ -2389,10 +2399,10 @@ final class CorpusPhysicsScene: SKScene {
                         self?.canvasState?.selectedNodeID = focalID
                     }
 
-                    // Reset grace timer (when NodeDetailView dismisses, user gets a fresh grace window)
+                    // Reset grace timer (when NodeDetailView dismisses, user gets a fresh grace window).
+                    // engagementState is the only owner of grace.
                     let newExpiresAt = CACurrentMediaTime() + gracePeriodDuration
                     engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
-                    gestureState = .gracePeriod(focalID: focalID, expiresAt: newExpiresAt)
 
                     return
                 }
@@ -2407,10 +2417,11 @@ final class CorpusPhysicsScene: SKScene {
             if let focalID = currentFocalNodeID {
                 print("[Honeycomb] Grace period entered for \(focalID)")
 
-                // Enter grace period (engagement state + gesture state)
+                // Enter grace period — owned by engagementState only. gestureState returns
+                // to idle so the next touchesBegan starts a fresh tap candidate.
                 let expiresAt = CACurrentMediaTime() + gracePeriodDuration
                 engagementState = .gracePeriod(focal: focalID, expiresAt: expiresAt)
-                gestureState = .gracePeriod(focalID: focalID, expiresAt: expiresAt)
+                gestureState = .idle
 
                 // Create prompt label near focal sprite
                 if let focalSprite = nodeSprites[focalID] {

@@ -2345,26 +2345,21 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
-                    // SB83d: Drag during grace exits grace cleanly — focal collapses back
-                    // via .disengaging, and the drag itself becomes a fresh pan gesture.
+                    // SB95: Drag during grace RESUMES engagement instead of collapsing it.
+                    // Lens scaffolding stays up, currentFocalNodeID is preserved, focal-tracking
+                    // in update() takes over next frame. The user experiences continuous engagement
+                    // across lift→re-touch→drag within the grace window.
+                    //
                     // Otherwise (idle), engage the nearest node as the new focal.
                     if case .gracePeriod(let graceFocal, _) = engagementState {
-                        clearStrands()
-                        unwindDrift()
-                        if let focalSprite = nodeSprites[graceFocal],
-                           let savedZ = savedFocalZPositions[graceFocal] {
-                            focalSprite.zPosition = savedZ
-                            savedFocalZPositions.removeValue(forKey: graceFocal)
-                        }
                         if let prompt = gracePromptLabel {
                             let fadeOut = SKAction.fadeOut(withDuration: 0.1)
                             let remove = SKAction.removeFromParent()
                             prompt.run(.sequence([fadeOut, remove]))
                             gracePromptLabel = nil
                         }
-                        engagementState = .disengaging
-                        currentFocalNodeID = nil
-                        print("[Honeycomb] State: gracePeriod → disengaging (drag exit)")
+                        engagementState = .engaged(focal: graceFocal)
+                        print("[Honeycomb] State: gracePeriod → engaged (drag resume)")
                     } else {
                         let focalID = findNearestNodeToCamera() ?? ""
                         engagementState = .engaging(focal: focalID)
@@ -2380,7 +2375,7 @@ final class CorpusPhysicsScene: SKScene {
                     holdCompleted = false
 
                     // SB83d: Any tapCandidate → honeycomb transition is pan-eligible
-                    // (idle navigation OR grace-exit pan).
+                    // (idle navigation OR grace-resume pan).
                     momentumEligible = true
                 }
 

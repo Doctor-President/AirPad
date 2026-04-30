@@ -491,6 +491,8 @@ final class CorpusPhysicsScene: SKScene {
     private var momentumEligible: Bool = false
 
     private var currentFocalNodeID: String? = nil
+    // SB96: Selection haptic for focal changes during engagement
+    private let focalChangeHaptic = UISelectionFeedbackGenerator()
     private var holdTimerStart: TimeInterval? = nil
     private var holdCompleted: Bool = false
     private var driftedRelatedIDs: [String: CGPoint] = [:]
@@ -708,6 +710,8 @@ final class CorpusPhysicsScene: SKScene {
                     newSprite.zPosition = focalZPosition
 
                     print("[Honeycomb] Focal: \(oldFocalID ?? "nil") → \(newFocalID)")
+                    focalChangeHaptic.selectionChanged()  // SB96
+                    focalChangeHaptic.prepare()             // SB96: re-prepare for next tick
 
                     // SB92: Mark focal-switch timestamp for lerp ramp
                     focalSwitchTimestamp = currentTime
@@ -2379,10 +2383,12 @@ final class CorpusPhysicsScene: SKScene {
                             gracePromptLabel = nil
                         }
                         engagementState = .engaged(focal: graceFocal)
+                        focalChangeHaptic.prepare()  // SB96
                         print("[Honeycomb] State: gracePeriod → engaged (drag resume)")
                     } else {
                         let focalID = findNearestNodeToCamera() ?? ""
                         engagementState = .engaging(focal: focalID)
+                        focalChangeHaptic.prepare()  // SB96
                         print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
                     }
 

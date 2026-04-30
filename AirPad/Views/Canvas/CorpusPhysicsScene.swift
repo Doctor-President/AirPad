@@ -457,6 +457,12 @@ final class CorpusPhysicsScene: SKScene {
     private var lastGraceTapTime: TimeInterval = 0
     private var lastGraceTapNodeID: String? = nil
 
+    // SB95.1: Set when a touch-down during grace lands on a node. Allows the touch to be
+    // treated as a tap candidate (so a follow-up drag can resume engagement) while still
+    // suppressing the default tap-on-node handler in touchesEnded so the grace-tap
+    // double-tap-to-drill pattern stays intact.
+    private var graceTapOnNodeSuppressLift: Bool = false
+
     // Honeycomb gesture state machine.
     // Note: grace period lives on `engagementState` only (single source of truth).
     private enum GestureState {
@@ -2280,7 +2286,7 @@ final class CorpusPhysicsScene: SKScene {
             if case .gracePeriod(let focalID, _) = engagementState {
                 let scenePoint = convertPoint(fromView: screenPoint)
 
-                // Permissive sprite-walk: any node hit opens its detail view.
+                // Permissive sprite-walk: any node hit registers a grace tap.
                 if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
                    let name = shape.name,
                    name.hasPrefix("node:") {
@@ -2296,20 +2302,32 @@ final class CorpusPhysicsScene: SKScene {
                         }
                         lastGraceTapNodeID = nil
                         lastGraceTapTime = 0
+                        // Double-tap drilled in — no need to suppress lift handling, the
+                        // navigation has already been queued.
+                        graceTapOnNodeSuppressLift = false
                     } else {
                         print("[Honeycomb] Grace tap on node \(tappedNodeID) (awaiting second tap)")
                         lastGraceTapNodeID = tappedNodeID
                         lastGraceTapTime = now
+                        // SB95.1: If the user lifts cleanly, suppress the default tap-on-node
+                        // handler in touchesEnded so we don't fight the grace double-tap pattern.
+                        graceTapOnNodeSuppressLift = true
                     }
 
                     // Stay in .gracePeriod with a fresh expiry so the second tap stays in window.
                     let newExpiresAt = now + gracePeriodDuration
                     engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
-                    return
-                }
 
-                // Empty-space tap during grace: fall through to tapCandidate so a follow-up
-                // drag can trigger the drag-during-grace re-engagement path.
+                    // SB95.1: Do NOT return early. Fall through to start a tapCandidate so that a
+                    // follow-up drag during this grace window can promote to honeycomb and trigger
+                    // the SB95 drag-resume path.
+                } else {
+                    // Empty-space tap during grace: fall through to tapCandidate so a follow-up
+                    // drag can trigger the drag-during-grace re-engagement path.
+                    graceTapOnNodeSuppressLift = false
+                }
+            } else {
+                graceTapOnNodeSuppressLift = false
             }
 
             // Start tap candidate
@@ -2345,6 +2363,8 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
+                    // SB95.1: User is dragging — the touch is no longer a tap, so suppression no longer applies.
+                    graceTapOnNodeSuppressLift = false
                     // SB95: Drag during grace RESUMES engagement instead of collapsing it.
                     // Lens scaffolding stays up, currentFocalNodeID is preserved, focal-tracking
                     // in update() takes over next frame. The user experiences continuous engagement
@@ -2524,9 +2544,17 @@ final class CorpusPhysicsScene: SKScene {
                   name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
 
-            // Single-tap on node: open NodeDetailView
-            DispatchQueue.main.async { [weak self] in
-                self?.canvasState?.selectedNodeID = nodeID
+            // SB95.1: If this lift is the clean release of a grace-tap-on-node, the grace-tap
+            // logic in touchesBegan already handled it (set lastGraceTapNodeID, refreshed expiry).
+            // Suppress the default selectedNodeID side effect to avoid fighting the grace
+            // double-tap-to-drill pattern.
+            if graceTapOnNodeSuppressLift {
+                graceTapOnNodeSuppressLift = false
+            } else {
+                // Single-tap on node: open NodeDetailView
+                DispatchQueue.main.async { [weak self] in
+                    self?.canvasState?.selectedNodeID = nodeID
+                }
             }
 
         } else {
@@ -2552,6 +2580,7 @@ final class CorpusPhysicsScene: SKScene {
         for touch in touches { activeTouches.removeValue(forKey: touch) }
         lastPinchDistance = nil
         tapStartInfo = nil
+        graceTapOnNodeSuppressLift = false
 
         // Clean up honeycomb state
         if case .honeycomb(_, _) = gestureState {

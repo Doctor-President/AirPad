@@ -533,8 +533,8 @@ final class CorpusPhysicsScene: SKScene {
     // euclidean distance from focal normalized by `characteristicSpacing`)
     private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
     private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
-    private let scaleSigmoidSteepness: CGFloat = 1.5      // SB92: gentler transition
-    private let scaleSigmoidMidpoint: CGFloat = 1.5       // SB92: transition shifted to wider intermediate band
+    private let scaleSigmoidSteepness: CGFloat = 3.0      // SB85 baseline
+    private let scaleSigmoidMidpoint: CGFloat = 0.7       // SB85 baseline
 
     // Radial position compression
     private let positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal

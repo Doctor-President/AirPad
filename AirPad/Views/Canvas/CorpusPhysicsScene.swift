@@ -2200,10 +2200,9 @@ final class CorpusPhysicsScene: SKScene {
         titleLabel.text = title
         titleLabel.font = titleFont
         titleLabel.textColor = textColor
-        titleLabel.numberOfLines = titleMaxLines
-        titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.adjustsFontSizeToFitWidth = true
-        titleLabel.minimumScaleFactor = 0.6
+        titleLabel.numberOfLines = 2
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.adjustsFontSizeToFitWidth = false
         titleLabel.textAlignment = (summaryFont == nil) ? .center : .left
         let titleMaxHeight = titleFont.lineHeight * CGFloat(titleMaxLines) + 4
         titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleMaxHeight)
@@ -2277,7 +2276,8 @@ final class CorpusPhysicsScene: SKScene {
 
     private func makeTitleSprite(text: String, radius: CGFloat) -> SKSpriteNode {
         let bubbleDiameter = radius * 2
-        let titleFont = UIFont(name: "HelveticaNeue", size: 11) ?? UIFont.systemFont(ofSize: 11)
+        let titleFontSize = radius * 0.5
+        let titleFont = UIFont(name: "HelveticaNeue", size: titleFontSize) ?? UIFont.systemFont(ofSize: titleFontSize)
         let texture = rasterizeText(
             title: text,
             summary: nil,
@@ -2310,8 +2310,10 @@ final class CorpusPhysicsScene: SKScene {
         // SB97.2: Use intrinsic diameter — parent's xScale change does the visual enlargement.
         let bubbleDiameter = radius * 2
 
-        let titleFont = UIFont(name: "HelveticaNeue-Bold", size: 16) ?? UIFont.boldSystemFont(ofSize: 16)
-        let summaryFont = UIFont(name: "HelveticaNeue", size: 11) ?? UIFont.systemFont(ofSize: 11)
+        let titleFontSize = radius * 0.7
+        let titleFont = UIFont(name: "HelveticaNeue-Bold", size: titleFontSize) ?? UIFont.boldSystemFont(ofSize: titleFontSize)
+        let summaryFontSize = radius * 0.5
+        let summaryFont = UIFont(name: "HelveticaNeue", size: summaryFontSize) ?? UIFont.systemFont(ofSize: summaryFontSize)
 
         let texture = rasterizeText(
             title: fullTitle,
@@ -2338,7 +2340,8 @@ final class CorpusPhysicsScene: SKScene {
         else { return }
 
         let bubbleDiameter = radius * 2
-        let titleFont = UIFont(name: "HelveticaNeue", size: 11) ?? UIFont.systemFont(ofSize: 11)
+        let titleFontSize = radius * 0.5
+        let titleFont = UIFont(name: "HelveticaNeue", size: titleFontSize) ?? UIFont.systemFont(ofSize: titleFontSize)
 
         let texture = rasterizeText(
             title: fullTitle,

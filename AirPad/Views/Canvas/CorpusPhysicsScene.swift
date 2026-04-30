@@ -468,7 +468,7 @@ final class CorpusPhysicsScene: SKScene {
     private var gestureState: GestureState = .idle
     private let dragThreshold: CGFloat = 10.0
     private let holdThreshold: TimeInterval = 0.7
-    private let gracePeriodDuration: TimeInterval = 2.0  // SB80b-fix2: bumped from 1.5
+    private let gracePeriodDuration: TimeInterval = 1.0  // SB94: halved — was 2.0
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
@@ -497,6 +497,7 @@ final class CorpusPhysicsScene: SKScene {
         case engaging(focal: String)
         case engaged(focal: String)
         case gracePeriod(focal: String, expiresAt: TimeInterval)
+        case preCollapse(focal: String, startTime: TimeInterval)  // SB94: new
         case disengaging
     }
 
@@ -506,7 +507,7 @@ final class CorpusPhysicsScene: SKScene {
     /// would otherwise mutate `currentFocalNodeID` and cause spurious grace entry on lift.
     private var isInActiveEngagement: Bool {
         switch engagementState {
-        case .engaging, .engaged, .gracePeriod: return true
+        case .engaging, .engaged, .gracePeriod, .preCollapse: return true
         case .idle, .disengaging: return false
         }
     }
@@ -547,9 +548,16 @@ final class CorpusPhysicsScene: SKScene {
     private let cameraFollowLerp: CGFloat = 0.10
 
     // SB92: Bounded-band relaxation for dense-region overlap cleanup
-    private let relaxationBandWorldRadius: CGFloat = 320.0     // World-space radius around focal where relaxation runs
-    private let relaxationPasses: Int = 5                       // Iteration cap per frame
-    private let relaxationBreathingGap: CGFloat = 6.0           // Min world-space gap between any two nodes
+    private let relaxationBandWorldRadius: CGFloat = 480.0     // SB94: wider band at zoom-out — was 320
+    private let relaxationPasses: Int = 8                       // SB94: more headroom for convergence — was 5
+    private let relaxationBreathingGap: CGFloat = 6.0           // World-space baseline (made scale-aware below)
+
+    // SB94: Pre-collapse phase — focal/amplified nodes relax slightly before full disengagement
+    private let preCollapseDuration: TimeInterval = 0.18
+    private let preCollapseScaleFactor: CGFloat = 0.92  // 8% scale-down
+    private let preCollapseAmplifiedThreshold: CGFloat = 1.2  // Only nodes currently scaled > 1.2× resting participate
+    // SB94: Starting scales for nodes participating in pre-collapse, captured at gracePeriod→preCollapse transition
+    private var preCollapseStartScales: [String: CGFloat] = [:]
 
     // Convergence tolerances (preserved)
     private let positionMatchTolerance: CGFloat = 2.0
@@ -858,7 +866,10 @@ final class CorpusPhysicsScene: SKScene {
                         let aIsFocal = (idA == focalID)
                         let bIsFocal = (idB == focalID)
 
-                        let required = radA + radB + relaxationBreathingGap
+                        // SB94: Scale-aware breathing gap. Constant world-space gap shrinks to invisibility at zoom-out
+                        // (6pt world × 0.25 cameraScale = 1.5pt screen). Divide by cameraScale so screen-space gap stays consistent.
+                        let effectiveBreathingGap = relaxationBreathingGap / max(cameraScale, 0.1)
+                        let required = radA + radB + effectiveBreathingGap
                         let dx = posB.x - posA.x
                         let dy = posB.y - posA.y
                         let actual = hypot(dx, dy)
@@ -957,7 +968,7 @@ final class CorpusPhysicsScene: SKScene {
             // During grace: lens stays frozen at engaged target state.
             // engagementState owns grace expiry — gestureState no longer mirrors this.
             if currentTime >= expiresAt {
-                print("[Honeycomb] State: gracePeriod → disengaging")
+                print("[Honeycomb] State: gracePeriod → preCollapse")
 
                 clearStrands()
                 unwindDrift()
@@ -976,9 +987,37 @@ final class CorpusPhysicsScene: SKScene {
                     gracePromptLabel = nil
                 }
 
-                engagementState = .disengaging
+                // SB94: Capture starting scales for amplified nodes only — these are the ones that will pre-collapse
+                preCollapseStartScales.removeAll()
+                for (nodeID, sprite) in nodeSprites {
+                    guard let restingScale = nodeRestingScales[nodeID] else { continue }
+                    let currentScale = sprite.xScale
+                    let amplifiedRatio = currentScale / max(restingScale, 0.001)
+                    if amplifiedRatio > preCollapseAmplifiedThreshold {
+                        preCollapseStartScales[nodeID] = currentScale
+                    }
+                }
+
+                engagementState = .preCollapse(focal: focalID, startTime: currentTime)
                 currentFocalNodeID = nil
                 holdCompleted = false
+            }
+
+        case .preCollapse(_, let startTime):
+            let elapsed = currentTime - startTime
+            let progress = min(elapsed / preCollapseDuration, 1.0)
+            let easedProgress = progress * progress * (3 - 2 * progress)  // smoothstep
+
+            for (nodeID, sprite) in nodeSprites {
+                guard let startingScale = preCollapseStartScales[nodeID] else { continue }
+                let targetScale = startingScale * preCollapseScaleFactor
+                let currentTargetScale = startingScale + (targetScale - startingScale) * easedProgress
+                sprite.setScale(currentTargetScale)
+            }
+
+            if progress >= 1.0 {
+                print("[Honeycomb] State: preCollapse → disengaging")
+                engagementState = .disengaging
             }
 
         case .disengaging:
@@ -1021,6 +1060,7 @@ final class CorpusPhysicsScene: SKScene {
                 engagementState = .idle
                 driftExcludedIDs.removeAll()
                 focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
+                preCollapseStartScales.removeAll()  // SB94: clean up
                 print("[Honeycomb] State: disengaging → idle")
             }
 
@@ -2537,6 +2577,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
             currentFocalNodeID = nil
+            preCollapseStartScales.removeAll()  // SB94
         }
         gestureState = .idle
         holdCompleted = false

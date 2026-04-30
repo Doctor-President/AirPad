@@ -799,10 +799,23 @@ final class CorpusPhysicsScene: SKScene {
                 let dxWorld = restingPos.x - focalRestingPos.x
                 let dyWorld = restingPos.y - focalRestingPos.y
                 let worldDist = hypot(dxWorld, dyWorld)
-                let normalizedDist = worldDist / characteristicSpacing
-                let targetScreenDiameter = screenWidth * screenFractionForNormalizedDistance(normalizedDist)
-                let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
-                let targetScale = targetWorldRadius / intrinsicRadius
+                // SB93: Multiply by cameraScale so the amplified zone covers a consistent
+                // screen-space radius around focal at any camera zoom level.
+                let normalizedDist = (worldDist * cameraScale) / characteristicSpacing
+                let targetScreenFraction = screenFractionForNormalizedDistance(normalizedDist)
+
+                let targetScale: CGFloat
+                // SB93: If the sigmoid has plateaued at baseline, use intrinsic scale (1.0)
+                // so the outer field shrinks/grows naturally with the camera.
+                // The 0.005 epsilon catches anything within ~10% of the baseline screen-fraction.
+                let baselineEpsilon: CGFloat = 0.005
+                if targetScreenFraction <= baselineScreenFraction + baselineEpsilon {
+                    targetScale = 1.0
+                } else {
+                    let targetScreenDiameter = targetScreenFraction * screenWidth
+                    let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
+                    targetScale = targetWorldRadius / intrinsicRadius
+                }
 
                 targetPositions[nodeID] = targetPos
                 targetScales[nodeID] = targetScale
@@ -817,7 +830,11 @@ final class CorpusPhysicsScene: SKScene {
                 let dx = restingPos.x - focalRestingPos.x
                 let dy = restingPos.y - focalRestingPos.y
                 let worldDist = hypot(dx, dy)
-                if worldDist < relaxationBandWorldRadius {
+                // SB93: Scale-aware relaxation band — covers a consistent screen-space region
+                // regardless of camera zoom. At zoom-out, expands in world-space to match the
+                // larger world-area visible on screen near focal; at zoom-in, contracts.
+                let effectiveRelaxationBand = relaxationBandWorldRadius / max(cameraScale, 0.1)
+                if worldDist < effectiveRelaxationBand {
                     relaxationSet.append(nodeID)
                 }
             }

@@ -24,7 +24,6 @@ struct CanvasView: View {
         return s
     }()
     @State private var showGlowDebugPanel = false
-    @State private var hexDebugModeActive = false  // SB80a temp debug toggle
 
     // MARK: - Capture mode
 
@@ -155,7 +154,6 @@ struct CanvasView: View {
             drillDownBackButton
             glowDebugPanelLayer
             debugPanelToggleButton
-            hexDebugToggleButton
             ActionButtonFan(
                 isExpanded: $fanExpanded,
                 isEmpty: store.nodes.isEmpty,
@@ -217,35 +215,6 @@ struct CanvasView: View {
                 }
                 .padding(.trailing, 16)
                 .padding(.top, 120)
-            }
-            Spacer()
-        }
-    }
-
-    // SB80a: Temporary hex debug toggle (remove before Phase 2)
-    @ViewBuilder
-    private var hexDebugToggleButton: some View {
-        VStack {
-            HStack {
-                Spacer()
-                Button {
-                    hexDebugModeActive.toggle()
-                    scene.toggleHexDebugMode()
-                } label: {
-                    Text("H")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(hexDebugModeActive ? .green : .white.opacity(0.6))
-                        .frame(width: 28, height: 28)
-                        .background(.ultraThinMaterial)
-                        .overlay {
-                            if hexDebugModeActive {
-                                Circle().fill(.green.opacity(0.2))
-                            }
-                        }
-                        .clipShape(Circle())
-                }
-                .padding(.trailing, 16)
-                .padding(.top, 156)  // Just below the glow debug button
             }
             Spacer()
         }

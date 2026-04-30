@@ -533,8 +533,8 @@ final class CorpusPhysicsScene: SKScene {
     // euclidean distance from focal normalized by `characteristicSpacing`)
     private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
     private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
-    private let scaleSigmoidSteepness: CGFloat = 3.0      // steeper = sharper focal-to-neighbor drop
-    private let scaleSigmoidMidpoint: CGFloat = 0.7       // normalized distance at which curve is at midpoint
+    private let scaleSigmoidSteepness: CGFloat = 1.5      // SB92: gentler transition
+    private let scaleSigmoidMidpoint: CGFloat = 1.5       // SB92: transition shifted to wider intermediate band
 
     // Radial position compression
     private let positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
@@ -546,11 +546,20 @@ final class CorpusPhysicsScene: SKScene {
     private let steadyStateLerp: CGFloat = 0.20
     private let cameraFollowLerp: CGFloat = 0.10
 
+    // SB92: Bounded-band relaxation for dense-region overlap cleanup
+    private let relaxationBandWorldRadius: CGFloat = 320.0     // World-space radius around focal where relaxation runs
+    private let relaxationPasses: Int = 5                       // Iteration cap per frame
+    private let relaxationBreathingGap: CGFloat = 6.0           // Min world-space gap between any two nodes
+
     // Convergence tolerances (preserved)
     private let positionMatchTolerance: CGFloat = 2.0
     private let scaleMatchTolerance: CGFloat = 0.05
 
     private let hysteresisThreshold: CGFloat = 20.0
+
+    // SB92: Track per-focal-switch lerp ramp window
+    private var focalSwitchTimestamp: TimeInterval? = nil
+    private let focalSwitchSlowLerpDuration: TimeInterval = 0.15
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -686,6 +695,9 @@ final class CorpusPhysicsScene: SKScene {
 
                     print("[Honeycomb] Focal: \(oldFocalID ?? "nil") → \(newFocalID)")
 
+                    // SB92: Mark focal-switch timestamp for lerp ramp
+                    focalSwitchTimestamp = currentTime
+
                     // Update engagement state to new focal (scale field will redistribute, positions stay rigid)
                     if case .engaged = engagementState {
                         engagementState = .engaged(focal: newFocalID)
@@ -746,7 +758,13 @@ final class CorpusPhysicsScene: SKScene {
             if case .engaging = engagementState {
                 lerpFactor = engagementLerp
             } else {
-                lerpFactor = steadyStateLerp
+                if let switchTime = focalSwitchTimestamp,
+                   currentTime - switchTime < focalSwitchSlowLerpDuration {
+                    // SB92: Slow lerp briefly after a focal switch
+                    lerpFactor = engagementLerp
+                } else {
+                    lerpFactor = steadyStateLerp
+                }
             }
 
             // Track convergence for state transition
@@ -756,9 +774,11 @@ final class CorpusPhysicsScene: SKScene {
             let screenWidth = view.bounds.width
             let cameraScale = cameraNode.xScale
 
-            // Apply lens to fingerprint resting positions: euclidean distance from focal
-            // drives both the sigmoid scale lens and radial position compression.
-            for (nodeID, sprite) in nodeSprites {
+            // Phase 1: Compute continuous-function targets for all nodes
+            var targetPositions: [String: CGPoint] = [:]
+            var targetScales: [String: CGFloat] = [:]
+
+            for (nodeID, _) in nodeSprites {
                 guard !driftExcludedIDs.contains(nodeID),
                       let restingPos = nodeRestingPositions[nodeID],
                       let intrinsicRadius = nodeIntrinsicRadii[nodeID],
@@ -783,6 +803,93 @@ final class CorpusPhysicsScene: SKScene {
                 let targetScreenDiameter = screenWidth * screenFractionForNormalizedDistance(normalizedDist)
                 let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
                 let targetScale = targetWorldRadius / intrinsicRadius
+
+                targetPositions[nodeID] = targetPos
+                targetScales[nodeID] = targetScale
+            }
+
+            // Phase 1.5 — SB92: Bounded-band relaxation
+            // Resolve overlaps in the band near focal. Far periphery is excluded
+            // because compression falloff has died out and overlaps are rare.
+            var relaxationSet: [String] = [focalID]
+            for nodeID in nodeSprites.keys where nodeID != focalID {
+                guard let restingPos = nodeRestingPositions[nodeID] else { continue }
+                let dx = restingPos.x - focalRestingPos.x
+                let dy = restingPos.y - focalRestingPos.y
+                let worldDist = hypot(dx, dy)
+                if worldDist < relaxationBandWorldRadius {
+                    relaxationSet.append(nodeID)
+                }
+            }
+
+            for _ in 0..<relaxationPasses {
+                var anyOverlap = false
+                for i in 0..<relaxationSet.count {
+                    let idA = relaxationSet[i]
+                    guard let posA = targetPositions[idA],
+                          let scaleA = targetScales[idA],
+                          let intrinsicA = nodeIntrinsicRadii[idA] else { continue }
+                    let radA = intrinsicA * scaleA
+
+                    for j in (i + 1)..<relaxationSet.count {
+                        let idB = relaxationSet[j]
+                        guard let posB = targetPositions[idB],
+                              let scaleB = targetScales[idB],
+                              let intrinsicB = nodeIntrinsicRadii[idB] else { continue }
+                        let radB = intrinsicB * scaleB
+
+                        let aIsFocal = (idA == focalID)
+                        let bIsFocal = (idB == focalID)
+
+                        let required = radA + radB + relaxationBreathingGap
+                        let dx = posB.x - posA.x
+                        let dy = posB.y - posA.y
+                        let actual = hypot(dx, dy)
+
+                        if actual < required {
+                            anyOverlap = true
+                            let deficit = required - actual
+                            let dirX: CGFloat
+                            let dirY: CGFloat
+                            if actual < 0.001 {
+                                dirX = 1.0
+                                dirY = 0.0
+                            } else {
+                                dirX = dx / actual
+                                dirY = dy / actual
+                            }
+
+                            if aIsFocal {
+                                targetPositions[idB] = CGPoint(
+                                    x: posB.x + dirX * deficit,
+                                    y: posB.y + dirY * deficit
+                                )
+                            } else if bIsFocal {
+                                targetPositions[idA] = CGPoint(
+                                    x: posA.x - dirX * deficit,
+                                    y: posA.y - dirY * deficit
+                                )
+                            } else {
+                                let half = deficit / 2.0
+                                targetPositions[idA] = CGPoint(
+                                    x: posA.x - dirX * half,
+                                    y: posA.y - dirY * half
+                                )
+                                targetPositions[idB] = CGPoint(
+                                    x: posB.x + dirX * half,
+                                    y: posB.y + dirY * half
+                                )
+                            }
+                        }
+                    }
+                }
+                if !anyOverlap { break }
+            }
+
+            // Phase 3: Lerp toward targets and check convergence
+            for (nodeID, sprite) in nodeSprites {
+                guard let targetPos = targetPositions[nodeID],
+                      let targetScale = targetScales[nodeID] else { continue }
 
                 // Lerp position
                 let currentPos = sprite.position
@@ -896,6 +1003,7 @@ final class CorpusPhysicsScene: SKScene {
             if allPositionsConverged && allScalesConverged {
                 engagementState = .idle
                 driftExcludedIDs.removeAll()
+                focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
                 print("[Honeycomb] State: disengaging → idle")
             }
 
@@ -1206,10 +1314,13 @@ final class CorpusPhysicsScene: SKScene {
             let currentDy = currentSprite.position.y - cameraCenter.y
             let currentDistance = sqrt(currentDx * currentDx + currentDy * currentDy)
 
+            // SB92: Scale-aware hysteresis for consistent screen-space behavior across zoom
+            let effectiveHysteresis = hysteresisThreshold / max(cameraNode.xScale, 0.1)
+
             if let candidate = nearestID,
                candidate != currentID,
-               nearestDistance < currentDistance - hysteresisThreshold {
-                // New candidate is at least 20pt closer — switch
+               nearestDistance < currentDistance - effectiveHysteresis {
+                // New candidate is closer by more than effective hysteresis — switch
                 return candidate
             } else {
                 // Stay with current focal

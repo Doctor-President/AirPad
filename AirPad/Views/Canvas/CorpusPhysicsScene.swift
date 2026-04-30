@@ -2276,7 +2276,7 @@ final class CorpusPhysicsScene: SKScene {
 
     private func makeTitleSprite(text: String, radius: CGFloat) -> SKSpriteNode {
         let bubbleDiameter = radius * 2
-        let titleFontSize = radius * 0.5
+        let titleFontSize = radius * 1.5
         let titleFont = UIFont(name: "HelveticaNeue", size: titleFontSize) ?? UIFont.systemFont(ofSize: titleFontSize)
         let texture = rasterizeText(
             title: text,
@@ -2310,9 +2310,9 @@ final class CorpusPhysicsScene: SKScene {
         // SB97.2: Use intrinsic diameter — parent's xScale change does the visual enlargement.
         let bubbleDiameter = radius * 2
 
-        let titleFontSize = radius * 0.7
+        let titleFontSize = radius * 2.1
         let titleFont = UIFont(name: "HelveticaNeue-Bold", size: titleFontSize) ?? UIFont.boldSystemFont(ofSize: titleFontSize)
-        let summaryFontSize = radius * 0.5
+        let summaryFontSize = radius * 1.5
         let summaryFont = UIFont(name: "HelveticaNeue", size: summaryFontSize) ?? UIFont.systemFont(ofSize: summaryFontSize)
 
         let texture = rasterizeText(
@@ -2340,7 +2340,7 @@ final class CorpusPhysicsScene: SKScene {
         else { return }
 
         let bubbleDiameter = radius * 2
-        let titleFontSize = radius * 0.5
+        let titleFontSize = radius * 1.5
         let titleFont = UIFont(name: "HelveticaNeue", size: titleFontSize) ?? UIFont.systemFont(ofSize: titleFontSize)
 
         let texture = rasterizeText(

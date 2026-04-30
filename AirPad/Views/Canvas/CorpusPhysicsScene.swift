@@ -148,9 +148,6 @@ final class CorpusPhysicsScene: SKScene {
         self.nodeRadii = nodeRadii
         self.currentNodes = nodes  // Cache for relatedness computation
 
-        // Reset label tier to force re-evaluation on next update() frame
-        currentLabelTier = -1
-
         // Sync regular nodes
         let incomingNodeIDs = Set(nodes.map { $0.id })
         let existingNodeIDs = Set(nodeSprites.keys)
@@ -248,9 +245,6 @@ final class CorpusPhysicsScene: SKScene {
     private var zoomedNodeID: String? = nil
     private var savedPhysicsBody: SKPhysicsBody? = nil
     private var savedZPosition: CGFloat = 0
-
-    // Label tier state (for zoom-aware visibility)
-    private var currentLabelTier: Int = -1
 
     // MARK: - Shared shader resources (lazy; created once, reused across all nodes)
 
@@ -496,7 +490,6 @@ final class CorpusPhysicsScene: SKScene {
     private var holdTimerStart: TimeInterval? = nil
     private var holdCompleted: Bool = false
     private var driftedRelatedIDs: [String: CGPoint] = [:]
-    private var gracePromptLabel: SKLabelNode? = nil
     private var savedFocalZPositions: [String: CGFloat] = [:]
 
     // Engagement state (SB80b: hex grid + scale lens)
@@ -659,12 +652,6 @@ final class CorpusPhysicsScene: SKScene {
         //     shape.fillShader?.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
         // }
 
-        let scale = cameraNode.xScale
-        let tier: Int = scale > 1.5 ? 0 : scale >= 0.8 ? 1 : 2
-
-        currentLabelTier = tier
-        applyLabelTier(tier)
-
         // Update newcomer halos
         if enableNewcomerHalo {
             updateNewcomerHalos(currentTime: currentTime)
@@ -712,6 +699,12 @@ final class CorpusPhysicsScene: SKScene {
                     print("[Honeycomb] Focal: \(oldFocalID ?? "nil") → \(newFocalID)")
                     focalChangeHaptic.selectionChanged()  // SB96
                     focalChangeHaptic.prepare()             // SB96: re-prepare for next tick
+
+                    // SB97.1: Swap textures — old focal back to non-focal, new focal to focal
+                    if let oldFocalID = oldFocalID {
+                        swapToNonFocalTexture(nodeID: oldFocalID)
+                    }
+                    swapToFocalTexture(nodeID: newFocalID)
 
                     // SB92: Mark focal-switch timestamp for lerp ramp
                     focalSwitchTimestamp = currentTime
@@ -990,13 +983,6 @@ final class CorpusPhysicsScene: SKScene {
                     }
                 }
 
-                if let prompt = gracePromptLabel {
-                    let fadeOut = SKAction.fadeOut(withDuration: 0.2)
-                    let remove = SKAction.removeFromParent()
-                    prompt.run(.sequence([fadeOut, remove]))
-                    gracePromptLabel = nil
-                }
-
                 // SB94: Capture starting scales for amplified nodes only — these are the ones that will pre-collapse
                 preCollapseStartScales.removeAll()
                 for (nodeID, sprite) in nodeSprites {
@@ -1071,6 +1057,16 @@ final class CorpusPhysicsScene: SKScene {
                 driftExcludedIDs.removeAll()
                 focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
                 preCollapseStartScales.removeAll()  // SB94: clean up
+
+                // SB97.1: Restore non-focal texture on any node still in focal state
+                for (nodeID, shape) in nodeSprites {
+                    if let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+                       let isFocal = sprite.userData?["isFocal"] as? Bool,
+                       isFocal {
+                        swapToNonFocalTexture(nodeID: nodeID)
+                    }
+                }
+
                 print("[Honeycomb] State: disengaging → idle")
             }
 
@@ -1157,43 +1153,6 @@ final class CorpusPhysicsScene: SKScene {
             median = nearestDistances[mid]
         }
         characteristicSpacing = max(median, 1.0)
-    }
-
-    private func applyLabelTier(_ tier: Int) {
-        for (_, shape) in nodeSprites {
-            guard let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode,
-                  let fullTitle = label.userData?["fullTitle"] as? String else {
-                continue
-            }
-
-            // Check for forced tier from hover-browse
-            let effectiveTier: Int
-            if let forcedTier = shape.userData?["forceLabelTier"] as? Int {
-                effectiveTier = forcedTier
-            } else {
-                effectiveTier = tier
-            }
-
-            switch effectiveTier {
-            case 0:
-                // Tier 0: Hidden
-                label.isHidden = true
-            case 1:
-                // Tier 1: 2 words
-                label.isHidden = false
-                let words = fullTitle.split(separator: " ")
-                let newText = words.prefix(2).joined(separator: " ")
-                if label.text != newText { label.text = newText }
-            case 2:
-                // Tier 2: 3 words
-                label.isHidden = false
-                let words = fullTitle.split(separator: " ")
-                let newText = words.prefix(3).joined(separator: " ")
-                if label.text != newText { label.text = newText }
-            default:
-                break
-            }
-        }
     }
 
     // MARK: - Debug controls (called from external UI)
@@ -1461,19 +1420,8 @@ final class CorpusPhysicsScene: SKScene {
         shape.userData?["radius"] = radius
 
         let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
-        let labelNode = makeTitleLabel(text: displayText, radius: radius)
-        shape.addChild(labelNode)
-
-        // Apply current label tier immediately on add
-        if currentLabelTier == 0 {
-            labelNode.isHidden = true
-        } else {
-            labelNode.isHidden = false
-            if let fullTitle = labelNode.userData?["fullTitle"] as? String {
-                let words = fullTitle.split(separator: " ")
-                labelNode.text = words.prefix(currentLabelTier == 1 ? 2 : 3).joined(separator: " ")
-            }
-        }
+        let labelSprite = makeTitleSprite(text: displayText, radius: radius)
+        shape.addChild(labelSprite)
 
         if node.isMeta {
             let spark = SKLabelNode(text: "✦")
@@ -1550,11 +1498,21 @@ final class CorpusPhysicsScene: SKScene {
         }
         shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
 
-        // Title label update
-        if let label = shape.children.first(where: { $0.name == "titleLabel" }) as? SKLabelNode {
+        // Title label update — re-rasterize texture if title changed
+        if let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+           let oldTitle = sprite.userData?["fullTitle"] as? String {
             let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
-            label.text = displayText
-            label.userData = ["fullTitle": displayText]
+            if oldTitle != displayText {
+                sprite.userData?["fullTitle"] = displayText
+                let isFocal = (sprite.userData?["isFocal"] as? Bool) ?? false
+                if isFocal {
+                    sprite.userData?["isFocal"] = false
+                    swapToFocalTexture(nodeID: node.id)
+                } else {
+                    sprite.userData?["isFocal"] = true
+                    swapToNonFocalTexture(nodeID: node.id)
+                }
+            }
         }
     }
 
@@ -2222,23 +2180,179 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    private func makeTitleLabel(text: String, radius: CGFloat) -> SKLabelNode {
-        let label = SKLabelNode(text: text)
-        label.fontSize = 48  // High-res rasterization
-        label.xScale = 10.0 / 48.0  // Scale down to 10pt visual size
-        label.yScale = 10.0 / 48.0
-        label.fontName = "HelveticaNeue"
-        label.fontColor = UIColor.white.withAlphaComponent(0.65)
-        label.verticalAlignmentMode = .center
-        label.horizontalAlignmentMode = .center
-        label.position = .zero
-        label.preferredMaxLayoutWidth = radius * 6.72  // pre-scale local coordinates: visible width = radius * 1.4, divided by xScale (10/48)
-        label.lineBreakMode = .byWordWrapping  // SB97: wrap on word boundaries, not mid-word
-        label.numberOfLines = 3                  // SB97: 3 lines accommodate longer titles — was 2
-        label.zPosition = 2
-        label.name = "titleLabel"
-        label.userData = ["fullTitle": text]
-        return label
+    // SB97.1: Rasterize title (and optional summary) into an SKTexture via UIKit.
+    // SKLabelNode's text engine breaks mid-word at narrow widths; UILabel handles
+    // word-wrap, shrink-to-fit, and subpixel positioning correctly.
+    private func rasterizeText(
+        title: String,
+        summary: String?,
+        bubbleDiameter: CGFloat,
+        titleFont: UIFont,
+        summaryFont: UIFont?,
+        titleMaxLines: Int,
+        summaryMaxLines: Int,
+        renderScale: CGFloat
+    ) -> SKTexture {
+        let renderWidth = bubbleDiameter * 1.4
+        let textColor = UIColor.white.withAlphaComponent(0.65)
+
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = titleFont
+        titleLabel.textColor = textColor
+        titleLabel.numberOfLines = titleMaxLines
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.adjustsFontSizeToFitWidth = true
+        titleLabel.minimumScaleFactor = 0.6
+        titleLabel.textAlignment = (summaryFont == nil) ? .center : .left
+        let titleMaxHeight = titleFont.lineHeight * CGFloat(titleMaxLines) + 4
+        titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleMaxHeight)
+        titleLabel.layoutIfNeeded()
+        let titleFitSize = titleLabel.sizeThatFits(CGSize(width: renderWidth, height: titleMaxHeight))
+        let titleHeight = min(titleFitSize.height, titleMaxHeight)
+        titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleHeight)
+        titleLabel.layoutIfNeeded()
+
+        let hasSummary = (summary?.isEmpty == false) && summaryFont != nil && summaryMaxLines > 0
+        let spacing: CGFloat = 8
+        var summaryLabel: UILabel? = nil
+        var summaryHeight: CGFloat = 0
+        if hasSummary, let sFont = summaryFont, let sText = summary {
+            let s = UILabel()
+            s.text = sText
+            s.font = sFont
+            s.textColor = textColor
+            s.numberOfLines = summaryMaxLines
+            s.lineBreakMode = .byTruncatingTail
+            s.textAlignment = .left
+            let sMaxHeight = sFont.lineHeight * CGFloat(summaryMaxLines) + 4
+            s.frame = CGRect(x: 0, y: 0, width: renderWidth, height: sMaxHeight)
+            s.layoutIfNeeded()
+            let sFit = s.sizeThatFits(CGSize(width: renderWidth, height: sMaxHeight))
+            summaryHeight = min(sFit.height, sMaxHeight)
+            s.frame = CGRect(x: 0, y: 0, width: renderWidth, height: summaryHeight)
+            s.layoutIfNeeded()
+            summaryLabel = s
+        }
+
+        let totalHeight = titleHeight + (summaryLabel != nil ? spacing + summaryHeight : 0)
+        let canvasSize = CGSize(width: renderWidth, height: max(totalHeight, 1))
+
+        let format = UIGraphicsImageRendererFormat()
+        // SB97.2: pixel density = renderScale × point size. Helper divides texture pixels
+        // by renderScale to recover intrinsic point size in parent coord space.
+        format.scale = renderScale
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+        let image = renderer.image { ctx in
+            titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleHeight)
+            titleLabel.layer.render(in: ctx.cgContext)
+            if let s = summaryLabel {
+                ctx.cgContext.saveGState()
+                ctx.cgContext.translateBy(x: 0, y: titleHeight + spacing)
+                s.layer.render(in: ctx.cgContext)
+                ctx.cgContext.restoreGState()
+            }
+        }
+
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        return texture
+    }
+
+    /// SB97.2: Convert texture pixel dimensions back to the sprite's intrinsic visual size in the parent's coord space.
+    /// The texture is rasterized at `bubbleDiameter * 1.4` width × renderScale multiplier of pixels.
+    /// To display at intrinsic size, divide pixel size by renderScale.
+    private func computeIntrinsicSpriteSize(
+        texture: SKTexture,
+        bubbleDiameter: CGFloat,
+        renderScale: CGFloat
+    ) -> CGSize {
+        let textureSize = texture.size()
+        return CGSize(
+            width: textureSize.width / renderScale,
+            height: textureSize.height / renderScale
+        )
+    }
+
+    private func makeTitleSprite(text: String, radius: CGFloat) -> SKSpriteNode {
+        let bubbleDiameter = radius * 2
+        let titleFont = UIFont(name: "HelveticaNeue", size: 11) ?? UIFont.systemFont(ofSize: 11)
+        let texture = rasterizeText(
+            title: text,
+            summary: nil,
+            bubbleDiameter: bubbleDiameter,
+            titleFont: titleFont,
+            summaryFont: nil,
+            titleMaxLines: 2,
+            summaryMaxLines: 0,
+            renderScale: 6.0  // SB97.2: high-res so text stays crisp when shape scales up to focal
+        )
+        let sprite = SKSpriteNode(texture: texture)
+        sprite.position = .zero
+        sprite.zPosition = 2
+        sprite.name = "titleLabel"
+        sprite.userData = ["fullTitle": text, "isFocal": false]
+        sprite.size = computeIntrinsicSpriteSize(texture: texture, bubbleDiameter: bubbleDiameter, renderScale: 6.0)
+        return sprite
+    }
+
+    private func swapToFocalTexture(nodeID: String) {
+        guard let shape = nodeSprites[nodeID],
+              let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+              let fullTitle = sprite.userData?["fullTitle"] as? String,
+              let isFocal = sprite.userData?["isFocal"] as? Bool,
+              !isFocal,
+              let node = currentNodes.first(where: { $0.id == nodeID }),
+              let radius = nodeIntrinsicRadii[nodeID]
+        else { return }
+
+        // SB97.2: Use intrinsic diameter — parent's xScale change does the visual enlargement.
+        let bubbleDiameter = radius * 2
+
+        let titleFont = UIFont(name: "HelveticaNeue-Bold", size: 16) ?? UIFont.boldSystemFont(ofSize: 16)
+        let summaryFont = UIFont(name: "HelveticaNeue", size: 11) ?? UIFont.systemFont(ofSize: 11)
+
+        let texture = rasterizeText(
+            title: fullTitle,
+            summary: node.summary,
+            bubbleDiameter: bubbleDiameter,
+            titleFont: titleFont,
+            summaryFont: summaryFont,
+            titleMaxLines: 2,
+            summaryMaxLines: 3,
+            renderScale: 6.0
+        )
+        sprite.texture = texture
+        sprite.size = computeIntrinsicSpriteSize(texture: texture, bubbleDiameter: bubbleDiameter, renderScale: 6.0)
+        sprite.userData?["isFocal"] = true
+    }
+
+    private func swapToNonFocalTexture(nodeID: String) {
+        guard let shape = nodeSprites[nodeID],
+              let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+              let fullTitle = sprite.userData?["fullTitle"] as? String,
+              let isFocal = sprite.userData?["isFocal"] as? Bool,
+              isFocal,
+              let radius = nodeIntrinsicRadii[nodeID]
+        else { return }
+
+        let bubbleDiameter = radius * 2
+        let titleFont = UIFont(name: "HelveticaNeue", size: 11) ?? UIFont.systemFont(ofSize: 11)
+
+        let texture = rasterizeText(
+            title: fullTitle,
+            summary: nil,
+            bubbleDiameter: bubbleDiameter,
+            titleFont: titleFont,
+            summaryFont: nil,
+            titleMaxLines: 2,
+            summaryMaxLines: 0,
+            renderScale: 6.0
+        )
+        sprite.texture = texture
+        sprite.size = computeIntrinsicSpriteSize(texture: texture, bubbleDiameter: bubbleDiameter, renderScale: 6.0)
+        sprite.userData?["isFocal"] = false
     }
 
     private func bubbleRadius(for node: Node) -> CGFloat {
@@ -2377,12 +2491,6 @@ final class CorpusPhysicsScene: SKScene {
                     //
                     // Otherwise (idle), engage the nearest node as the new focal.
                     if case .gracePeriod(let graceFocal, _) = engagementState {
-                        if let prompt = gracePromptLabel {
-                            let fadeOut = SKAction.fadeOut(withDuration: 0.1)
-                            let remove = SKAction.removeFromParent()
-                            prompt.run(.sequence([fadeOut, remove]))
-                            gracePromptLabel = nil
-                        }
                         engagementState = .engaged(focal: graceFocal)
                         focalChangeHaptic.prepare()  // SB96
                         print("[Honeycomb] State: gracePeriod → engaged (drag resume)")
@@ -2490,27 +2598,6 @@ final class CorpusPhysicsScene: SKScene {
                 let expiresAt = CACurrentMediaTime() + gracePeriodDuration
                 engagementState = .gracePeriod(focal: focalID, expiresAt: expiresAt)
                 gestureState = .idle
-
-                // Create prompt label near focal sprite
-                if let focalSprite = nodeSprites[focalID] {
-                    let prompt = SKLabelNode(text: "Tap for more detail")
-                    prompt.fontSize = 14
-                    prompt.fontName = "HelveticaNeue-Medium"
-                    prompt.fontColor = UIColor.white.withAlphaComponent(0.0)
-                    prompt.verticalAlignmentMode = .center
-                    prompt.horizontalAlignmentMode = .center
-                    prompt.position = CGPoint(
-                        x: focalSprite.position.x,
-                        y: focalSprite.position.y - 60
-                    )
-                    prompt.zPosition = 100
-                    addChild(prompt)
-                    gracePromptLabel = prompt
-
-                    // Fade in
-                    let fadeIn = SKAction.fadeAlpha(to: 0.9, duration: 0.2)
-                    prompt.run(fadeIn)
-                }
             } else {
                 // No focal tracked - return to idle
                 print("[Honeycomb] State: engaged → disengaging")

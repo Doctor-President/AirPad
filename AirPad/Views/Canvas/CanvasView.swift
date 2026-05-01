@@ -20,7 +20,7 @@ struct CanvasView: View {
     @State private var scene: CorpusPhysicsScene = {
         let s = CorpusPhysicsScene(size: CGSize(width: 393, height: 852))
         s.scaleMode = .resizeFill
-        s.backgroundColor = UIColor(red: 0.027, green: 0.027, blue: 0.039, alpha: 1.0)
+        s.backgroundColor = .clear
         return s
     }()
     @State private var showGlowDebugPanel = false
@@ -140,15 +140,19 @@ struct CanvasView: View {
 
     private var canvasZStack: some View {
         ZStack(alignment: .bottomTrailing) {
-            if store.nodes.isEmpty {
-                GraphPaperEmptyView()
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-            }
+            Color(red: 0.027, green: 0.027, blue: 0.039)
+                .ignoresSafeArea()
+
             SpriteKitView(scene: scene)
                 .ignoresSafeArea()
                 .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
                 .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+
+            if store.nodes.isEmpty {
+                EmptyStateOverlay()
+                    .transition(.opacity)
+            }
+
             nodeSummaryLayer
             captureTargetBanner
             drillDownBackButton

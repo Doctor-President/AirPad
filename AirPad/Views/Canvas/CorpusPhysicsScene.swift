@@ -2180,6 +2180,84 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
+    /// AT17.3.4: Render title + summary into a square canvas, vertically centered.
+    /// The texture is treated as an icon — same square dimensions regardless of text content.
+    /// Long content truncates with ellipsis. The square is sized in the bubble's intrinsic
+    /// coordinate space and scales with the parent shape.
+    private func rasterizeSquareText(
+        title: String,
+        summary: String?,
+        side: CGFloat,
+        titleFont: UIFont,
+        summaryFont: UIFont,
+        renderScale: CGFloat
+    ) -> SKTexture {
+        let textWidth = side * 0.85  // padding inside the square
+        let textColor = UIColor.white.withAlphaComponent(0.85)
+
+        // Title label
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = titleFont
+        titleLabel.textColor = textColor
+        titleLabel.numberOfLines = 2
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.textAlignment = .center
+        let titleMaxHeight = titleFont.lineHeight * 2 + 4
+        titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleMaxHeight)
+        let titleFit = titleLabel.sizeThatFits(CGSize(width: textWidth, height: titleMaxHeight))
+        let titleHeight = min(titleFit.height, titleMaxHeight)
+        titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleHeight)
+
+        // Summary label (optional)
+        let spacing: CGFloat = side * 0.04
+        var summaryLabel: UILabel? = nil
+        var summaryHeight: CGFloat = 0
+        if let summary, !summary.isEmpty {
+            let s = UILabel()
+            s.text = summary
+            s.font = summaryFont
+            s.textColor = textColor
+            s.numberOfLines = 4
+            s.lineBreakMode = .byTruncatingTail
+            s.textAlignment = .center
+            let sMaxHeight = summaryFont.lineHeight * 4 + 4
+            s.frame = CGRect(x: 0, y: 0, width: textWidth, height: sMaxHeight)
+            let sFit = s.sizeThatFits(CGSize(width: textWidth, height: sMaxHeight))
+            summaryHeight = min(sFit.height, sMaxHeight)
+            s.frame = CGRect(x: 0, y: 0, width: textWidth, height: summaryHeight)
+            summaryLabel = s
+        }
+
+        // Render into square canvas
+        let canvasSize = CGSize(width: side, height: side)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = renderScale
+        format.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
+        let image = renderer.image { ctx in
+            let totalTextHeight = titleHeight + (summaryLabel != nil ? spacing + summaryHeight : 0)
+            let yStart = (side - totalTextHeight) / 2.0
+            let xStart = (side - textWidth) / 2.0
+
+            ctx.cgContext.saveGState()
+            ctx.cgContext.translateBy(x: xStart, y: yStart)
+            titleLabel.layer.render(in: ctx.cgContext)
+            ctx.cgContext.restoreGState()
+
+            if let s = summaryLabel {
+                ctx.cgContext.saveGState()
+                ctx.cgContext.translateBy(x: xStart, y: yStart + titleHeight + spacing)
+                s.layer.render(in: ctx.cgContext)
+                ctx.cgContext.restoreGState()
+            }
+        }
+
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        return texture
+    }
+
     // SB97.1: Rasterize title (and optional summary) into an SKTexture via UIKit.
     // SKLabelNode's text engine breaks mid-word at narrow widths; UILabel handles
     // word-wrap, shrink-to-fit, and subpixel positioning correctly.
@@ -2304,73 +2382,30 @@ final class CorpusPhysicsScene: SKScene {
               let isFocal = sprite.userData?["isFocal"] as? Bool,
               !isFocal,
               let node = currentNodes.first(where: { $0.id == nodeID }),
-              let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0,
-              let view = self.view
+              let radius = nodeIntrinsicRadii[nodeID]
         else { return }
 
-        // AT17.3: All text geometry derives from the displayed focal diameter,
-        // not the bubble's intrinsic radius. The parent's xScale handles enlargement;
-        // the rasterization itself must be sized for what the user will actually see.
-        let displayedDiameter = focalScreenFraction * view.bounds.width
-
-        let titleFontSize = displayedDiameter * 0.11
+        // AT17.3.4: Square texture, intrinsic-radius-proportional. No displayed-diameter math.
+        // Text lives in the bubble's coordinate space. Parent's xScale handles all visual sizing.
+        let squareSide = radius * 2.5
+        let titleFontSize = radius * 0.55
         let titleFont = UIFont(name: "HelveticaNeue-Bold", size: titleFontSize) ?? UIFont.boldSystemFont(ofSize: titleFontSize)
-        let summaryFontSize = displayedDiameter * 0.07
+        let summaryFontSize = radius * 0.32
         let summaryFont = UIFont(name: "HelveticaNeue", size: summaryFontSize) ?? UIFont.systemFont(ofSize: summaryFontSize)
 
-        let texture = rasterizeText(
+        let texture = rasterizeSquareText(
             title: fullTitle,
             summary: node.summary,
-            bubbleDiameter: displayedDiameter,
+            side: squareSide,
             titleFont: titleFont,
             summaryFont: summaryFont,
-            titleMaxLines: 2,
-            summaryMaxLines: 3,
             renderScale: 6.0
         )
-
-        // AT17.3: Compute sprite size inline against the freshly-built texture.
-        // Do not delegate to a helper here — reading sprite.texture before assignment
-        // would race with the swap and produce stale sizes (the bug we just fixed).
-        let cameraScale = cameraNode.xScale
-        let targetWorldRadius = (displayedDiameter / 2.0) * cameraScale
-        let targetParentScale = targetWorldRadius / intrinsicRadius
-        let intrinsicSize = texture.size()
-
         sprite.texture = texture
-        sprite.size = CGSize(
-            width: intrinsicSize.width / targetParentScale,
-            height: intrinsicSize.height / targetParentScale
-        )
+        sprite.size = CGSize(width: squareSide, height: squareSide)
         sprite.userData?["isFocal"] = true
 
-        print("[FocalText] swap displayedDiameter=\(displayedDiameter) titleFontSize=\(titleFontSize) cameraScale=\(cameraScale) targetParentScale=\(targetParentScale) texture=\(texture.size()) sprite.size=\(sprite.size)")
-    }
-
-    /// AT17.3: Recompute focal sprite's on-screen size when camera scale changes.
-    /// Called only after pinch-zoom alters cameraNode.xScale. The sprite's texture
-    /// is already correct at this point — only sprite.size needs updating.
-    private func updateFocalSpriteSize(nodeID: String) {
-        guard let shape = nodeSprites[nodeID],
-              let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-              let isFocal = sprite.userData?["isFocal"] as? Bool, isFocal,
-              let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0,
-              let view = self.view,
-              let texture = sprite.texture
-        else { return }
-
-        let displayedDiameter = focalScreenFraction * view.bounds.width
-        let cameraScale = cameraNode.xScale
-        let targetWorldRadius = (displayedDiameter / 2.0) * cameraScale
-        let targetParentScale = targetWorldRadius / intrinsicRadius
-
-        let intrinsicSize = texture.size()
-        sprite.size = CGSize(
-            width: intrinsicSize.width / targetParentScale,
-            height: intrinsicSize.height / targetParentScale
-        )
-
-        print("[FocalText] resize cameraScale=\(cameraScale) targetParentScale=\(targetParentScale) sprite.size=\(sprite.size)")
+        print("[FocalText] swap radius=\(radius) squareSide=\(squareSide) titleFontSize=\(titleFontSize) texture=\(texture.size())")
     }
 
     private func swapToNonFocalTexture(nodeID: String) {
@@ -2598,9 +2633,6 @@ final class CorpusPhysicsScene: SKScene {
                 let factor = prev / dist
                 let newScale = (cameraNode.xScale * factor).clamped(to: 0.25...4.0)
                 cameraNode.setScale(newScale)
-                if let focalID = currentFocalNodeID {
-                    updateFocalSpriteSize(nodeID: focalID)
-                }
             }
             lastPinchDistance = dist
         }

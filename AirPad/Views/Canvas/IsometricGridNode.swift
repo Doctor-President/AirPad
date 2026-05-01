@@ -6,10 +6,13 @@ import simd
 /// transparent background, alpha modulated per-fragment by a 3D value-noise
 /// field evolving in time.
 ///
-/// AT18.1.4 — May 1, 2026. Adds per-fragment shimmer to the AT18.1.3 static
-/// chunked baseline. Each chunk sprite gets its own SKShader instance with a
-/// per-chunk u_chunkCenter uniform so the noise samples stay continuous in
-/// world space across chunk seams. u_time is pushed each frame from the scene.
+/// AT18.1.5 — May 1, 2026. Adds noise-driven UV displacement on top of the
+/// AT18.1.4 luma matte. A second 3D noise field (decorrelated from the luma
+/// noise via a z-offset) warps v_tex_coord before the texture sample so the
+/// grid lines visibly ripple like a stretched membrane. Same chunked
+/// architecture: each chunk sprite gets its own SKShader instance with a
+/// per-chunk u_chunkCenter uniform so noise samples stay continuous in world
+/// space across chunk seams. u_time is auto-supplied by SpriteKit.
 ///
 /// Tiling strategy (preserved from AT18.1.3): SKShapeNode.fillTexture and
 /// SKSpriteNode.texture both stretch a single texture across their bounds in
@@ -161,12 +164,26 @@ enum IsometricGridNode {
         }
 
         void main() {
-            vec4 tex = texture2D(u_texture, v_tex_coord);
-
             // World-space coordinate for noise sampling. v_tex_coord runs 0..1
             // across this chunk's own span; u_chunkCenter (per-chunk uniform)
             // shifts into world space so noise stays continuous across seams.
             vec2 worldPos = (v_tex_coord - vec2(0.5)) * \(chunkSize) + u_chunkCenter;
+
+            // --- Displacement layer ---
+            // Sample a separate noise field to compute a UV offset.
+            // Independent z-offsets (+1000.0 / +2000.0) decorrelate from the
+            // luma noise so the two effects don't pulse in lockstep.
+            const float displaceScale = 0.012;
+            const float displaceSpeed = 0.5;
+            const float displaceAmp   = 6.0;
+
+            float dx_noise = valueNoise3(vec3(worldPos * displaceScale, u_time * displaceSpeed + 1000.0));
+            float dy_noise = valueNoise3(vec3(worldPos * displaceScale, u_time * displaceSpeed + 2000.0));
+
+            vec2 displacement = vec2(dx_noise - 0.5, dy_noise - 0.5) * 2.0 * displaceAmp;
+            vec2 displacedUV = v_tex_coord + displacement / \(chunkSize);
+
+            vec4 tex = texture2D(u_texture, displacedUV);
 
             const float noiseScale     = 0.008;
             const float noiseIntensity = 0.74;

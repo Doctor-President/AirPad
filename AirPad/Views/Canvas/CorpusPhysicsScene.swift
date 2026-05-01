@@ -2192,7 +2192,7 @@ final class CorpusPhysicsScene: SKScene {
         summaryFont: UIFont,
         renderScale: CGFloat
     ) -> SKTexture {
-        let textWidth = side * 0.85  // padding inside the square
+        let textWidth = side * 0.98  // padding inside the square
         let textColor = UIColor.white.withAlphaComponent(0.85)
 
         // Title label
@@ -2200,10 +2200,10 @@ final class CorpusPhysicsScene: SKScene {
         titleLabel.text = title
         titleLabel.font = titleFont
         titleLabel.textColor = textColor
-        titleLabel.numberOfLines = 3
+        titleLabel.numberOfLines = 2
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.textAlignment = .center
-        let titleMaxHeight = titleFont.lineHeight * 3 + 4
+        let titleMaxHeight = titleFont.lineHeight * 2 + 4
         titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleMaxHeight)
         let titleFit = titleLabel.sizeThatFits(CGSize(width: textWidth, height: titleMaxHeight))
         let titleHeight = min(titleFit.height, titleMaxHeight)
@@ -2218,10 +2218,10 @@ final class CorpusPhysicsScene: SKScene {
             s.text = summary
             s.font = summaryFont
             s.textColor = textColor
-            s.numberOfLines = 6
+            s.numberOfLines = 4
             s.lineBreakMode = .byTruncatingTail
             s.textAlignment = .center
-            let sMaxHeight = summaryFont.lineHeight * 6 + 4
+            let sMaxHeight = summaryFont.lineHeight * 4 + 4
             s.frame = CGRect(x: 0, y: 0, width: textWidth, height: sMaxHeight)
             let sFit = s.sizeThatFits(CGSize(width: textWidth, height: sMaxHeight))
             summaryHeight = min(sFit.height, sMaxHeight)
@@ -2388,9 +2388,9 @@ final class CorpusPhysicsScene: SKScene {
         // AT17.3.4: Square texture, intrinsic-radius-proportional. No displayed-diameter math.
         // Text lives in the bubble's coordinate space. Parent's xScale handles all visual sizing.
         let squareSide = radius * 2.5
-        let titleFontSize = radius * 0.55
+        let titleFontSize = radius * 0.17
         let titleFont = UIFont(name: "HelveticaNeue-Bold", size: titleFontSize) ?? UIFont.boldSystemFont(ofSize: titleFontSize)
-        let summaryFontSize = radius * 0.32
+        let summaryFontSize = radius * 0.10
         let summaryFont = UIFont(name: "HelveticaNeue", size: summaryFontSize) ?? UIFont.systemFont(ofSize: summaryFontSize)
 
         let texture = rasterizeSquareText(
@@ -2399,7 +2399,7 @@ final class CorpusPhysicsScene: SKScene {
             side: squareSide,
             titleFont: titleFont,
             summaryFont: summaryFont,
-            renderScale: 6.0
+            renderScale: 12.0
         )
         sprite.texture = texture
         sprite.size = CGSize(width: squareSide, height: squareSide)

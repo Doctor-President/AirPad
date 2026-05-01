@@ -2192,7 +2192,7 @@ final class CorpusPhysicsScene: SKScene {
         summaryFont: UIFont,
         renderScale: CGFloat
     ) -> SKTexture {
-        let textWidth = side * 0.98  // padding inside the square
+        let textWidth = side  // padding inside the square
         let textColor = UIColor.white.withAlphaComponent(0.85)
 
         // Title label
@@ -2353,25 +2353,25 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat) -> SKSpriteNode {
-        let bubbleDiameter = radius * 2
-        let titleFontSize = radius * 1.5
-        let titleFont = UIFont(name: "HelveticaNeue", size: titleFontSize) ?? UIFont.systemFont(ofSize: titleFontSize)
-        let texture = rasterizeText(
+        // Rasterize at displayed dimensions (full visual size); sprite is sized in
+        // intrinsic coords so parent scaling stays consistent.
+        let displayedCanvasSide: CGFloat = 84
+        let displayedTitleFontSize: CGFloat = 14
+        let titleFont = UIFont(name: "HelveticaNeue", size: displayedTitleFontSize) ?? UIFont.systemFont(ofSize: displayedTitleFontSize)
+        let texture = rasterizeSquareText(
             title: text,
             summary: nil,
-            bubbleDiameter: bubbleDiameter,
+            side: displayedCanvasSide,
             titleFont: titleFont,
-            summaryFont: nil,
-            titleMaxLines: 2,
-            summaryMaxLines: 0,
-            renderScale: 6.0  // SB97.2: high-res so text stays crisp when shape scales up to focal
+            summaryFont: titleFont,
+            renderScale: 6.0
         )
         let sprite = SKSpriteNode(texture: texture)
         sprite.position = .zero
         sprite.zPosition = 2
         sprite.name = "titleLabel"
         sprite.userData = ["fullTitle": text, "isFocal": false]
-        sprite.size = computeIntrinsicSpriteSize(texture: texture, bubbleDiameter: bubbleDiameter, renderScale: 6.0)
+        sprite.size = CGSize(width: radius * 1.4, height: radius * 1.4)
         return sprite
     }
 
@@ -2382,30 +2382,35 @@ final class CorpusPhysicsScene: SKScene {
               let isFocal = sprite.userData?["isFocal"] as? Bool,
               !isFocal,
               let node = currentNodes.first(where: { $0.id == nodeID }),
-              let radius = nodeIntrinsicRadii[nodeID]
+              let radius = nodeIntrinsicRadii[nodeID],
+              let view = self.view
         else { return }
 
-        // AT17.3.4: Square texture, intrinsic-radius-proportional. No displayed-diameter math.
-        // Text lives in the bubble's coordinate space. Parent's xScale handles all visual sizing.
-        let squareSide = radius * 2.5
-        let titleFontSize = radius * 0.17
-        let titleFont = UIFont(name: "HelveticaNeue-Bold", size: titleFontSize) ?? UIFont.boldSystemFont(ofSize: titleFontSize)
-        let summaryFontSize = radius * 0.10
-        let summaryFont = UIFont(name: "HelveticaNeue", size: summaryFontSize) ?? UIFont.systemFont(ofSize: summaryFontSize)
+        // Rasterize at displayed dimensions (full visual size) so glyphs render at their
+        // actual on-screen point size. Sprite is sized in intrinsic coords so parent xScale
+        // still drives the engagement scaling — it just lands at 1:1 with the bitmap.
+        let displayedDiameter = focalScreenFraction * view.bounds.width
+        let displayedSquareSide = displayedDiameter * 0.7
+        let displayedTitleFontSize = displayedDiameter * 0.085
+        let displayedSummaryFontSize = displayedDiameter * 0.05
+
+        let titleFont = UIFont(name: "HelveticaNeue-Bold", size: displayedTitleFontSize) ?? UIFont.boldSystemFont(ofSize: displayedTitleFontSize)
+        let summaryFont = UIFont(name: "HelveticaNeue", size: displayedSummaryFontSize) ?? UIFont.systemFont(ofSize: displayedSummaryFontSize)
 
         let texture = rasterizeSquareText(
             title: fullTitle,
             summary: node.summary,
-            side: squareSide,
+            side: displayedSquareSide,
             titleFont: titleFont,
             summaryFont: summaryFont,
-            renderScale: 12.0
+            renderScale: 6.0
         )
         sprite.texture = texture
-        sprite.size = CGSize(width: squareSide, height: squareSide)
+        print("[FocalDebug] textureFiltering=\(texture.filteringMode.rawValue) spriteBlend=\(sprite.blendMode.rawValue) parentBlend=\(shape.blendMode.rawValue) parentHasShader=\(shape.fillShader != nil)")
+        sprite.size = CGSize(width: radius * 1.4, height: radius * 1.4)
         sprite.userData?["isFocal"] = true
 
-        print("[FocalText] swap radius=\(radius) squareSide=\(squareSide) titleFontSize=\(titleFontSize) texture=\(texture.size())")
+        print("[FocalText] swap radius=\(radius) intrinsicSide=\(radius * 1.4) displayedSide=\(displayedSquareSide) titleFontSize=\(displayedTitleFontSize) texture=\(texture.size())")
     }
 
     private func swapToNonFocalTexture(nodeID: String) {
@@ -2417,22 +2422,20 @@ final class CorpusPhysicsScene: SKScene {
               let radius = nodeIntrinsicRadii[nodeID]
         else { return }
 
-        let bubbleDiameter = radius * 2
-        let titleFontSize = radius * 1.5
-        let titleFont = UIFont(name: "HelveticaNeue", size: titleFontSize) ?? UIFont.systemFont(ofSize: titleFontSize)
+        let displayedCanvasSide: CGFloat = 84
+        let displayedTitleFontSize: CGFloat = 14
+        let titleFont = UIFont(name: "HelveticaNeue", size: displayedTitleFontSize) ?? UIFont.systemFont(ofSize: displayedTitleFontSize)
 
-        let texture = rasterizeText(
+        let texture = rasterizeSquareText(
             title: fullTitle,
             summary: nil,
-            bubbleDiameter: bubbleDiameter,
+            side: displayedCanvasSide,
             titleFont: titleFont,
-            summaryFont: nil,
-            titleMaxLines: 2,
-            summaryMaxLines: 0,
+            summaryFont: titleFont,
             renderScale: 6.0
         )
         sprite.texture = texture
-        sprite.size = computeIntrinsicSpriteSize(texture: texture, bubbleDiameter: bubbleDiameter, renderScale: 6.0)
+        sprite.size = CGSize(width: radius * 1.4, height: radius * 1.4)
         sprite.userData?["isFocal"] = false
     }
 

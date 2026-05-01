@@ -2193,7 +2193,7 @@ final class CorpusPhysicsScene: SKScene {
         summaryMaxLines: Int,
         renderScale: CGFloat
     ) -> SKTexture {
-        let renderWidth = bubbleDiameter * 1.4
+        let renderWidth = bubbleDiameter * 0.70
         let textColor = UIColor.white.withAlphaComponent(0.65)
 
         let titleLabel = UILabel()

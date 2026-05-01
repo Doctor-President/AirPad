@@ -2200,10 +2200,10 @@ final class CorpusPhysicsScene: SKScene {
         titleLabel.text = title
         titleLabel.font = titleFont
         titleLabel.textColor = textColor
-        titleLabel.numberOfLines = 2
+        titleLabel.numberOfLines = 3
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.textAlignment = .center
-        let titleMaxHeight = titleFont.lineHeight * 2 + 4
+        let titleMaxHeight = titleFont.lineHeight * 3 + 4
         titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleMaxHeight)
         let titleFit = titleLabel.sizeThatFits(CGSize(width: textWidth, height: titleMaxHeight))
         let titleHeight = min(titleFit.height, titleMaxHeight)
@@ -2218,10 +2218,10 @@ final class CorpusPhysicsScene: SKScene {
             s.text = summary
             s.font = summaryFont
             s.textColor = textColor
-            s.numberOfLines = 4
+            s.numberOfLines = 6
             s.lineBreakMode = .byTruncatingTail
             s.textAlignment = .center
-            let sMaxHeight = summaryFont.lineHeight * 4 + 4
+            let sMaxHeight = summaryFont.lineHeight * 6 + 4
             s.frame = CGRect(x: 0, y: 0, width: textWidth, height: sMaxHeight)
             let sFit = s.sizeThatFits(CGSize(width: textWidth, height: sMaxHeight))
             summaryHeight = min(sFit.height, sMaxHeight)

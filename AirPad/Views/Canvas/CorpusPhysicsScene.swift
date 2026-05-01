@@ -2304,6 +2304,7 @@ final class CorpusPhysicsScene: SKScene {
               let isFocal = sprite.userData?["isFocal"] as? Bool,
               !isFocal,
               let node = currentNodes.first(where: { $0.id == nodeID }),
+              let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0,
               let view = self.view
         else { return }
 
@@ -2327,15 +2328,28 @@ final class CorpusPhysicsScene: SKScene {
             summaryMaxLines: 3,
             renderScale: 6.0
         )
-        sprite.texture = texture
-        sprite.userData?["isFocal"] = true
-        updateFocalSpriteSize(nodeID: nodeID)
 
-        print("[FocalText] swap displayedDiameter=\(displayedDiameter) titleFontSize=\(titleFontSize) texture=\(texture.size())")
+        // AT17.3: Compute sprite size inline against the freshly-built texture.
+        // Do not delegate to a helper here — reading sprite.texture before assignment
+        // would race with the swap and produce stale sizes (the bug we just fixed).
+        let cameraScale = cameraNode.xScale
+        let targetWorldRadius = (displayedDiameter / 2.0) * cameraScale
+        let targetParentScale = targetWorldRadius / intrinsicRadius
+        let intrinsicSize = texture.size()
+
+        sprite.texture = texture
+        sprite.size = CGSize(
+            width: intrinsicSize.width / targetParentScale,
+            height: intrinsicSize.height / targetParentScale
+        )
+        sprite.userData?["isFocal"] = true
+
+        print("[FocalText] swap displayedDiameter=\(displayedDiameter) titleFontSize=\(titleFontSize) cameraScale=\(cameraScale) targetParentScale=\(targetParentScale) texture=\(texture.size()) sprite.size=\(sprite.size)")
     }
 
-    /// AT17.3: Recompute focal sprite's on-screen size based on current camera scale.
-    /// Called after swap and after any pinch-zoom change to currentFocalNodeID.
+    /// AT17.3: Recompute focal sprite's on-screen size when camera scale changes.
+    /// Called only after pinch-zoom alters cameraNode.xScale. The sprite's texture
+    /// is already correct at this point — only sprite.size needs updating.
     private func updateFocalSpriteSize(nodeID: String) {
         guard let shape = nodeSprites[nodeID],
               let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,

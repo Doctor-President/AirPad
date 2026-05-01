@@ -2304,21 +2304,23 @@ final class CorpusPhysicsScene: SKScene {
               let isFocal = sprite.userData?["isFocal"] as? Bool,
               !isFocal,
               let node = currentNodes.first(where: { $0.id == nodeID }),
-              let radius = nodeIntrinsicRadii[nodeID]
+              let view = self.view
         else { return }
 
-        // SB97.2: Use intrinsic diameter — parent's xScale change does the visual enlargement.
-        let bubbleDiameter = radius * 2
+        // AT17.3: All text geometry derives from the displayed focal diameter,
+        // not the bubble's intrinsic radius. The parent's xScale handles enlargement;
+        // the rasterization itself must be sized for what the user will actually see.
+        let displayedDiameter = focalScreenFraction * view.bounds.width
 
-        let titleFontSize = radius * 2.1
+        let titleFontSize = displayedDiameter * 0.11
         let titleFont = UIFont(name: "HelveticaNeue-Bold", size: titleFontSize) ?? UIFont.boldSystemFont(ofSize: titleFontSize)
-        let summaryFontSize = radius * 1.5
+        let summaryFontSize = displayedDiameter * 0.07
         let summaryFont = UIFont(name: "HelveticaNeue", size: summaryFontSize) ?? UIFont.systemFont(ofSize: summaryFontSize)
 
         let texture = rasterizeText(
             title: fullTitle,
             summary: node.summary,
-            bubbleDiameter: bubbleDiameter,
+            bubbleDiameter: displayedDiameter,
             titleFont: titleFont,
             summaryFont: summaryFont,
             titleMaxLines: 2,
@@ -2326,8 +2328,35 @@ final class CorpusPhysicsScene: SKScene {
             renderScale: 6.0
         )
         sprite.texture = texture
-        sprite.size = computeIntrinsicSpriteSize(texture: texture, bubbleDiameter: bubbleDiameter, renderScale: 6.0)
         sprite.userData?["isFocal"] = true
+        updateFocalSpriteSize(nodeID: nodeID)
+
+        print("[FocalText] swap displayedDiameter=\(displayedDiameter) titleFontSize=\(titleFontSize) texture=\(texture.size())")
+    }
+
+    /// AT17.3: Recompute focal sprite's on-screen size based on current camera scale.
+    /// Called after swap and after any pinch-zoom change to currentFocalNodeID.
+    private func updateFocalSpriteSize(nodeID: String) {
+        guard let shape = nodeSprites[nodeID],
+              let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+              let isFocal = sprite.userData?["isFocal"] as? Bool, isFocal,
+              let intrinsicRadius = nodeIntrinsicRadii[nodeID], intrinsicRadius > 0,
+              let view = self.view,
+              let texture = sprite.texture
+        else { return }
+
+        let displayedDiameter = focalScreenFraction * view.bounds.width
+        let cameraScale = cameraNode.xScale
+        let targetWorldRadius = (displayedDiameter / 2.0) * cameraScale
+        let targetParentScale = targetWorldRadius / intrinsicRadius
+
+        let intrinsicSize = texture.size()
+        sprite.size = CGSize(
+            width: intrinsicSize.width / targetParentScale,
+            height: intrinsicSize.height / targetParentScale
+        )
+
+        print("[FocalText] resize cameraScale=\(cameraScale) targetParentScale=\(targetParentScale) sprite.size=\(sprite.size)")
     }
 
     private func swapToNonFocalTexture(nodeID: String) {
@@ -2555,6 +2584,9 @@ final class CorpusPhysicsScene: SKScene {
                 let factor = prev / dist
                 let newScale = (cameraNode.xScale * factor).clamped(to: 0.25...4.0)
                 cameraNode.setScale(newScale)
+                if let focalID = currentFocalNodeID {
+                    updateFocalSpriteSize(nodeID: focalID)
+                }
             }
             lastPinchDistance = dist
         }

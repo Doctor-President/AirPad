@@ -239,6 +239,11 @@ final class CorpusPhysicsScene: SKScene {
     private let relatednessService = RelatednessService()
     private var currentNodes: [Node] = []  // Cached for relatedness computation
 
+    // Background isometric grid (AT18.1.3: static tiled PNG, no shader).
+    // SKNode parent containing a grid of identical-texture SKSpriteNode chunks;
+    // SpriteKit batches them into one draw call.
+    private var gridNode: SKNode?
+
     // Zoom state
     private var originalCameraPosition: CGPoint = .zero
     private var originalCameraScale: CGFloat = 1.0
@@ -612,6 +617,15 @@ final class CorpusPhysicsScene: SKScene {
         addChild(cameraNode)
         camera = cameraNode
 
+        // Background isometric grid — direct child of scene (NOT camera) so
+        // it pans and zooms naturally with the canvas. Anchored once at world
+        // origin; the 8192² coverage is large enough that the user can pan
+        // freely without ever reaching an edge. AT18.1.3.
+        let grid = IsometricGridNode.make()
+        grid.position = .zero
+        addChild(grid)
+        gridNode = grid
+
         // Large boundary so nodes don't escape to infinity
         let boundary = CGRect(x: -1500, y: -1500, width: 3000, height: 3000)
         physicsBody = SKPhysicsBody(edgeLoopFrom: boundary)
@@ -646,6 +660,7 @@ final class CorpusPhysicsScene: SKScene {
 
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+
 
         // Über-node shader updates disabled (sprites not rendered)
         // for (_, shape) in uberNodeSprites {

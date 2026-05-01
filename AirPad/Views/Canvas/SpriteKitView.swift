@@ -11,7 +11,8 @@ struct SpriteKitView: UIViewRepresentable {
         view.presentScene(scene)
         view.ignoresSiblingOrder = true
         view.isPaused = false
-        view.backgroundColor = UIColor(red: 0.027, green: 0.027, blue: 0.039, alpha: 1.0)
+        view.backgroundColor = .clear
+        view.allowsTransparency = true
         return view
     }
 

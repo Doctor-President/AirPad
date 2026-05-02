@@ -7,8 +7,8 @@ import simd
 /// per-fragment by a 3D value-noise field evolving in time.
 ///
 /// AT18.1.6 — May 2, 2026. Geometry swapped from the AT18.1.3-1.5 isometric
-/// tile to a square 1:1 tile (asset still named `IsometricGrid` in the catalog;
-/// the PNG contents were replaced in-place). Tile dimensions go from 70x80 to
+/// tile to a square 1:1 tile (asset renamed in the catalog from
+/// `IsometricGrid` to `BackgroundGrid`). Tile dimensions go from 70x80 to
 /// 70x70; chunk size 560pt still divides cleanly (560 / 70 = 8 tiles per
 /// chunk side). Zoom is decoupled from this node: the parent scene applies a
 /// per-frame inverse-scale counter-transform so the grid stays at constant
@@ -93,8 +93,8 @@ enum BackgroundGridNode {
     /// Resize the source PNG once to the locked 70pt tile size. Decouples
     /// the source asset's pixel resolution from on-screen tile dimensions.
     private static func loadTileImage() -> UIImage {
-        guard let source = UIImage(named: "IsometricGrid") else {
-            fatalError("IsometricGrid asset missing from asset catalog")
+        guard let source = UIImage(named: "BackgroundGrid") else {
+            fatalError("BackgroundGrid asset missing from asset catalog")
         }
         let format = UIGraphicsImageRendererFormat.default()
         format.opaque = false

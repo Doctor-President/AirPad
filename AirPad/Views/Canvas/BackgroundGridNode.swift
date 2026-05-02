@@ -183,7 +183,7 @@ enum BackgroundGridNode {
             // Sample a separate noise field to compute a UV offset.
             // Independent z-offsets (+1000.0 / +2000.0) decorrelate from the
             // luma noise so the two effects don't pulse in lockstep.
-            const float displaceScale = 0.012;
+            const float displaceScale = 0.006;
             const float displaceSpeed = 0.5;
             const float displaceAmp   = 6.0;
 

@@ -668,6 +668,7 @@ final class CorpusPhysicsScene: SKScene {
         // anchored at world origin); zoom is neutralized so fine line geometry
         // never minifies into moiré at extreme zoom-out.
         if let grid = gridNode {
+            grid.position = cameraNode.position
             grid.setScale(1.0 / cameraNode.xScale)
         }
 

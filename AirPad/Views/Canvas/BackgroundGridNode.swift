@@ -22,7 +22,7 @@ import simd
 /// SKShader instance with a per-chunk u_chunkCenter uniform so noise stays
 /// continuous across chunk seams); ASCII-only shader source; u_time
 /// auto-supplied by SpriteKit; premultiplied alpha; locked design values
-/// (baseAlpha 0.30, noise scale 0.008, intensity 0.74, speed 0.5,
+/// (baseAlpha 0.15, noise scale 0.008, intensity 0.74, speed 0.5,
 /// displacement scale 0.006, speed 0.5, amplitude 6.0).
 ///
 /// Tiling strategy (preserved): SKShapeNode.fillTexture and SKSpriteNode.texture
@@ -44,7 +44,7 @@ enum BackgroundGridNode {
     /// source PNG downsampled to 70pt washes out the strokes. Now applied
     /// inside the shader as `baseOpacity` so the noise matte modulates around
     /// it; the parent node's alpha stays at 1.0.
-    static let baseAlpha: CGFloat = 0.30
+    static let baseAlpha: CGFloat = 0.15
 
     /// Side length of one baked chunk. Must be an integer multiple of the
     /// tile size so chunk-to-chunk borders fall on tile borders and the
@@ -198,7 +198,7 @@ enum BackgroundGridNode {
             const float noiseScale     = 0.008;
             const float noiseIntensity = 0.74;
             const float noiseSpeed     = 0.5;
-            const float baseOpacity    = 0.30;
+            const float baseOpacity    = 0.15;
 
             float n = valueNoise3(vec3(worldPos * noiseScale, u_time * noiseSpeed));
             float matte = 1.0 + (n - 0.5) * 2.0 * noiseIntensity;

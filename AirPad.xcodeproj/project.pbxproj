@@ -16,6 +16,7 @@
 		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
 		1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
+		1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */; };
 		20A15CA3D0F6100CB85D8AA1 /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */; };
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
@@ -71,7 +72,6 @@
 		D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
-		DB47F8E927BB322B98CA812A /* IsometricGridNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCA707A7E8E614321B957858 /* IsometricGridNode.swift */; };
 		E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */; };
 		F59A93CA70C8FE71BC12E118 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239B75A26B2BA53534F71428 /* LayoutService.swift */; };
@@ -142,6 +142,7 @@
 		988F66299DD79745A824B3A0 /* RelatednessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatednessService.swift; sourceTree = "<group>"; };
 		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusQuerySheet.swift; sourceTree = "<group>"; };
+		ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridNode.swift; sourceTree = "<group>"; };
 		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
 		AE402981E931009EBB3F93EE /* Neighborhood.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Neighborhood.swift; sourceTree = "<group>"; };
 		B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadService.swift; sourceTree = "<group>"; };
@@ -164,7 +165,6 @@
 		F7814673E5A10B9F5E391DA4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		F98C5EDB7B8428ABB080668F /* UberNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UberNode.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
-		FCA707A7E8E614321B957858 /* IsometricGridNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IsometricGridNode.swift; sourceTree = "<group>"; };
 		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -197,12 +197,12 @@
 		1098DD62B5B4D5B3A78424EB /* Canvas */ = {
 			isa = PBXGroup;
 			children = (
+				ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */,
 				9348EE6BAC36DA4236BB5780 /* CanvasState.swift */,
 				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
 				D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */,
-				FCA707A7E8E614321B957858 /* IsometricGridNode.swift */,
 				323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */,
 			);
 			path = Canvas;
@@ -511,6 +511,7 @@
 				D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */,
 				6353A53FA1E910980685F823 /* ActionButtonFan.swift in Sources */,
 				2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */,
+				1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */,
 				97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */,
 				D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */,
 				734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */,
@@ -528,7 +529,6 @@
 				0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */,
 				8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */,
 				9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */,
-				DB47F8E927BB322B98CA812A /* IsometricGridNode.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */,
 				79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */,

@@ -239,10 +239,10 @@ final class CorpusPhysicsScene: SKScene {
     private let relatednessService = RelatednessService()
     private var currentNodes: [Node] = []  // Cached for relatedness computation
 
-    // Background isometric grid (AT18.1.3: static tiled PNG, no shader).
-    // SKNode parent containing a grid of identical-texture SKSpriteNode chunks;
-    // SpriteKit batches them into one draw call.
-    private var gridNode: SKNode?
+    // Background grid (AT18.1.9: procedural adaptive shader).
+    // Single SKShapeNode parented to cameraNode; shader reconstructs world
+    // coordinates from camera position + scale uniforms each frame.
+    private var gridNode: SKShapeNode?
 
     // Zoom state
     private var originalCameraPosition: CGPoint = .zero
@@ -617,15 +617,13 @@ final class CorpusPhysicsScene: SKScene {
         addChild(cameraNode)
         camera = cameraNode
 
-        // Background square grid — direct child of scene (NOT camera) so it
-        // pans naturally with the canvas. Anchored once at world origin; the
-        // 8192² coverage is large enough that the user can pan freely without
-        // ever reaching an edge. AT18.1.6: zoom is decoupled in update(_:) via
-        // an inverse-scale counter-transform so the grid stays at constant
-        // screen-pixel size regardless of pinch-zoom (kills moiré at zoom-out).
-        let grid = BackgroundGridNode.make()
-        grid.position = .zero
-        addChild(grid)
+        // Background grid (AT18.1.9): single procedural-shader SKShapeNode
+        // parented to the camera so its screen position is fixed. Shader
+        // reconstructs world coordinates from camera uniforms; pan and zoom
+        // are entirely handled by the shader's coordinate math.
+        let viewportSize = view.bounds.size
+        let grid = BackgroundGridNode.makeShape(viewportSize: viewportSize, fillTexture: whiteUVTexture)
+        cameraNode.addChild(grid)
         gridNode = grid
 
         // Large boundary so nodes don't escape to infinity
@@ -642,6 +640,13 @@ final class CorpusPhysicsScene: SKScene {
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
+    }
+
+    override func didChangeSize(_ oldSize: CGSize) {
+        super.didChangeSize(oldSize)
+        if let grid = gridNode {
+            BackgroundGridNode.resize(grid, to: size)
+        }
     }
 
     override func update(_ currentTime: TimeInterval) {
@@ -663,15 +668,13 @@ final class CorpusPhysicsScene: SKScene {
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
 
-        // AT18.1.8: hold the background grid at constant screen-pixel size by
-        // matching its local scale to the camera scale. SpriteKit's render
-        // pipeline divides world-space dimensions by cameraNode.xScale, so
-        // setting grid.xScale = cameraNode.xScale exactly cancels — apparent
-        // screen size is invariant across zoom. Grid stays anchored at world
-        // origin (set once in didMove, never written here), so pan continues
-        // to work via the camera moving over a static grid surface.
+        // AT18.1.9: push camera state into the grid shader. The grid shape is
+        // camera-parented (fixed screen position); the shader handles pan and
+        // zoom by reconstructing world coordinates from these uniforms.
         if let grid = gridNode {
-            grid.setScale(cameraNode.xScale)
+            BackgroundGridNode.update(grid,
+                                      cameraPosition: cameraNode.position,
+                                      cameraScale: cameraNode.xScale)
         }
 
 

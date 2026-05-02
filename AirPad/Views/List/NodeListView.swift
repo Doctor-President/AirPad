@@ -42,6 +42,9 @@ struct NodeListView: View {
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
                     Color.black.ignoresSafeArea()
+                    BackgroundGridView()
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
                     listContent(containerHeight: geo.size.height)
                     VStack(spacing: 0) {
                         LinearGradient(

@@ -1,155 +1,82 @@
 import SpriteKit
-import UIKit
 import simd
 
-/// Tiled square grid background with animated luma matte and noise-driven
-/// UV displacement. White lines on transparent background, alpha modulated
-/// per-fragment by a 3D value-noise field evolving in time.
+/// Procedural adaptive square grid. Fully GPU-rendered: lines computed
+/// per-fragment in world space, with three levels of adaptive subdivision
+/// that fade in/out by screen-space density. World-space animated noise
+/// (luma matte + UV displacement) modulates the lines.
 ///
-/// AT18.1.6 — May 2, 2026. Geometry swapped from the AT18.1.3-1.5 isometric
-/// tile to a square 1:1 tile (asset renamed in the catalog from
-/// `IsometricGrid` to `BackgroundGrid`). Tile dimensions go from 70x80 to
-/// 70x70; chunk size 560pt still divides cleanly (560 / 70 = 8 tiles per
-/// chunk side). Zoom is decoupled from this node: the parent scene applies a
-/// per-frame inverse-scale counter-transform so the grid stays at constant
-/// screen-pixel size regardless of camera zoom (fixes moire shimmer at extreme
-/// zoom-out). Pan still works because the grid sits at world origin and the
-/// camera moves over it. The noise field is therefore anchored to the grid
-/// surface itself — correct, since noise is a property of the grid, not the
-/// world.
+/// AT18.1.10 — May 2, 2026. Replaces the chunked-tile approach (AT18.1.3-1.9)
+/// which couldn't satisfy correct pan AND zoom anchor with a single scaled
+/// parent. The shape is parented to cameraNode so its screen position is
+/// fixed; the shader reconstructs world coordinates from v_tex_coord plus
+/// camera position + scale uniforms. No transform gymnastics.
 ///
-/// Preserved from AT18.1.3-1.5: chunked architecture (each chunk gets its own
-/// SKShader instance with a per-chunk u_chunkCenter uniform so noise stays
-/// continuous across chunk seams); ASCII-only shader source; u_time
-/// auto-supplied by SpriteKit; premultiplied alpha; locked design values
-/// (baseAlpha 0.15, noise scale 0.008, intensity 0.74, speed 0.5,
-/// displacement scale 0.006, speed 0.5, amplitude 6.0).
+/// Locked design values (preserved from AT18.1.4-1.5):
+///   stroke 0.50pt screen-space, base opacity 0.30, white,
+///   luma noise scale 0.008 / intensity 0.74 / speed 0.5,
+///   displacement noise scale 0.006 / amplitude 6.0 / speed 0.5,
+///   z-offsets +1000 / +2000 to decorrelate displacement from luma.
 ///
-/// Tiling strategy (preserved): SKShapeNode.fillTexture and SKSpriteNode.texture
-/// both stretch a single texture across their bounds in this SpriteKit version,
-/// neither tiles. So we tile explicitly: bake a chunk image once, then lay out
-/// a grid of identical SKSpriteNode chunks across `rectSize`. All chunks share
-/// one SKTexture. Per-chunk shader instances mean SpriteKit can no longer batch
-/// them into a single draw call, but the shader is light (one texture sample,
-/// two 3D noise calls) so the draw-call cost is acceptable on iPad at 120Hz.
+/// Adaptive subdivision: three levels at periods 100 / 500 / 2500 world
+/// points (ratio 5), peak opacity at ~60px screen-space spacing.
 enum BackgroundGridNode {
 
-    /// Total side length covered by the grid in world points.
-    static let rectSize: CGFloat = 8192
-
-    /// On-screen size of one tile. Square 1:1, locked at fine-texture density.
-    static let tileSize = CGSize(width: 70, height: 70)
-
-    /// Base opacity. Bumped from the original 0.07 because the high-res
-    /// source PNG downsampled to 70pt washes out the strokes. Now applied
-    /// inside the shader as `baseOpacity` so the noise matte modulates around
-    /// it; the parent node's alpha stays at 1.0.
-    static let baseAlpha: CGFloat = 0.15
-
-    /// Side length of one baked chunk. Must be an integer multiple of the
-    /// tile size so chunk-to-chunk borders fall on tile borders and the
-    /// pattern continues seamlessly. 560 = 70 x 8.
-    private static let chunkSize: CGFloat = 560
-
-    static func make() -> SKNode {
-        let tile = loadTileImage()
-        let chunkTexture = bakeChunkTexture(from: tile)
-        let shaderSource = makeShaderSource()
-
-        let parent = SKNode()
-        parent.zPosition = -1000
-        parent.name = "backgroundGrid"
-
-        let chunkCount = Int((rectSize / chunkSize).rounded(.up))
-        let half = CGFloat(chunkCount) * chunkSize * 0.5
-        for i in 0..<chunkCount {
-            for j in 0..<chunkCount {
-                let chunk = SKSpriteNode(
-                    texture: chunkTexture,
-                    size: CGSize(width: chunkSize, height: chunkSize)
-                )
-                let center = CGPoint(
-                    x: -half + chunkSize * (CGFloat(i) + 0.5),
-                    y: -half + chunkSize * (CGFloat(j) + 0.5)
-                )
-                chunk.position = center
-                chunk.blendMode = .alpha
-
-                let shader = SKShader(source: shaderSource)
-                shader.uniforms = [
-                    SKUniform(
-                        name: "u_chunkCenter",
-                        vectorFloat2: vector_float2(Float(center.x), Float(center.y))
-                    )
-                ]
-                chunk.shader = shader
-
-                parent.addChild(chunk)
+    /// Per-frame: push camera position and scale into the shader uniforms.
+    static func update(_ shape: SKShapeNode, cameraPosition: CGPoint, cameraScale: CGFloat) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_camera_position":
+                u.vectorFloat2Value = vector_float2(Float(cameraPosition.x), Float(cameraPosition.y))
+            case "u_camera_scale":
+                u.floatValue = Float(cameraScale)
+            default:
+                break
             }
         }
-        return parent
     }
 
-    /// Resize the source PNG once to the locked 70pt tile size. Decouples
-    /// the source asset's pixel resolution from on-screen tile dimensions.
-    private static func loadTileImage() -> UIImage {
-        guard let source = UIImage(named: "BackgroundGrid") else {
-            fatalError("BackgroundGrid asset missing from asset catalog")
-        }
-        let format = UIGraphicsImageRendererFormat.default()
-        format.opaque = false
-        format.scale = UIScreen.main.scale
-        let renderer = UIGraphicsImageRenderer(size: tileSize, format: format)
-        return renderer.image { _ in
-            source.draw(in: CGRect(origin: .zero, size: tileSize))
-        }
+    /// Build the shape and shader. Caller adds it as a child of cameraNode
+    /// at low zPosition, and resizes it via `resize(_:to:)` on scene size change.
+    static func makeShape(viewportSize: CGSize, fillTexture: SKTexture) -> SKShapeNode {
+        let half = CGSize(width: viewportSize.width / 2, height: viewportSize.height / 2)
+        let rect = CGRect(x: -half.width, y: -half.height,
+                          width: viewportSize.width, height: viewportSize.height)
+        let shape = SKShapeNode(path: CGPath(rect: rect, transform: nil))
+        shape.zPosition = -1000
+        shape.name = "backgroundGrid"
+        shape.fillColor = .white
+        shape.strokeColor = .clear
+        shape.lineWidth = 0
+        shape.fillTexture = fillTexture
+        shape.alpha = 1.0
+        shape.blendMode = .alpha
+        shape.fillShader = makeShader(viewportSize: viewportSize)
+        return shape
     }
 
-    /// Stamp the resized tile across a `chunkSize`-square image. Done once
-    /// at scene setup; the resulting SKTexture is shared by every chunk
-    /// sprite so the bake cost is paid exactly once.
-    private static func bakeChunkTexture(from tile: UIImage) -> SKTexture {
-        let size = CGSize(width: chunkSize, height: chunkSize)
-        let format = UIGraphicsImageRendererFormat.default()
-        format.opaque = false
-        format.scale = UIScreen.main.scale
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
-        let image = renderer.image { _ in
-            var y: CGFloat = 0
-            while y < chunkSize {
-                var x: CGFloat = 0
-                while x < chunkSize {
-                    tile.draw(in: CGRect(
-                        x: x,
-                        y: y,
-                        width: tileSize.width,
-                        height: tileSize.height
-                    ))
-                    x += tileSize.width
-                }
-                y += tileSize.height
+    /// Resize when the viewport changes (e.g. orientation).
+    static func resize(_ shape: SKShapeNode, to size: CGSize) {
+        let half = CGSize(width: size.width / 2, height: size.height / 2)
+        let rect = CGRect(x: -half.width, y: -half.height,
+                          width: size.width, height: size.height)
+        shape.path = CGPath(rect: rect, transform: nil)
+        if let uniforms = shape.fillShader?.uniforms {
+            for u in uniforms where u.name == "u_viewport_size" {
+                u.vectorFloat2Value = vector_float2(Float(size.width), Float(size.height))
             }
         }
-        let texture = SKTexture(image: image)
-        texture.filteringMode = .linear
-        return texture
     }
 
-    /// GLSL ES source. Identical for every chunk; only `u_chunkCenter` differs
-    /// at the uniform level. The 560.0 constant is interpolated from
-    /// `chunkSize` so the two stay in sync if the chunk dimensions ever change.
-    private static func makeShaderSource() -> String {
-        return """
-        // 3D value noise -- helpers must precede main per GLSL ES rules.
+    private static func makeShader(viewportSize: CGSize) -> SKShader {
+        let source = """
+        // --- Helpers (must precede main per GLSL ES rules) ---
 
         float hash3(vec3 p) {
             return fract(sin(p.x * 127.1 + p.y * 311.7 + p.z * 74.7) * 43758.5453);
         }
-
-        float smoothstep3(float t) {
-            return t * t * (3.0 - 2.0 * t);
-        }
-
+        float smoothstep3(float t) { return t * t * (3.0 - 2.0 * t); }
         float valueNoise3(vec3 p) {
             vec3 i = floor(p);
             vec3 f = p - i;
@@ -173,41 +100,120 @@ enum BackgroundGridNode {
             return mix(y0, y1, w);
         }
 
+        // World-space distance to nearest line of a square grid at given period.
+        // d <= 0 means the fragment is within halfStrokeWorld of a line (on-line);
+        // d > 0 means off-line. min over axes because a fragment is on a line if
+        // EITHER axis distance puts it inside the stroke band.
+        float lineDistance(vec2 worldPos, float period, float halfStrokeWorld) {
+            vec2 m = mod(worldPos, period);
+            // distance from nearest cell edge, range [0, period/2]
+            vec2 distFromEdge = (period * 0.5) - abs(m - period * 0.5);
+            // negative when within halfStrokeWorld of the edge
+            vec2 d = distFromEdge - halfStrokeWorld;
+            return min(d.x, d.y);
+        }
+
+        // Adaptive opacity for one grid level, by screen-space period.
+        // Steepness 0.3: each level visible for ~6.67 octaves (vs 4 at 0.5).
+        // Adjacent ratio-5 levels overlap ~4.35 octaves so 2-3 levels are
+        // typically active at once -- finer grids fade in earlier as you
+        // zoom out, coarser ones linger as you zoom in.
+        float levelOpacity(float screenPeriod, float targetPx) {
+            float t = log2(screenPeriod / targetPx);
+            return clamp(1.0 - abs(t) * 0.3, 0.0, 1.0);
+        }
+
+        // --- Main ---
+
         void main() {
-            // World-space coordinate for noise sampling. v_tex_coord runs 0..1
-            // across this chunk's own span; u_chunkCenter (per-chunk uniform)
-            // shifts into world space so noise stays continuous across seams.
-            vec2 worldPos = (v_tex_coord - vec2(0.5)) * \(chunkSize) + u_chunkCenter;
+            // Reconstruct world position of this fragment.
+            // SpriteKit camera convention: xScale > 1 = zoomed out (more world
+            // visible per screen point). So 1 screen point = u_camera_scale
+            // world points -> world = camPos + screenOffset * u_camera_scale.
+            vec2 screenOffset = (v_tex_coord - vec2(0.5)) * u_viewport_size;
+            vec2 worldPos = u_camera_position + screenOffset * u_camera_scale;
 
-            // --- Displacement layer ---
-            // Sample a separate noise field to compute a UV offset.
-            // Independent z-offsets (+1000.0 / +2000.0) decorrelate from the
-            // luma noise so the two effects don't pulse in lockstep.
-            const float displaceScale = 0.006;
-            const float displaceSpeed = 0.5;
-            const float displaceAmp   = 6.0;
+            // --- Displacement (samples in screen space) ---
+            // Noise sampled at screenOffset so the pattern is welded to the
+            // screen during zoom/pan. Amplitude expressed in screen pixels and
+            // converted to world units via u_camera_scale so the wiggle
+            // magnitude is constant regardless of zoom.
+            const float displaceScale     = 0.006;
+            const float displaceSpeed     = 0.5;
+            const float displaceAmpScreen = 6.0;  // screen pixels
+            float displaceAmpWorld = displaceAmpScreen * u_camera_scale;
+            float dx_n = valueNoise3(vec3(screenOffset * displaceScale, u_time * displaceSpeed + 1000.0));
+            float dy_n = valueNoise3(vec3(screenOffset * displaceScale, u_time * displaceSpeed + 2000.0));
+            vec2 displacement = vec2(dx_n - 0.5, dy_n - 0.5) * 2.0 * displaceAmpWorld;
+            vec2 displacedWorld = worldPos + displacement;
 
-            float dx_noise = valueNoise3(vec3(worldPos * displaceScale, u_time * displaceSpeed + 1000.0));
-            float dy_noise = valueNoise3(vec3(worldPos * displaceScale, u_time * displaceSpeed + 2000.0));
+            // --- Adaptive subdivision: five grid levels ---
+            // Ratio 5: each coarse cell subdivides into 5x5 finer cells.
+            // Periods 2, 10, 50, 250, 1250 -- p2=50 sits near the 60px
+            // visibility peak at xScale=1, so the default look is dominated
+            // by the 50-world-point level with crossfade emerging on either
+            // side as the user zooms. Adjacent levels overlap ~1.68 octaves;
+            // if crossfade pops, lower steepness in levelOpacity from 0.5.
+            const float targetPx = 60.0;
+            const float strokePx = 0.5;     // screen-space stroke width
 
-            vec2 displacement = vec2(dx_noise - 0.5, dy_noise - 0.5) * 2.0 * displaceAmp;
-            vec2 displacedUV = v_tex_coord + displacement / \(chunkSize);
+            // Convert screen-space stroke into world space at this zoom.
+            // 1 screen point = u_camera_scale world points (zoom-out convention).
+            float halfStrokeWorld = (strokePx * 0.5) * u_camera_scale;
+            float feather = halfStrokeWorld * 0.5;
 
-            vec4 tex = texture2D(u_texture, displacedUV);
+            float p0 = 2.0;
+            float p1 = 10.0;
+            float p2 = 50.0;
+            float p3 = 250.0;
+            float p4 = 1250.0;
 
-            const float noiseScale     = 0.008;
-            const float noiseIntensity = 0.74;
-            const float noiseSpeed     = 0.5;
-            const float baseOpacity    = 0.15;
+            // Screen period = world period / world-per-screen ratio.
+            float a0 = levelOpacity(p0 / u_camera_scale, targetPx);
+            float a1 = levelOpacity(p1 / u_camera_scale, targetPx);
+            float a2 = levelOpacity(p2 / u_camera_scale, targetPx);
+            float a3 = levelOpacity(p3 / u_camera_scale, targetPx);
+            float a4 = levelOpacity(p4 / u_camera_scale, targetPx);
 
-            float n = valueNoise3(vec3(worldPos * noiseScale, u_time * noiseSpeed));
-            float matte = 1.0 + (n - 0.5) * 2.0 * noiseIntensity;
+            float d0 = lineDistance(displacedWorld, p0, halfStrokeWorld);
+            float d1 = lineDistance(displacedWorld, p1, halfStrokeWorld);
+            float d2 = lineDistance(displacedWorld, p2, halfStrokeWorld);
+            float d3 = lineDistance(displacedWorld, p3, halfStrokeWorld);
+            float d4 = lineDistance(displacedWorld, p4, halfStrokeWorld);
 
-            float alpha = clamp(tex.a * baseOpacity * matte, 0.0, 1.0);
+            float c0 = (1.0 - smoothstep(0.0, feather, d0)) * a0;
+            float c1 = (1.0 - smoothstep(0.0, feather, d1)) * a1;
+            float c2 = (1.0 - smoothstep(0.0, feather, d2)) * a2;
+            float c3 = (1.0 - smoothstep(0.0, feather, d3)) * a3;
+            float c4 = (1.0 - smoothstep(0.0, feather, d4)) * a4;
+            float lineCoverage = max(max(c0, c1), max(c2, max(c3, c4)));
 
-            // SpriteKit uses premultiplied alpha. White lines -> RGB = alpha.
+            // --- Luma matte (samples in screen space, decorrelated z) ---
+            // Pattern stays welded to the screen during zoom/pan, like a veil
+            // over the camera rather than a texture on the world.
+            const float lumaScale     = 0.008;
+            const float lumaIntensity = 0.74;
+            const float lumaSpeed     = 0.5;
+            float n = valueNoise3(vec3(screenOffset * lumaScale, u_time * lumaSpeed));
+            float matte = 1.0 + (n - 0.5) * 2.0 * lumaIntensity;
+
+            // --- Composite ---
+            // baseOpacity 0.25 = peak line opacity; matte modulates around it.
+            const float baseOpacity = 0.25;
+            float alpha = clamp(lineCoverage * baseOpacity * matte, 0.0, 1.0);
+
+            // Premultiplied output (white lines).
             gl_FragColor = vec4(alpha, alpha, alpha, alpha);
         }
         """
+
+        let shader = SKShader(source: source)
+        shader.uniforms = [
+            SKUniform(name: "u_camera_position", vectorFloat2: vector_float2(0, 0)),
+            SKUniform(name: "u_camera_scale",    float: 1.0),
+            SKUniform(name: "u_viewport_size",   vectorFloat2: vector_float2(Float(viewportSize.width),
+                                                                              Float(viewportSize.height)))
+        ]
+        return shader
     }
 }

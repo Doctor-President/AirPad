@@ -617,11 +617,13 @@ final class CorpusPhysicsScene: SKScene {
         addChild(cameraNode)
         camera = cameraNode
 
-        // Background isometric grid — direct child of scene (NOT camera) so
-        // it pans and zooms naturally with the canvas. Anchored once at world
-        // origin; the 8192² coverage is large enough that the user can pan
-        // freely without ever reaching an edge. AT18.1.3.
-        let grid = IsometricGridNode.make()
+        // Background square grid — direct child of scene (NOT camera) so it
+        // pans naturally with the canvas. Anchored once at world origin; the
+        // 8192² coverage is large enough that the user can pan freely without
+        // ever reaching an edge. AT18.1.6: zoom is decoupled in update(_:) via
+        // an inverse-scale counter-transform so the grid stays at constant
+        // screen-pixel size regardless of pinch-zoom (kills moiré at zoom-out).
+        let grid = BackgroundGridNode.make()
         grid.position = .zero
         addChild(grid)
         gridNode = grid
@@ -660,6 +662,14 @@ final class CorpusPhysicsScene: SKScene {
 
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+
+        // AT18.1.6: keep the background grid at constant screen-pixel size by
+        // counter-scaling against the camera. Pan still works (grid stays
+        // anchored at world origin); zoom is neutralized so fine line geometry
+        // never minifies into moiré at extreme zoom-out.
+        if let grid = gridNode {
+            grid.setScale(1.0 / cameraNode.xScale)
+        }
 
 
         // Über-node shader updates disabled (sprites not rendered)

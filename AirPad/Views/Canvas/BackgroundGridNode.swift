@@ -2,43 +2,53 @@ import SpriteKit
 import UIKit
 import simd
 
-/// Tiled isometric grid background with animated luma matte. White lines on
-/// transparent background, alpha modulated per-fragment by a 3D value-noise
-/// field evolving in time.
+/// Tiled square grid background with animated luma matte and noise-driven
+/// UV displacement. White lines on transparent background, alpha modulated
+/// per-fragment by a 3D value-noise field evolving in time.
 ///
-/// AT18.1.5 — May 1, 2026. Adds noise-driven UV displacement on top of the
-/// AT18.1.4 luma matte. A second 3D noise field (decorrelated from the luma
-/// noise via a z-offset) warps v_tex_coord before the texture sample so the
-/// grid lines visibly ripple like a stretched membrane. Same chunked
-/// architecture: each chunk sprite gets its own SKShader instance with a
-/// per-chunk u_chunkCenter uniform so noise samples stay continuous in world
-/// space across chunk seams. u_time is auto-supplied by SpriteKit.
+/// AT18.1.6 — May 2, 2026. Geometry swapped from the AT18.1.3-1.5 isometric
+/// tile to a square 1:1 tile (asset still named `IsometricGrid` in the catalog;
+/// the PNG contents were replaced in-place). Tile dimensions go from 70x80 to
+/// 70x70; chunk size 560pt still divides cleanly (560 / 70 = 8 tiles per
+/// chunk side). Zoom is decoupled from this node: the parent scene applies a
+/// per-frame inverse-scale counter-transform so the grid stays at constant
+/// screen-pixel size regardless of camera zoom (fixes moire shimmer at extreme
+/// zoom-out). Pan still works because the grid sits at world origin and the
+/// camera moves over it. The noise field is therefore anchored to the grid
+/// surface itself — correct, since noise is a property of the grid, not the
+/// world.
 ///
-/// Tiling strategy (preserved from AT18.1.3): SKShapeNode.fillTexture and
-/// SKSpriteNode.texture both stretch a single texture across their bounds in
-/// this SpriteKit version, neither tiles. So we tile explicitly: bake a chunk
-/// image once, then lay out a grid of identical SKSpriteNode chunks across
-/// `rectSize`. All chunks share one SKTexture. Per-chunk shader instances mean
-/// SpriteKit can no longer batch them into a single draw call, but the shader
-/// is light (one texture sample, one 3D noise call) so the draw-call cost is
-/// acceptable on iPad at 120Hz.
-enum IsometricGridNode {
+/// Preserved from AT18.1.3-1.5: chunked architecture (each chunk gets its own
+/// SKShader instance with a per-chunk u_chunkCenter uniform so noise stays
+/// continuous across chunk seams); ASCII-only shader source; u_time
+/// auto-supplied by SpriteKit; premultiplied alpha; locked design values
+/// (baseAlpha 0.30, noise scale 0.008, intensity 0.74, speed 0.5,
+/// displacement scale 0.012, speed 0.5, amplitude 6.0).
+///
+/// Tiling strategy (preserved): SKShapeNode.fillTexture and SKSpriteNode.texture
+/// both stretch a single texture across their bounds in this SpriteKit version,
+/// neither tiles. So we tile explicitly: bake a chunk image once, then lay out
+/// a grid of identical SKSpriteNode chunks across `rectSize`. All chunks share
+/// one SKTexture. Per-chunk shader instances mean SpriteKit can no longer batch
+/// them into a single draw call, but the shader is light (one texture sample,
+/// two 3D noise calls) so the draw-call cost is acceptable on iPad at 120Hz.
+enum BackgroundGridNode {
 
     /// Total side length covered by the grid in world points.
     static let rectSize: CGFloat = 8192
 
-    /// On-screen size of one tile. Locked at fine-texture density.
-    static let tileSize = CGSize(width: 70, height: 80)
+    /// On-screen size of one tile. Square 1:1, locked at fine-texture density.
+    static let tileSize = CGSize(width: 70, height: 70)
 
     /// Base opacity. Bumped from the original 0.07 because the high-res
-    /// source PNG downsampled to 70×80pt washes out the strokes. Now applied
+    /// source PNG downsampled to 70pt washes out the strokes. Now applied
     /// inside the shader as `baseOpacity` so the noise matte modulates around
     /// it; the parent node's alpha stays at 1.0.
     static let baseAlpha: CGFloat = 0.30
 
-    /// Side length of one baked chunk. Must be an integer multiple of both
-    /// tile dimensions so chunk-to-chunk borders fall on tile borders and
-    /// the pattern continues seamlessly. 560 = 70 × 8 = 80 × 7.
+    /// Side length of one baked chunk. Must be an integer multiple of the
+    /// tile size so chunk-to-chunk borders fall on tile borders and the
+    /// pattern continues seamlessly. 560 = 70 x 8.
     private static let chunkSize: CGFloat = 560
 
     static func make() -> SKNode {
@@ -48,7 +58,7 @@ enum IsometricGridNode {
 
         let parent = SKNode()
         parent.zPosition = -1000
-        parent.name = "isometricGrid"
+        parent.name = "backgroundGrid"
 
         let chunkCount = Int((rectSize / chunkSize).rounded(.up))
         let half = CGFloat(chunkCount) * chunkSize * 0.5
@@ -80,7 +90,7 @@ enum IsometricGridNode {
         return parent
     }
 
-    /// Resize the source PNG once to the locked 70×80pt tile size. Decouples
+    /// Resize the source PNG once to the locked 70pt tile size. Decouples
     /// the source asset's pixel resolution from on-screen tile dimensions.
     private static func loadTileImage() -> UIImage {
         guard let source = UIImage(named: "IsometricGrid") else {

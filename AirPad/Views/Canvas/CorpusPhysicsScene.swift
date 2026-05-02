@@ -663,13 +663,15 @@ final class CorpusPhysicsScene: SKScene {
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
 
-        // AT18.1.6: keep the background grid at constant screen-pixel size by
-        // counter-scaling against the camera. Pan still works (grid stays
-        // anchored at world origin); zoom is neutralized so fine line geometry
-        // never minifies into moiré at extreme zoom-out.
+        // AT18.1.8: hold the background grid at constant screen-pixel size by
+        // matching its local scale to the camera scale. SpriteKit's render
+        // pipeline divides world-space dimensions by cameraNode.xScale, so
+        // setting grid.xScale = cameraNode.xScale exactly cancels — apparent
+        // screen size is invariant across zoom. Grid stays anchored at world
+        // origin (set once in didMove, never written here), so pan continues
+        // to work via the camera moving over a static grid surface.
         if let grid = gridNode {
-            grid.position = cameraNode.position
-            grid.setScale(1.0 / cameraNode.xScale)
+            grid.setScale(cameraNode.xScale)
         }
 
 

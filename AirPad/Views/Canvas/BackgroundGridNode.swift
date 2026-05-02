@@ -23,7 +23,7 @@ import simd
 /// continuous across chunk seams); ASCII-only shader source; u_time
 /// auto-supplied by SpriteKit; premultiplied alpha; locked design values
 /// (baseAlpha 0.30, noise scale 0.008, intensity 0.74, speed 0.5,
-/// displacement scale 0.012, speed 0.5, amplitude 6.0).
+/// displacement scale 0.006, speed 0.5, amplitude 6.0).
 ///
 /// Tiling strategy (preserved): SKShapeNode.fillTexture and SKSpriteNode.texture
 /// both stretch a single texture across their bounds in this SpriteKit version,

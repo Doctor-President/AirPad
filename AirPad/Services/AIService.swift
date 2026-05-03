@@ -16,7 +16,7 @@ struct NodeAIResult {
     @Guide(description: "One to two sentence summary capturing the idea's core essence.")
     var summary: String
 
-    @Guide(description: "Tag names from the provided vocabulary that are genuinely relevant to this content. Return an empty array if no existing tag clearly applies — do not force a match.")
+    @Guide(description: "Tag names from the provided vocabulary that are genuinely relevant to this content. Return an empty array if no existing tag clearly applies — do not force a match. Return at most 5 tags. Prefer broad domain tags from the vocabulary over highly specific descriptors.")
     var tags: [String]
 
     @Guide(description: "Emotional tone — exactly one word from this fixed set: curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.")
@@ -50,7 +50,7 @@ actor AIService {
 
         let vocabLine: String
         if tagVocabulary.isEmpty {
-            vocabLine = "Tag vocabulary: (empty — create new tag names based on the content)"
+            vocabLine = "Tag vocabulary: (empty — create 1 to 3 concise domain-level tag names based on the content. Prefer broad categories over specific descriptors.)"
         } else {
             vocabLine = "Tag vocabulary: " + tagVocabulary.map { $0.name }.joined(separator: ", ")
         }
@@ -72,7 +72,7 @@ actor AIService {
             return NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
-                tags:    r.tags.filter { !$0.isEmpty },
+                tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
                 mood:    r.mood.isEmpty ? nil : r.mood,
                 domain:  r.domain.isEmpty ? nil : r.domain
             )

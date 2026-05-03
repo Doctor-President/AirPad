@@ -374,15 +374,33 @@ final class CorpusStore {
     }
 
     private static func tier1SeedTags() -> [Tag] {
-        let names = [
-            "Idea", "Work", "Research", "Learning", "Technology", "Science",
-            "Health", "Fitness", "Creative", "Story", "Art", "Recipe",
-            "Travel", "Finance", "People", "Dream", "Memory", "Reference",
-            "Nature", "Project"
+        // Hex values match the 16-swatch palette in TagEditorSheet so users can
+        // recreate any default by picking from the same picker.
+        let seeds: [(String, String)] = [
+            ("Idea",       "#007AFF"),  // blue
+            ("Work",       "#8E8E93"),  // light gray
+            ("Research",   "#00C7BE"),  // teal
+            ("Learning",   "#32ADE6"),  // sky blue
+            ("Technology", "#5856D6"),  // indigo
+            ("Science",    "#34C759"),  // green
+            ("Health",     "#FF3B30"),  // red
+            ("Fitness",    "#FF9500"),  // orange
+            ("Creative",   "#FF2D55"),  // hot pink
+            ("Story",      "#AF52DE"),  // purple
+            ("Art",        "#FF6B35"),  // orange-red
+            ("Recipe",     "#FFCC00"),  // yellow
+            ("Travel",     "#FFFFFF"),  // white
+            ("Finance",    "#A2845E"),  // brown
+            ("People",     "#FF6B35"),  // orange-red (paired w/ Art)
+            ("Dream",      "#AF52DE"),  // purple (paired w/ Story)
+            ("Memory",     "#636366"),  // dark gray
+            ("Reference",  "#8E8E93"),  // light gray (paired w/ Work)
+            ("Nature",     "#34C759"),  // green (paired w/ Science)
+            ("Project",    "#007AFF")   // blue (paired w/ Idea)
         ]
         let now = Date()
-        return names.map { name in
-            Tag(id: UUID(), name: name, colorHex: "#7A52FF", createdAt: now, useCount: 0)
+        return seeds.map { (name, hex) in
+            Tag(id: UUID(), name: name, colorHex: hex, createdAt: now, useCount: 0)
         }
     }
 

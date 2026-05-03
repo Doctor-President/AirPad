@@ -268,7 +268,16 @@ struct NodeDetailView: View {
         var changed = false
         if updated.title != editedTitle { updated.title = editedTitle; changed = true }
         if updated.summary != editedSummary { updated.summary = editedSummary; changed = true }
-        if updated.tags != editedTags { updated.tags = editedTags; changed = true }
+        if updated.tags != editedTags {
+            updated.tags = editedTags
+            // User-edited tags carry .user provenance; drop sources for removed tags.
+            let editedSet = Set(editedTags)
+            for name in editedTags { updated.tagSources[name] = .user }
+            for name in updated.tagSources.keys where !editedSet.contains(name) {
+                updated.tagSources.removeValue(forKey: name)
+            }
+            changed = true
+        }
         guard changed else { return }
         updated.updatedAt = Date()
         Task { await store.updateNode(updated) }

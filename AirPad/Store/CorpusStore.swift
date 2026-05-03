@@ -356,11 +356,17 @@ final class CorpusStore {
     }
 
     /// Applies tag names to a node, merging with its existing tags (no duplicates).
-    func applyTags(_ tagNames: [String], toNodeID nodeID: String) async {
+    /// `source` records provenance in `tagSources` — never downgrades `.user` to `.model`.
+    func applyTags(_ tagNames: [String], toNodeID nodeID: String, source: TagSource = .user) async {
         guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[idx]
-        for name in tagNames where !updated.tags.contains(name) {
-            updated.tags.append(name)
+        for name in tagNames {
+            if !updated.tags.contains(name) {
+                updated.tags.append(name)
+            }
+            if source == .user || updated.tagSources[name] == nil {
+                updated.tagSources[name] = source
+            }
         }
         await updateNode(updated)
     }
@@ -458,6 +464,9 @@ final class CorpusStore {
             // FM-coined tags not in vocabulary are dropped — vocabulary is the hard constraint.
         }
         updated.tags = existingTagNames
+        for name in existingTagNames where updated.tagSources[name] == nil {
+            updated.tagSources[name] = .model
+        }
         updated.needsAIProcessing = false
         await updateNode(updated)
 
@@ -474,7 +483,7 @@ final class CorpusStore {
                     )
                     await addTag(tag)
                 }
-                await applyTags(newTagNames, toNodeID: nodeID)
+                await applyTags(newTagNames, toNodeID: nodeID, source: .model)
                 print("[AI] Silent tag apply for \(nodeID): \(newTagNames)")
             } else {
                 pendingTagSuggestions = TagSuggestionContext(

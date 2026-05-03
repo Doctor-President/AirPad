@@ -2476,8 +2476,16 @@ final class CorpusPhysicsScene: SKScene {
         return min(30.0 + extra, 60.0)
     }
 
+    /// User-assigned tags win over FM-assigned tags for color identity.
+    private func primaryTag(for node: Node) -> String? {
+        if let userTag = node.tags.first(where: { node.tagSources[$0] == .user }) {
+            return userTag
+        }
+        return node.tags.first
+    }
+
     private func bubbleColor(for node: Node) -> UIColor {
-        if let primaryTag = node.tags.first, let color = tagColors[primaryTag] {
+        if let primary = primaryTag(for: node), let color = tagColors[primary] {
             return color
         }
         return UIColor(red: 0.556, green: 0.556, blue: 0.576, alpha: 1.0)  // #8E8E93 neutral

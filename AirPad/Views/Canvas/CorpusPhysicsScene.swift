@@ -490,6 +490,9 @@ final class CorpusPhysicsScene: SKScene {
     private var momentumEligible: Bool = false
 
     private var currentFocalNodeID: String? = nil
+    /// Node currently rendering with the gradient shader (focal render state).
+    /// Mutated only via `setFocalShader(to:)`.
+    private var focalShaderID: String? = nil
     // SB96: Selection haptic for focal changes during engagement
     private let focalChangeHaptic = UISelectionFeedbackGenerator()
     private var holdTimerStart: TimeInterval? = nil
@@ -721,6 +724,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
 
                 currentFocalNodeID = newFocalID
+                setFocalShader(to: newFocalID)
 
                 if let newFocalID = newFocalID, let newSprite = nodeSprites[newFocalID] {
                     // Save original zPosition before lifting
@@ -1027,6 +1031,7 @@ final class CorpusPhysicsScene: SKScene {
 
                 engagementState = .preCollapse(focal: focalID, startTime: currentTime)
                 currentFocalNodeID = nil
+                setFocalShader(to: nil)
                 holdCompleted = false
             }
 
@@ -2160,9 +2165,8 @@ final class CorpusPhysicsScene: SKScene {
         } else {
             shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
             shape.lineWidth = 1
-            // Gradient fill shader — requires a non-nil fillTexture so v_tex_coord is valid
-            shape.fillTexture = whiteUVTexture
-            shape.fillShader = nodeFillShader
+            // Unfocused nodes render flat tag color — gradient shader is applied on
+            // engagement via setFocalShader(to:) and cleared on disengagement.
 
             // Start organic breathing animation
             startBlobBreathing(for: shape, nodeID: nodeID, radius: radius)
@@ -2476,6 +2480,22 @@ final class CorpusPhysicsScene: SKScene {
         return min(30.0 + extra, 60.0)
     }
 
+    /// Applies the gradient fill shader to the new focal node and clears it from
+    /// the previously focal node. Pass nil to clear without applying a new one.
+    private func setFocalShader(to nodeID: String?) {
+        if let oldID = focalShaderID, oldID != nodeID,
+           let oldShape = nodeSprites[oldID] {
+            oldShape.fillShader = nil
+            oldShape.fillTexture = nil
+        }
+        if let newID = nodeID, newID != focalShaderID,
+           let newShape = nodeSprites[newID] {
+            newShape.fillTexture = whiteUVTexture
+            newShape.fillShader = nodeFillShader
+        }
+        focalShaderID = nodeID
+    }
+
     /// User-assigned tags win over FM-assigned tags for color identity.
     private func primaryTag(for node: Node) -> String? {
         if let userTag = node.tags.first(where: { node.tagSources[$0] == .user }) {
@@ -2727,6 +2747,7 @@ final class CorpusPhysicsScene: SKScene {
                 engagementState = .disengaging
                 gestureState = .idle
                 currentFocalNodeID = nil
+                setFocalShader(to: nil)
                 holdCompleted = false
             }
             return
@@ -2818,6 +2839,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
             currentFocalNodeID = nil
+            setFocalShader(to: nil)
             preCollapseStartScales.removeAll()  // SB94
         }
         gestureState = .idle

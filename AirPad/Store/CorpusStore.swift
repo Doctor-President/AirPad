@@ -141,7 +141,12 @@ final class CorpusStore {
             let loadedTags = try await service.loadTags()
             nodes = loaded.sorted { $0.createdAt > $1.createdAt }
             canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
-            tags = loadedTags
+            if loadedTags.isEmpty {
+                tags = Self.tier1SeedTags()
+                await persistTags()
+            } else {
+                tags = loadedTags
+            }
         } catch {
             print("[CorpusStore] Load error: \(error)")
         }
@@ -325,6 +330,19 @@ final class CorpusStore {
             try await service.saveTags(tags)
         } catch {
             print("[CorpusStore] Tags save error: \(error)")
+        }
+    }
+
+    private static func tier1SeedTags() -> [Tag] {
+        let names = [
+            "Idea", "Work", "Research", "Learning", "Technology", "Science",
+            "Health", "Fitness", "Creative", "Story", "Art", "Recipe",
+            "Travel", "Finance", "People", "Dream", "Memory", "Reference",
+            "Nature", "Project"
+        ]
+        let now = Date()
+        return names.map { name in
+            Tag(id: UUID(), name: name, colorHex: "#7A52FF", createdAt: now, useCount: 0)
         }
     }
 

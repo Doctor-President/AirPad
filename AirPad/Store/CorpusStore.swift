@@ -436,9 +436,8 @@ final class CorpusStore {
         for name in result.tags {
             if let storedTag = currentTags.first(where: { $0.name.lowercased() == name.lowercased() }) {
                 existingTagNames.append(storedTag.name)  // use stored name to match tagColorMap keys exactly
-            } else {
-                newTagNames.append(name)
             }
+            // FM-coined tags not in vocabulary are dropped — vocabulary is the hard constraint.
         }
         updated.tags = existingTagNames
         updated.needsAIProcessing = false

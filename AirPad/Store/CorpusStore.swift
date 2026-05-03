@@ -1020,8 +1020,38 @@ final class CorpusStore {
             Task {
                 try? await self.service.saveCorpusIndex(indexSnapshot)
             }
+            refreshRelatednessIndex()
         } else {
             print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
+        }
+    }
+
+    /// Computes top-N related nodes for every node and persists into the corpus index.
+    /// O(n²) — guarded for corpora over 500 nodes; Session C will add batching.
+    private func refreshRelatednessIndex() {
+        guard nodes.count <= 500 else {
+            print("[Relatedness] Skipping relatedness index — \(nodes.count) nodes exceeds 500-node guard")
+            return
+        }
+        let relatednessService = RelatednessService()
+        var updated = false
+        for node in nodes {
+            let related = relatednessService.topRelated(forNodeID: node.id, in: nodes, limit: 5)
+            guard !related.isEmpty else { continue }
+            let entry = NodeRelatednessEntry(
+                nodeID: node.id,
+                related: related.map { NodeRelation(nodeID: $0.nodeID, score: $0.score) },
+                computedAt: Date()
+            )
+            corpusIndex.relatedness[node.id] = entry
+            updated = true
+        }
+        if updated {
+            corpusIndex.updatedAt = Date()
+            let indexSnapshot = corpusIndex
+            Task {
+                try? await self.service.saveCorpusIndex(indexSnapshot)
+            }
         }
     }
 

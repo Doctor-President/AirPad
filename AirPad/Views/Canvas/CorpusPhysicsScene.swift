@@ -352,8 +352,7 @@ final class CorpusPhysicsScene: SKScene {
             float aberrationMag = smoothstep(0.1, 0.0, distFromBoundary) * u_aberration_scale;
             color.rg += aberrationDir * aberrationMag; color.b -= length(aberrationDir) * aberrationMag * 0.5;
 
-            vec3 tinted = mix(color, color * v_color_mix.rgb * 2.0, 0.4);
-            gl_FragColor = vec4(tinted, 1.0);
+            gl_FragColor = vec4(color, 1.0);
         }
         """
         let shader = SKShader(source: src)

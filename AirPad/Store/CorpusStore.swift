@@ -1071,24 +1071,29 @@ final class CorpusStore {
             print("[Relatedness] Skipping relatedness index — \(nodes.count) nodes exceeds 500-node guard")
             return
         }
-        let relatednessService = RelatednessService()
-        var updated = false
-        for node in nodes {
-            let related = relatednessService.topRelated(forNodeID: node.id, in: nodes, limit: 5)
-            guard !related.isEmpty else { continue }
-            let entry = NodeRelatednessEntry(
-                nodeID: node.id,
-                related: related.map { NodeRelation(nodeID: $0.nodeID, score: $0.score) },
-                computedAt: Date()
-            )
-            corpusIndex.relatedness[node.id] = entry
-            updated = true
-        }
-        if updated {
-            corpusIndex.updatedAt = Date()
-            let indexSnapshot = corpusIndex
-            Task {
-                try? await self.service.saveCorpusIndex(indexSnapshot)
+        let nodeSnapshot = nodes
+        let existingIndex = corpusIndex
+        let serviceRef = service
+        Task.detached(priority: .background) { [weak self] in
+            let relatednessService = RelatednessService()
+            var updatedIndex = existingIndex
+            var updated = false
+            for node in nodeSnapshot {
+                let related = relatednessService.topRelated(forNodeID: node.id, in: nodeSnapshot, limit: 5)
+                guard !related.isEmpty else { continue }
+                let entry = NodeRelatednessEntry(
+                    nodeID: node.id,
+                    related: related.map { NodeRelation(nodeID: $0.nodeID, score: $0.score) },
+                    computedAt: Date()
+                )
+                updatedIndex.relatedness[node.id] = entry
+                updated = true
+            }
+            guard updated else { return }
+            updatedIndex.updatedAt = Date()
+            try? await serviceRef.saveCorpusIndex(updatedIndex)
+            await MainActor.run {
+                self?.corpusIndex = updatedIndex
             }
         }
     }

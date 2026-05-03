@@ -206,7 +206,7 @@ struct NodeListView: View {
     // MARK: - Palette selection
 
     private func paletteIndexForNode(_ node: Node) -> Int {
-        guard let tagName = node.tags.first else { return 0 }
+        guard let tagName = node.primaryTag else { return 0 }
 
         // Map tag names to palette indices 0-6
         switch tagName {
@@ -304,7 +304,7 @@ private struct NodeCard: View {
     }
 
     private var primaryTagColor: Color {
-        guard let name = node.tags.first,
+        guard let name = node.primaryTag,
               let tag = store.tags.first(where: { $0.name == name })
         else { return Color(hex: "#8E8E93") ?? .gray }
         return Color(hex: tag.colorHex) ?? .gray

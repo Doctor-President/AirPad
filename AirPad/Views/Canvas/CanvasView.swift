@@ -548,7 +548,7 @@ private struct NodeDetailOverlay: View {
 
     // Derive palette index from node's primary tag (same logic as paletteIndexForNode)
     private var paletteIndex: Int {
-        guard let tagName = node.tags.first else { return 0 }
+        guard let tagName = node.primaryTag else { return 0 }
         switch tagName {
         case "pal0": return 0
         case "pal1": return 1

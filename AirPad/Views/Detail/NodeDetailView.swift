@@ -36,7 +36,7 @@ struct NodeDetailView: View {
     ]
 
     private var paletteIndex: Int {
-        guard let node, let tagName = node.tags.first else { return 0 }
+        guard let tagName = node?.primaryTag else { return 0 }
         return abs(tagName.hashValue) % 7
     }
 

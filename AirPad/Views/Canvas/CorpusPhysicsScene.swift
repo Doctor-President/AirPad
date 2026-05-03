@@ -2480,8 +2480,9 @@ final class CorpusPhysicsScene: SKScene {
         return min(30.0 + extra, 60.0)
     }
 
-    /// Applies the gradient fill shader to the new focal node and clears it from
-    /// the previously focal node. Pass nil to clear without applying a new one.
+    /// Ensures the focal node renders flat. The SwiftUI NodeDetailOverlay sits on
+    /// top of the focal node and provides the tag-colored gradient, so the SpriteKit
+    /// shader underneath would be invisible and is intentionally not applied.
     private func setFocalShader(to nodeID: String?) {
         if let oldID = focalShaderID, oldID != nodeID,
            let oldShape = nodeSprites[oldID] {
@@ -2490,22 +2491,14 @@ final class CorpusPhysicsScene: SKScene {
         }
         if let newID = nodeID, newID != focalShaderID,
            let newShape = nodeSprites[newID] {
-            newShape.fillTexture = whiteUVTexture
-            newShape.fillShader = nodeFillShader
+            newShape.fillShader = nil
+            newShape.fillTexture = nil
         }
         focalShaderID = nodeID
     }
 
-    /// User-assigned tags win over FM-assigned tags for color identity.
-    private func primaryTag(for node: Node) -> String? {
-        if let userTag = node.tags.first(where: { node.tagSources[$0] == .user }) {
-            return userTag
-        }
-        return node.tags.first
-    }
-
     private func bubbleColor(for node: Node) -> UIColor {
-        if let primary = primaryTag(for: node), let color = tagColors[primary] {
+        if let primary = node.primaryTag, let color = tagColors[primary] {
             return color
         }
         return UIColor(red: 0.556, green: 0.556, blue: 0.576, alpha: 1.0)  // #8E8E93 neutral

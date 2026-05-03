@@ -81,6 +81,26 @@ actor AIService {
         }
     }
 
+    /// Generates a short evocative name for a neighborhood from its dominant tags.
+    /// Returns nil if the model is unavailable, no tags supplied, or the response is empty.
+    func nameNeighborhood(dominantTags: [String], memberCount: Int) async -> String? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+        guard !dominantTags.isEmpty else { return nil }
+        let tagList = dominantTags.prefix(5).joined(separator: ", ")
+        let prompt = """
+        Generate a short, evocative name (2-4 words) for a cluster of \(memberCount) ideas \
+        with tags: \(tagList).
+        The name should feel like a meaningful category, not a list.
+        Respond with ONLY the name, nothing else.
+        """
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt)
+            let name = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : name
+        } catch { return nil }
+    }
+
     /// Computes semantic similarity between a new tag and an existing tag vocabulary.
     /// Returns the top-N most similar tags (score > 0.3), or nil if the model is unavailable
     /// or output cannot be parsed. Empty vocabulary returns an empty array.

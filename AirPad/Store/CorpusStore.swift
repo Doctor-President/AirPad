@@ -1012,8 +1012,75 @@ final class CorpusStore {
                 print("[Neighborhood] Significant structure change detected (count Δ\(countDelta), largest member Δ\(String(format: "%.1f", largestCountChange * 100))%)")
                 recomputeAlgorithmicLayout(reason: "neighborhood structure change")
             }
+
+            updateCorpusIndexNeighborhoodLayer(cache: cache)
+            updateCorpusIndexTagLayer()
+            corpusIndex.updatedAt = Date()
+            let indexSnapshot = corpusIndex
+            Task {
+                try? await self.service.saveCorpusIndex(indexSnapshot)
+            }
         } else {
             print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
+        }
+    }
+
+    /// Upserts neighborhood entries into the corpus index. Existing neighborhoods keep their hue;
+    /// new neighborhoods get hues distributed evenly around the HSL wheel.
+    private func updateCorpusIndexNeighborhoodLayer(cache: NeighborhoodCache) {
+        let newNeighborhoods = cache.neighborhoods.filter { corpusIndex.neighborhoods[$0.id] == nil }
+        let totalNew = newNeighborhoods.count
+        var newIndex = 0
+
+        for neighborhood in cache.neighborhoods {
+            var tagFrequency: [String: Int] = [:]
+            for memberID in neighborhood.memberNodeIDs {
+                guard let node = nodes.first(where: { $0.id == memberID }) else { continue }
+                for tag in node.tags {
+                    tagFrequency[tag, default: 0] += 1
+                }
+            }
+            let dominantTags = tagFrequency
+                .sorted { $0.value > $1.value }
+                .prefix(3)
+                .map { $0.key }
+
+            let hue: Double
+            if let existing = corpusIndex.neighborhoods[neighborhood.id] {
+                hue = existing.hue
+            } else {
+                hue = totalNew > 0 ? (Double(newIndex) / Double(totalNew)) * 360.0 : 0.0
+                newIndex += 1
+            }
+
+            corpusIndex.neighborhoods[neighborhood.id] = NeighborhoodIndexEntry(
+                id: neighborhood.id,
+                name: dominantTags.first ?? neighborhood.id,
+                memberCount: neighborhood.memberCount,
+                dominantTags: dominantTags,
+                centroid: IndexPoint(x: Double(neighborhood.centroid.x), y: Double(neighborhood.centroid.y)),
+                cohesionScore: 1.0,
+                hue: hue
+            )
+        }
+    }
+
+    /// Upserts tag entries into the corpus index. Co-occurrence and semantic similarity
+    /// are populated by Session C — left empty here.
+    private func updateCorpusIndexTagLayer() {
+        for tag in tags {
+            if var existing = corpusIndex.tags[tag.name] {
+                existing.usageCount = tag.useCount
+                corpusIndex.tags[tag.name] = existing
+            } else {
+                corpusIndex.tags[tag.name] = TagIndexEntry(
+                    name: tag.name,
+                    usageCount: tag.useCount,
+                    origin: .model,
+                    coOccurrence: [],
+                    semanticSimilarity: []
+                )
+            }
         }
     }
 

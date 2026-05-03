@@ -150,6 +150,21 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode(CanvasLayout.self, from: data)
     }
 
+    // MARK: - Corpus index
+
+    func saveCorpusIndex(_ index: CorpusIndex) throws {
+        let root = try requireRoot()
+        let data = try JSONEncoder.airPad.encode(index)
+        try data.write(to: root.appendingPathComponent("corpus_index.json"), options: .atomic)
+    }
+
+    func loadCorpusIndex() throws -> CorpusIndex {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("corpus_index.json")
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode(CorpusIndex.self, from: data)
+    }
+
     // MARK: - Destructive operations
 
     /// Deletes every node directory (and all contained media), then recreates an empty

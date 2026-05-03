@@ -1022,6 +1022,7 @@ final class CorpusStore {
                 try? await self.service.saveCorpusIndex(indexSnapshot)
             }
             refreshRelatednessIndex()
+            generateNeighborhoodNamesIfNeeded()
         } else {
             print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
         }
@@ -1093,6 +1094,34 @@ final class CorpusStore {
                 cohesionScore: 1.0,
                 hue: hue
             )
+        }
+    }
+
+    /// Fire-and-forget FM naming pass for any neighborhoods whose name is still a fallback
+    /// (matches the neighborhood ID, or is just one of its dominant tags). One FM call per
+    /// unnamed neighborhood — never blocks `refreshNeighborhoods()`.
+    private func generateNeighborhoodNamesIfNeeded() {
+        let candidates: [(id: String, dominantTags: [String], memberCount: Int)] = corpusIndex.neighborhoods.values.compactMap { entry in
+            let isFallback = entry.name == entry.id || entry.dominantTags.contains(entry.name)
+            guard isFallback else { return nil }
+            guard !entry.dominantTags.isEmpty else { return nil }
+            return (entry.id, entry.dominantTags, entry.memberCount)
+        }
+        guard !candidates.isEmpty else { return }
+        Task {
+            guard #available(iOS 26.0, *) else { return }
+            let aiSvc = AIService()
+            for candidate in candidates {
+                guard let name = await aiSvc.nameNeighborhood(
+                    dominantTags: candidate.dominantTags,
+                    memberCount: candidate.memberCount
+                ) else { continue }
+                guard corpusIndex.neighborhoods[candidate.id] != nil else { continue }
+                corpusIndex.neighborhoods[candidate.id]?.name = name
+                corpusIndex.updatedAt = Date()
+                let snapshot = corpusIndex
+                try? await service.saveCorpusIndex(snapshot)
+            }
         }
     }
 

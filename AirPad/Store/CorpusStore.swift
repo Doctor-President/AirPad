@@ -172,8 +172,12 @@ final class CorpusStore {
             let loadedTags = try await service.loadTags()
             nodes = loaded.sorted { $0.createdAt > $1.createdAt }
             canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
-            if loadedTags.isEmpty {
-                tags = Self.tier1SeedTags()
+            let minimumViableTagCount = 8
+            if loadedTags.count < minimumViableTagCount {
+                let existingNames = Set(loadedTags.map { $0.name.lowercased() })
+                let tier1 = Self.tier1SeedTags()
+                let newTags = tier1.filter { !existingNames.contains($0.name.lowercased()) }
+                tags = loadedTags + newTags
                 await persistTags()
             } else {
                 tags = loadedTags

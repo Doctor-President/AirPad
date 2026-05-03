@@ -21,6 +21,10 @@ final class CorpusStore {
     /// Cached neighborhoods (Louvain communities over tag co-occurrence). Regenerates on invalidation.
     var neighborhoodCache: NeighborhoodCache? = nil
 
+    /// Persistent corpus index (neighborhood registry, tag layer, relatedness, summary).
+    /// Loaded from disk at startup; updated and re-saved whenever neighborhoods or relatedness refresh.
+    var corpusIndex: CorpusIndex = CorpusIndex.empty()
+
     /// Reference to CanvasState for drill-down filtering.
     var canvasState: CanvasState? = nil
 
@@ -149,6 +153,10 @@ final class CorpusStore {
             }
         } catch {
             print("[CorpusStore] Load error: \(error)")
+        }
+        // Load corpus index if available (graceful fallback to empty on first run)
+        if let loadedIndex = try? await service.loadCorpusIndex() {
+            corpusIndex = loadedIndex
         }
         // Generate initial Über-node clusters
         refreshUberNodeClusters()

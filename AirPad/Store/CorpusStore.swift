@@ -1023,6 +1023,11 @@ final class CorpusStore {
             }
             refreshRelatednessIndex()
             generateNeighborhoodNamesIfNeeded()
+            Task {
+                if #available(iOS 26.0, *) {
+                    await refreshCorpusSummaryIfNeeded()
+                }
+            }
         } else {
             print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
         }
@@ -1095,6 +1100,31 @@ final class CorpusStore {
                 hue: hue
             )
         }
+    }
+
+    /// Regenerates the corpus summary via FM if missing or if the node count has drifted by 20+
+    /// since the last summary. If the model is unavailable, leaves the existing summary in place.
+    private func refreshCorpusSummaryIfNeeded() async {
+        let prevCount = corpusIndex.summary?.nodeCount ?? 0
+        let needsRefresh = corpusIndex.summary == nil || abs(nodes.count - prevCount) >= 20
+        guard needsRefresh else { return }
+        guard #available(iOS 26.0, *) else { return }
+        let aiSvc = AIService()
+        guard let result = await aiSvc.generateCorpusSummary(index: corpusIndex, nodeCount: nodes.count) else { return }
+        let summary = CorpusSummary(
+            nodeCount: nodes.count,
+            tagCount: corpusIndex.tags.count,
+            neighborhoodCount: corpusIndex.neighborhoods.count,
+            dominantThemes: result.dominantThemes,
+            recentDominantTags: result.recentDominantTags,
+            anomalies: CorpusAnomalies(staleTags: result.staleTags, floaterNodeIDs: []),
+            summaryText: result.summaryText,
+            generatedAt: Date()
+        )
+        corpusIndex.summary = summary
+        corpusIndex.updatedAt = Date()
+        let snapshot = corpusIndex
+        try? await service.saveCorpusIndex(snapshot)
     }
 
     /// Fire-and-forget FM naming pass for any neighborhoods whose name is still a fallback

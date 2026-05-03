@@ -33,6 +33,25 @@ struct CoherenceCheck {
     var answer: String
 }
 
+@available(iOS 26.0, *)
+@Generable
+struct CorpusSummaryResult {
+    @Guide(description: "2-3 sentence synthesis of what this corpus is about right now. Second person. Be specific.")
+    var summaryText: String
+
+    @Guide(description: "Top 5 recurring themes as short phrases, most frequent first.")
+    var dominantThemes: [String]
+
+    @Guide(description: "Tags or themes most active in the last 30 days.")
+    var recentDominantTags: [String]
+
+    @Guide(description: "Tags that appear rarely or may be stale.")
+    var staleTags: [String]
+
+    @Guide(description: "Approximate count of nodes that don't fit clearly into any cluster.")
+    var floaterCount: Int
+}
+
 // MARK: - Service
 
 /// On-device AI processing for nodes.
@@ -79,6 +98,30 @@ actor AIService {
         } catch {
             return nil
         }
+    }
+
+    /// Generates a structured corpus summary from the current index. Returns nil if the
+    /// model is unavailable or the call fails. Caller is responsible for assembling the
+    /// final `CorpusSummary` (which carries computed counts and floater node IDs).
+    func generateCorpusSummary(index: CorpusIndex, nodeCount: Int) async -> CorpusSummaryResult? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+        let neighborhoodNames = index.neighborhoods.values.map { $0.name }.joined(separator: ", ")
+        let topTags = index.tags.values
+            .sorted { $0.usageCount > $1.usageCount }
+            .prefix(15)
+            .map { "\($0.name) (\($0.usageCount))" }
+            .joined(separator: ", ")
+        let prompt = """
+        Analyze this idea corpus:
+        - \(nodeCount) total nodes
+        - \(index.neighborhoods.count) clusters: \(neighborhoodNames)
+        - Top tags: \(topTags)
+        """
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt, generating: CorpusSummaryResult.self)
+            return response.content
+        } catch { return nil }
     }
 
     /// Generates a short evocative name for a neighborhood from its dominant tags.

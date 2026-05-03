@@ -111,6 +111,18 @@ extension Node {
     }
 }
 
+extension Node {
+    /// Source of truth for color identity across all surfaces (canvas, list card,
+    /// detail view, focal overlay). User-assigned tags beat FM-assigned tags so the
+    /// node's identity follows the user's intent when the model and user disagree.
+    var primaryTag: String? {
+        if let userTag = tags.first(where: { tagSources[$0] == .user }) {
+            return userTag
+        }
+        return tags.first
+    }
+}
+
 struct NodeLocation: Codable, Equatable {
     let latitude: Double
     let longitude: Double

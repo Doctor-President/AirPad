@@ -122,6 +122,33 @@ final class CorpusStore {
     private let service = iCloudDriveService()
     private let layoutService = LayoutService()
 
+    /// Suggestions surfaced by the Ghost Query Field. Built from the corpus summary if present,
+    /// with a fixed fallback list so the field is never empty (e.g., on a fresh install).
+    var ghostQuerySuggestions: [String] {
+        var suggestions: [String] = []
+        if let summary = corpusIndex.summary {
+            let themeQuestions = summary.dominantThemes.prefix(3).map {
+                "What patterns show up in my \($0.lowercased()) ideas?"
+            }
+            suggestions.append(contentsOf: themeQuestions)
+            if let recent = summary.recentDominantTags.first {
+                suggestions.append("What have I been thinking about with \(recent)?")
+            }
+            if let stale = summary.anomalies.staleTags.first {
+                suggestions.append("What happened to my \(stale) ideas?")
+            }
+        }
+        let fallbacks = [
+            "What patterns show up in my work?",
+            "What ideas keep coming back?",
+            "What have I been avoiding?",
+            "Where do my best ideas come from?",
+            "What ideas keep coming back that I haven't acted on?"
+        ]
+        if suggestions.isEmpty { suggestions = fallbacks }
+        return suggestions
+    }
+
     // MARK: - Lifecycle
 
     func setup() async {

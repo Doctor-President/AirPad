@@ -81,6 +81,39 @@ actor AIService {
         }
     }
 
+    /// Computes semantic similarity between a new tag and an existing tag vocabulary.
+    /// Returns the top-N most similar tags (score > 0.3), or nil if the model is unavailable
+    /// or output cannot be parsed. Empty vocabulary returns an empty array.
+    func computeTagSimilarity(
+        newTag: String,
+        existingTags: [String]
+    ) async -> [TagRelation]? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+        guard !existingTags.isEmpty else { return [] }
+        let vocabLine = existingTags.joined(separator: ", ")
+        let prompt = """
+        Rate the semantic similarity between the tag "\(newTag)" and each of the following tags.
+        Return only the top 5 most similar tags with a similarity score from 0.0 to 1.0.
+        Only include tags with score > 0.3. If none qualify, return an empty array.
+        Tags to compare: \(vocabLine)
+        Respond ONLY with a JSON array. Example: [{"tag": "French Cooking", "score": 0.87}]
+        """
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt)
+            let text = response.content
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let data = text.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([TagRelation].self, from: data) else {
+                return nil
+            }
+            return Array(decoded.filter { $0.score > 0.3 }.sorted { $0.score > $1.score }.prefix(5))
+        } catch { return nil }
+    }
+
     /// Checks whether a raw text block represents a complete, standalone idea.
     /// Returns true (coherent), false (incoherent), or nil if the model is unavailable.
     /// Callers should treat nil as "pass" — never block import when the model is offline.

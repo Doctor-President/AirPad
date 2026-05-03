@@ -310,6 +310,7 @@ final class CorpusStore {
     func addTag(_ tag: Tag) async {
         tags.append(tag)
         await persistTags()
+        computeTagSimilarityIfNeeded(for: tag.name)
     }
 
     func updateTag(_ updated: Tag) async {
@@ -1095,8 +1096,35 @@ final class CorpusStore {
         }
     }
 
-    /// Upserts tag entries into the corpus index. Co-occurrence and semantic similarity
-    /// are populated by Session C — left empty here.
+    /// Fire-and-forget FM call to populate semantic similarity for a newly added tag.
+    /// Idempotent: skips if similarity is already populated. Never blocks tag creation.
+    private func computeTagSimilarityIfNeeded(for tagName: String) {
+        guard corpusIndex.tags[tagName]?.semanticSimilarity.isEmpty != false else { return }
+        let existingNames = tags.map { $0.name }.filter { $0 != tagName }
+        guard !existingNames.isEmpty else { return }
+        Task {
+            guard #available(iOS 26.0, *) else { return }
+            let aiSvc = AIService()
+            guard let relations = await aiSvc.computeTagSimilarity(newTag: tagName, existingTags: existingNames) else { return }
+            if corpusIndex.tags[tagName] == nil {
+                let usageCount = tags.first(where: { $0.name == tagName })?.useCount ?? 0
+                corpusIndex.tags[tagName] = TagIndexEntry(
+                    name: tagName,
+                    usageCount: usageCount,
+                    origin: .model,
+                    coOccurrence: [],
+                    semanticSimilarity: []
+                )
+            }
+            corpusIndex.tags[tagName]?.semanticSimilarity = relations
+            corpusIndex.updatedAt = Date()
+            let snapshot = corpusIndex
+            try? await service.saveCorpusIndex(snapshot)
+        }
+    }
+
+    /// Upserts tag entries into the corpus index. Co-occurrence is populated by future work.
+    /// Semantic similarity is populated lazily via `computeTagSimilarityIfNeeded` on tag creation.
     private func updateCorpusIndexTagLayer() {
         for tag in tags {
             if var existing = corpusIndex.tags[tag.name] {

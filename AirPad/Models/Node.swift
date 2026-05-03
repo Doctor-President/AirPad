@@ -1,5 +1,11 @@
 import Foundation
 
+enum TagSource: String, Codable {
+    case user
+    case model
+    case promoted  // model-generated, explicitly accepted by user
+}
+
 struct Node: Codable, Identifiable, Hashable {
     let id: String
     var createdAt: Date
@@ -7,6 +13,7 @@ struct Node: Codable, Identifiable, Hashable {
     var title: String
     var summary: String
     var tags: [String]
+    var tagSources: [String: TagSource]
     var mood: String?
     var isMeta: Bool
     var provenance: [String]?
@@ -29,6 +36,7 @@ struct Node: Codable, Identifiable, Hashable {
         case domainConfirmed = "domain_confirmed"
         case needsAIProcessing = "needs_ai_processing"
         case needsReview = "needs_review"
+        case tagSources = "tag_sources"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -43,6 +51,7 @@ struct Node: Codable, Identifiable, Hashable {
         title: String,
         summary: String,
         tags: [String],
+        tagSources: [String: TagSource] = [:],
         mood: String? = nil,
         isMeta: Bool = false,
         provenance: [String]? = nil,
@@ -61,6 +70,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.title             = title
         self.summary           = summary
         self.tags              = tags
+        self.tagSources        = tagSources
         self.mood              = mood
         self.isMeta            = isMeta
         self.provenance        = provenance
@@ -86,6 +96,7 @@ extension Node {
         title             = try c.decode(String.self,    forKey: .title)
         summary           = try c.decode(String.self,    forKey: .summary)
         tags              = try c.decode([String].self,  forKey: .tags)
+        tagSources        = try c.decodeIfPresent([String: TagSource].self, forKey: .tagSources) ?? [:]
         mood              = try c.decodeIfPresent(String.self,    forKey: .mood)
         isMeta            = try c.decode(Bool.self,      forKey: .isMeta)
         provenance        = try c.decodeIfPresent([String].self,  forKey: .provenance)

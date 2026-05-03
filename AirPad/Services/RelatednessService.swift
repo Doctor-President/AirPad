@@ -1,7 +1,6 @@
 import Foundation
 
 /// Computes node relatedness based on TF-IDF-weighted tag overlap.
-@MainActor
 final class RelatednessService {
 
     /// Returns the top N related nodes for a given source node, ranked by TF-IDF tag overlap score.

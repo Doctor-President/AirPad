@@ -1110,9 +1110,45 @@ final class CorpusPhysicsScene: SKScene {
             break
         }
 
+        syncFocalToCanvasState()
+
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
         lastUpdateTime = currentTime
+    }
+
+    /// Tracks last focal-id pushed to CanvasState so we can detect transitions to
+    /// nil and dispatch a single clear instead of polling canvasState off-isolation.
+    private var lastSyncedFocalID: String? = nil
+
+    /// Bridges the engaged focal node's screen-space center and diameter to
+    /// CanvasState every frame so the SwiftUI gradient overlay can track it as the
+    /// user drags. Runs from `update(_:)`, which SpriteKit invokes on the main
+    /// thread; the dispatch is for @MainActor isolation only.
+    private func syncFocalToCanvasState() {
+        guard let view = self.view else { return }
+        if let focalID = currentFocalNodeID, let sprite = nodeSprites[focalID] {
+            let centerScene = sprite.position
+            let centerView = view.convert(centerScene, from: self)
+            let radiusScene = (nodeIntrinsicRadii[focalID] ?? 30) * sprite.xScale
+            let edgeView = view.convert(
+                CGPoint(x: centerScene.x + radiusScene, y: centerScene.y),
+                from: self
+            )
+            let diameterView = abs(edgeView.x - centerView.x) * 2
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.canvasState?.currentFocalNodeID = focalID
+                self.canvasState?.focalNodeScreenPosition = centerView
+                self.canvasState?.focalNodeDiameter = diameterView
+            }
+            lastSyncedFocalID = focalID
+        } else if lastSyncedFocalID != nil {
+            DispatchQueue.main.async { [weak self] in
+                self?.canvasState?.currentFocalNodeID = nil
+            }
+            lastSyncedFocalID = nil
+        }
     }
 
     /// Sigmoid scale falloff: focal large, smooth taper, asymptotic to baseline.

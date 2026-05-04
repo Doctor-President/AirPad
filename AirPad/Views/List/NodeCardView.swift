@@ -48,87 +48,16 @@ struct CardPalette {
 
 struct NodeCardView: View {
     let node: Node
-    let paletteIndex: Int
     let selected: Bool
     let dist: Int
 
-    @State private var phase: Double = 0
-
-    private let circleColors: [(String, String, String)] = [
-        ("9B6FE8", "F5C5A3", "E36B4E"),
-        ("5B8FFF", "A78BFA", "F472B6"),
-        ("34D399", "60A5FA", "A78BFA"),
-        ("FB923C", "FBBF24", "E36B4E"),
-        ("F472B6", "FB7185", "C084FC"),
-        ("22D3EE", "34D399", "60A5FA"),
-        ("A78BFA", "818CF8", "E36B4E"),
-    ]
-
-    private var palette: CardPalette {
-        CardPalette.all[paletteIndex % CardPalette.all.count]
-    }
-
     var body: some View {
         ZStack {
-            gradientFill
+            NodeGradientBackground(node: node, cornerRadius: 36)
             cardContent
-            innerGlow.blendMode(.overlay)
         }
         .clipShape(RoundedRectangle(cornerRadius: 36))
-        .onAppear { phase = Double.random(in: 0...100) }
         .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
-    }
-
-    // GRADIENT FILL
-    private var gradientFill: some View {
-        let colors = circleColors[paletteIndex % circleColors.count]
-        return TimelineView(.animation) { timeline in
-            ZStack {
-                Color(red: 0.027, green: 0.027, blue: 0.039)
-                let time = timeline.date.timeIntervalSinceReferenceDate
-                Circle()
-                    .fill(Color(hexString: colors.0))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 40)
-                    .offset(x: -80 + sin(time * 0.3 + phase * 1.3) * 30,
-                            y: cos(time * 0.25 + phase * 0.9) * 30)
-                Circle()
-                    .fill(Color(hexString: colors.1))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 40)
-                    .offset(x: sin(time * 0.35 + phase * 1.7) * 30,
-                            y: cos(time * 0.3 + phase * 1.1) * 30)
-                Circle()
-                    .fill(Color(hexString: colors.2))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 40)
-                    .offset(x: 80 + sin(time * 0.4 + phase * 2.1) * 30,
-                            y: cos(time * 0.35 + phase * 0.7) * 30)
-            }
-        }
-    }
-
-    // INNER GLOW
-    // Source: inner glow rim div, list_view.jsx
-    // Translated from inset box-shadow 4 layers:
-    // inset 0 0 0 1.5px rgba(255,248,235,0.6)
-    // inset 0 0 18px 3px rgba(255,225,195,0.48)
-    // inset 0 0 42px 6px rgba(255,195,160,0.32)
-    // inset 0 0 72px 10px rgba(220,160,255,0.2)
-    // mixBlendMode: color-dodge
-    private var innerGlow: some View {
-        GeometryReader { geo in
-            ZStack {
-                RadialGradient(
-                    colors: [.black, Color.white.opacity(0.85)],
-                    center: .center,
-                    startRadius: geo.size.width * 0.15,
-                    endRadius: geo.size.width * 0.72
-                )
-                RoundedRectangle(cornerRadius: 36)
-                    .strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5)
-            }
-        }
     }
 
     // CARD CONTENT

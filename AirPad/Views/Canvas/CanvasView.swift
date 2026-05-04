@@ -153,6 +153,7 @@ struct CanvasView: View {
                     .transition(.opacity)
             }
 
+            focalEngagementOverlay
             nodeSummaryLayer
             captureTargetBanner
             drillDownBackButton
@@ -272,6 +273,29 @@ struct CanvasView: View {
                 store.pendingTagSuggestions = nil
                 localTagSuggestions = nil
             }
+    }
+
+    /// Tag-colored gradient that tracks the focal node during honeycomb engagement.
+    /// SpriteKit owns the geometry (position, scale via lens); CanvasState bridges
+    /// it here. Hidden during zoom — `nodeSummaryLayer` morphs in with the same
+    /// gradient and takes over.
+    @ViewBuilder
+    private var focalEngagementOverlay: some View {
+        if let id = canvasState.currentFocalNodeID,
+           !canvasState.isZoomed,
+           !isDismissing,
+           canvasState.focalNodeDiameter > 0,
+           let node = store.nodes.first(where: { $0.id == id }) {
+            NodeGradientBackground(node: node, cornerRadius: canvasState.focalNodeDiameter / 2)
+                .frame(
+                    width: canvasState.focalNodeDiameter,
+                    height: canvasState.focalNodeDiameter
+                )
+                .clipShape(Circle())
+                .position(canvasState.focalNodeScreenPosition)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
@@ -533,34 +557,6 @@ private struct NodeDetailOverlay: View {
     @Environment(CorpusStore.self) private var store
     @State private var isExpanded = false
     @State private var showText = false
-    @State private var phase: Double = 0
-
-    // Same circleColors table as NodeCardView
-    private let circleColors: [(String, String, String)] = [
-        ("9B6FE8", "F5C5A3", "E36B4E"),
-        ("5B8FFF", "A78BFA", "F472B6"),
-        ("34D399", "60A5FA", "A78BFA"),
-        ("FB923C", "FBBF24", "E36B4E"),
-        ("F472B6", "FB7185", "C084FC"),
-        ("22D3EE", "34D399", "60A5FA"),
-        ("A78BFA", "818CF8", "E36B4E"),
-    ]
-
-    // Derive palette index from node's primary tag (same logic as paletteIndexForNode)
-    private var paletteIndex: Int {
-        guard let tagName = node.primaryTag else { return 0 }
-        switch tagName {
-        case "pal0": return 0
-        case "pal1": return 1
-        case "pal2": return 2
-        case "pal3": return 3
-        case "pal4": return 4
-        case "pal5": return 5
-        case "pal6": return 6
-        default:
-            return abs(tagName.hashValue) % 7
-        }
-    }
 
     // Calculate initial node diameter based on item count (matches bubbleRadius logic)
     private var initialDiameter: CGFloat {
@@ -582,24 +578,16 @@ private struct NodeDetailOverlay: View {
 
     var body: some View {
         ZStack {
-            // Animated gradient fill (replicated from NodeCardView)
-            gradientFill
-                .frame(
-                    width: isExpanded ? finalWidth : initialDiameter,
-                    height: isExpanded ? finalHeight : initialDiameter
-                )
-                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 32 : initialDiameter / 2))
-                .opacity(isExpanded ? 1.0 : 0.0)
-
-            // Inner glow overlay (animates with shape)
-            innerGlow(cornerRadius: isExpanded ? 32 : initialDiameter / 2)
-                .frame(
-                    width: isExpanded ? finalWidth : initialDiameter,
-                    height: isExpanded ? finalHeight : initialDiameter
-                )
-                .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 32 : initialDiameter / 2))
-                .blendMode(.overlay)
-                .opacity(isExpanded ? 1.0 : 0.0)
+            NodeGradientBackground(
+                node: node,
+                cornerRadius: isExpanded ? 32 : initialDiameter / 2
+            )
+            .frame(
+                width: isExpanded ? finalWidth : initialDiameter,
+                height: isExpanded ? finalHeight : initialDiameter
+            )
+            .clipShape(RoundedRectangle(cornerRadius: isExpanded ? 32 : initialDiameter / 2))
+            .opacity(isExpanded ? 1.0 : 0.0)
 
             // Text content: fades in after morph completes
             if showText {
@@ -671,9 +659,6 @@ private struct NodeDetailOverlay: View {
             scene.resetZoom()
         }
         .onAppear {
-            // Randomize phase for animation uniqueness
-            phase = Double.random(in: 0...100)
-
             // Phase 1: Morph shape from circle to rounded rect (0.25s)
             withAnimation(.easeInOut(duration: 0.25)) {
                 isExpanded = true
@@ -714,51 +699,6 @@ private struct NodeDetailOverlay: View {
             // Reset state for next appearance
             isExpanded = false
             showText = false
-        }
-    }
-
-    // GRADIENT FILL (replicated from NodeCardView exactly)
-    private var gradientFill: some View {
-        let colors = circleColors[paletteIndex % circleColors.count]
-        return TimelineView(.animation) { timeline in
-            ZStack {
-                Color(red: 0.027, green: 0.027, blue: 0.039)
-                let time = timeline.date.timeIntervalSinceReferenceDate
-                Circle()
-                    .fill(Color(hexString: colors.0))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 40)
-                    .offset(x: -80 + sin(time * 0.3 + phase * 1.3) * 30,
-                            y: cos(time * 0.25 + phase * 0.9) * 30)
-                Circle()
-                    .fill(Color(hexString: colors.1))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 40)
-                    .offset(x: sin(time * 0.35 + phase * 1.7) * 30,
-                            y: cos(time * 0.3 + phase * 1.1) * 30)
-                Circle()
-                    .fill(Color(hexString: colors.2))
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 40)
-                    .offset(x: 80 + sin(time * 0.4 + phase * 2.1) * 30,
-                            y: cos(time * 0.35 + phase * 0.7) * 30)
-            }
-        }
-    }
-
-    // INNER GLOW (replicated from NodeCardView)
-    private func innerGlow(cornerRadius: CGFloat) -> some View {
-        GeometryReader { geo in
-            ZStack {
-                RadialGradient(
-                    colors: [.black, Color.white.opacity(0.85)],
-                    center: .center,
-                    startRadius: geo.size.width * 0.15,
-                    endRadius: geo.size.width * 0.72
-                )
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5)
-            }
         }
     }
 }

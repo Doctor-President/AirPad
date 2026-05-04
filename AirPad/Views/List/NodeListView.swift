@@ -26,7 +26,6 @@ struct NodeListView: View {
     @State private var captureTargetNodeID: String? = nil
     @State private var showingNodePicker = false
     @State private var centerIdx = 0
-    @State private var settleScaleY: CGFloat = 1.0
 
     private let cardHeight: CGFloat = 168
     private let cardSpacing: CGFloat = 12
@@ -168,19 +167,10 @@ struct NodeListView: View {
                 }
                 .padding(.horizontal, UIScreen.main.bounds.width * 0.05)
                 .scrollTargetLayout()
-                .scaleEffect(y: settleScaleY, anchor: .center)
             }
             .contentMargins(.vertical, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
-            .onScrollPhaseChange { oldPhase, newPhase in
-                if oldPhase == .decelerating && newPhase == .idle {
-                    settleScaleY = 0.95
-                    withAnimation(.bouncy(duration: 0.5, extraBounce: 0.4)) {
-                        settleScaleY = 1.0
-                    }
-                }
-            }
             .onChange(of: scrolledID) { _, newID in
                 guard let newID, !isJumping else { return }
                 if let index = displayItems.firstIndex(where: { $0.id == newID }) {

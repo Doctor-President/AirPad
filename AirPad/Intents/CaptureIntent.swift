@@ -22,9 +22,3 @@ struct CaptureIntent: AppIntent {
         return .result()
     }
 }
-
-// MARK: - Notification name
-
-extension Notification.Name {
-    static let airPadActionButtonPressed = Notification.Name("airPadActionButtonPressed")
-}

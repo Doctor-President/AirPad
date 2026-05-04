@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
 
+    @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
     @State private var showFilterPanel = false
@@ -10,6 +11,16 @@ struct ContentView: View {
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
 
     var body: some View {
+        switch router.entryMode {
+        case .quikCapture:
+            // Step 2 will replace this with QuikCaptureView()
+            Color(hex: "#07070A").ignoresSafeArea()
+        case .canvas:
+            canvasBody
+        }
+    }
+
+    private var canvasBody: some View {
         ZStack {
             // Main content — switches between graph and list mode
             Group {

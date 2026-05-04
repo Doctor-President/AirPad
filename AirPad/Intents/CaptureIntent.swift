@@ -1,10 +1,12 @@
 import AppIntents
+import UIKit
 
 // MARK: - Intent
 
 /// Triggered when the user presses the Action Button while AirPad is assigned.
-/// Opens the app and posts a notification so the capture fan is shown.
-/// No Shortcuts provider — avoids the Shortcuts lookup failure on Action Button press.
+/// Opens `airpad://quikcapture`; cold-launch path is handled in AppDelegate
+/// via `launchOptions[.url]` before SwiftUI renders. Warm-launch path is
+/// handled by `onOpenURL` on the WindowGroup.
 struct CaptureIntent: AppIntent {
 
     static let title: LocalizedStringResource = "Capture to AirPad"
@@ -12,12 +14,10 @@ struct CaptureIntent: AppIntent {
 
     static let openAppWhenRun = true
 
+    @MainActor
     func perform() async throws -> some IntentResult {
-        await MainActor.run {
-            NotificationCenter.default.post(
-                name: .airPadActionButtonPressed,
-                object: nil
-            )
+        if let url = URL(string: "airpad://quikcapture") {
+            await UIApplication.shared.open(url)
         }
         return .result()
     }

@@ -1148,18 +1148,24 @@ final class CorpusPhysicsScene: SKScene {
                 from: self
             )
             let diameterView = abs(edgeView.x - centerView.x) * 2
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.canvasState?.currentFocalNodeID = isActive ? trackedID : nil
-                self.canvasState?.disengagingFocalNodeID = isActive ? nil : trackedID
-                self.canvasState?.focalNodeScreenPosition = centerView
-                self.canvasState?.focalNodeDiameter = diameterView
+            // Write synchronously so the SwiftUI overlay commits in the same
+            // CATransaction as the SpriteKit render. Dispatching async here
+            // adds a runloop hop, leaving the overlay one frame behind the
+            // surrounding sprites and producing visible jitter when the
+            // camera is moving (it follows focal during engagement).
+            // SpriteKit calls update(_:) on the main thread, so assumeIsolated
+            // is sound — the dispatch was only here for @MainActor isolation.
+            MainActor.assumeIsolated {
+                canvasState?.currentFocalNodeID = isActive ? trackedID : nil
+                canvasState?.disengagingFocalNodeID = isActive ? nil : trackedID
+                canvasState?.focalNodeScreenPosition = centerView
+                canvasState?.focalNodeDiameter = diameterView
             }
             lastSyncedFocalID = trackedID
         } else if lastSyncedFocalID != nil {
-            DispatchQueue.main.async { [weak self] in
-                self?.canvasState?.currentFocalNodeID = nil
-                self?.canvasState?.disengagingFocalNodeID = nil
+            MainActor.assumeIsolated {
+                canvasState?.currentFocalNodeID = nil
+                canvasState?.disengagingFocalNodeID = nil
             }
             lastSyncedFocalID = nil
         }

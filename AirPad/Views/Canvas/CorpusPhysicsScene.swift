@@ -2516,19 +2516,26 @@ final class CorpusPhysicsScene: SKScene {
         return min(30.0 + extra, 60.0)
     }
 
-    /// Ensures the focal node renders flat. The SwiftUI NodeDetailOverlay sits on
-    /// top of the focal node and provides the tag-colored gradient, so the SpriteKit
-    /// shader underneath would be invisible and is intentionally not applied.
+    /// Hides the focal node's SpriteKit sprite so the SwiftUI gradient overlay in
+    /// CanvasView owns the visual entirely. Pixel-perfect alignment between the two
+    /// layers is impractical because the lens system continuously animates the
+    /// SpriteKit node's scale; getting it out of the way is cleaner. Direct alpha
+    /// assignment (not SKAction) so the transition is instant.
+    /// Note: the sprite's "titleLabel" child inherits the parent alpha, so the
+    /// SpriteKit-rendered title is hidden too. The SwiftUI overlay does not yet
+    /// render the title — that's tracked separately.
     private func setFocalShader(to nodeID: String?) {
         if let oldID = focalShaderID, oldID != nodeID,
            let oldShape = nodeSprites[oldID] {
             oldShape.fillShader = nil
             oldShape.fillTexture = nil
+            oldShape.alpha = 1
         }
         if let newID = nodeID, newID != focalShaderID,
            let newShape = nodeSprites[newID] {
             newShape.fillShader = nil
             newShape.fillTexture = nil
+            newShape.alpha = 0
         }
         focalShaderID = nodeID
     }

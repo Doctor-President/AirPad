@@ -5,18 +5,25 @@ struct ContentView: View {
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
+    @Environment(\.scenePhase) private var scenePhase
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
     @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
 
     var body: some View {
-        switch router.entryMode {
-        case .quikCapture:
-            // Step 2 will replace this with QuikCaptureView()
-            Color(hex: "#07070A").ignoresSafeArea()
-        case .canvas:
-            canvasBody
+        Group {
+            switch router.entryMode {
+            case .quikCapture:
+                QuikCaptureView()
+            case .canvas:
+                canvasBody
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                router.entryMode = .canvas
+            }
         }
     }
 

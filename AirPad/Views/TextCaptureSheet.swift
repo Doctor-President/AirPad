@@ -5,6 +5,9 @@ struct TextCaptureSheet: View {
     /// If set, the captured text is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Optional pre-populated text (e.g. from clipboard).
+    var initialText: String = ""
+
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -40,7 +43,10 @@ struct TextCaptureSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationBackground(.black)
-        .onAppear { isFocused = true }
+        .onAppear {
+            if text.isEmpty { text = initialText }
+            isFocused = true
+        }
     }
 
     // MARK: - Helpers

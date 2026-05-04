@@ -46,10 +46,18 @@ struct CardPalette {
     ]
 }
 
+struct CardAnimationValues {
+    var scaleX: CGFloat = 1.0
+    var scaleY: CGFloat = 1.0
+    var opacity: Double = 1.0
+}
+
 struct NodeCardView: View {
     let node: Node
     let selected: Bool
     let dist: Int
+
+    @State private var appeared = false
 
     var body: some View {
         ZStack {
@@ -58,6 +66,27 @@ struct NodeCardView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 36))
         .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
+        .keyframeAnimator(initialValue: CardAnimationValues(), trigger: appeared) { content, value in
+            content
+                .scaleEffect(x: value.scaleX, y: value.scaleY)
+                .opacity(value.opacity)
+        } keyframes: { _ in
+            KeyframeTrack(\.scaleX) {
+                LinearKeyframe(0.85, duration: 0.0)
+                SpringKeyframe(1.02, duration: 0.25, spring: .bouncy)
+                SpringKeyframe(1.0, spring: .bouncy(duration: 0.2, extraBounce: 0.1))
+            }
+            KeyframeTrack(\.scaleY) {
+                LinearKeyframe(0.6, duration: 0.0)
+                SpringKeyframe(1.05, duration: 0.25, spring: .bouncy)
+                SpringKeyframe(1.0, spring: .bouncy(duration: 0.2, extraBounce: 0.1))
+            }
+            KeyframeTrack(\.opacity) {
+                LinearKeyframe(0.0, duration: 0.0)
+                LinearKeyframe(1.0, duration: 0.08)
+            }
+        }
+        .onAppear { appeared = true }
     }
 
     // CARD CONTENT

@@ -4,7 +4,6 @@ import SpriteKit
 struct FocalAnimationValues {
     var scaleX: CGFloat = 1.0
     var scaleY: CGFloat = 1.0
-    var opacity: Double = 1.0
 }
 
 /// The real canvas view for Session 2+. Wraps a SpriteKit physics scene with SwiftUI overlays.
@@ -306,33 +305,46 @@ struct CanvasView: View {
                 let diameter = canvasState.focalNodeDiameter
                 let displayTitle = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
 
-                focalOverlayContent(node: node, displayTitle: displayTitle, diameter: diameter)
-                    .frame(width: diameter, height: diameter)
-                    .clipShape(Circle())
-                    .keyframeAnimator(initialValue: FocalAnimationValues(), trigger: focalAnimationTrigger) { content, value in
-                        content
-                            .scaleEffect(x: value.scaleX, y: value.scaleY)
-                            .opacity(value.opacity)
-                    } keyframes: { _ in
-                        KeyframeTrack(\.scaleX) {
-                            LinearKeyframe(0.6, duration: 0.0)
-                            SpringKeyframe(1.08, duration: 0.2, spring: .bouncy)
-                            SpringKeyframe(1.0, spring: .bouncy(duration: 0.25, extraBounce: 0.15))
-                        }
-                        KeyframeTrack(\.scaleY) {
-                            LinearKeyframe(0.6, duration: 0.0)
-                            SpringKeyframe(0.92, duration: 0.2, spring: .bouncy)
-                            SpringKeyframe(1.0, spring: .bouncy(duration: 0.25, extraBounce: 0.15))
-                        }
-                        KeyframeTrack(\.opacity) {
-                            LinearKeyframe(0.0, duration: 0.0)
-                            LinearKeyframe(1.0, duration: 0.06)
+                ZStack {
+                    NodeGradientBackground(node: node, cornerRadius: diameter / 2)
+
+                    VStack(spacing: diameter * 0.025) {
+                        Text(displayTitle)
+                            .font(.system(size: diameter * 0.085, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+
+                        if !node.summary.isEmpty {
+                            Text(node.summary)
+                                .font(.system(size: diameter * 0.05))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(4)
                         }
                     }
-                    .position(canvasState.focalNodeScreenPosition)
-                    .opacity(isFading ? 0 : 1)
-                    .allowsHitTesting(false)
-                    .ignoresSafeArea()
+                    .frame(width: diameter * 0.7)
+                }
+                .frame(width: diameter, height: diameter)
+                .clipShape(Circle())
+                .keyframeAnimator(initialValue: FocalAnimationValues(), trigger: focalAnimationTrigger) { content, value in
+                    content.scaleEffect(x: value.scaleX, y: value.scaleY)
+                } keyframes: { _ in
+                    KeyframeTrack(\.scaleX) {
+                        LinearKeyframe(0.6, duration: 0.0)
+                        SpringKeyframe(1.08, duration: 0.2, spring: .bouncy)
+                        SpringKeyframe(1.0, spring: .bouncy(duration: 0.25, extraBounce: 0.15))
+                    }
+                    KeyframeTrack(\.scaleY) {
+                        LinearKeyframe(0.6, duration: 0.0)
+                        SpringKeyframe(0.92, duration: 0.2, spring: .bouncy)
+                        SpringKeyframe(1.0, spring: .bouncy(duration: 0.25, extraBounce: 0.15))
+                    }
+                }
+                .position(canvasState.focalNodeScreenPosition)
+                .opacity(isFading ? 0 : 1)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
             }
         }
         .animation(.easeOut(duration: 0.32), value: isFading)
@@ -340,29 +352,6 @@ struct CanvasView: View {
             if new != nil && old == nil {
                 focalAnimationTrigger.toggle()
             }
-        }
-    }
-
-    private func focalOverlayContent(node: Node, displayTitle: String, diameter: CGFloat) -> some View {
-        ZStack {
-            NodeGradientBackground(node: node, cornerRadius: diameter / 2)
-
-            VStack(spacing: diameter * 0.025) {
-                Text(displayTitle)
-                    .font(.system(size: diameter * 0.085, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-
-                if !node.summary.isEmpty {
-                    Text(node.summary)
-                        .font(.system(size: diameter * 0.05))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(4)
-                }
-            }
-            .frame(width: diameter * 0.7)
         }
     }
 

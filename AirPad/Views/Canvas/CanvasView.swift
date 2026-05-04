@@ -277,18 +277,21 @@ struct CanvasView: View {
 
     /// Tag-colored gradient that tracks the focal node during honeycomb engagement.
     /// SpriteKit owns the geometry (position, scale via lens); CanvasState bridges
-    /// it here. Hidden during zoom — `nodeSummaryLayer` morphs in with the same
-    /// gradient and takes over.
+    /// position and diameter here continuously, including through preCollapse and
+    /// disengaging via `disengagingFocalNodeID` so the overlay shrinks with the
+    /// sprite as it eases back into the corpus instead of cutting at full size.
+    /// Hidden during zoom — `nodeSummaryLayer` morphs in with the same gradient
+    /// and takes over.
     /// Title/summary text rendered here too, since the SpriteKit sprite (and its
     /// child titleLabel) is hidden via alpha=0 during engagement. Font sizes mirror
     /// swapToFocalTexture in CorpusPhysicsScene so the visual matches.
-    /// Animation is keyed on `currentFocalNodeID == nil`, which only flips on
-    /// engage/disengage — not when the focal switches between nodes during a drag,
-    /// so position tracking stays snappy mid-engagement.
     @ViewBuilder
     private var focalEngagementOverlay: some View {
+        let isFading = canvasState.currentFocalNodeID == nil
+        let trackedID = canvasState.currentFocalNodeID ?? canvasState.disengagingFocalNodeID
+
         ZStack {
-            if let id = canvasState.currentFocalNodeID,
+            if let id = trackedID,
                !canvasState.isZoomed,
                !isDismissing,
                canvasState.focalNodeDiameter > 0,
@@ -319,12 +322,12 @@ struct CanvasView: View {
                 .frame(width: diameter, height: diameter)
                 .clipShape(Circle())
                 .position(canvasState.focalNodeScreenPosition)
+                .opacity(isFading ? 0 : 1)
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
-                .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: 0.28), value: canvasState.currentFocalNodeID == nil)
+        .animation(.easeOut(duration: 0.32), value: isFading)
     }
 
     @ViewBuilder

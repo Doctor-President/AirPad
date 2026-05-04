@@ -490,6 +490,11 @@ final class CorpusPhysicsScene: SKScene {
     private var momentumEligible: Bool = false
 
     private var currentFocalNodeID: String? = nil
+    /// The most recent focal node, kept around through preCollapse and
+    /// disengaging so syncFocalToCanvasState can continue bridging its
+    /// shrinking position and diameter to the SwiftUI gradient overlay while
+    /// the overlay's opacity fades to 0. Cleared at disengaging → idle.
+    private var lingerFocalNodeID: String? = nil
     /// Node currently rendering with the gradient shader (focal render state).
     /// Mutated only via `setFocalShader(to:)`.
     private var focalShaderID: String? = nil
@@ -1030,6 +1035,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
 
                 engagementState = .preCollapse(focal: focalID, startTime: currentTime)
+                lingerFocalNodeID = focalID
                 currentFocalNodeID = nil
                 setFocalShader(to: nil)
                 holdCompleted = false
@@ -1093,6 +1099,7 @@ final class CorpusPhysicsScene: SKScene {
                 driftExcludedIDs.removeAll()
                 focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
                 preCollapseStartScales.removeAll()  // SB94: clean up
+                lingerFocalNodeID = nil
 
                 // SB97.1: Restore non-focal texture on any node still in focal state
                 for (nodeID, shape) in nodeSprites {
@@ -1127,10 +1134,15 @@ final class CorpusPhysicsScene: SKScene {
     /// thread; the dispatch is for @MainActor isolation only.
     private func syncFocalToCanvasState() {
         guard let view = self.view else { return }
-        if let focalID = currentFocalNodeID, let sprite = nodeSprites[focalID] {
+        // Prefer the active focal id; fall back to the lingering one so the
+        // SwiftUI overlay can keep tracking the sprite as it shrinks back.
+        let isActive = currentFocalNodeID != nil
+        let trackedID = currentFocalNodeID ?? lingerFocalNodeID
+
+        if let trackedID, let sprite = nodeSprites[trackedID] {
             let centerScene = sprite.position
             let centerView = view.convert(centerScene, from: self)
-            let radiusScene = (nodeIntrinsicRadii[focalID] ?? 30) * sprite.xScale
+            let radiusScene = (nodeIntrinsicRadii[trackedID] ?? 30) * sprite.xScale
             let edgeView = view.convert(
                 CGPoint(x: centerScene.x + radiusScene, y: centerScene.y),
                 from: self
@@ -1138,14 +1150,16 @@ final class CorpusPhysicsScene: SKScene {
             let diameterView = abs(edgeView.x - centerView.x) * 2
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.canvasState?.currentFocalNodeID = focalID
+                self.canvasState?.currentFocalNodeID = isActive ? trackedID : nil
+                self.canvasState?.disengagingFocalNodeID = isActive ? nil : trackedID
                 self.canvasState?.focalNodeScreenPosition = centerView
                 self.canvasState?.focalNodeDiameter = diameterView
             }
-            lastSyncedFocalID = focalID
+            lastSyncedFocalID = trackedID
         } else if lastSyncedFocalID != nil {
             DispatchQueue.main.async { [weak self] in
                 self?.canvasState?.currentFocalNodeID = nil
+                self?.canvasState?.disengagingFocalNodeID = nil
             }
             lastSyncedFocalID = nil
         }
@@ -2873,6 +2887,7 @@ final class CorpusPhysicsScene: SKScene {
                     focalSprite.zPosition = savedZ
                     savedFocalZPositions.removeValue(forKey: focalID)
                 }
+                lingerFocalNodeID = focalID
             }
             currentFocalNodeID = nil
             setFocalShader(to: nil)

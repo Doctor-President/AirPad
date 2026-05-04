@@ -51,6 +51,8 @@ struct NodeCardView: View {
     let selected: Bool
     let dist: Int
 
+    @State private var appeared = false
+
     var body: some View {
         ZStack {
             NodeGradientBackground(node: node, cornerRadius: 36)
@@ -58,6 +60,9 @@ struct NodeCardView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 36))
         .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
+        .transition(.scale(scale: 0.85, anchor: .center).combined(with: .opacity))
+        .animation(.bouncy(duration: 0.4, extraBounce: 0.15), value: appeared)
+        .onAppear { appeared = true }
     }
 
     // CARD CONTENT

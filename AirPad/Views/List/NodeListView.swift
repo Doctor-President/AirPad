@@ -122,7 +122,6 @@ struct NodeListView: View {
 
                         NodeCardView(
                             node: item.node,
-                            paletteIndex: paletteIndexForNode(item.node),
                             selected: index == centerIdx,
                             dist: dist
                         )
@@ -201,26 +200,6 @@ struct NodeListView: View {
         isJumping = true
         proxy.scrollTo(target.id, anchor: .center)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { isJumping = false }
-    }
-
-    // MARK: - Palette selection
-
-    private func paletteIndexForNode(_ node: Node) -> Int {
-        guard let tagName = node.primaryTag else { return 0 }
-
-        // Map tag names to palette indices 0-6
-        switch tagName {
-        case "pal0": return 0
-        case "pal1": return 1
-        case "pal2": return 2
-        case "pal3": return 3
-        case "pal4": return 4
-        case "pal5": return 5
-        case "pal6": return 6
-        default:
-            // For other tags, use hash-based selection
-            return abs(tagName.hashValue) % 7
-        }
     }
 
     // MARK: - Build display items

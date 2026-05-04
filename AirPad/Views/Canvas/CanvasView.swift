@@ -325,9 +325,10 @@ struct CanvasView: View {
                 .opacity(isFading ? 0 : 1)
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
+                .transition(.scale(scale: 0.7, anchor: .center).combined(with: .opacity))
             }
         }
-        .animation(.easeOut(duration: 0.32), value: isFading)
+        .animation(.bouncy(duration: 0.35, extraBounce: 0.2), value: isFading)
     }
 
     @ViewBuilder

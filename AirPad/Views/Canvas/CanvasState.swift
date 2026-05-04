@@ -32,6 +32,14 @@ final class CanvasState {
     /// scale + camera zoom so the SwiftUI overlay matches the canvas node visually.
     var focalNodeDiameter: CGFloat = 0
 
+    /// ID of the previously-focal node while it shrinks back into the corpus
+    /// during preCollapse and disengaging. Lets the SwiftUI overlay remain
+    /// parented to the sprite as it animates back to its resting state, so the
+    /// gradient fade follows the shrink instead of cutting at full size.
+    /// `focalNodeScreenPosition` and `focalNodeDiameter` are kept up to date
+    /// against this id while it's set; `currentFocalNodeID` is nil.
+    var disengagingFocalNodeID: String? = nil
+
     /// ID of the Über-node the user has drilled into, or nil when viewing the full canvas.
     var drilledInto: String? = nil
 

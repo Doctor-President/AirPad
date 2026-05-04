@@ -60,6 +60,10 @@ targets:
       properties:
         CFBundleDisplayName: AirPad
         UILaunchScreen: {}
+        CFBundleURLTypes:
+          - CFBundleURLName: com.doctorpresident.airpad
+            CFBundleURLSchemes:
+              - airpad
         NSUbiquitousContainers:
           iCloud.com.doctorpresident.airpad:
             NSUbiquitousContainerIsDocumentScopePublic: true

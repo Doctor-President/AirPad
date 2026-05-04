@@ -31,6 +31,7 @@ struct NodeListView: View {
     private let cardSpacing: CGFloat = 12
     private let topBarHeight: CGFloat = 110  // Graph/List toggle bar + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
+    private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
     enum ListCaptureMode: String, Identifiable {
         case voice, text, camera
@@ -99,6 +100,7 @@ struct NodeListView: View {
         }
         .onAppear {
             haptic.prepare()
+            navHaptic.prepare()
             buildItems()
         }
         .onChange(of: store.filteredNodes) { _, _ in buildItems() }
@@ -161,6 +163,7 @@ struct NodeListView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
+                            navHaptic.impactOccurred()
                             navigationPath.append(real)
                         }
                     }

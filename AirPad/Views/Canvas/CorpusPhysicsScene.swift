@@ -500,6 +500,7 @@ final class CorpusPhysicsScene: SKScene {
     private var focalShaderID: String? = nil
     // SB96: Selection haptic for focal changes during engagement
     private let focalChangeHaptic = UISelectionFeedbackGenerator()
+    private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private var holdTimerStart: TimeInterval? = nil
     private var holdCompleted: Bool = false
     private var driftedRelatedIDs: [String: CGPoint] = [:]
@@ -2615,6 +2616,7 @@ final class CorpusPhysicsScene: SKScene {
 
                     if isDoubleTap {
                         print("[Honeycomb] Grace double-tap on node \(tappedNodeID) → detail")
+                        navHaptic.impactOccurred()
                         DispatchQueue.main.async { [weak self] in
                             self?.canvasState?.pendingNavigationNodeID = tappedNodeID
                         }

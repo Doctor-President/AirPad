@@ -279,6 +279,9 @@ struct CanvasView: View {
     /// SpriteKit owns the geometry (position, scale via lens); CanvasState bridges
     /// it here. Hidden during zoom — `nodeSummaryLayer` morphs in with the same
     /// gradient and takes over.
+    /// Title/summary text rendered here too, since the SpriteKit sprite (and its
+    /// child titleLabel) is hidden via alpha=0 during engagement. Font sizes mirror
+    /// swapToFocalTexture in CorpusPhysicsScene so the visual matches.
     @ViewBuilder
     private var focalEngagementOverlay: some View {
         if let id = canvasState.currentFocalNodeID,
@@ -286,15 +289,34 @@ struct CanvasView: View {
            !isDismissing,
            canvasState.focalNodeDiameter > 0,
            let node = store.nodes.first(where: { $0.id == id }) {
-            NodeGradientBackground(node: node, cornerRadius: canvasState.focalNodeDiameter / 2)
-                .frame(
-                    width: canvasState.focalNodeDiameter,
-                    height: canvasState.focalNodeDiameter
-                )
-                .clipShape(Circle())
-                .position(canvasState.focalNodeScreenPosition)
-                .allowsHitTesting(false)
-                .ignoresSafeArea()
+            let diameter = canvasState.focalNodeDiameter
+            let displayTitle = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+
+            ZStack {
+                NodeGradientBackground(node: node, cornerRadius: diameter / 2)
+
+                VStack(spacing: diameter * 0.025) {
+                    Text(displayTitle)
+                        .font(.system(size: diameter * 0.085, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+
+                    if !node.summary.isEmpty {
+                        Text(node.summary)
+                            .font(.system(size: diameter * 0.05))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(4)
+                    }
+                }
+                .frame(width: diameter * 0.7)
+            }
+            .frame(width: diameter, height: diameter)
+            .clipShape(Circle())
+            .position(canvasState.focalNodeScreenPosition)
+            .allowsHitTesting(false)
+            .ignoresSafeArea()
         }
     }
 

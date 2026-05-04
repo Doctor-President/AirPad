@@ -282,42 +282,49 @@ struct CanvasView: View {
     /// Title/summary text rendered here too, since the SpriteKit sprite (and its
     /// child titleLabel) is hidden via alpha=0 during engagement. Font sizes mirror
     /// swapToFocalTexture in CorpusPhysicsScene so the visual matches.
+    /// Animation is keyed on `currentFocalNodeID == nil`, which only flips on
+    /// engage/disengage — not when the focal switches between nodes during a drag,
+    /// so position tracking stays snappy mid-engagement.
     @ViewBuilder
     private var focalEngagementOverlay: some View {
-        if let id = canvasState.currentFocalNodeID,
-           !canvasState.isZoomed,
-           !isDismissing,
-           canvasState.focalNodeDiameter > 0,
-           let node = store.nodes.first(where: { $0.id == id }) {
-            let diameter = canvasState.focalNodeDiameter
-            let displayTitle = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+        ZStack {
+            if let id = canvasState.currentFocalNodeID,
+               !canvasState.isZoomed,
+               !isDismissing,
+               canvasState.focalNodeDiameter > 0,
+               let node = store.nodes.first(where: { $0.id == id }) {
+                let diameter = canvasState.focalNodeDiameter
+                let displayTitle = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
 
-            ZStack {
-                NodeGradientBackground(node: node, cornerRadius: diameter / 2)
+                ZStack {
+                    NodeGradientBackground(node: node, cornerRadius: diameter / 2)
 
-                VStack(spacing: diameter * 0.025) {
-                    Text(displayTitle)
-                        .font(.system(size: diameter * 0.085, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-
-                    if !node.summary.isEmpty {
-                        Text(node.summary)
-                            .font(.system(size: diameter * 0.05))
+                    VStack(spacing: diameter * 0.025) {
+                        Text(displayTitle)
+                            .font(.system(size: diameter * 0.085, weight: .bold))
                             .foregroundStyle(.white.opacity(0.85))
                             .multilineTextAlignment(.center)
-                            .lineLimit(4)
+                            .lineLimit(2)
+
+                        if !node.summary.isEmpty {
+                            Text(node.summary)
+                                .font(.system(size: diameter * 0.05))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(4)
+                        }
                     }
+                    .frame(width: diameter * 0.7)
                 }
-                .frame(width: diameter * 0.7)
+                .frame(width: diameter, height: diameter)
+                .clipShape(Circle())
+                .position(canvasState.focalNodeScreenPosition)
+                .allowsHitTesting(false)
+                .ignoresSafeArea()
+                .transition(.opacity)
             }
-            .frame(width: diameter, height: diameter)
-            .clipShape(Circle())
-            .position(canvasState.focalNodeScreenPosition)
-            .allowsHitTesting(false)
-            .ignoresSafeArea()
         }
+        .animation(.easeOut(duration: 0.28), value: canvasState.currentFocalNodeID == nil)
     }
 
     @ViewBuilder

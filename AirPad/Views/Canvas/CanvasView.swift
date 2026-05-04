@@ -1,11 +1,6 @@
 import SwiftUI
 import SpriteKit
 
-struct FocalAnimationValues {
-    var scaleX: CGFloat = 1.0
-    var scaleY: CGFloat = 1.0
-}
-
 /// The real canvas view for Session 2+. Wraps a SpriteKit physics scene with SwiftUI overlays.
 struct CanvasView: View {
 
@@ -19,7 +14,6 @@ struct CanvasView: View {
     @State private var navigationPath = NavigationPath()
     @State private var localTagSuggestions: TagSuggestionContext? = nil
     @State private var isDismissing = false
-    @State private var focalAnimationTrigger = false
 
     @Namespace private var zoomNamespace
 
@@ -327,20 +321,6 @@ struct CanvasView: View {
                 }
                 .frame(width: diameter, height: diameter)
                 .clipShape(Circle())
-                .keyframeAnimator(initialValue: FocalAnimationValues(), trigger: focalAnimationTrigger) { content, value in
-                    content.scaleEffect(x: value.scaleX, y: value.scaleY)
-                } keyframes: { _ in
-                    KeyframeTrack(\.scaleX) {
-                        LinearKeyframe(0.6, duration: 0.0)
-                        SpringKeyframe(1.08, duration: 0.2, spring: .bouncy)
-                        SpringKeyframe(1.0, spring: .bouncy(duration: 0.25, extraBounce: 0.15))
-                    }
-                    KeyframeTrack(\.scaleY) {
-                        LinearKeyframe(0.6, duration: 0.0)
-                        SpringKeyframe(0.92, duration: 0.2, spring: .bouncy)
-                        SpringKeyframe(1.0, spring: .bouncy(duration: 0.25, extraBounce: 0.15))
-                    }
-                }
                 .position(canvasState.focalNodeScreenPosition)
                 .opacity(isFading ? 0 : 1)
                 .allowsHitTesting(false)
@@ -348,11 +328,6 @@ struct CanvasView: View {
             }
         }
         .animation(.easeOut(duration: 0.32), value: isFading)
-        .onChange(of: canvasState.currentFocalNodeID) { old, new in
-            if new != nil && old == nil {
-                focalAnimationTrigger.toggle()
-            }
-        }
     }
 
     @ViewBuilder

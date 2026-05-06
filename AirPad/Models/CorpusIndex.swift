@@ -12,6 +12,10 @@ struct TagIndexEntry: Codable {
     var origin: TagSource
     var coOccurrence: [TagRelation]
     var semanticSimilarity: [TagRelation]
+    /// Reserved for SB127 (conceptual tag similarity). Schema slot only in
+    /// SB126 Stage 1; populated by a later track. Holding the slot now means
+    /// adding labeled similarity later does not require a JSON migration.
+    var similarityKind: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -19,6 +23,7 @@ struct TagIndexEntry: Codable {
         case origin
         case coOccurrence = "co_occurrence"
         case semanticSimilarity = "semantic_similarity"
+        case similarityKind = "similarity_kind"
     }
 }
 
@@ -43,20 +48,33 @@ struct NeighborhoodIndexEntry: Codable {
     var centroid: IndexPoint
     var cohesionScore: Double
     var hue: Double  // HSL hue value 0.0-360.0, assigned at neighborhood creation
+    /// 1-2 sentence summary produced by the nameNeighborhood Call A
+    /// characterize step. Carried forward across refreshes; regenerated only
+    /// when the SB126 Stage 1 trigger rule fires.
+    var description: String
+    /// Sentence embedding of `description` via NLEmbedding. ~512 floats.
+    /// Consumed by SB126 Stage 2's processNode prefilter.
+    var descriptionEmbedding: [Float]
+    /// 8 representative member node IDs (3 central, 3 seeded-random, 2 recent).
+    /// Refreshed when the trigger rule fires; otherwise carried forward.
+    var sampledMemberIDs: [String]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, hue, members
+        case id, name, hue, members, description
         case memberCount = "member_count"
         case dominantTags = "dominant_tags"
         case centroid
         case cohesionScore = "cohesion_score"
+        case descriptionEmbedding = "description_embedding"
+        case sampledMemberIDs = "sampled_member_ids"
     }
 }
 
 extension NeighborhoodIndexEntry {
     /// Backwards-compatible decoder. Pre-AT21 entries have no `members` field;
-    /// they decode with an empty members array. The next refreshNeighborhoods
-    /// pass repopulates `members` from the live Louvain result.
+    /// pre-SB126 Stage 1 entries lack `description`, `description_embedding`,
+    /// and `sampled_member_ids`. Each decodes to an empty default; the next
+    /// refresh that meets the trigger rule populates the three derived fields.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -67,6 +85,9 @@ extension NeighborhoodIndexEntry {
         centroid = try c.decode(IndexPoint.self, forKey: .centroid)
         cohesionScore = try c.decode(Double.self, forKey: .cohesionScore)
         hue = try c.decode(Double.self, forKey: .hue)
+        description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        descriptionEmbedding = try c.decodeIfPresent([Float].self, forKey: .descriptionEmbedding) ?? []
+        sampledMemberIDs = try c.decodeIfPresent([String].self, forKey: .sampledMemberIDs) ?? []
     }
 }
 

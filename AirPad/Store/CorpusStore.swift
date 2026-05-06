@@ -1,6 +1,36 @@
 import Foundation
+import NaturalLanguage
 import Observation
 import UIKit
+
+// MARK: - Seeded RNG (SB126 Stage 1)
+
+/// Deterministic 64-bit RNG used for the random tier of neighborhood member
+/// sampling. SplitMix64 seeded by an FNV-1a hash of the neighborhood ID, so
+/// the same neighborhood draws the same 3 random members run-to-run unless
+/// the trigger rule fires and re-samples.
+fileprivate struct SeededRNG: RandomNumberGenerator {
+    private var state: UInt64
+    init(seed: UInt64) {
+        self.state = seed == 0 ? 0xDEADBEEFCAFEBABE : seed
+    }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z &>> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z &>> 27)) &* 0x94D049BB133111EB
+        return z ^ (z &>> 31)
+    }
+}
+
+fileprivate func stableSeed(_ s: String) -> UInt64 {
+    var h: UInt64 = 0xCBF29CE484222325
+    for byte in s.utf8 {
+        h ^= UInt64(byte)
+        h = h &* 0x100000001B3
+    }
+    return h
+}
 
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
@@ -1057,6 +1087,12 @@ final class CorpusStore {
         // can Jaccard-match fresh clusters to old ones (AT21 Cat A1).
         let previousMembers: [String: Set<String>] = corpusIndex.neighborhoods.mapValues { Set($0.members) }
 
+        // SB126 Stage 1 — full pre-update snapshot. The trigger rule compares fresh
+        // neighborhoods against this snapshot; the upsert step (carry-forward of
+        // description/embedding/sampledMemberIDs) reads from the live state, which
+        // is the same content until the upsert iteration overwrites it.
+        let priorNeighborhoodSnapshot = corpusIndex.neighborhoods
+
         // Generate new neighborhoods
         neighborhoodCache = service.generateNeighborhoods(
             from: nodes,
@@ -1086,7 +1122,7 @@ final class CorpusStore {
             Task {
                 try? await self.service.saveCorpusIndex(indexSnapshot)
             }
-            generateNeighborhoodNamesIfNeeded()
+            regenerateNeighborhoodMetaIfNeeded(priorSnapshot: priorNeighborhoodSnapshot)
             Task {
                 if #available(iOS 26.0, *) {
                     await refreshCorpusSummaryIfNeeded()
@@ -1098,8 +1134,11 @@ final class CorpusStore {
     }
 
     /// Upserts neighborhood entries into the corpus index. Existing neighborhoods keep their
-    /// hue and any FM-generated name. After upsert, prunes any persisted entry whose ID isn't
-    /// in the fresh Louvain output (AT21 Cat A2 — garbage collection).
+    /// hue, any FM-generated name, and the SB126 Stage 1 derived fields (`description`,
+    /// `descriptionEmbedding`, `sampledMemberIDs`) — those are overwritten only when the
+    /// trigger rule in `regenerateNeighborhoodMetaIfNeeded` fires for that neighborhood.
+    /// After upsert, prunes any persisted entry whose ID isn't in the fresh Louvain output
+    /// (AT21 Cat A2 — garbage collection).
     private func updateCorpusIndexNeighborhoodLayer(cache: NeighborhoodCache) {
         let freshIDs = Set(cache.neighborhoods.map { $0.id })
         let newNeighborhoods = cache.neighborhoods.filter { corpusIndex.neighborhoods[$0.id] == nil }
@@ -1130,7 +1169,7 @@ final class CorpusStore {
 
             // Preserve a non-fallback name across refreshes. Stable cluster IDs (Cat A1)
             // mean an FM-generated name attached to this ID is still valid; without this
-            // preservation, every refresh would re-trigger generateNeighborhoodNamesIfNeeded.
+            // preservation, every refresh would re-trigger the SB126 chain.
             let fallbackName = dominantTags.first ?? neighborhood.id
             let name: String
             if let existingName = existing?.name,
@@ -1141,6 +1180,14 @@ final class CorpusStore {
                 name = fallbackName
             }
 
+            // SB126 Stage 1 — carry forward derived fields. The trigger-driven chain
+            // overwrites these for the neighborhoods that actually need recomputation;
+            // every other neighborhood keeps its persisted description, embedding, and
+            // sampled members across refreshes.
+            let description = existing?.description ?? ""
+            let descriptionEmbedding = existing?.descriptionEmbedding ?? []
+            let sampledMemberIDs = existing?.sampledMemberIDs ?? []
+
             corpusIndex.neighborhoods[neighborhood.id] = NeighborhoodIndexEntry(
                 id: neighborhood.id,
                 name: name,
@@ -1149,7 +1196,10 @@ final class CorpusStore {
                 members: neighborhood.memberNodeIDs.sorted(),
                 centroid: IndexPoint(x: Double(neighborhood.centroid.x), y: Double(neighborhood.centroid.y)),
                 cohesionScore: 1.0,
-                hue: hue
+                hue: hue,
+                description: description,
+                descriptionEmbedding: descriptionEmbedding,
+                sampledMemberIDs: sampledMemberIDs
             )
         }
 
@@ -1185,32 +1235,227 @@ final class CorpusStore {
         try? await service.saveCorpusIndex(snapshot)
     }
 
-    /// Fire-and-forget FM naming pass for any neighborhoods whose name is still a fallback
-    /// (matches the neighborhood ID, or is just one of its dominant tags). One FM call per
-    /// unnamed neighborhood — never blocks `refreshNeighborhoods()`.
-    private func generateNeighborhoodNamesIfNeeded() {
-        let candidates: [(id: String, dominantTags: [String], memberCount: Int)] = corpusIndex.neighborhoods.values.compactMap { entry in
-            let isFallback = entry.name == entry.id || entry.dominantTags.contains(entry.name)
-            guard isFallback else { return nil }
+    /// SB126 Stage 1 — trigger-driven regeneration of neighborhood description,
+    /// description embedding, sampled members, and name. The trigger rule fires
+    /// per-neighborhood when ANY of:
+    ///   - the cluster is genuinely new (no prior snapshot entry)
+    ///   - the persisted description embedding is empty (legacy / never run)
+    ///   - dominant_tags Jaccard distance vs. prior > 0.30
+    ///   - member_count delta vs. prior ≥ 25%
+    /// Otherwise the persisted derived fields carry forward unchanged. Runs as
+    /// fire-and-forget so `refreshNeighborhoods` never blocks on FM calls.
+    private func regenerateNeighborhoodMetaIfNeeded(priorSnapshot: [String: NeighborhoodIndexEntry]) {
+        let candidates: [NeighborhoodIndexEntry] = corpusIndex.neighborhoods.values.compactMap { entry in
             guard !entry.dominantTags.isEmpty else { return nil }
-            return (entry.id, entry.dominantTags, entry.memberCount)
+            guard !entry.members.isEmpty else { return nil }
+
+            let prior = priorSnapshot[entry.id]
+            guard let prior else { return entry }                  // genuinely new
+            if prior.descriptionEmbedding.isEmpty { return entry } // legacy / never run
+
+            let freshSet = Set(entry.dominantTags)
+            let priorSet = Set(prior.dominantTags)
+            let union = freshSet.union(priorSet)
+            if !union.isEmpty {
+                let jaccard = Double(freshSet.intersection(priorSet).count) / Double(union.count)
+                if (1.0 - jaccard) > 0.30 { return entry }
+            }
+
+            if prior.memberCount > 0 {
+                let delta = abs(Double(entry.memberCount - prior.memberCount)) / Double(prior.memberCount)
+                if delta >= 0.25 { return entry }
+            }
+            return nil
         }
-        guard !candidates.isEmpty else { return }
+
+        guard !candidates.isEmpty else {
+            print("[Neighborhood][SB126] No neighborhoods triggered chain — derived fields carried forward")
+            return
+        }
+        let candidateIDs = candidates.map { $0.id }
+        print("[Neighborhood][SB126] Trigger fired for \(candidateIDs.count) of \(corpusIndex.neighborhoods.count) neighborhoods")
+
         Task {
             guard #available(iOS 26.0, *) else { return }
+            let embedder = NLEmbedding.sentenceEmbedding(for: .english)
+            if embedder == nil {
+                print("[Neighborhood][SB126] NLEmbedding unavailable — descriptions land but embeddings won't")
+            }
             let aiSvc = AIService()
-            for candidate in candidates {
-                guard let name = await aiSvc.nameNeighborhood(
-                    dominantTags: candidate.dominantTags,
-                    memberCount: candidate.memberCount
-                ) else { continue }
-                guard corpusIndex.neighborhoods[candidate.id] != nil else { continue }
-                corpusIndex.neighborhoods[candidate.id]?.name = name
-                corpusIndex.updatedAt = Date()
-                let snapshot = corpusIndex
-                try? await service.saveCorpusIndex(snapshot)
+            for id in candidateIDs {
+                await runNeighborhoodChain(
+                    neighborhoodID: id,
+                    priorSnapshot: priorSnapshot,
+                    embedder: embedder,
+                    aiSvc: aiSvc
+                )
+            }
+            print("[Neighborhood][SB126] Chain complete for \(candidateIDs.count) neighborhoods")
+        }
+    }
+
+    /// Per-neighborhood orchestration: sample → Call A → embed → Call B → persist.
+    /// Each successful step writes back to `corpusIndex.neighborhoods` and saves a
+    /// snapshot so partial progress survives interruption.
+    @available(iOS 26.0, *)
+    private func runNeighborhoodChain(
+        neighborhoodID: String,
+        priorSnapshot: [String: NeighborhoodIndexEntry],
+        embedder: NLEmbedding?,
+        aiSvc: AIService
+    ) async {
+        guard var entry = corpusIndex.neighborhoods[neighborhoodID] else { return }
+        let prior = priorSnapshot[neighborhoodID]
+
+        // Treat a fallback-shaped prior name (id or dominant-tag) as "no real prior name."
+        let priorName: String? = {
+            guard let prior else { return nil }
+            let n = prior.name
+            if n.isEmpty || n == prior.id { return nil }
+            if prior.dominantTags.contains(n) { return nil }
+            return n
+        }()
+        let priorDescription: String? = {
+            guard let prior, !prior.description.isEmpty else { return nil }
+            return prior.description
+        }()
+
+        // Sample 8 members deterministically (3 central, 2 recent, 3 seeded random).
+        let sampledIDs = sampleMemberIDs(for: entry)
+        entry.sampledMemberIDs = sampledIDs
+
+        let excerpts: [(title: String, snippet: String)] = sampledIDs.compactMap { nid in
+            guard let node = nodes.first(where: { $0.id == nid }) else { return nil }
+            let snippet = String(extractNodeContent(node).prefix(80))
+            return (node.title, snippet)
+        }
+        let coPairs = topCoOccurrencePairs(for: entry.dominantTags, limit: 8)
+
+        guard let description = await aiSvc.characterizeNeighborhood(
+            dominantTags: entry.dominantTags,
+            topCoOccurrences: coPairs,
+            memberExcerpts: excerpts,
+            priorName: priorName,
+            priorDescription: priorDescription
+        ) else {
+            print("[Neighborhood][SB126] Call A returned nil for \(neighborhoodID) — keeping prior derived fields")
+            // Persist the new sampledIDs even on Call A failure so the next refresh
+            // sees a coherent state.
+            corpusIndex.neighborhoods[neighborhoodID]?.sampledMemberIDs = sampledIDs
+            corpusIndex.updatedAt = Date()
+            let snapshot = corpusIndex
+            try? await service.saveCorpusIndex(snapshot)
+            return
+        }
+        entry.description = description
+
+        if let embedder, let vector = embedder.vector(for: description) {
+            entry.descriptionEmbedding = vector.map { Float($0) }
+        } else if embedder != nil {
+            print("[Neighborhood][SB126] Embedding produced no vector for \(neighborhoodID)")
+        }
+        // If embedder == nil, leave any prior embedding in place rather than wipe it.
+
+        // Sibling list = current peers (not self), excluding fallback names so the
+        // model isn't anchored on dominant-tag stand-ins. Top 20 by memberCount.
+        let siblingNames = corpusIndex.neighborhoods.values
+            .filter { other in
+                guard other.id != neighborhoodID else { return false }
+                guard !other.name.isEmpty, other.name != other.id else { return false }
+                if other.dominantTags.contains(other.name) { return false }
+                return true
+            }
+            .sorted { $0.memberCount > $1.memberCount }
+            .prefix(20)
+            .map { $0.name }
+
+        if let name = await aiSvc.nameNeighborhood(
+            description: description,
+            siblingNames: Array(siblingNames),
+            priorName: priorName
+        ) {
+            entry.name = name
+        } else {
+            print("[Neighborhood][SB126] Call B returned nil for \(neighborhoodID) — keeping existing name")
+        }
+
+        corpusIndex.neighborhoods[neighborhoodID] = entry
+        corpusIndex.updatedAt = Date()
+        let snapshot = corpusIndex
+        try? await service.saveCorpusIndex(snapshot)
+    }
+
+    /// SB126 Stage 1 — deterministic 3+3+2 member sampler. 3 most-central
+    /// (highest dominant-tag-match count, tie-break oldest first), 2 most-recent
+    /// (by createdAt), 3 random from the remainder seeded by the neighborhood ID
+    /// so the same cluster draws the same random members run-to-run unless the
+    /// trigger rule re-samples. Falls back to "all members" when fewer than 8.
+    private func sampleMemberIDs(for entry: NeighborhoodIndexEntry) -> [String] {
+        let memberNodes = entry.members.compactMap { id in
+            nodes.first(where: { $0.id == id })
+        }
+        guard !memberNodes.isEmpty else { return [] }
+        if memberNodes.count <= 8 {
+            return memberNodes.map { $0.id }
+        }
+
+        let dominant = Set(entry.dominantTags)
+
+        let scored = memberNodes.map { node -> (id: String, score: Int, ts: Date) in
+            let score = node.tags.filter { dominant.contains($0) }.count
+            return (node.id, score, node.createdAt)
+        }
+        let central = scored.sorted {
+            if $0.score != $1.score { return $0.score > $1.score }
+            return $0.ts < $1.ts
+        }.prefix(3).map { $0.id }
+        let centralSet = Set(central)
+
+        let recent = memberNodes
+            .filter { !centralSet.contains($0.id) }
+            .sorted { $0.createdAt > $1.createdAt }
+            .prefix(2)
+            .map { $0.id }
+        let chosenSet = centralSet.union(recent)
+
+        var rng = SeededRNG(seed: stableSeed(entry.id))
+        let pool = memberNodes.filter { !chosenSet.contains($0.id) }.map { $0.id }
+        let random = pool.shuffled(using: &rng).prefix(3)
+
+        return central + recent + Array(random)
+    }
+
+    /// SB126 Stage 1 — top tag co-occurrence pairs that involve any of the given
+    /// dominant tags. Pulled from the persisted `co_occurrence` data populated
+    /// by AT21. Pairs are canonicalized so A↔B and B↔A aren't double-counted.
+    private func topCoOccurrencePairs(for dominantTags: [String], limit: Int) -> [(pair: String, count: Int)] {
+        var pairs: [(pair: String, count: Int)] = []
+        var seen = Set<String>()
+        for tag in dominantTags {
+            guard let entry = corpusIndex.tags[tag] else { continue }
+            for relation in entry.coOccurrence {
+                let canonical = [tag, relation.tag].sorted().joined(separator: "\u{1F}")
+                if seen.insert(canonical).inserted {
+                    let display = canonical.replacingOccurrences(of: "\u{1F}", with: " ↔ ")
+                    pairs.append((pair: display, count: Int(relation.score)))
+                }
             }
         }
+        return pairs.sorted { $0.count > $1.count }.prefix(limit).map { $0 }
+    }
+
+    /// SB126 Stage 1 — node content extraction for member excerpts. Mirrors
+    /// `AIService.extractContent` but stays on @MainActor so the sampler can
+    /// call it without an actor hop.
+    private func extractNodeContent(_ node: Node) -> String {
+        node.items.compactMap { item -> String? in
+            switch item.type {
+            case .text:              return item.content
+            case .audio, .video:     return item.transcript
+            case .image, .document:  return item.description
+            case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            }
+        }.filter { !$0.isEmpty }.joined(separator: "\n")
     }
 
     /// Fire-and-forget FM call to populate semantic similarity for a newly added tag.

@@ -33,6 +33,25 @@ struct CoherenceCheck {
     var answer: String
 }
 
+/// Output of `nameNeighborhood` Call A. The description is the load-bearing
+/// derived field for SB126 Stage 1 — persisted on the neighborhood entry,
+/// embedded for Stage 2's prefilter, and reused as input to Call B.
+@available(iOS 26.0, *)
+@Generable
+struct NeighborhoodCharacterization {
+    @Guide(description: "1-2 sentence description of what unifies these ideas. Concrete and specific to the actual content, not generic. Under ~80 tokens.")
+    var summary: String
+}
+
+/// Output of `nameNeighborhood` Call B. Short evocative label that survives
+/// across refreshes once stable.
+@available(iOS 26.0, *)
+@Generable
+struct NeighborhoodNaming {
+    @Guide(description: "A 2-4 word name for the cluster. Distinct from the sibling cluster names. No quotes, no punctuation, just the words.")
+    var name: String
+}
+
 @available(iOS 26.0, *)
 @Generable
 struct CorpusSummaryResult {
@@ -124,22 +143,104 @@ actor AIService {
         } catch { return nil }
     }
 
-    /// Generates a short evocative name for a neighborhood from its dominant tags.
-    /// Returns nil if the model is unavailable, no tags supplied, or the response is empty.
-    func nameNeighborhood(dominantTags: [String], memberCount: Int) async -> String? {
+    /// SB126 Stage 1 — Call A. Characterize a neighborhood from its dominant
+    /// tags, top co-occurrence pairs, and 8 sampled member excerpts. Returns a
+    /// 1-2 sentence description, or nil on model unavailability / failure.
+    /// `priorName` and `priorDescription` provide continuity when cluster
+    /// identity matched across refreshes (AT21 Jaccard logic).
+    func characterizeNeighborhood(
+        dominantTags: [String],
+        topCoOccurrences: [(pair: String, count: Int)],
+        memberExcerpts: [(title: String, snippet: String)],
+        priorName: String?,
+        priorDescription: String?
+    ) async -> String? {
         guard SystemLanguageModel.default.isAvailable else { return nil }
         guard !dominantTags.isEmpty else { return nil }
-        let tagList = dominantTags.prefix(5).joined(separator: ", ")
+
+        let tagLine = dominantTags.prefix(5).joined(separator: ", ")
+        let coLine: String
+        if topCoOccurrences.isEmpty {
+            coLine = "(none)"
+        } else {
+            coLine = topCoOccurrences.prefix(8).map { "\($0.pair) (\($0.count))" }.joined(separator: ", ")
+        }
+        let memberLines = memberExcerpts.map { entry -> String in
+            let title = entry.title.isEmpty ? "Untitled" : entry.title
+            let snip = entry.snippet.trimmingCharacters(in: .whitespacesAndNewlines)
+            return snip.isEmpty ? "- \(title)" : "- \(title): \(snip)"
+        }.joined(separator: "\n")
+
+        var continuity = ""
+        if let priorName, let priorDescription, !priorDescription.isEmpty {
+            continuity = """
+
+            Previously this cluster was named "\(priorName)" and described as: "\(priorDescription)"
+            Refine the description if the cluster's character has shifted; otherwise stay close.
+            """
+        }
+
         let prompt = """
-        Generate a short, evocative name (2-4 words) for a cluster of \(memberCount) ideas \
-        with tags: \(tagList).
-        The name should feel like a meaningful category, not a list.
-        Respond with ONLY the name, nothing else.
+        Characterize this cluster of related ideas.
+
+        Dominant tags: \(tagLine)
+        Top tag co-occurrences: \(coLine)
+
+        Sample members:
+        \(memberLines)\(continuity)
+
+        Write a 1-2 sentence description (under ~80 tokens) capturing what unifies these ideas.
+        Be concrete and specific to the actual content; avoid generic filler.
         """
+        print("[FM][CharacterizeNeighborhood] prompt chars=\(prompt.count)")
         do {
             let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt)
-            let name = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let response = try await session.respond(to: prompt, generating: NeighborhoodCharacterization.self)
+            let summary = response.content.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            return summary.isEmpty ? nil : summary
+        } catch { return nil }
+    }
+
+    /// SB126 Stage 1 — Call B. Name a neighborhood given its description and
+    /// the names of sibling neighborhoods. Returns a 2-4 word name, or nil on
+    /// failure. `priorName` instructs the model to prefer keeping the prior
+    /// label unless the description has shifted meaningfully.
+    func nameNeighborhood(
+        description: String,
+        siblingNames: [String],
+        priorName: String?
+    ) async -> String? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+        guard !description.isEmpty else { return nil }
+
+        let siblingLine: String
+        if siblingNames.isEmpty {
+            siblingLine = "(none — this is the only cluster)"
+        } else {
+            siblingLine = siblingNames.prefix(20).joined(separator: ", ")
+        }
+
+        var priorClause = ""
+        if let priorName, !priorName.isEmpty {
+            priorClause = """
+
+            The prior name for this cluster was "\(priorName)". Prefer to keep it unless the description has meaningfully shifted.
+            """
+        }
+
+        let prompt = """
+        Choose a name for this cluster of ideas.
+
+        Description: \(description)
+        Existing sibling cluster names: \(siblingLine)\(priorClause)
+
+        Output a 2-4 word name that's distinct from the sibling names. Output only the name itself.
+        """
+        print("[FM][NameNeighborhood] prompt chars=\(prompt.count)")
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt, generating: NeighborhoodNaming.self)
+            let name = response.content.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? nil : name
         } catch { return nil }
     }

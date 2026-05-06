@@ -21,8 +21,8 @@ final class CorpusStore {
     /// Cached neighborhoods (Louvain communities over tag co-occurrence). Regenerates on invalidation.
     var neighborhoodCache: NeighborhoodCache? = nil
 
-    /// Persistent corpus index (neighborhood registry, tag layer, relatedness, summary).
-    /// Loaded from disk at startup; updated and re-saved whenever neighborhoods or relatedness refresh.
+    /// Persistent corpus index (neighborhood registry, tag layer, summary).
+    /// Loaded from disk at startup; updated and re-saved whenever neighborhoods refresh.
     var corpusIndex: CorpusIndex = CorpusIndex.empty()
 
     /// Reference to CanvasState for drill-down filtering.
@@ -365,7 +365,7 @@ final class CorpusStore {
                 updated.tags.append(name)
             }
             if source == .user || updated.tagSources[name] == nil {
-                updated.tagSources[name] = source
+                updated.tagSources[name] = TagOrigin(source: source)
             }
         }
         await updateNode(updated)
@@ -465,7 +465,7 @@ final class CorpusStore {
         }
         updated.tags = existingTagNames
         for name in existingTagNames where updated.tagSources[name] == nil {
-            updated.tagSources[name] = .model
+            updated.tagSources[name] = TagOrigin(source: .model)
         }
         updated.needsAIProcessing = false
         await updateNode(updated)
@@ -1053,8 +1053,16 @@ final class CorpusStore {
         let previousLargestMemberCount = neighborhoodCache?.neighborhoods.first?.memberCount ?? 0
         print("[Neighborhood] refreshNeighborhoods() called — cache valid: false, fingerprint match: \(hadCache ? "false" : "n/a (no cache)")")
 
+        // Build previous member sets from the persisted index so the service
+        // can Jaccard-match fresh clusters to old ones (AT21 Cat A1).
+        let previousMembers: [String: Set<String>] = corpusIndex.neighborhoods.mapValues { Set($0.members) }
+
         // Generate new neighborhoods
-        neighborhoodCache = service.generateNeighborhoods(from: nodes, layoutPositions: canvasLayout.positions)
+        neighborhoodCache = service.generateNeighborhoods(
+            from: nodes,
+            layoutPositions: canvasLayout.positions,
+            previousMembers: previousMembers
+        )
 
         if let cache = neighborhoodCache {
             let newNeighborhoodCount = cache.neighborhoods.count
@@ -1078,7 +1086,6 @@ final class CorpusStore {
             Task {
                 try? await self.service.saveCorpusIndex(indexSnapshot)
             }
-            refreshRelatednessIndex()
             generateNeighborhoodNamesIfNeeded()
             Task {
                 if #available(iOS 26.0, *) {
@@ -1090,43 +1097,11 @@ final class CorpusStore {
         }
     }
 
-    /// Computes top-N related nodes for every node and persists into the corpus index.
-    /// O(n²) — guarded for corpora over 500 nodes; Session C will add batching.
-    private func refreshRelatednessIndex() {
-        guard nodes.count <= 500 else {
-            print("[Relatedness] Skipping relatedness index — \(nodes.count) nodes exceeds 500-node guard")
-            return
-        }
-        let nodeSnapshot = nodes
-        let existingIndex = corpusIndex
-        let serviceRef = service
-        Task.detached(priority: .background) { [weak self] in
-            let relatednessService = RelatednessService()
-            var updatedIndex = existingIndex
-            var updated = false
-            for node in nodeSnapshot {
-                let related = relatednessService.topRelated(forNodeID: node.id, in: nodeSnapshot, limit: 5)
-                guard !related.isEmpty else { continue }
-                let entry = NodeRelatednessEntry(
-                    nodeID: node.id,
-                    related: related.map { NodeRelation(nodeID: $0.nodeID, score: $0.score) },
-                    computedAt: Date()
-                )
-                updatedIndex.relatedness[node.id] = entry
-                updated = true
-            }
-            guard updated else { return }
-            updatedIndex.updatedAt = Date()
-            try? await serviceRef.saveCorpusIndex(updatedIndex)
-            await MainActor.run {
-                self?.corpusIndex = updatedIndex
-            }
-        }
-    }
-
-    /// Upserts neighborhood entries into the corpus index. Existing neighborhoods keep their hue;
-    /// new neighborhoods get hues distributed evenly around the HSL wheel.
+    /// Upserts neighborhood entries into the corpus index. Existing neighborhoods keep their
+    /// hue and any FM-generated name. After upsert, prunes any persisted entry whose ID isn't
+    /// in the fresh Louvain output (AT21 Cat A2 — garbage collection).
     private func updateCorpusIndexNeighborhoodLayer(cache: NeighborhoodCache) {
+        let freshIDs = Set(cache.neighborhoods.map { $0.id })
         let newNeighborhoods = cache.neighborhoods.filter { corpusIndex.neighborhoods[$0.id] == nil }
         let totalNew = newNeighborhoods.count
         var newIndex = 0
@@ -1144,23 +1119,44 @@ final class CorpusStore {
                 .prefix(3)
                 .map { $0.key }
 
+            let existing = corpusIndex.neighborhoods[neighborhood.id]
             let hue: Double
-            if let existing = corpusIndex.neighborhoods[neighborhood.id] {
+            if let existing {
                 hue = existing.hue
             } else {
                 hue = totalNew > 0 ? (Double(newIndex) / Double(totalNew)) * 360.0 : 0.0
                 newIndex += 1
             }
 
+            // Preserve a non-fallback name across refreshes. Stable cluster IDs (Cat A1)
+            // mean an FM-generated name attached to this ID is still valid; without this
+            // preservation, every refresh would re-trigger generateNeighborhoodNamesIfNeeded.
+            let fallbackName = dominantTags.first ?? neighborhood.id
+            let name: String
+            if let existingName = existing?.name,
+               existingName != neighborhood.id,
+               !dominantTags.contains(existingName) {
+                name = existingName
+            } else {
+                name = fallbackName
+            }
+
             corpusIndex.neighborhoods[neighborhood.id] = NeighborhoodIndexEntry(
                 id: neighborhood.id,
-                name: dominantTags.first ?? neighborhood.id,
+                name: name,
                 memberCount: neighborhood.memberCount,
                 dominantTags: dominantTags,
+                members: neighborhood.memberNodeIDs.sorted(),
                 centroid: IndexPoint(x: Double(neighborhood.centroid.x), y: Double(neighborhood.centroid.y)),
                 cohesionScore: 1.0,
                 hue: hue
             )
+        }
+
+        // Garbage-collect persisted neighborhoods that didn't survive this Louvain pass.
+        let stalePersistedIDs = corpusIndex.neighborhoods.keys.filter { !freshIDs.contains($0) }
+        for staleID in stalePersistedIDs {
+            corpusIndex.neighborhoods.removeValue(forKey: staleID)
         }
     }
 
@@ -1228,11 +1224,12 @@ final class CorpusStore {
             let aiSvc = AIService()
             guard let relations = await aiSvc.computeTagSimilarity(newTag: tagName, existingTags: existingNames) else { return }
             if corpusIndex.tags[tagName] == nil {
-                let usageCount = tags.first(where: { $0.name == tagName })?.useCount ?? 0
+                let usageCount = nodes.filter { $0.tags.contains(tagName) }.count
+                let userSourced = nodes.contains { $0.tagSources[tagName]?.source == .user }
                 corpusIndex.tags[tagName] = TagIndexEntry(
                     name: tagName,
                     usageCount: usageCount,
-                    origin: .model,
+                    origin: userSourced ? .user : .model,
                     coOccurrence: [],
                     semanticSimilarity: []
                 )
@@ -1244,22 +1241,74 @@ final class CorpusStore {
         }
     }
 
-    /// Upserts tag entries into the corpus index. Co-occurrence is populated by future work.
-    /// Semantic similarity is populated lazily via `computeTagSimilarityIfNeeded` on tag creation.
+    /// Full recompute of the tag layer of the corpus index from current nodes (AT21 Cat B).
+    /// Always runs on a full corpus pass — incremental maintenance is a known source of drift,
+    /// and the corpus is small enough that recompute is cheap.
+    ///
+    /// - `usage_count`: number of nodes whose `tags` array contains the tag (Cat B1).
+    /// - `origin`: `.user` if any node carries this tag with `.user` provenance in
+    ///   `tagSources`, else `.model` (Cat B2).
+    /// - `co_occurrence`: top 10 tags by joint occurrence count, sorted desc, stored as
+    ///   `[TagRelation]` where `score` carries the integer count cast to Double (Cat B3).
+    ///
+    /// `semanticSimilarity` is preserved across rebuilds — it's populated by a separate
+    /// FM-driven path (`computeTagSimilarityIfNeeded`) on tag creation and is not derivable
+    /// from the corpus alone. Stale entries (tags no longer in the live vocabulary) are
+    /// dropped, mirroring the neighborhood layer's GC.
     private func updateCorpusIndexTagLayer() {
-        for tag in tags {
-            if var existing = corpusIndex.tags[tag.name] {
-                existing.usageCount = tag.useCount
-                corpusIndex.tags[tag.name] = existing
-            } else {
-                corpusIndex.tags[tag.name] = TagIndexEntry(
-                    name: tag.name,
-                    usageCount: tag.useCount,
-                    origin: .model,
-                    coOccurrence: [],
-                    semanticSimilarity: []
-                )
+        // usage_count: corpus-wide count per tag name.
+        var usageCount: [String: Int] = [:]
+        for tag in tags { usageCount[tag.name] = 0 }
+        for node in nodes {
+            for tagName in node.tags {
+                usageCount[tagName, default: 0] += 1
             }
+        }
+
+        // origin: any node carrying this tag with .user provenance flips it to .user.
+        var hasUserOrigin = Set<String>()
+        for node in nodes {
+            for (tagName, origin) in node.tagSources where origin.source == .user {
+                hasUserOrigin.insert(tagName)
+            }
+        }
+
+        // co_occurrence: per-tag joint counts.
+        var coOccurrence: [String: [String: Int]] = [:]
+        for node in nodes {
+            let nodeTags = node.tags
+            guard nodeTags.count >= 2 else { continue }
+            for i in 0..<nodeTags.count {
+                for j in 0..<nodeTags.count where i != j {
+                    coOccurrence[nodeTags[i], default: [:]][nodeTags[j], default: 0] += 1
+                }
+            }
+        }
+
+        // Rebuild in place, preserving semanticSimilarity from any existing entry.
+        for tag in tags {
+            let existingSimilarity = corpusIndex.tags[tag.name]?.semanticSimilarity ?? []
+            let count = usageCount[tag.name] ?? 0
+            let origin: TagSource = hasUserOrigin.contains(tag.name) ? .user : .model
+
+            let topCo: [TagRelation] = (coOccurrence[tag.name] ?? [:])
+                .sorted { $0.value > $1.value }
+                .prefix(10)
+                .map { TagRelation(tag: $0.key, score: Double($0.value)) }
+
+            corpusIndex.tags[tag.name] = TagIndexEntry(
+                name: tag.name,
+                usageCount: count,
+                origin: origin,
+                coOccurrence: topCo,
+                semanticSimilarity: existingSimilarity
+            )
+        }
+
+        // Drop stale entries for tags no longer in the live vocabulary.
+        let validNames = Set(tags.map { $0.name })
+        for staleName in corpusIndex.tags.keys where !validNames.contains(staleName) {
+            corpusIndex.tags.removeValue(forKey: staleName)
         }
     }
 

@@ -272,7 +272,7 @@ struct NodeDetailView: View {
             updated.tags = editedTags
             // User-edited tags carry .user provenance; drop sources for removed tags.
             let editedSet = Set(editedTags)
-            for name in editedTags { updated.tagSources[name] = .user }
+            for name in editedTags { updated.tagSources[name] = TagOrigin(source: .user) }
             for name in updated.tagSources.keys where !editedSet.contains(name) {
                 updated.tagSources.removeValue(forKey: name)
             }

@@ -6,6 +6,38 @@ enum TagSource: String, Codable {
     case promoted  // model-generated, explicitly accepted by user
 }
 
+/// Per-tag provenance carried on a Node. Modeled as a struct (not a bare
+/// `TagSource`) so future SB128 fields like `attributeOrigin`,
+/// `extractionSource`, and `confidence` can land alongside `source` without a
+/// JSON migration. Today only `source` is populated.
+struct TagOrigin: Codable {
+    var source: TagSource
+
+    init(source: TagSource) {
+        self.source = source
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case source
+    }
+}
+
+extension TagOrigin {
+    /// Backwards-compatible decoder. Accepts either the legacy bare-string form
+    /// (`"Recipe": "user"`) or the typed-struct form (`{"source": "user"}`).
+    /// Encoding always emits the struct form, so legacy node JSONs are
+    /// rewritten in place on the next save.
+    init(from decoder: Decoder) throws {
+        if let single = try? decoder.singleValueContainer(),
+           let bare = try? single.decode(TagSource.self) {
+            self.source = bare
+            return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.source = try c.decode(TagSource.self, forKey: .source)
+    }
+}
+
 struct Node: Codable, Identifiable, Hashable {
     let id: String
     var createdAt: Date
@@ -13,7 +45,7 @@ struct Node: Codable, Identifiable, Hashable {
     var title: String
     var summary: String
     var tags: [String]
-    var tagSources: [String: TagSource]
+    var tagSources: [String: TagOrigin]
     var mood: String?
     var isMeta: Bool
     var provenance: [String]?
@@ -51,7 +83,7 @@ struct Node: Codable, Identifiable, Hashable {
         title: String,
         summary: String,
         tags: [String],
-        tagSources: [String: TagSource] = [:],
+        tagSources: [String: TagOrigin] = [:],
         mood: String? = nil,
         isMeta: Bool = false,
         provenance: [String]? = nil,
@@ -96,7 +128,7 @@ extension Node {
         title             = try c.decode(String.self,    forKey: .title)
         summary           = try c.decode(String.self,    forKey: .summary)
         tags              = try c.decode([String].self,  forKey: .tags)
-        tagSources        = try c.decodeIfPresent([String: TagSource].self, forKey: .tagSources) ?? [:]
+        tagSources        = try c.decodeIfPresent([String: TagOrigin].self, forKey: .tagSources) ?? [:]
         mood              = try c.decodeIfPresent(String.self,    forKey: .mood)
         isMeta            = try c.decode(Bool.self,      forKey: .isMeta)
         provenance        = try c.decodeIfPresent([String].self,  forKey: .provenance)
@@ -116,7 +148,7 @@ extension Node {
     /// detail view, focal overlay). User-assigned tags beat FM-assigned tags so the
     /// node's identity follows the user's intent when the model and user disagree.
     var primaryTag: String? {
-        if let userTag = tags.first(where: { tagSources[$0] == .user }) {
+        if let userTag = tags.first(where: { tagSources[$0]?.source == .user }) {
             return userTag
         }
         return tags.first

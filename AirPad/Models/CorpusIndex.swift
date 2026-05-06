@@ -24,6 +24,8 @@ struct TagIndexEntry: Codable {
 
 struct TagRelation: Codable {
     let tag: String
+    /// For `semanticSimilarity` entries this carries a similarity score in [0, 1].
+    /// For `co_occurrence` entries this carries an integer count cast to Double.
     let score: Double
 }
 
@@ -34,12 +36,16 @@ struct NeighborhoodIndexEntry: Codable {
     var name: String
     var memberCount: Int
     var dominantTags: [String]
+    /// Sorted node IDs that belong to this neighborhood. Persisted so the next
+    /// run's Louvain output can be Jaccard-matched against this set to keep
+    /// cluster identity stable across launches (AT21 Cat A).
+    var members: [String]
     var centroid: IndexPoint
     var cohesionScore: Double
     var hue: Double  // HSL hue value 0.0-360.0, assigned at neighborhood creation
 
     enum CodingKeys: String, CodingKey {
-        case id, name, hue
+        case id, name, hue, members
         case memberCount = "member_count"
         case dominantTags = "dominant_tags"
         case centroid
@@ -47,33 +53,26 @@ struct NeighborhoodIndexEntry: Codable {
     }
 }
 
+extension NeighborhoodIndexEntry {
+    /// Backwards-compatible decoder. Pre-AT21 entries have no `members` field;
+    /// they decode with an empty members array. The next refreshNeighborhoods
+    /// pass repopulates `members` from the live Louvain result.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        memberCount = try c.decode(Int.self, forKey: .memberCount)
+        dominantTags = try c.decode([String].self, forKey: .dominantTags)
+        members = try c.decodeIfPresent([String].self, forKey: .members) ?? []
+        centroid = try c.decode(IndexPoint.self, forKey: .centroid)
+        cohesionScore = try c.decode(Double.self, forKey: .cohesionScore)
+        hue = try c.decode(Double.self, forKey: .hue)
+    }
+}
+
 struct IndexPoint: Codable {
     let x: Double
     let y: Double
-}
-
-// MARK: - Node relatedness entry
-
-struct NodeRelatednessEntry: Codable {
-    let nodeID: String
-    var related: [NodeRelation]
-    var computedAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case nodeID = "node_id"
-        case related
-        case computedAt = "computed_at"
-    }
-}
-
-struct NodeRelation: Codable {
-    let nodeID: String
-    let score: Double
-
-    enum CodingKeys: String, CodingKey {
-        case nodeID = "node_id"
-        case score
-    }
 }
 
 // MARK: - Corpus summary (Layer 3 — populated by AIService in Session C)
@@ -117,7 +116,6 @@ struct CorpusIndex: Codable {
     var updatedAt: Date
     var tags: [String: TagIndexEntry]
     var neighborhoods: [String: NeighborhoodIndexEntry]
-    var relatedness: [String: NodeRelatednessEntry]
     var summary: CorpusSummary?
 
     enum CodingKeys: String, CodingKey {
@@ -125,7 +123,6 @@ struct CorpusIndex: Codable {
         case updatedAt = "updated_at"
         case tags
         case neighborhoods
-        case relatedness
         case summary
     }
 
@@ -135,7 +132,6 @@ struct CorpusIndex: Codable {
             updatedAt: Date(),
             tags: [:],
             neighborhoods: [:],
-            relatedness: [:],
             summary: nil
         )
     }

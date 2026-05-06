@@ -7,7 +7,13 @@ final class NeighborhoodService {
 
     /// Generate neighborhoods from corpus using Louvain method.
     /// Returns nil if corpus is too small or has no tagged nodes.
-    func generateNeighborhoods(from nodes: [Node], layoutPositions: [String: CanvasPosition]) -> NeighborhoodCache? {
+    /// `previousMembers` maps persisted neighborhood IDs to their member node IDs;
+    /// used to keep cluster identity stable across runs via Jaccard matching.
+    func generateNeighborhoods(
+        from nodes: [Node],
+        layoutPositions: [String: CanvasPosition],
+        previousMembers: [String: Set<String>] = [:]
+    ) -> NeighborhoodCache? {
         // Edge case: empty or trivial corpus
         guard nodes.count >= 2 else { return nil }
 
@@ -27,9 +33,18 @@ final class NeighborhoodService {
         // Run Louvain community detection
         let communities = louvainClustering(graph: graph)
 
+        // Stabilize cluster identity across runs (AT21 Cat A): rewrite the
+        // arbitrary first-node-UUID community IDs to either reuse a persisted
+        // ID (when the fresh cluster's member set has Jaccard ≥ 0.5 with a
+        // persisted cluster) or mint a fresh UUID.
+        let stabilizedCommunities = stabilizeCommunityIDs(
+            communities: communities,
+            previousMembers: previousMembers
+        )
+
         // Build neighborhoods from communities
         let neighborhoods = buildNeighborhoods(
-            communities: communities,
+            communities: stabilizedCommunities,
             nodes: nodes,
             layoutPositions: layoutPositions
         )
@@ -276,6 +291,54 @@ final class NeighborhoodService {
 
         // Sort by member count descending
         return neighborhoods.sorted { $0.memberCount > $1.memberCount }
+    }
+
+    // MARK: - Cluster identity stability (AT21 Cat A)
+
+    /// Rewrites the community IDs in `communities` so that fresh clusters
+    /// sharing ≥ 0.5 Jaccard overlap with a persisted cluster reuse the
+    /// persisted ID. Other clusters get a fresh UUID. Greedy: each persisted
+    /// ID is claimed at most once. The 0.5 threshold is a starting heuristic;
+    /// can be tuned if observed behavior suggests another value.
+    private func stabilizeCommunityIDs(
+        communities: [String: String],
+        previousMembers: [String: Set<String>]
+    ) -> [String: String] {
+        // Group nodes by their provisional community ID
+        var freshClusters: [String: Set<String>] = [:]
+        for (nodeID, communityID) in communities {
+            freshClusters[communityID, default: []].insert(nodeID)
+        }
+
+        let jaccardThreshold = 0.5
+        var freshToStableID: [String: String] = [:]
+        var claimedPersistedIDs = Set<String>()
+
+        for (freshID, freshSet) in freshClusters {
+            var bestMatch: (id: String, score: Double)?
+            for (persistedID, persistedSet) in previousMembers where !claimedPersistedIDs.contains(persistedID) {
+                guard !persistedSet.isEmpty else { continue }
+                let intersection = freshSet.intersection(persistedSet).count
+                let unionCount = freshSet.union(persistedSet).count
+                guard unionCount > 0 else { continue }
+                let score = Double(intersection) / Double(unionCount)
+                if score >= jaccardThreshold, score > (bestMatch?.score ?? -1) {
+                    bestMatch = (persistedID, score)
+                }
+            }
+            if let match = bestMatch {
+                freshToStableID[freshID] = match.id
+                claimedPersistedIDs.insert(match.id)
+            } else {
+                freshToStableID[freshID] = UUID().uuidString
+            }
+        }
+
+        var rewritten: [String: String] = [:]
+        for (nodeID, communityID) in communities {
+            rewritten[nodeID] = freshToStableID[communityID]!
+        }
+        return rewritten
     }
 
     // MARK: - Fingerprint

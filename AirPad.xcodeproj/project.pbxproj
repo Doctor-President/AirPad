@@ -69,7 +69,6 @@
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
 		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
-		C1C8DC076F70E06B15CEDF66 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4114EB82C1700492CF29C6AE /* OnboardingView.swift */; };
 		C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1822A03D5407145464AB94 /* AppRouter.swift */; };
 		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
@@ -131,7 +130,6 @@
 		39E6876F450FCAC6F6B1A9CF /* Tag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tag.swift; sourceTree = "<group>"; };
 		3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureSheet.swift; sourceTree = "<group>"; };
 		3B1822A03D5407145464AB94 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
-		4114EB82C1700492CF29C6AE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4339BD7FF5450195EDF70A95 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RejectedBlock.swift; sourceTree = "<group>"; };
 		48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterState.swift; sourceTree = "<group>"; };
@@ -278,7 +276,6 @@
 				60660408D5EEF211EB72BA7D /* Capture */,
 				4457977889C2B78493EC5AD7 /* Detail */,
 				E2DA2EA8F4AA00E1FCC24AFC /* List */,
-				D6D2C1A623E85338DBC2E0AF /* Onboarding */,
 				2B9615A52E1C8DCD63462128 /* Settings */,
 				DF9CD6E4FF1185B7CEF053EE /* Shared */,
 				01B3209F32045005E03F39C8 /* Tags */,
@@ -382,14 +379,6 @@
 				2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */,
 			);
 			path = Threads;
-			sourceTree = "<group>";
-		};
-		D6D2C1A623E85338DBC2E0AF /* Onboarding */ = {
-			isa = PBXGroup;
-			children = (
-				4114EB82C1700492CF29C6AE /* OnboardingView.swift */,
-			);
-			path = Onboarding;
 			sourceTree = "<group>";
 		};
 		DF9CD6E4FF1185B7CEF053EE /* Shared */ = {
@@ -571,7 +560,6 @@
 				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
 				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
-				C1C8DC076F70E06B15CEDF66 /* OnboardingView.swift in Sources */,
 				9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */,
 				99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */,
 				883D93742F1EAF7DECF5E18F /* QuarantineWarningIcon.swift in Sources */,

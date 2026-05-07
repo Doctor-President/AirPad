@@ -194,6 +194,9 @@ actor AIService {
                 neighborhoodID: nil
             )
         } catch {
+            print("[FM][processNode] FAILURE: \(error)")
+            print("[FM][processNode] Error type: \(type(of: error))")
+            print("[FM][processNode] Localized: \(error.localizedDescription)")
             return nil
         }
     }
@@ -303,6 +306,9 @@ actor AIService {
                 neighborhoodID: nbhd.isEmpty ? nil : nbhd
             )
         } catch {
+            print("[FM][processNodeCorpusAware] FAILURE: \(error)")
+            print("[FM][processNodeCorpusAware] Error type: \(type(of: error))")
+            print("[FM][processNodeCorpusAware] Localized: \(error.localizedDescription)")
             return nil
         }
     }

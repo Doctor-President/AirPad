@@ -1269,7 +1269,15 @@ final class CorpusStore {
         guard needsRefresh else { return }
         guard #available(iOS 26.0, *) else { return }
         let aiSvc = AIService()
-        guard let result = await aiSvc.generateCorpusSummary(index: corpusIndex, nodeCount: nodes.count) else { return }
+        let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date.distantPast
+        let recentCaptureCount = nodes.reduce(into: 0) { acc, node in
+            if node.createdAt >= cutoff { acc += 1 }
+        }
+        guard let result = await aiSvc.generateCorpusSummary(
+            index: corpusIndex,
+            nodeCount: nodes.count,
+            recentCaptureCount: recentCaptureCount
+        ) else { return }
         let summary = CorpusSummary(
             nodeCount: nodes.count,
             tagCount: corpusIndex.tags.count,
@@ -1626,16 +1634,24 @@ final class CorpusStore {
             }
     }
 
-    /// Fire-and-forget FM call to populate semantic similarity for a newly added tag.
-    /// Idempotent: skips if similarity is already populated. Never blocks tag creation.
+    /// Fire-and-forget FM call to populate cold-start similarity for a newly added tag.
+    /// SB126 Stage 3: narrowed to tags with `usage_count < 5` (lift takes over for
+    /// established tags during index refresh). Idempotent: skips if `topSimilarTags`
+    /// is already populated. Never blocks tag creation.
     private func computeTagSimilarityIfNeeded(for tagName: String) {
-        guard corpusIndex.tags[tagName]?.semanticSimilarity.isEmpty != false else { return }
+        let existingEntry = corpusIndex.tags[tagName]
+        if let existingEntry, !existingEntry.topSimilarTags.isEmpty { return }
+        let currentUsage = existingEntry?.usageCount ?? nodes.filter { $0.tags.contains(tagName) }.count
+        guard currentUsage < 5 else { return }  // lift will populate during next refresh
         let existingNames = tags.map { $0.name }.filter { $0 != tagName }
         guard !existingNames.isEmpty else { return }
         Task {
             guard #available(iOS 26.0, *) else { return }
             let aiSvc = AIService()
             guard let relations = await aiSvc.computeTagSimilarity(newTag: tagName, existingTags: existingNames) else { return }
+            let similarities: [TagSimilarity] = relations.map {
+                TagSimilarity(tagID: $0.tag, lift: $0.score, similarityKind: nil)
+            }
             if corpusIndex.tags[tagName] == nil {
                 let usageCount = nodes.filter { $0.tags.contains(tagName) }.count
                 let userSourced = nodes.contains { $0.tagSources[tagName]?.source == .user }
@@ -1644,10 +1660,13 @@ final class CorpusStore {
                     usageCount: usageCount,
                     origin: userSourced ? .user : .model,
                     coOccurrence: [],
-                    semanticSimilarity: []
+                    semanticSimilarity: [],
+                    similarityKind: nil,
+                    topSimilarTags: similarities
                 )
+            } else {
+                corpusIndex.tags[tagName]?.topSimilarTags = similarities
             }
-            corpusIndex.tags[tagName]?.semanticSimilarity = relations
             corpusIndex.updatedAt = Date()
             let snapshot = corpusIndex
             try? await service.saveCorpusIndex(snapshot)
@@ -1663,11 +1682,12 @@ final class CorpusStore {
     ///   `tagSources`, else `.model` (Cat B2).
     /// - `co_occurrence`: top 10 tags by joint occurrence count, sorted desc, stored as
     ///   `[TagRelation]` where `score` carries the integer count cast to Double (Cat B3).
+    /// - `top_similar_tags` (SB126 Stage 3): deterministic lift-based similarity for tags
+    ///   with `usage_count >= 5`. Cold-start tags carry forward FM-derived entries.
     ///
-    /// `semanticSimilarity` is preserved across rebuilds — it's populated by a separate
-    /// FM-driven path (`computeTagSimilarityIfNeeded`) on tag creation and is not derivable
-    /// from the corpus alone. Stale entries (tags no longer in the live vocabulary) are
-    /// dropped, mirroring the neighborhood layer's GC.
+    /// `semanticSimilarity` is preserved across rebuilds — legacy field from pre-Stage-3.
+    /// Stale entries (tags no longer in the live vocabulary) are dropped, mirroring the
+    /// neighborhood layer's GC.
     private func updateCorpusIndexTagLayer() {
         // usage_count: corpus-wide count per tag name.
         var usageCount: [String: Int] = [:]
@@ -1698,9 +1718,17 @@ final class CorpusStore {
             }
         }
 
-        // Rebuild in place, preserving semanticSimilarity from any existing entry.
+        // SB126 Stage 3 — N for the lift formula: nodes carrying at least one tag.
+        let totalTaggedNodes = nodes.reduce(into: 0) { acc, node in
+            if !node.tags.isEmpty { acc += 1 }
+        }
+
+        // Rebuild in place, preserving semanticSimilarity (legacy) and topSimilarTags
+        // for cold-start tags (usage_count < 5). Lift-derived entries are recomputed
+        // every refresh for established tags.
         for tag in tags {
             let existingSimilarity = corpusIndex.tags[tag.name]?.semanticSimilarity ?? []
+            let existingTopSimilar = corpusIndex.tags[tag.name]?.topSimilarTags ?? []
             let count = usageCount[tag.name] ?? 0
             let origin: TagSource = hasUserOrigin.contains(tag.name) ? .user : .model
 
@@ -1709,12 +1737,27 @@ final class CorpusStore {
                 .prefix(10)
                 .map { TagRelation(tag: $0.key, score: Double($0.value)) }
 
+            let topSimilar: [TagSimilarity]
+            if count >= 5 {
+                topSimilar = computeLiftSimilarities(
+                    for: tag.name,
+                    usageCount: usageCount,
+                    coOccurrence: coOccurrence,
+                    totalTaggedNodes: totalTaggedNodes
+                )
+            } else {
+                // Cold-start: preserve FM-derived entries until usage crosses 5.
+                topSimilar = existingTopSimilar
+            }
+
             corpusIndex.tags[tag.name] = TagIndexEntry(
                 name: tag.name,
                 usageCount: count,
                 origin: origin,
                 coOccurrence: topCo,
-                semanticSimilarity: existingSimilarity
+                semanticSimilarity: existingSimilarity,
+                similarityKind: corpusIndex.tags[tag.name]?.similarityKind,
+                topSimilarTags: topSimilar
             )
         }
 
@@ -1723,6 +1766,33 @@ final class CorpusStore {
         for staleName in corpusIndex.tags.keys where !validNames.contains(staleName) {
             corpusIndex.tags.removeValue(forKey: staleName)
         }
+    }
+
+    /// SB126 Stage 3 — deterministic lift-based similarity for one tag.
+    /// `lift(A, B) = (n_AB * N) / (n_A * n_B)`.
+    /// Floors: lift > 1.5 (weak signal), n_AB >= 3 (spurious pairs from rare tags).
+    /// Cap: top 5 by lift, descending. Caller guards with `n_A >= 5`.
+    private func computeLiftSimilarities(
+        for tagName: String,
+        usageCount: [String: Int],
+        coOccurrence: [String: [String: Int]],
+        totalTaggedNodes: Int
+    ) -> [TagSimilarity] {
+        guard totalTaggedNodes > 0 else { return [] }
+        let nA = usageCount[tagName] ?? 0
+        guard nA > 0 else { return [] }
+        let pairs = coOccurrence[tagName] ?? [:]
+        var entries: [TagSimilarity] = []
+        for (otherName, nAB) in pairs {
+            guard nAB >= 3 else { continue }
+            let nB = usageCount[otherName] ?? 0
+            guard nB > 0 else { continue }
+            let lift = (Double(nAB) * Double(totalTaggedNodes)) / (Double(nA) * Double(nB))
+            guard lift > 1.5 else { continue }
+            entries.append(TagSimilarity(tagID: otherName, lift: lift, similarityKind: nil))
+        }
+        entries.sort { $0.lift > $1.lift }
+        return Array(entries.prefix(5))
     }
 
     /// Force regeneration of neighborhoods (ignores cache validity).

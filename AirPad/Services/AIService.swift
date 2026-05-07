@@ -310,20 +310,58 @@ actor AIService {
     /// Generates a structured corpus summary from the current index. Returns nil if the
     /// model is unavailable or the call fails. Caller is responsible for assembling the
     /// final `CorpusSummary` (which carries computed counts and floater node IDs).
-    func generateCorpusSummary(index: CorpusIndex, nodeCount: Int) async -> CorpusSummaryResult? {
+    ///
+    /// SB126 Stage 3: input shape upgraded — top-25 neighborhoods by member_count are
+    /// passed with their `description` (the Stage 1 derived field), so the FM gets
+    /// cohesion signal directly rather than guessing from name strings. Surplus
+    /// neighborhoods collapse into an "and N smaller communities" footer.
+    /// `recentCaptureCount` is the count of nodes captured in the last 14 days.
+    func generateCorpusSummary(
+        index: CorpusIndex,
+        nodeCount: Int,
+        recentCaptureCount: Int
+    ) async -> CorpusSummaryResult? {
         guard SystemLanguageModel.default.isAvailable else { return nil }
-        let neighborhoodNames = index.neighborhoods.values.map { $0.name }.joined(separator: ", ")
+
         let topTags = index.tags.values
             .sorted { $0.usageCount > $1.usageCount }
             .prefix(15)
             .map { "\($0.name) (\($0.usageCount))" }
             .joined(separator: ", ")
+
+        let sortedNeighborhoods = index.neighborhoods.values
+            .sorted { $0.memberCount > $1.memberCount }
+        let topNeighborhoods = Array(sortedNeighborhoods.prefix(25))
+        let remainingCount = max(0, sortedNeighborhoods.count - topNeighborhoods.count)
+
+        let neighborhoodSection: String
+        if topNeighborhoods.isEmpty {
+            neighborhoodSection = "(no neighborhoods yet)"
+        } else {
+            var lines = topNeighborhoods.map { entry -> String in
+                let desc = entry.description.isEmpty ? "(no description)" : entry.description
+                return "- \(entry.name) (\(entry.memberCount) members): \(desc)"
+            }
+            if remainingCount > 0 {
+                lines.append("- and \(remainingCount) smaller communities")
+            }
+            neighborhoodSection = lines.joined(separator: "\n")
+        }
+
         let prompt = """
-        Analyze this idea corpus:
+        Synthesize what this idea corpus is about right now. Ground every claim in the supplied neighborhoods (each carries a 1-2 sentence description of its content) and tag usage. Reference cluster content, not just names.
+
+        Corpus stats:
         - \(nodeCount) total nodes
-        - \(index.neighborhoods.count) clusters: \(neighborhoodNames)
-        - Top tags: \(topTags)
+        - \(recentCaptureCount) captured in the last 14 days
+
+        Neighborhoods (top by size, with description):
+        \(neighborhoodSection)
+
+        Top tags by usage:
+        \(topTags)
         """
+
         logFMTokens("GenerateCorpusSummary", prompt: prompt)
         do {
             let session = LanguageModelSession()
@@ -434,16 +472,21 @@ actor AIService {
         } catch { return nil }
     }
 
-    /// Computes semantic similarity between a new tag and an existing tag vocabulary.
-    /// Returns the top-N most similar tags (score > 0.3), or nil if the model is unavailable
-    /// or output cannot be parsed. Empty vocabulary returns an empty array.
+    /// Cold-start similarity for tags with `usage_count < 5`, where lift values
+    /// are not statistically meaningful. Returns top-N most similar existing
+    /// tags (score > 0.3), or nil if the model is unavailable or output cannot
+    /// be parsed. Empty vocabulary returns an empty array. Per SB126 Stage 3,
+    /// the new tag is filtered out of the comparison vocabulary defensively
+    /// (AT20 fix) — passing it back to itself produces self-similarity = 1.0
+    /// noise.
     func computeTagSimilarity(
         newTag: String,
         existingTags: [String]
     ) async -> [TagRelation]? {
         guard SystemLanguageModel.default.isAvailable else { return nil }
-        guard !existingTags.isEmpty else { return [] }
-        let vocabLine = existingTags.joined(separator: ", ")
+        let filteredVocab = existingTags.filter { $0 != newTag }
+        guard !filteredVocab.isEmpty else { return [] }
+        let vocabLine = filteredVocab.joined(separator: ", ")
         let prompt = """
         Rate the semantic similarity between the tag "\(newTag)" and each of the following tags.
         Return only the top 5 most similar tags with a similarity score from 0.0 to 1.0.

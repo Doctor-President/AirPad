@@ -16,6 +16,12 @@ struct TagIndexEntry: Codable {
     /// SB126 Stage 1; populated by a later track. Holding the slot now means
     /// adding labeled similarity later does not require a JSON migration.
     var similarityKind: String? = nil
+    /// SB126 Stage 3 — deterministic lift-based similar tags for tags with
+    /// `usage_count >= 5`. Cold-start tags (`usage_count < 5`) hold FM-derived
+    /// entries from `computeTagSimilarity` until usage crosses the threshold,
+    /// at which point lift takes over. Per-tag cap of 5; lift floor of 1.5
+    /// and pair-count floor of 3 applied at compute time.
+    var topSimilarTags: [TagSimilarity] = []
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -24,6 +30,23 @@ struct TagIndexEntry: Codable {
         case coOccurrence = "co_occurrence"
         case semanticSimilarity = "semantic_similarity"
         case similarityKind = "similarity_kind"
+        case topSimilarTags = "top_similar_tags"
+    }
+}
+
+extension TagIndexEntry {
+    /// Backwards-compatible decoder. Pre-SB126-Stage-3 corpus_index.json files
+    /// lack `top_similar_tags`; default to empty so the next refresh can
+    /// populate via lift (or cold-start FM for usage_count < 5 tags).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        usageCount = try c.decode(Int.self, forKey: .usageCount)
+        origin = try c.decode(TagSource.self, forKey: .origin)
+        coOccurrence = try c.decode([TagRelation].self, forKey: .coOccurrence)
+        semanticSimilarity = try c.decode([TagRelation].self, forKey: .semanticSimilarity)
+        similarityKind = try c.decodeIfPresent(String.self, forKey: .similarityKind)
+        topSimilarTags = try c.decodeIfPresent([TagSimilarity].self, forKey: .topSimilarTags) ?? []
     }
 }
 
@@ -32,6 +55,21 @@ struct TagRelation: Codable {
     /// For `semanticSimilarity` entries this carries a similarity score in [0, 1].
     /// For `co_occurrence` entries this carries an integer count cast to Double.
     let score: Double
+}
+
+/// SB126 Stage 3 — per-pair similarity entry. Populated deterministically via
+/// lift for established tags; via FM cold-start for tags with usage_count < 5.
+/// `similarityKind` is reserved for SB127 labeled similarity (always nil in v1).
+struct TagSimilarity: Codable, Hashable {
+    let tagID: String
+    let lift: Double
+    let similarityKind: String?
+
+    enum CodingKeys: String, CodingKey {
+        case tagID = "tag_id"
+        case lift
+        case similarityKind = "similarity_kind"
+    }
 }
 
 // MARK: - Neighborhood registry entry

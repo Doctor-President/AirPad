@@ -14,6 +14,9 @@ struct SettingsView: View {
     // Privacy
     @AppStorage("locationEnabled") private var locationEnabled = false
 
+    // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
+    @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
+
     // UI state
     @State private var connectionTestResult: String? = nil
     @State private var isTestingConnection = false
@@ -369,6 +372,14 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
+
+            Toggle(isOn: $useCorpusAwareTagging) {
+                Text("SB126 Stage 2 — corpus-aware tagging")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(0.5))
+            }
+            .tint(.orange)
+            .padding(.horizontal, 16)
         }
     }
 

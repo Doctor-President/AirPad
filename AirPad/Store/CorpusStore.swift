@@ -455,7 +455,31 @@ final class CorpusStore {
 
         let currentTags = tags
         let aiSvc = AIService()
-        guard let result = await aiSvc.processNode(node, tagVocabulary: currentTags) else {
+
+        // SB126 Stage 2 — corpus-aware tagging path. Behind a feature flag so
+        // legacy processNode stays bit-identical until validation phases A–G
+        // sign off. Computes a node embedding, builds a deterministic context
+        // window (top-K neighborhood digests + top-N tag digests), and runs a
+        // single FM call producing all per-node fields plus an FM-suggested
+        // neighborhood id.
+        let useCorpusAware = FeatureFlags.useCorpusAwareTagging
+        let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
+        let aiResult: NodeAIOutput?
+        if useCorpusAware {
+            let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
+            let tagDigests = topTagsForProcessNode(N: 12)
+            let vocabulary = currentTags.map { $0.name }
+            print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
+            aiResult = await aiSvc.processNodeCorpusAware(
+                node: node,
+                neighborhoodDigests: neighborhoodDigests,
+                tagDigests: tagDigests,
+                fullVocabulary: vocabulary
+            )
+        } else {
+            aiResult = await aiSvc.processNode(node, tagVocabulary: currentTags)
+        }
+        guard let result = aiResult else {
             // AI unavailable — apply a fallback title from raw content so the node isn't blank
             if var n = nodes.first(where: { $0.id == nodeID }) {
                 let fallback = n.items.compactMap { item -> String? in
@@ -483,6 +507,17 @@ final class CorpusStore {
         if let domain = result.domain {
             updated.domain          = domain
             updated.domainConfirmed = false
+        }
+        // SB126 Stage 2 — persist deterministic-prefilter embedding and the
+        // FM's neighborhood guess. Both are no-ops on the legacy path.
+        if useCorpusAware {
+            if let nodeEmbedding {
+                updated.contentEmbedding = nodeEmbedding
+            }
+            if let fmNeighborhood = result.neighborhoodID,
+               corpusIndex.neighborhoods[fmNeighborhood] != nil {
+                updated.fmSuggestedNeighborhoodID = fmNeighborhood
+            }
         }
 
         var existingTagNames: [String] = []
@@ -1188,6 +1223,21 @@ final class CorpusStore {
             let descriptionEmbedding = existing?.descriptionEmbedding ?? []
             let sampledMemberIDs = existing?.sampledMemberIDs ?? []
 
+            // SB126 Stage 2 — descriptionAttempts carries forward, but a meaningful
+            // dominant_tags shift resets it so a previously-stuck cluster gets a
+            // fresh attempt budget against the new tag profile.
+            let descriptionAttempts: Int = {
+                guard let existing else { return 0 }
+                let freshSet = Set(dominantTags)
+                let priorSet = Set(existing.dominantTags)
+                let union = freshSet.union(priorSet)
+                if !union.isEmpty {
+                    let jaccard = Double(freshSet.intersection(priorSet).count) / Double(union.count)
+                    if (1.0 - jaccard) > 0.30 { return 0 }
+                }
+                return existing.descriptionAttempts
+            }()
+
             corpusIndex.neighborhoods[neighborhood.id] = NeighborhoodIndexEntry(
                 id: neighborhood.id,
                 name: name,
@@ -1199,7 +1249,8 @@ final class CorpusStore {
                 hue: hue,
                 description: description,
                 descriptionEmbedding: descriptionEmbedding,
-                sampledMemberIDs: sampledMemberIDs
+                sampledMemberIDs: sampledMemberIDs,
+                descriptionAttempts: descriptionAttempts
             )
         }
 
@@ -1251,7 +1302,14 @@ final class CorpusStore {
 
             let prior = priorSnapshot[entry.id]
             guard let prior else { return entry }                  // genuinely new
-            if prior.descriptionEmbedding.isEmpty { return entry } // legacy / never run
+
+            // SB126 Stage 2 — empty-embedding retry is gated by descriptionAttempts.
+            // Tech/Work-style clusters where Call A keeps returning nil reach the
+            // ceiling and stop firing the chain until dominant_tags shifts (which
+            // resets attempts to 0 in updateCorpusIndexNeighborhoodLayer).
+            if prior.descriptionEmbedding.isEmpty && entry.descriptionAttempts < 3 {
+                return entry
+            }
 
             let freshSet = Set(entry.dominantTags)
             let priorSet = Set(prior.dominantTags)
@@ -1338,16 +1396,21 @@ final class CorpusStore {
             priorName: priorName,
             priorDescription: priorDescription
         ) else {
-            print("[Neighborhood][SB126] Call A returned nil for \(neighborhoodID) — keeping prior derived fields")
-            // Persist the new sampledIDs even on Call A failure so the next refresh
-            // sees a coherent state.
+            // SB126 Stage 2 — increment the per-cluster Call A backoff counter.
+            // Once it hits 3 with no embedding, the trigger rule stops firing
+            // for this cluster until dominant_tags shifts.
+            let newAttempts = (corpusIndex.neighborhoods[neighborhoodID]?.descriptionAttempts ?? 0) + 1
+            print("[Neighborhood][SB126] Call A returned nil for \(neighborhoodID) — descriptionAttempts → \(newAttempts)")
             corpusIndex.neighborhoods[neighborhoodID]?.sampledMemberIDs = sampledIDs
+            corpusIndex.neighborhoods[neighborhoodID]?.descriptionAttempts = newAttempts
             corpusIndex.updatedAt = Date()
             let snapshot = corpusIndex
             try? await service.saveCorpusIndex(snapshot)
             return
         }
         entry.description = description
+        // SB126 Stage 2 — Call A succeeded; reset the backoff counter.
+        entry.descriptionAttempts = 0
 
         if let embedder, let vector = embedder.vector(for: description) {
             entry.descriptionEmbedding = vector.map { Float($0) }
@@ -1456,6 +1519,111 @@ final class CorpusStore {
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
+    }
+
+    // MARK: - SB126 Stage 2 — corpus-aware processNode helpers
+
+    /// Cosine similarity for two equal-length [Float] vectors. Returns 0 for
+    /// degenerate inputs (mismatched length or zero magnitude) — the caller
+    /// treats those as "no signal" and falls back to the lexical path.
+    private func cosine(_ a: [Float], _ b: [Float]) -> Double {
+        guard !a.isEmpty, a.count == b.count else { return 0 }
+        var dot: Double = 0
+        var na: Double = 0
+        var nb: Double = 0
+        for i in 0..<a.count {
+            let x = Double(a[i])
+            let y = Double(b[i])
+            dot += x * y
+            na += x * x
+            nb += y * y
+        }
+        let denom = (na.squareRoot()) * (nb.squareRoot())
+        return denom > 0 ? dot / denom : 0
+    }
+
+    /// SB126 Stage 2 — sentence embedding for the node's extracted content.
+    /// Returns nil when content is empty or NLEmbedding has no vector
+    /// (e.g. very short or all-stopword content). Computed once per node
+    /// during the corpus-aware path and persisted to `node.contentEmbedding`.
+    private func computeNodeEmbedding(for node: Node) -> [Float]? {
+        let raw = extractNodeContent(node)
+        guard !raw.isEmpty else { return nil }
+        guard let embedder = NLEmbedding.sentenceEmbedding(for: .english) else { return nil }
+        guard let vector = embedder.vector(for: raw) else { return nil }
+        return vector.map { Float($0) }
+    }
+
+    /// SB126 Stage 2 — top-K neighborhood digests for the FM context window.
+    /// Primary signal: cosine similarity between the node embedding and each
+    /// neighborhood's `descriptionEmbedding`. Lexical fallback (token overlap
+    /// against `dominantTags`) handles two cases: the node has no embedding,
+    /// or no neighborhood has a description embedding yet (cold corpus).
+    /// Excludes neighborhoods with empty `dominantTags` since they can't help
+    /// the FM ground its tag choice.
+    private func prefilterNeighborhoods(
+        for node: Node,
+        nodeEmbedding: [Float]?,
+        K: Int = 5
+    ) -> [NeighborhoodDigest] {
+        let candidates = corpusIndex.neighborhoods.values.filter { !$0.dominantTags.isEmpty }
+        guard !candidates.isEmpty else { return [] }
+
+        let usableEmbeddings = candidates.contains { !$0.descriptionEmbedding.isEmpty }
+        let scored: [(entry: NeighborhoodIndexEntry, score: Double)]
+
+        if let nodeEmbedding, usableEmbeddings {
+            scored = candidates.map { entry in
+                let s = entry.descriptionEmbedding.isEmpty
+                    ? 0.0
+                    : cosine(nodeEmbedding, entry.descriptionEmbedding)
+                return (entry, s)
+            }
+        } else {
+            // Lexical fallback — token overlap between node content and the
+            // neighborhood's dominant tags. Cheap and good enough as a backup.
+            let raw = extractNodeContent(node).lowercased()
+            let nodeTokens = Set(raw.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+            scored = candidates.map { entry in
+                let overlap = entry.dominantTags.reduce(0) { acc, tag in
+                    nodeTokens.contains(tag.lowercased()) ? acc + 1 : acc
+                }
+                return (entry, Double(overlap))
+            }
+        }
+
+        return scored
+            .filter { $0.score > 0 }
+            .sorted { $0.score > $1.score }
+            .prefix(K)
+            .map { (entry, _) in
+                NeighborhoodDigest(
+                    id: entry.id,
+                    name: entry.name,
+                    description: entry.description,
+                    dominantTags: entry.dominantTags
+                )
+            }
+    }
+
+    /// SB126 Stage 2 — top-N tags by usage count, each annotated with its top-2
+    /// co-occurring tags from the persisted index. Read from the existing tag
+    /// layer so this is purely deterministic — no FM, no recompute.
+    private func topTagsForProcessNode(N: Int = 12) -> [TagDigest] {
+        corpusIndex.tags.values
+            .sorted { $0.usageCount > $1.usageCount }
+            .prefix(N)
+            .map { entry in
+                let topCo = entry.coOccurrence
+                    .sorted { $0.score > $1.score }
+                    .prefix(2)
+                    .map { $0.tag }
+                return TagDigest(
+                    name: entry.name,
+                    usageCount: entry.usageCount,
+                    topCoOccurring: Array(topCo)
+                )
+            }
     }
 
     /// Fire-and-forget FM call to populate semantic similarity for a newly added tag.

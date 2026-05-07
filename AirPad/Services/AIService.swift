@@ -1,6 +1,35 @@
 import Foundation
 import FoundationModels
 
+// MARK: - SB126 Stage 2 — token instrumentation helper
+
+/// Logs a `[FM][<callSite>] tokens=<n> chars=<m>` line for token-budget
+/// visibility. Apple's FoundationModels SDK does not currently surface a
+/// stable public `tokenCount(for:)` method on `LanguageModelSession` (Xcode
+/// 26.5 beta + iOS 26.4), so the implementation falls back to `prompt.count`
+/// as a chars proxy with `tokens=-1` to mark the gap. When the SDK exposes
+/// the API, swap the body of `measureTokens` to call it and the four call
+/// sites pick up the real numbers without further changes.
+@available(iOS 26.0, *)
+fileprivate func logFMTokens(_ callSite: String, prompt: String) {
+    let tokens = measureTokens(prompt: prompt)
+    let chars = prompt.count
+    if tokens >= 0 {
+        print("[FM][\(callSite)] tokens=\(tokens) chars=\(chars)")
+    } else {
+        print("[FM][\(callSite)] tokens=? chars=\(chars)")
+    }
+}
+
+/// Returns the prompt's token count if the SDK exposes one, else -1.
+/// Centralized here so flipping to the real API is a one-line change.
+@available(iOS 26.0, *)
+fileprivate func measureTokens(prompt: String) -> Int {
+    // No public tokenCount(for:) on LanguageModelSession in the current beta.
+    // When Apple ships one, replace this body with the real call.
+    return -1
+}
+
 // MARK: - Structured output types
 
 /// Requires iOS 26.0 — @Generable and its synthesised types (GenerationSchema,
@@ -24,6 +53,33 @@ struct NodeAIResult {
 
     @Guide(description: "Domain classification — exactly one value from: Recipe, Legal, Medical, Nutrition, Dream, Travel, Work, Learning, Family, Art/Project. Use an empty string if none clearly apply.")
     var domain: String
+}
+
+/// SB126 Stage 2 — output of the corpus-aware `processNode` FM call. Mirrors
+/// `NodeAIResult`'s shape (title, summary, tags, mood, domain) so the corpus
+/// context can ride alongside the existing per-node fields without splitting
+/// the capture path into two FM calls. Adds `neighborhoodID` for the FM's
+/// best-guess membership against the prefilter's top-K neighborhood digests.
+@available(iOS 26.0, *)
+@Generable
+struct ProcessNodeResult {
+    @Guide(description: "Concise idea title, under 60 characters. Functional, not poetic.")
+    var title: String
+
+    @Guide(description: "One to two sentence summary capturing the idea's core essence.")
+    var summary: String
+
+    @Guide(description: "Up to 5 tags from the supplied vocabulary. Prefer compound or specific tags over single broad ones when both are valid; e.g., a recipe-app idea should be tagged with both 'Recipe' and 'Technology' rather than 'Technology' alone. Return an empty array if the content is too thin to support confident tagging.")
+    var tags: [String]
+
+    @Guide(description: "Emotional tone — exactly one word from this fixed set: curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.")
+    var mood: String
+
+    @Guide(description: "Domain classification — exactly one value from: Recipe, Legal, Medical, Nutrition, Dream, Travel, Work, Learning, Family, Art/Project. Use an empty string if none clearly apply.")
+    var domain: String
+
+    @Guide(description: "If the node clearly belongs to one of the supplied existing neighborhoods, the neighborhood id (uuid) of the best match. Empty string if no clear fit.")
+    var neighborhoodID: String
 }
 
 @available(iOS 26.0, *)
@@ -71,6 +127,27 @@ struct CorpusSummaryResult {
     var floaterCount: Int
 }
 
+// MARK: - Corpus-aware digest types (SB126 Stage 2)
+
+/// Digest of a neighborhood, passed to the corpus-aware `processNode` FM call
+/// as part of the prefiltered context window. Built deterministically by
+/// `CorpusStore.prefilterNeighborhoods`; consumed by `processNodeCorpusAware`.
+struct NeighborhoodDigest {
+    let id: String
+    let name: String
+    let description: String
+    let dominantTags: [String]
+}
+
+/// Digest of a tag entry, passed to the corpus-aware `processNode` FM call.
+/// Built by `CorpusStore.topTagsForProcessNode`. The co-occurrence list helps
+/// the FM prefer compound tagging over single broad tags (SB133 specificity).
+struct TagDigest {
+    let name: String
+    let usageCount: Int
+    let topCoOccurring: [String]
+}
+
 // MARK: - Service
 
 /// On-device AI processing for nodes.
@@ -103,6 +180,7 @@ actor AIService {
         \(content)
         """
 
+        logFMTokens("ProcessNode", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: NodeAIResult.self)
@@ -112,7 +190,117 @@ actor AIService {
                 summary: r.summary,
                 tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
                 mood:    r.mood.isEmpty ? nil : r.mood,
-                domain:  r.domain.isEmpty ? nil : r.domain
+                domain:  r.domain.isEmpty ? nil : r.domain,
+                neighborhoodID: nil
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    /// SB126 Stage 2 — corpus-aware variant of `processNode`. Receives a
+    /// deterministically-prefiltered window of corpus context (top-K neighborhood
+    /// digests + top-N tag digests with co-occurrence) alongside the full
+    /// vocabulary. Single FM call producing all per-node fields plus the
+    /// FM's best-guess neighborhood id. Returns nil on model unavailability or
+    /// failure. Callers must NOT block node save on this — same contract as
+    /// the legacy `processNode`.
+    func processNodeCorpusAware(
+        node: Node,
+        neighborhoodDigests: [NeighborhoodDigest],
+        tagDigests: [TagDigest],
+        fullVocabulary: [String]
+    ) async -> NodeAIOutput? {
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+
+        let raw = extractContent(from: node)
+        guard !raw.isEmpty else { return nil }
+        // ~4 chars per token proxy; truncate at ~3200 chars (≈800 tokens) so the
+        // node-content slice stays inside its allocation in the token budget.
+        let content: String
+        if raw.count > 3200 {
+            content = String(raw.prefix(3200)) + " […]"
+        } else {
+            content = raw
+        }
+
+        let neighborhoodSection: String
+        if neighborhoodDigests.isEmpty {
+            neighborhoodSection = "(no existing neighborhoods)"
+        } else {
+            neighborhoodSection = neighborhoodDigests.map { d -> String in
+                let desc = d.description.isEmpty ? "(no description)" : d.description
+                let tags = d.dominantTags.isEmpty ? "(none)" : d.dominantTags.joined(separator: ", ")
+                return """
+                id: \(d.id)
+                name: \(d.name)
+                description: \(desc)
+                dominant_tags: [\(tags)]
+                """
+            }.joined(separator: "\n\n")
+        }
+
+        let tagSection: String
+        if tagDigests.isEmpty {
+            tagSection = "(no tag usage data)"
+        } else {
+            tagSection = tagDigests.map { d -> String in
+                if d.topCoOccurring.isEmpty {
+                    return "\(d.name) (used \(d.usageCount)×)"
+                } else {
+                    return "\(d.name) (used \(d.usageCount)×, often with: \(d.topCoOccurring.joined(separator: ", ")))"
+                }
+            }.joined(separator: "\n")
+        }
+
+        let vocabLine: String
+        if fullVocabulary.isEmpty {
+            vocabLine = "(empty)"
+        } else {
+            vocabLine = fullVocabulary.joined(separator: ", ")
+        }
+
+        let prompt = """
+        You are tagging a captured idea against an existing personal corpus. Use the supplied corpus context to ground your choices.
+
+        Tag-selection rules:
+        - Only choose tags from the full vocabulary list. Tags outside the vocabulary are not allowed.
+        - Prefer compound or specific tags over single broad ones when both are valid. A recipe-app idea is better tagged ["Recipe", "Technology"] than ["Technology"] alone. Single broad tags like "Technology" or "Work" tagged in isolation make clusters incoherent.
+        - If the content is too thin or ambiguous to support confident tagging, return an empty tags array. Do not fabricate.
+
+        Other fields:
+        - title: concise, functional, under 60 characters.
+        - summary: 1-2 sentences capturing the core essence.
+        - mood: exactly one of curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.
+        - domain: exactly one of Recipe, Legal, Medical, Nutrition, Dream, Travel, Work, Learning, Family, Art/Project, or empty string if none apply.
+        - neighborhoodID: if the idea clearly belongs to one of the existing neighborhoods below, copy that neighborhood's id verbatim. Otherwise empty string.
+
+        ## Node content
+        \(content)
+
+        ## Most-relevant existing neighborhoods (top \(neighborhoodDigests.count))
+        \(neighborhoodSection)
+
+        ## Most-used tags in the corpus (top \(tagDigests.count), with co-occurrence)
+        \(tagSection)
+
+        ## Full tag vocabulary (fallback — pick from any of these)
+        \(vocabLine)
+        """
+
+        logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt, generating: ProcessNodeResult.self)
+            let r = response.content
+            let nbhd = r.neighborhoodID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return NodeAIOutput(
+                title:   r.title,
+                summary: r.summary,
+                tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
+                mood:    r.mood.isEmpty ? nil : r.mood,
+                domain:  r.domain.isEmpty ? nil : r.domain,
+                neighborhoodID: nbhd.isEmpty ? nil : nbhd
             )
         } catch {
             return nil
@@ -136,6 +324,7 @@ actor AIService {
         - \(index.neighborhoods.count) clusters: \(neighborhoodNames)
         - Top tags: \(topTags)
         """
+        logFMTokens("GenerateCorpusSummary", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: CorpusSummaryResult.self)
@@ -192,7 +381,7 @@ actor AIService {
         Write a 1-2 sentence description (under ~80 tokens) capturing what unifies these ideas.
         Be concrete and specific to the actual content; avoid generic filler.
         """
-        print("[FM][CharacterizeNeighborhood] prompt chars=\(prompt.count)")
+        logFMTokens("CharacterizeNeighborhood", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: NeighborhoodCharacterization.self)
@@ -236,7 +425,7 @@ actor AIService {
 
         Output a 2-4 word name that's distinct from the sibling names. Output only the name itself.
         """
-        print("[FM][NameNeighborhood] prompt chars=\(prompt.count)")
+        logFMTokens("NameNeighborhood", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: NeighborhoodNaming.self)
@@ -262,6 +451,7 @@ actor AIService {
         Tags to compare: \(vocabLine)
         Respond ONLY with a JSON array. Example: [{"tag": "French Cooking", "score": 0.87}]
         """
+        logFMTokens("ComputeTagSimilarity", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt)
@@ -321,4 +511,8 @@ struct NodeAIOutput {
     let tags:    [String]
     let mood:    String?
     let domain:  String?
+    /// SB126 Stage 2 — set only by the corpus-aware path; always nil from
+    /// legacy `processNode`. Stored on the node as metadata; not consumed in
+    /// Stage 2 itself.
+    let neighborhoodID: String?
 }

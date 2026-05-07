@@ -23,6 +23,7 @@
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
 		2733262BA259E300B3613CF3 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		2B4E58DDB1092B8D07102CC3 /* RelatednessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988F66299DD79745A824B3A0 /* RelatednessService.swift */; };
+		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
 		481B80E93834B0485E835938 /* CorpusQuerySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */; };
 		50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194292F01A21193B880F16FA /* ContentView.swift */; };
@@ -165,6 +166,7 @@
 		B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostQueryField.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
+		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureIntent.swift; sourceTree = "<group>"; };
@@ -332,6 +334,7 @@
 			isa = PBXGroup;
 			children = (
 				ADDA79A05C807120913FCE5F /* CorpusStore.swift */,
+				C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */,
 				48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */,
 				0642041A7F8A258DF0FF065C /* QuarantineStore.swift */,
 			);
@@ -551,6 +554,7 @@
 				481B80E93834B0485E835938 /* CorpusQuerySheet.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
+				2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
 				0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */,
 				8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */,

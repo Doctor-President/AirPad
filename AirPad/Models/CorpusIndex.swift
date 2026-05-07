@@ -58,6 +58,13 @@ struct NeighborhoodIndexEntry: Codable {
     /// 8 representative member node IDs (3 central, 3 seeded-random, 2 recent).
     /// Refreshed when the trigger rule fires; otherwise carried forward.
     var sampledMemberIDs: [String]
+    /// SB126 Stage 2 — backoff counter for Call A nil returns. Increments each
+    /// time `characterizeNeighborhood` returns nil for this cluster; resets to
+    /// 0 on a successful Call A or when `dominantTags` shifts enough to retry.
+    /// Once `>= 3` AND `descriptionEmbedding.isEmpty`, the trigger rule stops
+    /// firing the chain for this cluster (Tech/Work-style permanently generic
+    /// clusters that the FM keeps declining to characterize).
+    var descriptionAttempts: Int
 
     enum CodingKeys: String, CodingKey {
         case id, name, hue, members, description
@@ -67,14 +74,15 @@ struct NeighborhoodIndexEntry: Codable {
         case cohesionScore = "cohesion_score"
         case descriptionEmbedding = "description_embedding"
         case sampledMemberIDs = "sampled_member_ids"
+        case descriptionAttempts = "description_attempts"
     }
 }
 
 extension NeighborhoodIndexEntry {
     /// Backwards-compatible decoder. Pre-AT21 entries have no `members` field;
     /// pre-SB126 Stage 1 entries lack `description`, `description_embedding`,
-    /// and `sampled_member_ids`. Each decodes to an empty default; the next
-    /// refresh that meets the trigger rule populates the three derived fields.
+    /// and `sampled_member_ids`; pre-Stage-2 entries lack `description_attempts`.
+    /// Each decodes to a default; the next refresh repopulates as needed.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -88,6 +96,7 @@ extension NeighborhoodIndexEntry {
         description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
         descriptionEmbedding = try c.decodeIfPresent([Float].self, forKey: .descriptionEmbedding) ?? []
         sampledMemberIDs = try c.decodeIfPresent([String].self, forKey: .sampledMemberIDs) ?? []
+        descriptionAttempts = try c.decodeIfPresent(Int.self, forKey: .descriptionAttempts) ?? 0
     }
 }
 

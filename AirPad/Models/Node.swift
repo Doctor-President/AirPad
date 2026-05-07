@@ -59,6 +59,15 @@ struct Node: Codable, Identifiable, Hashable {
     var needsReview: Bool
     /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
     var source: String?
+    /// SB126 Stage 2 — `NLEmbedding.sentenceEmbedding(for: .english)` of the
+    /// node's content. Computed lazily during the corpus-aware `processNode`
+    /// path; consumed by the deterministic neighborhood prefilter. Nil for
+    /// nodes captured before Stage 2 or when content was unavailable.
+    var contentEmbedding: [Float]?
+    /// SB126 Stage 2 — neighborhood ID the FM judged most relevant during the
+    /// corpus-aware tagging call. Stored for downstream consumption (a future
+    /// SB may surface or auto-assign), not read in Stage 2 itself.
+    var fmSuggestedNeighborhoodID: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
@@ -69,6 +78,8 @@ struct Node: Codable, Identifiable, Hashable {
         case needsAIProcessing = "needs_ai_processing"
         case needsReview = "needs_review"
         case tagSources = "tag_sources"
+        case contentEmbedding = "content_embedding"
+        case fmSuggestedNeighborhoodID = "fm_suggested_neighborhood_id"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -94,26 +105,30 @@ struct Node: Codable, Identifiable, Hashable {
         domainConfirmed: Bool = false,
         needsAIProcessing: Bool = false,
         needsReview: Bool = false,
-        source: String? = nil
+        source: String? = nil,
+        contentEmbedding: [Float]? = nil,
+        fmSuggestedNeighborhoodID: String? = nil
     ) {
-        self.id                = id
-        self.createdAt         = createdAt
-        self.updatedAt         = updatedAt
-        self.title             = title
-        self.summary           = summary
-        self.tags              = tags
-        self.tagSources        = tagSources
-        self.mood              = mood
-        self.isMeta            = isMeta
-        self.provenance        = provenance
-        self.threads           = threads
-        self.location          = location
-        self.items             = items
-        self.domain            = domain
-        self.domainConfirmed   = domainConfirmed
-        self.needsAIProcessing = needsAIProcessing
-        self.needsReview       = needsReview
-        self.source            = source
+        self.id                        = id
+        self.createdAt                 = createdAt
+        self.updatedAt                 = updatedAt
+        self.title                     = title
+        self.summary                   = summary
+        self.tags                      = tags
+        self.tagSources                = tagSources
+        self.mood                      = mood
+        self.isMeta                    = isMeta
+        self.provenance                = provenance
+        self.threads                   = threads
+        self.location                  = location
+        self.items                     = items
+        self.domain                    = domain
+        self.domainConfirmed           = domainConfirmed
+        self.needsAIProcessing         = needsAIProcessing
+        self.needsReview               = needsReview
+        self.source                    = source
+        self.contentEmbedding          = contentEmbedding
+        self.fmSuggestedNeighborhoodID = fmSuggestedNeighborhoodID
     }
 }
 
@@ -122,24 +137,26 @@ extension Node {
     // Custom decoder for backward compatibility — new fields default gracefully.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id                = try c.decode(String.self,    forKey: .id)
-        createdAt         = try c.decode(Date.self,      forKey: .createdAt)
-        updatedAt         = try c.decode(Date.self,      forKey: .updatedAt)
-        title             = try c.decode(String.self,    forKey: .title)
-        summary           = try c.decode(String.self,    forKey: .summary)
-        tags              = try c.decode([String].self,  forKey: .tags)
-        tagSources        = try c.decodeIfPresent([String: TagOrigin].self, forKey: .tagSources) ?? [:]
-        mood              = try c.decodeIfPresent(String.self,    forKey: .mood)
-        isMeta            = try c.decode(Bool.self,      forKey: .isMeta)
-        provenance        = try c.decodeIfPresent([String].self,  forKey: .provenance)
-        threads           = try c.decode([String].self,  forKey: .threads)
-        location          = try c.decodeIfPresent(NodeLocation.self, forKey: .location)
-        items             = try c.decode([NodeItem].self, forKey: .items)
-        domain            = try c.decodeIfPresent(String.self,    forKey: .domain)
-        domainConfirmed   = try c.decodeIfPresent(Bool.self,      forKey: .domainConfirmed) ?? false
-        needsAIProcessing = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
-        needsReview       = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
-        source            = try c.decodeIfPresent(String.self,    forKey: .source)
+        id                        = try c.decode(String.self,    forKey: .id)
+        createdAt                 = try c.decode(Date.self,      forKey: .createdAt)
+        updatedAt                 = try c.decode(Date.self,      forKey: .updatedAt)
+        title                     = try c.decode(String.self,    forKey: .title)
+        summary                   = try c.decode(String.self,    forKey: .summary)
+        tags                      = try c.decode([String].self,  forKey: .tags)
+        tagSources                = try c.decodeIfPresent([String: TagOrigin].self, forKey: .tagSources) ?? [:]
+        mood                      = try c.decodeIfPresent(String.self,    forKey: .mood)
+        isMeta                    = try c.decode(Bool.self,      forKey: .isMeta)
+        provenance                = try c.decodeIfPresent([String].self,  forKey: .provenance)
+        threads                   = try c.decode([String].self,  forKey: .threads)
+        location                  = try c.decodeIfPresent(NodeLocation.self, forKey: .location)
+        items                     = try c.decode([NodeItem].self, forKey: .items)
+        domain                    = try c.decodeIfPresent(String.self,    forKey: .domain)
+        domainConfirmed           = try c.decodeIfPresent(Bool.self,      forKey: .domainConfirmed) ?? false
+        needsAIProcessing         = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
+        needsReview               = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
+        source                    = try c.decodeIfPresent(String.self,    forKey: .source)
+        contentEmbedding          = try c.decodeIfPresent([Float].self,   forKey: .contentEmbedding)
+        fmSuggestedNeighborhoodID = try c.decodeIfPresent(String.self,    forKey: .fmSuggestedNeighborhoodID)
     }
 }
 

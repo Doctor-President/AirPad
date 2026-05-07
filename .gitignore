@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+*.xcuserdata/
+
+# Build artifacts
+build/
+DerivedData/
+*.pcm
+*.swiftdeps
+*.o
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# Audit snapshots (T's local records)
+audit-*.json

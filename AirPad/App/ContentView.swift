@@ -9,7 +9,6 @@ struct ContentView: View {
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
-    @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboardingComplete")
 
     var body: some View {
         Group {
@@ -141,9 +140,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
-        }
-        .fullScreenCover(isPresented: $showOnboarding) {
-            OnboardingView { showOnboarding = false }
         }
     }
 }

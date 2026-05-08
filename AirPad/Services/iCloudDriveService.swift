@@ -165,6 +165,35 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode(CorpusIndex.self, from: data)
     }
 
+    /// SB137 Stage A — write the routing diagnostics sidecar so the cosine
+    /// distribution can be AirDropped back for offline threshold tuning.
+    /// Overwritten on every neighborhood refresh.
+    func saveRoutingDiagnostics(_ diagnostics: RoutingDiagnostics) throws {
+        let root = try requireRoot()
+        let data = try JSONEncoder.airPad.encode(diagnostics)
+        try data.write(
+            to: root.appendingPathComponent("corpus_routing_diagnostics.json"),
+            options: .atomic
+        )
+    }
+
+    /// SB137 Stage A — copy the live `corpus_index.json` to
+    /// `corpus_index.pre-stageA.json` so a manual revert is possible if the
+    /// post-upgrade rebuild produces something obviously broken. Idempotent in
+    /// the sense that the backup is overwritten on every call (so a second
+    /// upgrade attempt doesn't lose the original); the caller guards by
+    /// detecting the v1 → v2 schema transition exactly once.
+    func backupCorpusIndexForStageAUpgrade() throws {
+        let root = try requireRoot()
+        let src = root.appendingPathComponent("corpus_index.json")
+        guard FileManager.default.fileExists(atPath: src.path) else { return }
+        let dst = root.appendingPathComponent("corpus_index.pre-stageA.json")
+        if FileManager.default.fileExists(atPath: dst.path) {
+            try FileManager.default.removeItem(at: dst)
+        }
+        try FileManager.default.copyItem(at: src, to: dst)
+    }
+
     // MARK: - Destructive operations
 
     /// Deletes every node directory (and all contained media), then recreates an empty

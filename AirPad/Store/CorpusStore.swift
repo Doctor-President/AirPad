@@ -306,10 +306,8 @@ final class CorpusStore {
         refreshNeighborhoods()
         // Single-node capture: recompute layout (inertia keeps existing nodes stable)
         recomputeAlgorithmicLayout(reason: "single-node capture")
-        // Trigger corpus-wide thread analysis once we have enough nodes
-        if nodes.count >= 10 {
-            Task { await triggerThreadAnalysis() }
-        }
+        // Thread analysis is gated on batchProcessingComplete (end of Phase 4) — see batchImportText.
+        // Single-node insert does not trigger evaluation against an incomplete corpus (SB123).
     }
 
     // MARK: - Update existing nodes
@@ -1099,10 +1097,6 @@ final class CorpusStore {
         canvasNeedsSync = UUID()
         print("[Batch] canvasNeedsSync fired")
 
-        if nodes.count >= 10 {
-            Task { await triggerThreadAnalysis() }
-        }
-
         // Phase 4 — AI title/summary in background; suppress tag sheet for batch
         let savedIDs = savedNodes.map { $0.id }
         print("[Batch] Kicking off AI for \(savedIDs.count) nodes (suppressTagSheet=true)")
@@ -1116,6 +1110,10 @@ final class CorpusStore {
             refreshNeighborhoods()  // Refresh after all AI processing complete
             recomputeAlgorithmicLayout(reason: "batch import complete")  // Algorithmic layout after import
             print("[Batch][AI] All done")
+            // SB123: gate ThreadService on batchProcessingComplete — fully-processed corpus only.
+            if nodes.count >= 10 {
+                await triggerThreadAnalysis()
+            }
         }
 
         // Phase 5 — Async FM coherence check for deferred entries

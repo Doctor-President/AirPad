@@ -44,6 +44,18 @@ struct ReprocessingState: Equatable {
     var done: Bool
 }
 
+// MARK: - Backfill progress (SB137 Stage A — content embedding precondition)
+
+/// Surface state for `backfillContentEmbeddings`. SettingsView observes the
+/// `backfillingEmbeddings` property on CorpusStore to show progress + final counts.
+struct BackfillEmbeddingState: Equatable {
+    var total: Int
+    var current: Int
+    var populated: Int
+    var skippedNoContent: Int
+    var done: Bool
+}
+
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
 @Observable
@@ -80,6 +92,10 @@ final class CorpusStore {
     /// Non-nil while `reprocessUntaggedNodes` is running or has just finished.
     /// SettingsView observes this to surface progress + final counts inline.
     var reprocessing: ReprocessingState? = nil
+
+    /// Non-nil while `backfillContentEmbeddings` is running or has just finished.
+    /// SettingsView observes this to surface progress + final counts inline.
+    var backfillingEmbeddings: BackfillEmbeddingState? = nil
 
     /// Active filter + view mode. Persisted to UserDefaults.
     var filterState: FilterState = FilterState.load() {
@@ -233,7 +249,19 @@ final class CorpusStore {
         }
         // Load corpus index if available (graceful fallback to empty on first run)
         if let loadedIndex = try? await service.loadCorpusIndex() {
-            corpusIndex = loadedIndex
+            // SB137 Stage A — first launch on schema v2: back up the v1 index and
+            // bump version. The neighborhoodCache stays nil, so the immediately-
+            // following refreshNeighborhoods() runs a full re-cluster against
+            // the lift-weighted edge weights + isolate routing.
+            if loadedIndex.version < CorpusIndex.currentVersion {
+                print("[CorpusStore][SB137] Upgrading corpus_index from v\(loadedIndex.version) → v\(CorpusIndex.currentVersion); writing pre-stageA backup")
+                try? await service.backupCorpusIndexForStageAUpgrade()
+                var upgraded = loadedIndex
+                upgraded.version = CorpusIndex.currentVersion
+                corpusIndex = upgraded
+            } else {
+                corpusIndex = loadedIndex
+            }
         }
         // Generate initial Über-node clusters
         refreshUberNodeClusters()
@@ -632,6 +660,67 @@ final class CorpusStore {
             failed: failedCount,
             done: true
         )
+    }
+
+    /// SB137 Stage A — populates `contentEmbedding` on nodes that lack it so
+    /// the isolate-routing path has a vector to cosine-compare against
+    /// neighborhood `descriptionEmbedding`s. Pure NLEmbedding pass: no FM
+    /// call, no overwrite of user-curated `title` / `summary` / `mood` /
+    /// `domain` / `tags`. After completion, force a neighborhood refresh so
+    /// the substrate is exercised immediately.
+    func backfillContentEmbeddings() async {
+        let candidates = nodes.filter { ($0.contentEmbedding ?? []).isEmpty }
+        print("[Backfill] Found \(candidates.count) nodes missing contentEmbedding")
+
+        backfillingEmbeddings = BackfillEmbeddingState(
+            total: candidates.count,
+            current: 0,
+            populated: 0,
+            skippedNoContent: 0,
+            done: false
+        )
+        guard !candidates.isEmpty else {
+            backfillingEmbeddings = BackfillEmbeddingState(
+                total: 0, current: 0, populated: 0, skippedNoContent: 0, done: true
+            )
+            print("[Backfill] Complete: nothing to do")
+            return
+        }
+
+        var populated = 0
+        var skippedNoContent = 0
+
+        for (idx, node) in candidates.enumerated() {
+            if let vec = computeNodeEmbedding(for: node), !vec.isEmpty {
+                var updated = node
+                updated.contentEmbedding = vec
+                await updateNode(updated)
+                populated += 1
+            } else {
+                skippedNoContent += 1
+            }
+            backfillingEmbeddings = BackfillEmbeddingState(
+                total: candidates.count,
+                current: idx + 1,
+                populated: populated,
+                skippedNoContent: skippedNoContent,
+                done: false
+            )
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+
+        print("[Backfill] Complete: \(candidates.count) attempted, \(populated) populated, \(skippedNoContent) skipped (no embeddable content)")
+        backfillingEmbeddings = BackfillEmbeddingState(
+            total: candidates.count,
+            current: candidates.count,
+            populated: populated,
+            skippedNoContent: skippedNoContent,
+            done: true
+        )
+
+        // Force re-cluster against the freshly populated substrate so isolate
+        // routing has something to chew on without requiring a relaunch.
+        invalidateNeighborhoods()
     }
 
     /// Item-level threshold check used by `reprocessUntaggedNodes`. A node
@@ -1223,6 +1312,14 @@ final class CorpusStore {
         // can Jaccard-match fresh clusters to old ones (AT21 Cat A1).
         let previousMembers: [String: Set<String>] = corpusIndex.neighborhoods.mapValues { Set($0.members) }
 
+        // SB137 Stage A — surface persisted description embeddings so the
+        // service's isolate routing step can cosine-match isolate nodes to
+        // substantive neighborhoods. Only entries with a non-empty embedding
+        // are usable (newly formed clusters get one on the next refresh via
+        // SB126 Stage 1's regenerate trigger).
+        let persistedDescriptionEmbeddings: [String: [Float]] = corpusIndex.neighborhoods
+            .compactMapValues { $0.descriptionEmbedding.isEmpty ? nil : $0.descriptionEmbedding }
+
         // SB126 Stage 1 — full pre-update snapshot. The trigger rule compares fresh
         // neighborhoods against this snapshot; the upsert step (carry-forward of
         // description/embedding/sampledMemberIDs) reads from the live state, which
@@ -1233,7 +1330,8 @@ final class CorpusStore {
         neighborhoodCache = service.generateNeighborhoods(
             from: nodes,
             layoutPositions: canvasLayout.positions,
-            previousMembers: previousMembers
+            previousMembers: previousMembers,
+            persistedDescriptionEmbeddings: persistedDescriptionEmbeddings
         )
 
         if let cache = neighborhoodCache {
@@ -1253,6 +1351,19 @@ final class CorpusStore {
 
             updateCorpusIndexNeighborhoodLayer(cache: cache)
             updateCorpusIndexTagLayer()
+            // SB137 Stage A — rewritten from scratch each refresh; not persisted
+            // on the Node itself, so unattached status self-corrects when a
+            // node gains routable signal.
+            corpusIndex.unattachedNodes = cache.unattachedNodeIDs
+            if !cache.unattachedNodeIDs.isEmpty {
+                print("[Neighborhood][SB137] \(cache.unattachedNodeIDs.count) node(s) unattached after isolate routing")
+            }
+            if let diagnostics = cache.routingDiagnostics {
+                logRoutingDiagnostics(diagnostics)
+                Task {
+                    try? await self.service.saveRoutingDiagnostics(diagnostics)
+                }
+            }
             corpusIndex.updatedAt = Date()
             let indexSnapshot = corpusIndex
             Task {
@@ -1385,7 +1496,7 @@ final class CorpusStore {
             neighborhoodCount: corpusIndex.neighborhoods.count,
             dominantThemes: result.dominantThemes,
             recentDominantTags: result.recentDominantTags,
-            anomalies: CorpusAnomalies(staleTags: result.staleTags, floaterNodeIDs: []),
+            anomalies: CorpusAnomalies(staleTags: result.staleTags),
             summaryText: result.summaryText,
             generatedAt: Date()
         )
@@ -1900,6 +2011,35 @@ final class CorpusStore {
     func invalidateNeighborhoods() {
         neighborhoodCache = nil
         refreshNeighborhoods()
+    }
+
+    /// SB137 Stage A — emit a compact distribution summary for the routing pass
+    /// so the cosine threshold can be tuned from console output without needing
+    /// the sidecar JSON. Logs only the percentile cuts and totals, not every
+    /// per-node sample (those go to `corpus_routing_diagnostics.json`).
+    private func logRoutingDiagnostics(_ d: RoutingDiagnostics) {
+        let isolateScores = d.isolateBestCosines.map { $0.bestCosine }
+        let inClusterScores = d.inClusterCosines.map { $0.cosine }
+        let routedAboveThreshold = isolateScores.filter { $0 >= d.thresholdUsed }.count
+
+        print("""
+        [Routing][SB137] threshold=\(String(format: "%.3f", d.thresholdUsed)) \
+        isolates=\(d.totalIsolates) (with_emb=\(d.isolatesWithEmbedding), no_emb=\(d.isolatesNoEmbedding)) \
+        routable_targets=\(d.routableTargetCount) routed=\(routedAboveThreshold)
+        """)
+        print("[Routing][SB137] isolate_cosines  \(percentileSummary(isolateScores))")
+        print("[Routing][SB137] in_cluster_cos   \(percentileSummary(inClusterScores))")
+    }
+
+    private func percentileSummary(_ values: [Double]) -> String {
+        guard !values.isEmpty else { return "n=0" }
+        let sorted = values.sorted()
+        func pct(_ p: Double) -> Double {
+            let idx = Int((p * Double(sorted.count - 1)).rounded())
+            return sorted[max(0, min(sorted.count - 1, idx))]
+        }
+        let f = { (v: Double) in String(format: "%.3f", v) }
+        return "n=\(sorted.count) min=\(f(sorted.first!)) p25=\(f(pct(0.25))) p50=\(f(pct(0.5))) p75=\(f(pct(0.75))) max=\(f(sorted.last!))"
     }
 
     // MARK: - Algorithmic layout

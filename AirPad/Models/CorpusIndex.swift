@@ -169,22 +169,31 @@ struct CorpusSummary: Codable {
 
 struct CorpusAnomalies: Codable {
     var staleTags: [String]       // tags not appearing in 30+ days
-    var floaterNodeIDs: [String]  // nodes not fitting any neighborhood
 
     enum CodingKeys: String, CodingKey {
         case staleTags = "stale_tags"
-        case floaterNodeIDs = "floater_node_ids"
     }
 }
 
 // MARK: - Root index
 
 struct CorpusIndex: Codable {
-    let version: Int
+    /// Schema version. Bumped to 2 in SB137 Stage A — first launch on v2 triggers
+    /// a one-time backup of any v1 `corpus_index.json` and a full re-cluster against
+    /// the lift-weighted edge weights + isolate routing introduced by Stage A.
+    static let currentVersion: Int = 2
+
+    var version: Int
     var updatedAt: Date
     var tags: [String: TagIndexEntry]
     var neighborhoods: [String: NeighborhoodIndexEntry]
     var summary: CorpusSummary?
+    /// SB137 Stage A — node IDs that failed isolate routing (no substantive
+    /// neighborhood passed the 0.20 cosine threshold, or the node has no
+    /// `contentEmbedding`). Rewritten from scratch on every refresh; not
+    /// persisted on the Node itself, so unattached status self-corrects when a
+    /// node gains routable signal.
+    var unattachedNodes: [String]
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -192,15 +201,43 @@ struct CorpusIndex: Codable {
         case tags
         case neighborhoods
         case summary
+        case unattachedNodes = "unattached_nodes"
+    }
+
+    init(
+        version: Int,
+        updatedAt: Date,
+        tags: [String: TagIndexEntry],
+        neighborhoods: [String: NeighborhoodIndexEntry],
+        summary: CorpusSummary? = nil,
+        unattachedNodes: [String] = []
+    ) {
+        self.version = version
+        self.updatedAt = updatedAt
+        self.tags = tags
+        self.neighborhoods = neighborhoods
+        self.summary = summary
+        self.unattachedNodes = unattachedNodes
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = try c.decode(Int.self, forKey: .version)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        tags = try c.decode([String: TagIndexEntry].self, forKey: .tags)
+        neighborhoods = try c.decode([String: NeighborhoodIndexEntry].self, forKey: .neighborhoods)
+        summary = try c.decodeIfPresent(CorpusSummary.self, forKey: .summary)
+        unattachedNodes = try c.decodeIfPresent([String].self, forKey: .unattachedNodes) ?? []
     }
 
     static func empty() -> CorpusIndex {
         CorpusIndex(
-            version: 1,
+            version: currentVersion,
             updatedAt: Date(),
             tags: [:],
             neighborhoods: [:],
-            summary: nil
+            summary: nil,
+            unattachedNodes: []
         )
     }
 }

@@ -375,6 +375,8 @@ struct SettingsView: View {
 
             reprocessRow
 
+            backfillEmbeddingRow
+
             Toggle(isOn: $useCorpusAwareTagging) {
                 Text("SB126 Stage 2 — corpus-aware tagging")
                     .font(.caption2)
@@ -416,6 +418,39 @@ struct SettingsView: View {
             return "\(s.total) attempted · \(s.tagged) tagged · \(s.failed) refused/failed"
         }
         return "\(s.current)/\(s.total) · \(s.tagged) tagged · \(s.failed) refused"
+    }
+
+    @ViewBuilder
+    private var backfillEmbeddingRow: some View {
+        let state = store.backfillingEmbeddings
+        let inFlight = state != nil && state?.done == false
+
+        VStack(spacing: 4) {
+            Button {
+                Task { await store.backfillContentEmbeddings() }
+            } label: {
+                Text(inFlight ? "Backfilling embeddings…" : "Backfill content embeddings")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(inFlight ? 0.3 : 0.5))
+            }
+            .buttonStyle(.plain)
+            .disabled(inFlight)
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            if let s = state {
+                Text(backfillStatusText(s))
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.35))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+    }
+
+    private func backfillStatusText(_ s: BackfillEmbeddingState) -> String {
+        if s.done {
+            return "\(s.total) attempted · \(s.populated) populated · \(s.skippedNoContent) skipped"
+        }
+        return "\(s.current)/\(s.total) · \(s.populated) populated · \(s.skippedNoContent) skipped"
     }
 
     private func simulateThread() {

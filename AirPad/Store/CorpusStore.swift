@@ -32,6 +32,18 @@ fileprivate func stableSeed(_ s: String) -> UInt64 {
     return h
 }
 
+// MARK: - Reprocess progress
+
+/// Surface state for `reprocessUntaggedNodes`. SettingsView observes the
+/// `reprocessing` property on CorpusStore to show progress and final counts.
+struct ReprocessingState: Equatable {
+    var total: Int
+    var current: Int
+    var tagged: Int
+    var failed: Int
+    var done: Bool
+}
+
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
 @Observable
@@ -64,6 +76,10 @@ final class CorpusStore {
     /// Set when AI processing suggests tags not yet in the vocabulary.
     /// CanvasView observes this and presents TagCreationSheet.
     var pendingTagSuggestions: TagSuggestionContext? = nil
+
+    /// Non-nil while `reprocessUntaggedNodes` is running or has just finished.
+    /// SettingsView observes this to surface progress + final counts inline.
+    var reprocessing: ReprocessingState? = nil
 
     /// Active filter + view mode. Persisted to UserDefaults.
     var filterState: FilterState = FilterState.load() {
@@ -445,7 +461,8 @@ final class CorpusStore {
     /// Runs on-device AI processing on a node after capture (non-blocking).
     /// Pass `suppressTagSheet: true` during batch import to auto-create new tags silently
     /// instead of presenting TagCreationSheet to the user.
-    func processNodeWithAI(nodeID: String, suppressTagSheet: Bool = false) async {
+    /// `forceCorpusAware` overrides the FeatureFlags default; nil falls through to the flag.
+    func processNodeWithAI(nodeID: String, suppressTagSheet: Bool = false, forceCorpusAware: Bool? = nil) async {
         print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet)")
         guard #available(iOS 26.0, *) else {
             print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
@@ -462,7 +479,7 @@ final class CorpusStore {
         // window (top-K neighborhood digests + top-N tag digests), and runs a
         // single FM call producing all per-node fields plus an FM-suggested
         // neighborhood id.
-        let useCorpusAware = FeatureFlags.useCorpusAwareTagging
+        let useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
         let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
         let aiResult: NodeAIOutput?
         if useCorpusAware {
@@ -559,6 +576,89 @@ final class CorpusStore {
                 )
             }
         }
+    }
+
+    /// One-time migration: re-runs AI processing on nodes that have empty tag
+    /// arrays but substantive content. Restores orphans captured during the
+    /// pre-`63255a7` tag-filter window and populates `contentEmbedding` on the
+    /// corpus-aware path so future Layer-1 routing has the field to read.
+    /// Pass-default forces the corpus-aware path regardless of the user flag.
+    func reprocessUntaggedNodes(useCorpusAware: Bool = true) async {
+        let untagged = nodes.filter { $0.tags.isEmpty }
+        let candidates = untagged.filter { hasSubstantiveContent($0) }
+        let skipped = untagged.filter { !hasSubstantiveContent($0) }
+
+        print("[Reprocess] Found \(candidates.count) untagged nodes with substantive content (\(skipped.count) thin-content nodes skipped)")
+        for thin in skipped {
+            print("[Reprocess] Skipping \(thin.id) — thin content")
+        }
+
+        reprocessing = ReprocessingState(total: candidates.count, current: 0, tagged: 0, failed: 0, done: false)
+        guard !candidates.isEmpty else {
+            reprocessing = ReprocessingState(total: 0, current: 0, tagged: 0, failed: 0, done: true)
+            print("[Reprocess] Complete: 0 attempted, 0 tagged, 0 refused/failed")
+            return
+        }
+
+        var taggedCount = 0
+        var failedCount = 0
+
+        for (idx, node) in candidates.enumerated() {
+            await processNodeWithAI(
+                nodeID: node.id,
+                suppressTagSheet: true,
+                forceCorpusAware: useCorpusAware
+            )
+            if let post = nodes.first(where: { $0.id == node.id }), !post.tags.isEmpty {
+                taggedCount += 1
+            } else {
+                failedCount += 1
+            }
+            reprocessing = ReprocessingState(
+                total: candidates.count,
+                current: idx + 1,
+                tagged: taggedCount,
+                failed: failedCount,
+                done: false
+            )
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        print("[Reprocess] Complete: \(candidates.count) attempted, \(taggedCount) tagged, \(failedCount) refused/failed")
+        reprocessing = ReprocessingState(
+            total: candidates.count,
+            current: candidates.count,
+            tagged: taggedCount,
+            failed: failedCount,
+            done: true
+        )
+    }
+
+    /// Item-level threshold check used by `reprocessUntaggedNodes`. A node
+    /// qualifies if at least one item passes the type-specific gate.
+    private func hasSubstantiveContent(_ node: Node) -> Bool {
+        guard !node.items.isEmpty else { return false }
+        for item in node.items {
+            switch item.type {
+            case .text:
+                if let c = item.content, meetsTextThreshold(c) { return true }
+            case .audio:
+                if let t = item.transcript, meetsTextThreshold(t) { return true }
+            case .link:
+                if let title = item.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+                if let url = item.url, !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+            case .image, .video, .document:
+                continue
+            }
+        }
+        return false
+    }
+
+    private func meetsTextThreshold(_ s: String) -> Bool {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 20 else { return false }
+        let words = trimmed.split(whereSeparator: { $0.isWhitespace }).count
+        return words >= 4
     }
 
     /// On launch, process any nodes captured via the share extension (no AI ran at capture time).

@@ -373,6 +373,8 @@ struct SettingsView: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
 
+            reprocessRow
+
             Toggle(isOn: $useCorpusAwareTagging) {
                 Text("SB126 Stage 2 — corpus-aware tagging")
                     .font(.caption2)
@@ -381,6 +383,39 @@ struct SettingsView: View {
             .tint(.orange)
             .padding(.horizontal, 16)
         }
+    }
+
+    @ViewBuilder
+    private var reprocessRow: some View {
+        let state = store.reprocessing
+        let inFlight = state != nil && state?.done == false
+
+        VStack(spacing: 4) {
+            Button {
+                Task { await store.reprocessUntaggedNodes() }
+            } label: {
+                Text(inFlight ? "Reprocessing…" : "Reprocess Untagged Nodes")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(inFlight ? 0.3 : 0.5))
+            }
+            .buttonStyle(.plain)
+            .disabled(inFlight)
+            .frame(maxWidth: .infinity, alignment: .center)
+
+            if let s = state {
+                Text(reprocessStatusText(s))
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.35))
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+    }
+
+    private func reprocessStatusText(_ s: ReprocessingState) -> String {
+        if s.done {
+            return "\(s.total) attempted · \(s.tagged) tagged · \(s.failed) refused/failed"
+        }
+        return "\(s.current)/\(s.total) · \(s.tagged) tagged · \(s.failed) refused"
     }
 
     private func simulateThread() {

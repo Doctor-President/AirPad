@@ -2561,11 +2561,54 @@ final class CorpusPhysicsScene: SKScene {
         focalShaderID = nodeID
     }
 
-    private func bubbleColor(for node: Node) -> UIColor {
-        if let primary = node.primaryTag, let color = tagColors[primary] {
-            return color
+    // SB135 Stage 1a — per-neighborhood palette (PLACEHOLDER).
+    // When the colorblind-tested set lands, replace this array — no other
+    // rendering changes required. Six slots; collisions across neighborhoods
+    // are accepted at this palette size.
+    private static let neighborhoodPalette: [UIColor] = [
+        UIColor(red: 0x1B/255.0, green: 0x59/255.0, blue: 0xC2/255.0, alpha: 1.0),  // #1B59C2 Klein Blue
+        UIColor(red: 0xE8/255.0, green: 0x82/255.0, blue: 0x0A/255.0, alpha: 1.0),  // #E8820A Mango
+        UIColor(red: 0x00/255.0, green: 0xBF/255.0, blue: 0xFF/255.0, alpha: 1.0),  // #00BFFF Electric Cyan
+        UIColor(red: 0x7B/255.0, green: 0x68/255.0, blue: 0xEE/255.0, alpha: 1.0),  // #7B68EE Slate Blue
+        UIColor(red: 0x20/255.0, green: 0xB2/255.0, blue: 0xAA/255.0, alpha: 1.0),  // #20B2AA Sea Green
+        UIColor(red: 0xFF/255.0, green: 0x6B/255.0, blue: 0x6B/255.0, alpha: 1.0),  // #FF6B6B Coral
+    ]
+
+    // SB135 Stage 1a — reserved low-saturation neutral for unattached nodes
+    // (neighborhoodID nil). Three candidates declared; T picks on-device by
+    // changing the active default below.
+    private static let unattachedNeutralCool = UIColor(red: 0xA8/255.0, green: 0xB0/255.0, blue: 0xBC/255.0, alpha: 1.0)  // desaturated slate
+    private static let unattachedNeutralWarm = UIColor(red: 0xB5/255.0, green: 0xAD/255.0, blue: 0xA0/255.0, alpha: 1.0)  // desaturated taupe
+    private static let unattachedNeutralPure = UIColor(red: 0xA8/255.0, green: 0xA8/255.0, blue: 0xAC/255.0, alpha: 1.0)  // pure neutral grey
+    private static let unattachedNeutral = unattachedNeutralCool  // T picks on-device
+
+    /// DJB2 stable hash. Swift's `String.hashValue` randomizes per launch, so we
+    /// use a deterministic hash to keep neighborhoodID → palette slot consistent
+    /// across sessions.
+    private func stableHash(_ s: String) -> UInt64 {
+        var hash: UInt64 = 5381
+        for byte in s.utf8 {
+            hash = hash &* 33 &+ UInt64(byte)
         }
-        return UIColor(red: 0.556, green: 0.556, blue: 0.576, alpha: 1.0)  // #8E8E93 neutral
+        return hash
+    }
+
+    /// SB135 Stage 1a — non-focal idea-node fill routes through neighborhoodID
+    /// against the placeholder palette. Tag identity is no longer a canvas
+    /// color channel for non-focal nodes; tags remain a vocabulary in detail
+    /// view, list mode, and swatch picker. The focal node's tag-driven gradient
+    /// is preserved via `NodeGradientBackground` (SwiftUI overlay) — that path
+    /// is unchanged.
+    ///
+    /// Über-nodes are not routed here — they have their own path via
+    /// `makeUberNodeShape` + `sampleChildColors`, which still reads `tagColors`.
+    private func bubbleColor(for node: Node) -> UIColor {
+        guard let neighborhoodID = neighborhoodCache?.neighborhoodID(forNodeID: node.id) else {
+            return Self.unattachedNeutral
+        }
+        let palette = Self.neighborhoodPalette
+        let index = Int(stableHash(neighborhoodID) % UInt64(palette.count))
+        return palette[index]
     }
 
     private func storedPosition(for nodeID: String) -> CGPoint {

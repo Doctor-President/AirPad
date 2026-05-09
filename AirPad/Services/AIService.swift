@@ -82,6 +82,30 @@ struct ProcessNodeResult {
     var neighborhoodID: String
 }
 
+/// SB139 Stage 1 — output of the substrate FM call. One prompt, two outputs:
+/// `summary` becomes the seed for `summaryEmbedding`; `tags` (folksonomy) is
+/// joined comma-space and embedded as `folksonomyEmbedding`. The substrate's
+/// summary is intentionally separate from the tag pipeline's `summary` —
+/// sharing would defeat the lens separation the substrate is built on.
+@available(iOS 26.0, *)
+@Generable
+struct SubstrateInterpretation {
+    @Guide(description: "One to two sentence summary of the idea, capturing what it's about. Specific to the actual content; avoid generic filler.")
+    var summary: String
+
+    @Guide(description: "Free-form tags describing this idea. Pick whatever words best capture the content — no fixed vocabulary, no schema list. Aim for 3 to 8 short tags. Concrete nouns and topical phrases work better than abstract single words.")
+    var tags: [String]
+}
+
+/// SB139 Stage 1 — outcome envelope for the substrate FM call. Models guardrail
+/// refusals as a normal outcome (~4% of nodes per harness data) so the caller
+/// can record the reason on the node and fall back to the content embedding.
+enum SubstrateFMOutcome {
+    case ok(summary: String, folksonomy: [String])
+    case guardrailRefused
+    case otherError(String)
+}
+
 @available(iOS 26.0, *)
 @Generable
 struct CoherenceCheck {
@@ -476,6 +500,63 @@ actor AIService {
             let name = response.content.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? nil : name
         } catch { return nil }
+    }
+
+    /// SB139 Stage 1 — substrate FM call. Single prompt produces both the
+    /// substrate summary (1-2 sentences) and the free-form folksonomy. The
+    /// substrate is intentionally separate from `processNode` /
+    /// `processNodeCorpusAware`: the tag pipeline picks from a fixed
+    /// vocabulary; the substrate lets the FM interpret content with no
+    /// schema constraint, then the resulting text is embedded.
+    /// Returns `.guardrailRefused` for the ~4% of nodes Apple's safety layer
+    /// rejects so the caller can record the reason and fall back to content.
+    func processSubstrate(content: String) async -> SubstrateFMOutcome {
+        guard SystemLanguageModel.default.isAvailable else { return .otherError("model_unavailable") }
+        guard !content.isEmpty else { return .otherError("empty_content") }
+
+        // Same ~3200-char cap (≈800 token proxy) used by processNodeCorpusAware
+        // so the substrate call has a similar input footprint.
+        let truncated: String
+        if content.count > 3200 {
+            truncated = String(content.prefix(3200)) + " […]"
+        } else {
+            truncated = content
+        }
+
+        let prompt = """
+        Interpret this captured idea. Two outputs:
+
+        1. summary — 1 to 2 sentences capturing what this idea is actually about. Be concrete and specific to the content; no generic filler. This is the seed for downstream embedding, so accuracy matters more than style.
+        2. tags — free-form folksonomy. Pick whatever short tags best describe this idea. No fixed vocabulary; use the words that actually fit. Concrete topical phrases beat abstract single words. 3 to 8 tags.
+
+        Idea:
+        \(truncated)
+        """
+
+        logFMTokens("ProcessSubstrate", prompt: prompt)
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt, generating: SubstrateInterpretation.self)
+            let s = response.content.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            let f = response.content.tags
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            if s.isEmpty && f.isEmpty {
+                return .otherError("empty_output")
+            }
+            return .ok(summary: s, folksonomy: f)
+        } catch {
+            let desc = "\(error)".lowercased()
+            // Apple's FoundationModels surfaces guardrail refusals as errors
+            // whose stringified form mentions "guardrail" / "safety". Detect
+            // those textually since the SDK doesn't expose a typed enum yet.
+            if desc.contains("guardrail") || desc.contains("safety") {
+                print("[FM][processSubstrate] guardrail refusal: \(error)")
+                return .guardrailRefused
+            }
+            print("[FM][processSubstrate] FAILURE: \(error)")
+            return .otherError("\(type(of: error)): \(error.localizedDescription)")
+        }
     }
 
     /// Cold-start similarity for tags with `usage_count < 5`, where lift values

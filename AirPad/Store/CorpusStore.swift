@@ -56,6 +56,23 @@ struct BackfillEmbeddingState: Equatable {
     var done: Bool
 }
 
+// MARK: - SB139 Stage 1 — substrate backfill progress
+
+/// Surface state for `backfillSubstrate`. The dev inspect view observes this
+/// to show batch progress and per-outcome counts. `pending` tracks how many
+/// substrate-eligible nodes remain after the current batch finishes.
+struct SubstrateBackfillState: Equatable {
+    var batchTotal: Int
+    var current: Int
+    var succeeded: Int
+    var guardrailRefused: Int
+    var thinContent: Int
+    var embedderError: Int
+    var pendingAfter: Int
+    var done: Bool
+    var lastRunAt: Date?
+}
+
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
 @Observable
@@ -96,6 +113,10 @@ final class CorpusStore {
     /// Non-nil while `backfillContentEmbeddings` is running or has just finished.
     /// SettingsView observes this to surface progress + final counts inline.
     var backfillingEmbeddings: BackfillEmbeddingState? = nil
+
+    /// SB139 Stage 1 — non-nil while substrate backfill is running or just
+    /// finished. The dev substrate inspect view observes this for progress.
+    var substrateBackfill: SubstrateBackfillState? = nil
 
     /// Active filter + view mode. Persisted to UserDefaults.
     var filterState: FilterState = FilterState.load() {
@@ -267,6 +288,12 @@ final class CorpusStore {
         refreshUberNodeClusters()
         // Generate initial neighborhoods
         refreshNeighborhoods()
+        // SB139 Stage 1 — recompute substrate corpus means from whatever
+        // vectors landed in storage. Cheap (one pass over nodes) and avoids
+        // persisting means to disk. Skipped silently if iOS < 17.
+        if #available(iOS 17.0, *) {
+            SubstrateService.shared.recomputeMeans(from: nodes)
+        }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
     }
@@ -577,6 +604,14 @@ final class CorpusStore {
             updated.tagSources[name] = TagOrigin(source: .model)
         }
         updated.needsAIProcessing = false
+
+        // SB139 Stage 1 — substrate pipeline runs alongside the tag pipeline.
+        // Single FM call producing summary + folksonomy, then three embeddings
+        // via NLContextualEmbedding. Bundled into the same updateNode write so
+        // capture lands one save with everything.
+        if FeatureFlags.substrateOnCapture {
+            await runSubstratePipeline(on: &updated, aiSvc: aiSvc)
+        }
         await updateNode(updated)
 
         if !newTagNames.isEmpty {
@@ -719,6 +754,181 @@ final class CorpusStore {
         // Force re-cluster against the freshly populated substrate so isolate
         // routing has something to chew on without requiring a relaunch.
         invalidateNeighborhoods()
+    }
+
+    // MARK: - SB139 Stage 1 — substrate pipeline
+
+    /// Runs the substrate FM call + three embeddings on the given node and
+    /// mutates it in place. Per the brief:
+    /// - Content < 20 chars → skip FM, set `embeddingFailureReason = "thin_content"`.
+    ///   Content embedding may still be computed if there's any text at all.
+    /// - Guardrail refusal (~4% expected) → set
+    ///   `embeddingFailureReason = "guardrail_refused"`, fall back to content
+    ///   embedding only. Summary/folksonomy stay nil.
+    /// - Embedder load failure → `embeddingFailureReason = "embedder_error"`.
+    ///   Whatever embeddings did land are still written.
+    /// - Success → all three embeddings populated, no failure reason.
+    /// `embeddingVersion` is set to the current substrate version regardless
+    /// of outcome, so this node won't be re-attempted by backfill until the
+    /// version constant bumps.
+    private func runSubstratePipeline(on node: inout Node, aiSvc: AIService) async {
+        guard #available(iOS 26.0, *) else { return }
+        let substrate = SubstrateService.shared
+        let loaded = await substrate.ensureLoaded()
+
+        let raw = extractNodeContent(node)
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        node.embeddingVersion = SubstrateService.currentEmbeddingVersion
+
+        // Thin content path — skip FM, but still try to embed whatever text
+        // exists so similarity has at least the content channel to fall back on.
+        if trimmed.count < SubstrateService.thinContentThreshold {
+            node.embeddingFailureReason = "thin_content"
+            node.substrateSummary = nil
+            node.folksonomy = nil
+            node.summaryEmbedding = nil
+            node.folksonomyEmbedding = nil
+            if loaded, !trimmed.isEmpty, let v = substrate.embed(trimmed) {
+                node.contextualContentEmbedding = v
+            } else {
+                node.contextualContentEmbedding = nil
+            }
+            return
+        }
+
+        // FM call — produces summary + folksonomy in one structured response.
+        let outcome = await aiSvc.processSubstrate(content: raw)
+        var failureReason: String? = nil
+        var producedSummary: String? = nil
+        var producedFolksonomy: [String]? = nil
+        switch outcome {
+        case .ok(let s, let f):
+            producedSummary = s.isEmpty ? nil : s
+            producedFolksonomy = f.isEmpty ? nil : f
+        case .guardrailRefused:
+            failureReason = "guardrail_refused"
+        case .otherError(let detail):
+            failureReason = "embedder_error"
+            print("[Substrate] FM error on \(node.id): \(detail)")
+        }
+        node.substrateSummary = producedSummary
+        node.folksonomy = producedFolksonomy
+
+        // Embed whichever channels we have text for. Embedder load failure
+        // turns into embedder_error overriding any prior failureReason — the
+        // node ends up with no vectors at all.
+        if !loaded {
+            node.embeddingFailureReason = "embedder_error"
+            node.summaryEmbedding = nil
+            node.folksonomyEmbedding = nil
+            node.contextualContentEmbedding = nil
+            return
+        }
+
+        node.summaryEmbedding = producedSummary.flatMap { substrate.embed($0) }
+        node.folksonomyEmbedding = producedFolksonomy
+            .map { $0.joined(separator: ", ") }
+            .flatMap { $0.isEmpty ? nil : substrate.embed($0) }
+        node.contextualContentEmbedding = trimmed.isEmpty ? nil : substrate.embed(trimmed)
+        node.embeddingFailureReason = failureReason
+
+        // Bump the post-recompute counter and trigger a recompute when we cross
+        // the threshold. Cheap to do inline; no scheduling needed at our corpus size.
+        if node.contextualContentEmbedding != nil
+            || node.summaryEmbedding != nil
+            || node.folksonomyEmbedding != nil {
+            substrate.registerNewEmbed()
+            if substrate.shouldRecomputeMeans {
+                substrate.recomputeMeans(from: nodes)
+            }
+        }
+    }
+
+    /// SB139 Stage 1 — substrate backfill control. Manual trigger, batched.
+    /// Targets nodes where `embeddingVersion < currentEmbeddingVersion`
+    /// (covers both pre-substrate captures and any future version bump).
+    /// `batchSize` defaults to 10 per the brief; pass `Int.max` for a full
+    /// corpus run. Recomputes means once at the end so similarity is fresh.
+    func backfillSubstrate(batchSize: Int = 10) async {
+        guard #available(iOS 26.0, *) else { return }
+        let aiSvc = AIService()
+        let substrate = SubstrateService.shared
+        _ = await substrate.ensureLoaded()
+
+        let pending = nodes
+            .filter { $0.embeddingVersion < SubstrateService.currentEmbeddingVersion }
+            .sorted { $0.createdAt < $1.createdAt }
+        let target = Array(pending.prefix(max(0, batchSize)))
+        print("[SubstrateBackfill] pending=\(pending.count) targeting=\(target.count)")
+
+        substrateBackfill = SubstrateBackfillState(
+            batchTotal: target.count,
+            current: 0,
+            succeeded: 0,
+            guardrailRefused: 0,
+            thinContent: 0,
+            embedderError: 0,
+            pendingAfter: pending.count,
+            done: false,
+            lastRunAt: nil
+        )
+
+        guard !target.isEmpty else {
+            substrateBackfill = SubstrateBackfillState(
+                batchTotal: 0, current: 0, succeeded: 0,
+                guardrailRefused: 0, thinContent: 0, embedderError: 0,
+                pendingAfter: 0, done: true, lastRunAt: Date()
+            )
+            return
+        }
+
+        var succeeded = 0, refused = 0, thin = 0, errored = 0
+
+        for (idx, node) in target.enumerated() {
+            // Re-fetch from `nodes` so we never overwrite a concurrent update.
+            guard var working = nodes.first(where: { $0.id == node.id }) else { continue }
+            await runSubstratePipeline(on: &working, aiSvc: aiSvc)
+            await updateNode(working)
+
+            switch working.embeddingFailureReason {
+            case "guardrail_refused": refused += 1
+            case "thin_content": thin += 1
+            case "embedder_error": errored += 1
+            case nil: succeeded += 1
+            default: break
+            }
+
+            substrateBackfill = SubstrateBackfillState(
+                batchTotal: target.count,
+                current: idx + 1,
+                succeeded: succeeded,
+                guardrailRefused: refused,
+                thinContent: thin,
+                embedderError: errored,
+                pendingAfter: max(0, pending.count - (idx + 1)),
+                done: false,
+                lastRunAt: nil
+            )
+            // Light back-pressure between FM calls.
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+
+        // Recompute means once after the batch — cheaper than per-node and
+        // gives Stage 2 / dev inspect view a consistent reference frame.
+        substrate.recomputeMeans(from: nodes)
+
+        substrateBackfill = SubstrateBackfillState(
+            batchTotal: target.count,
+            current: target.count,
+            succeeded: succeeded,
+            guardrailRefused: refused,
+            thinContent: thin,
+            embedderError: errored,
+            pendingAfter: max(0, pending.count - target.count),
+            done: true,
+            lastRunAt: Date()
+        )
+        print("[SubstrateBackfill] complete: \(succeeded) ok, \(refused) refused, \(thin) thin, \(errored) errored")
     }
 
     /// Item-level threshold check used by `reprocessUntaggedNodes`. A node

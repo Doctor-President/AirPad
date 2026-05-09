@@ -25,6 +25,7 @@ struct SettingsView: View {
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
+    @State private var showSubstrateInspect = false
 
     var body: some View {
         NavigationStack {
@@ -384,6 +385,27 @@ struct SettingsView: View {
             }
             .tint(.orange)
             .padding(.horizontal, 16)
+
+            // SB139 Stage 1 — hidden long-press opens the substrate dev
+            // inspect view. Label is faint on purpose; this surface is for
+            // Thomas debugging the substrate, not for end users.
+            Text("· · ·")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.12))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 12)
+                .contentShape(Rectangle())
+                .onLongPressGesture(minimumDuration: 1.0) {
+                    if #available(iOS 17.0, *) {
+                        showSubstrateInspect = true
+                    }
+                }
+        }
+        .sheet(isPresented: $showSubstrateInspect) {
+            if #available(iOS 17.0, *) {
+                SubstrateInspectView()
+                    .environment(store)
+            }
         }
     }
 

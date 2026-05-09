@@ -69,6 +69,41 @@ struct Node: Codable, Identifiable, Hashable {
     /// SB may surface or auto-assign), not read in Stage 2 itself.
     var fmSuggestedNeighborhoodID: String?
 
+    // MARK: - SB139 substrate (Stage 1)
+    //
+    // Parallel to the tag pipeline. The substrate's "summary" and "content
+    // embedding" are NOT the same artifacts as the existing `summary` field
+    // (tag pipeline) and `contentEmbedding` (NLEmbedding sentenceEmbedding).
+    // These come from a dedicated substrate FM call and `NLContextualEmbedding`
+    // respectively, named distinctly so the two embedding spaces stay
+    // separable: NLEmbedding for SB137 isolate routing, NLContextualEmbedding
+    // for SB139 substrate. Vectors are stored RAW; mean-centering is applied
+    // at read time by `SubstrateService` against the cached corpus mean.
+
+    /// FM-generated summary from the substrate prompt. Distinct from the
+    /// tag-pipeline `summary` above; this one is purpose-built for embedding.
+    /// Nil before substrate runs, on guardrail refusal, or for thin content.
+    var substrateSummary: String?
+    /// FM-generated free-form folksonomy tags. Joined comma-space before
+    /// embedding. Empty/nil on guardrail refusal or thin content.
+    var folksonomy: [String]?
+    /// `NLContextualEmbedding(.english)` mean-pooled vector of `substrateSummary`.
+    /// Stored raw; mean-center via `SubstrateService` before cosine.
+    var summaryEmbedding: [Float]?
+    /// Embedding of the comma-space folksonomy phrase. Stored raw.
+    var folksonomyEmbedding: [Float]?
+    /// Embedding of the node's extracted content. Used as the fallback channel
+    /// when summary or folksonomy are missing (guardrail refusal). Stored raw.
+    var contextualContentEmbedding: [Float]?
+    /// Substrate embedder/call-shape version. 0 = substrate never processed
+    /// this node. 1 = `NLContextualEmbedding(.english)` mean-pooled, summary +
+    /// folksonomy via `processSubstrate`. Bump when the embedder or call
+    /// shape changes so backfills can find stale vectors.
+    var embeddingVersion: Int
+    /// Nil on success. Populated when substrate processing reached a known
+    /// dead end: `guardrail_refused`, `thin_content`, `embedder_error`.
+    var embeddingFailureReason: String?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -80,6 +115,13 @@ struct Node: Codable, Identifiable, Hashable {
         case tagSources = "tag_sources"
         case contentEmbedding = "content_embedding"
         case fmSuggestedNeighborhoodID = "fm_suggested_neighborhood_id"
+        case substrateSummary = "substrate_summary"
+        case folksonomy
+        case summaryEmbedding = "summary_embedding"
+        case folksonomyEmbedding = "folksonomy_embedding"
+        case contextualContentEmbedding = "contextual_content_embedding"
+        case embeddingVersion = "embedding_version"
+        case embeddingFailureReason = "embedding_failure_reason"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -107,28 +149,42 @@ struct Node: Codable, Identifiable, Hashable {
         needsReview: Bool = false,
         source: String? = nil,
         contentEmbedding: [Float]? = nil,
-        fmSuggestedNeighborhoodID: String? = nil
+        fmSuggestedNeighborhoodID: String? = nil,
+        substrateSummary: String? = nil,
+        folksonomy: [String]? = nil,
+        summaryEmbedding: [Float]? = nil,
+        folksonomyEmbedding: [Float]? = nil,
+        contextualContentEmbedding: [Float]? = nil,
+        embeddingVersion: Int = 0,
+        embeddingFailureReason: String? = nil
     ) {
-        self.id                        = id
-        self.createdAt                 = createdAt
-        self.updatedAt                 = updatedAt
-        self.title                     = title
-        self.summary                   = summary
-        self.tags                      = tags
-        self.tagSources                = tagSources
-        self.mood                      = mood
-        self.isMeta                    = isMeta
-        self.provenance                = provenance
-        self.threads                   = threads
-        self.location                  = location
-        self.items                     = items
-        self.domain                    = domain
-        self.domainConfirmed           = domainConfirmed
-        self.needsAIProcessing         = needsAIProcessing
-        self.needsReview               = needsReview
-        self.source                    = source
-        self.contentEmbedding          = contentEmbedding
-        self.fmSuggestedNeighborhoodID = fmSuggestedNeighborhoodID
+        self.id                          = id
+        self.createdAt                   = createdAt
+        self.updatedAt                   = updatedAt
+        self.title                       = title
+        self.summary                     = summary
+        self.tags                        = tags
+        self.tagSources                  = tagSources
+        self.mood                        = mood
+        self.isMeta                      = isMeta
+        self.provenance                  = provenance
+        self.threads                     = threads
+        self.location                    = location
+        self.items                       = items
+        self.domain                      = domain
+        self.domainConfirmed             = domainConfirmed
+        self.needsAIProcessing           = needsAIProcessing
+        self.needsReview                 = needsReview
+        self.source                      = source
+        self.contentEmbedding            = contentEmbedding
+        self.fmSuggestedNeighborhoodID   = fmSuggestedNeighborhoodID
+        self.substrateSummary            = substrateSummary
+        self.folksonomy                  = folksonomy
+        self.summaryEmbedding            = summaryEmbedding
+        self.folksonomyEmbedding         = folksonomyEmbedding
+        self.contextualContentEmbedding  = contextualContentEmbedding
+        self.embeddingVersion            = embeddingVersion
+        self.embeddingFailureReason      = embeddingFailureReason
     }
 }
 
@@ -157,6 +213,13 @@ extension Node {
         source                    = try c.decodeIfPresent(String.self,    forKey: .source)
         contentEmbedding          = try c.decodeIfPresent([Float].self,   forKey: .contentEmbedding)
         fmSuggestedNeighborhoodID = try c.decodeIfPresent(String.self,    forKey: .fmSuggestedNeighborhoodID)
+        substrateSummary           = try c.decodeIfPresent(String.self,   forKey: .substrateSummary)
+        folksonomy                 = try c.decodeIfPresent([String].self, forKey: .folksonomy)
+        summaryEmbedding           = try c.decodeIfPresent([Float].self,  forKey: .summaryEmbedding)
+        folksonomyEmbedding        = try c.decodeIfPresent([Float].self,  forKey: .folksonomyEmbedding)
+        contextualContentEmbedding = try c.decodeIfPresent([Float].self,  forKey: .contextualContentEmbedding)
+        embeddingVersion           = try c.decodeIfPresent(Int.self,      forKey: .embeddingVersion) ?? 0
+        embeddingFailureReason     = try c.decodeIfPresent(String.self,   forKey: .embeddingFailureReason)
     }
 }
 

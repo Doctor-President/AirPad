@@ -28,15 +28,43 @@ struct ThreadSuggestion: Identifiable, Equatable {
 @MainActor
 enum SubstrateThreadService {
 
-    /// Stage 2 threshold T. Calibrated against the SB139 Stage 1 close-out
-    /// diagnostic on the 206-node corpus: top-1-per-node blended cosines were
-    /// p75=0.60, p90=0.73, max=0.87 (mean 0.53); top-5 pair distribution
-    /// p90=0.66, p95=0.70. 0.65 sits at p90 of top-5 pairs and just below
-    /// p90 of top-1 — high enough to surface only clearly-above-median
-    /// connections, low enough that ~10–25% of nodes will see at least one
-    /// candidate. Tunable from the dev inspect view; the brief expects
-    /// post-ship adjustment as real use surfaces noise/silence patterns.
-    static let candidateThreshold: Double = 0.65
+    /// Stage 2.5 — per-path threshold. Splitting the 2026-05-10 post-cleanup
+    /// pair distribution by similarity path showed the two channels live on
+    /// different scales:
+    ///
+    ///   blended top-1 (n=84):  median 0.47, p75 0.52, p90 0.71
+    ///   content top-1 (n=86):  median 0.57, p75 0.65, p90 0.73
+    ///
+    /// Content-fallback runs ~0.10 hotter at the body — averaging two
+    /// cosines (summary, folksonomy) suppresses tails, while a single raw
+    /// content cosine on longer-context input does not. A content pair at
+    /// 0.65 is near its own p75; a blended pair at 0.65 is near its own p90.
+    /// A single T over-surfaced content-fallback pairs (the
+    /// guardrail-refused slice — by construction degraded signal) by ~15
+    /// percentage points relative to share of all rankable pairs.
+    ///
+    /// Per-path T applies each scale on its own terms. Both thresholds sit
+    /// roughly at p90 of their respective top-1 distributions, where the
+    /// distributions converge in the upper tail. Refused-content nodes
+    /// continue to propose threads, just calibrated honestly to the path
+    /// the substrate is actually using on them.
+    ///
+    /// Calibrated against the 2026-05-10 post-cleanup substrate diagnostic
+    /// (`substrate-diagnostic-20260510-013836.json`, 206-node corpus).
+    /// Revisit if corpus shape shifts substantially.
+    static let blendedThreshold: Double = 0.62
+    static let contentFallbackThreshold: Double = 0.72
+
+    /// Returns the threshold to apply for a given pair-similarity path, or
+    /// nil for `.noSignal` (no threshold applies — the pair is filtered out
+    /// upstream by `rankingPairSimilarity` returning a nil blended score).
+    static func threshold(for path: PairSimilarity.Path) -> Double? {
+        switch path {
+        case .blendedSummaryFolksonomy: return blendedThreshold
+        case .contentFallback:          return contentFallbackThreshold
+        case .noSignal:                 return nil
+        }
+    }
 
     /// Tags that count as a "user-intentional connection." Explicit user
     /// assignment plus model-assigned tags the user explicitly accepted.
@@ -63,6 +91,9 @@ enum SubstrateThreadService {
     struct Candidate {
         let other: Node
         let blended: Double
+        /// Which similarity path produced `blended`, so the inspect view can
+        /// label rows with the threshold that actually applied.
+        let path: PairSimilarity.Path
         /// Nil when the pair survives the geometric-only filter and is a
         /// real Stage 2 candidate. Non-nil when the pair sits ≥ threshold
         /// but is filtered out for the named reason (still surfaced in the
@@ -106,7 +137,9 @@ enum SubstrateThreadService {
                 if !aTags.isDisjoint(with: userIntentionalTags(b)) { continue }
 
                 let p = substrate.rankingPairSimilarity(a, b)
-                guard let blended = p.blended, blended >= candidateThreshold else { continue }
+                guard let blended = p.blended,
+                      let T = threshold(for: p.path),
+                      blended >= T else { continue }
                 picks.append((blended, a, b))
             }
         }
@@ -139,7 +172,9 @@ enum SubstrateThreadService {
         for other in nodes where other.id != node.id && !other.isMeta {
             guard substrate.isRankable(other) else { continue }
             let p = substrate.rankingPairSimilarity(node, other)
-            guard let blended = p.blended, blended >= candidateThreshold else { continue }
+            guard let blended = p.blended,
+                  let T = threshold(for: p.path),
+                  blended >= T else { continue }
 
             let key = pairKey(node.id, other.id)
             let exclusion: Candidate.Exclusion?
@@ -150,7 +185,7 @@ enum SubstrateThreadService {
             } else {
                 exclusion = nil
             }
-            out.append(Candidate(other: other, blended: blended, exclusion: exclusion))
+            out.append(Candidate(other: other, blended: blended, path: p.path, exclusion: exclusion))
         }
         return out.sorted { $0.blended > $1.blended }
     }

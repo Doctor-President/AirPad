@@ -103,7 +103,12 @@ struct SubstrateInterpretation {
 enum SubstrateFMOutcome {
     case ok(summary: String, folksonomy: [String])
     case guardrailRefused
-    case otherError(String)
+    /// SB139 Stage 1 cleanup — carries `FMErrorDetail` so the diagnostic
+    /// inspect view can show the raw error type + debugDescription. Pre-call
+    /// guard failures (model unavailable, empty content, empty output) reuse
+    /// the same envelope with `errorType` set to a sentinel and
+    /// `debugDescription` nil.
+    case otherError(FMErrorDetail)
 }
 
 @available(iOS 26.0, *)
@@ -511,8 +516,12 @@ actor AIService {
     /// Returns `.guardrailRefused` for the ~4% of nodes Apple's safety layer
     /// rejects so the caller can record the reason and fall back to content.
     func processSubstrate(content: String) async -> SubstrateFMOutcome {
-        guard SystemLanguageModel.default.isAvailable else { return .otherError("model_unavailable") }
-        guard !content.isEmpty else { return .otherError("empty_content") }
+        guard SystemLanguageModel.default.isAvailable else {
+            return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
+        }
+        guard !content.isEmpty else {
+            return .otherError(FMErrorDetail(errorType: "empty_content", debugDescription: nil))
+        }
 
         // Same ~3200-char cap (≈800 token proxy) used by processNodeCorpusAware
         // so the substrate call has a similar input footprint.
@@ -542,21 +551,62 @@ actor AIService {
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             if s.isEmpty && f.isEmpty {
-                return .otherError("empty_output")
+                return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
             }
             return .ok(summary: s, folksonomy: f)
         } catch {
-            let desc = "\(error)".lowercased()
-            // Apple's FoundationModels surfaces guardrail refusals as errors
-            // whose stringified form mentions "guardrail" / "safety". Detect
-            // those textually since the SDK doesn't expose a typed enum yet.
-            if desc.contains("guardrail") || desc.contains("safety") {
-                print("[FM][processSubstrate] guardrail refusal: \(error)")
-                return .guardrailRefused
+            // SB139 Stage 1 cleanup: match on the typed enum cases, not on
+            // substrings of the stringified error. The `fm_error_detail`
+            // diagnostic on the real corpus confirmed two refusal paths:
+            //   • `.guardrailViolation` (debugDescription "May contain unsafe content")
+            //   • `.refusal`            (debugDescription "May contain sensitive content")
+            // Both route to `guardrailRefused`. The case names are the API
+            // contract; the debugDescription strings are user-facing UX text
+            // Apple may change without notice. Anything else falls through
+            // to `fm_error` — reserved for genuine unseen failure modes —
+            // and `classifyFMError` captures the type + debugDescription
+            // for diagnosis on `Node.fmErrorDetail`.
+            if let genErr = error as? LanguageModelSession.GenerationError {
+                switch genErr {
+                case .refusal, .guardrailViolation:
+                    print("[FM][processSubstrate] guardrail refusal: \(error)")
+                    return .guardrailRefused
+                default:
+                    break
+                }
             }
             print("[FM][processSubstrate] FAILURE: \(error)")
-            return .otherError("\(type(of: error)): \(error.localizedDescription)")
+            return .otherError(classifyFMError(error))
         }
+    }
+
+    /// SB139 Stage 1 cleanup — extract a structured `FMErrorDetail` from a
+    /// Swift error. Combines `type(of:)` with the case name parsed from the
+    /// stringified error (cases of `LanguageModelSession.GenerationError`
+    /// like `guardrailViolation` / `refusal` render before the first `(`).
+    /// Pulls the first `debugDescription: "..."` if present. String-parsing
+    /// approach is intentional: the typed enum's case set may shift across
+    /// SDK versions, but `Context.debugDescription` is the public surface
+    /// Apple shapes for diagnostics.
+    private func classifyFMError(_ error: any Error) -> FMErrorDetail {
+        let typeName = "\(type(of: error))"
+        let raw = "\(error)"
+        var errorType = typeName
+        if let parenIdx = raw.firstIndex(of: "(") {
+            let head = raw[..<parenIdx].trimmingCharacters(in: .whitespacesAndNewlines)
+            if !head.isEmpty,
+               head.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" }) {
+                errorType = "\(typeName).\(head)"
+            }
+        }
+        var debugDescription: String? = nil
+        if let r = raw.range(of: "debugDescription: \"") {
+            let after = raw[r.upperBound...]
+            if let endQuote = after.firstIndex(of: "\"") {
+                debugDescription = String(after[..<endQuote])
+            }
+        }
+        return FMErrorDetail(errorType: errorType, debugDescription: debugDescription)
     }
 
     /// Cold-start similarity for tags with `usage_count < 5`, where lift values

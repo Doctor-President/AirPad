@@ -22,6 +22,28 @@ struct TagOrigin: Codable {
     }
 }
 
+/// SB139 Stage 1 cleanup — diagnostic detail for `fm_error` nodes. Captures
+/// what `processSubstrate` actually saw so we can tune the textual
+/// guardrail-vs-other-error classifier against observed strings instead of
+/// strings inferred from the harness logs. Populated only when
+/// `embeddingFailureReason == "fm_error"`; nil in every other state.
+struct FMErrorDetail: Codable, Hashable {
+    /// The Swift type / case path of the error, e.g.
+    /// `"GenerationError.refusal"` or `"FoundationModels.LanguageModelSession.GenerationError"`.
+    /// Tells us *what kind* of error this is.
+    var errorType: String
+    /// The Context.debugDescription if the error was a typed
+    /// `LanguageModelSession.GenerationError` (parsed from the stringified
+    /// error so we don't bet on case names that may not exist in this SDK).
+    /// Tells us *what specifically* the error said.
+    var debugDescription: String?
+
+    enum CodingKeys: String, CodingKey {
+        case errorType = "error_type"
+        case debugDescription = "debug_description"
+    }
+}
+
 extension TagOrigin {
     /// Backwards-compatible decoder. Accepts either the legacy bare-string form
     /// (`"Recipe": "user"`) or the typed-struct form (`{"source": "user"}`).
@@ -105,6 +127,11 @@ struct Node: Codable, Identifiable, Hashable {
     /// non-guardrail failure — content embedding may still be present),
     /// `embedder_error` (`NLContextualEmbedding` load failure — no vectors).
     var embeddingFailureReason: String?
+    /// Diagnostic-only sidecar populated when `embeddingFailureReason ==
+    /// "fm_error"`. Captures the raw error type and debug description so we
+    /// can tune the guardrail-vs-other classifier against observed strings.
+    /// Cleared on every other outcome (success, guardrail, thin, embedder).
+    var fmErrorDetail: FMErrorDetail?
 
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
@@ -124,6 +151,7 @@ struct Node: Codable, Identifiable, Hashable {
         case contextualContentEmbedding = "contextual_content_embedding"
         case embeddingVersion = "embedding_version"
         case embeddingFailureReason = "embedding_failure_reason"
+        case fmErrorDetail = "fm_error_detail"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -158,7 +186,8 @@ struct Node: Codable, Identifiable, Hashable {
         folksonomyEmbedding: [Float]? = nil,
         contextualContentEmbedding: [Float]? = nil,
         embeddingVersion: Int = 0,
-        embeddingFailureReason: String? = nil
+        embeddingFailureReason: String? = nil,
+        fmErrorDetail: FMErrorDetail? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -187,6 +216,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.contextualContentEmbedding  = contextualContentEmbedding
         self.embeddingVersion            = embeddingVersion
         self.embeddingFailureReason      = embeddingFailureReason
+        self.fmErrorDetail               = fmErrorDetail
     }
 }
 
@@ -222,6 +252,7 @@ extension Node {
         contextualContentEmbedding = try c.decodeIfPresent([Float].self,  forKey: .contextualContentEmbedding)
         embeddingVersion           = try c.decodeIfPresent(Int.self,      forKey: .embeddingVersion) ?? 0
         embeddingFailureReason     = try c.decodeIfPresent(String.self,   forKey: .embeddingFailureReason)
+        fmErrorDetail              = try c.decodeIfPresent(FMErrorDetail.self, forKey: .fmErrorDetail)
     }
 }
 

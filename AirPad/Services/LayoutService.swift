@@ -276,7 +276,7 @@ final class LayoutService {
         var adjustedPositions = positions
         let maxIterations = 10
 
-        for iteration in 0..<maxIterations {
+        for _ in 0..<maxIterations {
             var moved = false
             let nodeIDs = Array(adjustedPositions.keys).sorted()
 

@@ -45,6 +45,8 @@ struct SubstrateInspectView: View {
                     Divider().background(Color.white.opacity(0.1))
                     pairInspectorSection
                     Divider().background(Color.white.opacity(0.1))
+                    threadCandidatesSection
+                    Divider().background(Color.white.opacity(0.1))
                     backfillSection
                     Divider().background(Color.white.opacity(0.1))
                     selfTestSection
@@ -175,6 +177,58 @@ struct SubstrateInspectView: View {
     private func formatCos(_ v: Double?) -> String {
         guard let v else { return "—" }
         return String(format: "%+.4f", v)
+    }
+
+    // MARK: - Thread candidates (SB139 Stage 2)
+
+    private var threadCandidatesSection: some View {
+        let t = SubstrateThreadService.candidateThreshold
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Thread candidates  (T = \(String(format: "%.2f", t)))")
+            if let id = selectedNodeID, let node = store.nodes.first(where: { $0.id == id }) {
+                let cands = SubstrateThreadService.candidates(forNode: node, in: store.nodes)
+                if cands.isEmpty {
+                    Text("No pairs ≥ \(String(format: "%.2f", t)).")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.4))
+                } else {
+                    let surviving = cands.filter { $0.exclusion == nil }
+                    Text("\(surviving.count) surviving · \(cands.count - surviving.count) excluded")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.4))
+                    ForEach(cands.indices, id: \.self) { i in
+                        candidateRow(cands[i])
+                    }
+                }
+            } else {
+                Text("Pick a node in the Selected node section above.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func candidateRow(_ c: SubstrateThreadService.Candidate) -> some View {
+        let dim = c.exclusion != nil
+        HStack(alignment: .top, spacing: 8) {
+            Text(String(format: "%+.4f", c.blended))
+                .font(.caption2.monospaced())
+                .foregroundStyle(dim ? .white.opacity(0.4) : .white)
+                .frame(width: 64, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(c.other.title.isEmpty ? "(untitled)" : c.other.title)
+                    .font(.caption2)
+                    .foregroundStyle(dim ? .white.opacity(0.4) : .white.opacity(0.85))
+                    .lineLimit(1)
+                if let ex = c.exclusion {
+                    Text("excluded: \(ex.rawValue)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.orange.opacity(0.7))
+                }
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     // MARK: - Backfill

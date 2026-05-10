@@ -209,6 +209,37 @@ final class SubstrateService {
         )
     }
 
+    // MARK: - Rankability
+
+    /// A node is excluded from ranking (top-K, thread candidates, canvas
+    /// neighborhoods) when the substrate doesn't have enough signal to speak
+    /// honestly about it. Today that's only `thin_content`: tiny strings
+    /// produce degenerate cosines (e.g. duplicate "Recipe App" stubs hitting
+    /// 1.0) that pollute downstream ranking. The pair inspector still shows
+    /// raw scores via `pairSimilarity` — it's a diagnostic, not a consumer.
+    ///
+    /// Other failure modes (`guardrail_refused`, `fm_error`, `embedder_error`)
+    /// stay rankable: they may still have a content embedding, in which case
+    /// the contentFallback path is honest signal even if degraded.
+    func isRankable(_ node: Node) -> Bool {
+        node.embeddingFailureReason != "thin_content"
+    }
+
+    /// Like `pairSimilarity`, but returns `.noSignal` whenever either side is
+    /// ineligible per `isRankable`. This is what top-K consumers (Stage 2
+    /// thread candidates, the diagnostic export's neighbor list, future
+    /// canvas physics) should call. The pair inspector keeps using
+    /// `pairSimilarity` so it can verify the exclusion is doing its job.
+    func rankingPairSimilarity(_ a: Node, _ b: Node) -> PairSimilarity {
+        guard isRankable(a), isRankable(b) else {
+            return PairSimilarity(
+                summaryCos: nil, folksonomyCos: nil, contentCos: nil,
+                blended: nil, path: .noSignal
+            )
+        }
+        return pairSimilarity(a, b)
+    }
+
     // MARK: - Internal math
 
     private func mean(of vecs: [[Float]]) -> [Float]? {

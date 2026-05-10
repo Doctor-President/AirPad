@@ -67,6 +67,11 @@ struct SubstrateBackfillState: Equatable {
     var succeeded: Int
     var guardrailRefused: Int
     var thinContent: Int
+    /// FM `processSubstrate` call failed for a non-guardrail reason (decode
+    /// error, transient FM unavailability, etc.). Content embedding may still
+    /// have landed; summary/folksonomy are nil.
+    var fmError: Int
+    /// `NLContextualEmbedding` failed to load — no vectors at all on the node.
     var embedderError: Int
     var pendingAfter: Int
     var done: Bool
@@ -288,6 +293,11 @@ final class CorpusStore {
         refreshUberNodeClusters()
         // Generate initial neighborhoods
         refreshNeighborhoods()
+        // SB139 Stage 1 — relabel pre-split `embedder_error` records. The
+        // original implementation conflated two cases under one reason; if the
+        // node has any vectors, the failure was on the FM side, not the
+        // embedder load. One-time, idempotent migration.
+        migrateEmbedderErrorLabels()
         // SB139 Stage 1 — recompute substrate corpus means from whatever
         // vectors landed in storage. Cheap (one pass over nodes) and avoids
         // persisting means to disk. Skipped silently if iOS < 17.
@@ -758,6 +768,35 @@ final class CorpusStore {
 
     // MARK: - SB139 Stage 1 — substrate pipeline
 
+    /// SB139 Stage 1 cleanup — pre-split, `embedder_error` was overloaded for
+    /// both NL embedder load failures (no vectors) and FM `processSubstrate`
+    /// non-guardrail failures (content embedding still landed). This walks
+    /// existing nodes and relabels the FM-side cases as `fm_error` so the
+    /// retry button finds them. Idempotent: re-running on already-migrated
+    /// records is a no-op because the symptom (embedder_error + any vector)
+    /// can no longer occur under the post-split write path.
+    private func migrateEmbedderErrorLabels() {
+        var changed: [Node] = []
+        for i in nodes.indices {
+            guard nodes[i].embeddingFailureReason == "embedder_error" else { continue }
+            let hasAnyVector =
+                (nodes[i].summaryEmbedding?.isEmpty == false)
+                || (nodes[i].folksonomyEmbedding?.isEmpty == false)
+                || (nodes[i].contextualContentEmbedding?.isEmpty == false)
+            guard hasAnyVector else { continue }
+            nodes[i].embeddingFailureReason = "fm_error"
+            changed.append(nodes[i])
+        }
+        guard !changed.isEmpty else { return }
+        print("[Substrate] Migrated \(changed.count) embedder_error → fm_error (had vectors)")
+        Task {
+            for node in changed {
+                do { try await service.saveNode(node) }
+                catch { print("[Substrate] migration save error: \(error)") }
+            }
+        }
+    }
+
     /// Runs the substrate FM call + three embeddings on the given node and
     /// mutates it in place. Per the brief:
     /// - Content < 20 chars → skip FM, set `embeddingFailureReason = "thin_content"`.
@@ -765,14 +804,16 @@ final class CorpusStore {
     /// - Guardrail refusal (~4% expected) → set
     ///   `embeddingFailureReason = "guardrail_refused"`, fall back to content
     ///   embedding only. Summary/folksonomy stay nil.
-    /// - Embedder load failure → `embeddingFailureReason = "embedder_error"`.
-    ///   Whatever embeddings did land are still written.
+    /// - FM call non-guardrail failure → `embeddingFailureReason = "fm_error"`.
+    ///   Content embedding still attempted; summary/folksonomy nil.
+    /// - `NLContextualEmbedding` load failure → `embeddingFailureReason =
+    ///   "embedder_error"`. No vectors on the node.
     /// - Success → all three embeddings populated, no failure reason.
     /// `embeddingVersion` is set to the current substrate version regardless
     /// of outcome, so this node won't be re-attempted by backfill until the
     /// version constant bumps.
+    @available(iOS 26.0, *)
     private func runSubstratePipeline(on node: inout Node, aiSvc: AIService) async {
-        guard #available(iOS 26.0, *) else { return }
         let substrate = SubstrateService.shared
         let loaded = await substrate.ensureLoaded()
 
@@ -808,14 +849,14 @@ final class CorpusStore {
         case .guardrailRefused:
             failureReason = "guardrail_refused"
         case .otherError(let detail):
-            failureReason = "embedder_error"
+            failureReason = "fm_error"
             print("[Substrate] FM error on \(node.id): \(detail)")
         }
         node.substrateSummary = producedSummary
         node.folksonomy = producedFolksonomy
 
         // Embed whichever channels we have text for. Embedder load failure
-        // turns into embedder_error overriding any prior failureReason — the
+        // is its own reason and overrides any prior FM-side reason — the
         // node ends up with no vectors at all.
         if !loaded {
             node.embeddingFailureReason = "embedder_error"
@@ -851,15 +892,43 @@ final class CorpusStore {
     /// corpus run. Recomputes means once at the end so similarity is fresh.
     func backfillSubstrate(batchSize: Int = 10) async {
         guard #available(iOS 26.0, *) else { return }
+        let pending = nodes
+            .filter { $0.embeddingVersion < SubstrateService.currentEmbeddingVersion }
+            .sorted { $0.createdAt < $1.createdAt }
+        await runSubstrateBatch(
+            label: "SubstrateBackfill",
+            pending: pending,
+            batchSize: batchSize
+        )
+    }
+
+    /// SB139 Stage 1 — targeted retry for nodes that landed in `fm_error`.
+    /// Same loop as `backfillSubstrate` but pre-filters by failure reason so
+    /// we don't re-process the 132 healthy nodes. Useful for distinguishing
+    /// transient FM unavailability from systematic prompt/schema issues.
+    func retrySubstrateFMErrors(batchSize: Int = Int.max) async {
+        guard #available(iOS 26.0, *) else { return }
+        let pending = nodes
+            .filter { $0.embeddingFailureReason == "fm_error" }
+            .sorted { $0.createdAt < $1.createdAt }
+        await runSubstrateBatch(
+            label: "SubstrateRetryFMErrors",
+            pending: pending,
+            batchSize: batchSize
+        )
+    }
+
+    /// Shared loop body for backfill and targeted retry. `pending` is the full
+    /// candidate set (used for `pendingAfter` accounting); the batch is
+    /// `prefix(batchSize)` of that set.
+    @available(iOS 26.0, *)
+    private func runSubstrateBatch(label: String, pending: [Node], batchSize: Int) async {
         let aiSvc = AIService()
         let substrate = SubstrateService.shared
         _ = await substrate.ensureLoaded()
 
-        let pending = nodes
-            .filter { $0.embeddingVersion < SubstrateService.currentEmbeddingVersion }
-            .sorted { $0.createdAt < $1.createdAt }
         let target = Array(pending.prefix(max(0, batchSize)))
-        print("[SubstrateBackfill] pending=\(pending.count) targeting=\(target.count)")
+        print("[\(label)] pending=\(pending.count) targeting=\(target.count)")
 
         substrateBackfill = SubstrateBackfillState(
             batchTotal: target.count,
@@ -867,6 +936,7 @@ final class CorpusStore {
             succeeded: 0,
             guardrailRefused: 0,
             thinContent: 0,
+            fmError: 0,
             embedderError: 0,
             pendingAfter: pending.count,
             done: false,
@@ -876,13 +946,13 @@ final class CorpusStore {
         guard !target.isEmpty else {
             substrateBackfill = SubstrateBackfillState(
                 batchTotal: 0, current: 0, succeeded: 0,
-                guardrailRefused: 0, thinContent: 0, embedderError: 0,
+                guardrailRefused: 0, thinContent: 0, fmError: 0, embedderError: 0,
                 pendingAfter: 0, done: true, lastRunAt: Date()
             )
             return
         }
 
-        var succeeded = 0, refused = 0, thin = 0, errored = 0
+        var succeeded = 0, refused = 0, thin = 0, fmErrored = 0, embedderErrored = 0
 
         for (idx, node) in target.enumerated() {
             // Re-fetch from `nodes` so we never overwrite a concurrent update.
@@ -893,7 +963,8 @@ final class CorpusStore {
             switch working.embeddingFailureReason {
             case "guardrail_refused": refused += 1
             case "thin_content": thin += 1
-            case "embedder_error": errored += 1
+            case "fm_error": fmErrored += 1
+            case "embedder_error": embedderErrored += 1
             case nil: succeeded += 1
             default: break
             }
@@ -904,7 +975,8 @@ final class CorpusStore {
                 succeeded: succeeded,
                 guardrailRefused: refused,
                 thinContent: thin,
-                embedderError: errored,
+                fmError: fmErrored,
+                embedderError: embedderErrored,
                 pendingAfter: max(0, pending.count - (idx + 1)),
                 done: false,
                 lastRunAt: nil
@@ -923,12 +995,13 @@ final class CorpusStore {
             succeeded: succeeded,
             guardrailRefused: refused,
             thinContent: thin,
-            embedderError: errored,
+            fmError: fmErrored,
+            embedderError: embedderErrored,
             pendingAfter: max(0, pending.count - target.count),
             done: true,
             lastRunAt: Date()
         )
-        print("[SubstrateBackfill] complete: \(succeeded) ok, \(refused) refused, \(thin) thin, \(errored) errored")
+        print("[\(label)] complete: \(succeeded) ok, \(refused) refused, \(thin) thin, \(fmErrored) fm_error, \(embedderErrored) embedder_error")
     }
 
     /// Item-level threshold check used by `reprocessUntaggedNodes`. A node

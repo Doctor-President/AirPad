@@ -150,7 +150,11 @@ final class CorpusStore {
     /// Reference to QuarantineStore for syncing quarantined entries.
     var quarantineStore: QuarantineStore?
 
-    private var dismissedThreadDescriptions: Set<String> = []
+    /// SB139 Stage 2 — session-only set of dismissed pair keys (pair key from
+    /// `SubstrateThreadService.pairKey`). Cleared on app relaunch so the
+    /// candidate stays in the pool per the brief's "one-time dismissal,
+    /// candidate may surface again later" rule. Not persisted.
+    private var dismissedThreadPairKeys: Set<String> = []
 
     /// Debounced cluster refresh task (Task 3)
     private var clusterRefreshTask: Task<Void, Never>?
@@ -303,6 +307,9 @@ final class CorpusStore {
         // persisting means to disk. Skipped silently if iOS < 17.
         if #available(iOS 17.0, *) {
             SubstrateService.shared.recomputeMeans(from: nodes)
+            // SB139 Stage 2 — first surface for substrate-driven threads.
+            // Means must be fresh first; that's the line above.
+            refreshSubstrateThreadCandidates()
         }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
@@ -646,6 +653,14 @@ final class CorpusStore {
                     existingTagNames: existingTagNames
                 )
             }
+        }
+
+        // SB139 Stage 2 — single-capture path refreshes substrate-driven
+        // thread candidates now that this node's substrate is current. The
+        // batch-import path suppresses this per-node refresh and triggers
+        // one combined refresh at the end of Phase 4 (see batchImportText).
+        if !suppressTagSheet, #available(iOS 17.0, *) {
+            refreshSubstrateThreadCandidates()
         }
     }
 
@@ -1007,6 +1022,10 @@ final class CorpusStore {
             lastRunAt: Date()
         )
         print("[\(label)] complete: \(succeeded) ok, \(refused) refused, \(thin) thin, \(fmErrored) fm_error, \(embedderErrored) embedder_error")
+
+        // SB139 Stage 2 — backfill changed which pairs are rankable; refresh
+        // the thread queue against the new substrate state.
+        refreshSubstrateThreadCandidates()
     }
 
     /// Item-level threshold check used by `reprocessUntaggedNodes`. A node
@@ -1119,23 +1138,27 @@ final class CorpusStore {
 
     // MARK: - Thread surfacing
 
-    /// Trigger corpus-wide thread analysis. Runs in background; never blocks node save.
-    private func triggerThreadAnalysis() async {
-        guard #available(iOS 26.0, *) else { return }
-        let currentNodes = nodes
-        let currentTags = tags
-        let dismissed = dismissedThreadDescriptions
-        let existingDescriptions = Set(pendingThreads.map { $0.description })
-
-        let threadSvc = ThreadService()
-        let suggestions = await threadSvc.analyzeCorpus(nodes: currentNodes, tags: currentTags)
-
-        let newSuggestions = suggestions.filter { s in
-            !dismissed.contains(s.description) && !existingDescriptions.contains(s.description)
-        }
-        if !newSuggestions.isEmpty {
-            pendingThreads.append(contentsOf: newSuggestions)
-        }
+    /// SB139 Stage 2 — recompute the substrate-driven thread queue. Runs
+    /// against current `nodes` and the in-memory dismissed-pair set.
+    /// Deterministic; no FM call. Replaces the FM-driven `analyzeCorpus`
+    /// path. Cheap at our corpus size (≤200 nodes ≈ 20K cosines, well under
+    /// 100ms), so callers re-run it on each capture / backfill / pull.
+    ///
+    /// Behavior model: `pendingThreads` is a queue; ContentView shows
+    /// `.first`. We replace the queue wholesale so the freshest top-K is
+    /// always what surfaces next. Dismiss/pull triggers a refresh that
+    /// removes the just-handled pair (dismissal via session set, pull via
+    /// the new meta-node landing in `alreadyConnectedPairs`).
+    @available(iOS 17.0, *)
+    private func refreshSubstrateThreadCandidates() {
+        let suggestions = SubstrateThreadService.candidates(
+            in: nodes,
+            dismissedPairKeys: dismissedThreadPairKeys
+        )
+        // Cap the visible queue. Brief calls for one-at-rest; we keep a
+        // small head so the next-best is ready when the user dismisses
+        // without paying for another full scan.
+        pendingThreads = Array(suggestions.prefix(5))
     }
 
     /// Accept a thread suggestion — creates a meta-node and updates source node thread arrays.
@@ -1186,11 +1209,26 @@ final class CorpusStore {
         }
 
         await addNode(metaNode, position: centroid)
+
+        // SB139 Stage 2 — the just-pulled pair now lands in
+        // `alreadyConnectedPairs` (via the new meta-node's provenance), so a
+        // refresh drops it from the queue and surfaces the next candidate.
+        if #available(iOS 17.0, *) {
+            refreshSubstrateThreadCandidates()
+        }
     }
 
-    /// Dismiss a thread suggestion — never show it again.
+    /// Dismiss a thread suggestion. Per the SB139 Stage 2 brief, dismissal
+    /// is one-time: the surface card is removed, the pair key is added to
+    /// the session-only dismissed set so the same pair won't reappear in
+    /// this session, but the candidate stays in the pool and may surface
+    /// again after relaunch.
     func dismissThread(_ suggestion: ThreadSuggestion) {
-        dismissedThreadDescriptions.insert(suggestion.description)
+        if suggestion.nodeIDs.count == 2,
+           #available(iOS 17.0, *) {
+            let key = SubstrateThreadService.pairKey(suggestion.nodeIDs[0], suggestion.nodeIDs[1])
+            dismissedThreadPairKeys.insert(key)
+        }
         pendingThreads.removeAll { $0.id == suggestion.id }
     }
 
@@ -1398,9 +1436,15 @@ final class CorpusStore {
             refreshNeighborhoods()  // Refresh after all AI processing complete
             recomputeAlgorithmicLayout(reason: "batch import complete")  // Algorithmic layout after import
             print("[Batch][AI] All done")
-            // SB123: gate ThreadService on batchProcessingComplete — fully-processed corpus only.
-            if nodes.count >= 10 {
-                await triggerThreadAnalysis()
+            // SB139 Stage 2 — substrate-driven thread candidates. Per-node
+            // refresh is suppressed during batch (suppressTagSheet=true);
+            // we do one combined refresh now that the corpus is fully
+            // processed. Deterministic, no FM call. SB123's `count >= 10`
+            // gate retired with the FM threads path — substrate works on
+            // any corpus size and just returns no candidates if nothing
+            // qualifies.
+            if #available(iOS 17.0, *) {
+                refreshSubstrateThreadCandidates()
             }
         }
 

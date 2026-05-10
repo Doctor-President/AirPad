@@ -101,7 +101,9 @@ struct Node: Codable, Identifiable, Hashable {
     /// shape changes so backfills can find stale vectors.
     var embeddingVersion: Int
     /// Nil on success. Populated when substrate processing reached a known
-    /// dead end: `guardrail_refused`, `thin_content`, `embedder_error`.
+    /// dead end: `guardrail_refused`, `thin_content`, `fm_error` (FM call
+    /// non-guardrail failure — content embedding may still be present),
+    /// `embedder_error` (`NLContextualEmbedding` load failure — no vectors).
     var embeddingFailureReason: String?
 
     enum CodingKeys: String, CodingKey {

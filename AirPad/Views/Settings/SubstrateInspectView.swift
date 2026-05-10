@@ -12,6 +12,8 @@ import SwiftUI
 ///    plus blended score and which fallback path fired.
 /// 4. Backfill control — batch size input, run button, last-run summary.
 /// 5. Self-tests — runs the synthetic pair-similarity assertions.
+/// 6. Export — dump corpus-wide diagnostic JSON (means + per-node substrate +
+///    top-5 neighbors) to Documents and offer share-sheet export.
 @available(iOS 17.0, *)
 struct SubstrateInspectView: View {
 
@@ -23,6 +25,15 @@ struct SubstrateInspectView: View {
     @State private var pairRightID: String? = nil
     @State private var batchSizeText: String = "10"
     @State private var selfTestResult: String? = nil
+    @State private var exportInProgress: Bool = false
+    @State private var exportResult: ExportResult? = nil
+    @State private var exportError: String? = nil
+
+    struct ExportResult: Equatable {
+        let url: URL
+        let nodeCount: Int
+        let elapsed: TimeInterval
+    }
 
     var body: some View {
         NavigationStack {
@@ -37,6 +48,8 @@ struct SubstrateInspectView: View {
                     backfillSection
                     Divider().background(Color.white.opacity(0.1))
                     selfTestSection
+                    Divider().background(Color.white.opacity(0.1))
+                    exportSection
                 }
                 .padding(20)
             }
@@ -200,12 +213,29 @@ struct SubstrateInspectView: View {
                 .buttonStyle(.plain)
                 .disabled(inFlight)
             }
+            let fmErrorCount = store.nodes.filter { $0.embeddingFailureReason == "fm_error" }.count
+            HStack(spacing: 8) {
+                Spacer()
+                Button {
+                    Task { await store.retrySubstrateFMErrors() }
+                } label: {
+                    Text("Retry FM errors (\(fmErrorCount))")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.orange.opacity(fmErrorCount == 0 || inFlight ? 0.3 : 0.8))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight || fmErrorCount == 0)
+            }
             if let s = state {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(progressLine(s))
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.5))
-                    Text("ok=\(s.succeeded) refused=\(s.guardrailRefused) thin=\(s.thinContent) error=\(s.embedderError) pending=\(s.pendingAfter)")
+                    Text("ok=\(s.succeeded) refused=\(s.guardrailRefused) thin=\(s.thinContent) fm_err=\(s.fmError) emb_err=\(s.embedderError) pending=\(s.pendingAfter)")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.35))
                     if let last = s.lastRunAt {
@@ -247,6 +277,192 @@ struct SubstrateInspectView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+
+    // MARK: - Export
+
+    private var exportSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Export")
+            HStack(spacing: 8) {
+                Button {
+                    Task { await runExport() }
+                } label: {
+                    Text(exportInProgress ? "Exporting…" : "Export diagnostic JSON")
+                        .font(.caption2)
+                        .foregroundStyle(.purple.opacity(exportInProgress ? 0.4 : 0.7))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(exportInProgress)
+
+                if let result = exportResult {
+                    ShareLink(item: result.url) {
+                        Text("Share")
+                            .font(.caption2)
+                            .foregroundStyle(.purple.opacity(0.7))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.05))
+                            .clipShape(Capsule())
+                    }
+                }
+            }
+            if let result = exportResult {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Exported to: \(result.url.path)")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.white.opacity(0.6))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("\(result.nodeCount) nodes · \(String(format: "%.2fs", result.elapsed))")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+            }
+            if let err = exportError {
+                Text("export failed: \(err)")
+                    .font(.caption2)
+                    .foregroundStyle(.red.opacity(0.8))
+            }
+        }
+    }
+
+    @MainActor
+    private func runExport() async {
+        exportInProgress = true
+        exportError = nil
+        defer { exportInProgress = false }
+
+        let start = Date()
+        let nodes = store.nodes
+        let substrate = SubstrateService.shared
+
+        let nodeEntries: [SubstrateExportPayload.NodeEntry] = nodes.map { node in
+            SubstrateExportPayload.NodeEntry(
+                id: node.id,
+                title: String(node.title.prefix(80)),
+                contentLength: substrateContentLength(node),
+                tags: userIntentionalTags(node),
+                substrate: SubstrateExportPayload.NodeEntry.Substrate(
+                    summary: node.substrateSummary,
+                    folksonomy: node.folksonomy,
+                    summaryEmbeddingPresent: node.summaryEmbedding?.isEmpty == false,
+                    folksonomyEmbeddingPresent: node.folksonomyEmbedding?.isEmpty == false,
+                    contentEmbeddingPresent: node.contextualContentEmbedding?.isEmpty == false,
+                    embeddingFailureReason: node.embeddingFailureReason,
+                    summaryEmbeddingPreview: previewVec(node.summaryEmbedding),
+                    folksonomyEmbeddingPreview: previewVec(node.folksonomyEmbedding),
+                    contentEmbeddingPreview: previewVec(node.contextualContentEmbedding)
+                ),
+                top5Neighbors: top5Neighbors(for: node, in: nodes, substrate: substrate)
+            )
+        }
+
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let payload = SubstrateExportPayload(
+            exportedAt: isoFormatter.string(from: Date()),
+            embedderVersion: SubstrateService.currentEmbeddingVersion,
+            corpusMeans: SubstrateExportPayload.Means(
+                summary: previewVec(substrate.summaryMean),
+                folksonomy: previewVec(substrate.folksonomyMean),
+                content: previewVec(substrate.contentMean)
+            ),
+            nodes: nodeEntries
+        )
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            let data = try encoder.encode(payload)
+
+            let docs = try FileManager.default.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            )
+            let stamp = exportFilenameTimestamp()
+            let url = docs.appendingPathComponent("substrate-diagnostic-\(stamp).json")
+            try data.write(to: url, options: .atomic)
+            exportResult = ExportResult(
+                url: url,
+                nodeCount: nodes.count,
+                elapsed: Date().timeIntervalSince(start)
+            )
+        } catch {
+            exportError = String(describing: error)
+            exportResult = nil
+        }
+    }
+
+    private func previewVec(_ vec: [Float]?) -> [Float]? {
+        guard let vec, !vec.isEmpty else { return nil }
+        return Array(vec.prefix(8))
+    }
+
+    private func substrateContentLength(_ node: Node) -> Int {
+        // Mirror of CorpusStore.extractNodeContent — kept here so the export
+        // doesn't require a CorpusStore-internal accessor.
+        node.items.compactMap { item -> String? in
+            switch item.type {
+            case .text:              return item.content
+            case .audio, .video:     return item.transcript
+            case .image, .document:  return item.description
+            case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            }
+        }
+        .filter { !$0.isEmpty }
+        .joined(separator: "\n")
+        .count
+    }
+
+    private func userIntentionalTags(_ node: Node) -> [String] {
+        node.tags.filter { tag in
+            guard let source = node.tagSources[tag]?.source else { return false }
+            return source == .user || source == .promoted
+        }
+    }
+
+    private func top5Neighbors(
+        for node: Node,
+        in allNodes: [Node],
+        substrate: SubstrateService
+    ) -> [SubstrateExportPayload.Neighbor] {
+        // Skip the work entirely when this node itself is unrankable —
+        // top-K consumers (Stage 2 threads etc.) shouldn't surface neighbors
+        // for thin-content stubs. The diagnostic export reflects that rule.
+        guard substrate.isRankable(node) else { return [] }
+        var scored: [(Node, Double)] = []
+        scored.reserveCapacity(allNodes.count)
+        for other in allNodes where other.id != node.id {
+            let p = substrate.rankingPairSimilarity(node, other)
+            if let blended = p.blended {
+                scored.append((other, blended))
+            }
+        }
+        return scored
+            .sorted { $0.1 > $1.1 }
+            .prefix(5)
+            .map { (other, score) in
+                SubstrateExportPayload.Neighbor(
+                    id: other.id,
+                    title: String(other.title.prefix(80)),
+                    blendedCosine: score
+                )
+            }
+    }
+
+    private func exportFilenameTimestamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(secondsFromGMT: 0)
+        return f.string(from: Date())
     }
 
     // MARK: - Reusable bits
@@ -327,4 +543,79 @@ private extension DateFormatter {
         f.dateFormat = "MMM d HH:mm:ss"
         return f
     }()
+}
+
+// MARK: - Diagnostic export payload
+
+/// Snake-cased JSON shape per the SB139 Stage 1 diagnostic export spec.
+/// Embedding *previews* are first-8-dim slices, NOT full vectors — this is a
+/// sanity-check dump, not a corpus snapshot.
+struct SubstrateExportPayload: Encodable {
+    let exportedAt: String
+    let embedderVersion: Int
+    let corpusMeans: Means
+    let nodes: [NodeEntry]
+
+    struct Means: Encodable {
+        let summary: [Float]?
+        let folksonomy: [Float]?
+        let content: [Float]?
+    }
+
+    struct NodeEntry: Encodable {
+        let id: String
+        let title: String
+        let contentLength: Int
+        let tags: [String]
+        let substrate: Substrate
+        let top5Neighbors: [Neighbor]
+
+        struct Substrate: Encodable {
+            let summary: String?
+            let folksonomy: [String]?
+            let summaryEmbeddingPresent: Bool
+            let folksonomyEmbeddingPresent: Bool
+            let contentEmbeddingPresent: Bool
+            let embeddingFailureReason: String?
+            let summaryEmbeddingPreview: [Float]?
+            let folksonomyEmbeddingPreview: [Float]?
+            let contentEmbeddingPreview: [Float]?
+
+            enum CodingKeys: String, CodingKey {
+                case summary
+                case folksonomy
+                case summaryEmbeddingPresent = "summary_embedding_present"
+                case folksonomyEmbeddingPresent = "folksonomy_embedding_present"
+                case contentEmbeddingPresent = "content_embedding_present"
+                case embeddingFailureReason = "embedding_failure_reason"
+                case summaryEmbeddingPreview = "summary_embedding_preview"
+                case folksonomyEmbeddingPreview = "folksonomy_embedding_preview"
+                case contentEmbeddingPreview = "content_embedding_preview"
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, title, tags, substrate
+            case contentLength = "content_length"
+            case top5Neighbors = "top_5_neighbors"
+        }
+    }
+
+    struct Neighbor: Encodable {
+        let id: String
+        let title: String
+        let blendedCosine: Double
+
+        enum CodingKeys: String, CodingKey {
+            case id, title
+            case blendedCosine = "blended_cosine"
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case nodes
+        case exportedAt = "exported_at"
+        case embedderVersion = "embedder_version"
+        case corpusMeans = "corpus_means"
+    }
 }

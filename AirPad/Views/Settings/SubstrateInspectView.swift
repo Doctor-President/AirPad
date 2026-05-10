@@ -182,13 +182,15 @@ struct SubstrateInspectView: View {
     // MARK: - Thread candidates (SB139 Stage 2)
 
     private var threadCandidatesSection: some View {
-        let t = SubstrateThreadService.candidateThreshold
+        let tBlend = SubstrateThreadService.blendedThreshold
+        let tContent = SubstrateThreadService.contentFallbackThreshold
+        let tHeader = "T blend=\(String(format: "%.2f", tBlend)) · content=\(String(format: "%.2f", tContent))"
         return VStack(alignment: .leading, spacing: 8) {
-            sectionHeader("Thread candidates  (T = \(String(format: "%.2f", t)))")
+            sectionHeader("Thread candidates  (\(tHeader))")
             if let id = selectedNodeID, let node = store.nodes.first(where: { $0.id == id }) {
                 let cands = SubstrateThreadService.candidates(forNode: node, in: store.nodes)
                 if cands.isEmpty {
-                    Text("No pairs ≥ \(String(format: "%.2f", t)).")
+                    Text("No pairs ≥ per-path T.")
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.4))
                 } else {
@@ -208,19 +210,37 @@ struct SubstrateInspectView: View {
         }
     }
 
+    private func pathLabel(_ path: PairSimilarity.Path) -> (tag: String, T: Double?) {
+        switch path {
+        case .blendedSummaryFolksonomy: return ("blend", SubstrateThreadService.blendedThreshold)
+        case .contentFallback:          return ("content", SubstrateThreadService.contentFallbackThreshold)
+        case .noSignal:                 return ("none", nil)
+        }
+    }
+
     @ViewBuilder
     private func candidateRow(_ c: SubstrateThreadService.Candidate) -> some View {
         let dim = c.exclusion != nil
+        let label = pathLabel(c.path)
+        let pathSuffix: String = {
+            guard let T = label.T else { return label.tag }
+            return "\(label.tag) T=\(String(format: "%.2f", T))"
+        }()
         HStack(alignment: .top, spacing: 8) {
             Text(String(format: "%+.4f", c.blended))
                 .font(.caption2.monospaced())
                 .foregroundStyle(dim ? .white.opacity(0.4) : .white)
                 .frame(width: 64, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
-                Text(c.other.title.isEmpty ? "(untitled)" : c.other.title)
-                    .font(.caption2)
-                    .foregroundStyle(dim ? .white.opacity(0.4) : .white.opacity(0.85))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(c.other.title.isEmpty ? "(untitled)" : c.other.title)
+                        .font(.caption2)
+                        .foregroundStyle(dim ? .white.opacity(0.4) : .white.opacity(0.85))
+                        .lineLimit(1)
+                    Text(pathSuffix)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.white.opacity(0.35))
+                }
                 if let ex = c.exclusion {
                     Text("excluded: \(ex.rawValue)")
                         .font(.caption2.monospaced())

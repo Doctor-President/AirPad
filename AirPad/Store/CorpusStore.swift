@@ -825,6 +825,7 @@ final class CorpusStore {
         // exists so similarity has at least the content channel to fall back on.
         if trimmed.count < SubstrateService.thinContentThreshold {
             node.embeddingFailureReason = "thin_content"
+            node.fmErrorDetail = nil
             node.substrateSummary = nil
             node.folksonomy = nil
             node.summaryEmbedding = nil
@@ -840,6 +841,7 @@ final class CorpusStore {
         // FM call — produces summary + folksonomy in one structured response.
         let outcome = await aiSvc.processSubstrate(content: raw)
         var failureReason: String? = nil
+        var fmErrorDetail: FMErrorDetail? = nil
         var producedSummary: String? = nil
         var producedFolksonomy: [String]? = nil
         switch outcome {
@@ -850,7 +852,8 @@ final class CorpusStore {
             failureReason = "guardrail_refused"
         case .otherError(let detail):
             failureReason = "fm_error"
-            print("[Substrate] FM error on \(node.id): \(detail)")
+            fmErrorDetail = detail
+            print("[Substrate] FM error on \(node.id): \(detail.errorType) — \(detail.debugDescription ?? "<no debugDescription>")")
         }
         node.substrateSummary = producedSummary
         node.folksonomy = producedFolksonomy
@@ -860,6 +863,7 @@ final class CorpusStore {
         // node ends up with no vectors at all.
         if !loaded {
             node.embeddingFailureReason = "embedder_error"
+            node.fmErrorDetail = nil
             node.summaryEmbedding = nil
             node.folksonomyEmbedding = nil
             node.contextualContentEmbedding = nil
@@ -872,6 +876,7 @@ final class CorpusStore {
             .flatMap { $0.isEmpty ? nil : substrate.embed($0) }
         node.contextualContentEmbedding = trimmed.isEmpty ? nil : substrate.embed(trimmed)
         node.embeddingFailureReason = failureReason
+        node.fmErrorDetail = fmErrorDetail
 
         // Bump the post-recompute counter and trigger a recompute when we cross
         // the threshold. Cheap to do inline; no scheduling needed at our corpus size.

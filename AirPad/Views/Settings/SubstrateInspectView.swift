@@ -356,7 +356,13 @@ struct SubstrateInspectView: View {
                     embeddingFailureReason: node.embeddingFailureReason,
                     summaryEmbeddingPreview: previewVec(node.summaryEmbedding),
                     folksonomyEmbeddingPreview: previewVec(node.folksonomyEmbedding),
-                    contentEmbeddingPreview: previewVec(node.contextualContentEmbedding)
+                    contentEmbeddingPreview: previewVec(node.contextualContentEmbedding),
+                    contentFull: node.embeddingFailureReason == "fm_error"
+                        ? substrateContentText(node)
+                        : nil,
+                    fmErrorDetail: node.embeddingFailureReason == "fm_error"
+                        ? node.fmErrorDetail
+                        : nil
                 ),
                 top5Neighbors: top5Neighbors(for: node, in: nodes, substrate: substrate)
             )
@@ -405,7 +411,7 @@ struct SubstrateInspectView: View {
         return Array(vec.prefix(8))
     }
 
-    private func substrateContentLength(_ node: Node) -> Int {
+    private func substrateContentText(_ node: Node) -> String {
         // Mirror of CorpusStore.extractNodeContent — kept here so the export
         // doesn't require a CorpusStore-internal accessor.
         node.items.compactMap { item -> String? in
@@ -418,7 +424,10 @@ struct SubstrateInspectView: View {
         }
         .filter { !$0.isEmpty }
         .joined(separator: "\n")
-        .count
+    }
+
+    private func substrateContentLength(_ node: Node) -> Int {
+        substrateContentText(node).count
     }
 
     private func userIntentionalTags(_ node: Node) -> [String] {
@@ -580,6 +589,18 @@ struct SubstrateExportPayload: Encodable {
             let summaryEmbeddingPreview: [Float]?
             let folksonomyEmbeddingPreview: [Float]?
             let contentEmbeddingPreview: [Float]?
+            /// Debug-only: raw content text. Populated *only* when
+            /// `embedding_failure_reason == "fm_error"` so we can analyze
+            /// content patterns across all FM failures at once. Custom encode
+            /// uses `encodeIfPresent` so the key is absent (not null) on
+            /// other nodes. Remove once the FM-error pattern is understood.
+            let contentFull: String?
+            /// Diagnostic-only sidecar populated *only* when
+            /// `embedding_failure_reason == "fm_error"`. Captures the raw
+            /// error type + Context.debugDescription as observed at call
+            /// time so the textual classifier in `processSubstrate` can be
+            /// tuned against actual strings instead of inferred ones.
+            let fmErrorDetail: FMErrorDetail?
 
             enum CodingKeys: String, CodingKey {
                 case summary
@@ -591,6 +612,23 @@ struct SubstrateExportPayload: Encodable {
                 case summaryEmbeddingPreview = "summary_embedding_preview"
                 case folksonomyEmbeddingPreview = "folksonomy_embedding_preview"
                 case contentEmbeddingPreview = "content_embedding_preview"
+                case contentFull = "content_full"
+                case fmErrorDetail = "fm_error_detail"
+            }
+
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(summary, forKey: .summary)
+                try c.encode(folksonomy, forKey: .folksonomy)
+                try c.encode(summaryEmbeddingPresent, forKey: .summaryEmbeddingPresent)
+                try c.encode(folksonomyEmbeddingPresent, forKey: .folksonomyEmbeddingPresent)
+                try c.encode(contentEmbeddingPresent, forKey: .contentEmbeddingPresent)
+                try c.encode(embeddingFailureReason, forKey: .embeddingFailureReason)
+                try c.encode(summaryEmbeddingPreview, forKey: .summaryEmbeddingPreview)
+                try c.encode(folksonomyEmbeddingPreview, forKey: .folksonomyEmbeddingPreview)
+                try c.encode(contentEmbeddingPreview, forKey: .contentEmbeddingPreview)
+                try c.encodeIfPresent(contentFull, forKey: .contentFull)
+                try c.encodeIfPresent(fmErrorDetail, forKey: .fmErrorDetail)
             }
         }
 

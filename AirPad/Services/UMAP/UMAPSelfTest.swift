@@ -15,6 +15,9 @@ import Foundation
 //   Step 4.5 (fit wire)  — T11:    end-to-end UMAP.fit structural smoke
 //   Step 6 (transform)   — T14:    transform-then-refit round-trip
 //                                  (cluster-adaptive 2D placement tolerance)
+//   Step 7 (recovery)    — T12:    synthetic cluster recovery
+//                                  (≥190/200 nodes pass M=3 of K=5 same-cluster)
+//   Step 7 (determinism) — T13:    fit twice with same seed → bit-equal model
 //
 // The host-side `swift_knn_parity.swift` and `swift_fuzzy_parity.swift`
 // scripts do the heavyweight end-to-end checks against the harness
@@ -63,6 +66,10 @@ enum UMAPSelfTest {
     static func run() -> String {
         var failures: [String] = []
         var ran = 0
+        // Surfaced in the success line so on-device timing is visible
+        // without a console attach. T12 is the only test heavy enough
+        // for this to matter (200 obs × 200 epochs).
+        var t12ElapsedMS: Int = 0
 
         // Test 1 — SplitMix64 parity. Seed 42, first 32 outputs must match
         // the harness fixture byte-for-byte.
@@ -449,8 +456,146 @@ enum UMAPSelfTest {
             }
         }
 
+        // --- Step 7 (synthetic recovery + determinism) ---
+
+        // Test 12 — Synthetic cluster recovery. Plants 4 well-separated
+        // clusters in 4D (50 points each, ±0.3 uniform jitter), runs
+        // UMAP.fit, asserts that for each node ≥M=3 of its k=5 nearest
+        // 2D neighbors share its cluster label, with ≥190/200 nodes
+        // passing.
+        //
+        // **Pass-rate framing (≥95%) rather than strict per-node.**
+        // UMAP fits leave some boundary points sandwiched between
+        // clusters even on healthy embeddings. Strict per-node would
+        // false-fail on noise; the gap between bug-shaped failure (mass
+        // mismatch, dozens or more failing) and noise (a handful of
+        // boundary outliers) is wide, so 190/200 sits cleanly inside it.
+        //
+        // **K=5, M=3** mirrors T14's M-of-K shape. Same logic for why
+        // 3 of 5 lands in the bug/noise gap with margin.
+        //
+        // **Why uniform jitter (not Gaussian).** SplitMix64 emits
+        // uniforms; Box-Muller would import transcendentals into the
+        // fixture for no test-shape gain. Uniform ±0.3 around centers
+        // spaced 5 apart still gives the σ-search non-fallback input
+        // on every cluster boundary.
+        do {
+            ran += 1
+            let (inputs, labels) = synthClusters4D(
+                pointsPerCluster: 50,
+                numClusters: 4,
+                jitterHalfWidth: 0.3,
+                centerSpacing: 5.0,
+                seed: 42
+            )
+            let hyper = UMAPHyperparameters(
+                nComponents: 2,
+                nNeighbors: 15,
+                minDist: 0.1,
+                spread: 1.0,
+                learningRate: 1.0,
+                negativeSampleRate: 5,
+                nEpochs: 200
+            )
+            let seed: [UInt64] = [42, 0, 0, 0]
+
+            do {
+                let t0 = Date()
+                let model = try UMAP.fit(
+                    trainingInputs: inputs,
+                    hyperparameters: hyper,
+                    rngSeed: seed,
+                    fitVersion: 1
+                )
+                t12ElapsedMS = Int(Date().timeIntervalSince(t0) * 1000)
+                if let diff = diffSyntheticRecovery(
+                    model: model,
+                    labels: labels,
+                    k: 5,
+                    minMatching: 3,
+                    minPassingNodes: 190
+                ) {
+                    failures.append("T12 cluster-recovery: \(diff)")
+                }
+            } catch {
+                failures.append("T12 cluster-recovery threw: \(error)")
+            }
+        }
+
+        // Test 13 — Determinism. Two `UMAP.fit` calls on the same
+        // inputs with the same seed must produce bit-identical models
+        // (every Float coord, every field — `fittedAt` excluded as it's
+        // wall-clock).
+        //
+        // **Why bit-equality, not within-tolerance.** Determinism is a
+        // structural property of the pipeline: the RNGs (SplitMix64,
+        // MT19937-64) are deterministic, the SGD update rule is
+        // deterministic, the ordering is deterministic. Any drift means
+        // some non-determinism leaked in (parallel iteration order,
+        // hash randomization, uninitialized memory, etc.) — these don't
+        // produce small drift, they produce arbitrary drift, and
+        // `==` on Float catches them all without tolerance hand-waving.
+        //
+        // **Why T11's 10-pt fixture suffices.** Determinism doesn't
+        // need scale; bit-equal at 10 obs × 20 epochs is the same proof
+        // as bit-equal at 200 × 200, and ~10x faster. Fixture inlined
+        // (matches T11 / T14 self-contained pattern).
+        do {
+            ran += 1
+            let inputs: [(nodeID: String, vector: [Float])] = [
+                ("a0", [0.00, 0.00, 0.00, 0.00]),
+                ("a1", [0.10, 0.00, 0.00, 0.00]),
+                ("a2", [0.00, 0.10, 0.00, 0.00]),
+                ("a3", [0.00, 0.00, 0.10, 0.00]),
+                ("a4", [0.00, 0.00, 0.00, 0.10]),
+                ("b0", [5.00, 5.00, 5.00, 5.00]),
+                ("b1", [5.10, 5.00, 5.00, 5.00]),
+                ("b2", [5.00, 5.10, 5.00, 5.00]),
+                ("b3", [5.00, 5.00, 5.10, 5.00]),
+                ("b4", [5.00, 5.00, 5.00, 5.10]),
+            ]
+            let hyper = UMAPHyperparameters(
+                nComponents: 2,
+                nNeighbors: 3,
+                minDist: 0.1,
+                spread: 1.0,
+                learningRate: 1.0,
+                negativeSampleRate: 5,
+                nEpochs: 20
+            )
+            let seed: [UInt64] = [42, 0, 0, 0]
+
+            do {
+                let modelA = try UMAP.fit(
+                    trainingInputs: inputs,
+                    hyperparameters: hyper,
+                    rngSeed: seed,
+                    fitVersion: 1
+                )
+                let modelB = try UMAP.fit(
+                    trainingInputs: inputs,
+                    hyperparameters: hyper,
+                    rngSeed: seed,
+                    fitVersion: 1
+                )
+                if let diff = diffFittedModel(
+                    got: modelB,
+                    expected: modelA,
+                    ignoreTimestamp: true
+                ) {
+                    failures.append("T13 determinism: \(diff)")
+                }
+            } catch {
+                failures.append("T13 determinism threw: \(error)")
+            }
+        }
+
         if failures.isEmpty {
-            return "UMAP self-test OK · \(ran) tests"
+            var msg = "UMAP self-test OK · \(ran) tests"
+            if t12ElapsedMS > 0 {
+                msg += " · T12 fit \(t12ElapsedMS)ms"
+            }
+            return msg
         }
         return "UMAP self-test FAIL · " + failures.joined(separator: " | ")
     }
@@ -522,14 +667,23 @@ enum UMAPSelfTest {
         return nil
     }
 
-    /// Field-by-field compare for the round-trip Codable test. Returns
-    /// nil on match, else a short string naming the first divergence.
+    /// Field-by-field compare for the round-trip Codable test (T10) and
+    /// the determinism test (T13). Returns nil on match, else a short
+    /// string naming the first divergence.
+    ///
     /// Float/Double compares are bit-exact: JSONEncoder/Decoder preserve
-    /// full precision for both, so any drift here is a real bug, not
-    /// rounding noise.
+    /// full precision for both, so any drift in T10 is a real bug, not
+    /// rounding noise. Same logic applies to T13 — same seed + same
+    /// inputs through deterministic SGD must produce bit-identical Float
+    /// coords; any drift means a non-determinism leak.
+    ///
+    /// `ignoreTimestamp` skips `fittedAt` (wall-clock; always differs
+    /// between two `UMAP.fit` calls). T10 leaves it false (round-trip
+    /// must preserve the encoded date); T13 sets it true.
     private static func diffFittedModel(
         got: UMAPFittedModel,
-        expected: UMAPFittedModel
+        expected: UMAPFittedModel,
+        ignoreTimestamp: Bool = false
     ) -> String? {
         if got.schemaVersion != expected.schemaVersion {
             return "schemaVersion got=\(got.schemaVersion) expected=\(expected.schemaVersion)"
@@ -537,7 +691,7 @@ enum UMAPSelfTest {
         if got.fitVersion != expected.fitVersion {
             return "fitVersion got=\(got.fitVersion) expected=\(expected.fitVersion)"
         }
-        if got.fittedAt != expected.fittedAt {
+        if !ignoreTimestamp && got.fittedAt != expected.fittedAt {
             return "fittedAt got=\(got.fittedAt) expected=\(expected.fittedAt)"
         }
         if got.hyperparameters != expected.hyperparameters {
@@ -716,6 +870,103 @@ enum UMAPSelfTest {
             return lhs.idx < rhs.idx
         }
         return pairs.prefix(Swift.min(k, pairs.count)).map { points[$0.idx].nodeID }
+    }
+
+    /// Generate `pointsPerCluster * numClusters` points in 4D as
+    /// `numClusters` well-separated clusters with uniform per-coord
+    /// jitter inside each. Cluster `c`'s center sits at `centerSpacing
+    /// * e_c` (the c-th 4D standard basis vector), so 4 clusters fit
+    /// orthogonally. Deterministic via `SplitMix64(seed:)`. Returns
+    /// inputs in the shape `UMAP.fit` consumes plus a parallel
+    /// `labels` array (cluster index per node) for T12's recovery
+    /// check.
+    private static func synthClusters4D(
+        pointsPerCluster: Int,
+        numClusters: Int,
+        jitterHalfWidth: Float,
+        centerSpacing: Float,
+        seed: UInt64
+    ) -> (inputs: [(nodeID: String, vector: [Float])], labels: [Int]) {
+        var rng = SplitMix64(seed: seed)
+        var inputs: [(nodeID: String, vector: [Float])] = []
+        var labels: [Int] = []
+        let total = pointsPerCluster * numClusters
+        inputs.reserveCapacity(total)
+        labels.reserveCapacity(total)
+        for c in 0..<numClusters {
+            for i in 0..<pointsPerCluster {
+                var v: [Float] = [0, 0, 0, 0]
+                v[c] = centerSpacing
+                for d in 0..<4 {
+                    // Top 24 bits → Float in [0, 1); map to ±half-width.
+                    let u = Float(rng.next() >> 40) / 16_777_216.0
+                    v[d] += (u * 2 - 1) * jitterHalfWidth
+                }
+                inputs.append((nodeID: "c\(c)_n\(i)", vector: v))
+                labels.append(c)
+            }
+        }
+        return (inputs, labels)
+    }
+
+    /// Structural check for T12. For each training point, find its k
+    /// nearest 2D neighbors (by index, excluding self, tiebroken by
+    /// ascending index), count how many share its cluster label, and
+    /// mark the point as passing if matches ≥ minMatching. Returns nil
+    /// if at least minPassingNodes pass, else a short summary plus the
+    /// worst-matching node (helps narrow what's drifting if the test
+    /// goes red).
+    private static func diffSyntheticRecovery(
+        model: UMAPFittedModel,
+        labels: [Int],
+        k: Int,
+        minMatching: Int,
+        minPassingNodes: Int
+    ) -> String? {
+        let n = model.trainingPoints.count
+        if labels.count != n {
+            return "label count \(labels.count) != trainingPoints count \(n)"
+        }
+        var coords: [(x: Double, y: Double)] = []
+        coords.reserveCapacity(n)
+        for tp in model.trainingPoints {
+            if !tp.coord2D.x.isFinite || !tp.coord2D.y.isFinite {
+                return "non-finite coord at nodeID=\(tp.nodeID)"
+            }
+            coords.append((Double(tp.coord2D.x), Double(tp.coord2D.y)))
+        }
+        var passing = 0
+        var worstNode: (id: String, matches: Int)?
+        for i in 0..<n {
+            var pairs: [(idx: Int, dist: Double)] = []
+            pairs.reserveCapacity(n - 1)
+            for j in 0..<n where j != i {
+                let dx = coords[i].x - coords[j].x
+                let dy = coords[i].y - coords[j].y
+                pairs.append((j, (dx * dx + dy * dy).squareRoot()))
+            }
+            pairs.sort { lhs, rhs in
+                if lhs.dist != rhs.dist { return lhs.dist < rhs.dist }
+                return lhs.idx < rhs.idx
+            }
+            var matches = 0
+            for p in pairs.prefix(k) where labels[p.idx] == labels[i] {
+                matches += 1
+            }
+            if matches >= minMatching {
+                passing += 1
+            } else if worstNode == nil || matches < worstNode!.matches {
+                worstNode = (model.trainingPoints[i].nodeID, matches)
+            }
+        }
+        if passing < minPassingNodes {
+            var msg = "\(passing)/\(n) nodes passed M≥\(minMatching) of K=\(k), need ≥\(minPassingNodes)"
+            if let worst = worstNode {
+                msg += " · worst=\(worst.id)@\(worst.matches)/\(k)"
+            }
+            return msg
+        }
+        return nil
     }
 
     /// Returns nil if every stored edge has an equal-weight back-edge

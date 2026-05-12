@@ -133,6 +133,24 @@ struct Node: Codable, Identifiable, Hashable {
     /// Cleared on every other outcome (success, guardrail, thin, embedder).
     var fmErrorDetail: FMErrorDetail?
 
+    // MARK: - SB139 Stage 4 substrate layout
+    //
+    // Coord and version land at 4a. Cluster identity (`substrateClusterID`,
+    // membership stability, FM-derived label) lands at 4b. Canvas read-side
+    // continues to use the tag-driven LayoutService until the 4c1 flag flip.
+
+    /// SB139 Stage 4a — UMAP-projected 2D coordinate for the canvas substrate
+    /// layout. Nil before the layout has been fit or for nodes captured after
+    /// the last fit (project-through-saved-model fills these on next refresh
+    /// cycle). Stored independently of the canvas read path; populated only
+    /// when `FeatureFlags.substrateLayout` is on.
+    var substrateCoord2D: SubstrateCoord2D?
+    /// SB139 Stage 4a — UMAP fit version this coord was produced under. 0 =
+    /// never projected. Bumps on every full re-fit. Matches the
+    /// `UMAPFittedModel.fitVersion` that was active when the coord was
+    /// computed so we can detect coords stale against the saved model.
+    var substrateLayoutVersion: Int
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -152,6 +170,8 @@ struct Node: Codable, Identifiable, Hashable {
         case embeddingVersion = "embedding_version"
         case embeddingFailureReason = "embedding_failure_reason"
         case fmErrorDetail = "fm_error_detail"
+        case substrateCoord2D = "substrate_coord_2d"
+        case substrateLayoutVersion = "substrate_layout_version"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -187,7 +207,9 @@ struct Node: Codable, Identifiable, Hashable {
         contextualContentEmbedding: [Float]? = nil,
         embeddingVersion: Int = 0,
         embeddingFailureReason: String? = nil,
-        fmErrorDetail: FMErrorDetail? = nil
+        fmErrorDetail: FMErrorDetail? = nil,
+        substrateCoord2D: SubstrateCoord2D? = nil,
+        substrateLayoutVersion: Int = 0
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -217,6 +239,8 @@ struct Node: Codable, Identifiable, Hashable {
         self.embeddingVersion            = embeddingVersion
         self.embeddingFailureReason      = embeddingFailureReason
         self.fmErrorDetail               = fmErrorDetail
+        self.substrateCoord2D            = substrateCoord2D
+        self.substrateLayoutVersion      = substrateLayoutVersion
     }
 }
 
@@ -253,6 +277,8 @@ extension Node {
         embeddingVersion           = try c.decodeIfPresent(Int.self,      forKey: .embeddingVersion) ?? 0
         embeddingFailureReason     = try c.decodeIfPresent(String.self,   forKey: .embeddingFailureReason)
         fmErrorDetail              = try c.decodeIfPresent(FMErrorDetail.self, forKey: .fmErrorDetail)
+        substrateCoord2D           = try c.decodeIfPresent(SubstrateCoord2D.self, forKey: .substrateCoord2D)
+        substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
     }
 }
 

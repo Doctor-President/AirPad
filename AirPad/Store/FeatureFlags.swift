@@ -9,6 +9,7 @@ import Foundation
 enum FeatureFlags {
     private static let useCorpusAwareTaggingKey = "ff.useCorpusAwareTagging"
     private static let substrateOnCaptureKey = "ff.substrateOnCapture"
+    private static let substrateLayoutKey = "ff.substrateLayout"
 
     /// SB126 Stage 2 — when true, `processNodeWithAI` runs the corpus-aware
     /// path (deterministic neighborhood prefilter + corpus-context FM call).
@@ -30,5 +31,15 @@ enum FeatureFlags {
             return UserDefaults.standard.bool(forKey: substrateOnCaptureKey)
         }
         set { UserDefaults.standard.set(newValue, forKey: substrateOnCaptureKey) }
+    }
+
+    /// SB139 Stage 4 — when true, substrate-derived UMAP layout is computed
+    /// in parallel with the existing tag-driven layout and made available
+    /// through the dev inspect view. Canvas continues to read tag-driven
+    /// positions until the Stage 4c1 flag flip. Default off until 4a lands
+    /// the projection pipeline and 4b lands clustering.
+    static var substrateLayout: Bool {
+        get { UserDefaults.standard.bool(forKey: substrateLayoutKey) }
+        set { UserDefaults.standard.set(newValue, forKey: substrateLayoutKey) }
     }
 }

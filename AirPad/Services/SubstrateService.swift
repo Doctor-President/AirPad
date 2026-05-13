@@ -124,6 +124,43 @@ final class SubstrateService {
         }
     }
 
+    // MARK: - Legacy-FM fallback embeddings
+
+    /// Assemble substrate inputs from legacy-FM artifacts on a node whose
+    /// substrate FM call refused, and embed them. Used by the refused-content
+    /// fallback chain at capture time and by the dev backfill affordance.
+    ///
+    /// Summary input: `node.summary` (legacy tag-pipeline FM summary) when
+    /// non-empty; otherwise `node.title` as summary-equivalent. The title
+    /// fallback covers the small slice of refused nodes where the legacy FM
+    /// also produced nothing.
+    ///
+    /// Folksonomy input: only tags with `tagSources[tag]?.source == .user`,
+    /// joined comma-space. Mirrors the native folksonomy path's joining and
+    /// `Node.primaryTag`'s "user-origin only" filter. Model-provenance and
+    /// `.promoted` tags are excluded — this is a constitutional commitment
+    /// (`architecture/tags-as-user-affordance.md`): assent is an organize
+    /// signal, not a substrate input signal.
+    ///
+    /// Returns nil-or-empty channels when the corresponding input text is
+    /// absent (no legacy summary AND no title for summary; no user tags
+    /// for folksonomy). `pairSimilarity`'s summary-only / folksonomy-only
+    /// branches handle asymmetric coverage downstream.
+    func legacyFallbackEmbeddings(for node: Node) -> (summary: [Float]?, folksonomy: [Float]?) {
+        guard loadSucceeded else { return (nil, nil) }
+
+        let trimmedLegacySummary = node.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTitle = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let summaryText = trimmedLegacySummary.isEmpty ? trimmedTitle : trimmedLegacySummary
+        let summaryVec = summaryText.isEmpty ? nil : embed(summaryText)
+
+        let userTags = node.tags.filter { node.tagSources[$0]?.source == .user }
+        let folksonomyText = userTags.joined(separator: ", ")
+        let folksonomyVec = folksonomyText.isEmpty ? nil : embed(folksonomyText)
+
+        return (summaryVec, folksonomyVec)
+    }
+
     // MARK: - Corpus means (cached, read-time centering)
 
     /// Per-channel corpus mean vectors. Recomputed by `recomputeMeans(from:)`.
@@ -167,10 +204,20 @@ final class SubstrateService {
 
     /// SB139 pair similarity blend.
     ///
-    /// `average(summaryCos, folksonomyCos)` when both channels are present on
-    /// both nodes. When either side is missing on either node, fall back to
-    /// `contextualContentCos`. When even content is missing, returns nil
-    /// (the caller treats this as "no signal").
+    /// Path selection mirrors `SubstrateLayoutService.substrateVector(for:)`
+    /// so per-pair similarity and UMAP-input assembly tell the same story
+    /// about each node:
+    ///
+    /// - Both summary + folksonomy present on both sides → mean(summaryCos, folksonomyCos).
+    /// - Only summary present on both sides → summaryCos alone.
+    /// - Only folksonomy present on both sides → folksonomyCos alone.
+    /// - Otherwise → `contextualContentCos` if available, else `.noSignal`.
+    ///
+    /// `.blendedFromLegacy` is selected (instead of `.blendedSummaryFolksonomy`)
+    /// when either node carries `embeddingFailureReason == "guardrail_refused"` —
+    /// i.e. its summary/folksonomy vectors were produced by the legacy-FM
+    /// fallback chain, not the native substrate FM call. Mixed pairs use
+    /// `.blendedFromLegacy` because half-legacy geometry is still legacy-derived.
     ///
     /// All cosines are computed on RAW vectors centered against the cached
     /// per-channel corpus mean at read time. If the mean for a channel is
@@ -187,11 +234,21 @@ final class SubstrateService {
         let folksonomyCos = centeredCosine(aFolk, bFolk, mean: folksonomyMean)
         let contentCos = centeredCosine(aContent, bContent, mean: contentMean)
 
+        let isLegacy = a.embeddingFailureReason == "guardrail_refused"
+            || b.embeddingFailureReason == "guardrail_refused"
+        let blendedPath: PairSimilarity.Path = isLegacy ? .blendedFromLegacy : .blendedSummaryFolksonomy
+
         let blended: Double?
         let path: PairSimilarity.Path
         if let s = summaryCos, let f = folksonomyCos {
             blended = (s + f) / 2.0
-            path = .blendedSummaryFolksonomy
+            path = blendedPath
+        } else if let s = summaryCos {
+            blended = s
+            path = blendedPath
+        } else if let f = folksonomyCos {
+            blended = f
+            path = blendedPath
         } else if let c = contentCos {
             blended = c
             path = .contentFallback
@@ -307,9 +364,23 @@ struct PairSimilarity {
     let path: Path
 
     enum Path: String {
-        /// Both summary and folksonomy cosines defined → averaged.
+        /// Native substrate FM produced summary and/or folksonomy on both
+        /// sides; the blend uses whichever channels are present (mean when
+        /// both, single-channel when only one). No `guardrail_refused` flag
+        /// on either node.
         case blendedSummaryFolksonomy
-        /// One or both of summary/folksonomy missing → used content cosine.
+        /// Same blended dispatch as above, but at least one node carries
+        /// `embeddingFailureReason == "guardrail_refused"` — its
+        /// summary/folksonomy vectors come from the legacy-FM fallback chain
+        /// (legacy `node.summary`/title + user-provenance tags) rather than
+        /// the native substrate FM call. Mixed pairs (one refused, one
+        /// native) take this path so the label honors the legacy origin.
+        case blendedFromLegacy
+        /// No summary or folksonomy signal on at least one side → used
+        /// content cosine. Effectively dead code on the current corpus
+        /// (the legacy fallback chain populates summary on every refused
+        /// node); retained as a safety net for nodes that somehow land
+        /// with neither summary nor folksonomy vectors.
         case contentFallback
         /// All channels missing or dimension-mismatched → no signal.
         case noSignal

@@ -61,6 +61,7 @@ enum SubstrateThreadService {
     static func threshold(for path: PairSimilarity.Path) -> Double? {
         switch path {
         case .blendedSummaryFolksonomy: return blendedThreshold
+        case .blendedFromLegacy:        return blendedThreshold
         case .contentFallback:          return contentFallbackThreshold
         case .noSignal:                 return nil
         }

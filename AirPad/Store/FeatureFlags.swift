@@ -10,6 +10,7 @@ enum FeatureFlags {
     private static let useCorpusAwareTaggingKey = "ff.useCorpusAwareTagging"
     private static let substrateOnCaptureKey = "ff.substrateOnCapture"
     private static let substrateLayoutKey = "ff.substrateLayout"
+    private static let substrateRelaxationKey = "ff.substrateRelaxation"
 
     /// SB126 Stage 2 — when true, `processNodeWithAI` runs the corpus-aware
     /// path (deterministic neighborhood prefilter + corpus-context FM call).
@@ -41,5 +42,19 @@ enum FeatureFlags {
     static var substrateLayout: Bool {
         get { UserDefaults.standard.bool(forKey: substrateLayoutKey) }
         set { UserDefaults.standard.set(newValue, forKey: substrateLayoutKey) }
+    }
+
+    /// SB139 Stage 4c1.3 — when true, the substrate canvas reads the relaxed
+    /// display positions (truth coords resolved against pairwise overlap via
+    /// tether-spring + repulsion). When false, the canvas reads truth coords
+    /// directly — the overlapping baseline 4c1.0–4c1.2 shipped against.
+    /// Defaults TRUE so substrate-layout users see the de-overlapped canvas
+    /// without flipping anything; toggle off from the inspect view to backout.
+    static var substrateRelaxation: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: substrateRelaxationKey) == nil { return true }
+            return UserDefaults.standard.bool(forKey: substrateRelaxationKey)
+        }
+        set { UserDefaults.standard.set(newValue, forKey: substrateRelaxationKey) }
     }
 }

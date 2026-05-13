@@ -310,6 +310,16 @@ final class CorpusStore {
             // SB139 Stage 2 — first surface for substrate-driven threads.
             // Means must be fresh first; that's the line above.
             refreshSubstrateThreadCandidates()
+            // SB139 Stage 4c1 — substrate-as-baseline: load any saved UMAP fit
+            // from disk and cluster it on the way in so the canvas sees a
+            // placed corpus on first paint. Auto-fit when no model exists yet
+            // is triggered by CanvasView on appear (not here — load() must not
+            // block on a synchronous fit).
+            do {
+                _ = try SubstrateLayoutService.shared.load()
+            } catch {
+                print("[CorpusStore] Substrate model load error: \(error)")
+            }
         }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
@@ -817,10 +827,18 @@ final class CorpusStore {
     /// - Content < 20 chars → skip FM, set `embeddingFailureReason = "thin_content"`.
     ///   Content embedding may still be computed if there's any text at all.
     /// - Guardrail refusal (~4% expected) → set
-    ///   `embeddingFailureReason = "guardrail_refused"`, fall back to content
-    ///   embedding only. Summary/folksonomy stay nil.
+    ///   `embeddingFailureReason = "guardrail_refused"`. Substrate vectors are
+    ///   populated via the legacy-FM fallback chain (legacy summary or title
+    ///   + user-provenance tags), not via raw-content embedding. See
+    ///   `SubstrateService.legacyFallbackEmbeddings(for:)` and the
+    ///   `ws-refused-content-fallback-chain` brief — the prior raw-content
+    ///   fallback created a distributional bias between refused and blended
+    ///   populations in the UMAP geography.
     /// - FM call non-guardrail failure → `embeddingFailureReason = "fm_error"`.
-    ///   Content embedding still attempted; summary/folksonomy nil.
+    ///   Content embedding still attempted; summary/folksonomy nil. The
+    ///   legacy fallback is NOT applied here in V1 — `fm_error` is a smaller,
+    ///   retry-bounded population and stays on the prior path until the
+    ///   retirement workstream lands.
     /// - `NLContextualEmbedding` load failure → `embeddingFailureReason =
     ///   "embedder_error"`. No vectors on the node.
     /// - Success → all three embeddings populated, no failure reason.
@@ -885,11 +903,23 @@ final class CorpusStore {
             return
         }
 
-        node.summaryEmbedding = producedSummary.flatMap { substrate.embed($0) }
-        node.folksonomyEmbedding = producedFolksonomy
-            .map { $0.joined(separator: ", ") }
-            .flatMap { $0.isEmpty ? nil : substrate.embed($0) }
-        node.contextualContentEmbedding = trimmed.isEmpty ? nil : substrate.embed(trimmed)
+        // Refused branch: route through the legacy-FM fallback chain. The
+        // substrate vectors carry the legacy summary + user-tags signal so
+        // refused nodes share a distribution with blended nodes in the UMAP
+        // geography. Content embedding is intentionally not populated here
+        // — the prior raw-content path is what we're replacing.
+        if failureReason == "guardrail_refused" {
+            let fallback = substrate.legacyFallbackEmbeddings(for: node)
+            node.summaryEmbedding = fallback.summary
+            node.folksonomyEmbedding = fallback.folksonomy
+            node.contextualContentEmbedding = nil
+        } else {
+            node.summaryEmbedding = producedSummary.flatMap { substrate.embed($0) }
+            node.folksonomyEmbedding = producedFolksonomy
+                .map { $0.joined(separator: ", ") }
+                .flatMap { $0.isEmpty ? nil : substrate.embed($0) }
+            node.contextualContentEmbedding = trimmed.isEmpty ? nil : substrate.embed(trimmed)
+        }
         node.embeddingFailureReason = failureReason
         node.fmErrorDetail = fmErrorDetail
 
@@ -920,6 +950,85 @@ final class CorpusStore {
             pending: pending,
             batchSize: batchSize
         )
+    }
+
+    /// SB139 Stage 4b — apply the legacy-FM fallback chain to every node
+    /// already marked `guardrail_refused`. Idempotent: re-running produces
+    /// the same vectors because the inputs (legacy summary, title, user
+    /// tags) are deterministic given the node's current state, and the
+    /// failure reason stays `guardrail_refused` so the candidate set is
+    /// stable. Skips the FM entirely — no per-node FM call needed since
+    /// the legacy artifacts are already on disk.
+    ///
+    /// Used by the "Backfill refused-node fallback" affordance in
+    /// `SubstrateInspectView` to bring the existing refused population onto
+    /// the new chain without forcing a full re-capture.
+    @available(iOS 17.0, *)
+    func backfillRefusedNodesFallback() async {
+        let substrate = SubstrateService.shared
+        _ = await substrate.ensureLoaded()
+        guard substrate.isLoaded else {
+            print("[SubstrateRefusedBackfill] embedder unavailable — aborting")
+            return
+        }
+
+        let pending = nodes.filter { $0.embeddingFailureReason == "guardrail_refused" }
+        let total = pending.count
+        print("[SubstrateRefusedBackfill] pending=\(total)")
+
+        substrateBackfill = SubstrateBackfillState(
+            batchTotal: total, current: 0, succeeded: 0,
+            guardrailRefused: 0, thinContent: 0, fmError: 0, embedderError: 0,
+            pendingAfter: total, done: false, lastRunAt: nil
+        )
+
+        guard total > 0 else {
+            substrateBackfill = SubstrateBackfillState(
+                batchTotal: 0, current: 0, succeeded: 0,
+                guardrailRefused: 0, thinContent: 0, fmError: 0, embedderError: 0,
+                pendingAfter: 0, done: true, lastRunAt: Date()
+            )
+            return
+        }
+
+        var processed = 0
+        for (idx, node) in pending.enumerated() {
+            guard var working = nodes.first(where: { $0.id == node.id }) else { continue }
+            let fallback = substrate.legacyFallbackEmbeddings(for: working)
+            working.summaryEmbedding = fallback.summary
+            working.folksonomyEmbedding = fallback.folksonomy
+            working.contextualContentEmbedding = nil
+            // Preserve `embedding_failure_reason = "guardrail_refused"` as
+            // historical provenance — the diagnostic export needs it to
+            // group the population for hypothesis-3 validation.
+            await updateNode(working)
+            processed += 1
+
+            substrateBackfill = SubstrateBackfillState(
+                batchTotal: total,
+                current: idx + 1,
+                succeeded: processed,
+                guardrailRefused: total,
+                thinContent: 0, fmError: 0, embedderError: 0,
+                pendingAfter: max(0, total - (idx + 1)),
+                done: false, lastRunAt: nil
+            )
+        }
+
+        substrate.recomputeMeans(from: nodes)
+
+        substrateBackfill = SubstrateBackfillState(
+            batchTotal: total,
+            current: total,
+            succeeded: processed,
+            guardrailRefused: total,
+            thinContent: 0, fmError: 0, embedderError: 0,
+            pendingAfter: 0,
+            done: true, lastRunAt: Date()
+        )
+        print("[SubstrateRefusedBackfill] complete: \(processed)/\(total) refused nodes re-embedded via legacy fallback")
+
+        refreshSubstrateThreadCandidates()
     }
 
     /// SB139 Stage 1 — targeted retry for nodes that landed in `fm_error`.

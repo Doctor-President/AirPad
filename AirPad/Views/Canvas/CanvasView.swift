@@ -43,6 +43,7 @@ struct CanvasView: View {
             store.canvasState = canvasState
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.visibleNodes)
+            kickOffSubstrateAutoFitIfNeeded()
 
             // Inject test nodes for visual development
             if showGlowDebugPanel && store.nodes.isEmpty {
@@ -57,6 +58,13 @@ struct CanvasView: View {
             previousNodeIDs = newIDs
             print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), visibleNodes=\(store.visibleNodes.count), layoutPositions=\(store.canvasLayout.positions.count)")
             syncScene(nodes: store.visibleNodes, newNodeID: addedID)
+            kickOffSubstrateAutoFitIfNeeded()
+        }
+        .onChange(of: SubstrateLayoutService.shared.generation) { _, _ in
+            // SB139 Stage 4c1 — fit/load/clear in the substrate service bumps
+            // `generation`. Re-sync so substrate-derived positions replace
+            // legacy ones (or vice versa on clear).
+            syncScene(nodes: store.visibleNodes)
         }
         .onChange(of: store.filteredNodes) { old, filtered in
             // Re-sync when filter state changes (tag filter, type filter, etc.)
@@ -430,13 +438,89 @@ struct CanvasView: View {
             uniquingKeysWith: { first, _ in first }
         )
 
-        // Compute layout: radial when drilled in, canonical otherwise
+        // Compute layout: radial when drilled in, substrate when flag on +
+        // fitted, canonical otherwise.
         let layoutPositions: [String: CanvasPosition]
         if let drilledClusterID = canvasState.drilledInto,
            store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) != nil,
            let centerPos = expandingFrom {
             // Radial layout around Über-node position
             layoutPositions = computeRadialLayout(nodes: nodes, center: centerPos)
+        } else if FeatureFlags.substrateLayout,
+                  let placements = SubstrateLayoutService.shared.canvasPlacements() {
+            // SB139 Stage 4c1 — substrate-as-baseline. Below the auto-fit
+            // threshold or before a model lands, `canvasPlacements()`
+            // returns nil and the canonical legacy path runs silently.
+            let truth = SubstrateCanvasLayoutAdapter.map(placements)
+            // SB139 Stage 4c1.3 — one-shot tethered relaxation resolves
+            // visual overlap. Truth coords stay first-class on the service;
+            // the canvas reads display positions when the flag is on and
+            // falls back to truth when off.
+            //
+            // Radii are inflated from geometric → visual before PBD sees
+            // them. `CorpusPhysicsScene` renders nodes as deformed blob
+            // paths (16-point perimeter at `radius × (1 + displacement)`,
+            // `displacementAmplitude = 0.15`) with a 1 pt centered stroke,
+            // so the rendered extent exceeds the geometric radius by up
+            // to 15% + ~0.5 pt. PBD's collision model is a circle of the
+            // radius it's given; feeding visual radii lets `minGap` keep
+            // its honest meaning ("breathing room between visible edges").
+            //
+            // The source of truth for geometric radius mirrors the scene's
+            // fallback chain at `CorpusPhysicsScene.addNodeSprite` line
+            // ~1500: prefer `store.nodeRadii` when populated (legacy layout
+            // pass ran), otherwise compute from item count via the same
+            // formula `bubbleRadius` uses (30 + 4×extras, capped at 60).
+            // `store.nodeRadii` is not persisted — on a fresh launch it
+            // starts empty and only fills after capture/import/neighborhood
+            // events. Relying on it directly leaves PBD blind to large
+            // nodes' real extent for an entire session, which produced the
+            // cross-color overlap pattern in the 4c1.3 first-light test.
+            // Non-substrate stragglers (meta, non-rankable, unembedded) have
+            // no UMAP coord and would otherwise drop into the scene at their
+            // tag-driven `store.canvasLayout.positions` coord untouched —
+            // mixed into the substrate scene unrelaxed, they visibly overlap
+            // substrate-fit nodes (the cross-color overlap T saw in the 4c1.3
+            // first-light test: green/red/teal "neighborhood palette" nodes
+            // sitting inside the blue/orange "substrate HSB" cluster cores).
+            //
+            // Fix: include every displayed node in PBD. Substrate-fit nodes
+            // tether to their substrate truth; non-fit nodes tether to their
+            // tag-driven position. Projection resolves cross-class collisions
+            // uniformly. Caller owns input assembly; service just caches the
+            // result and short-circuits on input-fingerprint match.
+            let mergedTruth: [String: CanvasPosition] = {
+                var m = store.canvasLayout.positions
+                for (id, pos) in truth.positions { m[id] = pos }
+                return m
+            }()
+            let substratePositions: [String: CanvasPosition]
+            if FeatureFlags.substrateRelaxation {
+                let nodesByID = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+                var visualRadii: [String: CGFloat] = [:]
+                visualRadii.reserveCapacity(mergedTruth.count)
+                for id in mergedTruth.keys {
+                    let geometric: CGFloat
+                    if let r = store.nodeRadii[id] {
+                        geometric = r
+                    } else if let node = nodesByID[id] {
+                        let extra = CGFloat(max(0, node.items.count - 1)) * 4.0
+                        geometric = min(30.0 + extra, 60.0)
+                    } else {
+                        geometric = 24
+                    }
+                    visualRadii[id] = geometric * 1.15 + 0.5
+                }
+                SubstrateLayoutService.shared.ensureRelaxation(
+                    truthPositions: mergedTruth,
+                    nodeRadii: visualRadii
+                )
+                substratePositions = SubstrateLayoutService.shared.displayCanvasPositions
+                    ?? mergedTruth
+            } else {
+                substratePositions = mergedTruth
+            }
+            layoutPositions = substratePositions
         } else {
             layoutPositions = store.canvasLayout.positions
         }
@@ -454,6 +538,24 @@ struct CanvasView: View {
             nodeRadii: store.nodeRadii
         )
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
+    }
+
+    /// SB139 Stage 4c1 — substrate-as-baseline auto-fit trigger. Cheap to
+    /// call multiple times: the service early-returns if a model is already
+    /// loaded or the rankable count is below `autoFitMinNodeCount`. Called
+    /// on canvas appear and whenever `store.nodes` changes so corpus growth
+    /// past the threshold triggers the first fit.
+    private func kickOffSubstrateAutoFitIfNeeded() {
+        guard FeatureFlags.substrateLayout else { return }
+        guard SubstrateLayoutService.shared.fittedModel == nil else { return }
+        let snapshot = store.nodes
+        Task { @MainActor in
+            do {
+                try await SubstrateLayoutService.shared.ensureFittedIfPossible(allNodes: snapshot)
+            } catch {
+                print("[Canvas] Substrate auto-fit error: \(error)")
+            }
+        }
     }
 
     /// Compute radial layout for drilled-in child nodes around center point.

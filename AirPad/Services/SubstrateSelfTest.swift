@@ -24,12 +24,14 @@ enum SubstrateSelfTest {
 
         // Helper: build a Node carrying only the substrate fields we care
         // about. Other fields are placeholders consistent with the existing
-        // memberwise init contract.
+        // memberwise init contract. `failureReason` lets refused-node tests
+        // exercise the `.blendedFromLegacy` path selection.
         func makeNode(
             id: String,
             summary: [Float]? = nil,
             folksonomy: [Float]? = nil,
-            content: [Float]? = nil
+            content: [Float]? = nil,
+            failureReason: String? = nil
         ) -> Node {
             Node(
                 id: id,
@@ -42,7 +44,8 @@ enum SubstrateSelfTest {
                 summaryEmbedding: summary,
                 folksonomyEmbedding: folksonomy,
                 contextualContentEmbedding: content,
-                embeddingVersion: 1
+                embeddingVersion: 1,
+                embeddingFailureReason: failureReason
             )
         }
 
@@ -85,20 +88,24 @@ enum SubstrateSelfTest {
             if p.path != .blendedSummaryFolksonomy { failures.append("T3 path != blended") }
         }
 
-        // Test 4 — content fallback: one side missing summary → must fall
-        // back to content cosine, not silently use folksonomy alone.
+        // Test 4 — folksonomy-only branch: one side missing summary but
+        // both sides have folksonomy → use folksonomy cosine alone, not
+        // content. Mirrors `SubstrateLayoutService.substrateVector`'s
+        // folksonomy-only branch so pair similarity and UMAP input agree on
+        // the same node-pair geometry.
         do {
             let v: [Float] = [1, 1, 0, 0]
             let a = makeNode(id: "fb-a", summary: nil, folksonomy: v, content: v)
             let b = makeNode(id: "fb-b", summary: v,   folksonomy: v, content: v)
             let p = SubstrateService.shared.pairSimilarity(a, b)
             ran += 1
-            if p.path != .contentFallback { failures.append("T4 path != contentFallback (got \(p.path.rawValue))") }
-            if abs((p.blended ?? 0) - 1.0) > 1e-4 { failures.append("T4 fallback blended != content cosine") }
+            if p.path != .blendedSummaryFolksonomy { failures.append("T4 path != blendedSummaryFolksonomy (got \(p.path.rawValue))") }
+            if abs((p.blended ?? 0) - 1.0) > 1e-4 { failures.append("T4 folksonomy-only blended != folkCos") }
         }
 
         // Test 5 — both summary and folksonomy missing on one side, content
-        // present → content fallback.
+        // present on both → content fallback. The only remaining route to
+        // .contentFallback after the legacy-fallback chain ships.
         do {
             let v: [Float] = [0.5, 0.5, 0, 0]
             let a = makeNode(id: "ref-a", summary: nil, folksonomy: nil, content: v)
@@ -140,6 +147,70 @@ enum SubstrateSelfTest {
             }
             // Reset so subsequent inspect-view cosines are uncontaminated.
             SubstrateService.shared.recomputeMeans(from: [])
+        }
+
+        // Test 8 — `.blendedFromLegacy` selected when both nodes carry
+        // `embeddingFailureReason == "guardrail_refused"`. Vectors stand in
+        // for legacy-summary + user-tag embeddings produced by the fallback
+        // chain. Adapted from the brief's "two refused nodes that share a
+        // domain → non-zero similarity" self-test to the synthetic-vector
+        // style this file uses.
+        do {
+            let s: [Float] = [1, 0, 0, 0]
+            let f: [Float] = [1, 0, 0, 0]
+            let a = makeNode(id: "leg-a", summary: s, folksonomy: f, failureReason: "guardrail_refused")
+            let b = makeNode(id: "leg-b", summary: s, folksonomy: f, failureReason: "guardrail_refused")
+            let p = SubstrateService.shared.pairSimilarity(a, b)
+            ran += 1
+            if p.path != .blendedFromLegacy { failures.append("T8 path != blendedFromLegacy (got \(p.path.rawValue))") }
+            if abs((p.blended ?? 0) - 1.0) > 1e-4 { failures.append("T8 blended != 1.0 (got \(p.blended ?? .nan))") }
+        }
+
+        // Test 9 — mixed pair (one refused, one native) takes
+        // `.blendedFromLegacy`. Half-legacy geometry is still legacy-derived
+        // so the conservative label applies.
+        do {
+            let s: [Float] = [1, 0, 0, 0]
+            let f: [Float] = [0, 1, 0, 0]
+            let a = makeNode(id: "mix-leg-a", summary: s, folksonomy: f, failureReason: "guardrail_refused")
+            let b = makeNode(id: "mix-leg-b", summary: s, folksonomy: f)
+            let p = SubstrateService.shared.pairSimilarity(a, b)
+            ran += 1
+            if p.path != .blendedFromLegacy { failures.append("T9 path != blendedFromLegacy (got \(p.path.rawValue))") }
+        }
+
+        // Test 10 — refused node with only summary (no user tags → no
+        // folksonomy embedding) pairs with another summary-bearing node via
+        // the summary-only branch, labeled `.blendedFromLegacy`. Exercises
+        // the 1-of-38 edge case the brief calls out.
+        do {
+            let s: [Float] = [1, 0, 0, 0]
+            let a = makeNode(id: "leg-summ-a", summary: s, folksonomy: nil, failureReason: "guardrail_refused")
+            let b = makeNode(id: "leg-summ-b", summary: s, folksonomy: nil)
+            let p = SubstrateService.shared.pairSimilarity(a, b)
+            ran += 1
+            if p.path != .blendedFromLegacy { failures.append("T10 path != blendedFromLegacy (got \(p.path.rawValue))") }
+            if abs((p.blended ?? 0) - 1.0) > 1e-4 { failures.append("T10 summary-only blended != summaryCos") }
+        }
+
+        // Test 11 — `PairSimilarity.Path` round-trip via String rawValue.
+        // The enum gets implicit `Codable` via its `String` raw type; this
+        // guards against a future refactor (e.g. wrapping `PairSimilarity`
+        // in a Codable diagnostic export) silently dropping the new case to
+        // a default. Mirrors the brief's "Round-trip Codable" self-test.
+        do {
+            let cases: [PairSimilarity.Path] = [
+                .blendedSummaryFolksonomy, .blendedFromLegacy, .contentFallback, .noSignal
+            ]
+            for c in cases {
+                let encoded = c.rawValue
+                guard let decoded = PairSimilarity.Path(rawValue: encoded) else {
+                    failures.append("T11 \(c.rawValue) failed to decode")
+                    continue
+                }
+                if decoded != c { failures.append("T11 \(c.rawValue) round-trip drifted to \(decoded.rawValue)") }
+            }
+            ran += 1
         }
 
         if failures.isEmpty {

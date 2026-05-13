@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// SB139 Stage 4a — Substrate-derived canvas layout service.
 ///
@@ -22,6 +23,7 @@ import Foundation
 /// `fit()` call dispatches its inner compute to `Task.detached` so we
 /// don't block main; the actor itself owns state mutation back on main.
 @available(iOS 17.0, *)
+@Observable
 @MainActor
 final class SubstrateLayoutService {
 
@@ -31,12 +33,55 @@ final class SubstrateLayoutService {
 
     private init() {}
 
+    // MARK: - Auto-fit threshold (4c1)
+
+    /// Minimum count of rankable nodes required for substrate to be applicable.
+    /// UMAP's default `n_neighbors = 15` becomes degenerate near n ≈ neighbors
+    /// (every point neighbors every other point); 30 = ~2× margin and enough
+    /// density for HDBSCAN to potentially find structure. Conservative seed,
+    /// not load-bearing — tunable as the corpus grows. `nonisolated` so it
+    /// can be referenced from default-parameter expressions evaluated off the
+    /// main actor.
+    nonisolated static let autoFitMinNodeCount: Int = 30
+
     // MARK: - State
 
     /// Currently-loaded fitted UMAP model. Nil until `load()` finds one
     /// on disk or `fit()` produces a fresh one. `project(node:)` consults
     /// this directly.
     private(set) var fittedModel: UMAPFittedModel?
+
+    /// SB139 Stage 4c1 — HDBSCAN cluster labels for the currently-loaded
+    /// fitted model's training points. Index-aligned with
+    /// `fittedModel.trainingPoints`. `-1` is the noise label. Recomputed
+    /// whenever a fit completes or a model loads; cleared on `clear()`.
+    private(set) var clusterLabels: [Int]?
+
+    /// SB139 Stage 4c1.1 — per-node HSB color, keyed by node ID. Computed
+    /// by `SubstrateColoringPass` from current placements + cluster
+    /// labels. Refreshed in lockstep with `clusterLabels` (same generation).
+    private(set) var colorHSB: [String: SubstrateColoringPass.HSB]?
+
+    /// SB139 Stage 4c1.3 — display-space canvas positions produced by the
+    /// tethered relaxation pass. Spans ALL canvas-displayed nodes (substrate
+    /// fit + non-substrate stragglers), not just substrate placements:
+    /// non-rankable/meta/unembedded nodes still need to be collision-resolved
+    /// against substrate-fit nodes or the cross-class pairs visibly overlap.
+    /// Caller (CanvasView) supplies the full truth + radii inputs; this
+    /// service just caches the output and tags it with an input fingerprint
+    /// so the next `ensureRelaxation` call skips when nothing changed.
+    private(set) var displayCanvasPositions: [String: CanvasPosition]?
+
+    /// Fingerprint of the inputs (truth positions + radii) that produced
+    /// `displayCanvasPositions`. Used to short-circuit recomputation when
+    /// the canvas re-syncs without underlying input change. Nil → no cache,
+    /// always recompute.
+    private var relaxationInputHash: Int?
+
+    /// Monotonic pulse that bumps on every fit, load, runClustering, or clear.
+    /// Views that derive layout/color from this service observe `generation`
+    /// to trigger re-renders without subscribing to specific large fields.
+    private(set) var generation: Int = 0
 
     /// Wall-clock when the loaded model was last fit or projected
     /// against. Diagnostic surface for the dev inspect view.
@@ -108,7 +153,15 @@ final class SubstrateLayoutService {
         hyperparameters: UMAPHyperparameters = .default,
         targetConstraints: TargetConstraints? = nil
     ) async throws -> UMAPFittedModel {
+        // Filter at the boundary: thin-content nodes produce false-positive
+        // cosines that pollute downstream geometry; meta-nodes are synthetic
+        // pulled-thread aggregations whose 2D placement would inflate local
+        // density around their source clusters. Same discipline as
+        // `ThreadService` and other top-K substrate consumers.
+        // TODO(SB122/universal-node-model): swap to node.provenance == nil after meta-node refactor.
         let inputs: [(nodeID: String, vector: [Float])] = allNodes.compactMap { node in
+            guard SubstrateService.shared.isRankable(node) else { return nil }
+            guard !node.isMeta else { return nil }
             guard let v = substrateVector(for: node) else { return nil }
             return (node.id, v)
         }
@@ -137,6 +190,8 @@ final class SubstrateLayoutService {
         self.fittedModel = model
         self.lastActivityAt = Date()
         try persist()
+        runClustering()
+        generation &+= 1
         return model
     }
 
@@ -192,6 +247,8 @@ final class SubstrateLayoutService {
             let model = try decoder.decode(UMAPFittedModel.self, from: data)
             self.fittedModel = model
             self.lastActivityAt = Date()
+            runClustering()
+            generation &+= 1
             return true
         } catch {
             throw UMAPError.loadFailed(underlying: error)
@@ -203,11 +260,16 @@ final class SubstrateLayoutService {
     /// refresh-undo if the snapshot is missing.
     func clear() throws {
         self.fittedModel = nil
+        self.clusterLabels = nil
+        self.colorHSB = nil
+        self.displayCanvasPositions = nil
+        self.relaxationInputHash = nil
         let url = Self.fittedModelURL()
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
         self.lastActivityAt = Date()
+        generation &+= 1
     }
 
     // MARK: - On-disk location
@@ -240,5 +302,153 @@ final class SubstrateLayoutService {
     /// can expose a "shuffle seed" affordance.
     private func defaultRNGSeed() -> [UInt64] {
         [0xA1B2C3D4E5F60718, 0x0F1E2D3C4B5A6978, 0x123456789ABCDEF0, 0xFEDCBA9876543210]
+    }
+
+    // MARK: - Clustering (SB139 Stage 4c1)
+
+    /// Per-node view emitted to the canvas: 2D coord + cluster assignment.
+    /// `clusterID == -1` is the HDBSCAN noise label. Cross-fit cluster
+    /// identity is not stable (HDBSCAN renumbers on every fit) — consumers
+    /// must treat the ID as valid only for the current `generation`.
+    struct CanvasPlacement {
+        var nodeID: String
+        var coord: SubstrateCoord2D
+        var clusterID: Int
+    }
+
+    /// Run HDBSCAN on the currently-loaded fitted model's 2D coords. Pinned
+    /// to `algorithm='generic'` (the only path implemented in 4b). Cheap
+    /// at AirPad's corpus scale — milliseconds on 200 points. Called from
+    /// `fit()` and `load()`; idempotent. No-op when no model is loaded or
+    /// the model has fewer than 2 training points (HDBSCAN precondition).
+    func runClustering(minClusterSize: Int = 5, minSamples: Int = 2) {
+        guard let model = fittedModel else {
+            clusterLabels = nil
+            colorHSB = nil
+            return
+        }
+        let pts = model.trainingPoints
+        guard pts.count >= 2 else {
+            clusterLabels = nil
+            colorHSB = nil
+            return
+        }
+        let coords: [[Double]] = pts.map { [Double($0.coord2D.x), Double($0.coord2D.y)] }
+        let result = HDBSCAN.fit(
+            coords: coords,
+            minClusterSize: minClusterSize,
+            minSamples: minSamples
+        )
+        clusterLabels = result.labels
+        // 4c1.1 — color derives from placements (truth coord + cluster). Compute
+        // once per fit/load so the canvas can read it imperatively per-node.
+        let placements = zip(pts, result.labels).map { point, label in
+            CanvasPlacement(nodeID: point.nodeID, coord: point.coord2D, clusterID: label)
+        }
+        colorHSB = SubstrateColoringPass.map(placements)
+        lastActivityAt = Date()
+    }
+
+    /// SB139 Stage 4c1 — single accessor consumed by the canvas. Returns
+    /// nil when no model is loaded or clustering hasn't run yet. The
+    /// returned array is index-aligned with the fitted model's training
+    /// points (the order UMAP fit produced); each entry pairs node ID,
+    /// 2D coord, and cluster label.
+    func canvasPlacements() -> [CanvasPlacement]? {
+        guard let model = fittedModel, let labels = clusterLabels else { return nil }
+        let pts = model.trainingPoints
+        guard pts.count == labels.count else { return nil }
+        return zip(pts, labels).map { point, label in
+            CanvasPlacement(nodeID: point.nodeID, coord: point.coord2D, clusterID: label)
+        }
+    }
+
+    // MARK: - Auto-fit lifecycle (SB139 Stage 4c1)
+
+    /// Substrate-as-baseline entry point: ensure a fitted model exists if
+    /// the corpus is large enough to warrant one. Called by the canvas on
+    /// appear when the substrate flag is on and no model is loaded.
+    ///
+    /// Behavior:
+    /// - If a model is already loaded → no-op.
+    /// - If rankable node count is below `threshold` → no-op. The canvas
+    ///   falls back to legacy layout silently per Consultation 3.
+    /// - Otherwise → run a fresh fit, persist, cluster. Caller's
+    ///   `generation` observer fires when complete.
+    ///
+    /// Errors propagate from `fit()` (input dimension mismatch,
+    /// persistence failure). Caller decides whether to surface or log.
+    func ensureFittedIfPossible(
+        allNodes: [Node],
+        threshold: Int = SubstrateLayoutService.autoFitMinNodeCount
+    ) async throws {
+        if fittedModel != nil { return }
+        let rankableCount = allNodes.reduce(into: 0) { acc, node in
+            if SubstrateService.shared.isRankable(node), !node.isMeta,
+               substrateVector(for: node) != nil {
+                acc += 1
+            }
+        }
+        guard rankableCount >= threshold else { return }
+        _ = try await fit(allNodes: allNodes)
+    }
+
+    // MARK: - Relaxation (SB139 Stage 4c1.3)
+
+    /// Compute (or reuse) the relaxed display positions for the FULL set of
+    /// canvas-displayed nodes — substrate-fit nodes' UMAP truth + non-fit
+    /// nodes' tag-driven truth — so cross-class pairs collide-resolve too.
+    ///
+    /// Caller (CanvasView) owns the input assembly: it knows which nodes are
+    /// substrate-fit (truth from `SubstrateCanvasLayoutAdapter`) and which
+    /// aren't (truth from `store.canvasLayout.positions`). This service just
+    /// runs PBD, caches the result, and fingerprints the inputs so a re-sync
+    /// without input change skips the recompute.
+    ///
+    /// `nodeRadii` is keyed by node ID, in canvas points. Missing entries
+    /// fall back to `SubstrateRelaxationPass.defaultRadius`.
+    func ensureRelaxation(
+        truthPositions: [String: CanvasPosition],
+        nodeRadii: [String: CGFloat]
+    ) {
+        guard !truthPositions.isEmpty else {
+            displayCanvasPositions = nil
+            relaxationInputHash = nil
+            return
+        }
+        let hash = Self.inputHash(truthPositions: truthPositions, nodeRadii: nodeRadii)
+        if hash == relaxationInputHash, displayCanvasPositions != nil {
+            return
+        }
+        let relaxed = SubstrateRelaxationPass.relax(
+            truthPositions: truthPositions,
+            nodeRadii: nodeRadii
+        )
+        displayCanvasPositions = relaxed
+        relaxationInputHash = hash
+        lastActivityAt = Date()
+    }
+
+    /// Deterministic fingerprint of relaxation inputs. Combines sorted node
+    /// IDs with their truth coords and radii. PBD is deterministic given
+    /// these three, so a matching fingerprint guarantees a matching output.
+    private static func inputHash(
+        truthPositions: [String: CanvasPosition],
+        nodeRadii: [String: CGFloat]
+    ) -> Int {
+        var hasher = Hasher()
+        let ids = truthPositions.keys.sorted()
+        hasher.combine(ids.count)
+        for id in ids {
+            hasher.combine(id)
+            if let p = truthPositions[id] {
+                hasher.combine(p.x)
+                hasher.combine(p.y)
+            }
+            if let r = nodeRadii[id] {
+                hasher.combine(Double(r))
+            }
+        }
+        return hasher.finalize()
     }
 }

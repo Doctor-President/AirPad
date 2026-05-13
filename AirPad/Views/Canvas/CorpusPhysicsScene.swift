@@ -2603,6 +2603,20 @@ final class CorpusPhysicsScene: SKScene {
     /// Über-nodes are not routed here — they have their own path via
     /// `makeUberNodeShape` + `sampleChildColors`, which still reads `tagColors`.
     private func bubbleColor(for node: Node) -> UIColor {
+        // SB139 Stage 4c1.1 — substrate-as-baseline color path. When the flag
+        // is on and the substrate has computed an HSB for this node, render
+        // it. Otherwise fall through to the legacy neighborhood palette so
+        // non-rankable / meta / pre-fit corpora keep their tag-driven colors.
+        if #available(iOS 17.0, *),
+           FeatureFlags.substrateLayout,
+           let hsb = SubstrateLayoutService.shared.colorHSB?[node.id] {
+            return UIColor(
+                hue: CGFloat(hsb.hue),
+                saturation: CGFloat(hsb.saturation),
+                brightness: CGFloat(hsb.brightness),
+                alpha: 1.0
+            )
+        }
         guard let neighborhoodID = neighborhoodCache?.neighborhoodID(forNodeID: node.id) else {
             return Self.unattachedNeutral
         }

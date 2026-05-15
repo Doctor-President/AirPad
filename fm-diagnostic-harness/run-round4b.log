@@ -1,0 +1,27 @@
+Building for debugging...
+[0/3] Write swift-version-5D9F918B9D1672F1.txt
+Build of product 'Harness' complete! (0.13s)
+=== FM Tagging Diagnostic Harness — Round 4b (centering + first-token) ===
+Loaded Round 4 envelope: embedder=NLContextualEmbedding(language: .english) [5C45D94E-BAB4-4927-94B6-8B5745C46289 rev=1] dim=512 records=20
+NLContextualEmbedding loaded for first-token pass (assets cached from Round 4).
+  first-token [1/20] C57169F2 CSF
+  first-token [2/20] 70A66523 CSF
+  first-token [3/20] 0A0DB1DA CSF
+  first-token [4/20] 1E9C4DEF CSF
+  first-token [5/20] 42B8C8DB CSF
+  first-token [6/20] 3B5584B8 CSF
+  first-token [7/20] 6215BD85 CSF
+  first-token [8/20] 18C0ADA0 CSF
+  first-token [9/20] 0638A25E CSF
+  first-token [10/20] DF6B5E4B CSF
+  first-token [11/20] 56C645B8 CSF
+  first-token [12/20] DDC66F15 CSF
+  first-token [13/20] 948C90CD CSF
+  first-token [14/20] 09C7E791 CSF
+  first-token [15/20] DEA2B9DB CSF
+  first-token [16/20] 9C8F8D6F CSF
+  first-token [17/20] 7735A62F CSF
+  first-token [18/20] 4B5E9285 CSF
+  first-token [19/20] FF43DCC8 CSF
+  first-token [20/20] E7BCE684 C··
+Wrote summary-round4b.md.

@@ -1,0 +1,7 @@
+venv/
+results/
+fixtures/corpus_post_umap_filtered.json
+__pycache__/
+*.pyc
+*.tmp
+.DS_Store

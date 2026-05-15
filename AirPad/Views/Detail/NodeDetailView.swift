@@ -22,6 +22,7 @@ struct NodeDetailView: View {
     @State private var captureMode: CaptureMode? = nil
     @State private var showPromoteConfirmation = false
     @State private var showingNewTagSheet = false
+    @State private var showDeleteConfirmation = false
 
     @State private var bgPhase: Double = 0
 
@@ -115,6 +116,21 @@ struct NodeDetailView: View {
         } message: {
             Text("This makes it a permanent part of your corpus. Can't be undone.")
         }
+        .confirmationDialog(
+            "Delete this node?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await store.deleteNode(id: nodeID)
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the node and all its items. Can't be undone.")
+        }
         .sheet(item: $captureMode) { mode in
             switch mode {
             case .voice:  VoiceCaptureSheet(targetNodeID: nodeID)
@@ -190,6 +206,14 @@ struct NodeDetailView: View {
                 }
                 .fontWeight(.semibold)
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
         }
     }
 
@@ -205,22 +229,16 @@ struct NodeDetailView: View {
                 }
                 // Add from vocabulary
                 Menu {
-                    let available = store.tags.filter { !editedTags.contains($0.name) }
-                    if !available.isEmpty {
-                        ForEach(available) { tag in
-                            Button(tag.name) {
-                                if !editedTags.contains(tag.name) {
-                                    editedTags.append(tag.name)
-                                }
+                    TagPickerMenuContent(
+                        tags: store.tags,
+                        excludeNames: Set(editedTags),
+                        onPickExisting: { name in
+                            if !editedTags.contains(name) {
+                                editedTags.append(name)
                             }
-                        }
-                        Divider()
-                    }
-                    Button {
-                        showingNewTagSheet = true
-                    } label: {
-                        Label("New tag…", systemImage: "plus")
-                    }
+                        },
+                        onAddNew: { showingNewTagSheet = true }
+                    )
                 } label: {
                     Label("Add tag", systemImage: "plus")
                         .font(.caption.weight(.semibold))

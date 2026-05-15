@@ -29,6 +29,24 @@ struct SubstrateInspectView: View {
     // re-enables.
     @AppStorage("ff.substrateRelaxation") private var substrateRelaxationFlag = true
 
+    // Strands — bound to FeatureFlags.strandSnap + StrandService tunables.
+    // Doubles persist directly to the keys StrandService reads via
+    // UserDefaults.standard.double(forKey:). Default 0 ⇒ service default
+    // (the service falls back when stored value is 0/missing).
+    @AppStorage("ff.strandSnap") private var strandSnapFlag = false
+    @AppStorage("strand.ringRadiusMultiplier") private var strandRingRadiusMultiplier: Double = 0
+    @AppStorage("strand.minAngularSeparationDeg") private var strandMinAngularSeparationDeg: Double = 0
+    @AppStorage("strand.blendedThreshold") private var strandBlendedThreshold: Double = 0
+    @AppStorage("strand.contentThreshold") private var strandContentThreshold: Double = 0
+    @AppStorage("strand.dimAlpha") private var strandDimAlpha: Double = 0
+    @AppStorage("strand.focalScaleMultiplier") private var strandFocalScaleMultiplier: Double = 0
+    @State private var strandRingRadiusMultiplierText: String = ""
+    @State private var strandMinAngularSeparationText: String = ""
+    @State private var strandBlendedThresholdText: String = ""
+    @State private var strandContentThresholdText: String = ""
+    @State private var strandDimAlphaText: String = ""
+    @State private var strandFocalScaleMultiplierText: String = ""
+
     @State private var selectedNodeID: String? = nil
     @State private var pairLeftID: String? = nil
     @State private var pairRightID: String? = nil
@@ -123,6 +141,8 @@ struct SubstrateInspectView: View {
                     substrateLayoutSection
                     Divider().background(Color.white.opacity(0.1))
                     substrateClusterSection
+                    Divider().background(Color.white.opacity(0.1))
+                    strandsSection
                     Divider().background(Color.white.opacity(0.1))
                     exportSection
                 }
@@ -460,6 +480,96 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+        }
+    }
+
+    // MARK: - Strands
+
+    private var strandsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Strands — engaged-state ring")
+            Toggle(isOn: $strandSnapFlag) {
+                Text("FeatureFlags.strandSnap")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .tint(.purple)
+
+            strandTunableRow(
+                label: "ring_radius_mult",
+                placeholder: "1.6",
+                text: $strandRingRadiusMultiplierText,
+                store: $strandRingRadiusMultiplier
+            )
+            strandTunableRow(
+                label: "min_sep_deg",
+                placeholder: "30",
+                text: $strandMinAngularSeparationText,
+                store: $strandMinAngularSeparationDeg
+            )
+            strandTunableRow(
+                label: "blended_thresh",
+                placeholder: "0.50",
+                text: $strandBlendedThresholdText,
+                store: $strandBlendedThreshold
+            )
+            strandTunableRow(
+                label: "content_thresh",
+                placeholder: "0.60",
+                text: $strandContentThresholdText,
+                store: $strandContentThreshold
+            )
+            strandTunableRow(
+                label: "dim_alpha",
+                placeholder: "0.30",
+                text: $strandDimAlphaText,
+                store: $strandDimAlpha
+            )
+            strandTunableRow(
+                label: "focal_scale_mult",
+                placeholder: "0.40",
+                text: $strandFocalScaleMultiplierText,
+                store: $strandFocalScaleMultiplier
+            )
+        }
+        .onAppear {
+            strandRingRadiusMultiplierText = strandRingRadiusMultiplier > 0 ? String(strandRingRadiusMultiplier) : ""
+            strandMinAngularSeparationText = strandMinAngularSeparationDeg > 0 ? String(strandMinAngularSeparationDeg) : ""
+            strandBlendedThresholdText = strandBlendedThreshold > 0 ? String(strandBlendedThreshold) : ""
+            strandContentThresholdText = strandContentThreshold > 0 ? String(strandContentThreshold) : ""
+            strandDimAlphaText = strandDimAlpha > 0 ? String(strandDimAlpha) : ""
+            strandFocalScaleMultiplierText = strandFocalScaleMultiplier > 0 ? String(strandFocalScaleMultiplier) : ""
+        }
+    }
+
+    /// Numeric tunable row. Empty text or unparseable input ⇒ writes 0 to the
+    /// backing AppStorage, which StrandService reads as "use default."
+    private func strandTunableRow(
+        label: String,
+        placeholder: String,
+        text: Binding<String>,
+        store: Binding<Double>
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 110, alignment: .leading)
+            TextField(placeholder, text: text)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white)
+                .keyboardType(.decimalPad)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: 80)
+                .onChange(of: text.wrappedValue) { _, new in
+                    store.wrappedValue = Double(new) ?? 0
+                }
+            Text(text.wrappedValue.isEmpty ? "default \(placeholder)" : "")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.35))
         }
     }
 

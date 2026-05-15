@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NodePickerSheet: View {
-    @Binding var selectedNodeID: String?
+    let onSelect: (Node) -> Void
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -10,7 +10,7 @@ struct NodePickerSheet: View {
             List {
                 ForEach(store.nodes.prefix(20)) { node in
                     Button {
-                        selectedNodeID = node.id
+                        onSelect(node)
                         dismiss()
                     } label: {
                         HStack(spacing: 12) {
@@ -30,10 +30,6 @@ struct NodePickerSheet: View {
                                     .foregroundStyle(.white.opacity(0.4))
                             }
                             Spacer()
-                            if selectedNodeID == node.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.white)
-                            }
                         }
                     }
                     .listRowBackground(Color.white.opacity(0.05))
@@ -42,7 +38,7 @@ struct NodePickerSheet: View {
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
             .background(Color.black.ignoresSafeArea())
-            .navigationTitle("Add to Node")
+            .navigationTitle("Recent Nodes")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(.black, for: .navigationBar)
@@ -51,13 +47,6 @@ struct NodePickerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(.white.opacity(0.7))
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("New Node") {
-                        selectedNodeID = nil
-                        dismiss()
-                    }
-                    .foregroundStyle(.white.opacity(0.7))
                 }
             }
         }

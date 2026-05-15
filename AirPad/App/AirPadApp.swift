@@ -8,6 +8,7 @@ struct AirPadApp: App {
 
     @State private var store = CorpusStore()
     @State private var quarantineStore = QuarantineStore()
+    @State private var selectionService = SelectionService()
     private let router: AppRouter
 
     init() {
@@ -22,6 +23,7 @@ struct AirPadApp: App {
                 .environment(store)
                 .environment(quarantineStore)
                 .environment(router)
+                .environment(selectionService)
                 .task {
                     store.quarantineStore = quarantineStore
                     await store.setup()

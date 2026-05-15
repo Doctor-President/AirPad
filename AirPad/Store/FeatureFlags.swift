@@ -11,6 +11,7 @@ enum FeatureFlags {
     private static let substrateOnCaptureKey = "ff.substrateOnCapture"
     private static let substrateLayoutKey = "ff.substrateLayout"
     private static let substrateRelaxationKey = "ff.substrateRelaxation"
+    private static let strandSnapKey = "ff.strandSnap"
 
     /// SB126 Stage 2 — when true, `processNodeWithAI` runs the corpus-aware
     /// path (deterministic neighborhood prefilter + corpus-context FM call).
@@ -56,5 +57,14 @@ enum FeatureFlags {
             return UserDefaults.standard.bool(forKey: substrateRelaxationKey)
         }
         set { UserDefaults.standard.set(newValue, forKey: substrateRelaxationKey) }
+    }
+
+    /// Strands — when true, engaged-state entry snaps the focal's top
+    /// substrate neighbors onto a concentric ring around it (and snaps them
+    /// back on disengage). Default off until on-device validation; flip from
+    /// the inspect view.
+    static var strandSnap: Bool {
+        get { UserDefaults.standard.bool(forKey: strandSnapKey) }
+        set { UserDefaults.standard.set(newValue, forKey: strandSnapKey) }
     }
 }

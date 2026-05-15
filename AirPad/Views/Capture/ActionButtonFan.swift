@@ -14,14 +14,9 @@ struct ActionButtonFan: View {
     let onCamera:        () -> Void
     let onText:          () -> Void
     let onNodePicker:    () -> Void    // opens the recent-node tray
-    let onAddToRecent:   () -> Void    // immediately targets the most-recent node
 
     private let fanRadius: CGFloat = 100
     private let bubbleSize: CGFloat = 52
-
-    // Extra bottom padding added to the inner ZStack when the fan is open.
-    // Lifts the + button and fan above the strip (which sits at padding(.bottom, 40)).
-    private let expandedLift: CGFloat = 88
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -36,25 +31,6 @@ struct ActionButtonFan: View {
                     .contentShape(Rectangle())
                     .onTapGesture { collapse() }
                     .transition(.opacity)
-            }
-
-            // Bottom strip: Add to Recent | New Node — just above safe area, always below fan
-            if isExpanded {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        StripButton(label: "Add to Recent", icon: "arrow.up.circle") {
-                            onAddToRecent(); collapse()
-                        }
-                        StripButton(label: "New Node", icon: "plus.circle.fill", isPrimary: true) {
-                            collapse()  // default behavior — fan capture goes to new node
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.bottom, 40)   // just above home-indicator safe area
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
             // Recents circle — left of + button at the same vertical level when expanded
@@ -79,9 +55,7 @@ struct ActionButtonFan: View {
                             }
                         }
                         .padding(.leading, 28)
-                        // Match the inner ZStack's expanded bottom padding (24 base + 88 lift = 112)
-                        // so the Recents circle center aligns vertically with the + button center.
-                        .padding(.bottom, 112)
+                        .padding(.bottom, 24)
                         .bubbleTransition(delay: 0.12)
 
                         Spacer()
@@ -90,7 +64,6 @@ struct ActionButtonFan: View {
             }
 
             // Capture bubbles + main button, anchored to bottom-right.
-            // expandedLift raises the whole group above the strip when the fan is open.
             ZStack(alignment: .bottomTrailing) {
                 if isExpanded {
                     // Arc: 90° (straight up), 130° (up-left), 180° (pure left).
@@ -141,7 +114,7 @@ struct ActionButtonFan: View {
             .padding(.top, 24)
             .padding(.leading, 24)
             .padding(.trailing, 24)
-            .padding(.bottom, 24 + (isExpanded ? expandedLift : 0))
+            .padding(.bottom, 24)
         }
     }
 
@@ -187,31 +160,6 @@ private struct FanBubble: View {
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.white.opacity(0.75))
             }
-        }
-    }
-}
-
-// MARK: - Bottom strip button
-
-private struct StripButton: View {
-    let label: String
-    let icon: String
-    var isPrimary = false
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
-                Text(label)
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(isPrimary ? .black : .white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(isPrimary ? .white : .white.opacity(0.15))
-            .clipShape(Capsule())
         }
     }
 }

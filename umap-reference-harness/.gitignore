@@ -1,0 +1,5 @@
+build/
+results/
+fixtures/corpus_snapshot.json
+*.tmp
+.DS_Store

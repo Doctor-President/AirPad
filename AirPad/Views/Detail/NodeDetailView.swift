@@ -399,7 +399,7 @@ private struct ItemRow: View {
 
     private var audioRow: some View {
         VStack(alignment: .leading, spacing: 10) {
-            AudioPlayerRow(item: item, nodeID: nodeID)
+            VoiceWaveformPlayer(item: item, nodeID: nodeID)
             if let transcript = item.transcript, !transcript.isEmpty {
                 Text(transcript)
                     .font(.caption)
@@ -530,66 +530,387 @@ private struct ItemRow: View {
     }
 }
 
-// MARK: - Audio player row
+// MARK: - Voice waveform player
 
-private struct AudioPlayerRow: View {
+private struct VoiceWaveformPlayer: View {
     let item: NodeItem
     let nodeID: String
 
     @Environment(CorpusStore.self) private var store
-    @State private var player: AVAudioPlayer? = nil
-    @State private var isPlaying = false
-    @State private var url: URL? = nil
+    @State private var controller = AudioPlaybackController()
+    @State private var peaks: [Float] = []
+    @State private var isDragging = false
+
+    private static let barCount = 56
+    private static let dragActivationThreshold: CGFloat = 5
 
     var body: some View {
-        HStack(spacing: 14) {
-            Button {
-                togglePlayback()
-            } label: {
-                Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.white)
-            }
+        HStack(spacing: 12) {
+            scrubbableWaveform
 
-            VStack(alignment: .leading, spacing: 3) {
-                if let duration = item.durationSeconds {
-                    Text(formatDuration(duration))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.6))
-                }
+            if let duration = item.durationSeconds {
+                Text(formatDuration(duration))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .monospacedDigit()
+                    .frame(minWidth: 40, alignment: .trailing)
             }
-            Spacer()
         }
         .padding(12)
         .background(Color.white.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .onAppear { loadURL() }
-    }
-
-    private func loadURL() {
-        Task {
-            url = await store.itemFileURL(for: item, nodeID: nodeID)
+        .task {
+            await load()
+        }
+        .onDisappear {
+            controller.stop()
         }
     }
 
-    private func togglePlayback() {
-        guard let url else { return }
-        if isPlaying {
-            player?.pause()
-            isPlaying = false
-        } else {
-            if player == nil {
-                player = try? AVAudioPlayer(contentsOf: url)
-                player?.prepareToPlay()
+    private var scrubbableWaveform: some View {
+        GeometryReader { geo in
+            ZStack {
+                Color.clear
+                waveformVisual
             }
-            player?.play()
-            isPlaying = true
+            .contentShape(Rectangle())
+            .gesture(scrubGesture(width: geo.size.width))
         }
+        .frame(maxWidth: .infinity, minHeight: 44)
+    }
+
+    @ViewBuilder
+    private var waveformVisual: some View {
+        if peaks.isEmpty {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.white.opacity(0.18))
+                .frame(height: 2)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0,
+                                    paused: !controller.isPlaying && !isDragging)) { _ in
+                WaveformBars(peaks: peaks, progress: controller.progress)
+            }
+            .frame(height: 32)
+        }
+    }
+
+    private func scrubGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let moved = abs(value.translation.width) > Self.dragActivationThreshold
+                    || abs(value.translation.height) > Self.dragActivationThreshold
+                if moved { isDragging = true }
+                if isDragging, width > 0 {
+                    let p = max(0, min(1, Double(value.location.x / width)))
+                    controller.seek(toProgress: p)
+                }
+            }
+            .onEnded { _ in
+                if !isDragging {
+                    controller.toggle()
+                }
+                isDragging = false
+            }
+    }
+
+    private func load() async {
+        guard let url = await store.itemFileURL(for: item, nodeID: nodeID) else { return }
+        controller.prepare(url: url)
+        let computed = await Self.loadOrComputePeaks(audioURL: url, barCount: Self.barCount)
+        await MainActor.run { peaks = computed }
     }
 
     private func formatDuration(_ seconds: Double) -> String {
-        let s = Int(seconds)
+        let s = Int(seconds.rounded())
         return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    // MARK: - Peaks pipeline
+
+    private struct CachedPeaks: Codable {
+        let version: Int
+        let barCount: Int
+        let peaks: [Float]
+    }
+
+    private static let peaksFormatVersion = 1
+
+    private static func loadOrComputePeaks(audioURL: URL, barCount: Int) async -> [Float] {
+        let peaksURL = audioURL.deletingPathExtension().appendingPathExtension("peaks")
+
+        if let data = try? Data(contentsOf: peaksURL),
+           let cached = try? JSONDecoder().decode(CachedPeaks.self, from: data),
+           cached.version == peaksFormatVersion,
+           cached.barCount == barCount,
+           cached.peaks.count == barCount {
+            return cached.peaks
+        }
+
+        let computed = await computePeaks(audioURL: audioURL, barCount: barCount)
+        if computed.count == barCount {
+            let cached = CachedPeaks(version: peaksFormatVersion, barCount: barCount, peaks: computed)
+            if let data = try? JSONEncoder().encode(cached) {
+                try? data.write(to: peaksURL, options: .atomic)
+            }
+        }
+        return computed
+    }
+
+    private static func computePeaks(audioURL: URL, barCount: Int) async -> [Float] {
+        await Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: audioURL)
+            guard let track = try? await asset.loadTracks(withMediaType: .audio).first else {
+                return [Float]()
+            }
+
+            let outputSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsNonInterleaved: false
+            ]
+
+            guard let reader = try? AVAssetReader(asset: asset) else { return [Float]() }
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: outputSettings)
+            reader.add(output)
+            guard reader.startReading() else { return [Float]() }
+
+            let durationCMTime = (try? await asset.load(.duration)) ?? .zero
+            let durationSeconds = durationCMTime.seconds
+            var sampleRate: Double = 44100
+            if let formats = try? await track.load(.formatDescriptions), let desc = formats.first {
+                if let basic = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
+                    sampleRate = basic.pointee.mSampleRate
+                }
+            }
+            let totalSamples = max(barCount, Int(durationSeconds * sampleRate))
+            let samplesPerBar = max(1, totalSamples / barCount)
+
+            var bars = [Float](repeating: 0, count: barCount)
+            var barIndex = 0
+            var sampleInBar = 0
+            var maxInBar: Float = 0
+
+            while reader.status == .reading, barIndex < barCount {
+                guard let buffer = output.copyNextSampleBuffer(),
+                      let blockBuffer = CMSampleBufferGetDataBuffer(buffer) else { break }
+
+                let length = CMBlockBufferGetDataLength(blockBuffer)
+                var data = Data(count: length)
+                data.withUnsafeMutableBytes { raw in
+                    guard let base = raw.baseAddress else { return }
+                    CMBlockBufferCopyDataBytes(
+                        blockBuffer,
+                        atOffset: 0,
+                        dataLength: length,
+                        destination: base
+                    )
+                }
+                CMSampleBufferInvalidate(buffer)
+
+                data.withUnsafeBytes { raw in
+                    let pcm = raw.bindMemory(to: Int16.self)
+                    for s in pcm {
+                        let v = Float(abs(Int(s))) / Float(Int16.max)
+                        if v > maxInBar { maxInBar = v }
+                        sampleInBar += 1
+                        if sampleInBar >= samplesPerBar && barIndex < barCount {
+                            bars[barIndex] = maxInBar
+                            barIndex += 1
+                            sampleInBar = 0
+                            maxInBar = 0
+                        }
+                    }
+                }
+            }
+            while barIndex < barCount {
+                bars[barIndex] = 0
+                barIndex += 1
+            }
+
+            let peak = bars.max() ?? 0
+            if peak > 0 {
+                bars = bars.map { $0 / peak }
+            }
+            // Floor so quiet segments still show a visible tick.
+            return bars.map { max(0.08, $0) }
+        }.value
+    }
+}
+
+// MARK: - Waveform bars
+
+private struct WaveformBars: View {
+    let peaks: [Float]
+    let progress: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            let barCount = peaks.count
+            let spacing: CGFloat = 2
+            let totalSpacing = CGFloat(max(0, barCount - 1)) * spacing
+            let barWidth = max(1, (geo.size.width - totalSpacing) / CGFloat(max(1, barCount)))
+            let height = geo.size.height
+            let minBarHeight: CGFloat = 3
+            let progressThreshold = progress * Double(barCount)
+            let kleinBlue = Color(hexString: "1B59C2")
+            let rest = Color.white.opacity(0.30)
+
+            HStack(alignment: .center, spacing: spacing) {
+                ForEach(0..<barCount, id: \.self) { i in
+                    let h = max(minBarHeight, CGFloat(peaks[i]) * height)
+                    let played = Double(i) < progressThreshold
+                    RoundedRectangle(cornerRadius: barWidth / 2)
+                        .fill(played ? kleinBlue : rest)
+                        .frame(width: barWidth, height: h)
+                }
+            }
+            .frame(width: geo.size.width, height: height, alignment: .center)
+        }
+    }
+}
+
+// MARK: - Audio playback controller
+
+@Observable
+@MainActor
+private final class AudioPlaybackController: NSObject, AVAudioPlayerDelegate {
+    var isPlaying = false
+    var currentTime: TimeInterval = 0
+    var duration: TimeInterval = 0
+
+    private var player: AVAudioPlayer?
+    private var url: URL?
+    private var pollTimer: Timer?
+
+    var progress: Double {
+        duration > 0 ? min(1.0, currentTime / duration) : 0
+    }
+
+    func prepare(url: URL) {
+        self.url = url
+    }
+
+    func toggle() {
+        guard let url else { return }
+        if isPlaying {
+            pause()
+        } else {
+            play(url: url)
+        }
+    }
+
+    func stop() {
+        player?.stop()
+        player?.currentTime = 0
+        isPlaying = false
+        currentTime = 0
+        stopPolling()
+        deactivateSession()
+    }
+
+    /// Seek to a fractional position in [0, 1]. Lazily creates the player if needed
+    /// so scrubbing works before the user has ever pressed play. Does not start playback.
+    func seek(toProgress progress: Double) {
+        guard let url else { return }
+        if player == nil {
+            guard configureSessionForPlayback() else { return }
+            do {
+                let p = try AVAudioPlayer(contentsOf: url)
+                p.delegate = self
+                p.prepareToPlay()
+                player = p
+                duration = p.duration
+            } catch {
+                print("[VoicePlayback] Player init for seek failed: \(error)")
+                return
+            }
+        }
+        guard let player else { return }
+        let clamped = max(0, min(1, progress))
+        let target = clamped * player.duration
+        player.currentTime = target
+        currentTime = target
+    }
+
+    private func play(url: URL) {
+        guard configureSessionForPlayback() else { return }
+
+        if player == nil {
+            do {
+                let p = try AVAudioPlayer(contentsOf: url)
+                p.delegate = self
+                p.prepareToPlay()
+                player = p
+                duration = p.duration
+            } catch {
+                print("[VoicePlayback] Player init failed: \(error)")
+                return
+            }
+        }
+
+        guard let player else { return }
+        player.play()
+        isPlaying = true
+        startPolling()
+    }
+
+    private func pause() {
+        player?.pause()
+        isPlaying = false
+        stopPolling()
+    }
+
+    private func configureSessionForPlayback() -> Bool {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .spokenAudio, options: [])
+            try session.setActive(true)
+            return true
+        } catch {
+            print("[VoicePlayback] Audio session configure failed: \(error)")
+            return false
+        }
+    }
+
+    private func deactivateSession() {
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func startPolling() {
+        stopPolling()
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let p = self.player else { return }
+                self.currentTime = p.currentTime
+            }
+        }
+    }
+
+    private func stopPolling() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
+
+    // MARK: - AVAudioPlayerDelegate
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.player?.currentTime = 0
+            self.currentTime = 0
+            self.isPlaying = false
+            self.stopPolling()
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        if let error { print("[VoicePlayback] Decode error: \(error)") }
+        Task { @MainActor [weak self] in
+            self?.isPlaying = false
+            self?.stopPolling()
+        }
     }
 }
 

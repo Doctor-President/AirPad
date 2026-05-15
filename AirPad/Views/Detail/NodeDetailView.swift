@@ -344,7 +344,6 @@ private struct ItemRow: View {
     @Environment(CorpusStore.self) private var store
     @State private var imageURL: URL? = nil
     @State private var editingText = ""
-    @State private var isEditingText = false
     @FocusState private var textEditorFocused: Bool
 
     var body: some View {
@@ -368,29 +367,27 @@ private struct ItemRow: View {
 
     private var textRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if isEditingText {
-                TextEditor(text: $editingText)
-                    .scrollContentBackground(.hidden)
-                    .foregroundStyle(.white)
-                    .font(.body)
-                    .frame(minHeight: 80)
-                    .padding(12)
-                    .background(Color.white.opacity(0.07))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .focused($textEditorFocused)
-            } else {
-                Text(item.content ?? "")
-                    .font(.body)
-                    .foregroundStyle(.white.opacity(0.85))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(Color.white.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .onTapGesture {
-                        editingText = item.content ?? ""
-                        isEditingText = true
+            TextField("", text: $editingText, axis: .vertical)
+                .font(.body)
+                .foregroundStyle(.white)
+                .tint(.white)
+                .padding(12)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .focused($textEditorFocused)
+                .onAppear {
+                    editingText = item.content ?? ""
+                }
+                .onChange(of: textEditorFocused) { _, isFocused in
+                    guard !isFocused, editingText != (item.content ?? "") else { return }
+                    Task {
+                        await store.updateTextItem(
+                            itemID: item.id,
+                            newContent: editingText,
+                            nodeID: nodeID
+                        )
                     }
-            }
+                }
             itemMeta
         }
     }

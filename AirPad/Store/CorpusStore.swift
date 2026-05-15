@@ -386,6 +386,19 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Updates the text content of an existing text-type item in a node.
+    /// No-op if the node or item is missing, or the content is unchanged.
+    func updateTextItem(itemID: String, newContent: String, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .text,
+              updated.items[itemIdx].content != newContent else { return }
+        updated.items[itemIdx].content = newContent
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     func appendItemToNodeWithAudio(nodeID: String, item: NodeItem, audioURL: URL, audioItemID: String) async {
         do {
             try await service.saveItemFile(

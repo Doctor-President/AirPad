@@ -344,7 +344,6 @@ private struct ItemRow: View {
     @Environment(CorpusStore.self) private var store
     @State private var imageURL: URL? = nil
     @State private var editingText = ""
-    @FocusState private var textEditorFocused: Bool
 
     var body: some View {
         switch item.type {
@@ -367,19 +366,10 @@ private struct ItemRow: View {
 
     private var textRow: some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextField("", text: $editingText, axis: .vertical)
-                .font(.body)
-                .foregroundStyle(.white)
-                .tint(.white)
-                .padding(12)
-                .background(Color.white.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .focused($textEditorFocused)
-                .onAppear {
-                    editingText = item.content ?? ""
-                }
-                .onChange(of: textEditorFocused) { _, isFocused in
-                    guard !isFocused, editingText != (item.content ?? "") else { return }
+            RichTextEditor(
+                text: $editingText,
+                onEndEditing: {
+                    guard editingText != (item.content ?? "") else { return }
                     Task {
                         await store.updateTextItem(
                             itemID: item.id,
@@ -388,6 +378,13 @@ private struct ItemRow: View {
                         )
                     }
                 }
+            )
+            .padding(12)
+            .background(Color.white.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .onAppear {
+                editingText = item.content ?? ""
+            }
             itemMeta
         }
     }

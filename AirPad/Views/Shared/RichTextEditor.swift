@@ -267,6 +267,16 @@ struct RichTextEditor: UIViewRepresentable {
             // which covers built-in typing and our explicit captureUndoSnapshot calls.
             state.canUndo = textView.undoManager?.canUndo ?? false
             state.canRedo = textView.undoManager?.canRedo ?? false
+
+            // typingAttributes inherit from the preceding char. If that char is a `•`
+            // carrying `.airpadBulletGlyph`, freshly typed content would silently inherit
+            // the marker — which the encoder would later rewrite to `-`. Strip it so the
+            // marker stays scoped to the actual bullet glyph chars.
+            if textView.typingAttributes[.airpadBulletGlyph] != nil {
+                var typing = textView.typingAttributes
+                typing.removeValue(forKey: .airpadBulletGlyph)
+                textView.typingAttributes = typing
+            }
         }
 
         // MARK: List parsing (step 5)
@@ -297,7 +307,17 @@ struct RichTextEditor: UIViewRepresentable {
             }
             let indentChars = indent * 2
 
-            if work.hasPrefix("- ") {
+            // `▪\u{FE0E} ` is 3 UTF-16 code units (glyph + VS + space); the other
+            // bullet forms are 2. Check the VS-bearing form first so it doesn't get
+            // shadowed by a more-permissive prefix.
+            if work.hasPrefix("▪\u{FE0E} ") {
+                return LineInfo(indent: indent, kind: .bullet, prefixLength: indentChars + 3)
+            }
+            if work.hasPrefix("- ")
+                || work.hasPrefix("• ")
+                || work.hasPrefix("◦ ")
+                || work.hasPrefix("▪ ")
+            {
                 return LineInfo(indent: indent, kind: .bullet, prefixLength: indentChars + 2)
             }
 
@@ -359,7 +379,14 @@ struct RichTextEditor: UIViewRepresentable {
                 let line = substring ?? ""
                 paragraphs.append((substringRange, line, Self.parseLine(line)))
             }
-            guard !paragraphs.isEmpty else { return }
+            // Empty workingRange — cursor sits on a trailing empty line (or the whole
+            // document is empty). `enumerateSubstrings` emits nothing in that case, so
+            // synthesize a zero-length paragraph so the mutation still inserts the prefix
+            // at the cursor location.
+            if paragraphs.isEmpty {
+                let emptyInfo = LineInfo(indent: 0, kind: nil, prefixLength: 0)
+                paragraphs.append((NSRange(location: workingRange.location, length: 0), "", emptyInfo))
+            }
 
             // Decide direction for toggleKind: if every paragraph already matches the target
             // kind, the toggle removes; else it applies.
@@ -413,7 +440,10 @@ struct RichTextEditor: UIViewRepresentable {
                 let newPrefix: String
                 switch newKind {
                 case .bullet:
-                    newPrefix = String(repeating: "  ", count: newIndent) + "- "
+                    // Display-form bullet glyph. The `airpadBulletGlyph` marker is added
+                    // below so the markdown encoder substitutes it back to `-` for storage.
+                    let glyph = MarkdownCodec.bulletGlyph(forIndent: newIndent)
+                    newPrefix = String(repeating: "  ", count: newIndent) + glyph + " "
                 case .numbered:
                     // Placeholder "1." — the renumbering pass fixes the actual number afterward.
                     newPrefix = String(repeating: "  ", count: newIndent) + "1. "
@@ -424,7 +454,25 @@ struct RichTextEditor: UIViewRepresentable {
                 // Replace old prefix with new prefix on this paragraph.
                 let oldPrefixRange = NSRange(location: shifted.location, length: info.prefixLength)
                 mutable.replaceCharacters(in: oldPrefixRange, with: newPrefix)
-                runningDelta += newPrefix.count - info.prefixLength
+
+                // `replaceCharacters(in:with: String)` inherits attributes from the surrounding
+                // text, which can carry a stale bullet marker onto the new prefix. Scrub the
+                // whole new-prefix range first, then tag only the `•` glyph (if present).
+                let newPrefixLength = (newPrefix as NSString).length
+                let newPrefixRange = NSRange(location: shifted.location, length: newPrefixLength)
+                if newPrefixLength > 0 {
+                    mutable.removeAttribute(.airpadBulletGlyph, range: newPrefixRange)
+                }
+                if case .bullet = newKind {
+                    let glyphLen = MarkdownCodec.bulletGlyphUTF16Length(forIndent: newIndent)
+                    let bulletLocation = shifted.location + newIndent * 2
+                    let bulletRange = NSRange(location: bulletLocation, length: glyphLen)
+                    if bulletRange.upperBound <= mutable.length {
+                        mutable.addAttribute(.airpadBulletGlyph, value: true, range: bulletRange)
+                    }
+                }
+
+                runningDelta += newPrefixLength - info.prefixLength
             }
 
             // Run the document-wide renumbering pass so numbered blocks are 1, 2, 3...
@@ -543,7 +591,9 @@ struct RichTextEditor: UIViewRepresentable {
             let info = Self.parseLine(line)
             guard info.kind != nil else { return false }
 
-            let isEmptyListLine = (line.count == info.prefixLength)
+            // Use UTF-16 length for parity with `info.prefixLength`. `Character.count`
+            // groups `▪\u{FE0E}` as one grapheme; UTF-16 length is the right unit here.
+            let isEmptyListLine = ((line as NSString).length == info.prefixLength)
             if isEmptyListLine {
                 captureUndoSnapshot(in: textView)
                 // Empty list item + Enter → strip the prefix, exit the list, no new line.
@@ -562,15 +612,37 @@ struct RichTextEditor: UIViewRepresentable {
             captureUndoSnapshot(in: textView)
             // Otherwise: insert \n + same-indent marker (number gets renumbered after).
             let indentStr = String(repeating: "  ", count: info.indent)
+            let isBulletContinuation: Bool
             let markerStr: String
             switch info.kind! {
-            case .bullet: markerStr = "- "
-            case .numbered: markerStr = "1. "  // renumber pass corrects
+            case .bullet:
+                markerStr = MarkdownCodec.bulletGlyph(forIndent: info.indent) + " "
+                isBulletContinuation = true
+            case .numbered:
+                markerStr = "1. "  // renumber pass corrects
+                isBulletContinuation = false
             }
             let insertion = "\n" + indentStr + markerStr
 
             let mutable = NSMutableAttributedString(attributedString: textView.attributedText ?? NSAttributedString())
             mutable.replaceCharacters(in: range, with: insertion)
+
+            // Scrub any stale bullet marker inherited from surrounding text, then tag the
+            // `•` glyph (if this is a bullet continuation) so the encoder maps it to `-`.
+            let insertedLength = (insertion as NSString).length
+            let insertedRange = NSRange(location: range.location, length: insertedLength)
+            if insertedLength > 0 {
+                mutable.removeAttribute(.airpadBulletGlyph, range: insertedRange)
+            }
+            if isBulletContinuation {
+                let glyphLen = MarkdownCodec.bulletGlyphUTF16Length(forIndent: info.indent)
+                let bulletLocation = range.location + 1 + info.indent * 2  // \n + indent
+                let bulletRange = NSRange(location: bulletLocation, length: glyphLen)
+                if bulletRange.upperBound <= mutable.length {
+                    mutable.addAttribute(.airpadBulletGlyph, value: true, range: bulletRange)
+                }
+            }
+
             renumberLists(in: mutable)
             textView.attributedText = mutable
             let newCursor = range.location + (insertion as NSString).length
@@ -912,6 +984,13 @@ extension NSAttributedString.Key {
     /// Marker for inline-code spans. Detection source of truth (independent of font
     /// introspection quirks); the corresponding monospaced font is for rendering.
     static let airpadInlineCode = NSAttributedString.Key("airpadInlineCode")
+
+    /// Marker placed on a `•` character that represents a markdown `-` bullet in storage.
+    /// The textView always displays `• `; the `MarkdownCodec` strips the marker and
+    /// substitutes `-` back when encoding so the on-disk JSON remains pure markdown.
+    /// User-typed literal `•` chars (no marker) are preserved as-is — only marker-bearing
+    /// glyphs are mapped to hyphens.
+    static let airpadBulletGlyph = NSAttributedString.Key("airpadBulletGlyph")
 }
 
 // MARK: - Toolbar state
@@ -1115,8 +1194,35 @@ final class RichTextUIView: UITextView {
 /// Plain text → encode → plain text is the lossless invariant: text without attributes
 /// has no markers emitted, only escapes for reserved chars, which decode back to the
 /// original characters.
+///
+/// **Bullet glyph substitution (Stage 2.2.1):** the editor displays `• ` at the start of
+/// bulleted lines while the storage form stays `- `. The substitution is driven by the
+/// `.airpadBulletGlyph` marker attribute placed on the `•` char: encode rewrites
+/// marker-bearing `•` → `-`; decode walks paragraphs and substitutes `- ` → `• ` (adding
+/// the marker) at line start, with optional leading indent. Literal `•` chars typed by
+/// the user (no marker) are preserved as-is.
 @MainActor
 enum MarkdownCodec {
+
+    // MARK: Bullet glyph depth cascade
+    //
+    // Notes-style depth cascade — `•` at level 0, `◦` at level 1, `▪` at level 2+.
+    // `•` (U+2022) and `◦` (U+25E6) render as text by default. `▪` (U+25AA) has
+    // emoji-presentation-default on iOS — without the U+FE0E text variation selector
+    // it paints as a color emoji square rather than a plain glyph. The VS makes the
+    // depth-2 glyph 2 UTF-16 code units; consumers must use `bulletGlyphUTF16Length`
+    // rather than assuming 1.
+    static func bulletGlyph(forIndent depth: Int) -> String {
+        switch depth {
+        case 0: return "•"
+        case 1: return "◦"
+        default: return "▪\u{FE0E}"
+        }
+    }
+
+    static func bulletGlyphUTF16Length(forIndent depth: Int) -> Int {
+        return (bulletGlyph(forIndent: depth) as NSString).length
+    }
 
     // MARK: Encoding
 
@@ -1124,12 +1230,15 @@ enum MarkdownCodec {
 
     static func encode(_ attr: NSAttributedString) -> String {
         guard attr.length > 0 else { return "" }
+        // Pre-pass: strip the display-only bullet glyph substitution so the markdown
+        // we emit uses the canonical `-` storage form.
+        let normalized = substituteBulletGlyphsForStorage(attr)
         var result = ""
-        result.reserveCapacity(attr.length)
-        let nsString = attr.string as NSString
-        let fullRange = NSRange(location: 0, length: attr.length)
+        result.reserveCapacity(normalized.length)
+        let nsString = normalized.string as NSString
+        let fullRange = NSRange(location: 0, length: normalized.length)
 
-        attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
+        normalized.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             let runText = nsString.substring(with: range)
             let escaped = escape(runText)
 
@@ -1189,7 +1298,76 @@ enum MarkdownCodec {
         let result = NSMutableAttributedString()
         var state = DecoderState()
         decode(markdown, into: result, state: &state, linkURL: nil)
-        return result
+        // Post-pass: apply the display-only bullet glyph substitution so the user sees
+        // `• ` instead of literal `- ` at the start of bulleted lines.
+        return substituteBulletGlyphsForDisplay(result)
+    }
+
+    // MARK: Bullet glyph substitution (Stage 2.2.1)
+
+    /// Display-form: walk paragraphs and replace `- ` at paragraph start (with optional
+    /// `"  "` indent groups before it) with the depth-appropriate glyph (`•` / `◦` / `▪`),
+    /// marking the glyph char with `.airpadBulletGlyph` so the inverse pass can find it.
+    private static func substituteBulletGlyphsForDisplay(_ attr: NSAttributedString) -> NSAttributedString {
+        let mut = NSMutableAttributedString(attributedString: attr)
+        let ns = mut.string as NSString
+        guard ns.length > 0 else { return mut }
+        // Collect hyphen ranges first along with the indent depth so we can pick the
+        // matching glyph. Mutating during enumeration of the underlying string is fragile.
+        var hits: [(range: NSRange, indent: Int)] = []
+        ns.enumerateSubstrings(
+            in: NSRange(location: 0, length: ns.length),
+            options: .byParagraphs
+        ) { sub, range, _, _ in
+            guard let s = sub else { return }
+            let chars = Array(s)
+            var idx = 0
+            while idx + 1 < chars.count, chars[idx] == " ", chars[idx + 1] == " " {
+                idx += 2
+            }
+            if idx + 1 < chars.count, chars[idx] == "-", chars[idx + 1] == " " {
+                let depth = idx / 2
+                hits.append((NSRange(location: range.location + idx, length: 1), depth))
+            }
+        }
+        // Apply from end to start so earlier ranges stay valid. Replacements at depth 2+
+        // may grow the string (1 char `-` → 2 char `▪\u{FE0E}`); reverse-order iteration
+        // keeps earlier hit locations correct.
+        for hit in hits.reversed() {
+            let glyph = bulletGlyph(forIndent: hit.indent)
+            let glyphLen = (glyph as NSString).length
+            mut.mutableString.replaceCharacters(in: hit.range, with: glyph)
+            let glyphRange = NSRange(location: hit.range.location, length: glyphLen)
+            mut.addAttribute(.airpadBulletGlyph, value: true, range: glyphRange)
+        }
+        return mut
+    }
+
+    /// Storage-form: find chars carrying the `.airpadBulletGlyph` marker; if they are
+    /// `•` (which they should be — the marker is only ever set on `•` chars), swap
+    /// back to `-` and drop the marker. Other markers and content are left intact.
+    private static func substituteBulletGlyphsForStorage(_ attr: NSAttributedString) -> NSAttributedString {
+        let mut = NSMutableAttributedString(attributedString: attr)
+        let fullRange = NSRange(location: 0, length: mut.length)
+        var hits: [NSRange] = []
+        mut.enumerateAttribute(.airpadBulletGlyph, in: fullRange, options: []) { value, range, _ in
+            if (value as? Bool) == true {
+                hits.append(range)
+            }
+        }
+        for range in hits.reversed() {
+            let chunk = (mut.string as NSString).substring(with: range)
+            // Depth 0/1: chunk is a single glyph char (`•` or `◦`).
+            // Depth 2+: chunk is `▪\u{FE0E}` (2 UTF-16 units). Either way, if the leading
+            // char is a known bullet glyph, replace the whole marker range with `-` so the
+            // VS doesn't leak into storage.
+            let first = chunk.first
+            if first == "•" || first == "◦" || first == "▪" {
+                mut.mutableString.replaceCharacters(in: range, with: "-")
+            }
+            mut.removeAttribute(.airpadBulletGlyph, range: range)
+        }
+        return mut
     }
 
     private struct DecoderState {

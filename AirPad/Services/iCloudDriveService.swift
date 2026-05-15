@@ -72,6 +72,14 @@ actor iCloudDriveService {
         try data.write(to: nodeDir.appendingPathComponent("node.json"), options: .atomic)
     }
 
+    func deleteNode(id: String) throws {
+        let root = try requireRoot()
+        let nodeDir = root.appendingPathComponent("nodes/\(id)")
+        if FileManager.default.fileExists(atPath: nodeDir.path) {
+            try FileManager.default.removeItem(at: nodeDir)
+        }
+    }
+
     func loadAllNodes() throws -> [Node] {
         let root = try requireRoot()
         let nodesDir = root.appendingPathComponent("nodes")

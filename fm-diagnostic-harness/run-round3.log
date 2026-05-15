@@ -1,0 +1,31 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version-5D9F918B9D1672F1.txt
+Build of product 'Harness' complete! (0.13s)
+=== FM Tagging Diagnostic Harness — Round 3 (Embedding Substrate Probe) ===
+Corpus root: /Users/thomasjurgensen/Library/Mobile Documents/iCloud~com~doctorpresident~airpad/Documents
+NLEmbedding.sentenceEmbedding loaded (dim=512).
+Cached rows: A4=20, A5=20
+Sampled 20 nodes (seed=42).
+  [1/20] C57169F2 CSF Diet Coke Psychology
+  [2/20] 70A66523 CSF Sometimes a right angle is the wrong angle
+  [3/20] 0A0DB1DA CSF Episode Premise: Hole to China
+  [4/20] 1E9C4DEF CSF Action Button Reveal
+  [5/20] 42B8C8DB CSF Boomers Dividing and Multiplying
+  [6/20] 3B5584B8 CSF The Complexity of Morality in Middle-earth
+  [7/20] 6215BD85 CSF Mask Dynamics
+  [8/20] 18C0ADA0 CSF Stress Testing Router Classification Limits
+  [9/20] 0638A25E CSF Vertical Farming Future
+  [10/20] DF6B5E4B CSF Zoom-Dependent Clustering for Over-Nodes
+  [11/20] 56C645B8 CSF Topographic Canvas with Semantic Discovery
+  [12/20] DDC66F15 CSF Mirror of Truth
+  [13/20] 948C90CD CSF Episode Premise: Lights Out
+  [14/20] 09C7E791 CSF Historical Revisionism in WWII Narratives
+  [15/20] DEA2B9DB CSF Reexamining Meals: Breakfast as a Critical Meal
+  [16/20] 9C8F8D6F CSF Exploring Hate Faces on TikTok
+  [17/20] 7735A62F CSF Tomato Recipe
+  [18/20] 4B5E9285 CSF AirPad Concept
+  [19/20] FF43DCC8 CSF Queerness as Self-Expression
+  [20/20] E7BCE684 C·· Creative Storytelling and Technology
+Wrote embeddings.json (818465 bytes).
+Wrote summary-round3.md.

@@ -1,0 +1,653 @@
+[0/1] Planning build
+Building for debugging...
+[0/3] Write swift-version-5D9F918B9D1672F1.txt
+Build of product 'Harness' complete! (0.15s)
+=== FM Tagging Diagnostic Harness — Round 5 (Full-Corpus Substrate) ===
+Corpus root: /Users/thomasjurgensen/Library/Mobile Documents/iCloud~com~doctorpresident~airpad/Documents
+Loaded 206 nodes from disk.
+Loaded cache: A4=20, A5=20
+Eligible (>=20 chars): 170. Skipped (<20 chars): 36.
+
+[FM 1/170] 00500AF9 Divine Succession [content=124 chars]
+  A4 ok  4216ms folk=["10/17", "alternate", "divinity", "God", "offer", "seat", "claim", "role"]
+  A5 ok  2353ms summary="God is offering the divine role to whoever claims it first, presenting an opportunity for power and …"
+  …checkpoint written (A4=21, A5=21)
+
+[FM 2/170] 01CA8E4F Food as a Human Right [content=159 chars]
+  A4 ok  1051ms folk=["food", "human right", "shelter", "medicine", "education", "rights", "social justice", "equity"]
+  A5 ok  2060ms summary="The idea argues that food is as fundamental a human right as shelter, medicine, and education."
+
+[FM 3/170] 040DEE3D Dream Awareness [content=205 chars]
+  A4 ok  987ms folk=["dreams", "dream analysis", "dream interpretation", "dream awareness", "sleep science", "psychological exploration"]
+  A5 ok  2016ms summary="Questions if increased awareness of dreams impacts their nature or quality."
+
+[FM 5/170] 07E0DC7B ✨QuikCapture [content=177 chars]
+  A4 ok  1159ms folk=["QuikCapture", "magnifying glass", "prismatic", "quality", "behavior", "action button", "back tap", "lock screen widget", "share sheet", "capture"]
+  A5 ok  2348ms summary="An innovative app enabling effortless screen captures from any location using a unique prismatic int…"
+
+[FM 6/170] 099CD678 Light Modes and Emotion [content=149 chars]
+  A4 ok  1031ms folk=["dark mode", "light mode", "solar flare", "cucumber water", "emotional registers", "ergonomics"]
+  A5 ok  2146ms summary="Explores the concept of light modes as emotional registers rather than simple toggles."
+
+[FM 9/170] 0CC36D15 Architecture & Backend Development [content=36 chars]
+  A4 ok  775ms folk=["architecture", "backend", "idea", "concept", "design", "tech"]
+  A5 ok  2023ms summary="Focuses on backend systems and architecture, possibly exploring themes of control, design, and socie…"
+
+[FM 10/170] 0DA3D74A Emily is the best! [content=20 chars]
+  A4 ok  837ms folk=["Emily", "best", "favourite", "love", "admiration", "appreciation"]
+  A5 ok  1720ms summary="A statement declaring admiration for Emily."
+
+[FM 11/170] 1130789A Exploring Corti Keyboards in China [content=117 chars]
+  A4 ERROR 114ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ERROR 164ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+
+[FM 12/170] 1196CC2B Universal Canvas Tap Model [content=140 chars]
+  A4 ok  1207ms folk=["universal canvas", "tap model", "node centering", "scaling", "dismissal", "double tap drilling", "no toggle mode", "single tap functionality"]
+  A5 ok  1737ms summary="A single tap centers and scales the node; a double tap drills in. No separate mode or toggle."
+
+[FM 13/170] 11A4B383 Sweetgreen Harvest Bowl Recipe [content=395 chars]
+  A4 ok  1407ms folk=["Sweetgreen Harvest Bowl", "recipe", "vegetarian", "healthy", "cooking", "salad", "meal prep", "quick", "eats", "home"]
+  A5 ok  2015ms summary="A detailed recipe for a Sweetgreen Harvest Bowl knockoff, including ingredients, preparation steps, …"
+
+[FM 14/170] 13B50ADA High-End Cop Drama [content=94 chars]
+  A4 ok  894ms folk=["cops", "high-end", "subscription", "leather", "daddies"]
+  A5 ok  2257ms summary="A premium version of the cops genre, featuring stylized, leather-daddied police officers."
+
+[FM 15/170] 14F87597 Plastic Empire: A Poisoned Generation [content=80 chars]
+  A4 ok  955ms folk=["Plastic Empire", "poisoned generation", "colorectal cancer", "kids", "TikTok", "health", "awareness", "science"]
+  A5 ok  2048ms summary="Discusses colorectal cancer in children and its potential links to environmental toxins."
+
+[FM 16/170] 155C4EE3 Continuous Process [content=26 chars]
+  A4 ok  963ms folk=["idea", "process", "continuing", "development", "conceptual", "thought", "theory", "innovation"]
+  A5 ok  1758ms summary="The idea suggests an ongoing, evolving journey of growth and understanding."
+
+[FM 17/170] 155CC8BC Vet Visit Episode Premise [content=27 chars]
+  A4 ok  1282ms folk=["veterinary care", "animal health", "pet vet visit", "pet wellness", "animal care", "pet health check", "pet visit", "animal wellness"]
+  A5 ok  1822ms summary="A veterinary visit sparks curiosity and learning about health and care for pets."
+
+[FM 18/170] 15B26052 Neighborhood Gamification [content=95 chars]
+  A4 ok  1178ms folk=["high score", "neighborhood competition", "gamification", "neighborhood drama", "community interaction", "competitive spirit", "social experiment", "local rivalry"]
+  A5 ok  2072ms summary="Tom gamifies his neighborhood, leading to unintended consequences as his neighbors become overly inv…"
+
+[FM 19/170] 172AB5B7 Capture Intentions [content=26 chars]
+  A4 ok  944ms folk=["idea", "intention", "concept", "thought", "innovation", "creativity", "strategic thinking", "mindset"]
+  A5 ok  2310ms summary="This idea explores the concept of capturing intentions, possibly examining how ideas are formed, und…"
+
+[FM 20/170] 1765A743 Sports Team Loyalty and Public Policy [content=810 chars]
+  A4 ok  1842ms folk=["sports", "sports teams", "Chicago Bears", "St. Louis Rams", "Noam Chomsky", "taxpayers", "monopoly", "municipal pride", "ownership", "abusive pricing", "fan loyalty", "political commentary", "American sports culture"]
+  A5 ok  2671ms summary="The article explores why sports fans remain loyal to teams despite issues like branding, ownership o…"
+
+[FM 21/170] 17B0552D Sexual curiosity [content=161 chars]
+  A4 ERROR 139ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ERROR 177ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+
+[FM 22/170] 18750632 Gender Vampires [content=52 chars]
+  A4 ok  928ms folk=["gender", "vampires", "psychology", "harmful", "relationships", "negative"]
+  A5 ok  1780ms summary="Gender vampires are entities that drain gender from individuals."
+
+[FM 24/170] 19B04B53 Outline-format Brainstorm [content=132 chars]
+  A4 ok  860ms folk=["brainstorm", "outline", "hierarchy", "detection", "content", "structure", "idea"]
+  A5 ok  2019ms summary="An organized, hierarchical structure for developing ideas through a series of interconnected topics."
+
+[FM 25/170] 1B0042AA Peeping Tom Episode Idea [content=39 chars]
+  A4 ok  642ms folk=["peeping tom", "episode idea", "and now what"]
+  A5 ok  2880ms summary="A mystery unfolds as a detective investigates a series of peculiar occurrences linked to a local leg…"
+
+[FM 26/170] 1B4C4369 Summer Lemon Shrimp Pasta [content=524 chars]
+  A4 ok  1228ms folk=["summer", "lemon", "shrimp", "pasta", "recipe", "dinner", "cooking", "gourmet", "easy", "food"]
+  A5 ok  1957ms summary="A simple and flavorful pasta recipe with shrimp, lemon, and Parmesan."
+  …checkpoint written (A4=42, A5=42)
+
+[FM 27/170] 1DBF521C Alternative to DoorDash [content=56 chars]
+  A4 ok  1457ms folk=["Dishonest DoorDash", "Alternative to DoorDash", "End Gatekeeping", "Food delivery", "Delivery apps", "Efficient food delivery", "DoorDash alternatives", "Food delivery innovation"]
+  A5 ok  2329ms summary="This TikTok idea proposes a new system that eliminates gatekeeping for delivery services, aiming to …"
+
+[FM 29/170] 208950E1 Episode premise: Fan Fic. Tom starts goi [content=111 chars]
+  A4 ok  863ms folk=["fan fiction", "biblical", "mormon", "church", "inspiration", "storytelling"]
+  A5 ok  2112ms summary="Tom's interest in Mormonism leads him to create Biblical fan fiction."
+
+[FM 30/170] 21EED00B Application Burden [content=33 chars]
+  A4 ok  865ms folk=["application", "burden", "idea", "concept", "thought", "innovation", "problem", "solution"]
+  A5 ok  1763ms summary="The application carries significant responsibility."
+
+[FM 31/170] 23C11BCF Artistic Data Visualization [content=115 chars]
+  A4 ok  1098ms folk=["idea", "artifacts", "shareable", "view", "system", "graph", "list", "catalogue", "export"]
+  A5 ok  2026ms summary="The corpus generates visually appealing and shareable digital artifacts using a flexible view system…"
+
+[FM 32/170] 245288DA Rollover Minutes [content=116 chars]
+  A4 ok  921ms folk=["episode", "premise", "rollover minutes", "unclaimed", "minutes", "get", "more"]
+  A5 ok  1868ms summary="Tom discovers millions of unclaimed rollover minutes and seeks more."
+
+[FM 33/170] 25650366 Room Design Concept [content=42 chars]
+  A4 ok  895ms folk=["solar flare", "cucumber", "science", "experiment", "innovation", "concept", "technology", "room"]
+  A5 ok  2166ms summary="The concept presents two distinct rooms, each with unique thematic elements, sparking curiosity abou…"
+
+[FM 34/170] 259F10C9 Creative Dilemma [content=121 chars]
+  A4 ok  1263ms folk=["philosophy", "religion", "theology", "existentialism", "metaphysics", "allegory", "paradox", "conceptual", "thought-experiment"]
+  A5 ok  2357ms summary="Examines philosophical implications of killing God and the resulting potential for self-elevation."
+
+[FM 35/170] 2745F3ED AI for CEOs [content=55 chars]
+  A4 ok  1048ms folk=["ai", "ceo", "hentai", "technology", "artificial intelligence", "humor", "fictional", "concept"]
+  A5 ok  2450ms summary="This idea revolves around creating AI tailored for CEOs, exploring themes of power, creativity, and …"
+
+[FM 36/170] 27CD93D7 Wiki Freaks [content=124 chars]
+  A4 ok  911ms folk=["wiki", "neighborhood", "obsession", "lore", "community", "online", "interactive", "social"]
+  A5 ok  2234ms summary="A neighborhood wiki gains a life of its own as residents become obsessed with its lore."
+
+[FM 37/170] 28C3FAB7 Ghost Query Field [content=305 chars]
+  A4 ok  1150ms folk=["ghost", "query", "field", "ambient", "suggestions", "pre-filled", "text", "reflective", "prompts", "corpus-aware"]
+  A5 ok  2376ms summary="The Ghost Query Field is a persistent query field with dynamic ambient suggestions that evolve based…"
+
+[FM 38/170] 2942D9B0 Urinal Cake Tagline [content=111 chars]
+  A4 ok  987ms folk=["humor", "golf", "play", "they_live", "urinal cake", "death", "irony"]
+  A5 ok  2094ms summary="A humorous, They Live-inspired tagline warning against the absurd risks of playing golf."
+
+[FM 39/170] 2B549156 Jesse Brooks' Ambition in Thailand [content=155 chars]
+  A4 ok  988ms folk=["Jesse Brooks", "Thailand", "Talat Noi", "poop", "best person", "overtake"]
+  A5 ok  2111ms summary="Jesse Brooks is portrayed as an exceptional figure who is poised to lead or influence Thailand, a pl…"
+
+[FM 40/170] 2C8E51AD Culinary Innovation App [content=147 chars]
+  A4 ok  1033ms folk=["episode", "premise", "missing", "god", "neighborhood", "friend", "prayers", "strike", "tithing"]
+  A5 ok  2355ms summary="God leaves humanity due to declining tithing, prompting existential reflection on faith and communit…"
+
+[FM 41/170] 2E445015 Optimistic Dog Series [content=310 chars]
+  A4 ok  1042ms folk=["money", "optimistic", "comedy", "dog", "fantasy", "animation", "series", "humor"]
+  A5 ok  2660ms summary="The series follows an optimistic, somewhat foolish protagonist whose naive ideas occasionally succee…"
+
+[FM 42/170] 31DAA67B RAM Crisis [content=275 chars]
+  A4 ok  975ms folk=["AI", "computing", "PC building", "hardware", "RAM", "technology", "AI impact", "DIY PCs"]
+  A5 ok  2098ms summary="Concerns about AI monopolizing RAM resources impacting DIY PC building."
+
+[FM 43/170] 31F8C2F6 Recipe Recognition System [content=247 chars]
+  A4 ok  981ms folk=["recipes", "structured-document", "recipe-format", "structured-recognition", "recipe-tags"]
+  A5 ok  2208ms summary="Develops a structured recipe recognition system to validate recipe content and validate structured d…"
+
+[FM 44/170] 3322D60A Domestication Reflection [content=1007 chars]
+  A4 ok  1344ms folk=["dogs", "domestication", "wolves", "anthropomorphism", "emotionalconnection", "familyrelationships", "petcare", "animalbehavior"]
+  A5 ok  2654ms summary="The idea explores human-dog relationships, reflecting on domestication and the impact on dog behavio…"
+
+[FM 45/170] 345AD7E3 Private Cloud Storage [content=185 chars]
+  A4 ok  1093ms folk=["cloud storage", "encryption", "private", "iCloud", "security", "data privacy", "digital ownership", "unseen"]
+  A5 ok  1891ms summary="A digital promise encapsulated in encrypted iCloud, meant to exist only temporarily."
+
+[FM 46/170] 37B4904F Etymology Inquiry [content=85 chars]
+  A4 ERROR 907ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "Response may contain sensitive or unsafe content", underlyingErrors: []))
+  A5 ok  1843ms summary="Explores the etymology and historical context of the term 'honky'."
+
+[FM 47/170] 38E5960A Advanced Canvas Physics System [content=258 chars]
+  A4 ok  1678ms folk=["two-layer", "canvas", "physics", "force", "semantic", "embedding", "affinity", "nearest", "neighbor", "thread", "connections", "view", "modes", "corehaptics", "pulse", "train", "sort", "transitions", "ambient", "drift"]
+  A5 ok  2157ms summary="The concept involves two-layer canvas physics, using luminous tendrils for thread connections and su…"
+
+[FM 48/170] 3981BBA2 Progressive Node Arrival [content=207 chars]
+  A4 ok  783ms folk=["batch import", "progressive node arrival", "guided first node", "QuikCapture reveal"]
+  A5 ok  1915ms summary="The concept revolves around sequential node arrival and guided first node positioning, emphasizing a…"
+
+[FM 49/170] 3AD97701 Stress-test Batch Import Gate / Router [content=288 chars]
+  A4 ok  1661ms folk=["stress-test", "batch import", "gate", "router", "diverse", "realistic", "input", "material", "writing", "journal", "entries", "recipes", "brainstorms", "Sounding Board", "synthetic", "outliers", "edge cases"]
+  A5 ok  1862ms summary="Testing the batch import gate with varied inputs to ensure reliability and performance."
+
+[FM 51/170] 3DE64A27 Chicken Mole Recipe [content=478 chars]
+  A4 ok  1512ms folk=["Chicken Mole", "grandma\'s recipe", "7 servings", "Mexican cuisine", "chocolate", "spices", "broth", "soup", "culinary", "family recipe", "traditional"]
+  A5 ok  2078ms summary="A detailed recipe for Chicken Mole, a Mexican dish involving simmering chicken in a rich, spicy choc…"
+  …checkpoint written (A4=65, A5=65)
+
+[FM 52/170] 3F6EE190 Dog Therapist [content=31 chars]
+  A4 ok  935ms folk=["dog", "therapist", "episode", "premise", "story", "animal", "therapy", "narrative"]
+  A5 ok  2142ms summary="A premise about a unique therapist specializing in helping dogs, blending creativity with emotional …"
+
+[FM 54/170] 450B5CBC Web Clipper with Intelligent Features [content=205 chars]
+  A4 ok  1079ms folk=["web clipper", "reader mode", "recipe intelligence", "images", "text", "link", "cloud storage", "rich bubble card"]
+  A5 ok  2537ms summary="A web clipping app with a unique 'Beautify' mode combining recipe intelligence, local storage for im…"
+
+[FM 55/170] 45B09046 Bible Fanfiction [content=165 chars]
+  A4 ok  1141ms folk=["bible", "fanfiction", "interpretation", "literary", "mythology", "textual", "theory", "exegesis"]
+  A5 ok  1910ms summary="The Bible is reimagined as fanfiction, offering a creative lens for analysis."
+
+[FM 56/170] 4817441B Recipe App [content=74 chars]
+  A4 ok  896ms folk=["golf", "sports", "game", "outdoor", "activity", "recreation", "fun", "exercise"]
+  A5 ok  1652ms summary="A game with deep roots spanning sports, culture, and personal identity."
+
+[FM 57/170] 4952837E RideShare Revolution [content=615 chars]
+  A4 ok  1335ms folk=["rideshare", "disruption", "Uber", "taxi", "open source", "self-governance", "money-sharing", "independent", "technology", "greedy corporation"]
+  A5 ok  2543ms summary="Create a rideshare service using open source tools to allow independent operators to retain more ear…"
+
+[FM 59/170] 4C739796 Boomers' Market Expansion [content=194 chars]
+  A4 ok  947ms folk=["boomers", "social security", "demographic shift", "housing market", "population dynamics"]
+  A5 ok  2116ms summary="Boomers are rapidly dividing and multiplying, purchasing assets like houses and continuing to receiv…"
+
+[FM 60/170] 4EA17148 Foundation Model Usage Principles [content=297 chars]
+  A4 ok  1507ms folk=["Foundation Model", "on-device", "never silent", "event-driven", "user-controlled", "node commit", "analyze button", "scheduled digest", "processing indicator", "heartbeat", "spinner"]
+  A5 ok  2636ms summary="Three principles for Foundation Model usage on-device: never silent, event-driven only, user-control…"
+
+[FM 61/170] 4F568934 Eco-Friendly Tech Lifecycle [content=713 chars]
+  A4 ok  1491ms folk=["ecologically friendly", "disposable technology", "repairable", "lifecycle", "composting", "recycling", "hardware upgrade", "sustainable tech"]
+  A5 ok  2555ms summary="The idea advocates for ecologically friendly, disposable technology that can be repaired, reused, an…"
+
+[FM 62/170] 5599D9DE Cooking as Alchemy [content=119 chars]
+  A4 ok  737ms folk=["cooking", "alchemy", "oldest", "tradition"]
+  A5 ok  1992ms summary="Cooking is compared to alchemy as an ancient transformative process."
+
+[FM 64/170] 5B41F9D1 Musical Symphony Experience [content=33 chars]
+  A4 ok  1099ms folk=["Beethoven", "Symphony", "No. 9", "Classical", "Music", "ClassicalMusic", "Symphonic", "Orchestral"]
+  A5 ok  2211ms summary="The Symphony No. 9 by Beethoven is a profound work of classical music that celebrates themes of unit…"
+
+[FM 65/170] 5B7A7632 Tier 3 Rules-Based System [content=61 chars]
+  A4 ok  879ms folk=["tier", "3", "rules-based", "self-maintaining", "deferred", "own", "session"]
+  A5 ok  2332ms summary="An idea centered around a tiered system where rules are self-maintaining and deferred, suggesting a …"
+
+[FM 66/170] 5CFC7CAA Golf Satire with Psychopathy [content=1313 chars]
+  A4 ok  1397ms folk=["satire", "golf", "psychology", "sarcasm", "humor", "culture critique", "society", "historical context", "social commentary"]
+  A5 ok  3962ms summary="The script satirically critiques golf, exploring its transformation from a sport for all to a symbol…"
+
+[FM 67/170] 5D9C9F62 Recipe Intelligence [content=20 chars]
+  A4 ok  891ms folk=["recipe", "intelligence", "automation", "food", "technology", "innovation", "AI", "automation"]
+  A5 ok  2364ms summary="The concept of recipe intelligence revolves around extracting, analyzing, and utilizing data from re…"
+
+[FM 68/170] 60087FC7 Arroz Mexicano Recipe [content=387 chars]
+  A4 ok  1248ms folk=["Arroz Mexicano", "rice", "chicken", "tomato", "spice", "culinary", "recipe", "Mexican", "culinary-arts", "food"]
+  A5 ok  1923ms summary="A detailed recipe for preparing Arroz Mexicano, a flavorful rice dish."
+
+[FM 70/170] 62272A48 Honeycomb Navigation [content=21 chars]
+  A4 ok  948ms folk=["honeycomb", "navigation", "algorithm", "pathfinding", "graph", "data structure", "complexity", "efficiency"]
+  A5 ok  2065ms summary="A conceptual framework for navigating ideas and possibilities like a honeycomb structure."
+
+[FM 71/170] 6BE2CBD3 User-Centric Design [content=47 chars]
+  A4 ok  993ms folk=["burden", "user", "application", "support", "responsibility", "equity", "utilities", "assistance"]
+  A5 ok  2417ms summary="This idea suggests a shift in responsibility from the user to the application, implying a potential …"
+
+[FM 72/170] 6CCD1EB3 Creative Idea Analysis [content=237 chars]
+  A4 ok  947ms folk=["mixed format", "dated entry parsing", "fragment classification", "creative premise recognition", "narrative scenes", "partial thoughts"]
+  A5 ok  2639ms summary="The idea is a mixed format that combines dated fragments, narrative scenes, and partial thoughts to …"
+
+[FM 73/170] 6D00CC90 Water Conservation Project [content=27 chars]
+  A4 ok  945ms folk=["16.4 million gallons", "water", "volume", "measurement", "fluid ounces", "liquid", "statistics", "data"]
+  A5 ok  1651ms summary="The idea revolves around the measurement of water in gallons."
+
+[FM 74/170] 6D50AB93 Episode Mystery [content=62 chars]
+  A4 ok  1137ms folk=["old tapes", "clairvoyant", "grandparent", "vhs", "episode premise", "mystery", "family history", "television"]
+  A5 ok  2796ms summary="An episode centered on uncovering secrets through old clairvoyant tapes from a grandparent's VHS col…"
+
+[FM 75/170] 6E4BEBC5 Birdwatching Episode [content=30 chars]
+  A4 ok  1043ms folk=["birdwatching", "nature", "wildlife", "seasonal", "adventure", "relaxing", "outdoors", "observer"]
+  A5 ok  1905ms summary="An episode centered around birdwatching, exploring themes of connection with nature, team dynamics, …"
+
+[FM 76/170] 6EF0A41D Creative Job Application Strategy [content=53 chars]
+  A4 ok  1111ms folk=["job application", "lying", "career advice", "interview tips", "employment", "workplace etiquette", "professional development", "personal growth"]
+  A5 ok  2153ms summary="The premise involves navigating ethical and emotional complexities when lying on job applications."
+  …checkpoint written (A4=86, A5=86)
+
+[FM 77/170] 6FD80A65 Decentralized Social Network [content=1522 chars]
+  A4 ok  1649ms folk=["decentralized social network", "P2P networking", "real-time syncing", "federated messaging", "blockchain tech", "web3", "low-code development", "security protocols"]
+  A5 ok  2403ms summary="Creating a decentralized social network architecture utilizing modern tools and protocols for user c…"
+
+[FM 78/170] 7021C131 Mesh Social Network Concept [content=339 chars]
+  A4 ok  941ms folk=["mesh networks", "social media", "physical connectivity", "exclusive access", "network technology"]
+  A5 ok  2371ms summary="The idea revolves around using mesh networks to create a unique social media platform accessible onl…"
+
+[FM 79/170] 703B5ACA Friendly Spit [content=48 chars]
+  A4 ok  1196ms folk=["friendly", "spitting", "joke", "humor", "casual", "amusement", "lighthearted", "innocuous"]
+  A5 ok  2114ms summary="The idea questions a casual remark about spitting, implying a misunderstanding of social boundaries."
+
+[FM 81/170] 72DA0F97 Technical Error Analysis [content=152 chars]
+  A4 ok  950ms folk=["application", "illness", "batch", "import", "router", "gate", "filter", "silently"]
+  A5 ok  2126ms summary="The application processes data without errors, using a router instead of a filter, ensuring no data …"
+
+[FM 82/170] 752214F8 Writing Confidence [content=46 chars]
+  A4 ok  764ms folk=["writing", "voice", "confidence", "content creation", "authoring"]
+  A5 ok  2667ms summary="The idea emphasizes that confidence in one's writing voice is fundamental to effective communication…"
+
+[FM 83/170] 758A477D Structured Document Recognition [content=136 chars]
+  A4 ok  972ms folk=["structured-document", "coherence", "single-node", "commit", "hierarchy", "tests", "recognition"]
+  A5 ok  2589ms summary="The idea revolves around the concept of a single, unified document that functions cohesively as a si…"
+
+[FM 84/170] 76923FD0 Exploring Artistic Boundaries [content=32 chars]
+  A4 ok  870ms folk=["episode", "premise", "art", "question", "conceptual", "thought-provoking"]
+  A5 ok  2104ms summary="The episode explores the boundaries of what qualifies as art, questioning conventional definitions a…"
+
+[FM 86/170] 794C38A4 Iron Rand [content=181 chars]
+  A4 ok  870ms folk=["iron rand", "pseudo intellectual", "seriousness", "criticism", "opinion", "analysis"]
+  A5 ok  2203ms summary="The idea presents a critical stance against the intellectual status of the iron rand, labeling it as…"
+
+[FM 87/170] 7A2D5562 Oracle Videos [content=255 chars]
+  A4 ok  1155ms folk=["oracle", "clairvoyance", "forecasting", "video recording", "afterlife", "temporal continuity", "historical narrative", "futuristic foresight"]
+  A5 ok  2436ms summary="Recall of an oracle's foresight through recorded nighttime videos, showcasing clairvoyance and its p…"
+
+[FM 88/170] 7A489B5B Becoming an AI. [content=69 chars]
+  A4 ok  951ms folk=["AI", "Technology", "Outsourcing", "Globalization", "Innovation", "Future", "Business", "Development"]
+  A5 ok  2095ms summary="Explores the concept of AI development outsourcing to developing countries and its broader implicati…"
+
+[FM 89/170] 7A5F97D0 iPad Kid [content=26 chars]
+  A4 ok  1042ms folk=["iPad", "technology", "gadgets", "kids", "entertainment", "techshow", "kids content", "innovation"]
+  A5 ok  2402ms summary="An exploration into the creativity and societal themes surrounding a child's relationship with techn…"
+
+[FM 90/170] 7ED900C9 Decentralized Social Media [content=596 chars]
+  A4 ok  1231ms folk=["social media", "decentralization", "privacy", "direct communication", "group chats", "misinformation", "miscomparison", "insecurity", "parasocial relationships"]
+  A5 ok  2632ms summary="The idea explores the concept of returning to text-based social media platforms as a solution to the…"
+
+[FM 91/170] 8122F384 Bar Concept Exploration [content=51 chars]
+  A4 ok  1107ms folk=["gay bar", "straight bar", "ally bar", "social bar", "LGBTQ+ community", "mixed bar", "diversity", "inclusivity"]
+  A5 ok  2474ms summary="An episode premise exploring themes of identity, acceptance, and community through three distinctly …"
+
+[FM 92/170] 841C3E0F Person with Loud Opinion [content=70 chars]
+  A4 ok  1054ms folk=["loud", "disruptive", "annoyance", "mariachi", "music", "unwanted noise"]
+  A5 ok  2276ms summary="A person identifies with a strong emotional response, possibly rooted in discomfort or cultural clas…"
+
+[FM 93/170] 8605E844 SpaceSex [content=285 chars]
+  A4 ERROR 147ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ERROR 193ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+
+[FM 94/170] 878BB691 TikTok topic: Abolish Golf! Golf is basi [content=1212 chars]
+  A4 ok  1780ms folk=["abolish golf", "elite sport", "inclusivity", "inequality", "toxic masculinity", "US ruling class", "environmental impact", "social justice", "exclusivity", "sports culture", "historical context", "class disparity"]
+  A5 ok  3099ms summary="The TikTok video argues against golf as a symbol of exclusivity, inequality, and environmental destr…"
+
+[FM 95/170] 8CA3072E Capture Confirmation Animation [content=196 chars]
+  A4 ok  1421ms folk=["capture", "animation", "confirmation", "presence", "miniaturization", "warp", "drop", "impact", "haptic", "ripple", "sink", "elastic", "release"]
+  A5 ok  2095ms summary="The animation captures a unique haptic feedback sequence during a landing, emphasizing miniaturizati…"
+
+[FM 96/170] 8D0F6186 Hyper-masculinity Trends [content=647 chars]
+  A4 ok  1709ms folk=["masculinity", "hypermasculinity", "straight men", "heteronormativity", "emotional security", "muscularity", "hyper-masculine", "male obsession", "homosexuality", "primal instincts", "male bonding"]
+  A5 ok  3376ms summary="Men, particularly straight and heteronormative ones, are increasingly focused on extreme masculinity…"
+
+[FM 97/170] 91E7C6BA Comedy Premise Exploration [content=223 chars]
+  A4 ok  1202ms folk=["nested list", "comedy premise", "show concept", "content organization", "structure analysis", "hierarchical data", "narrative framework", "logic flow"]
+  A5 ok  2261ms summary="The idea revolves around a complex comedy concept involving nested lists, where each premise splits …"
+
+[FM 98/170] 93A3E22D Misunderstanding Friendships [content=52 chars]
+  A4 ok  885ms folk=["children", "bullying", "misunderstanding", "emotion", "confusion", "attraction"]
+  A5 ok  2220ms summary="A child mistakenly views bullies as admirers, leading to a conflict between perceived admiration and…"
+
+[FM 99/170] 93E9D218 Artistic Expression in Relationships [content=805 chars]
+  A4 ok  1287ms folk=["LGBTQ+", "relationships", "agency", "authenticity", "romance", "sexual orientation", "gender roles", "contemporary culture"]
+  A5 ok  2944ms summary="The idea discusses how LGBTQ+ representations in media grant authenticity and agency by portraying n…"
+
+[FM 101/170] 967F4953 Provenance in Branches [content=23 chars]
+  A4 ok  952ms folk=["provenance", "branches", "tree", "hierarchy", "structure", "network", "organization", "graph"]
+  A5 ok  2187ms summary="This idea explores the concept of tracing origins or roots in a branching or interconnected manner."
+  …checkpoint written (A4=108, A5=108)
+
+[FM 102/170] 994463A0 Golf and Music Conflict [content=120 chars]
+  A4 ok  863ms folk=["golfing", "mariachi", "music", "yelling", "culture clash"]
+  A5 ok  2196ms summary="The idea explores a surprising parallel between golf enthusiasts and individuals who react strongly …"
+
+[FM 103/170] 995A0E14 Roasted Lemongrass Chicken Recipe [content=474 chars]
+  A4 ok  1434ms folk=["roasted lemongrass chicken", "sweet lime sauce", "thai cuisine", "marinated chicken", "coconut milk", "grilled chicken", "thai jasmine rice", "garlic ginger chicken"]
+  A5 ok  1986ms summary="A Thai-inspired roasted chicken dish with a sweet lime sauce served with jasmine rice."
+
+[FM 104/170] 9AF3AA17 Attention-Grabbing Comedy [content=124 chars]
+  A4 ERROR 136ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ok  2307ms summary="The episode centers around the humorous yet problematic attention-seeking behavior of the characters…"
+
+[FM 106/170] 9F74032F This is all about sucking guys’ nuts [content=36 chars]
+  A4 ERROR 139ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ok  1827ms summary="This idea discusses explicit adult themes. It is not appropriate for general audiences."
+
+[FM 107/170] A63498CA Short Ideas [content=247 chars]
+  A4 ok  963ms folk=["single-line ideas", "notes app", "expanded ideas", "characters", "new router", "coherent ideas"]
+  A5 ok  2000ms summary="Ideas captured as single-line thoughts, often discarded due to length restrictions."
+
+[FM 108/170] A7693B80 Catalogue View Enhancement [content=204 chars]
+  A4 ok  1091ms folk=["catalogue", "third surface", "on-demand processing", "graph", "list", "artifact", "generation", "battery efficiency"]
+  A5 ok  2157ms summary="Catalogue concept that provides on-demand processing, generating content when users request it inste…"
+
+[FM 109/170] A7F694A5 AI-Driven Navigation System [content=169 chars]
+  A4 ok  1222ms folk=["three-tier taxonomy", "AI-generated", "ephemeral", "navigation", "user-selected", "permanent", "wizard-defined", "rules-based", "self-maintaining"]
+  A5 ok  2055ms summary="Proposes a three-tier taxonomy for organizing knowledge: AI-driven, user-defined, and self-regulatin…"
+
+[FM 110/170] A993CC74 Lost in the Unknown [content=1190 chars]
+  A4 ok  1307ms folk=["darkness", "mystery", "supernatural", "lost", "voice", "guidance", "secrets", "unknown"]
+  A5 ok  2654ms summary="A group of people in a dark, empty space encounter a mysterious voice offering guidance, leading the…"
+
+[FM 111/170] A9DB24F0 Animation's Legitimacy Debate [content=1093 chars]
+  A4 ok  1496ms folk=["animation", "legitimacy", "adultentertainment", "generationaldisconnect", "anime", "culturalstereotypes", "artcritique", "cinematicstyle"]
+  A5 ok  3167ms summary="The content explores why animation, despite its sophistication, is often dismissed as 'for children'…"
+
+[FM 112/170] ABACFEF7 Story Completion [content=199 chars]
+  A4 ok  932ms folk=["storywriting", "creativeprocess", "storyconcept", "selfpublishing", "personalproject"]
+  A5 ok  2114ms summary="The user expresses determination to finish a personal story, valuing its concept over fame."
+
+[FM 113/170] ABEECDC4 Lavender Marriages [content=33 chars]
+  A4 ok  1131ms folk=["lavender", "weddings", "marriage", "romantic", "aesthetic", "ceremony", "vintage", "fashion"]
+  A5 ok  2350ms summary="A TikTok topic exploring the cultural and social implications of lavender marriages, touching on the…"
+
+[FM 114/170] AC765AB0 Dislike for Crawling Creatures [content=62 chars]
+  A4 ok  1034ms folk=["creepy crawlies", "quick movers", "unwanted critters", "disgusting", "annoying insects"]
+  A5 ok  1874ms summary="The speaker expresses a dislike for things that crawl and move quickly."
+
+[FM 115/170] ADF05FB1 Sky Cities [content=761 chars]
+  A4 ok  1229ms folk=["sky", "clouds", "cities", "imagination", "cathedrals", "society", "evasion", "heaven", "fantasy"]
+  A5 ok  2604ms summary="A child's imaginative concept of ethereal cities hidden within clouds, evading human awareness to pr…"
+
+[FM 116/170] AFF0BBDD Divine Dimension Mystery [content=185 chars]
+  A4 ok  1091ms folk=["mystery", "cosmic", "theology", "science fiction", "dimension", "existence", "absurd", "philosophical"]
+  A5 ok  2562ms summary="God is not outside our universe but exists as a vibrational presence within it, possibly being pursu…"
+
+[FM 117/170] B2175A49 Creative Storytelling Integration [content=173 chars]
+  A4 ok  1098ms folk=["artisticvision", "RogerRabbit", "IPrights", "corporateinfluence", "animationtriumph"]
+  A5 ok  3023ms summary="The film "Who Framed Roger Rabbit" is lauded for its artistic innovation, yet its success is oversha…"
+
+[FM 118/170] B602745F Gender Vampire Mystery [content=202 chars]
+  A4 ok  1253ms folk=["gender vampire", "DL married men", "gender draining", "urban fantasy", "paranormal", "whodunit", "neighborhood thriller", "conspiracy"]
+  A5 ok  2100ms summary="People in the neighborhood experience gender drainage, linked to DL married men meeting in alleys."
+
+[FM 119/170] B620D306 Network-Aware Dashboard [content=224 chars]
+  A4 ok  1095ms folk=["dashboard", "graph", "list", "hierarchy", "settings", "artifacts", "network", "document", "versioning", "canvas"]
+  A5 ok  2368ms summary="A two-pane dashboard with a unique hierarchy and settings icon swapped for Artifacts button, allowin…"
+
+[FM 120/170] B6FB6CEA Physics Innovation with SpriteKit [content=189 chars]
+  A4 ok  1088ms folk=["physics", "science", "technology", "spritekit", "game development", "depth perception", "battery efficiency", "intrinsic value"]
+  A5 ok  2458ms summary="Physics emphasizes intrinsic understanding over spectacle, exemplified by innovative solutions like …"
+
+[FM 121/170] B7CD9BEE Chicken Tacos Recipe [content=521 chars]
+  A4 ok  1347ms folk=["chicken tacos", "boneless skinless chicken", "seasoned chicken", "pico de gallo", "crema", "fried corn tortillas", "queso fresco", " Valentina hot sauce"]
+  A5 ok  1917ms summary="A detailed recipe for making chicken tacos with ingredients, preparation steps, and serving suggesti…"
+
+[FM 122/170] B8A13726 Luxury Elite [content=202 chars]
+  A4 ok  990ms folk=["luxury", "elite", "wealth", "loss", "high-end", "services", "products", "tragedy"]
+  A5 ok  2158ms summary="Tom and Fernando become wealthy by creating high-end services but lose everything due to targeted lu…"
+
+[FM 123/170] BEF7ED34 Field as Steering Wheel [content=24 chars]
+  A4 ok  1002ms folk=["steering wheel", "control wheel", "vehicle steering", "driving wheel", "automotive steering"]
+  A5 ok  2475ms summary="The idea presents a conceptual metaphor where a field functions as a steering wheel, blending artful…"
+
+[FM 124/170] BF9595C3 Sexual Content [content=95 chars]
+  A4 ERROR 140ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ok  1812ms summary="The idea revolves around explicit adult content and humor."
+
+[FM 125/170] C1B6353C Innovative Touch Interface [content=200 chars]
+  A4 ok  1565ms folk=["honeycomb", "pivot", "touch", "steering", "cursor", "field", "pan", "fixed", "screen", "occlusion", "scales", "density", "watch", "app", "launcher", "paradigm"]
+  A5 ok  2177ms summary="Innovative touchscreen design featuring a honeycomb pivot, finger-based steering wheel, and adaptive…"
+
+[FM 126/170] C38AFB4A Light in Interior Design [content=209 chars]
+  A4 ok  1132ms folk=["lighting", "room ambiance", "light mood", "lighting design", "room transformation", "light effects", "interior design", "home decor"]
+  A5 ok  1881ms summary="Light is a cost-effective and powerful tool for altering the mood and atmosphere of a space."
+  …checkpoint written (A4=132, A5=132)
+
+[FM 128/170] CD6B8969 Ghost Suggestions at Reduced Opacity [content=37 chars]
+  A4 ok  877ms folk=["ghost", "opacity", "suggestions", "image editing", "visual effects"]
+  A5 ok  1788ms summary="Ideas about ghosts presented with adjustable transparency."
+
+[FM 129/170] CF56C783 Queerness as Living on Your Terms [content=42 chars]
+  A4 ok  966ms folk=["queerness", "lifestyle", "autonomy", "identity", "personal", "expression", "choice", "individuality"]
+  A5 ok  2124ms summary="Queerness embodies the freedom and authenticity of living independently and true to oneself."
+
+[FM 130/170] CFC6C35F Artifact Categories [content=234 chars]
+  A4 ok  982ms folk=["artifacts", "categories", "objects", "collections", "items", "recipes", "documents", "gifts"]
+  A5 ok  2691ms summary="The idea discusses categories of artifacts people acquire, desire, or gift, highlighting the cultura…"
+
+[FM 131/170] D1486FEF Bank Ownership Reform [content=293 chars]
+  A4 ok  1013ms folk=["banking", "community investment", "municipal ownership", "finance", "economic reform", "social responsibility"]
+  A5 ok  2088ms summary="The idea proposes that banks should be municipally owned to ensure investments benefit local communi…"
+
+[FM 132/170] D20112F1 Idea about Privacy [content=301 chars]
+  A4 ERROR 123ms — GenerationError: refusal(FoundationModels.LanguageModelSession.GenerationError.Refusal(record: FoundationModels.LanguageModelSession.GenerationError.Refusal.TranscriptRecord), FoundationModels.Languag…
+  A5 ok  2118ms summary="The idea emphasizes the right of individuals to protect their personal thoughts and ideas from exter…"
+
+[FM 133/170] D30FCC29 Fear of Control [content=190 chars]
+  A4 ok  942ms folk=["power", "control", "fear", "intelligence", "dupe", "anxiety", "dependence", "autonomy"]
+  A5 ok  2142ms summary="The idea expresses a deep fear of being controlled by someone perceived as smarter, highlighting a c…"
+
+[FM 134/170] D35450FD Cat Domestication [content=459 chars]
+  A4 ok  989ms folk=["domestication", "cats", "dogs", "wolves", "human society", "animal behavior", "evolution"]
+  A5 ok  2565ms summary="Explores how cats became domesticated and adapted differently from dogs, examining their integration…"
+
+[FM 135/170] D4BDC629 Decentralized Web [content=47 chars]
+  A4 ok  972ms folk=["decentralized web", "blockchain", "distributed systems", "internet", "technology", "digital", "innovation", "cybersecurity"]
+  A5 ok  2327ms summary="The decentralized web refers to a system of internet infrastructure that distributes control and aut…"
+
+[FM 136/170] D51F45D9 Color Discovery [content=293 chars]
+  A4 ok  1284ms folk=["new_color", "science", "discovery", "orange_part_2", "color_theory", "color_science", "naming_challenge", "media_influence"]
+  A5 ok  2017ms summary="Fernando discovers a new color, faces external pressure, and must name it within a week."
+
+[FM 137/170] D54384D3 Milkmen Comeback [content=51 chars]
+  A4 ok  1008ms folk=["milkmen", "women", "comeback", "traditional", "retro", "reintroduction", "historical", "modern"]
+  A5 ok  2267ms summary="Suggests a cultural movement to revive the traditional role of milkmen and women."
+
+[FM 138/170] D7E3B377 Wikipedia's Role in the Digital Age [content=227 chars]
+  A4 ok  974ms folk=["Wikipedia", "internet", "freedom", "accessibility", "surveillance", "power", "platforms", "censorship"]
+  A5 ok  2180ms summary="Wikipedia is a cornerstone of free and accessible internet information, now potentially targeted by …"
+
+[FM 139/170] D82BB422 QuikCapture Overlay Design [content=211 chars]
+  A4 ok  1235ms folk=["QuikCapture", "overlay", "screenshot", "compositing", "silent", "prismatic", "glow", "thumbzone", "gradient"]
+  A5 ok  2095ms summary="Designs an overlay system for silent screenshots with prismatic, circular buttons and a dark gradien…"
+
+[FM 140/170] DB4EAD7D Nightmares and their Impact [content=189 chars]
+  A4 ok  1365ms folk=["nightmares", "dreams", "night terrors", "unremembered", "psychological impact", "dream analysis", "nightmare phenomena", "waking effects"]
+  A5 ok  1976ms summary="A person is plagued by terrifying dreams that profoundly impact their waking life, yet they cannot r…"
+
+[FM 141/170] DB62F18E Morality and Darkness in Middle-earth [content=683 chars]
+  A4 ok  1207ms folk=["Lord of the Rings", "morality", "good versus evil", "darkness", "black-and-white morality", "world morality", "stand against darkness"]
+  A5 ok  2706ms summary="The idea explores the duality of morality in 'The Lord of the Rings', emphasizing the challenge of o…"
+
+[FM 143/170] DE376D16 Heartbeat Control System [content=25 chars]
+  A4 ok  568ms folk=["heartbeat", "not", "spinner"]
+  A5 ok  1943ms summary="A concept that transcends the physical idea of a heartbeat, suggesting a deeper, metaphorical signif…"
+
+[FM 146/170] DFBD28AB Interdimensional Narrative [content=170 chars]
+  A4 ok  1080ms folk=["multiverse", "god-macro", "dimension", "fantasy", "science fiction", "mythology", "universe", "parallel worlds"]
+  A5 ok  2335ms summary="A narrative exploring a god-macro level world, blending reality with a newly discovered dimension, p…"
+
+[FM 147/170] E21482BF Creative Story Development [content=24 chars]
+  A4 ok  1185ms folk=["story idea", "creative writing", "writing prompt", "story inspiration", "narrative development", "plot suggestion", "fictional concept", "storytelling"]
+  A5 ok  2231ms summary="A whimsical journey blending culinary creativity with cosmic themes, exploring cultural connections …"
+
+[FM 148/170] E324C919 Exploring Belief in Divine Nature [content=299 chars]
+  A4 ok  1026ms folk=["philosophy", "religion", "ethics", "belief", "theism", "atheism", "morality", "beliefs"]
+  A5 ok  2302ms summary="This idea explores whether knowledge of a deity's potential evil nature would affect one's faith in …"
+
+[FM 149/170] E3CB2C56 Slow Roasted Plum Tomatoes [content=379 chars]
+  A4 ok  1280ms folk=["slow roasted", "plum tomatoes", "olive oil", "garlic", "thyme", "kosher salt", "balsamic vinegar", "oven-baked"]
+  A5 ok  1790ms summary="A recipe for slow roasting plum tomatoes with herbs and balsamic vinegar."
+
+[FM 150/170] E5A63DEC Strategic Ideation from AirPad Sounding Board [content=218 chars]
+  A4 ok  1175ms folk=["strategic decisions", "AirPad", "sourcing", "product design", "ideation", "product principles", "gate commit", "design observations"]
+  A5 ok  2365ms summary="The AirPad Sounding Board offers a structured approach to generating and refining strategic ideas th…"
+
+[FM 151/170] E7B9C683 Inner Light [content=28 chars]
+  A4 ok  1130ms folk=["inspiration", "inner light", "personal growth", "spiritual awakening", "mindfulness", "self-reflection", "inner peace", "life philosophy"]
+  A5 ok  2059ms summary="An introspective idea suggesting that inner light holds the power to illuminate one's surroundings."
+  …checkpoint written (A4=153, A5=153)
+
+[FM 153/170] E858BE6B Peeping Tom [content=99 chars]
+  A4 ok  1186ms folk=["peeping tom", "suspense", "thriller", "psychological drama", "crime", "mystery", "window washer", "unethical voyeurism"]
+  A5 ok  2024ms summary="Tom, a window washer, becomes entangled in voyeuristic observations."
+
+[FM 154/170] E8962D8F Mysterious Guns [content=339 chars]
+  A4 ok  1025ms folk=["mysterious", "objects", "powers", "transformation", "cursed", "bullets", "altered", "nature"]
+  A5 ok  2747ms summary="The narrative explores guns as enigmatic objects with transformative powers, suggesting a shift from…"
+
+[FM 155/170] E91DC9EF Fan Loyalty and Team Dynamics [content=29 chars]
+  A4 ok  901ms folk=["sports", "teams", "fans", "relationships", "negative", "perception", "controversy"]
+  A5 ok  2264ms summary="The idea explores the complex relationship between sports teams and their fans, focusing on the tens…"
+
+[FM 156/170] E9783584 Phone Lens Warp [content=140 chars]
+  A4 ok  951ms folk=["lens", "warp", "impact", "elastic", "phone", "distortion", "release", "surface"]
+  A5 ok  2007ms summary="Conceptual representation of a lens warp and elastic snap-back action through artistic imagery."
+
+[FM 157/170] EA3C20C5 TechTrends [content=133 chars]
+  A4 ok  868ms folk=["Lennox", "windows", "technology", "innovation", "computing", "market", "competition"]
+  A5 ok  2152ms summary="The idea suggests Lennox will surpass Windows in market share in the coming years."
+
+[FM 158/170] EAB9D025 Exploring Connections [content=20 chars]
+  A4 ok  554ms folk=["idea", "therefore", "however"]
+  A5 ok  2197ms summary="This idea presents a way to transition between statements or thoughts, often indicating a shift or c…"
+
+[FM 159/170] EBA90170 Company Mergers and Brand Consolidation [content=371 chars]
+  A4 ok  1228ms folk=["monopoly", "corporate consolidation", "brand collapse", "big tech", "consumer branding", "business strategy", "industry trend", "market dominance"]
+  A5 ok  2479ms summary="The idea explores the scenario of a company owning all sub-brands and merging them into a single ent…"
+
+[FM 160/170] EBF18FFC Honesty in Reflection [content=26 chars]
+  A4 ok  1059ms folk=["reflection", "truth", "mirror", "honesty", "self-perception", "introspection", "metaphor", "philosophy"]
+  A5 ok  2023ms summary="An idea centered on the concept of honesty and perception, exploring the nature and implications of …"
+
+[FM 161/170] ED80560F Unimaginable Cruelty [content=84 chars]
+  A4 ok  1002ms folk=["curse", "cruelty", "happiness", "step", "other", "unimaginable"]
+  A5 ok  1980ms summary="The idea explores a curse of unimaginable cruelty and its impact as a stepping stone to another pers…"
+
+[FM 162/170] EF74D6B7 Time Travel Concept [content=803 chars]
+  A4 ok  1337ms folk=["time travel", "universe", "multiverse", "time manipulation", "punishment", "golden age", "deportation", "alternate realities"]
+  A5 ok  3329ms summary="Exploring a universe where time travel is possible, people can be 'deported' or relegated to specifi…"
+
+[FM 163/170] F26299D0 Recipe Domain Classification [content=146 chars]
+  A4 ok  1025ms folk=["domain classification", "recipe recognition", "node commit", "JSON response", "structured data", "automated tagging"]
+  A5 ok  1974ms summary="This idea revolves around the process of creating and categorizing recipes, focusing on both the tec…"
+
+[FM 164/170] F31D49B8 Brand Architecture for Curious Objects [content=195 chars]
+  A4 ok  1125ms folk=["brand architecture", "product naming", "curious objects", "corpus app", "nfc configuration app", "plain english names", "company branding"]
+  A5 ok  2279ms summary="Curious Objects uses plain English names for its products, emphasizing clarity and self-identificati…"
+
+[FM 165/170] F3BAD1DC Recipe-App [content=33 chars]
+  A4 ok  1155ms folk=["Renée Good", "murder", "history", "crime", "notable_deaths", "biography", "murder_case", "historical_event"]
+  A5 ok  2096ms summary="This Wikipedia article discusses the controversial killing of Renée Good, touching on themes of powe…"
+
+[FM 166/170] F49C7C2C Interactive Branching System [content=358 chars]
+  A4 ok  1428ms folk=["node branching", "git inspired", "branch creation", "canvas", "orbiting nodes", "fork icon", "modal confirmation", "actions exploration", "elevate", "provenance note", "abandon"]
+  A5 ok  2234ms summary="A branching system inspired by git, enabling independent content development with exploration, eleva…"
+
+[FM 167/170] FBD574E7 Inner Light and Perception [content=199 chars]
+  A4 ok  892ms folk=["idea", "nodes", "light", "airpad", "perception", "colorblind", "aesthetic"]
+  A5 ok  2218ms summary="AirPad serves as a source of light, symbolizing ideas that persist and illuminate the aesthetic thro…"
+
+[FM 168/170] FCA1668C Cosmic Messages and Constellations [content=797 chars]
+  A4 ok  1330ms folk=["constellations", "ancient aliens", "cosmic messages", "cosmic guidance", "deep meaning", "primitive religions", "scientific progress", "galactic mysteries"]
+  A5 ok  2984ms summary="The idea posits that constellations serve as encoded messages from ancient civilizations, potentiall…"
+
+[FM 169/170] FF0C11DE Iconoclasmic Video Series [content=111 chars]
+  A4 ERROR 150ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A5 ERROR 177ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+
+Stage 1 done: FM calls=300 errors=13 refusals=12 elapsed=489s
+Wrote results-A4.json (170 records), results-A5.json (170 records).
+
+=== Stage 2 — embeddings ===
+NLContextualEmbedding loaded: dim=512 maxLen=256
+  embed [25/170] 1B0042AA
+  embed [50/170] 3B5584B8
+  embed [75/170] 6E4BEBC5
+  embed [100/170] 948C90CD
+  embed [125/170] C1B6353C
+  embed [150/170] E5A63DEC
+  embed [170/170] FF43DCC8
+Stage 2 done: records=170 elapsed=8.1s embed fails=0
+Wrote embeddings-corpus.json (7647515 bytes).
+
+=== Stage 3 — centered cosine matrices ===
+  mean[content]: dim=512 norm=2.3332 maxAbs=1.8339
+  mean[summary]: dim=512 norm=2.4099 maxAbs=1.8364
+  mean[folksonomy]: dim=512 norm=2.4021 maxAbs=1.9031
+  M_content     avg=-0.0040 min=-0.5906 max=1.0000 spread=1.5906
+  M_summary     avg=-0.0049 min=-0.4533 max=0.8642 spread=1.3176
+  M_folksonomy  avg=-0.0055 min=-0.5361 max=0.9171 spread=1.4532
+  M_blend       avg=-0.0053 min=-0.4338 max=0.8193 spread=1.2531
+Wrote corpus-similarity.json (1084523 bytes).
+
+=== Stage 4 — agglomerative clustering on M_blend_centered ===
+  blend-defined pairs: 12720 of 14365
+  HAC complete in 0.2s
+  cluster sizes (sorted): 4=32, 3=27, 2=20, 0=15, 1=12, 5=10, 7=9, 9=9, 12=8, 11=7, 18=5, 14=3, 8=3, 22=1, 6=1, 10=1, 19=1, 20=1, 15=1, 17=1, 13=1, 21=1, 16=1
+Wrote corpus-clusters.json (23600 bytes).
+
+=== Section 3 prep — 52 neighborhoods loaded ===
+
+Wrote summary-round5.md.
+
+=== Round 5 complete in 501.6s ===

@@ -5,8 +5,9 @@ import SpriteKit
 struct CanvasView: View {
 
     @Environment(CorpusStore.self) private var store
+    @Environment(SelectionService.self) private var selection
     @State private var canvasState = CanvasState()
-    @State private var fanExpanded = false
+    @Binding var fanExpanded: Bool
     @State private var captureMode: CaptureMode? = nil
     @State private var captureTargetNodeID: String? = nil  // nil = create new node
     @State private var showingNodePicker = false
@@ -40,9 +41,11 @@ struct CanvasView: View {
         }
         .onAppear {
             scene.canvasState = canvasState
+            scene.selection = selection
             store.canvasState = canvasState
             previousNodeIDs = Set(store.filteredNodes.map { $0.id })
             syncScene(nodes: store.visibleNodes)
+            scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
 
             // Inject test nodes for visual development
@@ -112,6 +115,12 @@ struct CanvasView: View {
             navigationPath.append(node)
             canvasState.pendingNavigationNodeID = nil
         }
+        .onChange(of: selection.isActive) { _, _ in
+            scene.refreshSelectionOutlines()
+        }
+        .onChange(of: selection.selected) { _, _ in
+            scene.refreshSelectionOutlines()
+        }
     }
 
     // MARK: - Canvas stack (extracted to keep body type-checkable)
@@ -127,7 +136,9 @@ struct CanvasView: View {
             }
             .sheet(item: $captureMode, content: captureModeSheet)
             .sheet(isPresented: $showingNodePicker) {
-                NodePickerSheet(selectedNodeID: $captureTargetNodeID)
+                NodePickerSheet(onSelect: { node in
+                    navigationPath.append(node)
+                })
             }
             .sheet(item: $localTagSuggestions) { context in
                 tagCreationSheet(context: context)
@@ -143,33 +154,51 @@ struct CanvasView: View {
 
     private var canvasZStack: some View {
         ZStack(alignment: .bottomTrailing) {
-            Color(red: 0.027, green: 0.027, blue: 0.039)
-                .ignoresSafeArea()
+            ZStack(alignment: .bottomTrailing) {
+                Color(red: 0.027, green: 0.027, blue: 0.039)
+                    .ignoresSafeArea()
 
-            SpriteKitView(scene: scene)
-                .ignoresSafeArea()
-                .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
-                .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+                SpriteKitView(scene: scene)
+                    .ignoresSafeArea()
+                    .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
+                    .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
 
-            if store.nodes.isEmpty {
-                EmptyStateOverlay()
-                    .transition(.opacity)
+                if store.nodes.isEmpty {
+                    EmptyStateOverlay()
+                        .transition(.opacity)
+                }
+
+                focalEngagementOverlay
+                nodeSummaryLayer
+                captureTargetBanner
+                drillDownBackButton
+                glowDebugPanelLayer
+                debugPanelToggleButton
+
+                if !store.isInDetailView {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 12) {
+                            GhostQueryField()
+                                .frame(maxWidth: .infinity)
+                            Spacer()
+                                .frame(width: 68) // reserve space for ActionButtonFan + button
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                    }
+                }
             }
+            .blur(radius: fanExpanded ? 12 : 0)
+            .animation(.easeInOut(duration: 0.22), value: fanExpanded)
 
-            focalEngagementOverlay
-            nodeSummaryLayer
-            captureTargetBanner
-            drillDownBackButton
-            glowDebugPanelLayer
-            debugPanelToggleButton
             ActionButtonFan(
                 isExpanded: $fanExpanded,
                 isEmpty: store.nodes.isEmpty,
                 onVoice:       { captureMode = .voice },
                 onCamera:      { captureMode = .camera },
                 onText:        { captureMode = .text },
-                onNodePicker:  { showingNodePicker = true },
-                onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
+                onNodePicker:  { showingNodePicker = true }
             )
         }
     }
@@ -537,6 +566,7 @@ struct CanvasView: View {
             neighborhoodCache: store.neighborhoodCache,
             nodeRadii: store.nodeRadii
         )
+        scene.refreshSelectionOutlines()
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
     }
 

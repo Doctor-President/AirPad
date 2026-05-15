@@ -50,16 +50,42 @@ struct NodeCardView: View {
     let node: Node
     let selected: Bool
     let dist: Int
+    var isSelecting: Bool = false
+    var isPicked: Bool = false
 
     @State private var appeared = false
 
     var body: some View {
-        ZStack {
-            NodeGradientBackground(node: node, cornerRadius: 36)
-            cardContent
+        HStack(spacing: 12) {
+            if isSelecting {
+                ZStack {
+                    Circle()
+                        .stroke(Color.white.opacity(0.55), lineWidth: 2)
+                        .frame(width: 26, height: 26)
+                    if isPicked {
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 26, height: 26)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.black)
+                    }
+                }
+                .frame(width: 32)
+                .transition(.opacity.combined(with: .move(edge: .leading)))
+            }
+
+            ZStack {
+                NodeGradientBackground(node: node, cornerRadius: 36)
+                cardContent
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 36))
+            .overlay(
+                RoundedRectangle(cornerRadius: 36)
+                    .stroke(Color.white, lineWidth: isSelecting && isPicked ? 3 : 0)
+            )
+            .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 36))
-        .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
         .transition(.scale(scale: 0.85, anchor: .center).combined(with: .opacity))
         .animation(.bouncy(duration: 0.4, extraBounce: 0.15), value: appeared)
         .onAppear { appeared = true }

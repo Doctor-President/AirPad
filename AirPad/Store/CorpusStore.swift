@@ -1588,6 +1588,144 @@ final class CorpusStore {
 
     // MARK: - Destructive operations
 
+    func deleteNode(id: String) async {
+        await deleteNodes(ids: [id])
+    }
+
+    /// Batch delete. Removes nodes from disk + memory, cleans up dangling
+    /// thread / provenance references on remaining nodes, drops canvas layout
+    /// entries, and invalidates ephemeral caches. The substrate fitted model's
+    /// `trainingPoints` snapshot is intentionally NOT pruned — it's a frozen
+    /// fit-time artifact, and pruning it would cause `SubstrateCanvasLayoutAdapter`
+    /// to re-normalize the min/max bounds and shift every surviving node on
+    /// screen. Ghost entries in the snapshot are inert and clear on the next
+    /// deliberate refit.
+    func deleteNodes(ids: Set<String>) async {
+        guard !ids.isEmpty else { return }
+
+        for id in ids {
+            do {
+                try await service.deleteNode(id: id)
+            } catch {
+                print("[CorpusStore] deleteNodes error for \(id): \(error)")
+            }
+        }
+        nodes.removeAll { ids.contains($0.id) }
+
+        // Filter dangling NodeID references on remaining nodes. Source-node
+        // `threads[]` carries meta-node IDs (set bidirectionally in pullThread);
+        // meta-node `provenance[]` carries source-node IDs. Both can dangle
+        // after a delete, so we filter both directions on every survivor and
+        // re-persist only the ones that actually changed.
+        var changedNodes: [Node] = []
+        for index in nodes.indices {
+            var node = nodes[index]
+            var changed = false
+            let filteredThreads = node.threads.filter { !ids.contains($0) }
+            if filteredThreads.count != node.threads.count {
+                node.threads = filteredThreads
+                changed = true
+            }
+            if let provenance = node.provenance {
+                let filteredProvenance = provenance.filter { !ids.contains($0) }
+                if filteredProvenance.count != provenance.count {
+                    node.provenance = filteredProvenance
+                    changed = true
+                }
+            }
+            if changed {
+                node.updatedAt = Date()
+                nodes[index] = node
+                changedNodes.append(node)
+            }
+        }
+        for node in changedNodes {
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] deleteNodes: saveNode error for \(node.id): \(error)")
+            }
+        }
+
+        // Canvas layout positions: drop all deleted IDs in a single write.
+        let hadAnyLayoutEntry = ids.contains { canvasLayout.positions[$0] != nil }
+        if hadAnyLayoutEntry {
+            var positions = canvasLayout.positions
+            for id in ids { positions.removeValue(forKey: id) }
+            let updated = CanvasLayout(version: canvasLayout.version, updatedAt: Date(), positions: positions)
+            canvasLayout = updated
+            do {
+                try await service.saveCanvasLayout(updated)
+            } catch {
+                print("[CorpusStore] deleteNodes: layout save error: \(error)")
+            }
+        }
+
+        // Ephemeral caches. Neighborhood + Über-node caches recompute on next
+        // access from the new `nodes[]`; pending thread suggestions referencing
+        // deleted IDs are dropped explicitly so the user doesn't see a
+        // suggestion for a node that no longer exists.
+        neighborhoodCache = nil
+        uberNodeCache = nil
+        pendingThreads.removeAll { suggestion in
+            suggestion.nodeIDs.contains(where: { ids.contains($0) })
+        }
+
+        if let selected = canvasState?.selectedNodeID, ids.contains(selected) {
+            canvasState?.selectedNodeID = nil
+        }
+        canvasNeedsSync = UUID()
+    }
+
+    /// Batch tag application. Idempotent — nodes already carrying `tagName` are
+    /// unchanged. Registers `tagName` in the tag vocabulary if it isn't
+    /// already there. Tags applied via this path carry `.user` provenance.
+    func addTag(_ tagName: String, toNodes ids: Set<String>) async {
+        let trimmed = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !ids.isEmpty else { return }
+
+        // Defensive: caller is expected to have registered the tag via
+        // TagEditorSheet (which assigns a chosen color). If somehow we receive
+        // a name not yet in vocabulary, register it with the neutral color so
+        // the apply-to-nodes step doesn't drop the tag silently.
+        if !tags.contains(where: { $0.name == trimmed }) {
+            let newTag = Tag(
+                id: UUID(),
+                name: trimmed,
+                colorHex: Tag.neutralColorHex,
+                createdAt: Date(),
+                useCount: 0
+            )
+            tags.append(newTag)
+            do {
+                try await service.saveTags(tags)
+            } catch {
+                print("[CorpusStore] addTag(batch): saveTags error: \(error)")
+            }
+        }
+
+        var changedNodes: [Node] = []
+        for index in nodes.indices {
+            guard ids.contains(nodes[index].id) else { continue }
+            var node = nodes[index]
+            if node.tags.contains(trimmed) {
+                continue
+            }
+            node.tags.append(trimmed)
+            node.tagSources[trimmed] = TagOrigin(source: .user)
+            node.updatedAt = Date()
+            nodes[index] = node
+            changedNodes.append(node)
+        }
+        for node in changedNodes {
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] addTag(batch): saveNode error for \(node.id): \(error)")
+            }
+        }
+    }
+
     func clearAllData() async {
         do {
             try await service.deleteAllData()

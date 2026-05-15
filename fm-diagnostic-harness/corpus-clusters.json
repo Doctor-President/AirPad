@@ -1,0 +1,881 @@
+{
+  "algorithm" : "agglomerative average-linkage on (1 - cosine(M_blend_centered))",
+  "assignments" : [
+    {
+      "clusterID" : 0,
+      "nodeID" : "00500AF9-A193-4AA2-91B6-F81988A786B4",
+      "title" : "Divine Succession"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "01CA8E4F-0AC5-4A0E-9F18-F07EC510ED40",
+      "title" : "Food as a Human Right"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "040DEE3D-082E-41AB-AFAD-DF2CC25E8457",
+      "title" : "Dream Awareness"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "0638A25E-0F1E-42D8-BADE-78B5BB65FD3E",
+      "title" : "Vertical Farming Future"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "07E0DC7B-D4A3-4D62-A95D-F12DCC988D08",
+      "title" : "✨QuikCapture"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "099CD678-E51D-4162-8ADD-5EE13E923039",
+      "title" : "Light Modes and Emotion"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "09C7E791-93DF-435D-A885-7454C34A98E2",
+      "title" : "Historical Revisionism in WWII Narratives"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "0A0DB1DA-B0F0-463D-BF1F-F07DCA0E000C",
+      "title" : "Episode Premise: Hole to China"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "0CC36D15-E4E7-4659-BD60-181FCD2D63B4",
+      "title" : "Architecture & Backend Development"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "0DA3D74A-3F3E-4E68-8E48-F192A37FEA27",
+      "title" : "Emily is the best!"
+    },
+    {
+      "clusterID" : 6,
+      "nodeID" : "1130789A-0757-4F78-B0F6-5C0DC982886B",
+      "title" : "Exploring Corti Keyboards in China"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "1196CC2B-9ED8-4F64-9AF3-B8E388D95965",
+      "title" : "Universal Canvas Tap Model"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "11A4B383-078F-4257-B3E2-395B0C0772A0",
+      "title" : "Sweetgreen Harvest Bowl Recipe"
+    },
+    {
+      "clusterID" : 8,
+      "nodeID" : "13B50ADA-F873-47D8-9554-6CF6FD4BFBA6",
+      "title" : "High-End Cop Drama"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "14F87597-0494-4086-A1B8-3014BAACEE4F",
+      "title" : "Plastic Empire: A Poisoned Generation"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "155C4EE3-BA3F-4B98-9A97-80344D6E87B8",
+      "title" : "Continuous Process"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "155CC8BC-494F-42B2-8251-8091E417B376",
+      "title" : "Vet Visit Episode Premise"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "15B26052-5F20-4161-BFD8-41CC5036C8ED",
+      "title" : "Neighborhood Gamification"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "172AB5B7-4FAB-4132-A7C6-5858ECA00EC2",
+      "title" : "Capture Intentions"
+    },
+    {
+      "clusterID" : 8,
+      "nodeID" : "1765A743-9007-4E95-B55A-99D74ECA17A0",
+      "title" : "Sports Team Loyalty and Public Policy"
+    },
+    {
+      "clusterID" : 10,
+      "nodeID" : "17B0552D-A747-4637-A1B0-79446B192347",
+      "title" : "Sexual curiosity"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "18750632-826F-4241-BBDE-22C4FFC0A45D",
+      "title" : "Gender Vampires"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "18C0ADA0-83CF-408C-BA4B-88E80D336B1D",
+      "title" : "Stress Testing Router Classification Limits"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "19B04B53-A91C-47E1-AC92-CBAF50FA1C94",
+      "title" : "Outline-format Brainstorm"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "1B0042AA-E667-44B6-A3A2-6735B20CC932",
+      "title" : "Peeping Tom Episode Idea"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "1B4C4369-810B-4B25-BC1A-14ECFAD6A71D",
+      "title" : "Summer Lemon Shrimp Pasta"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "1DBF521C-1079-4B48-9CF9-E4794D0309CB",
+      "title" : "Alternative to DoorDash"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "1E9C4DEF-DD1E-42B0-80FC-62E9CD93DF54",
+      "title" : "Action Button Reveal"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "208950E1-597A-4304-A903-9207DB667B55",
+      "title" : "Episode premise: Fan Fic. Tom starts goi"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "21EED00B-1721-476B-91C2-FF23CD4FA201",
+      "title" : "Application Burden"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "23C11BCF-E227-4346-9852-4C8C362BE1A7",
+      "title" : "Artistic Data Visualization"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "245288DA-993D-4968-AA62-5B1EF0D81D82",
+      "title" : "Rollover Minutes"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "25650366-E259-48C1-9B83-CE86B7A7F030",
+      "title" : "Room Design Concept"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "259F10C9-09D5-491B-81D3-E2BAFA7599EE",
+      "title" : "Creative Dilemma"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "2745F3ED-7CA7-4984-837A-26DB3ED4C2F7",
+      "title" : "AI for CEOs"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "27CD93D7-CCEB-486F-BB34-FCD0AFC8B9B3",
+      "title" : "Wiki Freaks"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "28C3FAB7-09DA-4EAD-A121-9CC26C8EB564",
+      "title" : "Ghost Query Field"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "2942D9B0-5986-4162-A4DE-231F4072A8B2",
+      "title" : "Urinal Cake Tagline"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "2B549156-3A21-45FA-9036-236A7174B72D",
+      "title" : "Jesse Brooks' Ambition in Thailand"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "2C8E51AD-CBCB-48DD-80BC-9EB8C7A86345",
+      "title" : "Culinary Innovation App"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "2E445015-6DE6-4110-A01E-5C6D76FB9A8D",
+      "title" : "Optimistic Dog Series"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "31DAA67B-50C7-4042-BA7A-08CF021A6A61",
+      "title" : "RAM Crisis"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "31F8C2F6-3301-46CD-9465-D2401E1ACE66",
+      "title" : "Recipe Recognition System"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "3322D60A-64E9-4597-A0E1-741B21BA3CDD",
+      "title" : "Domestication Reflection"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "345AD7E3-0AF0-4EC3-94A1-BE7DD99BD43D",
+      "title" : "Private Cloud Storage"
+    },
+    {
+      "clusterID" : 13,
+      "nodeID" : "37B4904F-9513-4222-9C39-09219A5E03F1",
+      "title" : "Etymology Inquiry"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "38E5960A-288A-4BBB-97BA-0CC09C690806",
+      "title" : "Advanced Canvas Physics System"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "3981BBA2-3F02-4379-9BF4-F7AE2580E015",
+      "title" : "Progressive Node Arrival"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "3AD97701-4A8C-486D-B430-1499F8419ACF",
+      "title" : "Stress-test Batch Import Gate \/ Router"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "3B5584B8-4B25-4801-804B-0B86C87961C0",
+      "title" : "The Complexity of Morality in Middle-earth"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "3DE64A27-98DA-4EC2-8D73-E632EE482BF8",
+      "title" : "Chicken Mole Recipe"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "3F6EE190-B4DB-4903-B5DE-42D2A03B323F",
+      "title" : "Dog Therapist"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "42B8C8DB-A8F8-40C4-A270-F1FC29A36A81",
+      "title" : "Boomers Dividing and Multiplying"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "450B5CBC-5D8A-412E-9576-769807EF0480",
+      "title" : "Web Clipper with Intelligent Features"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "45B09046-E738-412A-B13B-C66FDF2C60FE",
+      "title" : "Bible Fanfiction"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "4817441B-0A25-405C-A858-3807E01C486E",
+      "title" : "Recipe App"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "4952837E-FF53-4B1A-9B1D-02A9401082C6",
+      "title" : "RideShare Revolution"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "4B5E9285-1EE9-4740-9E22-66D818937172",
+      "title" : "AirPad Concept"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "4C739796-26B1-48EC-A6FE-D27AB4F130C8",
+      "title" : "Boomers' Market Expansion"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "4EA17148-105F-40E1-B24B-8B69D28CE81B",
+      "title" : "Foundation Model Usage Principles"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "4F568934-C74F-44F9-A0F6-1A65579FE62C",
+      "title" : "Eco-Friendly Tech Lifecycle"
+    },
+    {
+      "clusterID" : 14,
+      "nodeID" : "5599D9DE-72FF-4A0D-ACC0-0B090D36BB18",
+      "title" : "Cooking as Alchemy"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "56C645B8-EB8E-42BC-9E19-D510FA3E4397",
+      "title" : "Topographic Canvas with Semantic Discovery"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "5B41F9D1-6626-41C8-B56D-1EE16391F29E",
+      "title" : "Musical Symphony Experience"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "5B7A7632-DA5B-41AA-A0CE-2CC53E10279A",
+      "title" : "Tier 3 Rules-Based System"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "5CFC7CAA-3C6C-4D19-9AB2-0D4941C39821",
+      "title" : "Golf Satire with Psychopathy"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "5D9C9F62-BE83-495C-9234-0FFA54ABA01B",
+      "title" : "Recipe Intelligence"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "60087FC7-5CCD-441B-BA5B-A2F9F1B03793",
+      "title" : "Arroz Mexicano Recipe"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "6215BD85-AF0C-4853-BBCC-9E818732E5A0",
+      "title" : "Mask Dynamics"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "62272A48-6EEF-4293-BAC1-BE08C4CA7697",
+      "title" : "Honeycomb Navigation"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "6BE2CBD3-6DBE-4B25-B884-E8290B5F6C59",
+      "title" : "User-Centric Design"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "6CCD1EB3-946E-4FF7-A7EC-42570B75CFD3",
+      "title" : "Creative Idea Analysis"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "6D00CC90-7D50-4CF3-AA56-583EC1BEA3A4",
+      "title" : "Water Conservation Project"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "6D50AB93-B19E-40AE-BC21-9BDB5C11AE56",
+      "title" : "Episode Mystery"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "6E4BEBC5-B94D-414D-8381-EDAB6C72C4C7",
+      "title" : "Birdwatching Episode"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "6EF0A41D-5EBA-4DE3-BA06-BCC95E8E036C",
+      "title" : "Creative Job Application Strategy"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "6FD80A65-0C19-4A8D-98FE-2B8D4BF84105",
+      "title" : "Decentralized Social Network"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "7021C131-7C4D-49D7-B35C-1B05ABD55825",
+      "title" : "Mesh Social Network Concept"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "703B5ACA-4D99-4687-AC52-49BCC86C3F28",
+      "title" : "Friendly Spit"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "70A66523-9B31-42A0-9021-8988E09C6A46",
+      "title" : "Sometimes a right angle is the wrong angle"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "72DA0F97-C362-4BD6-89C7-FD5D8986C8B4",
+      "title" : "Technical Error Analysis"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "752214F8-AA18-4A20-BC88-26413F69243D",
+      "title" : "Writing Confidence"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "758A477D-1A78-49C7-AE85-561546EDAA39",
+      "title" : "Structured Document Recognition"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "76923FD0-AFB3-4A34-BC8C-8BFBB0D8EE74",
+      "title" : "Exploring Artistic Boundaries"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "7735A62F-7B0E-4EA5-9E59-C1E00D7A1AD0",
+      "title" : "Tomato Recipe"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "794C38A4-D66D-4E1B-99A1-540BE5624641",
+      "title" : "Iron Rand"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "7A2D5562-46F5-4ED4-9EA8-1A124C61A921",
+      "title" : "Oracle Videos"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "7A489B5B-7709-445E-A214-6DDADDB2AF41",
+      "title" : "Becoming an AI."
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "7A5F97D0-FA12-44C4-810B-234AB28396E9",
+      "title" : "iPad Kid"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "7ED900C9-11F7-40EE-A87F-332A8EFFD437",
+      "title" : "Decentralized Social Media"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "8122F384-FE42-44ED-B25A-3F8FB1BDEE0F",
+      "title" : "Bar Concept Exploration"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "841C3E0F-8292-49D6-87CC-E273F28B93EE",
+      "title" : "Person with Loud Opinion"
+    },
+    {
+      "clusterID" : 15,
+      "nodeID" : "8605E844-AE38-4D9B-9519-9312AD3E3C99",
+      "title" : "SpaceSex"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "878BB691-5821-4542-B7B5-22DB37FF2F41",
+      "title" : "TikTok topic: Abolish Golf! Golf is basi"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "8CA3072E-4286-43D4-B215-42CD00492CA3",
+      "title" : "Capture Confirmation Animation"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "8D0F6186-5208-4EAB-B10B-8C35B86A5BBB",
+      "title" : "Hyper-masculinity Trends"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "91E7C6BA-2E4C-4090-80D8-45ABA50EF079",
+      "title" : "Comedy Premise Exploration"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "93A3E22D-93A4-4296-8E6D-CCFE9D731E0D",
+      "title" : "Misunderstanding Friendships"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "93E9D218-A7BB-4B22-B2B5-F62192911A24",
+      "title" : "Artistic Expression in Relationships"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "948C90CD-94D6-4EAE-B618-1FF3FCDA3DB0",
+      "title" : "Episode Premise: Lights Out"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "967F4953-B748-4650-B7AB-13E20E899F92",
+      "title" : "Provenance in Branches"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "994463A0-4FFF-4BAE-9130-26B39328ADBD",
+      "title" : "Golf and Music Conflict"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "995A0E14-9227-4D6C-9C87-6B98CB30E80A",
+      "title" : "Roasted Lemongrass Chicken Recipe"
+    },
+    {
+      "clusterID" : 16,
+      "nodeID" : "9AF3AA17-48F7-4618-BD9C-31564DC18DF0",
+      "title" : "Attention-Grabbing Comedy"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "9C8F8D6F-08EF-43C9-96C8-B7C3012CB903",
+      "title" : "Exploring Hate Faces on TikTok"
+    },
+    {
+      "clusterID" : 17,
+      "nodeID" : "9F74032F-C6A4-40DB-AF62-F27FEF211500",
+      "title" : "This is all about sucking guys’ nuts"
+    },
+    {
+      "clusterID" : 18,
+      "nodeID" : "A63498CA-DFB5-4919-A6B1-104B27ABDAF1",
+      "title" : "Short Ideas"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "A7693B80-736D-4235-89E6-80DA3B176AAF",
+      "title" : "Catalogue View Enhancement"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "A7F694A5-AEE2-4764-BD0A-71375325B23D",
+      "title" : "AI-Driven Navigation System"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "A993CC74-A57A-4548-9CA6-0F1D1331CA2A",
+      "title" : "Lost in the Unknown"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "A9DB24F0-49ED-4755-BC9B-46117CBDD9F1",
+      "title" : "Animation's Legitimacy Debate"
+    },
+    {
+      "clusterID" : 18,
+      "nodeID" : "ABACFEF7-DBBC-4DC9-816A-66C85B68C1EC",
+      "title" : "Story Completion"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "ABEECDC4-67FB-4C4C-A085-A694E96739A6",
+      "title" : "Lavender Marriages"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "AC765AB0-4C32-47E0-94E2-67515833FA20",
+      "title" : "Dislike for Crawling Creatures"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "ADF05FB1-14CB-4024-BF1B-9E71A35B7DAE",
+      "title" : "Sky Cities"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "AFF0BBDD-5C88-4B80-BCA8-90AF12FD71E7",
+      "title" : "Divine Dimension Mystery"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "B2175A49-F308-4E96-8013-D84D0E02E639",
+      "title" : "Creative Storytelling Integration"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "B602745F-76FD-410F-82D1-90BB3BB675EE",
+      "title" : "Gender Vampire Mystery"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "B620D306-131F-4148-8C4E-27101E59F8AC",
+      "title" : "Network-Aware Dashboard"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "B6FB6CEA-2369-4E3C-9A4A-0046B893D1ED",
+      "title" : "Physics Innovation with SpriteKit"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "B7CD9BEE-A528-4FB4-AEEF-5F76CADF671F",
+      "title" : "Chicken Tacos Recipe"
+    },
+    {
+      "clusterID" : 8,
+      "nodeID" : "B8A13726-0971-4F31-94DB-40F73B2A927D",
+      "title" : "Luxury Elite"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "BEF7ED34-1D54-4BED-B7CD-3EAF43490481",
+      "title" : "Field as Steering Wheel"
+    },
+    {
+      "clusterID" : 19,
+      "nodeID" : "BF9595C3-1D03-425C-83F4-F65257117C04",
+      "title" : "Sexual Content"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "C1B6353C-1201-49E2-8DFB-45BD85BB610C",
+      "title" : "Innovative Touch Interface"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "C38AFB4A-FADB-4B81-9872-DA9AD52EDB94",
+      "title" : "Light in Interior Design"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "C57169F2-6217-430E-BEEB-799B0189BAF1",
+      "title" : "Diet Coke Psychology"
+    },
+    {
+      "clusterID" : 18,
+      "nodeID" : "CD6B8969-6369-4E25-8522-9407DB7DCE36",
+      "title" : "Ghost Suggestions at Reduced Opacity"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "CF56C783-B228-4ECC-A089-02EA4F7684E7",
+      "title" : "Queerness as Living on Your Terms"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "CFC6C35F-623F-4CED-8E94-2E262EDB4B1B",
+      "title" : "Artifact Categories"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "D1486FEF-0E22-4DB9-B2AF-3F6FADD55501",
+      "title" : "Bank Ownership Reform"
+    },
+    {
+      "clusterID" : 20,
+      "nodeID" : "D20112F1-4058-4E73-9E9D-3A3EB482A7E9",
+      "title" : "Idea about Privacy"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "D30FCC29-041B-4054-93FD-9E851E45E2A5",
+      "title" : "Fear of Control"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "D35450FD-72E5-432D-8F63-32FC6BD166A5",
+      "title" : "Cat Domestication"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "D4BDC629-2887-4147-9BBA-752D786D6ABD",
+      "title" : "Decentralized Web"
+    },
+    {
+      "clusterID" : 18,
+      "nodeID" : "D51F45D9-9370-451A-8BF5-3945F038A08F",
+      "title" : "Color Discovery"
+    },
+    {
+      "clusterID" : 11,
+      "nodeID" : "D54384D3-B137-4943-9FBA-3581C05E1C90",
+      "title" : "Milkmen Comeback"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "D7E3B377-5D38-4B3F-9F63-35D087B63673",
+      "title" : "Wikipedia's Role in the Digital Age"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "D82BB422-53A2-49C2-A6E8-7C4324027677",
+      "title" : "QuikCapture Overlay Design"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "DB4EAD7D-7103-4214-92A8-604FC49D8084",
+      "title" : "Nightmares and their Impact"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "DB62F18E-C396-4822-9EA2-8471FEC2C52B",
+      "title" : "Morality and Darkness in Middle-earth"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "DDC66F15-2480-441C-AA28-B2A3916C9023",
+      "title" : "Mirror of Truth"
+    },
+    {
+      "clusterID" : 14,
+      "nodeID" : "DE376D16-3A46-4847-B961-027642F084CF",
+      "title" : "Heartbeat Control System"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "DEA2B9DB-F98C-4D4A-A088-BA833CA1D054",
+      "title" : "Reexamining Meals: Breakfast as a Critical Meal"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "DF6B5E4B-79E5-42AF-9230-781165F8A264",
+      "title" : "Zoom-Dependent Clustering for Over-Nodes"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "DFBD28AB-1DAE-4F70-90DB-CE8AFF938C66",
+      "title" : "Interdimensional Narrative"
+    },
+    {
+      "clusterID" : 5,
+      "nodeID" : "E21482BF-EF67-4BF8-A0F5-CFA07ED1D625",
+      "title" : "Creative Story Development"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "E324C919-659F-4FC5-93ED-445222DC688A",
+      "title" : "Exploring Belief in Divine Nature"
+    },
+    {
+      "clusterID" : 7,
+      "nodeID" : "E3CB2C56-229D-4E64-BF76-C5EEBD5E49A8",
+      "title" : "Slow Roasted Plum Tomatoes"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "E5A63DEC-42AB-46F1-A9B4-53DDA3CF8757",
+      "title" : "Strategic Ideation from AirPad Sounding Board"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "E7B9C683-FD65-45BD-B173-66562484699C",
+      "title" : "Inner Light"
+    },
+    {
+      "clusterID" : 21,
+      "nodeID" : "E7BCE684-7DFF-4225-B15A-E0DDFEB1BF54",
+      "title" : "Creative Storytelling and Technology"
+    },
+    {
+      "clusterID" : 9,
+      "nodeID" : "E858BE6B-3587-415F-9E94-FBCA3101AEC0",
+      "title" : "Peeping Tom"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "E8962D8F-FDBA-441A-828A-3CD31D051E62",
+      "title" : "Mysterious Guns"
+    },
+    {
+      "clusterID" : 1,
+      "nodeID" : "E91DC9EF-9BBB-4979-B539-FCCA577DCD04",
+      "title" : "Fan Loyalty and Team Dynamics"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "E9783584-AF6C-4703-A288-CE14F5CE2FA5",
+      "title" : "Phone Lens Warp"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "EA3C20C5-CFFA-48CA-BFE1-C294979CC7C1",
+      "title" : "TechTrends"
+    },
+    {
+      "clusterID" : 14,
+      "nodeID" : "EAB9D025-BAB1-44A7-BAE5-95BE444C2015",
+      "title" : "Exploring Connections"
+    },
+    {
+      "clusterID" : 3,
+      "nodeID" : "EBA90170-0042-476B-9D08-C178CAEEE4A7",
+      "title" : "Company Mergers and Brand Consolidation"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "EBF18FFC-87C8-49B9-BCD6-EBA1491B27F8",
+      "title" : "Honesty in Reflection"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "ED80560F-5FA4-4610-8FF1-F33F86086F15",
+      "title" : "Unimaginable Cruelty"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "EF74D6B7-DBDF-4E45-9745-D86C3AA28D05",
+      "title" : "Time Travel Concept"
+    },
+    {
+      "clusterID" : 12,
+      "nodeID" : "F26299D0-89AB-47D4-A406-D5FE51DE4D15",
+      "title" : "Recipe Domain Classification"
+    },
+    {
+      "clusterID" : 18,
+      "nodeID" : "F31D49B8-047A-4051-B377-33AD799A9A52",
+      "title" : "Brand Architecture for Curious Objects"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "F3BAD1DC-09E8-4576-BF73-ED6FD8A19D66",
+      "title" : "Recipe-App"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "F49C7C2C-6D4D-4D20-8405-B79E851BA3D6",
+      "title" : "Interactive Branching System"
+    },
+    {
+      "clusterID" : 4,
+      "nodeID" : "FBD574E7-D2CB-4629-A679-630BA11DC678",
+      "title" : "Inner Light and Perception"
+    },
+    {
+      "clusterID" : 2,
+      "nodeID" : "FCA1668C-FAFF-41FF-90C5-3F4DB625A341",
+      "title" : "Cosmic Messages and Constellations"
+    },
+    {
+      "clusterID" : 22,
+      "nodeID" : "FF0C11DE-B878-49FB-8487-CE50EEB3B0DF",
+      "title" : "Iconoclasmic Video Series"
+    },
+    {
+      "clusterID" : 0,
+      "nodeID" : "FF43DCC8-2E4C-482F-90AC-4DA7E6B7AB3E",
+      "title" : "Queerness as Self-Expression"
+    }
+  ],
+  "clusterSizes" : {
+    "0" : 15,
+    "1" : 12,
+    "10" : 1,
+    "11" : 7,
+    "12" : 8,
+    "13" : 1,
+    "14" : 3,
+    "15" : 1,
+    "16" : 1,
+    "17" : 1,
+    "18" : 5,
+    "19" : 1,
+    "2" : 20,
+    "20" : 1,
+    "21" : 1,
+    "22" : 1,
+    "3" : 27,
+    "4" : 32,
+    "5" : 10,
+    "6" : 1,
+    "7" : 9,
+    "8" : 3,
+    "9" : 9
+  },
+  "k" : 23
+}

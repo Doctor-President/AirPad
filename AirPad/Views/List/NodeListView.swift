@@ -14,6 +14,7 @@ private struct ListItem: Identifiable {
 struct NodeListView: View {
 
     @Environment(CorpusStore.self) private var store
+    @Environment(SelectionService.self) private var selection
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
     @State private var displayItems: [ListItem] = []
@@ -21,7 +22,7 @@ struct NodeListView: View {
     @State private var isJumping = false
 
     @State private var scrollToFirstAfterSort = false
-    @State private var fanExpanded = false
+    @Binding var fanExpanded: Bool
     @State private var captureMode: ListCaptureMode? = nil
     @State private var captureTargetNodeID: String? = nil
     @State private var showingNodePicker = false
@@ -42,40 +43,58 @@ struct NodeListView: View {
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
-                    Color.black.ignoresSafeArea()
-                    BackgroundGridView()
+                    ZStack(alignment: .bottomTrailing) {
+                        Color.black.ignoresSafeArea()
+                        BackgroundGridView()
+                            .ignoresSafeArea()
+                            .allowsHitTesting(false)
+                        listContent(containerHeight: geo.size.height)
+                        VStack(spacing: 0) {
+                            LinearGradient(
+                                colors: [.black, .clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 100)
+                            .allowsHitTesting(false)
+
+                            Spacer()
+
+                            LinearGradient(
+                                colors: [.clear, .black],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 100)
+                            .allowsHitTesting(false)
+                        }
+                        .allowsHitTesting(false)
                         .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                    listContent(containerHeight: geo.size.height)
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [.black, .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 100)
-                        .allowsHitTesting(false)
 
-                        Spacer()
-
-                        LinearGradient(
-                            colors: [.clear, .black],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 100)
-                        .allowsHitTesting(false)
+                        if !store.isInDetailView {
+                            VStack {
+                                Spacer()
+                                HStack(spacing: 12) {
+                                    GhostQueryField()
+                                        .frame(maxWidth: .infinity)
+                                    Spacer()
+                                        .frame(width: 68) // reserve space for ActionButtonFan + button
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.bottom, 24)
+                            }
+                        }
                     }
-                    .allowsHitTesting(false)
-                    .ignoresSafeArea()
+                    .blur(radius: fanExpanded ? 12 : 0)
+                    .animation(.easeInOut(duration: 0.22), value: fanExpanded)
+
                     ActionButtonFan(
                         isExpanded: $fanExpanded,
                         isEmpty: store.nodes.isEmpty,
                         onVoice:       { captureMode = .voice },
                         onCamera:      { captureMode = .camera },
                         onText:        { captureMode = .text },
-                        onNodePicker:  { showingNodePicker = true },
-                        onAddToRecent: { captureTargetNodeID = store.nodes.first?.id }
+                        onNodePicker:  { showingNodePicker = true }
                     )
                 }
                 .navigationDestination(for: Node.self) { node in
@@ -90,7 +109,9 @@ struct NodeListView: View {
                     }
                 }
                 .sheet(isPresented: $showingNodePicker) {
-                    NodePickerSheet(selectedNodeID: $captureTargetNodeID)
+                    NodePickerSheet(onSelect: { node in
+                        navigationPath.append(node)
+                    })
                 }
                 .onChange(of: captureMode) { _, mode in
                     if mode != nil { fanExpanded = false }
@@ -125,10 +146,13 @@ struct NodeListView: View {
                         NodeCardView(
                             node: item.node,
                             selected: index == centerIdx,
-                            dist: dist
+                            dist: dist,
+                            isSelecting: selection.isActive,
+                            isPicked: selection.isSelected(item.realNodeID)
                         )
                         .frame(height: cardHeight)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
+                        .animation(.easeInOut(duration: 0.18), value: selection.isActive)
                         .id(item.id)
                         .visualEffect { content, proxy in
                             let frame = proxy.frame(in: .global)
@@ -163,8 +187,13 @@ struct NodeListView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
-                            navHaptic.impactOccurred()
-                            navigationPath.append(real)
+                            if selection.isActive {
+                                haptic.impactOccurred()
+                                selection.toggle(real.id)
+                            } else {
+                                navHaptic.impactOccurred()
+                                navigationPath.append(real)
+                            }
                         }
                     }
                 }

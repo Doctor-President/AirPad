@@ -1,0 +1,5501 @@
+[
+  {
+    "contentTruncated" : "10\/17 (alternate): God has grown weary of their role and is offering up the seat of divinity to whomever can claim it first.",
+    "currentTags" : [
+      "Idea",
+      "Science",
+      "Dream"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "10\/17",
+      "alternate",
+      "divinity",
+      "God",
+      "offer",
+      "seat",
+      "claim",
+      "role"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 4215,
+    "nodeID" : "00500AF9-A193-4AA2-91B6-F81988A786B4",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Divine Succession"
+  },
+  {
+    "contentTruncated" : "I think that food is a human right just like shelter and medicine and education\nI think that food is a human right just like shelter and medicine and education",
+    "currentTags" : [
+      "Food",
+      "Human Rights"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "food",
+      "human right",
+      "shelter",
+      "medicine",
+      "education",
+      "rights",
+      "social justice",
+      "equity"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1051,
+    "nodeID" : "01CA8E4F-0AC5-4A0E-9F18-F07EC510ED40",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Food as a Human Right"
+  },
+  {
+    "contentTruncated" : "I wonder if having more awareness of your dreams actually affects the quality or manner of your dreams\nI wonder if having more awareness of your dreams actually affects the quality or manner of your d…",
+    "currentTags" : [
+      "Dream"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "dreams",
+      "dream analysis",
+      "dream interpretation",
+      "dream awareness",
+      "sleep science",
+      "psychological exploration"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 987,
+    "nodeID" : "040DEE3D-082E-41AB-AFAD-DF2CC25E8457",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Dream Awareness"
+  },
+  {
+    "contentTruncated" : "Vertical farming seems like it's genuinely the future of food because as the climate is going to become more volatile and less hospitable to growing food will have to resort to recirculating water sys…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "vertical farming",
+        "score" : 0.4888625334335956,
+        "vocab" : "Domestication"
+      },
+      {
+        "folksonomy" : "food production",
+        "score" : 0.6788259427729361,
+        "vocab" : "Food"
+      },
+      {
+        "folksonomy" : "climate change",
+        "score" : 0.580741380050355,
+        "vocab" : "Conflict"
+      },
+      {
+        "folksonomy" : "agriculture",
+        "score" : 0.5385228727532271,
+        "vocab" : "Domestication"
+      },
+      {
+        "folksonomy" : "water recycling",
+        "score" : 0.5175422357917933,
+        "vocab" : "Domestication"
+      },
+      {
+        "folksonomy" : "controlled environments",
+        "score" : 0.46852365780373983,
+        "vocab" : "People"
+      },
+      {
+        "folksonomy" : "yield maximization",
+        "score" : 0.5836830191773917,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "pest resistance",
+        "score" : 0.6279446931045767,
+        "vocab" : "Domestication"
+      },
+      {
+        "folksonomy" : "biodiversity loss",
+        "score" : 0.6052282932406687,
+        "vocab" : "Domestication"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "vertical farming",
+      "food production",
+      "climate change",
+      "agriculture",
+      "water recycling",
+      "controlled environments",
+      "yield maximization",
+      "pest resistance",
+      "biodiversity loss"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1545,
+    "nodeID" : "0638A25E-0F1E-42D8-BADE-78B5BB65FD3E",
+    "postFilterTags" : [
+      "Food",
+      "Conflict",
+      "Domestication",
+      "Manipulation"
+    ],
+    "summaryLatencyMs" : 1355,
+    "title" : "Vertical Farming Future"
+  },
+  {
+    "contentTruncated" : "QuikCapture. Q + magnifying glass icon. Prismatic quality is the identity — behavior, not color. Action Button, Back Tap, lock screen widget, share sheet. Capture from anywhere.",
+    "currentTags" : [
+      "Technology",
+      "Work",
+      "Creative",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "QuikCapture",
+      "magnifying glass",
+      "prismatic",
+      "quality",
+      "behavior",
+      "action button",
+      "back tap",
+      "lock screen widget",
+      "share sheet",
+      "capture"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1159,
+    "nodeID" : "07E0DC7B-D4A3-4D62-A95D-F12DCC988D08",
+    "postFilterTags" : [
+
+    ],
+    "title" : "✨QuikCapture"
+  },
+  {
+    "contentTruncated" : "Two rooms. Dark mode (Solar Flare) and light mode (Cucumber Water) are two emotional registers, not ergonomic toggles. Same physics, different light.",
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "dark mode",
+      "light mode",
+      "solar flare",
+      "cucumber water",
+      "emotional registers",
+      "ergonomics"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1031,
+    "nodeID" : "099CD678-E51D-4162-8ADD-5EE13E923039",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Light Modes and Emotion"
+  },
+  {
+    "contentTruncated" : "The story of WWII isn’t that good triumphed over evil. It’s that the evil empire that inspired Germany catapulted itself to being the dominant power of the world while being hailed as righteous and re…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "worldwar2",
+        "score" : 0.5508691783367896,
+        "vocab" : "AirPad"
+      },
+      {
+        "folksonomy" : "history",
+        "score" : 0.9999999999999998,
+        "vocab" : "History"
+      },
+      {
+        "folksonomy" : "evil",
+        "score" : 0.6205134555920302,
+        "vocab" : "Cosmic"
+      },
+      {
+        "folksonomy" : "power",
+        "score" : 1,
+        "vocab" : "Power"
+      },
+      {
+        "folksonomy" : "dominant",
+        "score" : 0.31898206153351416,
+        "vocab" : "Cosmic"
+      },
+      {
+        "folksonomy" : "righteous",
+        "score" : 0.5415750411768337,
+        "vocab" : "Cosmic"
+      },
+      {
+        "folksonomy" : "imperialism",
+        "score" : 0.6402890420601282,
+        "vocab" : "Morality"
+      }
+    ],
+    "currentTags" : [
+      "Story",
+      "Art",
+      "Historical Revisionism"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "worldwar2",
+      "history",
+      "evil",
+      "power",
+      "dominant",
+      "righteous",
+      "imperialism"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1235,
+    "nodeID" : "09C7E791-93DF-435D-A885-7454C34A98E2",
+    "postFilterTags" : [
+      "AirPad",
+      "History",
+      "Cosmic",
+      "Power",
+      "Morality"
+    ],
+    "summaryLatencyMs" : 1067,
+    "title" : "Historical Revisionism in WWII Narratives"
+  },
+  {
+    "contentTruncated" : "Episode premise: Hole to China.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "science fiction",
+        "score" : 0.6250995182527804,
+        "vocab" : "Science"
+      },
+      {
+        "folksonomy" : "space",
+        "score" : 0.4447496660434939,
+        "vocab" : "Power"
+      },
+      {
+        "folksonomy" : "travel",
+        "score" : 1,
+        "vocab" : "Travel"
+      },
+      {
+        "folksonomy" : "adventure",
+        "score" : 0.44649712336926856,
+        "vocab" : "Comedy"
+      },
+      {
+        "folksonomy" : "exploration",
+        "score" : 0.580107166067673,
+        "vocab" : "Research"
+      },
+      {
+        "folksonomy" : "conceptual",
+        "score" : 1,
+        "vocab" : "Conceptual"
+      },
+      {
+        "folksonomy" : "futuristic",
+        "score" : 0.44892293873541855,
+        "vocab" : "Conceptual"
+      },
+      {
+        "folksonomy" : "epic",
+        "score" : 0.600789708866873,
+        "vocab" : "Cosmic"
+      }
+    ],
+    "currentTags" : [
+      "Story",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "science fiction",
+      "space",
+      "travel",
+      "adventure",
+      "exploration",
+      "conceptual",
+      "futuristic",
+      "epic"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1255,
+    "nodeID" : "0A0DB1DA-B0F0-463D-BF1F-F07DCA0E000C",
+    "postFilterTags" : [
+      "Science",
+      "Travel",
+      "Research",
+      "Conceptual",
+      "Cosmic"
+    ],
+    "summaryLatencyMs" : 1075,
+    "title" : "Episode Premise: Hole to China"
+  },
+  {
+    "contentTruncated" : "\\#\\#\\# **1. Architecture & Backend**",
+    "currentTags" : [
+      "Technology",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "architecture",
+      "backend",
+      "idea",
+      "concept",
+      "design",
+      "tech"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 775,
+    "nodeID" : "0CC36D15-E4E7-4659-BD60-181FCD2D63B4",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Architecture & Backend Development"
+  },
+  {
+    "contentTruncated" : "Emily is the best! ✨",
+    "currentTags" : [
+      "People",
+      "Memory"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Emily",
+      "best",
+      "favourite",
+      "love",
+      "admiration",
+      "appreciation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 837,
+    "nodeID" : "0DA3D74A-3F3E-4E68-8E48-F192A37FEA27",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Emily is the best!"
+  },
+  {
+    "contentTruncated" : "I'm curious to know how Chinese people use Corti keyboards\nI'm curious to know how Chinese people use Corti keyboards",
+    "currentTags" : [
+      "Technology"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 114,
+    "nodeID" : "1130789A-0757-4F78-B0F6-5C0DC982886B",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Exploring Corti Keyboards in China"
+  },
+  {
+    "contentTruncated" : "Universal canvas tap model. Single tap centers and scales the node; tap outside dismisses; double tap drills in. No separate mode or toggle.",
+    "currentTags" : [
+      "Technology",
+      "Creative",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "universal canvas",
+      "tap model",
+      "node centering",
+      "scaling",
+      "dismissal",
+      "double tap drilling",
+      "no toggle mode",
+      "single tap functionality"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1207,
+    "nodeID" : "1196CC2B-9ED8-4F64-9AF3-B8E388D95965",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Universal Canvas Tap Model"
+  },
+  {
+    "contentTruncated" : "Sweetgreen Harvest Bowl knockoff. One sweet potato chopped, 3-4 cups Lacinato kale, 1.5-2 cups cooked wild rice, 1 cup cooked chicken (rotisserie works), 1 chopped apple, 4 oz goat cheese, 1\/2 cup sli…",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Sweetgreen Harvest Bowl",
+      "recipe",
+      "vegetarian",
+      "healthy",
+      "cooking",
+      "salad",
+      "meal prep",
+      "quick",
+      "eats",
+      "home"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1407,
+    "nodeID" : "11A4B383-078F-4257-B3E2-395B0C0772A0",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Sweetgreen Harvest Bowl Recipe"
+  },
+  {
+    "contentTruncated" : "Episode premise: Cops+. Subscription, high-end version of cops — dressed like leather daddies.",
+    "currentTags" : [
+      "Story",
+      "Art",
+      "Dumb humor"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "cops",
+      "high-end",
+      "subscription",
+      "leather",
+      "daddies"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 894,
+    "nodeID" : "13B50ADA-F873-47D8-9554-6CF6FD4BFBA6",
+    "postFilterTags" : [
+
+    ],
+    "title" : "High-End Cop Drama"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Plastic Empire — A Poisoned Generation. Colorectal cancer in kids.",
+    "currentTags" : [
+      "Health",
+      "Science",
+      "Technology",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Plastic Empire",
+      "poisoned generation",
+      "colorectal cancer",
+      "kids",
+      "TikTok",
+      "health",
+      "awareness",
+      "science"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 955,
+    "nodeID" : "14F87597-0494-4086-A1B8-3014BAACEE4F",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Plastic Empire: A Poisoned Generation"
+  },
+  {
+    "contentTruncated" : "It's a continuing process.",
+    "currentTags" : [
+      "Learning",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "idea",
+      "process",
+      "continuing",
+      "development",
+      "conceptual",
+      "thought",
+      "theory",
+      "innovation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 962,
+    "nodeID" : "155C4EE3-BA3F-4B98-9A97-80344D6E87B8",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Continuous Process"
+  },
+  {
+    "contentTruncated" : "Episode premise: Vet Visit.",
+    "currentTags" : [
+      "Health",
+      "Fitness"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "veterinary care",
+      "animal health",
+      "pet vet visit",
+      "pet wellness",
+      "animal care",
+      "pet health check",
+      "pet visit",
+      "animal wellness"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1281,
+    "nodeID" : "155CC8BC-494F-42B2-8251-8091E417B376",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Vet Visit Episode Premise"
+  },
+  {
+    "contentTruncated" : "Episode premise: High Score. Tom gamifies his neighborhood. Neighbors get a little too into it.",
+    "currentTags" : [
+      "Work",
+      "Technology",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "high score",
+      "neighborhood competition",
+      "gamification",
+      "neighborhood drama",
+      "community interaction",
+      "competitive spirit",
+      "social experiment",
+      "local rivalry"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1178,
+    "nodeID" : "15B26052-5F20-4161-BFD8-41CC5036C8ED",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Neighborhood Gamification"
+  },
+  {
+    "contentTruncated" : "Idea capture as intention.",
+    "currentTags" : [
+      "Idea",
+      "Work",
+      "Research"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "idea",
+      "intention",
+      "concept",
+      "thought",
+      "innovation",
+      "creativity",
+      "strategic thinking",
+      "mindset"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 944,
+    "nodeID" : "172AB5B7-4FAB-4132-A7C6-5858ECA00EC2",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Capture Intentions"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Sports Teams. The thing isn't that I hate sports as much as I don't really get how I'm supposed to care for something that so blatantly hates its fans. Chicago Bears threatening to leave…",
+    "currentTags" : [
+      "Sports",
+      "PublicPolicy",
+      "FanLoyalty",
+      "MunicipalPride"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "sports",
+      "sports teams",
+      "Chicago Bears",
+      "St. Louis Rams",
+      "Noam Chomsky",
+      "taxpayers",
+      "monopoly",
+      "municipal pride",
+      "ownership",
+      "abusive pricing",
+      "fan loyalty",
+      "political commentary",
+      "American sports culture"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1842,
+    "nodeID" : "1765A743-9007-4E95-B55A-99D74ECA17A0",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Sports Team Loyalty and Public Policy"
+  },
+  {
+    "contentTruncated" : "I wonder how many straight men actually would enjoy being penetrated in the butt\nI wonder how many straight men actually would enjoy being penetrated in the butt",
+    "currentTags" : [
+      "Opinion"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 139,
+    "nodeID" : "17B0552D-A747-4637-A1B0-79446B192347",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Sexual curiosity"
+  },
+  {
+    "contentTruncated" : "Gender vampires. They suck the gender out of people.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Dumb humor"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "gender",
+      "vampires",
+      "psychology",
+      "harmful",
+      "relationships",
+      "negative"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 928,
+    "nodeID" : "18750632-826F-4241-BBDE-22C4FFC0A45D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Gender Vampires"
+  },
+  {
+    "contentTruncated" : "These deliberately stress-test the router's classification limits. Some should commit with a \"needs review\" flag. Some should genuinely fail to a quarantine queue. None should be silently dropped.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "router stress testing",
+        "score" : 0.5520981882938504,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "classification limits",
+        "score" : 0.4793009740757055,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "needs review",
+        "score" : 0.48864227477213823,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "quarantine queue",
+        "score" : 0.5343065902553455,
+        "vocab" : "Washington DC"
+      },
+      {
+        "folksonomy" : "silently dropped",
+        "score" : 0.32507676646861333,
+        "vocab" : "Manipulation"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Learning",
+      "AirPad"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "router stress testing",
+      "classification limits",
+      "needs review",
+      "quarantine queue",
+      "silently dropped"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1187,
+    "nodeID" : "18C0ADA0-83CF-408C-BA4B-88E80D336B1D",
+    "postFilterTags" : [
+      "Manipulation",
+      "Washington DC"
+    ],
+    "summaryLatencyMs" : 1025,
+    "title" : "Stress Testing Router Classification Limits"
+  },
+  {
+    "contentTruncated" : "Outline-format brainstorm. Each top-level topic is one node. Bullets are content within the node. Tests outline-hierarchy detection.",
+    "currentTags" : [
+      "Work",
+      "Research",
+      "Learning",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "brainstorm",
+      "outline",
+      "hierarchy",
+      "detection",
+      "content",
+      "structure",
+      "idea"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 860,
+    "nodeID" : "19B04B53-A91C-47E1-AC92-CBAF50FA1C94",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Outline-format Brainstorm"
+  },
+  {
+    "contentTruncated" : "Peeping Tom episode idea.\nAnd now what?",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "peeping tom",
+      "episode idea",
+      "and now what"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 642,
+    "nodeID" : "1B0042AA-E667-44B6-A3A2-6735B20CC932",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Peeping Tom Episode Idea"
+  },
+  {
+    "contentTruncated" : "Summer Lemon Shrimp Pasta. One stick Kerrygold butter, 2 tbsp minced garlic, white onion sliced lengthwise, 1 cup dry white wine, 1 cup shredded Parmesan, 1 tbsp white wine vinegar, 1 cup lemon juice …",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "summer",
+      "lemon",
+      "shrimp",
+      "pasta",
+      "recipe",
+      "dinner",
+      "cooking",
+      "gourmet",
+      "easy",
+      "food"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1228,
+    "nodeID" : "1B4C4369-810B-4B25-BC1A-14ECFAD6A71D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Summer Lemon Shrimp Pasta"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Alternative to DoorDash \/ End Gatekeeping.",
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Dishonest DoorDash",
+      "Alternative to DoorDash",
+      "End Gatekeeping",
+      "Food delivery",
+      "Delivery apps",
+      "Efficient food delivery",
+      "DoorDash alternatives",
+      "Food delivery innovation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1457,
+    "nodeID" : "1DBF521C-1079-4B48-9CF9-E4794D0309CB",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Alternative to DoorDash"
+  },
+  {
+    "contentTruncated" : "The reveal: Action Button setup is a reveal, not a setup step. Person captures something in the world, it arrives without opening the app. Closing line: \"It works from anywhere. You'll never lose a th…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "action",
+        "score" : 0.4558347919885472,
+        "vocab" : "Conflict"
+      },
+      {
+        "folksonomy" : "button",
+        "score" : 0.42005258327362766,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "reveal",
+        "score" : 0.4447696821669614,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "setup",
+        "score" : 0.5239147506345393,
+        "vocab" : "Memory"
+      },
+      {
+        "folksonomy" : "capture",
+        "score" : 0.43708461345675864,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "device",
+        "score" : 0.6392527396614914,
+        "vocab" : "Technology"
+      },
+      {
+        "folksonomy" : "accessibility",
+        "score" : 0.5764161362600684,
+        "vocab" : "Guidance"
+      },
+      {
+        "folksonomy" : "feature",
+        "score" : 0.4385328738858138,
+        "vocab" : "Reference"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "action",
+      "button",
+      "reveal",
+      "setup",
+      "capture",
+      "device",
+      "accessibility",
+      "feature"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1139,
+    "nodeID" : "1E9C4DEF-DD1E-42B0-80FC-62E9CD93DF54",
+    "postFilterTags" : [
+      "Memory",
+      "Technology",
+      "Guidance"
+    ],
+    "summaryLatencyMs" : 961,
+    "title" : "Action Button Reveal"
+  },
+  {
+    "contentTruncated" : "Episode premise: Fan Fic. Tom starts going to the Mormon church and gets inspired to make Biblical fan fiction.",
+    "currentTags" : [
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "fan fiction",
+      "biblical",
+      "mormon",
+      "church",
+      "inspiration",
+      "storytelling"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 863,
+    "nodeID" : "208950E1-597A-4304-A903-9207DB667B55",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Episode premise: Fan Fic. Tom starts goi"
+  },
+  {
+    "contentTruncated" : "The application bears the burden.",
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "application",
+      "burden",
+      "idea",
+      "concept",
+      "thought",
+      "innovation",
+      "problem",
+      "solution"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 865,
+    "nodeID" : "21EED00B-1721-476B-91C2-FF23CD4FA201",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Application Burden"
+  },
+  {
+    "contentTruncated" : "The corpus produces beautiful, shareable artifacts. The view system splits into graph, list, catalogue, and export.",
+    "currentTags" : [
+      "Creative",
+      "Technology",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "idea",
+      "artifacts",
+      "shareable",
+      "view",
+      "system",
+      "graph",
+      "list",
+      "catalogue",
+      "export"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1098,
+    "nodeID" : "23C11BCF-E227-4346-9852-4C8C362BE1A7",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Artistic Data Visualization"
+  },
+  {
+    "contentTruncated" : "Episode premise: Rollover Minutes. Tom realizes he has millions of unclaimed rollover minutes and tries to get more.",
+    "currentTags" : [
+      "Technology",
+      "Work",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "episode",
+      "premise",
+      "rollover minutes",
+      "unclaimed",
+      "minutes",
+      "get",
+      "more"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 921,
+    "nodeID" : "245288DA-993D-4968-AA62-5B1EF0D81D82",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Rollover Minutes"
+  },
+  {
+    "contentTruncated" : "Two rooms: Solar Flare and Cucumber Water.",
+    "currentTags" : [
+      "Idea",
+      "Work",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "solar flare",
+      "cucumber",
+      "science",
+      "experiment",
+      "innovation",
+      "concept",
+      "technology",
+      "room"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 895,
+    "nodeID" : "25650366-E259-48C1-9B83-CE86B7A7F030",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Room Design Concept"
+  },
+  {
+    "contentTruncated" : "If somebody kills God what happens do they get to become God\nIf somebody kills God what happens do they get to become God",
+    "currentTags" : [
+      "Creative",
+      "Technology",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "philosophy",
+      "religion",
+      "theology",
+      "existentialism",
+      "metaphysics",
+      "allegory",
+      "paradox",
+      "conceptual",
+      "thought-experiment"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1263,
+    "nodeID" : "259F10C9-09D5-491B-81D3-E2BAFA7599EE",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Creative Dilemma"
+  },
+  {
+    "contentTruncated" : "Episode premise: Developing H.E.N.T.A.I. — AI for CEOs.",
+    "currentTags" : [
+      "Technology",
+      "Idea",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "ai",
+      "ceo",
+      "hentai",
+      "technology",
+      "artificial intelligence",
+      "humor",
+      "fictional",
+      "concept"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1048,
+    "nodeID" : "2745F3ED-7CA7-4984-837A-26DB3ED4C2F7",
+    "postFilterTags" : [
+
+    ],
+    "title" : "AI for CEOs"
+  },
+  {
+    "contentTruncated" : "Episode premise: Wiki Freaks. A wiki is made for people in the neighborhood that ends up having people obsess over the lore.",
+    "currentTags" : [
+      "Technology",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "wiki",
+      "neighborhood",
+      "obsession",
+      "lore",
+      "community",
+      "online",
+      "interactive",
+      "social"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 911,
+    "nodeID" : "27CD93D7-CCEB-486F-BB34-FCD0AFC8B9B3",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Wiki Freaks"
+  },
+  {
+    "contentTruncated" : "The Ghost Query Field. Persistent query field with ambient suggestions at reduced opacity. Suggestions rotate on slow cycle, same breathing rhythm as the canvas. On tap: suggestion becomes pre-filled …",
+    "currentTags" : [
+      "Technology",
+      "AirPad"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "ghost",
+      "query",
+      "field",
+      "ambient",
+      "suggestions",
+      "pre-filled",
+      "text",
+      "reflective",
+      "prompts",
+      "corpus-aware"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1150,
+    "nodeID" : "28C3FAB7-09DA-4EAD-A121-9CC26C8EB564",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Ghost Query Field"
+  },
+  {
+    "contentTruncated" : "Channel tagline candidate: \"I would rather die choking on a urinal cake than play golf.\" Very They Live energy.",
+    "currentTags" : [
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "humor",
+      "golf",
+      "play",
+      "they_live",
+      "urinal cake",
+      "death",
+      "irony"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 987,
+    "nodeID" : "2942D9B0-5986-4162-A4DE-231F4072A8B2",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Urinal Cake Tagline"
+  },
+  {
+    "contentTruncated" : "Jesse Brooks is the best person and she's going to take over Thailand\nJesse Brooks is the best person and she's going to take over Thailand\nPoop \nTalat Noi",
+    "currentTags" : [
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Jesse Brooks",
+      "Thailand",
+      "Talat Noi",
+      "poop",
+      "best person",
+      "overtake"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 988,
+    "nodeID" : "2B549156-3A21-45FA-9036-236A7174B72D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Jesse Brooks' Ambition in Thailand"
+  },
+  {
+    "contentTruncated" : "Episode premise: Missing — God. Neighbor friend says God isn't getting their prayers. God has gone on strike because people aren't tithing anymore.",
+    "currentTags" : [
+      "Recipe",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "episode",
+      "premise",
+      "missing",
+      "god",
+      "neighborhood",
+      "friend",
+      "prayers",
+      "strike",
+      "tithing"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1033,
+    "nodeID" : "2C8E51AD-CBCB-48DD-80BC-9EB8C7A86345",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Culinary Innovation App"
+  },
+  {
+    "contentTruncated" : "05\/07: A simple series, just about making money. Stars a more optimistic and slightly stupid version of me. His dumb ideas have a tendency to sort of work out. He has a dog named Hannibal who Tom swea…",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "money",
+      "optimistic",
+      "comedy",
+      "dog",
+      "fantasy",
+      "animation",
+      "series",
+      "humor"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1042,
+    "nodeID" : "2E445015-6DE6-4110-A01E-5C6D76FB9A8D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Optimistic Dog Series"
+  },
+  {
+    "contentTruncated" : "With AI donators with AI setters writing of buying up all the ram is this gonna spell the end of people being able to build their own PCs\nWith AI donators with AI setters writing of buying up all the …",
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "AI",
+      "computing",
+      "PC building",
+      "hardware",
+      "RAM",
+      "technology",
+      "AI impact",
+      "DIY PCs"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 974,
+    "nodeID" : "31DAA67B-50C7-4042-BA7A-08CF021A6A61",
+    "postFilterTags" : [
+
+    ],
+    "title" : "RAM Crisis"
+  },
+  {
+    "contentTruncated" : "Six full recipes in consistent structured format. Each recipe should commit as one node, not exploded into ingredient lists. Tests structured-document recognition and the gate's ability to recognize \"…",
+    "currentTags" : [
+      "Recipe",
+      "Technology",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "recipes",
+      "structured-document",
+      "recipe-format",
+      "structured-recognition",
+      "recipe-tags"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 981,
+    "nodeID" : "31F8C2F6-3301-46CD-9465-D2401E1ACE66",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Recipe Recognition System"
+  },
+  {
+    "contentTruncated" : "I feel really bad for what humans did to dogs who would've thought that one night when a wolf had come across a human cam that would have spelled A lifetime spanning generations of domestication and s…",
+    "currentTags" : [
+      "Domestication",
+      "Dogs",
+      "Emotional",
+      "Reflective"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "dogs",
+      "domestication",
+      "wolves",
+      "anthropomorphism",
+      "emotionalconnection",
+      "familyrelationships",
+      "petcare",
+      "animalbehavior"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1343,
+    "nodeID" : "3322D60A-64E9-4597-A0E1-741B21BA3CDD",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Domestication Reflection"
+  },
+  {
+    "contentTruncated" : "The promise: everything you put here is yours. It lives in your private iCloud — encrypted, invisible to anyone but you. Not us. Not anyone. Fades after first reveal. Never shown again.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Health"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "cloud storage",
+      "encryption",
+      "private",
+      "iCloud",
+      "security",
+      "data privacy",
+      "digital ownership",
+      "unseen"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1093,
+    "nodeID" : "345AD7E3-0AF0-4EC3-94A1-BE7DD99BD43D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Private Cloud Storage"
+  },
+  {
+    "contentTruncated" : "Where did the term honky come from anyways\nWhere did the term honky come from anyways",
+    "currentTags" : [
+      "Etymology",
+      "Cultural Studies"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"Response may contain sensitive or unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 907,
+    "nodeID" : "37B4904F-9513-4222-9C39-09219A5E03F1",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Etymology Inquiry"
+  },
+  {
+    "contentTruncated" : "Two-layer canvas physics. Tag-based force plus semantic embedding. Primary affinity: top-1 nearest neighbor stored per node. Luminous tendrils for thread connections. Six view modes. CoreHaptics pulse…",
+    "currentTags" : [
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "two-layer",
+      "canvas",
+      "physics",
+      "force",
+      "semantic",
+      "embedding",
+      "affinity",
+      "nearest",
+      "neighbor",
+      "thread",
+      "connections",
+      "view",
+      "modes",
+      "corehaptics",
+      "pulse",
+      "train",
+      "sort",
+      "transitions",
+      "ambient",
+      "drift"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1678,
+    "nodeID" : "38E5960A-288A-4BBB-97BA-0CC09C690806",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Advanced Canvas Physics System"
+  },
+  {
+    "contentTruncated" : "The batch import moment: \"You've probably already been thinking about this for a while. Bring it with you.\" Progressive node arrival, one at a time. Positioned after guided first node and QuikCapture …",
+    "currentTags" : [
+      "Work",
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "batch import",
+      "progressive node arrival",
+      "guided first node",
+      "QuikCapture reveal"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 783,
+    "nodeID" : "3981BBA2-3F02-4379-9BF4-F7AE2580E015",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Progressive Node Arrival"
+  },
+  {
+    "contentTruncated" : "**Purpose:** Stress-test the batch import gate \/ router with diverse, realistic input.\n**Target node count:** ~200 after routing\n**Composition:** ~70% real material (your own writing, journal entries,…",
+    "currentTags" : [
+      "Work",
+      "Research",
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "stress-test",
+      "batch import",
+      "gate",
+      "router",
+      "diverse",
+      "realistic",
+      "input",
+      "material",
+      "writing",
+      "journal",
+      "entries",
+      "recipes",
+      "brainstorms",
+      "Sounding Board",
+      "synthetic",
+      "outliers",
+      "edge cases"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1661,
+    "nodeID" : "3AD97701-4A8C-486D-B430-1499F8419ACF",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Stress-test Batch Import Gate \/ Router"
+  },
+  {
+    "contentTruncated" : "I think that as time goes on the Lord of the rings has become more and more present especially in the times that we live in now sometimes the forces of good and evil really are that black-and-white so…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "Lord of the Rings",
+        "score" : 0.39364377834039227,
+        "vocab" : "Time Travel"
+      },
+      {
+        "folksonomy" : "Good vs Evil",
+        "score" : 0.509910146449013,
+        "vocab" : "Emotional"
+      },
+      {
+        "folksonomy" : "Moral Complexity",
+        "score" : 0.6755856130215961,
+        "vocab" : "Morality"
+      },
+      {
+        "folksonomy" : "Black and White",
+        "score" : 0.4052844480761717,
+        "vocab" : "Cosmic"
+      },
+      {
+        "folksonomy" : "Epic Fantasy",
+        "score" : 0.6235098715660142,
+        "vocab" : "Comedy"
+      },
+      {
+        "folksonomy" : "Philosophical Themes",
+        "score" : 0.6356344852762487,
+        "vocab" : "Morality"
+      },
+      {
+        "folksonomy" : "Darkness",
+        "score" : 1,
+        "vocab" : "Darkness"
+      },
+      {
+        "folksonomy" : "Contemporary Relevance",
+        "score" : 0.5358708624478015,
+        "vocab" : "Historical Revisionism"
+      }
+    ],
+    "currentTags" : [
+      "Morality",
+      "Middle-earth",
+      "Darkness"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Lord of the Rings",
+      "Good vs Evil",
+      "Moral Complexity",
+      "Black and White",
+      "Epic Fantasy",
+      "Philosophical Themes",
+      "Darkness",
+      "Contemporary Relevance"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1543,
+    "nodeID" : "3B5584B8-4B25-4801-804B-0B86C87961C0",
+    "postFilterTags" : [
+      "Emotional",
+      "Morality",
+      "Comedy",
+      "Darkness",
+      "Historical Revisionism"
+    ],
+    "summaryLatencyMs" : 1363,
+    "title" : "The Complexity of Morality in Middle-earth"
+  },
+  {
+    "contentTruncated" : "Chicken Mole (grandma's recipe, 7 servings). Boil chicken in 16 cups water with half onion, 2 bay leaves, 2 garlic cloves for 25-30 min. Reserve 9 cups broth. Add Mexican chocolate disk to broth. Toas…",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Chicken Mole",
+      "grandma's recipe",
+      "7 servings",
+      "Mexican cuisine",
+      "chocolate",
+      "spices",
+      "broth",
+      "soup",
+      "culinary",
+      "family recipe",
+      "traditional"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1512,
+    "nodeID" : "3DE64A27-98DA-4EC2-8D73-E632EE482BF8",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Chicken Mole Recipe"
+  },
+  {
+    "contentTruncated" : "Episode premise: Dog Therapist.",
+    "currentTags" : [
+      "Dumb humor"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "dog",
+      "therapist",
+      "episode",
+      "premise",
+      "story",
+      "animal",
+      "therapy",
+      "narrative"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 935,
+    "nodeID" : "3F6EE190-B4DB-4903-B5DE-42D2A03B323F",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Dog Therapist"
+  },
+  {
+    "contentTruncated" : "Boomers are dividing and multiplying.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "boomers",
+        "score" : 0.3637933527220711,
+        "vocab" : "Dogs"
+      },
+      {
+        "folksonomy" : "generation",
+        "score" : 0.43915944507748067,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "multiply",
+        "score" : 0.5108112545245519,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "divide",
+        "score" : 0.4074441779687468,
+        "vocab" : "Conflict"
+      },
+      {
+        "folksonomy" : "aging",
+        "score" : 0.48367974336492536,
+        "vocab" : "Fitness"
+      },
+      {
+        "folksonomy" : "population trends",
+        "score" : 0.7392733285461751,
+        "vocab" : "Trends"
+      },
+      {
+        "folksonomy" : "generational dynamics",
+        "score" : 0.6540186741455946,
+        "vocab" : "Team Dynamics"
+      }
+    ],
+    "currentTags" : [
+      "Work",
+      "People",
+      "Reference"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "boomers",
+      "generation",
+      "multiply",
+      "divide",
+      "aging",
+      "population trends",
+      "generational dynamics"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1178,
+    "nodeID" : "42B8C8DB-A8F8-40C4-A270-F1FC29A36A81",
+    "postFilterTags" : [
+      "Manipulation",
+      "Trends",
+      "Team Dynamics"
+    ],
+    "summaryLatencyMs" : 1009,
+    "title" : "Boomers Dividing and Multiplying"
+  },
+  {
+    "contentTruncated" : "Web Clipper, four modes: Beautify (Reader Mode plus recipe intelligence), Images (locally stored to iCloud), Text (article body only), Link (rich bubble card). Mode selected after page loads, never be…",
+    "currentTags" : [
+      "Technology",
+      "Work",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "web clipper",
+      "reader mode",
+      "recipe intelligence",
+      "images",
+      "text",
+      "link",
+      "cloud storage",
+      "rich bubble card"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1079,
+    "nodeID" : "450B5CBC-5D8A-412E-9576-769807EF0480",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Web Clipper with Intelligent Features"
+  },
+  {
+    "contentTruncated" : "The Bible becomes a lot more interesting when you just realize it's all fanfiction\nThe Bible becomes a lot more interesting when you just realize it's all fanfiction",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "bible",
+      "fanfiction",
+      "interpretation",
+      "literary",
+      "mythology",
+      "textual",
+      "theory",
+      "exegesis"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1141,
+    "nodeID" : "45B09046-E738-412A-B13B-C66FDF2C60FE",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Bible Fanfiction"
+  },
+  {
+    "contentTruncated" : "You'd be excused if you didn't know it already exists and its name is GOLF",
+    "currentTags" : [
+      "Recipe",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "golf",
+      "sports",
+      "game",
+      "outdoor",
+      "activity",
+      "recreation",
+      "fun",
+      "exercise"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 896,
+    "nodeID" : "4817441B-0A25-405C-A858-3807E01C486E",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Recipe App"
+  },
+  {
+    "contentTruncated" : "I want to create a new service that disrupts the gatekeeping nature of Uber and entitled taxis and other rideshare's to govern themselves independently and use open source tools to accomplish this so …",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Work",
+      "Health",
+      "Finance",
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "rideshare",
+      "disruption",
+      "Uber",
+      "taxi",
+      "open source",
+      "self-governance",
+      "money-sharing",
+      "independent",
+      "technology",
+      "greedy corporation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1335,
+    "nodeID" : "4952837E-FF53-4B1A-9B1D-02A9401082C6",
+    "postFilterTags" : [
+
+    ],
+    "title" : "RideShare Revolution"
+  },
+  {
+    "contentTruncated" : "AirPad is a layer, not just an app. The Action Button is physical proof of that. Introduction happens inside the first-time experience.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "AirPad",
+        "score" : 1,
+        "vocab" : "AirPad"
+      },
+      {
+        "folksonomy" : "Action Button",
+        "score" : 0.4336498175682616,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "first-time experience",
+        "score" : 0.5365761062236877,
+        "vocab" : "Hyper-masculinity"
+      },
+      {
+        "folksonomy" : "layer",
+        "score" : 0.47388884881721616,
+        "vocab" : "AirPad"
+      },
+      {
+        "folksonomy" : "app",
+        "score" : 0.550718337586612,
+        "vocab" : "Technology"
+      },
+      {
+        "folksonomy" : "physical proof",
+        "score" : 0.5500951889226243,
+        "vocab" : "Reflective"
+      },
+      {
+        "folksonomy" : "introduction",
+        "score" : 0.43005550648365726,
+        "vocab" : "Design"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "AirPad",
+      "Action Button",
+      "first-time experience",
+      "layer",
+      "app",
+      "physical proof",
+      "introduction"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1040,
+    "nodeID" : "4B5E9285-1EE9-4740-9E22-66D818937172",
+    "postFilterTags" : [
+      "AirPad",
+      "Hyper-masculinity",
+      "Technology",
+      "Reflective"
+    ],
+    "summaryLatencyMs" : 868,
+    "title" : "AirPad Concept"
+  },
+  {
+    "contentTruncated" : "Episode premise: Bonus Boomers. Boomers are dividing and multiplying rapidly, buying up all the houses and everything else. They still get social security checks even when there are two of them.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Health",
+      "Work",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "boomers",
+      "social security",
+      "demographic shift",
+      "housing market",
+      "population dynamics"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 947,
+    "nodeID" : "4C739796-26B1-48EC-A6FE-D27AB4F130C8",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Boomers' Market Expansion"
+  },
+  {
+    "contentTruncated" : "Three principles for Foundation Model usage on-device: never silent, event-driven only, user-controlled. Three trigger types: node commit (lightweight), user-initiated Analyze button (full \/ collectio…",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Foundation Model",
+      "on-device",
+      "never silent",
+      "event-driven",
+      "user-controlled",
+      "node commit",
+      "analyze button",
+      "scheduled digest",
+      "processing indicator",
+      "heartbeat",
+      "spinner"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1507,
+    "nodeID" : "4EA17148-105F-40E1-B24B-8B69D28CE81B",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Foundation Model Usage Principles"
+  },
+  {
+    "contentTruncated" : "I like the idea of ecologically friendly and disposable technology technology that can actually be broken and that's OK it's actually part of the lifecycle and eventually it can be composted or recycl…",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Health",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "ecologically friendly",
+      "disposable technology",
+      "repairable",
+      "lifecycle",
+      "composting",
+      "recycling",
+      "hardware upgrade",
+      "sustainable tech"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1490,
+    "nodeID" : "4F568934-C74F-44F9-A0F6-1A65579FE62C",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Eco-Friendly Tech Lifecycle"
+  },
+  {
+    "contentTruncated" : "Cooking in my opinion is one of the oldest forms of alchemy\nCooking in my opinion is one of the oldest forms of alchemy",
+    "currentTags" : [
+      "Science",
+      "Health",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "cooking",
+      "alchemy",
+      "oldest",
+      "tradition"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 737,
+    "nodeID" : "5599D9DE-72FF-4A0D-ACC0-0B090D36BB18",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Cooking as Alchemy"
+  },
+  {
+    "contentTruncated" : "Density and tension. Dramatic size hierarchy creates topographic canvas. Displaced nodes show color bleed toward semantic cluster — highest thread discovery surface.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "density",
+        "score" : 0.4338551293771186,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "tension",
+        "score" : 0.5967922247832441,
+        "vocab" : "Fear"
+      },
+      {
+        "folksonomy" : "dramatic",
+        "score" : 0.5789602100392577,
+        "vocab" : "Reflective"
+      },
+      {
+        "folksonomy" : "size",
+        "score" : 0.44688554431907435,
+        "vocab" : "Memory"
+      },
+      {
+        "folksonomy" : "hierarchy",
+        "score" : 0.5201151032535445,
+        "vocab" : "PublicPolicy"
+      },
+      {
+        "folksonomy" : "topographic",
+        "score" : 0.5204105884568534,
+        "vocab" : "Cosmic"
+      },
+      {
+        "folksonomy" : "canvas",
+        "score" : 0.4041787308302125,
+        "vocab" : "Art"
+      },
+      {
+        "folksonomy" : "displaced",
+        "score" : 0.4361616608717938,
+        "vocab" : "AirPad"
+      },
+      {
+        "folksonomy" : "nodes",
+        "score" : 0.3998239998094663,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "color",
+        "score" : 0.4993120951387132,
+        "vocab" : "Etymology"
+      },
+      {
+        "folksonomy" : "bleed",
+        "score" : 0.41340332375638283,
+        "vocab" : "Fear"
+      },
+      {
+        "folksonomy" : "semantic",
+        "score" : 0.5245270835199802,
+        "vocab" : "PublicPolicy"
+      },
+      {
+        "folksonomy" : "cluster",
+        "score" : 0.5007701608171718,
+        "vocab" : "AirPad"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "density",
+      "tension",
+      "dramatic",
+      "size",
+      "hierarchy",
+      "topographic",
+      "canvas",
+      "displaced",
+      "nodes",
+      "color",
+      "bleed",
+      "semantic",
+      "cluster",
+      "thread",
+      "discovery",
+      "surface"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1961,
+    "nodeID" : "56C645B8-EB8E-42BC-9E19-D510FA3E4397",
+    "postFilterTags" : [
+      "Fear",
+      "Reflective",
+      "PublicPolicy",
+      "Cosmic",
+      "AirPad"
+    ],
+    "summaryLatencyMs" : 1743,
+    "title" : "Topographic Canvas with Semantic Discovery"
+  },
+  {
+    "contentTruncated" : "(music: Beethoven Symphony No. 9)",
+    "currentTags" : [
+      "Art",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Beethoven",
+      "Symphony",
+      "No. 9",
+      "Classical",
+      "Music",
+      "ClassicalMusic",
+      "Symphonic",
+      "Orchestral"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1099,
+    "nodeID" : "5B41F9D1-6626-41C8-B56D-1EE16391F29E",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Musical Symphony Experience"
+  },
+  {
+    "contentTruncated" : "Tier 3: rules-based, self-maintaining — deferred, own session",
+    "currentTags" : [
+      "Work",
+      "Technology",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "tier",
+      "3",
+      "rules-based",
+      "self-maintaining",
+      "deferred",
+      "own",
+      "session"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 879,
+    "nodeID" : "5B7A7632-DA5B-41AA-A0CE-2CC53E10279A",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Tier 3 Rules-Based System"
+  },
+  {
+    "contentTruncated" : "TikTok script idea: \"You're Excused — Green With Psychopathy.\" A satirical takedown of golf framed as a recurring \"You're Excused\" series. Opens with character being deliberately disagreeable in a tur…",
+    "currentTags" : [
+      "Recipe",
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "satire",
+      "golf",
+      "psychology",
+      "sarcasm",
+      "humor",
+      "culture critique",
+      "society",
+      "historical context",
+      "social commentary"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1396,
+    "nodeID" : "5CFC7CAA-3C6C-4D19-9AB2-0D4941C39821",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Golf Satire with Psychopathy"
+  },
+  {
+    "contentTruncated" : "Recipe intelligence.",
+    "currentTags" : [
+      "Recipe",
+      "Technology",
+      "Health"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "recipe",
+      "intelligence",
+      "automation",
+      "food",
+      "technology",
+      "innovation",
+      "AI",
+      "automation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 891,
+    "nodeID" : "5D9C9F62-BE83-495C-9234-0FFA54ABA01B",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Recipe Intelligence"
+  },
+  {
+    "contentTruncated" : "Arroz Mexicano. Long grain rice, chicken stock, roma tomato, white onion, tomato paste, garlic, ground annatto\/achiote, turmeric, cumin, serrano pepper, salt. Blend tomato, onion, broth, paste, spices…",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Arroz Mexicano",
+      "rice",
+      "chicken",
+      "tomato",
+      "spice",
+      "culinary",
+      "recipe",
+      "Mexican",
+      "culinary-arts",
+      "food"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1248,
+    "nodeID" : "60087FC7-5CCD-441B-BA5B-A2F9F1B03793",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Arroz Mexicano Recipe"
+  },
+  {
+    "contentTruncated" : "We all wear different masks and we all behave differently in front of different people in certain contexts. Maybe that’s inauthentic or maybe that’s just human nature. Perhaps existing in multitudes i…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "mask",
+        "score" : 0.4727279733569008,
+        "vocab" : "Cat"
+      },
+      {
+        "folksonomy" : "behavior",
+        "score" : 0.5676552584415253,
+        "vocab" : "Morality"
+      },
+      {
+        "folksonomy" : "social",
+        "score" : 0.5265940472487415,
+        "vocab" : "Health"
+      },
+      {
+        "folksonomy" : "authenticity",
+        "score" : 0.6311748963104317,
+        "vocab" : "Guidance"
+      },
+      {
+        "folksonomy" : "human",
+        "score" : 0.5233713835047099,
+        "vocab" : "People"
+      },
+      {
+        "folksonomy" : "nature",
+        "score" : 1,
+        "vocab" : "Nature"
+      }
+    ],
+    "currentTags" : [
+      "Story",
+      "Art",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "mask",
+      "behavior",
+      "social",
+      "authenticity",
+      "human",
+      "nature",
+      "multitudes",
+      "psychology"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1099,
+    "nodeID" : "6215BD85-AF0C-4853-BBCC-9E818732E5A0",
+    "postFilterTags" : [
+      "Morality",
+      "Health",
+      "Guidance",
+      "People",
+      "Nature"
+    ],
+    "summaryLatencyMs" : 935,
+    "title" : "Mask Dynamics"
+  },
+  {
+    "contentTruncated" : "Honeycomb navigation.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "honeycomb",
+      "navigation",
+      "algorithm",
+      "pathfinding",
+      "graph",
+      "data structure",
+      "complexity",
+      "efficiency"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 948,
+    "nodeID" : "62272A48-6EEF-4293-BAC1-BE08C4CA7697",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Honeycomb Navigation"
+  },
+  {
+    "contentTruncated" : "The application bears the burden, not the user.",
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "burden",
+      "user",
+      "application",
+      "support",
+      "responsibility",
+      "equity",
+      "utilities",
+      "assistance"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 993,
+    "nodeID" : "6BE2CBD3-6DBE-4B25-B884-E8290B5F6C59",
+    "postFilterTags" : [
+
+    ],
+    "title" : "User-Centric Design"
+  },
+  {
+    "contentTruncated" : "Mixed format. Some are dated short fragments, some are narrative scenes, some are partial thoughts. Tests dated-entry parsing, fragment classification, and the gate's ability to recognize a complete c…",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "mixed format",
+      "dated entry parsing",
+      "fragment classification",
+      "creative premise recognition",
+      "narrative scenes",
+      "partial thoughts"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 946,
+    "nodeID" : "6CCD1EB3-946E-4FF7-A7EC-42570B75CFD3",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Creative Idea Analysis"
+  },
+  {
+    "contentTruncated" : "Approx 16.4 million gallons",
+    "currentTags" : [
+      "Work",
+      "Project",
+      "Science",
+      "Technology",
+      "Nature"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "16.4 million gallons",
+      "water",
+      "volume",
+      "measurement",
+      "fluid ounces",
+      "liquid",
+      "statistics",
+      "data"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 945,
+    "nodeID" : "6D00CC90-7D50-4CF3-AA56-583EC1BEA3A4",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Water Conservation Project"
+  },
+  {
+    "contentTruncated" : "Episode premise: Old tapes from clairvoyant grandparent (VHS).",
+    "currentTags" : [
+      "Science",
+      "Story",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "old tapes",
+      "clairvoyant",
+      "grandparent",
+      "vhs",
+      "episode premise",
+      "mystery",
+      "family history",
+      "television"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1137,
+    "nodeID" : "6D50AB93-B19E-40AE-BC21-9BDB5C11AE56",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Episode Mystery"
+  },
+  {
+    "contentTruncated" : "Episode premise: Birdwatchers.",
+    "currentTags" : [
+      "Nature",
+      "Science",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "birdwatching",
+      "nature",
+      "wildlife",
+      "seasonal",
+      "adventure",
+      "relaxing",
+      "outdoors",
+      "observer"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1043,
+    "nodeID" : "6E4BEBC5-B94D-414D-8381-EDAB6C72C4C7",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Birdwatching Episode"
+  },
+  {
+    "contentTruncated" : "Episode premise: Learning to lie on job applications.",
+    "currentTags" : [
+      "Creative",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "job application",
+      "lying",
+      "career advice",
+      "interview tips",
+      "employment",
+      "workplace etiquette",
+      "professional development",
+      "personal growth"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1111,
+    "nodeID" : "6EF0A41D-5EBA-4DE3-BA06-BCC95E8E036C",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Creative Job Application Strategy"
+  },
+  {
+    "contentTruncated" : "Creating a decentralized, user-controlled social network without relying on central servers or algorithms is feasible with modern tools, even for those with limited programming experience. The archite…",
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "decentralized social network",
+      "P2P networking",
+      "real-time syncing",
+      "federated messaging",
+      "blockchain tech",
+      "web3",
+      "low-code development",
+      "security protocols"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1649,
+    "nodeID" : "6FD80A65-0C19-4A8D-98FE-2B8D4BF84105",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Decentralized Social Network"
+  },
+  {
+    "contentTruncated" : "I am intrigued by the idea of using mesh tastic networks to use a new type of social media that can only be accessible by people physically on that same network with you\nI am intrigued by the idea of …",
+    "currentTags" : [
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "mesh networks",
+      "social media",
+      "physical connectivity",
+      "exclusive access",
+      "network technology"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 941,
+    "nodeID" : "7021C131-7C4D-49D7-B35C-1B05ABD55825",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Mesh Social Network Concept"
+  },
+  {
+    "contentTruncated" : "“Oh no worries it’s just some friendly spitting”",
+    "currentTags" : [
+      "Dumb humor"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "friendly",
+      "spitting",
+      "joke",
+      "humor",
+      "casual",
+      "amusement",
+      "lighthearted",
+      "innocuous"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1196,
+    "nodeID" : "703B5ACA-4D99-4687-AC52-49BCC86C3F28",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Friendly Spit"
+  },
+  {
+    "contentTruncated" : "Sometimes a right angle is the wrong angle\nSometimes a right angle is the wrong angle",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "angle",
+        "score" : 0.34899947612110077,
+        "vocab" : "Trends"
+      },
+      {
+        "folksonomy" : "geometry",
+        "score" : 1,
+        "vocab" : "Geometry"
+      },
+      {
+        "folksonomy" : "mathematics",
+        "score" : 0.7027211777468938,
+        "vocab" : "Psychology"
+      },
+      {
+        "folksonomy" : "right angle",
+        "score" : 0.3340341022211988,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "perspective",
+        "score" : 0.5145131693167104,
+        "vocab" : "Etymology"
+      },
+      {
+        "folksonomy" : "conceptual",
+        "score" : 1,
+        "vocab" : "Conceptual"
+      },
+      {
+        "folksonomy" : "thought experiment",
+        "score" : 0.5302897104400887,
+        "vocab" : "Dream"
+      }
+    ],
+    "currentTags" : [
+      "Geometry",
+      "Math",
+      "Design"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "angle",
+      "geometry",
+      "mathematics",
+      "right angle",
+      "perspective",
+      "conceptual",
+      "thought experiment"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1157,
+    "nodeID" : "70A66523-9B31-42A0-9021-8988E09C6A46",
+    "postFilterTags" : [
+      "Geometry",
+      "Psychology",
+      "Etymology",
+      "Conceptual",
+      "Dream"
+    ],
+    "summaryLatencyMs" : 985,
+    "title" : "Sometimes a right angle is the wrong angle"
+  },
+  {
+    "contentTruncated" : "The illness is on the application. No batch import should be seen as correct or incorrect. The gate is a router, not a filter. Nothing silently dropped.",
+    "currentTags" : [
+      "Technology",
+      "Research",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "application",
+      "illness",
+      "batch",
+      "import",
+      "router",
+      "gate",
+      "filter",
+      "silently"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 950,
+    "nodeID" : "72DA0F97-C362-4BD6-89C7-FD5D8986C8B4",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Technical Error Analysis"
+  },
+  {
+    "contentTruncated" : "The best writing comes from a confident voice.",
+    "currentTags" : [
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "writing",
+      "voice",
+      "confidence",
+      "content creation",
+      "authoring"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 764,
+    "nodeID" : "752214F8-AA18-4A20-BC88-26413F69243D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Writing Confidence"
+  },
+  {
+    "contentTruncated" : "A single coherent document. Should commit as one node, not be exploded into the bullet hierarchy. Tests structured-document recognition.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "structured-document",
+      "coherence",
+      "single-node",
+      "commit",
+      "hierarchy",
+      "tests",
+      "recognition"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 972,
+    "nodeID" : "758A477D-1A78-49C7-AE85-561546EDAA39",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Structured Document Recognition"
+  },
+  {
+    "contentTruncated" : "Episode premise: But… is it art?",
+    "currentTags" : [
+      "Art",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "episode",
+      "premise",
+      "art",
+      "question",
+      "conceptual",
+      "thought-provoking"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 870,
+    "nodeID" : "76923FD0-AFB3-4A34-BC8C-8BFBB0D8EE74",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Exploring Artistic Boundaries"
+  },
+  {
+    "contentTruncated" : "\\* 1 1\/2 pounds plum tomatoes (large, about 6)",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "plum tomatoes",
+        "score" : 0.5134067404479515,
+        "vocab" : "Diet Coke"
+      },
+      {
+        "folksonomy" : "large tomatoes",
+        "score" : 0.4133309329965183,
+        "vocab" : "Diet Coke"
+      },
+      {
+        "folksonomy" : "tomato recipe",
+        "score" : 0.7245749246710157,
+        "vocab" : "Recipe"
+      },
+      {
+        "folksonomy" : "vegetable dish",
+        "score" : 0.6509116757928581,
+        "vocab" : "Food"
+      },
+      {
+        "folksonomy" : "cooking ingredient",
+        "score" : 0.5743527786456386,
+        "vocab" : "Food"
+      }
+    ],
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "plum tomatoes",
+      "large tomatoes",
+      "tomato recipe",
+      "vegetable dish",
+      "cooking ingredient"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1057,
+    "nodeID" : "7735A62F-7B0E-4EA5-9E59-C1E00D7A1AD0",
+    "postFilterTags" : [
+      "Diet Coke",
+      "Recipe",
+      "Food"
+    ],
+    "summaryLatencyMs" : 903,
+    "title" : "Tomato Recipe"
+  },
+  {
+    "contentTruncated" : "I think that iron rand is a pseudo intellectual and should never have been taken seriously\nI think that iron rand is a pseudo intellectual and should never have been taken seriously",
+    "currentTags" : [
+      "Technology",
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "iron rand",
+      "pseudo intellectual",
+      "seriousness",
+      "criticism",
+      "opinion",
+      "analysis"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 870,
+    "nodeID" : "794C38A4-D66D-4E1B-99A1-540BE5624641",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Iron Rand"
+  },
+  {
+    "contentTruncated" : "05\/01: Recall the old story of an oracle who recorded videos at night so they could continue their task after their death. This could be an instance where a person with foresight and clairvoyance can …",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "oracle",
+      "clairvoyance",
+      "forecasting",
+      "video recording",
+      "afterlife",
+      "temporal continuity",
+      "historical narrative",
+      "futuristic foresight"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1155,
+    "nodeID" : "7A2D5562-46F5-4ED4-9EA8-1A124C61A921",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Oracle Videos"
+  },
+  {
+    "contentTruncated" : "Episode premise: Becoming an AI. Outsourcing to developing countries.",
+    "currentTags" : [
+      "Story",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "AI",
+      "Technology",
+      "Outsourcing",
+      "Globalization",
+      "Innovation",
+      "Future",
+      "Business",
+      "Development"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 951,
+    "nodeID" : "7A489B5B-7709-445E-A214-6DDADDB2AF41",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Becoming an AI."
+  },
+  {
+    "contentTruncated" : "Episode premise: iPad Kid.",
+    "currentTags" : [
+      "Technology",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "iPad",
+      "technology",
+      "gadgets",
+      "kids",
+      "entertainment",
+      "techshow",
+      "kids content",
+      "innovation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1042,
+    "nodeID" : "7A5F97D0-FA12-44C4-810B-234AB28396E9",
+    "postFilterTags" : [
+
+    ],
+    "title" : "iPad Kid"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Return to Text Movement. Social media has become so over-cluttered with things you didn't ask for and makes it hard to actually do what it began with: connecting with others. Decentraliz…",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "social media",
+      "decentralization",
+      "privacy",
+      "direct communication",
+      "group chats",
+      "misinformation",
+      "miscomparison",
+      "insecurity",
+      "parasocial relationships"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1230,
+    "nodeID" : "7ED900C9-11F7-40EE-A87F-332A8EFFD437",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Decentralized Social Media"
+  },
+  {
+    "contentTruncated" : "Episode premise: Gay Bar \/ Straight Bar \/ Ally Bar.",
+    "currentTags" : [
+      "Work",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "gay bar",
+      "straight bar",
+      "ally bar",
+      "social bar",
+      "LGBTQ+ community",
+      "mixed bar",
+      "diversity",
+      "inclusivity"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1107,
+    "nodeID" : "8122F384-FE42-44ED-B25A-3F8FB1BDEE0F",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Bar Concept Exploration"
+  },
+  {
+    "contentTruncated" : "The kind of person who yells at a mariachi band to stop playing music.",
+    "currentTags" : [
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "loud",
+      "disruptive",
+      "annoyance",
+      "mariachi",
+      "music",
+      "unwanted noise"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1054,
+    "nodeID" : "841C3E0F-8292-49D6-87CC-E273F28B93EE",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Person with Loud Opinion"
+  },
+  {
+    "contentTruncated" : "Episode premise: SpaceSex. Tom is inspired by a tech billionaire to do stupid shit. Stares at Elon on TV, dramatic music swells, says: \"Oh my god. Yes. I'm going to pay off a flight attendant to have …",
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 147,
+    "nodeID" : "8605E844-AE38-4D9B-9519-9312AD3E3C99",
+    "postFilterTags" : [
+
+    ],
+    "title" : "SpaceSex"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Abolish Golf! Golf is basically the elite playing in our faces. Not meant for everybody. Exclusivity is the point. Perpetuates inequality. If a sport were a narcissist, it would be golf.…",
+    "currentTags" : [
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "abolish golf",
+      "elite sport",
+      "inclusivity",
+      "inequality",
+      "toxic masculinity",
+      "US ruling class",
+      "environmental impact",
+      "social justice",
+      "exclusivity",
+      "sports culture",
+      "historical context",
+      "class disparity"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1780,
+    "nodeID" : "878BB691-5821-4542-B7B5-22DB37FF2F41",
+    "postFilterTags" : [
+
+    ],
+    "title" : "TikTok topic: Abolish Golf! Golf is basi"
+  },
+  {
+    "contentTruncated" : "The capture confirmation animation, six beats, ~1.2 seconds: presence, miniaturization, warp, drop, impact haptic, ripple, sink, elastic release. Haptic identical to in-app landing moment. Always.",
+    "currentTags" : [
+      "Technology",
+      "Work",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "capture",
+      "animation",
+      "confirmation",
+      "presence",
+      "miniaturization",
+      "warp",
+      "drop",
+      "impact",
+      "haptic",
+      "ripple",
+      "sink",
+      "elastic",
+      "release"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1421,
+    "nodeID" : "8CA3072E-4286-43D4-B215-42CD00492CA3",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Capture Confirmation Animation"
+  },
+  {
+    "contentTruncated" : "Men (specifically straight, heteronormative men) have been obsessed with elements of extreme masculinity lately. Many young straight men are seeking to discipline their bodies and become ultra muscula…",
+    "currentTags" : [
+      "Hyper-masculinity",
+      "Masculinity",
+      "Trends"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "masculinity",
+      "hypermasculinity",
+      "straight men",
+      "heteronormativity",
+      "emotional security",
+      "muscularity",
+      "hyper-masculine",
+      "male obsession",
+      "homosexuality",
+      "primal instincts",
+      "male bonding"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1709,
+    "nodeID" : "8D0F6186-5208-4EAB-B10B-8C35B86A5BBB",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Hyper-masculinity Trends"
+  },
+  {
+    "contentTruncated" : "This is the hardest case in the corpus. One nested list, but each bullet is its own complete comedy premise. Should the gate split? Probably yes — but each split node should carry provenance back to t…",
+    "currentTags" : [
+      "Idea",
+      "Work",
+      "Research",
+      "Story",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "nested list",
+      "comedy premise",
+      "show concept",
+      "content organization",
+      "structure analysis",
+      "hierarchical data",
+      "narrative framework",
+      "logic flow"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1202,
+    "nodeID" : "91E7C6BA-2E4C-4090-80D8-45ABA50EF079",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Comedy Premise Exploration"
+  },
+  {
+    "contentTruncated" : "01\/13: A child misconstrues his bullies as admirers.",
+    "currentTags" : [
+      "Idea",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "children",
+      "bullying",
+      "misunderstanding",
+      "emotion",
+      "confusion",
+      "attraction"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 884,
+    "nodeID" : "93A3E22D-93A4-4296-8E6D-CCFE9D731E0D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Misunderstanding Friendships"
+  },
+  {
+    "contentTruncated" : "I think a lot of women and just generally people right now are intrigued by gay sex and gay romance because it depicts two males that are actually getting to define their roles in a relationship rathe…",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "LGBTQ+",
+      "relationships",
+      "agency",
+      "authenticity",
+      "romance",
+      "sexual orientation",
+      "gender roles",
+      "contemporary culture"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1287,
+    "nodeID" : "93E9D218-A7BB-4B22-B2B5-F62192911A24",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Artistic Expression in Relationships"
+  },
+  {
+    "contentTruncated" : "Episode premise: Lights Out.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "lights out",
+        "score" : 0.42043004672297063,
+        "vocab" : "Reflective"
+      },
+      {
+        "folksonomy" : "mystery",
+        "score" : 0.540265535886244,
+        "vocab" : "Comedy"
+      },
+      {
+        "folksonomy" : "thriller",
+        "score" : 0.670403848588851,
+        "vocab" : "Comedy"
+      },
+      {
+        "folksonomy" : "suspense",
+        "score" : 0.5877355783131157,
+        "vocab" : "Humor"
+      },
+      {
+        "folksonomy" : "episode",
+        "score" : 0.4505182235829787,
+        "vocab" : "Story"
+      },
+      {
+        "folksonomy" : "premise",
+        "score" : 0.6269256914685685,
+        "vocab" : "Idea"
+      },
+      {
+        "folksonomy" : "narrative",
+        "score" : 0.7036669221736724,
+        "vocab" : "Humor"
+      },
+      {
+        "folksonomy" : "drama",
+        "score" : 0.7363714104969391,
+        "vocab" : "Comedy"
+      }
+    ],
+    "currentTags" : [
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "lights out",
+      "mystery",
+      "thriller",
+      "suspense",
+      "episode",
+      "premise",
+      "narrative",
+      "drama"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1459,
+    "nodeID" : "948C90CD-94D6-4EAE-B618-1FF3FCDA3DB0",
+    "postFilterTags" : [
+      "Comedy",
+      "Humor",
+      "Idea"
+    ],
+    "summaryLatencyMs" : 1282,
+    "title" : "Episode Premise: Lights Out"
+  },
+  {
+    "contentTruncated" : "Provenance in branches.",
+    "currentTags" : [
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "provenance",
+      "branches",
+      "tree",
+      "hierarchy",
+      "structure",
+      "network",
+      "organization",
+      "graph"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 952,
+    "nodeID" : "967F4953-B748-4650-B7AB-13E20E899F92",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Provenance in Branches"
+  },
+  {
+    "contentTruncated" : "The kind of person who golfs all the time is the same kind of person who yells at a mariachi band to stop playing music.",
+    "currentTags" : [
+      "Golf",
+      "Music",
+      "Conflict"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "golfing",
+      "mariachi",
+      "music",
+      "yelling",
+      "culture clash"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 863,
+    "nodeID" : "994463A0-4FFF-4BAE-9130-26B39328ADBD",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Golf and Music Conflict"
+  },
+  {
+    "contentTruncated" : "Roasted Lemongrass Chicken with Sweet Lime Sauce. Chicken pieces marinated with finely chopped lemongrass, onion, garlic, galangal\/ginger, fresh red chilies, fish sauce, soy sauce, brown sugar, and th…",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "roasted lemongrass chicken",
+      "sweet lime sauce",
+      "thai cuisine",
+      "marinated chicken",
+      "coconut milk",
+      "grilled chicken",
+      "thai jasmine rice",
+      "garlic ginger chicken"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1434,
+    "nodeID" : "995A0E14-9227-4D6C-9C87-6B98CB30E80A",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Roasted Lemongrass Chicken Recipe"
+  },
+  {
+    "contentTruncated" : "Episode premise: My Eyes Are Up Here. Tom realizes he and his friends get a lot of attention when they stuff their crotches.",
+    "currentTags" : [
+      "Comedy",
+      "Humor",
+      "Attention"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 136,
+    "nodeID" : "9AF3AA17-48F7-4618-BD9C-31564DC18DF0",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Attention-Grabbing Comedy"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Hate Face. When you see someone having a hateful meltdown on social media, you're rarely surprised by the person. One look and you can kind of see it coming. Is this just being shallow, …",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "TikTok",
+        "score" : 0.6264777343554807,
+        "vocab" : "AirPad"
+      },
+      {
+        "folksonomy" : "hate face",
+        "score" : 0.5376887883106869,
+        "vocab" : "Fear"
+      },
+      {
+        "folksonomy" : "social media",
+        "score" : 0.4636406200991694,
+        "vocab" : "Health"
+      },
+      {
+        "folksonomy" : "psychology",
+        "score" : 0.9999999999999998,
+        "vocab" : "Psychology"
+      },
+      {
+        "folksonomy" : "demeanor",
+        "score" : 0.6017476501972442,
+        "vocab" : "Humor"
+      },
+      {
+        "folksonomy" : "facial expressions",
+        "score" : 0.4963005155022536,
+        "vocab" : "Masculinity"
+      },
+      {
+        "folksonomy" : "resting bitch face",
+        "score" : 0.438185589591162,
+        "vocab" : "Dumb humor"
+      },
+      {
+        "folksonomy" : "emotional reactions",
+        "score" : 0.6592846130929492,
+        "vocab" : "Emotional"
+      }
+    ],
+    "currentTags" : [
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "TikTok",
+      "hate face",
+      "social media",
+      "psychology",
+      "demeanor",
+      "facial expressions",
+      "resting bitch face",
+      "emotional reactions",
+      "online behavior"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1444,
+    "nodeID" : "9C8F8D6F-08EF-43C9-96C8-B7C3012CB903",
+    "postFilterTags" : [
+      "AirPad",
+      "Fear",
+      "Psychology",
+      "Humor",
+      "Emotional"
+    ],
+    "summaryLatencyMs" : 1268,
+    "title" : "Exploring Hate Faces on TikTok"
+  },
+  {
+    "contentTruncated" : "This is all about sucking guys’ nuts",
+    "currentTags" : [
+
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 139,
+    "nodeID" : "9F74032F-C6A4-40DB-AF62-F27FEF211500",
+    "postFilterTags" : [
+
+    ],
+    "title" : "This is all about sucking guys’ nuts"
+  },
+  {
+    "contentTruncated" : "Single-line ideas. The kind of thing that lives in a notes app and never gets expanded. Many of these are under 50 characters and will be rejected by the current gate's char threshold. Tests whether t…",
+    "currentTags" : [
+      "Idea",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "single-line ideas",
+      "notes app",
+      "expanded ideas",
+      "characters",
+      "new router",
+      "coherent ideas"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 963,
+    "nodeID" : "A63498CA-DFB5-4919-A6B1-104B27ABDAF1",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Short Ideas"
+  },
+  {
+    "contentTruncated" : "Catalogue view as a third surface beyond graph and list. On-demand processing rather than at-capture processing — generation happens when the user wants the artifact, not in the background eating batt…",
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "catalogue",
+      "third surface",
+      "on-demand processing",
+      "graph",
+      "list",
+      "artifact",
+      "generation",
+      "battery efficiency"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1091,
+    "nodeID" : "A7693B80-736D-4235-89E6-80DA3B176AAF",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Catalogue View Enhancement"
+  },
+  {
+    "contentTruncated" : "Three-tier Über-node taxonomy. Tier 1: AI-generated, ephemeral, navigation-only. Tier 2: user-selected, permanent, wizard-defined. Tier 3: rules-based, self-maintaining.",
+    "currentTags" : [
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "three-tier taxonomy",
+      "AI-generated",
+      "ephemeral",
+      "navigation",
+      "user-selected",
+      "permanent",
+      "wizard-defined",
+      "rules-based",
+      "self-maintaining"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1222,
+    "nodeID" : "A7F694A5-AEE2-4764-BD0A-71375325B23D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "AI-Driven Navigation System"
+  },
+  {
+    "contentTruncated" : "10\/22 — Scene fragment: A group of people independently start off in a seemingly empty dark place. So dark, they cannot see their own hands in front of them. At first they wonder if they are dead but …",
+    "currentTags" : [
+      "Story",
+      "Science",
+      "Health"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "darkness",
+      "mystery",
+      "supernatural",
+      "lost",
+      "voice",
+      "guidance",
+      "secrets",
+      "unknown"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1307,
+    "nodeID" : "A993CC74-A57A-4548-9CA6-0F1D1331CA2A",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Lost in the Unknown"
+  },
+  {
+    "contentTruncated" : "TikTok topic: What's With the Disrespect for Animation? Certain age groups don't see animation as legitimate adult entertainment — Boomers, Gen-Xers, my own family. Animated films showcasing tremendou…",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "animation",
+      "legitimacy",
+      "adultentertainment",
+      "generationaldisconnect",
+      "anime",
+      "culturalstereotypes",
+      "artcritique",
+      "cinematicstyle"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1496,
+    "nodeID" : "A9DB24F0-49ED-4755-BC9B-46117CBDD9F1",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Animation's Legitimacy Debate"
+  },
+  {
+    "contentTruncated" : "03\/27: I'm trying to actually finish a story that is inside of me. The more I think about it, I think I can actually do it. It may not make me famous but I think it's a good story and a cool concept.",
+    "currentTags" : [
+      "Idea",
+      "Work",
+      "Creative",
+      "Story",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "storywriting",
+      "creativeprocess",
+      "storyconcept",
+      "selfpublishing",
+      "personalproject"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 932,
+    "nodeID" : "ABACFEF7-DBBC-4DC9-816A-66C85B68C1EC",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Story Completion"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Lavender Marriages.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art",
+      "Travel"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "lavender",
+      "weddings",
+      "marriage",
+      "romantic",
+      "aesthetic",
+      "ceremony",
+      "vintage",
+      "fashion"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1131,
+    "nodeID" : "ABEECDC4-67FB-4C4C-A085-A694E96739A6",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Lavender Marriages"
+  },
+  {
+    "contentTruncated" : "10\/18: I really don't like things that crawl and move quickly.",
+    "currentTags" : [
+      "Science",
+      "Health",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "creepy crawlies",
+      "quick movers",
+      "unwanted critters",
+      "disgusting",
+      "annoying insects"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1034,
+    "nodeID" : "AC765AB0-4C32-47E0-94E2-67515833FA20",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Dislike for Crawling Creatures"
+  },
+  {
+    "contentTruncated" : "As a child I often like to imagine that there were cities in the sky embedded inside large cumulus clouds and that we could only make out the bottom side of them but if we were able to see them from a…",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "sky",
+      "clouds",
+      "cities",
+      "imagination",
+      "cathedrals",
+      "society",
+      "evasion",
+      "heaven",
+      "fantasy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1229,
+    "nodeID" : "ADF05FB1-14CB-4024-BF1B-9E71A35B7DAE",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Sky Cities"
+  },
+  {
+    "contentTruncated" : "10\/17: God has gone missing and it turns out they're not outside the universe looking in — they're vibrating within our space on another dimension. Maybe God is hiding or being pursued.",
+    "currentTags" : [
+      "Science",
+      "Creative",
+      "Dream",
+      "Story",
+      "Religion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "mystery",
+      "cosmic",
+      "theology",
+      "science fiction",
+      "dimension",
+      "existence",
+      "absurd",
+      "philosophical"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1091,
+    "nodeID" : "AFF0BBDD-5C88-4B80-BCA8-90AF12FD71E7",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Divine Dimension Mystery"
+  },
+  {
+    "contentTruncated" : "Who Framed Roger Rabbit is one of the greatest triumphs of artistic vision that gets buried only because of how it violates corporations’ obsession with manicuring their IP.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "artisticvision",
+      "RogerRabbit",
+      "IPrights",
+      "corporateinfluence",
+      "animationtriumph"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1098,
+    "nodeID" : "B2175A49-F308-4E96-8013-D84D0E02E639",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Creative Storytelling Integration"
+  },
+  {
+    "contentTruncated" : "Episode premise: The Gender Vampire(s). People in the neighborhood are having their gender(s) drained from them. It's really just DL married men getting sucked off in alleys to avoid their wives' wrat…",
+    "currentTags" : [
+      "Story",
+      "Dumb humor"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "gender vampire",
+      "DL married men",
+      "gender draining",
+      "urban fantasy",
+      "paranormal",
+      "whodunit",
+      "neighborhood thriller",
+      "conspiracy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1253,
+    "nodeID" : "B602745F-76FD-410F-82D1-90BB3BB675EE",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Gender Vampire Mystery"
+  },
+  {
+    "contentTruncated" : "Two-pane Dashboard above Graph and List in hierarchy. Settings icon swapped for Artifacts button. Network-aware ordering — never loses canvas position. Artifacts are living documents, no versioning, o…",
+    "currentTags" : [
+      "Technology",
+      "Work",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "dashboard",
+      "graph",
+      "list",
+      "hierarchy",
+      "settings",
+      "artifacts",
+      "network",
+      "document",
+      "versioning",
+      "canvas"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1095,
+    "nodeID" : "B620D306-131F-4148-8C4E-27101E59F8AC",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Network-Aware Dashboard"
+  },
+  {
+    "contentTruncated" : "Physics serves meaning, not spectacle. Dot field depth is intrinsic to the field, not parallax. Node weight via SpriteKit, always on, zero additional battery cost. Their ideas carry weight.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Health"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "physics",
+      "science",
+      "technology",
+      "spritekit",
+      "game development",
+      "depth perception",
+      "battery efficiency",
+      "intrinsic value"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1088,
+    "nodeID" : "B6FB6CEA-2369-4E3C-9A4A-0046B893D1ED",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Physics Innovation with SpriteKit"
+  },
+  {
+    "contentTruncated" : "Chicken Tacos. Boneless skinless chicken thighs (1-2 lbs), seasoned with onion powder, minced garlic, chili powder, cumin, chipotle chili pepper, salt and pepper. Sear in canola oil with chopped white…",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "chicken tacos",
+      "boneless skinless chicken",
+      "seasoned chicken",
+      "pico de gallo",
+      "crema",
+      "fried corn tortillas",
+      "queso fresco",
+      " Valentina hot sauce"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1347,
+    "nodeID" : "B7CD9BEE-A528-4FB4-AEEF-5F76CADF671F",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Chicken Tacos Recipe"
+  },
+  {
+    "contentTruncated" : "Episode premise: Luxury Elite. Creating high-end versions of existing services or products. Tom and Fernando end up becoming rich, but lose it all because they also get targeted by pricey, luxury good…",
+    "currentTags" : [
+      "Work",
+      "Technology",
+      "Science",
+      "Creative",
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "luxury",
+      "elite",
+      "wealth",
+      "loss",
+      "high-end",
+      "services",
+      "products",
+      "tragedy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 990,
+    "nodeID" : "B8A13726-0971-4F31-94DB-40F73B2A927D",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Luxury Elite"
+  },
+  {
+    "contentTruncated" : "Field as steering wheel.",
+    "currentTags" : [
+      "Technology",
+      "Creative",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "steering wheel",
+      "control wheel",
+      "vehicle steering",
+      "driving wheel",
+      "automotive steering"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1002,
+    "nodeID" : "BEF7ED34-1D54-4BED-B7CD-3EAF43490481",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Field as Steering Wheel"
+  },
+  {
+    "contentTruncated" : "Hey hey hey this is all about sucking guys nuts\nHey hey hey this is all about sucking guys nuts",
+    "currentTags" : [
+      "Dumb humor",
+      "Hyper-masculinity"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 140,
+    "nodeID" : "BF9595C3-1D03-425C-83F4-F65257117C04",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Sexual Content"
+  },
+  {
+    "contentTruncated" : "Honeycomb pivot. Finger as steering wheel rather than cursor. Field pans with the touch; focal point is a fixed screen position. Eliminates occlusion. Scales with density. Watch app launcher paradigm.",
+    "currentTags" : [
+      "Technology",
+      "Learning",
+      "Creative",
+      "AirPad"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "honeycomb",
+      "pivot",
+      "touch",
+      "steering",
+      "cursor",
+      "field",
+      "pan",
+      "fixed",
+      "screen",
+      "occlusion",
+      "scales",
+      "density",
+      "watch",
+      "app",
+      "launcher",
+      "paradigm"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1565,
+    "nodeID" : "C1B6353C-1201-49E2-8DFB-45BD85BB610C",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Innovative Touch Interface"
+  },
+  {
+    "contentTruncated" : "Light is one of the cheapest and most effective ways in reshaping the tone and mood of a room or setting\nLight is one of the cheapest and most effective ways in reshaping the tone and mood of a room o…",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Health",
+      "Creative",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "lighting",
+      "room ambiance",
+      "light mood",
+      "lighting design",
+      "room transformation",
+      "light effects",
+      "interior design",
+      "home decor"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1132,
+    "nodeID" : "C38AFB4A-FADB-4B81-9872-DA9AD52EDB94",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Light in Interior Design"
+  },
+  {
+    "contentTruncated" : "I don't know what it is about Diet Coke but it seems like it's one of those things that you either get it or you don't it's been one of those things that's kind of been loaded as fuel for people worki…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "Diet Coke",
+        "score" : 0.9999999999999999,
+        "vocab" : "Diet Coke"
+      },
+      {
+        "folksonomy" : "Washington DC",
+        "score" : 1,
+        "vocab" : "Washington DC"
+      },
+      {
+        "folksonomy" : "high achieving",
+        "score" : 0.37395328266252714,
+        "vocab" : "Emotional"
+      },
+      {
+        "folksonomy" : "Psychology",
+        "score" : 0.9999999999999998,
+        "vocab" : "Psychology"
+      },
+      {
+        "folksonomy" : "Sociology",
+        "score" : 1,
+        "vocab" : "Sociology"
+      },
+      {
+        "folksonomy" : "Caffeine",
+        "score" : 0.44791635796245427,
+        "vocab" : "Food"
+      },
+      {
+        "folksonomy" : "Motivation",
+        "score" : 0.5986602792001313,
+        "vocab" : "Masculinity"
+      }
+    ],
+    "currentTags" : [
+      "Psychology",
+      "Sociology",
+      "Diet Coke",
+      "Washington DC"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Diet Coke",
+      "Washington DC",
+      "high achieving",
+      "Psychology",
+      "Sociology",
+      "Caffeine",
+      "Motivation",
+      "Lifestyle"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1318,
+    "nodeID" : "C57169F2-6217-430E-BEEB-799B0189BAF1",
+    "postFilterTags" : [
+      "Diet Coke",
+      "Washington DC",
+      "Psychology",
+      "Sociology",
+      "Masculinity"
+    ],
+    "summaryLatencyMs" : 1119,
+    "title" : "Diet Coke Psychology"
+  },
+  {
+    "contentTruncated" : "Ghost suggestions at reduced opacity.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Work",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "ghost",
+      "opacity",
+      "suggestions",
+      "image editing",
+      "visual effects"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 877,
+    "nodeID" : "CD6B8969-6369-4E25-8522-9407DB7DCE36",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Ghost Suggestions at Reduced Opacity"
+  },
+  {
+    "contentTruncated" : "Queerness means living life on your terms.",
+    "currentTags" : [
+      "Idea",
+      "Work",
+      "Research",
+      "Learning",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "queerness",
+      "lifestyle",
+      "autonomy",
+      "identity",
+      "personal",
+      "expression",
+      "choice",
+      "individuality"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 966,
+    "nodeID" : "CF56C783-B228-4ECC-A089-02EA4F7684E7",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Queerness as Living on Your Terms"
+  },
+  {
+    "contentTruncated" : "Three categories of finished artifacts: things people buy (recipes, technical references), things people wish they had (personal archives, legal documents), things people give as gifts (memoirs, photo…",
+    "currentTags" : [
+      "Creative",
+      "Reference"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "artifacts",
+      "categories",
+      "objects",
+      "collections",
+      "items",
+      "recipes",
+      "documents",
+      "gifts"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 982,
+    "nodeID" : "CFC6C35F-623F-4CED-8E94-2E262EDB4B1B",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Artifact Categories"
+  },
+  {
+    "contentTruncated" : "I think that banks should all be municipally owned so that all the money that people invest actually goes towards investing into their communities\nI think that banks should all be municipally owned so…",
+    "currentTags" : [
+      "Bank",
+      "Ownership",
+      "Reform"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "banking",
+      "community investment",
+      "municipal ownership",
+      "finance",
+      "economic reform",
+      "social responsibility"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1013,
+    "nodeID" : "D1486FEF-0E22-4DB9-B2AF-3F6FADD55501",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Bank Ownership Reform"
+  },
+  {
+    "contentTruncated" : "I just wanna say that I think that every human being is entitled to the privacy of their own ideas not being invaded by other people or other entities\nI just wanna say that I think that every human be…",
+    "currentTags" : [
+      "Idea"
+    ],
+    "error" : "GenerationError: refusal(FoundationModels.LanguageModelSession.GenerationError.Refusal(record: FoundationModels.LanguageModelSession.GenerationError.Refusal.TranscriptRecord), FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain sensitive content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 123,
+    "nodeID" : "D20112F1-4058-4E73-9E9D-3A3EB482A7E9",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Idea about Privacy"
+  },
+  {
+    "contentTruncated" : "10\/18: I fear losing all control. I get very upset when I think about someone else having power over me — someone who does so because they're smarter. I fear being an easily controlled dupe.",
+    "currentTags" : [
+      "Fear",
+      "Control",
+      "Manipulation",
+      "Power"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "power",
+      "control",
+      "fear",
+      "intelligence",
+      "dupe",
+      "anxiety",
+      "dependence",
+      "autonomy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 942,
+    "nodeID" : "D30FCC29-041B-4054-93FD-9E851E45E2A5",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Fear of Control"
+  },
+  {
+    "contentTruncated" : "How is it that cats became domesticated and behaved so differently from dogs like I know the story about how dogs probably came upon human cat back when they were wolves but how did cats end up being …",
+    "currentTags" : [
+      "History",
+      "Cat",
+      "Domestication"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "domestication",
+      "cats",
+      "dogs",
+      "wolves",
+      "human society",
+      "animal behavior",
+      "evolution"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 989,
+    "nodeID" : "D35450FD-72E5-432D-8F63-32FC6BD166A5",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Cat Domestication"
+  },
+  {
+    "contentTruncated" : "https:\/\/en.wikipedia.org\/wiki\/Decentralized_web",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "decentralized web",
+      "blockchain",
+      "distributed systems",
+      "internet",
+      "technology",
+      "digital",
+      "innovation",
+      "cybersecurity"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 972,
+    "nodeID" : "D4BDC629-2887-4147-9BBA-752D786D6ABD",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Decentralized Web"
+  },
+  {
+    "contentTruncated" : "Episode premise: New Color. Fernando discovers a new color. Science's gayest experts confirm it's true (they never looked too hard at that band of visible light). Fernando has one week to give it a na…",
+    "currentTags" : [
+      "Science",
+      "Idea",
+      "Work"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "new_color",
+      "science",
+      "discovery",
+      "orange_part_2",
+      "color_theory",
+      "color_science",
+      "naming_challenge",
+      "media_influence"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1284,
+    "nodeID" : "D51F45D9-9370-451A-8BF5-3945F038A08F",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Color Discovery"
+  },
+  {
+    "contentTruncated" : "It’s high time milkmen (and women) make a comeback!",
+    "currentTags" : [
+      "Work",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "milkmen",
+      "women",
+      "comeback",
+      "traditional",
+      "retro",
+      "reintroduction",
+      "historical",
+      "modern"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1008,
+    "nodeID" : "D54384D3-B137-4943-9FBA-3581C05E1C90",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Milkmen Comeback"
+  },
+  {
+    "contentTruncated" : "Wikipedia is silently one of the most important pillars of the internet, from an age when the internet was truly free and accessible. In the age of platforms and mass surveillance, it is likely in the…",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Health"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Wikipedia",
+      "internet",
+      "freedom",
+      "accessibility",
+      "surveillance",
+      "power",
+      "platforms",
+      "censorship"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 973,
+    "nodeID" : "D7E3B377-5D38-4B3F-9F63-35D087B63673",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Wikipedia's Role in the Digital Age"
+  },
+  {
+    "contentTruncated" : "QuikCapture overlay design. Silent screenshot at invocation composited as background. Prismatic glow from bottom edge. Three circular buttons in thumb zone. Dark gradient grounds the glow against any …",
+    "currentTags" : [
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "QuikCapture",
+      "overlay",
+      "screenshot",
+      "compositing",
+      "silent",
+      "prismatic",
+      "glow",
+      "thumbzone",
+      "gradient"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1235,
+    "nodeID" : "D82BB422-53A2-49C2-A6E8-7C4324027677",
+    "postFilterTags" : [
+
+    ],
+    "title" : "QuikCapture Overlay Design"
+  },
+  {
+    "contentTruncated" : "03\/12: A person consistently has horrible, terrifying dreams every night but can never recall them. Despite not remembering, these dreams have a strong effect upon them in the waking world.",
+    "currentTags" : [
+      "Dream",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "nightmares",
+      "dreams",
+      "night terrors",
+      "unremembered",
+      "psychological impact",
+      "dream analysis",
+      "nightmare phenomena",
+      "waking effects"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1365,
+    "nodeID" : "DB4EAD7D-7103-4214-92A8-604FC49D8084",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Nightmares and their Impact"
+  },
+  {
+    "contentTruncated" : "I think the Lord of the rings sometimes the scene as two black-and-white when it comes to morality of good and evil but I do think that it makes an important point that if you give into the idea that …",
+    "currentTags" : [
+      "Morality",
+      "Middle-earth",
+      "Darkness"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Lord of the Rings",
+      "morality",
+      "good versus evil",
+      "darkness",
+      "black-and-white morality",
+      "world morality",
+      "stand against darkness"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1207,
+    "nodeID" : "DB62F18E-C396-4822-9EA2-8471FEC2C52B",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Morality and Darkness in Middle-earth"
+  },
+  {
+    "contentTruncated" : "Corpus as mirror. The mirror must be honest — surfaces uncomfortable patterns, not flattering reflections. Foundation Model on-device for retrieval; frontier API opt-in for longitudinal synthesis. Sug…",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "corpus",
+        "score" : 0.39033774113732633,
+        "vocab" : "Geometry"
+      },
+      {
+        "folksonomy" : "mirror",
+        "score" : 0.5715312963119731,
+        "vocab" : "Message"
+      },
+      {
+        "folksonomy" : "honesty",
+        "score" : 0.6574628849828269,
+        "vocab" : "Fitness"
+      },
+      {
+        "folksonomy" : "uncomfortable",
+        "score" : 0.4665781904245611,
+        "vocab" : "Emotional"
+      },
+      {
+        "folksonomy" : "patterns",
+        "score" : 0.6355220006887302,
+        "vocab" : "Trends"
+      },
+      {
+        "folksonomy" : "foundation",
+        "score" : 0.5019926699204124,
+        "vocab" : "Design"
+      },
+      {
+        "folksonomy" : "model",
+        "score" : 0.5698420496766702,
+        "vocab" : "Technology"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "corpus",
+      "mirror",
+      "honesty",
+      "uncomfortable",
+      "patterns",
+      "foundation",
+      "model",
+      "on-device",
+      "retrieval",
+      "api",
+      "opt-in",
+      "synthesis",
+      "reflection",
+      "prompts",
+      "invitation"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1857,
+    "nodeID" : "DDC66F15-2480-441C-AA28-B2A3916C9023",
+    "postFilterTags" : [
+      "Message",
+      "Fitness",
+      "Trends",
+      "Design",
+      "Technology"
+    ],
+    "summaryLatencyMs" : 1688,
+    "title" : "Mirror of Truth"
+  },
+  {
+    "contentTruncated" : "Heartbeat, not a spinner.",
+    "currentTags" : [
+      "Technology",
+      "Health",
+      "Fitness",
+      "Project"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "heartbeat",
+      "not",
+      "spinner"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 568,
+    "nodeID" : "DE376D16-3A46-4847-B961-027642F084CF",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Heartbeat Control System"
+  },
+  {
+    "contentTruncated" : "I think that people really don't examine the meals that we take for granted supper and dinner were once separate meals and there wasn't any breakfast for the longest time I think people also overlook …",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "breakfast",
+        "score" : 0.4966462064100343,
+        "vocab" : "Math"
+      },
+      {
+        "folksonomy" : "meals",
+        "score" : 0.5880442378014379,
+        "vocab" : "Food"
+      },
+      {
+        "folksonomy" : "foodindustry",
+        "score" : 0.5448713039222214,
+        "vocab" : "Domestication"
+      },
+      {
+        "folksonomy" : "diet",
+        "score" : 0.7274807324530017,
+        "vocab" : "Diet Coke"
+      },
+      {
+        "folksonomy" : "nutrition",
+        "score" : 0.6042850404890748,
+        "vocab" : "Food"
+      },
+      {
+        "folksonomy" : "culturalhistory",
+        "score" : 0.5310600812891219,
+        "vocab" : "MunicipalPride"
+      },
+      {
+        "folksonomy" : "supper",
+        "score" : 0.4604648416552785,
+        "vocab" : "Darkness"
+      },
+      {
+        "folksonomy" : "dinner",
+        "score" : 0.39262443592467877,
+        "vocab" : "Darkness"
+      }
+    ],
+    "currentTags" : [
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "breakfast",
+      "meals",
+      "foodindustry",
+      "diet",
+      "nutrition",
+      "culturalhistory",
+      "supper",
+      "dinner"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1422,
+    "nodeID" : "DEA2B9DB-F98C-4D4A-A088-BA833CA1D054",
+    "postFilterTags" : [
+      "Food",
+      "Domestication",
+      "Diet Coke",
+      "MunicipalPride"
+    ],
+    "summaryLatencyMs" : 1247,
+    "title" : "Reexamining Meals: Breakfast as a Critical Meal"
+  },
+  {
+    "contentTruncated" : "Über-nodes as zoom-dependent clustering. Frosted vessel with luminous interior. Functional necessity once corpus passes navigable threshold without hierarchy.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "over-nodes",
+        "score" : 0.37709156549115574,
+        "vocab" : "Hyper-masculinity"
+      },
+      {
+        "folksonomy" : "zoom-dependent clustering",
+        "score" : 0.4942636133452496,
+        "vocab" : "Manipulation"
+      },
+      {
+        "folksonomy" : "frosted vessel",
+        "score" : 0.4256415834597617,
+        "vocab" : "Time Travel"
+      },
+      {
+        "folksonomy" : "luminous interior",
+        "score" : 0.3722023722139464,
+        "vocab" : "Diet Coke"
+      },
+      {
+        "folksonomy" : "functional necessity",
+        "score" : 0.5256815362262839,
+        "vocab" : "PublicPolicy"
+      },
+      {
+        "folksonomy" : "corpus",
+        "score" : 0.39033774113732633,
+        "vocab" : "Geometry"
+      },
+      {
+        "folksonomy" : "navigable threshold",
+        "score" : 0.3741161383464652,
+        "vocab" : "Time Travel"
+      },
+      {
+        "folksonomy" : "hierarchy",
+        "score" : 0.5201151032535445,
+        "vocab" : "PublicPolicy"
+      }
+    ],
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "over-nodes",
+      "zoom-dependent clustering",
+      "frosted vessel",
+      "luminous interior",
+      "functional necessity",
+      "corpus",
+      "navigable threshold",
+      "hierarchy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1407,
+    "nodeID" : "DF6B5E4B-79E5-42AF-9230-781165F8A264",
+    "postFilterTags" : [
+      "PublicPolicy"
+    ],
+    "summaryLatencyMs" : 1224,
+    "title" : "Zoom-Dependent Clustering for Over-Nodes"
+  },
+  {
+    "contentTruncated" : "11\/03: A story that takes place on a god-macro level — one within what we understand as something similar to our world, and a newly discovered dimension within our world.",
+    "currentTags" : [
+      "Story",
+      "Science",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "multiverse",
+      "god-macro",
+      "dimension",
+      "fantasy",
+      "science fiction",
+      "mythology",
+      "universe",
+      "parallel worlds"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1080,
+    "nodeID" : "DFBD28AB-1DAE-4F70-90DB-CE8AFF938C66",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Interdimensional Narrative"
+  },
+  {
+    "contentTruncated" : "Apply this to your story",
+    "currentTags" : [
+      "Story",
+      "Art",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "story idea",
+      "creative writing",
+      "writing prompt",
+      "story inspiration",
+      "narrative development",
+      "plot suggestion",
+      "fictional concept",
+      "storytelling"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1185,
+    "nodeID" : "E21482BF-EF67-4BF8-A0F5-CFA07ED1D625",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Creative Story Development"
+  },
+  {
+    "contentTruncated" : "Who's to say that God's actually a good person would that actually change anybody's willingness to believe in God even if they knew that God was evil\nWho's to say that God's actually a good person wou…",
+    "currentTags" : [
+      "Opinion",
+      "Religion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "philosophy",
+      "religion",
+      "ethics",
+      "belief",
+      "theism",
+      "atheism",
+      "morality",
+      "beliefs"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1026,
+    "nodeID" : "E324C919-659F-4FC5-93ED-445222DC688A",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Exploring Belief in Divine Nature"
+  },
+  {
+    "contentTruncated" : "Slow Roasted Plum Tomatoes. 1.5 lbs plum tomatoes (about 6 large), 3 tbsp olive oil, dried thyme, head of garlic peeled and smashed, kosher salt, 2 tbsp balsamic vinegar. Halve tomatoes cut-side up in…",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "slow roasted",
+      "plum tomatoes",
+      "olive oil",
+      "garlic",
+      "thyme",
+      "kosher salt",
+      "balsamic vinegar",
+      "oven-baked"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1280,
+    "nodeID" : "E3CB2C56-229D-4E64-BF76-C5EEBD5E49A8",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Slow Roasted Plum Tomatoes"
+  },
+  {
+    "contentTruncated" : "Real strategic decisions from the AirPad Sounding Board, treated as standalone idea nodes. These read as design observations and product principles — exactly the kind of compact ideation the gate shou…",
+    "currentTags" : [
+      "Work",
+      "Idea",
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "strategic decisions",
+      "AirPad",
+      "sourcing",
+      "product design",
+      "ideation",
+      "product principles",
+      "gate commit",
+      "design observations"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1175,
+    "nodeID" : "E5A63DEC-42AB-46F1-A9B4-53DDA3CF8757",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Strategic Ideation from AirPad Sounding Board"
+  },
+  {
+    "contentTruncated" : "The light comes from within.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Dream"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "inspiration",
+      "inner light",
+      "personal growth",
+      "spiritual awakening",
+      "mindfulness",
+      "self-reflection",
+      "inner peace",
+      "life philosophy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1130,
+    "nodeID" : "E7B9C683-FD65-45BD-B173-66562484699C",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Inner Light"
+  },
+  {
+    "contentTruncated" : "Episode premise: Fuck! Getting Gen Z to start procreating.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "controversial",
+        "score" : 0.5285260524146723,
+        "vocab" : "Historical Revisionism"
+      },
+      {
+        "folksonomy" : "gen-z",
+        "score" : 0.48115861343524463,
+        "vocab" : "Washington DC"
+      },
+      {
+        "folksonomy" : "population",
+        "score" : 0.5059680184360018,
+        "vocab" : "Religion"
+      },
+      {
+        "folksonomy" : "social-issue",
+        "score" : 0.4442245987965854,
+        "vocab" : "PublicPolicy"
+      },
+      {
+        "folksonomy" : "discussion",
+        "score" : 0.5004135361139411,
+        "vocab" : "Research"
+      },
+      {
+        "folksonomy" : "cultural-trend",
+        "score" : 0.5769586889722828,
+        "vocab" : "Cultural Studies"
+      },
+      {
+        "folksonomy" : "debate",
+        "score" : 0.5466220508277524,
+        "vocab" : "Conflict"
+      }
+    ],
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "controversial",
+      "gen-z",
+      "population",
+      "social-issue",
+      "discussion",
+      "cultural-trend",
+      "debate",
+      "society"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1409,
+    "nodeID" : "E7BCE684-7DFF-4225-B15A-E0DDFEB1BF54",
+    "postFilterTags" : [
+      "Historical Revisionism",
+      "Religion",
+      "Research",
+      "Cultural Studies",
+      "Conflict"
+    ],
+    "summaryLatencyMs" : 1240,
+    "title" : "Creative Storytelling and Technology"
+  },
+  {
+    "contentTruncated" : "Episode premise: Peeping Tom. Tom becomes a window washer and ends up seeing more than he ought to.",
+    "currentTags" : [
+      "Story",
+      "Art"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "peeping tom",
+      "suspense",
+      "thriller",
+      "psychological drama",
+      "crime",
+      "mystery",
+      "window washer",
+      "unethical voyeurism"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1186,
+    "nodeID" : "E858BE6B-3587-415F-9E94-FBCA3101AEC0",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Peeping Tom"
+  },
+  {
+    "contentTruncated" : "12\/11: Guns are mysterious objects with great powers. When a person holds a gun, it wraps itself around your wrist and takes over your body. It transforms you in ways that can fundamentally alter your…",
+    "currentTags" : [
+      "Science",
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "mysterious",
+      "objects",
+      "powers",
+      "transformation",
+      "cursed",
+      "bullets",
+      "altered",
+      "nature"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1025,
+    "nodeID" : "E8962D8F-FDBA-441A-828A-3CD31D051E62",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Mysterious Guns"
+  },
+  {
+    "contentTruncated" : "Sports teams hate their fans.",
+    "currentTags" : [
+      "FanLoyalty",
+      "Sports",
+      "Team Dynamics"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "sports",
+      "teams",
+      "fans",
+      "relationships",
+      "negative",
+      "perception",
+      "controversy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 901,
+    "nodeID" : "E91DC9EF-9BBB-4979-B539-FCCA577DCD04",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Fan Loyalty and Team Dynamics"
+  },
+  {
+    "contentTruncated" : "The distortion. Lens warp pulls inward around impact point. Elastic snap back on release. The phone's surface stretched, received, returned.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Fitness"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "lens",
+      "warp",
+      "impact",
+      "elastic",
+      "phone",
+      "distortion",
+      "release",
+      "surface"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 950,
+    "nodeID" : "E9783584-AF6C-4703-A288-CE14F5CE2FA5",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Phone Lens Warp"
+  },
+  {
+    "contentTruncated" : "I think Lennox is going to eclipse windows within the coming years\nI think Lennox is going to eclipse windows within the coming years",
+    "currentTags" : [
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Lennox",
+      "windows",
+      "technology",
+      "innovation",
+      "computing",
+      "market",
+      "competition"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 868,
+    "nodeID" : "EA3C20C5-CFFA-48CA-BFE1-C294979CC7C1",
+    "postFilterTags" : [
+
+    ],
+    "title" : "TechTrends"
+  },
+  {
+    "contentTruncated" : "Therefore \/ however.",
+    "currentTags" : [
+      "Work",
+      "Research",
+      "Learning",
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "idea",
+      "therefore",
+      "however"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 554,
+    "nodeID" : "EAB9D025-BAB1-44A7-BAE5-95BE444C2015",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Exploring Connections"
+  },
+  {
+    "contentTruncated" : "One day when one company ends up owning everything they're just gonna get rid of all the little sub brands and they're just gonna collapse them all into one and that'll be the end of it\nOne day when o…",
+    "currentTags" : [
+      "Technology",
+      "Ownership"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "monopoly",
+      "corporate consolidation",
+      "brand collapse",
+      "big tech",
+      "consumer branding",
+      "business strategy",
+      "industry trend",
+      "market dominance"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1228,
+    "nodeID" : "EBA90170-0042-476B-9D08-C178CAEEE4A7",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Company Mergers and Brand Consolidation"
+  },
+  {
+    "contentTruncated" : "The mirror must be honest.",
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "reflection",
+      "truth",
+      "mirror",
+      "honesty",
+      "self-perception",
+      "introspection",
+      "metaphor",
+      "philosophy"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1059,
+    "nodeID" : "EBF18FFC-87C8-49B9-BCD6-EBA1491B27F8",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Honesty in Reflection"
+  },
+  {
+    "contentTruncated" : "A curse of unimaginable cruelty. I was a stepping stone to someone else's happiness.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Memory"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "curse",
+      "cruelty",
+      "happiness",
+      "step",
+      "other",
+      "unimaginable"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1002,
+    "nodeID" : "ED80560F-5FA4-4610-8FF1-F33F86086F15",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Unimaginable Cruelty"
+  },
+  {
+    "contentTruncated" : "If time travel was even feasible or possible what would it look like in the universe where people can actually move back-and-forth between different times almost like boarding a train and going to a d…",
+    "currentTags" : [
+      "Science",
+      "Time Travel",
+      "Conceptual"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "time travel",
+      "universe",
+      "multiverse",
+      "time manipulation",
+      "punishment",
+      "golden age",
+      "deportation",
+      "alternate realities"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1337,
+    "nodeID" : "EF74D6B7-DBDF-4E45-9745-D86C3AA28D05",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Time Travel Concept"
+  },
+  {
+    "contentTruncated" : "Domain classification at capture. \"This looks like a recipe\" prompt at the moment of node commit. domain and domain_confirmed fields on each node.",
+    "currentTags" : [
+      "Recipe",
+      "Work",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "domain classification",
+      "recipe recognition",
+      "node commit",
+      "JSON response",
+      "structured data",
+      "automated tagging"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1025,
+    "nodeID" : "F26299D0-89AB-47D4-A406-D5FE51DE4D15",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Recipe Domain Classification"
+  },
+  {
+    "contentTruncated" : "Brand architecture. Curious Objects (company) makes Curious (corpus app) and Objects (NFC configuration app). Both names are plain English. The company is the maker; the products name themselves.",
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "brand architecture",
+      "product naming",
+      "curious objects",
+      "corpus app",
+      "nfc configuration app",
+      "plain english names",
+      "company branding"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1125,
+    "nodeID" : "F31D49B8-047A-4051-B377-33AD799A9A52",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Brand Architecture for Curious Objects"
+  },
+  {
+    "contentTruncated" : "Killing of Renée Good - Wikipedia",
+    "currentTags" : [
+      "Recipe",
+      "Technology"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "Renée Good",
+      "murder",
+      "history",
+      "crime",
+      "notable_deaths",
+      "biography",
+      "murder_case",
+      "historical_event"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1155,
+    "nodeID" : "F3BAD1DC-09E8-4576-BF73-ED6FD8A19D66",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Recipe-App"
+  },
+  {
+    "contentTruncated" : "Node branching, git-inspired. Root nodes spawn branches that inherit content and develop independently. Fork icon in detail view triggers branch creation with confirmation modal. Branch nodes orbit th…",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "node branching",
+      "git inspired",
+      "branch creation",
+      "canvas",
+      "orbiting nodes",
+      "fork icon",
+      "modal confirmation",
+      "actions exploration",
+      "elevate",
+      "provenance note",
+      "abandon"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1428,
+    "nodeID" : "F49C7C2C-6D4D-4D20-8405-B79E851BA3D6",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Interactive Branching System"
+  },
+  {
+    "contentTruncated" : "The light comes from within. Nodes emit light from inside themselves. AirPad is a place where the light of an idea doesn't go out. Colorblind perception as the perceptual foundation of the aesthetic.",
+    "currentTags" : [
+      "Idea",
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "idea",
+      "nodes",
+      "light",
+      "airpad",
+      "perception",
+      "colorblind",
+      "aesthetic"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 892,
+    "nodeID" : "FBD574E7-D2CB-4629-A679-630BA11DC678",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Inner Light and Perception"
+  },
+  {
+    "contentTruncated" : "What if constellations are actually encoded with meaning and deep messaging like what if it's something that God or ancient aliens actually left behind to help guide humanity to give us some sort of s…",
+    "currentTags" : [
+      "Cosmic",
+      "Message",
+      "Constellation",
+      "Guidance",
+      "History"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "constellations",
+      "ancient aliens",
+      "cosmic messages",
+      "cosmic guidance",
+      "deep meaning",
+      "primitive religions",
+      "scientific progress",
+      "galactic mysteries"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1330,
+    "nodeID" : "FCA1668C-FAFF-41FF-90C5-3F4DB625A341",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Cosmic Messages and Constellations"
+  },
+  {
+    "contentTruncated" : "Iconoclasher \/ Iconoclysm \/ Iconogasm with Tom McJazz. \"When I see shit I don't like, I make a video about it.\"",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Art"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 150,
+    "nodeID" : "FF0C11DE-B878-49FB-8487-CE50EEB3B0DF",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Iconoclasmic Video Series"
+  },
+  {
+    "contentTruncated" : "Queerness means living life on your terms.",
+    "cosineMatches" : [
+      {
+        "folksonomy" : "queerness",
+        "score" : 0.6369070219858034,
+        "vocab" : "Fitness"
+      },
+      {
+        "folksonomy" : "self-expression",
+        "score" : 0.5232291816984879,
+        "vocab" : "Hyper-masculinity"
+      },
+      {
+        "folksonomy" : "autonomy",
+        "score" : 0.5158636897830192,
+        "vocab" : "Conflict"
+      },
+      {
+        "folksonomy" : "identity",
+        "score" : 0.5418894438744158,
+        "vocab" : "Morality"
+      },
+      {
+        "folksonomy" : "lifestyle",
+        "score" : 0.607679974988697,
+        "vocab" : "Food"
+      }
+    ],
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+      "queerness",
+      "self-expression",
+      "autonomy",
+      "identity",
+      "lifestyle",
+      "personal",
+      "freedom",
+      "terms"
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 1159,
+    "nodeID" : "FF43DCC8-2E4C-482F-90AC-4DA7E6B7AB3E",
+    "postFilterTags" : [
+      "Fitness",
+      "Hyper-masculinity",
+      "Conflict",
+      "Morality",
+      "Food"
+    ],
+    "summaryLatencyMs" : 1007,
+    "title" : "Queerness as Self-Expression"
+  }
+]

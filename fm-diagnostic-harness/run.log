@@ -1,0 +1,110 @@
+Building for debugging...
+[0/3] Write swift-version-5D9F918B9D1672F1.txt
+Build of product 'Harness' complete! (0.12s)
+=== FM Tagging Diagnostic Harness ===
+Corpus root: /Users/thomasjurgensen/Library/Mobile Documents/iCloud~com~doctorpresident~airpad/Documents
+Vocabulary size: 72
+Loaded 206 nodes from disk.
+Sampled 20 eligible nodes (content >= 20 chars).
+
+[1/20] C57169F2-6217-430E-BEEB-799B0189BAF1 — Diet Coke Psychology
+  content len: 705
+  A1 (free-form)… 4757ms tags=["Sociology", "Psychology", "Cultural Studies"] → filter=["Sociology", "Psychology", "Cultural Studies"]
+  A2 (typed enum)… 2891ms tags=["Diet Coke", "Sociology", "Psychology"]
+
+[2/20] 70A66523-9B31-42A0-9021-8988E09C6A46 — Sometimes a right angle is the wrong angle
+  content len: 85
+  A1 (free-form)… 2825ms tags=["Conceptual", "Design", "Logic", "Reflective"] → filter=["Conceptual", "Design", "Reflective"]
+  A2 (typed enum)… 2497ms tags=["Conceptual", "Reflective"]
+
+[3/20] 0A0DB1DA-B0F0-463D-BF1F-F07DCA0E000C — Episode Premise: Hole to China
+  content len: 31
+  A1 (free-form)… 2300ms tags=["Science", "Technology", "Conceptual", "Time Travel"] → filter=["Science", "Technology", "Conceptual", "Time Travel"]
+  A2 (typed enum)… 2807ms tags=["Conceptual", "Cosmic", "Travel", "Time Travel", "Idea"]
+
+[4/20] 1E9C4DEF-DD1E-42B0-80FC-62E9CD93DF54 — Action Button Reveal
+  content len: 205
+  A1 (free-form)… 2140ms tags=["Technology", "Design", "Attention"] → filter=["Technology", "Design", "Attention"]
+  A2 (typed enum)… 2831ms tags=["Idea", "Attention", "Control", "Design", "Reflective"]
+
+[5/20] 42B8C8DB-A8F8-40C4-A270-F1FC29A36A81 — Boomers Dividing and Multiplying
+  content len: 37
+  A1 (free-form)… 2129ms tags=["Sociology", "Human Rights", "Middle-earth"] → filter=["Sociology", "Human Rights", "Middle-earth"]
+  A2 (typed enum)… 2423ms tags=["Conceptual", "Sociology", "History"]
+
+[6/20] 3B5584B8-4B25-4801-804B-0B86C87961C0 — The Complexity of Morality in Middle-earth
+  content len: 647
+  A1 (free-form)… 3334ms tags=["Conceptual", "Conflict", "Morality"] → filter=["Conceptual", "Conflict", "Morality"]
+  A2 (typed enum)… 3170ms tags=["Middle-earth", "Morality"]
+
+[7/20] 6215BD85-AF0C-4853-BBCC-9E818732E5A0 — Mask Dynamics
+  content len: 214
+  A1 (free-form)… 2694ms tags=["Conceptual", "Attention", "Masculinity", "Human Rights", "Morality"] → filter=["Conceptual", "Attention", "Masculinity", "Human Rights", "Morality"]
+  A2 (typed enum)… 2730ms tags=["Conceptual", "Emotional", "Power", "Sociology"]
+
+[8/20] 18C0ADA0-83CF-408C-BA4B-88E80D336B1D — Stress Testing Router Classification Limits
+  content len: 196
+  A1 (free-form)… 2524ms tags=["Technology", "Innovation", "Development"] → filter=["Technology"]
+  A2 (typed enum)… 3394ms tags=["Conceptual", "Attention", "Control", "Technology", "Idea"]
+
+[9/20] 0638A25E-0F1E-42D8-BADE-78B5BB65FD3E — Vertical Farming Future
+  content len: 919
+  A1 (free-form)… 2799ms tags=["Agriculture", "Environmental Impact", "Food Security"] → filter=[]
+  A2 (typed enum)… 2803ms tags=["Food", "Technology", "Science", "Nature"]
+
+[10/20] DF6B5E4B-79E5-42AF-9230-781165F8A264 — Zoom-Dependent Clustering for Over-Nodes
+  content len: 158
+  A1 (free-form)… 2379ms tags=["Conceptual", "Design", "Technology"] → filter=["Conceptual", "Design", "Technology"]
+  A2 (typed enum)… 2988ms tags=["Conceptual", "Attention", "Design"]
+
+[11/20] 56C645B8-EB8E-42BC-9E19-D510FA3E4397 — Topographic Canvas with Semantic Discovery
+  content len: 165
+  A1 (free-form)… 2412ms tags=["Conceptual", "Design", "Spatial Awareness", "Visual Thinking"] → filter=["Conceptual", "Design"]
+  A2 (typed enum)… 2470ms tags=["Conceptual", "Design", "Attention"]
+
+[12/20] DDC66F15-2480-441C-AA28-B2A3916C9023 — Mirror of Truth
+  content len: 262
+  A1 (free-form)… 2875ms tags=["Attention", "Conceptual", "Reflective", "Thought", "Idea", "Hypothetical"] → filter=["Attention", "Conceptual", "Reflective", "Idea"]
+  A2 (typed enum)… 2499ms tags=["Conceptual", "Attention", "Technology"]
+
+[13/20] 948C90CD-94D6-4EAE-B618-1FF3FCDA3DB0 — Episode Premise: Lights Out
+  content len: 28
+  A1 (free-form)… 2241ms tags=["Conflict", "Attention", "Dream", "Idea"] → filter=["Conflict", "Attention", "Dream", "Idea"]
+  A2 (typed enum)… 2364ms tags=["Cosmic", "Conflict", "Dream", "Idea"]
+
+[14/20] 09C7E791-93DF-435D-A885-7454C34A98E2 — Historical Revisionism in WWII Narratives
+  content len: 235
+  A1 (free-form)… 2809ms tags=["Conceptual", "Historical Revisionism", "Conflict"] → filter=["Conceptual", "Historical Revisionism", "Conflict"]
+  A2 (typed enum)… 2958ms tags=["Historical Revisionism", "Idea"]
+
+[15/20] DEA2B9DB-F98C-4D4A-A088-BA833CA1D054 — Reexamining Meals: Breakfast as a Critical Meal
+  content len: 747
+  A1 (free-form)… 2998ms tags=["Conceptual", "Food", "History"] → filter=["Conceptual", "Food", "History"]
+  A2 (typed enum)… 2593ms tags=["Food", "History"]
+
+[16/20] 9C8F8D6F-08EF-43C9-96C8-B7C3012CB903 — Exploring Hate Faces on TikTok
+  content len: 340
+  A1 (free-form)… 2511ms tags=["Attention", "Conflict", "Emotional", "Opinion", "Psychology"] → filter=["Attention", "Conflict", "Emotional", "Opinion", "Psychology"]
+  A2 (typed enum)… 2575ms tags=["Emotional", "Psychology"]
+
+[17/20] 7735A62F-7B0E-4EA5-9E59-C1E00D7A1AD0 — Tomato Recipe
+  content len: 46
+  A1 (free-form)… 1946ms tags=["Food", "Recipe"] → filter=["Food", "Recipe"]
+  A2 (typed enum)… 2275ms tags=["Food", "Recipe"]
+
+[18/20] 4B5E9285-1EE9-4740-9E22-66D818937172 — AirPad Concept
+  content len: 135
+  A1 (free-form)… 2483ms tags=["Conceptual", "Design", "Attention", "Idea"] → filter=["Conceptual", "Design", "Attention", "Idea"]
+  A2 (typed enum)… 2390ms tags=["Conceptual", "Design", "Creative"]
+
+[19/20] FF43DCC8-2E4C-482F-90AC-4DA7E6B7AB3E — Queerness as Self-Expression
+  content len: 42
+  A1 (free-form)… 2329ms tags=["Conceptual", "Creative", "Emotional", "Morality", "Opinion"] → filter=["Conceptual", "Creative", "Emotional", "Morality", "Opinion"]
+  A2 (typed enum)… 2269ms tags=["Creative", "Emotional", "Opinion", "Morality"]
+
+[20/20] E7BCE684-7DFF-4225-B15A-E0DDFEB1BF54 — Creative Storytelling and Technology
+  content len: 58
+  A1 (free-form)… ERROR 156ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A2 (typed enum)… ERROR 149ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+
+Wrote results-A1.json, results-A2.json, summary.md to /Users/thomasjurgensen/Desktop/AirPad/fm-diagnostic-harness

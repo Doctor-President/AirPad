@@ -1,0 +1,190 @@
+Building for debugging...
+[0/3] Write swift-version-5D9F918B9D1672F1.txt
+Build of product 'Harness' complete! (0.12s)
+=== FM Tagging Diagnostic Harness — Round 2 ===
+Corpus root: /Users/thomasjurgensen/Library/Mobile Documents/iCloud~com~doctorpresident~airpad/Documents
+Vocabulary size: 72
+NLEmbedding.sentenceEmbedding loaded (dim=512).
+Loaded 206 nodes from disk.
+Sampled 20 eligible nodes (seed=42, content >= 20 chars).
+[cache] Stage-1 summary will be reused across A5 and A6 per-node.
+
+[1/20] C57169F2-6217-430E-BEEB-799B0189BAF1 — Diet Coke Psychology
+  content len: 705
+  A3 (typed enum + abstention)… 5197ms tags=["Diet Coke", "Sociology", "Psychology"]
+  A4 (folksonomy → cosine match)… fm=1119ms cos=199ms folk=["Diet Coke", "Washington DC", "high achieving", "Psychology", "Sociology", "Caffeine", "Motivation", "Lifestyle"] tier1=["Diet Coke", "Washington DC", "Psychology", "Sociology", "Masculinity"]
+    matches: Diet Coke→Diet Coke(1.00), Washington DC→Washington DC(1.00), high achieving→Emotional(0.37), Psychology→Psychology(1.00), Sociology→Sociology(1.00)
+  A5 stage-1 (summary)… 2406ms summary="Explores the psychological and sociological connections between Diet Coke consumption and high-achieving individuals in …"
+  A5 stage-2 (free-form on summary)… 1254ms tags=["Psychological", "Sociological", "Washington DC", "Cultural Studies", "Idea"] → filter=["Washington DC", "Cultural Studies", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1412ms tags=["Conceptual", "Sociology", "PublicPolicy", "History", "Washington DC"]
+
+[2/20] 70A66523-9B31-42A0-9021-8988E09C6A46 — Sometimes a right angle is the wrong angle
+  content len: 85
+  A3 (typed enum + abstention)… 2772ms tags=["Conceptual", "Creative", "Geometry"]
+  A4 (folksonomy → cosine match)… fm=985ms cos=172ms folk=["angle", "geometry", "mathematics", "right angle", "perspective", "conceptual", "thought experiment"] tier1=["Geometry", "Psychology", "Etymology", "Conceptual", "Dream"]
+    matches: angle→Trends(0.35), geometry→Geometry(1.00), mathematics→Psychology(0.70), right angle→Message(0.33), perspective→Etymology(0.51)
+  A5 stage-1 (summary)… 2555ms summary="The idea explores the concept of perspective and context, suggesting that what seems correct or logical may not always b…"
+  A5 stage-2 (free-form on summary)… 899ms tags=["Conceptual", "Perspective", "Context", "Idea"] → filter=["Conceptual", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1083ms tags=["Conceptual", "Attention", "Reflective"]
+
+[3/20] 0A0DB1DA-B0F0-463D-BF1F-F07DCA0E000C — Episode Premise: Hole to China
+  content len: 31
+  A3 (typed enum + abstention)… 3105ms tags=["Science", "Conceptual", "Idea", "Time Travel", "Middle-earth"]
+  A4 (folksonomy → cosine match)… fm=1075ms cos=180ms folk=["science fiction", "space", "travel", "adventure", "exploration", "conceptual", "futuristic", "epic"] tier1=["Science", "Travel", "Research", "Conceptual", "Cosmic"]
+    matches: science fiction→Science(0.63), space→Power(0.44), travel→Travel(1.00), adventure→Comedy(0.45), exploration→Research(0.58)
+  A5 stage-1 (summary)… 2412ms summary="A whimsical journey through dimensions, blending humor, creativity, and cosmic exploration."
+  A5 stage-2 (free-form on summary)… 950ms tags=["Art", "Cosmic", "Comedy", "Conceptual", "Design"] → filter=["Art", "Cosmic", "Comedy", "Conceptual", "Design"]
+  A6 stage-2 (typed enum on summary)… 1326ms tags=["Cosmic", "Creative", "Comedy", "Dream", "Science"]
+
+[4/20] 1E9C4DEF-DD1E-42B0-80FC-62E9CD93DF54 — Action Button Reveal
+  content len: 205
+  A3 (typed enum + abstention)… 2517ms tags=["Design", "Attention", "Idea"]
+  A4 (folksonomy → cosine match)… fm=961ms cos=178ms folk=["action", "button", "reveal", "setup", "capture", "device", "accessibility", "feature"] tier1=["Memory", "Technology", "Guidance"]
+    matches: action→Conflict(0.46), button→Message(0.42), reveal→Message(0.44), setup→Memory(0.52), capture→Manipulation(0.44)
+  A5 stage-1 (summary)… 2329ms summary="An innovative feature that allows users to capture and store things without needing an app setup, emphasizing convenienc…"
+  A5 stage-2 (free-form on summary)… 880ms tags=["Design", "Technology", "Convenience", "Accessibility", "Innovation"] → filter=["Design", "Technology"]
+  A6 stage-2 (typed enum on summary)… 1182ms tags=["Creative", "Design", "Idea", "Technology", "People"]
+
+[5/20] 42B8C8DB-A8F8-40C4-A270-F1FC29A36A81 — Boomers Dividing and Multiplying
+  content len: 37
+  A3 (typed enum + abstention)… 2865ms tags=["Conceptual", "Sociology", "History"]
+  A4 (folksonomy → cosine match)… fm=1009ms cos=169ms folk=["boomers", "generation", "multiply", "divide", "aging", "population trends", "generational dynamics"] tier1=["Manipulation", "Trends", "Team Dynamics"]
+    matches: boomers→Dogs(0.36), generation→Manipulation(0.44), multiply→Manipulation(0.51), divide→Conflict(0.41), aging→Fitness(0.48)
+  A5 stage-1 (summary)… 2864ms summary="This idea explores the demographic phenomenon where baby boomers are experiencing both division (perhaps due to generati…"
+  A5 stage-2 (free-form on summary)… 1151ms tags=["Social Studies", "Sociology", "Demography", "Family Dynamics", "Cultural Studies"] → filter=["Sociology", "Cultural Studies"]
+  A6 stage-2 (typed enum on summary)… 1155ms tags=["Conflict", "Cultural Studies", "Idea"]
+
+[6/20] 3B5584B8-4B25-4801-804B-0B86C87961C0 — The Complexity of Morality in Middle-earth
+  content len: 647
+  A3 (typed enum + abstention)… 2859ms tags=["Middle-earth", "Morality"]
+  A4 (folksonomy → cosine match)… fm=1363ms cos=180ms folk=["Lord of the Rings", "Good vs Evil", "Moral Complexity", "Black and White", "Epic Fantasy", "Philosophical Themes", "Darkness", "Contemporary Relevance"] tier1=["Emotional", "Morality", "Comedy", "Darkness", "Historical Revisionism"]
+    matches: Lord of the Rings→Time Travel(0.39), Good vs Evil→Emotional(0.51), Moral Complexity→Morality(0.68), Black and White→Cosmic(0.41), Epic Fantasy→Comedy(0.62)
+  A5 stage-1 (summary)… 3051ms summary="The idea explores how the dichotomy of good versus evil has persisted, critiquing societal tendencies to oversimplify mo…"
+  A5 stage-2 (free-form on summary)… 1098ms tags=["Conceptual", "Conflict", "Morality", "Idea", "Sociology"] → filter=["Conceptual", "Conflict", "Morality", "Idea", "Sociology"]
+  A6 stage-2 (typed enum on summary)… 1114ms tags=["Conflict", "Morality", "Idea"]
+
+[7/20] 6215BD85-AF0C-4853-BBCC-9E818732E5A0 — Mask Dynamics
+  content len: 214
+  A3 (typed enum + abstention)… 2631ms tags=["Conceptual", "Emotional"]
+  A4 (folksonomy → cosine match)… fm=935ms cos=164ms folk=["mask", "behavior", "social", "authenticity", "human", "nature", "multitudes", "psychology"] tier1=["Morality", "Health", "Guidance", "People", "Nature"]
+    matches: mask→Cat(0.47), behavior→Morality(0.57), social→Health(0.53), authenticity→Guidance(0.63), human→People(0.52)
+  A5 stage-1 (summary)… 2255ms summary="The idea explores how individuals wear different masks based on context, questioning if this is inauthentic or natural."
+  A5 stage-2 (free-form on summary)… 1027ms tags=["Attention", "Conceptual", "Conflict", "Emotional", "Idea"] → filter=["Attention", "Conceptual", "Conflict", "Emotional", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1395ms tags=["Conceptual", "Emotional", "Masculinity", "Power", "Sociology"]
+
+[8/20] 18C0ADA0-83CF-408C-BA4B-88E80D336B1D — Stress Testing Router Classification Limits
+  content len: 196
+  A3 (typed enum + abstention)… 2935ms tags=["Conceptual", "Attention", "Technology"]
+  A4 (folksonomy → cosine match)… fm=1025ms cos=162ms folk=["router stress testing", "classification limits", "needs review", "quarantine queue", "silently dropped"] tier1=["Manipulation", "Washington DC"]
+    matches: router stress testing→Manipulation(0.55), classification limits→Manipulation(0.48), needs review→Message(0.49), quarantine queue→Washington DC(0.53), silently dropped→Manipulation(0.33)
+  A5 stage-1 (summary)… 2639ms summary="This idea involves deliberately pushing a router's classification capabilities to their limits, ensuring any failures ar…"
+  A5 stage-2 (free-form on summary)… 912ms tags=["Conceptual", "Creative", "Technology", "Design", "Idea"] → filter=["Conceptual", "Creative", "Technology", "Design", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1182ms tags=["Attention", "Conceptual", "Creative", "Design", "Learning"]
+
+[9/20] 0638A25E-0F1E-42D8-BADE-78B5BB65FD3E — Vertical Farming Future
+  content len: 919
+  A3 (typed enum + abstention)… 2773ms tags=["Food", "Science", "Technology"]
+  A4 (folksonomy → cosine match)… fm=1355ms cos=190ms folk=["vertical farming", "food production", "climate change", "agriculture", "water recycling", "controlled environments", "yield maximization", "pest resistance", "biodiversity loss"] tier1=["Food", "Conflict", "Domestication", "Manipulation"]
+    matches: vertical farming→Domestication(0.49), food production→Food(0.68), climate change→Conflict(0.58), agriculture→Domestication(0.54), water recycling→Domestication(0.52)
+  A5 stage-1 (summary)… 2348ms summary="Vertical farming presents a promising solution for food production in volatile climates but raises concerns about plant …"
+  A5 stage-2 (free-form on summary)… 746ms tags=["Environmental", "Food", "Agriculture"] → filter=["Food"]
+  A6 stage-2 (typed enum on summary)… 1157ms tags=["Food", "Conceptual", "Design", "Science", "Technology"]
+
+[10/20] DF6B5E4B-79E5-42AF-9230-781165F8A264 — Zoom-Dependent Clustering for Over-Nodes
+  content len: 158
+  A3 (typed enum + abstention)… 2780ms tags=["Conceptual", "Design", "Idea"]
+  A4 (folksonomy → cosine match)… fm=1224ms cos=183ms folk=["over-nodes", "zoom-dependent clustering", "frosted vessel", "luminous interior", "functional necessity", "corpus", "navigable threshold", "hierarchy"] tier1=["PublicPolicy"]
+    matches: over-nodes→Hyper-masculinity(0.38), zoom-dependent clustering→Manipulation(0.49), frosted vessel→Time Travel(0.43), luminous interior→Diet Coke(0.37), functional necessity→PublicPolicy(0.53)
+  A5 stage-1 (summary)… 2412ms summary="The idea explores the concept of clustering based on zoom functionality within a navigable framework, suggesting a shift…"
+  A5 stage-2 (free-form on summary)… 922ms tags=["Conceptual", "Design", "Mathematics", "Technology", "Idea"] → filter=["Conceptual", "Design", "Technology", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1299ms tags=["Conceptual", "Design", "Idea", "Technology", "Trends"]
+
+[11/20] 56C645B8-EB8E-42BC-9E19-D510FA3E4397 — Topographic Canvas with Semantic Discovery
+  content len: 165
+  A3 (typed enum + abstention)… 2618ms tags=["Conceptual", "Design"]
+  A4 (folksonomy → cosine match)… fm=1743ms cos=218ms folk=["density", "tension", "dramatic", "size", "hierarchy", "topographic", "canvas", "displaced", "nodes", "color", "bleed", "semantic", "cluster", "thread", "discovery", "surface"] tier1=["Fear", "Reflective", "PublicPolicy", "Cosmic", "AirPad"]
+    matches: density→Manipulation(0.43), tension→Fear(0.60), dramatic→Reflective(0.58), size→Memory(0.45), hierarchy→PublicPolicy(0.52)
+  A5 stage-1 (summary)… 2387ms summary="The idea revolves around dramatic size hierarchies on a topographic canvas and exploring semantic connections through co…"
+  A5 stage-2 (free-form on summary)… 1055ms tags=["Conceptual", "Design", "Geometry", "Visual Arts", "Color Theory"] → filter=["Conceptual", "Design", "Geometry"]
+  A6 stage-2 (typed enum on summary)… 1153ms tags=["Art", "Conceptual", "Design", "Geometry", "Creative"]
+
+[12/20] DDC66F15-2480-441C-AA28-B2A3916C9023 — Mirror of Truth
+  content len: 262
+  A3 (typed enum + abstention)… 3301ms tags=["Conceptual", "Attention", "Creative", "Control", "Reflective"]
+  A4 (folksonomy → cosine match)… fm=1688ms cos=169ms folk=["corpus", "mirror", "honesty", "uncomfortable", "patterns", "foundation", "model", "on-device", "retrieval", "api", "opt-in", "synthesis", "reflection", "prompts", "invitation"] tier1=["Message", "Fitness", "Trends", "Design", "Technology"]
+    matches: corpus→Geometry(0.39), mirror→Message(0.57), honesty→Fitness(0.66), uncomfortable→Emotional(0.47), patterns→Trends(0.64)
+  A5 stage-1 (summary)… 2342ms summary="The idea centers on using a foundation model as a reflective mirror, prompting users to see uncomfortable truths rather …"
+  A5 stage-2 (free-form on summary)… 939ms tags=["Attention", "Conceptual", "Emotional", "Reflective", "Idea"] → filter=["Attention", "Conceptual", "Emotional", "Reflective", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1173ms tags=["Conceptual", "Attention", "Reflective"]
+
+[13/20] 948C90CD-94D6-4EAE-B618-1FF3FCDA3DB0 — Episode Premise: Lights Out
+  content len: 28
+  A3 (typed enum + abstention)… 2208ms tags=["Conceptual", "Reflective"]
+  A4 (folksonomy → cosine match)… fm=1282ms cos=177ms folk=["lights out", "mystery", "thriller", "suspense", "episode", "premise", "narrative", "drama"] tier1=["Comedy", "Humor", "Idea"]
+    matches: lights out→Reflective(0.42), mystery→Comedy(0.54), thriller→Comedy(0.67), suspense→Humor(0.59), episode→Story(0.45)
+  A5 stage-1 (summary)… 2026ms summary="An enigmatic premise involving sudden darkness that sparks curiosity and potential conflict or transformation."
+  A5 stage-2 (free-form on summary)… 991ms tags=["Conceptual", "Conflict", "Darkness", "Idea", "Story"] → filter=["Conceptual", "Conflict", "Darkness", "Idea", "Story"]
+  A6 stage-2 (typed enum on summary)… 1358ms tags=["Conceptual", "Attention", "Conflict", "Darkness", "Idea"]
+
+[14/20] 09C7E791-93DF-435D-A885-7454C34A98E2 — Historical Revisionism in WWII Narratives
+  content len: 235
+  A3 (typed enum + abstention)… 2995ms tags=["Historical Revisionism", "Idea"]
+  A4 (folksonomy → cosine match)… fm=1067ms cos=168ms folk=["worldwar2", "history", "evil", "power", "dominant", "righteous", "imperialism"] tier1=["AirPad", "History", "Cosmic", "Power", "Morality"]
+    matches: worldwar2→AirPad(0.55), history→History(1.00), evil→Cosmic(0.62), power→Power(1.00), dominant→Cosmic(0.32)
+  A5 stage-1 (summary)… 2426ms summary="The narrative of WWII is reframed to highlight how the evil empire manipulated history to portray itself as righteous an…"
+  A5 stage-2 (free-form on summary)… 1032ms tags=["Conceptual", "Historical Revisionism", "Idea", "Morality", "PublicPolicy"] → filter=["Conceptual", "Historical Revisionism", "Idea", "Morality", "PublicPolicy"]
+  A6 stage-2 (typed enum on summary)… 1270ms tags=["Historical Revisionism", "Idea", "Conflict", "Cultural Studies", "Morality"]
+
+[15/20] DEA2B9DB-F98C-4D4A-A088-BA833CA1D054 — Reexamining Meals: Breakfast as a Critical Meal
+  content len: 747
+  A3 (typed enum + abstention)… 2834ms tags=["Food", "Conceptual", "History"]
+  A4 (folksonomy → cosine match)… fm=1247ms cos=175ms folk=["breakfast", "meals", "foodindustry", "diet", "nutrition", "culturalhistory", "supper", "dinner"] tier1=["Food", "Domestication", "Diet Coke", "MunicipalPride"]
+    matches: breakfast→Math(0.50), meals→Food(0.59), foodindustry→Domestication(0.54), diet→Diet Coke(0.73), nutrition→Food(0.60)
+  A5 stage-1 (summary)… 2815ms summary="The concept that breakfast was historically overlooked and may have been created by the food industry to promote a new r…"
+  A5 stage-2 (free-form on summary)… 989ms tags=["Conceptual", "Historical Revisionism", "Sociology", "Cultural Studies", "PublicPolicy"] → filter=["Conceptual", "Historical Revisionism", "Sociology", "Cultural Studies", "PublicPolicy"]
+  A6 stage-2 (typed enum on summary)… 1386ms tags=["Food", "Conceptual", "Historical Revisionism", "Idea", "PublicPolicy"]
+
+[16/20] 9C8F8D6F-08EF-43C9-96C8-B7C3012CB903 — Exploring Hate Faces on TikTok
+  content len: 340
+  A3 (typed enum + abstention)… 3018ms tags=["Emotional", "Psychology"]
+  A4 (folksonomy → cosine match)… fm=1268ms cos=176ms folk=["TikTok", "hate face", "social media", "psychology", "demeanor", "facial expressions", "resting bitch face", "emotional reactions", "online behavior"] tier1=["AirPad", "Fear", "Psychology", "Humor", "Emotional"]
+    matches: TikTok→AirPad(0.63), hate face→Fear(0.54), social media→Health(0.46), psychology→Psychology(1.00), demeanor→Humor(0.60)
+  A5 stage-1 (summary)… 2543ms summary="Examines the psychological basis of 'hate face' displays on social media, exploring whether such expressions are reflect…"
+  A5 stage-2 (free-form on summary)… 979ms tags=["Attention", "Emotional", "Psychology", "Manipulation", "Cultural Studies"] → filter=["Attention", "Emotional", "Psychology", "Manipulation", "Cultural Studies"]
+  A6 stage-2 (typed enum on summary)… 1265ms tags=["Attention", "Emotional", "Idea", "Psychology", "Sociology"]
+
+[17/20] 7735A62F-7B0E-4EA5-9E59-C1E00D7A1AD0 — Tomato Recipe
+  content len: 46
+  A3 (typed enum + abstention)… 2273ms tags=["Food", "Recipe"]
+  A4 (folksonomy → cosine match)… fm=903ms cos=154ms folk=["plum tomatoes", "large tomatoes", "tomato recipe", "vegetable dish", "cooking ingredient"] tier1=["Diet Coke", "Recipe", "Food"]
+    matches: plum tomatoes→Diet Coke(0.51), large tomatoes→Diet Coke(0.41), tomato recipe→Recipe(0.72), vegetable dish→Food(0.65), cooking ingredient→Food(0.57)
+  A5 stage-1 (summary)… 2036ms summary="A recipe for using 1 1/2 pounds of large plum tomatoes."
+  A5 stage-2 (free-form on summary)… 646ms tags=["Food"] → filter=["Food"]
+  A6 stage-2 (typed enum on summary)… 891ms tags=["Recipe"]
+
+[18/20] 4B5E9285-1EE9-4740-9E22-66D818937172 — AirPad Concept
+  content len: 135
+  A3 (typed enum + abstention)… 2779ms tags=["Conceptual", "Design", "AirPad"]
+  A4 (folksonomy → cosine match)… fm=868ms cos=172ms folk=["AirPad", "Action Button", "first-time experience", "layer", "app", "physical proof", "introduction"] tier1=["AirPad", "Hyper-masculinity", "Technology", "Reflective"]
+    matches: AirPad→AirPad(1.00), Action Button→Message(0.43), first-time experience→Hyper-masculinity(0.54), layer→AirPad(0.47), app→Technology(0.55)
+  A5 stage-1 (summary)… 2142ms summary="AirPad is more than just an app; it embodies a transformative experience where the first-time introduction is pivotal."
+  A5 stage-2 (free-form on summary)… 953ms tags=["Conceptual", "Creative", "Design", "Idea", "Human Rights"] → filter=["Conceptual", "Creative", "Design", "Idea", "Human Rights"]
+  A6 stage-2 (typed enum on summary)… 1167ms tags=["Art", "Attention", "Cosmic", "Creative", "Emotional"]
+
+[19/20] FF43DCC8-2E4C-482F-90AC-4DA7E6B7AB3E — Queerness as Self-Expression
+  content len: 42
+  A3 (typed enum + abstention)… 2390ms tags=["Conceptual", "Creative", "Emotional", "Opinion", "Power"]
+  A4 (folksonomy → cosine match)… fm=1007ms cos=152ms folk=["queerness", "self-expression", "autonomy", "identity", "lifestyle", "personal", "freedom", "terms"] tier1=["Fitness", "Hyper-masculinity", "Conflict", "Morality", "Food"]
+    matches: queerness→Fitness(0.64), self-expression→Hyper-masculinity(0.52), autonomy→Conflict(0.52), identity→Morality(0.54), lifestyle→Food(0.61)
+  A5 stage-1 (summary)… 2334ms summary="Queerness embodies living life according to one's own terms, emphasizing personal freedom and autonomy."
+  A5 stage-2 (free-form on summary)… 896ms tags=["Art", "Attention", "Conceptual", "Emotional", "Idea"] → filter=["Art", "Attention", "Conceptual", "Emotional", "Idea"]
+  A6 stage-2 (typed enum on summary)… 1197ms tags=["Conceptual", "Emotional", "Idea", "People", "Power"]
+
+[20/20] E7BCE684-7DFF-4225-B15A-E0DDFEB1BF54 — Creative Storytelling and Technology
+  content len: 58
+  A3 (typed enum + abstention)… ERROR 146ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+  A4 (folksonomy → cosine match)… fm=1240ms cos=169ms folk=["controversial", "gen-z", "population", "social-issue", "discussion", "cultural-trend", "debate", "society"] tier1=["Historical Revisionism", "Religion", "Research", "Cultural Studies", "Conflict"]
+    matches: controversial→Historical Revisionism(0.53), gen-z→Washington DC(0.48), population→Religion(0.51), social-issue→PublicPolicy(0.44), discussion→Research(0.50)
+  A5 stage-1 (summary)… ERROR 150ms — GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: "May contain unsafe content", underlyingErrors: []))
+
+Wrote results-A3/A4/A5/A6.json and summary-round2.md to /Users/thomasjurgensen/Desktop/AirPad/fm-diagnostic-harness

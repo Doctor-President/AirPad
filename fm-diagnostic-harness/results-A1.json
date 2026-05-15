@@ -1,0 +1,504 @@
+[
+  {
+    "contentTruncated" : "I don't know what it is about Diet Coke but it seems like it's one of those things that you either get it or you don't it's been one of those things that's kind of been loaded as fuel for people worki…",
+    "currentTags" : [
+      "Psychology",
+      "Sociology",
+      "Diet Coke",
+      "Washington DC"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Sociology",
+      "Psychology",
+      "Cultural Studies"
+    ],
+    "fmSummary" : "Explores the cultural and psychological significance of Diet Coke among high-achieving individuals in Washington DC.",
+    "fmTitle" : "The Allure of Diet Coke in Power Dynamics",
+    "latencyMs" : 4757,
+    "nodeID" : "C57169F2-6217-430E-BEEB-799B0189BAF1",
+    "postFilterTags" : [
+      "Sociology",
+      "Psychology",
+      "Cultural Studies"
+    ],
+    "title" : "Diet Coke Psychology"
+  },
+  {
+    "contentTruncated" : "Sometimes a right angle is the wrong angle\nSometimes a right angle is the wrong angle",
+    "currentTags" : [
+      "Geometry",
+      "Math",
+      "Design"
+    ],
+    "fmDomain" : "Art\/Project",
+    "fmMood" : "Curious",
+    "fmRawTags" : [
+      "Conceptual",
+      "Design",
+      "Logic",
+      "Reflective"
+    ],
+    "fmSummary" : "This idea explores the concept that certain concepts or actions, like a 'right angle,' might not always be beneficial or correct in all contexts.",
+    "fmTitle" : "Sometimes a right angle is the wrong angle",
+    "latencyMs" : 2825,
+    "nodeID" : "70A66523-9B31-42A0-9021-8988E09C6A46",
+    "postFilterTags" : [
+      "Conceptual",
+      "Design",
+      "Reflective"
+    ],
+    "title" : "Sometimes a right angle is the wrong angle"
+  },
+  {
+    "contentTruncated" : "Episode premise: Hole to China.",
+    "currentTags" : [
+      "Story",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Excited",
+    "fmRawTags" : [
+      "Science",
+      "Technology",
+      "Conceptual",
+      "Time Travel"
+    ],
+    "fmSummary" : "A speculative journey through time and space featuring a mysterious portal leading from Earth to China.",
+    "fmTitle" : "Hole to China Episode Premise",
+    "latencyMs" : 2300,
+    "nodeID" : "0A0DB1DA-B0F0-463D-BF1F-F07DCA0E000C",
+    "postFilterTags" : [
+      "Science",
+      "Technology",
+      "Conceptual",
+      "Time Travel"
+    ],
+    "title" : "Episode Premise: Hole to China"
+  },
+  {
+    "contentTruncated" : "The reveal: Action Button setup is a reveal, not a setup step. Person captures something in the world, it arrives without opening the app. Closing line: \"It works from anywhere. You'll never lose a th…",
+    "currentTags" : [
+      "Technology",
+      "Work"
+    ],
+    "fmDomain" : "Work",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Technology",
+      "Design",
+      "Attention"
+    ],
+    "fmSummary" : "A feature that automatically captures items from the real world without needing an app setup, emphasizing accessibility and convenience.",
+    "fmTitle" : "Action Button Reveal",
+    "latencyMs" : 2140,
+    "nodeID" : "1E9C4DEF-DD1E-42B0-80FC-62E9CD93DF54",
+    "postFilterTags" : [
+      "Technology",
+      "Design",
+      "Attention"
+    ],
+    "title" : "Action Button Reveal"
+  },
+  {
+    "contentTruncated" : "Boomers are dividing and multiplying.",
+    "currentTags" : [
+      "Work",
+      "People",
+      "Reference"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Sociology",
+      "Human Rights",
+      "Middle-earth"
+    ],
+    "fmSummary" : "This idea explores the concept of boomer demographics evolving, highlighting themes of division and growth.",
+    "fmTitle" : "Boomers Dividing and Multiplying",
+    "latencyMs" : 2129,
+    "nodeID" : "42B8C8DB-A8F8-40C4-A270-F1FC29A36A81",
+    "postFilterTags" : [
+      "Sociology",
+      "Human Rights",
+      "Middle-earth"
+    ],
+    "title" : "Boomers Dividing and Multiplying"
+  },
+  {
+    "contentTruncated" : "I think that as time goes on the Lord of the rings has become more and more present especially in the times that we live in now sometimes the forces of good and evil really are that black-and-white so…",
+    "currentTags" : [
+      "Morality",
+      "Middle-earth",
+      "Darkness"
+    ],
+    "fmDomain" : "Art\/Project",
+    "fmMood" : "reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Conflict",
+      "Morality"
+    ],
+    "fmSummary" : "The idea explores how the narrative of 'The Lord of the Rings' reflects the ongoing tension between black-and-white notions of good and evil, and how this dichotomy influences perceptions of morality in contemporary society.",
+    "fmTitle" : "The Dichotomy of Good vs. Evil in 'The Lord of the Rings' and Modern Times",
+    "latencyMs" : 3334,
+    "nodeID" : "3B5584B8-4B25-4801-804B-0B86C87961C0",
+    "postFilterTags" : [
+      "Conceptual",
+      "Conflict",
+      "Morality"
+    ],
+    "title" : "The Complexity of Morality in Middle-earth"
+  },
+  {
+    "contentTruncated" : "We all wear different masks and we all behave differently in front of different people in certain contexts. Maybe that’s inauthentic or maybe that’s just human nature. Perhaps existing in multitudes i…",
+    "currentTags" : [
+      "Story",
+      "Art",
+      "Technology"
+    ],
+    "fmDomain" : "Art\/Project",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Attention",
+      "Masculinity",
+      "Human Rights",
+      "Morality"
+    ],
+    "fmSummary" : "The idea explores the concept of wearing different masks based on context and human behavior, questioning authenticity versus natural diversity.",
+    "fmTitle" : "Masks and Human Nature",
+    "latencyMs" : 2694,
+    "nodeID" : "6215BD85-AF0C-4853-BBCC-9E818732E5A0",
+    "postFilterTags" : [
+      "Conceptual",
+      "Attention",
+      "Masculinity",
+      "Human Rights",
+      "Morality"
+    ],
+    "title" : "Mask Dynamics"
+  },
+  {
+    "contentTruncated" : "These deliberately stress-test the router's classification limits. Some should commit with a \"needs review\" flag. Some should genuinely fail to a quarantine queue. None should be silently dropped.",
+    "currentTags" : [
+      "Technology",
+      "Learning",
+      "AirPad"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Energetic",
+    "fmRawTags" : [
+      "Technology",
+      "Innovation",
+      "Development"
+    ],
+    "fmSummary" : "The idea focuses on deliberately testing the router's ability to classify different content types, ensuring robust handling and clear routing for flagged and non-compliant items.",
+    "fmTitle" : "Stress Testing Router Classification Limits",
+    "latencyMs" : 2524,
+    "nodeID" : "18C0ADA0-83CF-408C-BA4B-88E80D336B1D",
+    "postFilterTags" : [
+      "Technology"
+    ],
+    "title" : "Stress Testing Router Classification Limits"
+  },
+  {
+    "contentTruncated" : "Vertical farming seems like it's genuinely the future of food because as the climate is going to become more volatile and less hospitable to growing food will have to resort to recirculating water sys…",
+    "currentTags" : [
+      "Technology",
+      "Recipe"
+    ],
+    "fmDomain" : "Work",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Agriculture",
+      "Environmental Impact",
+      "Food Security"
+    ],
+    "fmSummary" : "Vertical farming is presented as a potential solution for food security in a changing climate, but it raises concerns about plant resistance to pests and infections due to controlled environments.",
+    "fmTitle" : "The Future of Vertical Farming and Its Challenges",
+    "latencyMs" : 2799,
+    "nodeID" : "0638A25E-0F1E-42D8-BADE-78B5BB65FD3E",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Vertical Farming Future"
+  },
+  {
+    "contentTruncated" : "Über-nodes as zoom-dependent clustering. Frosted vessel with luminous interior. Functional necessity once corpus passes navigable threshold without hierarchy.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Learning"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Design",
+      "Technology"
+    ],
+    "fmSummary" : "An exploration of clustering concepts tied to zoom-dependent functionality and navigability in a theoretical framework.",
+    "fmTitle" : "Zoom-Dependent Clustering in Over-Nodes",
+    "latencyMs" : 2379,
+    "nodeID" : "DF6B5E4B-79E5-42AF-9230-781165F8A264",
+    "postFilterTags" : [
+      "Conceptual",
+      "Design",
+      "Technology"
+    ],
+    "title" : "Zoom-Dependent Clustering for Over-Nodes"
+  },
+  {
+    "contentTruncated" : "Density and tension. Dramatic size hierarchy creates topographic canvas. Displaced nodes show color bleed toward semantic cluster — highest thread discovery surface.",
+    "currentTags" : [
+      "Technology",
+      "Science",
+      "Project"
+    ],
+    "fmDomain" : "Art\/Project",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Design",
+      "Spatial Awareness",
+      "Visual Thinking"
+    ],
+    "fmSummary" : "The idea centers on dramatic size hierarchy and its impact on a topographic canvas, with semantic clusters and thread discoveries.",
+    "fmTitle" : "Density and Tension",
+    "latencyMs" : 2412,
+    "nodeID" : "56C645B8-EB8E-42BC-9E19-D510FA3E4397",
+    "postFilterTags" : [
+      "Conceptual",
+      "Design"
+    ],
+    "title" : "Topographic Canvas with Semantic Discovery"
+  },
+  {
+    "contentTruncated" : "Corpus as mirror. The mirror must be honest — surfaces uncomfortable patterns, not flattering reflections. Foundation Model on-device for retrieval; frontier API opt-in for longitudinal synthesis. Sug…",
+    "currentTags" : [
+      "Technology",
+      "Science"
+    ],
+    "fmDomain" : "Work",
+    "fmMood" : "reflective",
+    "fmRawTags" : [
+      "Attention",
+      "Conceptual",
+      "Reflective",
+      "Thought",
+      "Idea",
+      "Hypothetical"
+    ],
+    "fmSummary" : "The idea revolves around using a foundation model as a reflective mirror, focusing on honest, uncomfortable patterns rather than flattering reflections. It emphasizes prompting users to reflect rather than search.",
+    "fmTitle" : "Corpus as Mirror",
+    "latencyMs" : 2875,
+    "nodeID" : "DDC66F15-2480-441C-AA28-B2A3916C9023",
+    "postFilterTags" : [
+      "Attention",
+      "Conceptual",
+      "Reflective",
+      "Idea"
+    ],
+    "title" : "Mirror of Truth"
+  },
+  {
+    "contentTruncated" : "Episode premise: Lights Out.",
+    "currentTags" : [
+      "Story"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Conflict",
+      "Attention",
+      "Dream",
+      "Idea"
+    ],
+    "fmSummary" : "An intriguing premise where an unexpected blackout alters the dynamics of relationships and perceptions within a community.",
+    "fmTitle" : "Lights Out Episode Premise",
+    "latencyMs" : 2241,
+    "nodeID" : "948C90CD-94D6-4EAE-B618-1FF3FCDA3DB0",
+    "postFilterTags" : [
+      "Conflict",
+      "Attention",
+      "Dream",
+      "Idea"
+    ],
+    "title" : "Episode Premise: Lights Out"
+  },
+  {
+    "contentTruncated" : "The story of WWII isn’t that good triumphed over evil. It’s that the evil empire that inspired Germany catapulted itself to being the dominant power of the world while being hailed as righteous and re…",
+    "currentTags" : [
+      "Story",
+      "Art",
+      "Historical Revisionism"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Historical Revisionism",
+      "Conflict"
+    ],
+    "fmSummary" : "The narrative of WWII isn't about good triumphing over evil; instead, it highlights how the evil empire that rose to global dominance was simultaneously portrayed as righteous and manipulated historical records to obscure its true nature.",
+    "fmTitle" : "The Rewriting of WWII History",
+    "latencyMs" : 2809,
+    "nodeID" : "09C7E791-93DF-435D-A885-7454C34A98E2",
+    "postFilterTags" : [
+      "Conceptual",
+      "Historical Revisionism",
+      "Conflict"
+    ],
+    "title" : "Historical Revisionism in WWII Narratives"
+  },
+  {
+    "contentTruncated" : "I think that people really don't examine the meals that we take for granted supper and dinner were once separate meals and there wasn't any breakfast for the longest time I think people also overlook …",
+    "currentTags" : [
+      "Opinion"
+    ],
+    "fmDomain" : "Nutrition",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Food",
+      "History"
+    ],
+    "fmSummary" : "The idea examines how societal perceptions of meals like supper, dinner, and breakfast have shifted, questioning the influence of the food industry in promoting breakfast as the 'most important' meal.",
+    "fmTitle" : "The Evolution of Mealtime: Breakfast and Beyond",
+    "latencyMs" : 2998,
+    "nodeID" : "DEA2B9DB-F98C-4D4A-A088-BA833CA1D054",
+    "postFilterTags" : [
+      "Conceptual",
+      "Food",
+      "History"
+    ],
+    "title" : "Reexamining Meals: Breakfast as a Critical Meal"
+  },
+  {
+    "contentTruncated" : "TikTok topic: Hate Face. When you see someone having a hateful meltdown on social media, you're rarely surprised by the person. One look and you can kind of see it coming. Is this just being shallow, …",
+    "currentTags" : [
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "curious",
+    "fmRawTags" : [
+      "Attention",
+      "Conflict",
+      "Emotional",
+      "Opinion",
+      "Psychology"
+    ],
+    "fmSummary" : "Explores whether hate face is a real phenomenon, examining its psychological underpinnings and potential connections to other expressions like Resting Bitch Face.",
+    "fmTitle" : "Understanding Hate Face in Social Media",
+    "latencyMs" : 2511,
+    "nodeID" : "9C8F8D6F-08EF-43C9-96C8-B7C3012CB903",
+    "postFilterTags" : [
+      "Attention",
+      "Conflict",
+      "Emotional",
+      "Opinion",
+      "Psychology"
+    ],
+    "title" : "Exploring Hate Faces on TikTok"
+  },
+  {
+    "contentTruncated" : "\\* 1 1\/2 pounds plum tomatoes (large, about 6)",
+    "currentTags" : [
+      "Recipe"
+    ],
+    "fmDomain" : "Recipe",
+    "fmMood" : "Calm",
+    "fmRawTags" : [
+      "Food",
+      "Recipe"
+    ],
+    "fmSummary" : "A recipe suggestion for 1 1\/2 pounds of plum tomatoes.",
+    "fmTitle" : "Plum Tomato Recipe",
+    "latencyMs" : 1946,
+    "nodeID" : "7735A62F-7B0E-4EA5-9E59-C1E00D7A1AD0",
+    "postFilterTags" : [
+      "Food",
+      "Recipe"
+    ],
+    "title" : "Tomato Recipe"
+  },
+  {
+    "contentTruncated" : "AirPad is a layer, not just an app. The Action Button is physical proof of that. Introduction happens inside the first-time experience.",
+    "currentTags" : [
+      "Technology",
+      "Creative"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "curious",
+    "fmRawTags" : [
+      "Conceptual",
+      "Design",
+      "Attention",
+      "Idea"
+    ],
+    "fmSummary" : "AirPad represents a conceptual shift beyond just an app, with the Action Button serving as tangible evidence of this transformation during the first-time experience.",
+    "fmTitle" : "AirPad: A Layer Beyond the App",
+    "latencyMs" : 2483,
+    "nodeID" : "4B5E9285-1EE9-4740-9E22-66D818937172",
+    "postFilterTags" : [
+      "Conceptual",
+      "Design",
+      "Attention",
+      "Idea"
+    ],
+    "title" : "AirPad Concept"
+  },
+  {
+    "contentTruncated" : "Queerness means living life on your terms.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Opinion"
+    ],
+    "fmDomain" : "",
+    "fmMood" : "Reflective",
+    "fmRawTags" : [
+      "Conceptual",
+      "Creative",
+      "Emotional",
+      "Morality",
+      "Opinion"
+    ],
+    "fmSummary" : "Queerness embodies the concept of living life according to one's own terms, emphasizing authenticity and personal freedom.",
+    "fmTitle" : "Queerness as Living Life on Your Terms",
+    "latencyMs" : 2329,
+    "nodeID" : "FF43DCC8-2E4C-482F-90AC-4DA7E6B7AB3E",
+    "postFilterTags" : [
+      "Conceptual",
+      "Creative",
+      "Emotional",
+      "Morality",
+      "Opinion"
+    ],
+    "title" : "Queerness as Self-Expression"
+  },
+  {
+    "contentTruncated" : "Episode premise: Fuck! Getting Gen Z to start procreating.",
+    "currentTags" : [
+      "Creative",
+      "Story",
+      "Technology"
+    ],
+    "error" : "GenerationError: guardrailViolation(FoundationModels.LanguageModelSession.GenerationError.Context(debugDescription: \"May contain unsafe content\", underlyingErrors: []))",
+    "fmDomain" : "",
+    "fmMood" : "",
+    "fmRawTags" : [
+
+    ],
+    "fmSummary" : "",
+    "fmTitle" : "",
+    "latencyMs" : 156,
+    "nodeID" : "E7BCE684-7DFF-4225-B15A-E0DDFEB1BF54",
+    "postFilterTags" : [
+
+    ],
+    "title" : "Creative Storytelling and Technology"
+  }
+]

@@ -11,7 +11,46 @@ final class CorpusPhysicsScene: SKScene {
     /// Set by CanvasView so the scene can report tap events.
     var canvasState: CanvasState?
 
+    /// Set by CanvasView. When non-nil and `isActive`, taps toggle selection
+    /// instead of opening the detail view.
+    var selection: SelectionService?
+
     var spriteCount: Int { nodeSprites.count }
+
+    /// Apply or remove the white outline child for a single node sprite.
+    /// Mirrors the `addNewcomerHalo` pattern — the outline lives as a named
+    /// child node so it tracks sprite motion automatically.
+    func applySelectionOutline(nodeID: String, isSelected: Bool) {
+        guard let sprite = nodeSprites[nodeID] else { return }
+        if let existing = sprite.children.first(where: { $0.name == "selectionOutline" }) {
+            existing.removeFromParent()
+        }
+        guard isSelected else { return }
+        let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
+        let outline = SKShapeNode(circleOfRadius: radius + 6)
+        outline.strokeColor = .white
+        outline.fillColor = .clear
+        outline.lineWidth = 3
+        outline.zPosition = 1.0
+        outline.name = "selectionOutline"
+        sprite.addChild(outline)
+    }
+
+    /// Reconcile outlines against the current selection set. Called by
+    /// CanvasView whenever `selection.selected` or `isActive` changes.
+    func refreshSelectionOutlines() {
+        let active = selection?.isActive ?? false
+        let picked = selection?.selected ?? []
+        for (id, sprite) in nodeSprites {
+            let want = active && picked.contains(id)
+            let existing = sprite.children.first(where: { $0.name == "selectionOutline" })
+            if want, existing == nil {
+                applySelectionOutline(nodeID: id, isSelected: true)
+            } else if !want, existing != nil {
+                existing?.removeFromParent()
+            }
+        }
+    }
 
     /// Animate all existing sprites to new positions (view-only rearrangement; does not
     /// mutate canvasLayout). Positions use SpriteKit convention (y-up from center).
@@ -233,11 +272,9 @@ final class CorpusPhysicsScene: SKScene {
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
 
-    // Strand layer state
-    private var focalNodeID: String? = nil
-    private var strandLayer: SKNode? = nil
-    private let relatednessService = RelatednessService()
-    private var currentNodes: [Node] = []  // Cached for relatedness computation
+    /// Cached corpus snapshot. Source for strand neighbor lookup and other
+    /// per-node consumers that need the live `Node` value (not just sprite).
+    private var currentNodes: [Node] = []
 
     // Background grid (AT18.1.9: procedural adaptive shader).
     // Single SKShapeNode parented to cameraNode; shader reconstructs world
@@ -472,7 +509,6 @@ final class CorpusPhysicsScene: SKScene {
 
     private var gestureState: GestureState = .idle
     private let dragThreshold: CGFloat = 10.0
-    private let holdThreshold: TimeInterval = 0.7
     private let gracePeriodDuration: TimeInterval = 1.0  // SB94: halved — was 2.0
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
@@ -501,9 +537,6 @@ final class CorpusPhysicsScene: SKScene {
     // SB96: Selection haptic for focal changes during engagement
     private let focalChangeHaptic = UISelectionFeedbackGenerator()
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
-    private var holdTimerStart: TimeInterval? = nil
-    private var holdCompleted: Bool = false
-    private var driftedRelatedIDs: [String: CGPoint] = [:]
     private var savedFocalZPositions: [String: CGFloat] = [:]
 
     // Engagement state (SB80b: hex grid + scale lens)
@@ -517,6 +550,38 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var engagementState: EngagementState = .idle
+
+    /// Strand ring-target positions in the undistorted (substrate-resting)
+    /// frame, keyed by neighbor nodeID. Populated on engaged-state entry +
+    /// focal switch; cleared on `preCollapse` / honeycomb teardown. Bypasses
+    /// the engaged-branch radial-compression target for any node in the dict.
+    private var strandTargets: [String: CGPoint] = [:]
+
+    /// Focal whose strand targets are currently in `strandTargets`. Used to
+    /// detect focal-switch within engaged state and recompute the ring. nil
+    /// when no ring is active (idle / preCollapse / disengaging).
+    private var lastStrandFocalID: String? = nil
+
+    /// IDs of sprites currently faded to `StrandService.dimAlpha` via SKAction.
+    /// Used so `clearStrandDimming` knows exactly which sprites to fade back —
+    /// avoids touching the focal or strand neighbors (which were never dimmed).
+    /// SKAction-based on purpose: per-frame alpha writes here race with
+    /// `setFocalShader`'s instant `alpha = 0` on the focal and let the focal's
+    /// solid fill leak through behind the SwiftUI gradient overlay.
+    private var dimmedSpriteIDs: Set<String> = []
+
+    /// SKAction key for strand dim/restore fades. Re-running the action with
+    /// the same key cancels any in-flight fade on that sprite — critical for
+    /// mid-engagement focal switches where the dim set changes.
+    private static let strandDimActionKey = "strandDim"
+    private static let strandDimDuration: TimeInterval = 0.2
+
+    /// Saved zPositions for strand neighbors before they were lifted above the
+    /// dimmed corpus. Restored on disengage. Strands sit between corpus
+    /// (zPosition = 1) and focal (zPosition = focalZPosition = 1000) so the
+    /// ring is never occluded by a dimmed sibling.
+    private var savedStrandZPositions: [String: CGFloat] = [:]
+    private static let strandZPosition: CGFloat = 500
 
     /// SB83g: True only during active engagement states. Focal-tracking during pan/disengage
     /// would otherwise mutate `currentFocalNodeID` and cause spurious grace entry on lift.
@@ -542,8 +607,6 @@ final class CorpusPhysicsScene: SKScene {
     /// Used to normalize euclidean distance for the sigmoid lens and radial compression
     /// so the lens behaves consistently across layouts of different densities.
     private var characteristicSpacing: CGFloat = 60.0
-
-    private var driftExcludedIDs: Set<String> = []
 
     // Screen-space scale lens (SB80b-fix2 — sigmoid math preserved; input is now
     // euclidean distance from focal normalized by `characteristicSpacing`)
@@ -641,11 +704,6 @@ final class CorpusPhysicsScene: SKScene {
 
         view.isMultipleTouchEnabled = true
 
-        // Strand layer (below sprites)
-        strandLayer = SKNode()
-        strandLayer?.zPosition = -1
-        addChild(strandLayer!)
-
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
@@ -697,19 +755,6 @@ final class CorpusPhysicsScene: SKScene {
             updateNewcomerHalos(currentTime: currentTime)
         }
 
-        // Update strand paths if focal node is set
-        if let focalID = focalNodeID, let focalSprite = nodeSprites[focalID] {
-            for strand in strandLayer?.children ?? [] {
-                guard let line = strand as? SKShapeNode,
-                      let relatedID = line.userData?["relatedID"] as? String,
-                      let relatedSprite = nodeSprites[relatedID] else { continue }
-                let path = CGMutablePath()
-                path.move(to: focalSprite.position)
-                path.addLine(to: relatedSprite.position)
-                line.path = path
-            }
-        }
-
         // Honeycomb gesture state updates
         switch gestureState {
         case .honeycomb(_, _) where isInActiveEngagement:
@@ -750,48 +795,15 @@ final class CorpusPhysicsScene: SKScene {
                     // SB92: Mark focal-switch timestamp for lerp ramp
                     focalSwitchTimestamp = currentTime
 
-                    // Update engagement state to new focal (scale field will redistribute, positions stay rigid)
+                    // Update engagement state to new focal. Strand targets
+                    // recompute when the engagement state machine sees the
+                    // focal switch in its own branch — kept off this gesture
+                    // path so the recompute trigger has a single source.
                     if case .engaged = engagementState {
                         engagementState = .engaged(focal: newFocalID)
                     } else if case .engaging = engagementState {
                         engagementState = .engaging(focal: newFocalID)
                     }
-
-                    // Reset hold timer and completion flag
-                    holdTimerStart = currentTime
-                    holdCompleted = false
-
-                    // Clear strands if any
-                    clearStrands()
-
-                    // Unwind drift if any
-                    unwindDrift()
-                }
-            } else if let focalID = currentFocalNodeID, let startTime = holdTimerStart {
-                // Same focal - check hold threshold
-                if currentTime - startTime >= holdThreshold {
-                    // Hold threshold reached
-                    print("[Honeycomb] Hold threshold reached for \(focalID) — rendering strands + drift")
-
-                    // Render strands
-                    setFocalNode(focalID)
-
-                    // Start drift
-                    if let focalSprite = nodeSprites[focalID] {
-                        let related = relatednessService.topRelated(
-                            forNodeID: focalID,
-                            in: currentNodes,
-                            limit: 5
-                        )
-                        let relatedIDs = related.map { $0.0 }
-                        startDrift(towardFocalID: focalID, relatedIDs: relatedIDs)
-                    }
-
-                    // Mark hold as completed
-                    holdCompleted = true
-
-                    // Reset timer to prevent re-triggering
-                    holdTimerStart = nil
                 }
             }
 
@@ -804,6 +816,16 @@ final class CorpusPhysicsScene: SKScene {
         case .engaging(let focalID), .engaged(let focalID):
             guard let focalRestingPos = nodeRestingPositions[focalID],
                   let view = view else { break }
+
+            // Strand targets: recompute on initial entry and on focal switch.
+            // Single trigger point covers idle→engaging, engaging→engaged
+            // (focalID is preserved across that transition), and mid-engagement
+            // focal switches that reassign engagementState directly. Flag-off
+            // is handled inside recomputeStrandTargets — clearing the dict.
+            if focalID != lastStrandFocalID {
+                recomputeStrandTargets(focalID: focalID, screenWidth: view.bounds.width)
+                lastStrandFocalID = focalID
+            }
 
             // Determine lerp factor based on state
             let lerpFactor: CGFloat
@@ -831,19 +853,26 @@ final class CorpusPhysicsScene: SKScene {
             var targetScales: [String: CGFloat] = [:]
 
             for (nodeID, _) in nodeSprites {
-                guard !driftExcludedIDs.contains(nodeID),
-                      let restingPos = nodeRestingPositions[nodeID],
+                guard let restingPos = nodeRestingPositions[nodeID],
                       let intrinsicRadius = nodeIntrinsicRadii[nodeID],
                       intrinsicRadius > 0 else { continue }
 
                 // Target position: fingerprint resting position pushed radially outward
                 // from focal to make room for the focal's enlarged size.
-                let targetPos = applyRadialCompression(
-                    nodePos: restingPos,
-                    focalPos: focalRestingPos,
-                    strength: positionCompressionStrength,
-                    falloff: positionCompressionFalloff
-                )
+                // Strand-ring members override with an undistorted ring slot —
+                // strands sit outside the lens. PBD relaxation below resolves
+                // any non-overlap against the override target.
+                let targetPos: CGPoint
+                if let ringTarget = strandTargets[nodeID] {
+                    targetPos = ringTarget
+                } else {
+                    targetPos = applyRadialCompression(
+                        nodePos: restingPos,
+                        focalPos: focalRestingPos,
+                        strength: positionCompressionStrength,
+                        falloff: positionCompressionFalloff
+                    )
+                }
 
                 // Target scale: screen-space sigmoid → world-space, divided by stable intrinsic.
                 // `intrinsicRadius` is captured at sprite creation and never updated, so
@@ -873,11 +902,33 @@ final class CorpusPhysicsScene: SKScene {
                 targetScales[nodeID] = targetScale
             }
 
+            // Phase 1.1 — Strand scale override. Strand members render at a
+            // fraction of the focal's screen-space scale, so they read as
+            // elevated against the dimmed corpus and stay sized consistently
+            // across zoom levels (the focal already uses screen-space sigmoid
+            // scaling, so multiplying its scale carries that property through).
+            // Relative intrinsic sizing among strands is preserved — applying
+            // the same scale multiplier to different intrinsic radii produces
+            // proportionally different world sizes. Floored at resting scale
+            // so a strand is never smaller than its plain corpus form.
+            if !strandTargets.isEmpty, let focalScale = targetScales[focalID] {
+                let strandMultiplier = StrandService.focalScaleMultiplier
+                for strandID in strandTargets.keys {
+                    guard targetScales[strandID] != nil else { continue }
+                    let restingScale = nodeRestingScales[strandID] ?? 1.0
+                    targetScales[strandID] = max(restingScale, strandMultiplier * focalScale)
+                }
+            }
+
             // Phase 1.5 — SB92: Bounded-band relaxation
             // Resolve overlaps in the band near focal. Far periphery is excluded
             // because compression falloff has died out and overlaps are rare.
             var relaxationSet: [String] = [focalID]
             for nodeID in nodeSprites.keys where nodeID != focalID {
+                // Strand-ring members sit in the undistorted frame outside the
+                // lens with their own angular separation; PBD resolves overlap
+                // among lens-compressed nodes only.
+                if strandTargets[nodeID] != nil { continue }
                 guard let restingPos = nodeRestingPositions[nodeID] else { continue }
                 let dx = restingPos.x - focalRestingPos.x
                 let dy = restingPos.y - focalRestingPos.y
@@ -958,7 +1009,11 @@ final class CorpusPhysicsScene: SKScene {
                 if !anyOverlap { break }
             }
 
-            // Phase 3: Lerp toward targets and check convergence
+            // Phase 3: Lerp toward targets and check convergence.
+            // Alpha is no longer touched here — strand dimming runs via SKAction
+            // at state transitions (see `applyStrandDimming` / `clearStrandDimming`).
+            // Per-frame alpha writes here raced with `setFocalShader` and let the
+            // focal's solid fill leak through behind the SwiftUI gradient overlay.
             for (nodeID, sprite) in nodeSprites {
                 guard let targetPos = targetPositions[nodeID],
                       let targetScale = targetScales[nodeID] else { continue }
@@ -988,6 +1043,7 @@ final class CorpusPhysicsScene: SKScene {
                 if abs(scaleDiff) > scaleMatchTolerance {
                     allScalesConverged = false
                 }
+
             }
 
             // Camera follow (engaged state only, not during engaging).
@@ -1014,9 +1070,6 @@ final class CorpusPhysicsScene: SKScene {
             if currentTime >= expiresAt {
                 print("[Honeycomb] State: gracePeriod → preCollapse")
 
-                clearStrands()
-                unwindDrift()
-
                 if let focalSprite = nodeSprites[focalID] {
                     if let savedZ = savedFocalZPositions[focalID] {
                         focalSprite.zPosition = savedZ
@@ -1039,7 +1092,10 @@ final class CorpusPhysicsScene: SKScene {
                 lingerFocalNodeID = focalID
                 currentFocalNodeID = nil
                 setFocalShader(to: nil)
-                holdCompleted = false
+                strandTargets.removeAll()
+                lastStrandFocalID = nil
+                clearStrandDimming()
+                restoreStrandZPositions()
             }
 
         case .preCollapse(_, let startTime):
@@ -1089,6 +1145,7 @@ final class CorpusPhysicsScene: SKScene {
                 if abs(scaleDiff) > scaleMatchTolerance {
                     allScalesConverged = false
                 }
+
             }
 
             // State transition: disengaging → idle.
@@ -1097,7 +1154,6 @@ final class CorpusPhysicsScene: SKScene {
             // to skip every node and instantly transition without animating.
             if allPositionsConverged && allScalesConverged {
                 engagementState = .idle
-                driftExcludedIDs.removeAll()
                 focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
                 preCollapseStartScales.removeAll()  // SB94: clean up
                 lingerFocalNodeID = nil
@@ -1209,6 +1265,146 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
+    // MARK: - Strand ring targets
+
+    /// Default ring-radius multiplier applied to focal's steady-state world
+    /// radius. Tunable from inspect view via `strand.ringRadiusMultiplier`.
+    private static let defaultStrandRingRadiusMultiplier: CGFloat = 1.6
+
+    private var strandRingRadiusMultiplier: CGFloat {
+        let v = UserDefaults.standard.double(forKey: StrandService.ringRadiusMultiplierKey)
+        return v > 0 ? CGFloat(v) : Self.defaultStrandRingRadiusMultiplier
+    }
+
+    /// World-space ring radius around `focalID`. Targets the focal's
+    /// **steady-state** rendered radius (post-sigmoid) × multiplier — using
+    /// the live sprite frame would chase a moving target during the
+    /// engaging→engaged lerp and produce a ring that drifts outward as the
+    /// focal scales up. Mirrors the sigmoid target math used by the engaged
+    /// target loop so geometry stays consistent.
+    private func strandRingRadius(focalID: String, screenWidth: CGFloat) -> CGFloat {
+        let cameraScale = cameraNode.xScale
+        let steadyStateFocalWorldRadius = focalScreenFraction * screenWidth * cameraScale / 2
+        return steadyStateFocalWorldRadius * strandRingRadiusMultiplier
+    }
+
+    /// Compute strand-ring target positions for the given focal and store
+    /// them in `strandTargets`. Flag-off or no-qualifying-neighbors clears
+    /// the dict (a sparse or empty ring is valid output). Called from the
+    /// engaged-state branch when focal changes — single source of trigger.
+    private func recomputeStrandTargets(focalID: String, screenWidth: CGFloat) {
+        guard FeatureFlags.strandSnap else {
+            strandTargets.removeAll()
+            return
+        }
+        guard let focalNode = currentNodes.first(where: { $0.id == focalID }),
+              let focalRestingPos = nodeRestingPositions[focalID] else {
+            strandTargets.removeAll()
+            return
+        }
+
+        let picks = StrandService.neighbors(of: focalNode, in: currentNodes, k: 5)
+        var neighborPositions: [StrandService.NeighborPos] = []
+        neighborPositions.reserveCapacity(picks.count)
+        for pick in picks {
+            guard let pos = nodeRestingPositions[pick.node.id] else { continue }
+            neighborPositions.append(StrandService.NeighborPos(id: pick.node.id, pos: pos))
+        }
+
+        let radius = strandRingRadius(focalID: focalID, screenWidth: screenWidth)
+        strandTargets = StrandService.ringSlots(
+            focalRestingPos: focalRestingPos,
+            neighbors: neighborPositions,
+            radius: radius,
+            minAngularSeparation: StrandService.minAngularSeparation
+        )
+
+        print("[Strand] focal=\(focalID) neighbors=\(neighborPositions.count)/\(picks.count) radius=\(Int(radius))")
+
+        applyStrandDimming(focalID: focalID)
+        liftStrandZPositions()
+    }
+
+    /// Saves the current zPosition of each strand neighbor, then lifts them to
+    /// `strandZPosition` so they render above any dimmed corpus sibling that
+    /// happens to land near the ring. Focal still sits above strands.
+    /// Idempotent — re-running after a focal switch restores the previous
+    /// strands first and then lifts the new set.
+    private func liftStrandZPositions() {
+        // Restore zPositions for sprites that are no longer strands.
+        let currentStrandIDs = Set(strandTargets.keys)
+        for (id, z) in savedStrandZPositions where !currentStrandIDs.contains(id) {
+            if let sprite = nodeSprites[id] { sprite.zPosition = z }
+            savedStrandZPositions.removeValue(forKey: id)
+        }
+        // Lift current strands (only if not already lifted).
+        for id in currentStrandIDs {
+            guard let sprite = nodeSprites[id] else { continue }
+            if savedStrandZPositions[id] == nil {
+                savedStrandZPositions[id] = sprite.zPosition
+            }
+            sprite.zPosition = Self.strandZPosition
+        }
+    }
+
+    /// Restores every lifted strand sprite to its pre-engagement zPosition.
+    private func restoreStrandZPositions() {
+        for (id, z) in savedStrandZPositions {
+            if let sprite = nodeSprites[id] { sprite.zPosition = z }
+        }
+        savedStrandZPositions.removeAll()
+    }
+
+    /// Fades every non-focal, non-strand sprite to `StrandService.dimAlpha` via
+    /// SKAction so the ring stands out. Double-guarded against the focal: both
+    /// the engagement-state focal (`focalID` arg) and `focalShaderID` are
+    /// excluded, in case they momentarily disagree mid-transition. No-op when
+    /// `strandTargets` is empty (sparse-ring or flag-off).
+    private func applyStrandDimming(focalID: String) {
+        guard !strandTargets.isEmpty else {
+            clearStrandDimming()
+            restoreStrandZPositions()
+            return
+        }
+        let dimAlpha = StrandService.dimAlpha
+        let duration = Self.strandDimDuration
+        let key = Self.strandDimActionKey
+
+        var newDimmed: Set<String> = []
+        for (nodeID, sprite) in nodeSprites {
+            if nodeID == focalID { continue }
+            if nodeID == focalShaderID { continue }
+            if strandTargets[nodeID] != nil { continue }
+            newDimmed.insert(nodeID)
+            sprite.removeAction(forKey: key)
+            sprite.run(SKAction.fadeAlpha(to: dimAlpha, duration: duration), withKey: key)
+        }
+
+        // Restore any sprite that was previously dimmed but is no longer in the
+        // dim set (e.g., became a strand neighbor after a focal switch).
+        for staleID in dimmedSpriteIDs.subtracting(newDimmed) {
+            guard let sprite = nodeSprites[staleID] else { continue }
+            sprite.removeAction(forKey: key)
+            sprite.run(SKAction.fadeAlpha(to: 1.0, duration: duration), withKey: key)
+        }
+
+        dimmedSpriteIDs = newDimmed
+    }
+
+    /// Fades every dimmed sprite back to full opacity. Called at engagement
+    /// teardown (preCollapse / disengage / touch-cancelled).
+    private func clearStrandDimming() {
+        guard !dimmedSpriteIDs.isEmpty else { return }
+        let duration = Self.strandDimDuration
+        let key = Self.strandDimActionKey
+        for nodeID in dimmedSpriteIDs {
+            guard let sprite = nodeSprites[nodeID] else { continue }
+            sprite.removeAction(forKey: key)
+            sprite.run(SKAction.fadeAlpha(to: 1.0, duration: duration), withKey: key)
+        }
+        dimmedSpriteIDs.removeAll()
+    }
+
     /// Compute median nearest-neighbor distance across all fingerprint resting positions.
     /// Sets `characteristicSpacing` so the sigmoid lens and radial compression are
     /// scale-invariant across layouts. Falls back to 60.0 if too few nodes exist.
@@ -1316,97 +1512,6 @@ final class CorpusPhysicsScene: SKScene {
         nodeFillShader.uniforms.first(where: { $0.name == "u_aberration_max" })?.floatValue = max
     }
 
-    // MARK: - Strand layer
-
-    /// Set the focal node and render strands to its top-related nodes.
-    /// Pass nil to clear the focal node and fade out all strands.
-    func setFocalNode(_ nodeID: String?) {
-        // Clear focal if nil
-        guard let nodeID = nodeID else {
-            focalNodeID = nil
-            clearStrands()
-            print("[Strand] Focal cleared")
-            return
-        }
-
-        // No-op if same node
-        guard nodeID != focalNodeID else { return }
-
-        // Set new focal
-        focalNodeID = nodeID
-        renderStrands(forFocalID: nodeID)
-    }
-
-    private func renderStrands(forFocalID focalID: String) {
-        // Clear existing strands first (fast removal, no animation)
-        strandLayer?.removeAllChildren()
-
-        // Find focal sprite
-        guard let focalSprite = nodeSprites[focalID] else {
-            print("[Strand] Focal node \(focalID) not found in sprites")
-            return
-        }
-
-        // Query related nodes
-        let related = relatednessService.topRelated(
-            forNodeID: focalID,
-            in: currentNodes,
-            limit: 5
-        )
-
-        guard !related.isEmpty else {
-            print("[Strand] Focal set to node \(focalID) — 0 related nodes found")
-            return
-        }
-
-        print("[Strand] Focal set to node \(focalID) — \(related.count) related nodes found")
-
-        // Render strands
-        for (relatedID, _) in related {
-            guard let relatedSprite = nodeSprites[relatedID] else { continue }
-
-            // Create line from focal to related
-            let path = CGMutablePath()
-            path.move(to: focalSprite.position)
-            path.addLine(to: relatedSprite.position)
-
-            let line = SKShapeNode(path: path)
-            line.strokeColor = UIColor.white.withAlphaComponent(0.0)  // Start transparent
-            line.lineWidth = 1.0
-            line.zPosition = -1
-
-            // Store related ID in userData for path updates
-            line.userData = NSMutableDictionary()
-            line.userData?["relatedID"] = relatedID
-
-            strandLayer?.addChild(line)
-
-            // Fade in to 0.3 opacity
-            let fadeIn = SKAction.fadeAlpha(to: 0.3, duration: 0.4)
-            fadeIn.timingMode = .easeOut
-            line.run(fadeIn)
-        }
-
-        print("[Strand] Rendered \(related.count) strands (fade-in 0.4s)")
-    }
-
-    private func clearStrands() {
-        guard let strandLayer = strandLayer else { return }
-
-        let childCount = strandLayer.children.count
-        guard childCount > 0 else { return }
-
-        print("[Strand] Cleared \(childCount) strands (fade-out 0.3s)")
-
-        // Fade out each strand
-        for child in strandLayer.children {
-            let fadeOut = SKAction.fadeOut(withDuration: 0.3)
-            fadeOut.timingMode = .easeIn
-            let remove = SKAction.removeFromParent()
-            child.run(.sequence([fadeOut, remove]))
-        }
-    }
-
     // MARK: - Honeycomb helpers
 
     /// Find the node sprite nearest to the camera center with hysteresis.
@@ -1449,48 +1554,6 @@ final class CorpusPhysicsScene: SKScene {
             // No current focal — take the nearest
             return nearestID
         }
-    }
-
-    /// Start drift animation: move related nodes 8% toward focal.
-    private func startDrift(towardFocalID focalID: String, relatedIDs: [String]) {
-        guard let focalSprite = nodeSprites[focalID] else { return }
-
-        // Exclude drifting nodes from displacement loop
-        driftExcludedIDs = Set(relatedIDs)
-
-        for relatedID in relatedIDs {
-            guard let relatedSprite = nodeSprites[relatedID] else { continue }
-
-            // Store original position
-            driftedRelatedIDs[relatedID] = relatedSprite.position
-
-            // Compute 8% of vector toward focal
-            let dx = focalSprite.position.x - relatedSprite.position.x
-            let dy = focalSprite.position.y - relatedSprite.position.y
-            let driftDx = dx * 0.08
-            let driftDy = dy * 0.08
-
-            // Animate
-            let move = SKAction.moveBy(x: driftDx, y: driftDy, duration: 0.5)
-            move.timingMode = .easeOut
-            relatedSprite.run(move, withKey: "honeycombDrift")
-        }
-    }
-
-    /// Unwind drift animation: return drifted nodes to original positions.
-    private func unwindDrift() {
-        guard !driftedRelatedIDs.isEmpty else { return }
-
-        for (relatedID, originalPosition) in driftedRelatedIDs {
-            guard let relatedSprite = nodeSprites[relatedID] else { continue }
-
-            let move = SKAction.move(to: originalPosition, duration: 0.4)
-            move.timingMode = .easeIn
-            relatedSprite.run(move, withKey: "honeycombDrift")
-        }
-
-        driftedRelatedIDs.removeAll()
-        driftExcludedIDs.removeAll()
     }
 
     // MARK: - Node sprites
@@ -2546,17 +2609,25 @@ final class CorpusPhysicsScene: SKScene {
     /// SpriteKit-rendered title is hidden too. The SwiftUI overlay does not yet
     /// render the title — that's tracked separately.
     private func setFocalShader(to nodeID: String?) {
+        // Cancel any in-flight strand-dim fade on either sprite — otherwise an
+        // active `SKAction.fadeAlpha` keeps interpolating each frame toward the
+        // dim target and clobbers the instant alpha assignment below, letting
+        // the focal's solid fill bleed through behind the SwiftUI gradient.
         if let oldID = focalShaderID, oldID != nodeID,
            let oldShape = nodeSprites[oldID] {
+            oldShape.removeAction(forKey: Self.strandDimActionKey)
             oldShape.fillShader = nil
             oldShape.fillTexture = nil
             oldShape.alpha = 1
+            dimmedSpriteIDs.remove(oldID)
         }
         if let newID = nodeID, newID != focalShaderID,
            let newShape = nodeSprites[newID] {
+            newShape.removeAction(forKey: Self.strandDimActionKey)
             newShape.fillShader = nil
             newShape.fillTexture = nil
             newShape.alpha = 0
+            dimmedSpriteIDs.remove(newID)
         }
         focalShaderID = nodeID
     }
@@ -2764,8 +2835,6 @@ final class CorpusPhysicsScene: SKScene {
                         initialPosition: initialPosition,
                         lastPanPosition: current
                     )
-                    holdTimerStart = CACurrentMediaTime()
-                    holdCompleted = false
 
                     // SB83d: Any tapCandidate → honeycomb transition is pan-eligible
                     // (idle navigation OR grace-resume pan).
@@ -2863,7 +2932,10 @@ final class CorpusPhysicsScene: SKScene {
                 gestureState = .idle
                 currentFocalNodeID = nil
                 setFocalShader(to: nil)
-                holdCompleted = false
+                strandTargets.removeAll()
+                lastStrandFocalID = nil
+                clearStrandDimming()
+                restoreStrandZPositions()
             }
             return
         }
@@ -2896,6 +2968,18 @@ final class CorpusPhysicsScene: SKScene {
                   let name = shape.name,
                   name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
+
+            // Selection mode: tap toggles, does not open detail.
+            if selection?.isActive == true {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.selection?.toggle(nodeID)
+                    let nowPicked = self.selection?.isSelected(nodeID) ?? false
+                    self.applySelectionOutline(nodeID: nodeID, isSelected: nowPicked)
+                }
+                graceTapOnNodeSuppressLift = false
+                return
+            }
 
             // SB95.1: If this lift is the clean release of a grace-tap-on-node, the grace-tap
             // logic in touchesBegan already handled it (set lastGraceTapNodeID, refreshed expiry).
@@ -2939,9 +3023,11 @@ final class CorpusPhysicsScene: SKScene {
         if case .honeycomb(_, _) = gestureState {
             // Transition to disengaging
             engagementState = .disengaging
+            strandTargets.removeAll()
+            lastStrandFocalID = nil
+            clearStrandDimming()
+            restoreStrandZPositions()
 
-            clearStrands()
-            unwindDrift()
             if let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
                 let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
                 scaleDown.timingMode = .easeOut
@@ -2959,7 +3045,6 @@ final class CorpusPhysicsScene: SKScene {
             preCollapseStartScales.removeAll()  // SB94
         }
         gestureState = .idle
-        holdCompleted = false
     }
 }
 

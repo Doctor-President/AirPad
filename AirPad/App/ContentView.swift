@@ -5,10 +5,14 @@ struct ContentView: View {
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
+    @Environment(SelectionService.self) private var selection
     @Environment(\.scenePhase) private var scenePhase
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
+    @State private var fanExpanded = false
+    @State private var showBatchDeleteConfirmation = false
+    @State private var showBatchAddTagSheet = false
 
     var body: some View {
         Group {
@@ -28,108 +32,103 @@ struct ContentView: View {
 
     private var canvasBody: some View {
         ZStack {
-            // Main content — switches between graph and list mode
+            // Main content — switches between graph and list mode.
+            // CanvasView/NodeListView handle their own internal blur for the
+            // non-fan layers when fanExpanded; the fan stays sharp inside them.
             Group {
                 if store.filterState.viewMode == .graph {
-                    CanvasView()
+                    CanvasView(fanExpanded: $fanExpanded)
                 } else {
-                    NodeListView()
+                    NodeListView(fanExpanded: $fanExpanded)
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: store.filterState.viewMode)
 
-            // iCloud unavailable banner
-            if store.iCloudUnavailable {
-                VStack {
-                    iCloudUnavailableBanner()
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .padding(.top, 8)
-                    Spacer()
-                }
-            }
-
-            // Persistent top controls — CAMetalLayer rule: lives here in ContentView ZStack,
-            // never inside NavigationStack or SpriteKit hierarchy.
-            // Hidden while NodeDetailView is on screen to avoid overlap with node title.
-            if !store.isInDetailView {
-                VStack(spacing: 0) {
-                    HStack(alignment: .center) {
-                        ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
-                            var s = store.filterState
-                            s.viewMode = mode
-                            store.filterState = s
-                        }
+            // Overlays that live above the canvas but behind the fan — these all
+            // blur uniformly when the fan is expanded so the focal effect is
+            // consistent across the full screen, not just the canvas area.
+            ZStack {
+                if store.iCloudUnavailable {
+                    VStack {
+                        iCloudUnavailableBanner()
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .padding(.top, 8)
                         Spacer()
-                        HStack(spacing: 10) {
-                            if quarantineStore.entries.count > 0 {
-                                QuarantineWarningIcon(count: quarantineStore.entries.count) {
-                                    showQuarantineReview = true
+                    }
+                }
+
+                if !store.isInDetailView {
+                    VStack(spacing: 0) {
+                        if selection.isActive {
+                            SelectionHeader(count: selection.count) {
+                                selection.exit()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                        } else {
+                            HStack(alignment: .center) {
+                                ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
+                                    var s = store.filterState
+                                    s.viewMode = mode
+                                    store.filterState = s
+                                }
+                                Spacer()
+                                HStack(spacing: 10) {
+                                    if quarantineStore.entries.count > 0 {
+                                        QuarantineWarningIcon(count: quarantineStore.entries.count) {
+                                            showQuarantineReview = true
+                                        }
+                                    }
+                                    SelectButton { selection.enter() }
+                                    SettingsButton { showSettings = true }
+                                    FilterButton(activeCount: store.filterState.activeFilterCount) {
+                                        showFilterPanel = true
+                                    }
                                 }
                             }
-                            SettingsButton { showSettings = true }
-                            FilterButton(activeCount: store.filterState.activeFilterCount) {
-                                showFilterPanel = true
-                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
                         }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 12)
-                    Spacer()
-                }
-                .transition(.opacity.animation(.easeInOut(duration: 0.18)))
-            }
-
-            // Import progress banner
-            if let progress = store.importBatchProgress {
-                VStack {
-                    Spacer()
-                    ImportProgressBanner(current: progress.current, total: progress.total)
-                        .padding(.bottom, 108)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-                .animation(.spring(response: 0.35), value: store.importBatchProgress != nil)
-            }
-
-            // Thread suggestion card — bottom of screen, above the action button
-            if let suggestion = store.pendingThreads.first {
-                let titles = suggestion.nodeIDs.compactMap { id in
-                    store.nodes.first { $0.id == id }?.title
-                }
-                VStack {
-                    Spacer()
-                    ThreadSuggestionCard(
-                        suggestion: suggestion,
-                        nodeTitles: titles,
-                        onPull: {
-                            UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                            Task { await store.pullThread(suggestion) }
-                        },
-                        onDismiss: {
-                            withAnimation(.spring(response: 0.3)) {
-                                store.dismissThread(suggestion)
-                            }
-                        }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .padding(.bottom, 108)
-                }
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: store.pendingThreads.first?.id)
-            }
-
-            // Ghost Query Field — persistent bottom pill, visible in both graph and list views
-            if !store.isInDetailView {
-                VStack {
-                    Spacer()
-                    HStack(spacing: 12) {
-                        GhostQueryField()
-                            .frame(maxWidth: .infinity)
                         Spacer()
-                            .frame(width: 68) // reserve space for ActionButtonFan + button
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 24)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.18)))
                 }
+
+                if selection.isActive && !selection.isEmpty && !store.isInDetailView {
+                    VStack {
+                        Spacer()
+                        BatchActionBar(
+                            count: selection.count,
+                            tags: store.tags,
+                            onDelete: { showBatchDeleteConfirmation = true },
+                            onPickExistingTag: { tagName in
+                                let ids = selection.selected
+                                Task {
+                                    await store.addTag(tagName, toNodes: ids)
+                                    await MainActor.run { selection.exit() }
+                                }
+                            },
+                            onAddNewTag: { showBatchAddTagSheet = true }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if let progress = store.importBatchProgress {
+                    VStack {
+                        Spacer()
+                        ImportProgressBanner(current: progress.current, total: progress.total)
+                            .padding(.bottom, 108)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                    .animation(.spring(response: 0.35), value: store.importBatchProgress != nil)
+                }
+
             }
+            .blur(radius: fanExpanded ? 12 : 0)
+            .animation(.easeInOut(duration: 0.22), value: fanExpanded)
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
@@ -140,6 +139,33 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
+        }
+        .sheet(isPresented: $showBatchAddTagSheet) {
+            TagEditorSheet(existing: nil) { createdName in
+                let ids = selection.selected
+                Task {
+                    await store.addTag(createdName, toNodes: ids)
+                    await MainActor.run { selection.exit() }
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) \(selection.count == 1 ? "item" : "items")?",
+            isPresented: $showBatchDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                let ids = selection.selected
+                Task {
+                    await store.deleteNodes(ids: ids)
+                    await MainActor.run {
+                        selection.exit()
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This cannot be undone.")
         }
     }
 }
@@ -397,5 +423,105 @@ private struct iCloudUnavailableBanner: View {
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
+    }
+}
+
+// MARK: - Selection mode controls
+
+private struct SelectButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(Color(white: 0.18))
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SelectionHeader: View {
+    let count: Int
+    let onDone: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center) {
+            Text(count == 0 ? "Select items" : "\(count) selected")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color(white: 0.18))
+                .clipShape(Capsule())
+            Spacer()
+            Button(action: onDone) {
+                Text("Done")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color(white: 0.18))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct BatchActionBar: View {
+    let count: Int
+    let tags: [Tag]
+    let onDelete: () -> Void
+    let onPickExistingTag: (String) -> Void
+    let onAddNewTag: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Menu {
+                TagPickerMenuContent(
+                    tags: tags,
+                    excludeNames: [],
+                    onPickExisting: onPickExistingTag,
+                    onAddNew: onAddNewTag
+                )
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "tag")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Tag (\(count))")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(Color(white: 0.18))
+                .clipShape(Capsule())
+            }
+            .disabled(count == 0)
+            .opacity(count == 0 ? 0.5 : 1.0)
+
+            Button(action: onDelete) {
+                HStack(spacing: 6) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Delete (\(count))")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(Color.red.opacity(0.85))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(count == 0)
+            .opacity(count == 0 ? 0.5 : 1.0)
+        }
     }
 }

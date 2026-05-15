@@ -19,3 +19,10 @@ DerivedData/
 
 # Audit snapshots (T's local records)
 audit-*.json
+
+# Historical corpus snapshots (T's local records)
+corpus_index.pre-*.json
+
+# SwiftPM build artifacts (harness sub-packages)
+.build/
+Package.resolved

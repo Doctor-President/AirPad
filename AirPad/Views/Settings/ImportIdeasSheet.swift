@@ -67,6 +67,7 @@ struct ImportIdeasSheet: View {
                     .padding(.vertical, 14)
                     .animation(.easeInOut(duration: 0.15), value: detectedCount)
                 }
+                .dismissKeyboardOnTapOutside()
             }
             .navigationTitle("Import Ideas")
             .navigationBarTitleDisplayMode(.inline)

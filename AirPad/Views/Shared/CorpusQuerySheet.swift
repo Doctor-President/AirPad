@@ -165,6 +165,7 @@ struct CorpusQuerySheet: View {
                 .frame(maxHeight: .infinity)
             }
             .background(Color(red: 0.04, green: 0.04, blue: 0.06))
+            .dismissKeyboardOnTapOutside()
             .navigationDestination(for: String.self) { nodeID in
                 NodeDetailView(nodeID: nodeID)
             }

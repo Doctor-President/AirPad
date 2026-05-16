@@ -47,6 +47,7 @@ struct SettingsView: View {
                     developerSection
                 }
                 .padding(20)
+                .dismissKeyboardOnTapOutside()
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("Settings")

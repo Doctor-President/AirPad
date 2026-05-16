@@ -134,6 +134,14 @@ final class CorpusStore {
     /// True while NodeDetailView is on screen. ContentView reads this to hide the toggle pill.
     var isInDetailView = false
 
+    /// Set by `appendEmptyTextItem` so the corresponding `TextEntryBody` can
+    /// pull focus on its first render — that's how the in-node "+" → Text
+    /// path lands the user directly in the editor (inline append pattern)
+    /// instead of routing through `TextCaptureSheet`. Cleared by the body
+    /// once consumed. Single-shot: only one entry can be pending at a time
+    /// because the "+" menu can only fire one entry creation per tap.
+    var pendingAutoFocusItemID: String? = nil
+
     /// Non-nil while a batch import is in progress. ContentView shows a progress banner.
     var importBatchProgress: (current: Int, total: Int)? = nil
 
@@ -376,6 +384,24 @@ final class CorpusStore {
         }
     }
 
+    /// Stage 3.1a — lazy per-node migration to the entry-primitive schema.
+    /// Called from `NodeDetailView.onAppear` so a node is only migrated when
+    /// the user actually opens it; the corpus is never bulk-walked at launch.
+    /// No-op when the node is already at the current schema version, so
+    /// repeated calls during a session are cheap.
+    func ensureEntrySchema(forNodeID nodeID: String) async {
+        guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var node = nodes[idx]
+        let didMigrate = migrateEntrySchemaIfNeeded(&node)
+        guard didMigrate else { return }
+        nodes[idx] = node
+        do {
+            try await service.saveNode(node)
+        } catch {
+            print("[CorpusStore] ensureEntrySchema: saveNode error for \(nodeID): \(error)")
+        }
+    }
+
     // MARK: - Append items to existing nodes
 
     func appendItemToNode(nodeID: String, item: NodeItem) async {
@@ -388,15 +414,186 @@ final class CorpusStore {
 
     /// Updates the text content of an existing text-type item in a node.
     /// No-op if the node or item is missing, or the content is unchanged.
+    /// Bumps the item's `updatedAt` alongside the node's — the per-entry
+    /// timestamp field shipped in Stage 3.1a commit (a) and is now live.
     func updateTextItem(itemID: String, newContent: String, nodeID: String) async {
         guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[nodeIdx]
         guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
               updated.items[itemIdx].type == .text,
               updated.items[itemIdx].content != newContent else { return }
+        let now = Date()
         updated.items[itemIdx].content = newContent
+        updated.items[itemIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    // MARK: - Entry-primitive actions (Stage 3.1a commit (b))
+
+    /// Renames an entry's user-facing display name. Trims whitespace; no-op
+    /// if the result is empty or unchanged from the current name. Bumps both
+    /// the entry's and node's `updatedAt`.
+    func renameEntry(itemID: String, newName: String, nodeID: String) async {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].displayName != trimmed else { return }
+        let now = Date()
+        updated.items[itemIdx].displayName = trimmed
+        updated.items[itemIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    /// Duplicates an entry in place (inserted immediately after the original).
+    /// New entry gets a fresh UUID + timestamps; display name gets a " copy"
+    /// suffix so the user can tell them apart in the card stack. Constructed
+    /// via the memberwise init because `NodeItem.id` and `.createdAt` are
+    /// `let`-bound. No-op if the node or item is missing.
+    func duplicateEntry(itemID: String, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }) else { return }
+        let original = updated.items[itemIdx]
+        let now = Date()
+        let nameWithCopy: String? = original.displayName.map { "\($0) copy" }
+        let copy = NodeItem(
+            id: UUID().uuidString,
+            type: original.type,
+            createdAt: now,
+            content: original.content,
+            file: original.file,
+            description: original.description,
+            transcript: original.transcript,
+            durationSeconds: original.durationSeconds,
+            url: original.url,
+            title: original.title,
+            preview: original.preview,
+            specializedType: original.specializedType,
+            displayName: nameWithCopy,
+            isExpanded: true,
+            updatedAt: now
+        )
+        updated.items.insert(copy, at: itemIdx + 1)
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    /// Deletes an entry from a node. No-op if the node or item is missing.
+    /// Future work (3.1b): also clean up any item-file artifacts (audio,
+    /// images, video) on disk. For 3.1a the file is left orphaned — same
+    /// behavior as the legacy flat-items model had before.
+    func deleteEntry(itemID: String, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }) else { return }
+        updated.items.remove(at: itemIdx)
         updated.updatedAt = Date()
         await updateNode(updated)
+    }
+
+    /// Persists the collapsed/expanded state for an entry card. Does not
+    /// bump the entry's `updatedAt` — collapse is UI state, not content
+    /// edit. The node-level `updatedAt` still bumps so the on-disk file
+    /// reflects the latest save. No-op if the state already matches.
+    func setEntryExpanded(itemID: String, isExpanded: Bool, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].isExpanded != isExpanded else { return }
+        updated.items[itemIdx].isExpanded = isExpanded
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    // MARK: - Entry creation (Stage 3.1a commit (c))
+
+    /// Appends an empty `.text` entry to a node and flags it for autofocus
+    /// so the `TextEntryBody` can raise the keyboard on first render. This
+    /// is the inline-append path the in-node "+" → Text button uses; the
+    /// `TextCaptureSheet` modal stays for canvas-level / QuikCapture entry
+    /// where there's no card to land in. Returns the new item's ID so the
+    /// caller can scroll-to or otherwise reference it if needed.
+    @discardableResult
+    func appendEmptyTextItem(nodeID: String) async -> String {
+        let now = Date()
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .text,
+            createdAt: now,
+            content: "",
+            displayName: nil,
+            isExpanded: true,
+            updatedAt: now
+        )
+        pendingAutoFocusItemID = item.id
+        await appendItemToNode(nodeID: nodeID, item: item)
+        return item.id
+    }
+
+    /// Appends a `.link` entry to a node. URL is stored verbatim; title and
+    /// preview are left nil for AT19.3c web-clipping to populate. Display
+    /// name is set to the URL's host when extractable, falling back to
+    /// "Link" so the title row shows something readable even if the user
+    /// pasted a bare path. No-op on empty/whitespace input.
+    func appendLinkItem(nodeID: String, urlString: String) async {
+        let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let host = URL(string: trimmed)?.host ?? trimmed
+        let displayName = host.isEmpty ? "Link" : host
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .link,
+            createdAt: Date(),
+            url: trimmed,
+            displayName: displayName,
+            isExpanded: true,
+            updatedAt: Date()
+        )
+        await appendItemToNode(nodeID: nodeID, item: item)
+    }
+
+    /// Appends a `.document` entry to a node. Copies the picked file into
+    /// the corpus's `nodes/<id>/items/` directory via the existing
+    /// `saveItemFile` path, then writes the NodeItem with `file` pointing
+    /// at the new copy. Display name uses the original filename so the
+    /// title row shows e.g. "annual-report.pdf"; the body keeps showing
+    /// the corpus-side filename for technical context. No-op if the file
+    /// can't be copied.
+    func appendDocumentItem(nodeID: String, sourceURL: URL) async {
+        let needsScope = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if needsScope { sourceURL.stopAccessingSecurityScopedResource() }
+        }
+
+        let itemID = UUID().uuidString
+        let ext = sourceURL.pathExtension.isEmpty ? "bin" : sourceURL.pathExtension
+        let originalFilename = sourceURL.lastPathComponent
+        do {
+            try await service.saveItemFile(
+                nodeID: nodeID,
+                itemID: itemID,
+                sourceURL: sourceURL,
+                fileExtension: ext
+            )
+        } catch {
+            print("[CorpusStore] Document file save error: \(error)")
+            return
+        }
+        let now = Date()
+        let item = NodeItem(
+            id: itemID,
+            type: .document,
+            createdAt: now,
+            file: "items/\(itemID).\(ext)",
+            displayName: originalFilename,
+            isExpanded: true,
+            updatedAt: now
+        )
+        await appendItemToNode(nodeID: nodeID, item: item)
     }
 
     func appendItemToNodeWithAudio(nodeID: String, item: NodeItem, audioURL: URL, audioItemID: String) async {

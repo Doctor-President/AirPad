@@ -151,6 +151,13 @@ struct Node: Codable, Identifiable, Hashable {
     /// computed so we can detect coords stale against the saved model.
     var substrateLayoutVersion: Int
 
+    /// Stage 3.1a — entry-primitive schema version for `items`. 0 = legacy
+    /// flat-item schema (pre-3.1a); 1 = items carry `displayName`,
+    /// `isExpanded`, `updatedAt`, `specializedType`. Bumped by
+    /// `migrateEntrySchemaIfNeeded` on first open under 3.1a. Per-node lazy
+    /// migration; the corpus is never bulk-walked at launch.
+    var entrySchemaVersion: Int
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -172,6 +179,7 @@ struct Node: Codable, Identifiable, Hashable {
         case fmErrorDetail = "fm_error_detail"
         case substrateCoord2D = "substrate_coord_2d"
         case substrateLayoutVersion = "substrate_layout_version"
+        case entrySchemaVersion = "entry_schema_version"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -209,7 +217,8 @@ struct Node: Codable, Identifiable, Hashable {
         embeddingFailureReason: String? = nil,
         fmErrorDetail: FMErrorDetail? = nil,
         substrateCoord2D: SubstrateCoord2D? = nil,
-        substrateLayoutVersion: Int = 0
+        substrateLayoutVersion: Int = 0,
+        entrySchemaVersion: Int = 0
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -241,6 +250,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.fmErrorDetail               = fmErrorDetail
         self.substrateCoord2D            = substrateCoord2D
         self.substrateLayoutVersion      = substrateLayoutVersion
+        self.entrySchemaVersion          = entrySchemaVersion
     }
 }
 
@@ -279,6 +289,7 @@ extension Node {
         fmErrorDetail              = try c.decodeIfPresent(FMErrorDetail.self, forKey: .fmErrorDetail)
         substrateCoord2D           = try c.decodeIfPresent(SubstrateCoord2D.self, forKey: .substrateCoord2D)
         substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
+        entrySchemaVersion         = try c.decodeIfPresent(Int.self,      forKey: .entrySchemaVersion) ?? 0
     }
 }
 

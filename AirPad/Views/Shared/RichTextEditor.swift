@@ -26,6 +26,12 @@ struct RichTextEditor: UIViewRepresentable {
     var minHeight: CGFloat = 44
     var onBeginEditing: (() -> Void)? = nil
     var onEndEditing: (() -> Void)? = nil
+    /// When true, the editor calls `becomeFirstResponder` once on first appearance.
+    /// Used by the in-node "+" → Text path so a newly appended empty entry lands
+    /// the user directly in the editor with the keyboard up. Consumers should
+    /// clear the upstream trigger (e.g. `store.pendingAutoFocusItemID`) on
+    /// `.onAppear` so subsequent renders don't re-focus.
+    var autoFocusOnAppear: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -45,7 +51,21 @@ struct RichTextEditor: UIViewRepresentable {
         textView.placeholderText = placeholder
         textView.minHeight = minHeight
         textView.attributedText = MarkdownCodec.decode(text)
+        // Seed typingAttributes so the first keystroke into an empty editor renders white.
+        // UIKit derives typingAttributes from the surrounding character on each cursor move,
+        // but with no characters it falls back to system defaults — which on our dark
+        // surfaces means black-on-black. Set them explicitly here and re-apply whenever
+        // attributedText is replaced.
+        textView.typingAttributes = Self.defaultTypingAttributes
         context.coordinator.attachToolbar(to: textView)
+        if autoFocusOnAppear {
+            // Dispatch so the view is in the window/responder chain before we
+            // try to become first responder. Without the hop, becomeFirstResponder
+            // is called during view construction and silently fails.
+            DispatchQueue.main.async { [weak textView] in
+                textView?.becomeFirstResponder()
+            }
+        }
         return textView
     }
 
@@ -63,9 +83,25 @@ struct RichTextEditor: UIViewRepresentable {
             let clampedLocation = min(previousRange.location, length)
             let clampedLength = min(previousRange.length, length - clampedLocation)
             uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+            // After replacing attributedText, typingAttributes inherit from the new
+            // surrounding character — or default to system attrs if the text is empty.
+            // Re-seed for the empty case so the next keystroke stays white.
+            if length == 0 {
+                uiView.typingAttributes = Self.defaultTypingAttributes
+            }
         }
         uiView.placeholderText = placeholder
         uiView.minHeight = minHeight
+    }
+
+    /// Default typing attributes for an empty editor — body font, white foreground.
+    /// Used as a floor so the first keystroke into a freshly created entry is legible
+    /// against the app's dark chrome.
+    private static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: UIColor.white
+        ]
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: RichTextUIView, context: Context) -> CGSize? {

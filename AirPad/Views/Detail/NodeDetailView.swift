@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import UIKit
 
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
 /// All edits auto-save on disappear.
@@ -18,11 +19,17 @@ struct NodeDetailView: View {
 
     @FocusState private var focusedField: Bool
 
-    // "Add item" mini-fan state
+    // "Add entry" floating "+" state. Stage 3.1a commit (c) replaced the
+    // inline bottom composer triad with a single floating Menu button that
+    // routes to one of six entry types.
     @State private var captureMode: CaptureMode? = nil
     @State private var showPromoteConfirmation = false
     @State private var showingNewTagSheet = false
     @State private var showDeleteConfirmation = false
+    @State private var keyboardVisible = false
+    @State private var showLinkAddAlert = false
+    @State private var linkDraft = ""
+    @State private var showDocumentPicker = false
 
     @State private var bgPhase: Double = 0
 
@@ -71,8 +78,14 @@ struct NodeDetailView: View {
         .ignoresSafeArea()
     }
 
+    /// In-node capture surfaces. `.text` is intentionally absent: the "+"
+    /// menu's Text action now appends an empty entry card inline (see
+    /// `store.appendEmptyTextItem`) rather than presenting a sheet. Voice
+    /// and Camera stay sheet-based because their capture flows are
+    /// genuinely modal (recording session / camera viewfinder), not
+    /// append-and-type.
     enum CaptureMode: String, Identifiable {
-        case voice, text, camera
+        case voice, camera
         var id: String { rawValue }
     }
 
@@ -99,6 +112,9 @@ struct NodeDetailView: View {
                 editedTags    = node.tags
             }
             bgPhase = Double.random(in: 0...100)
+            // Stage 3.1a — first-open lazy migration to the entry-primitive
+            // schema. No-op once the node's entrySchemaVersion is current.
+            Task { await store.ensureEntrySchema(forNodeID: nodeID) }
         }
         .onDisappear {
             store.isInDetailView = false
@@ -134,7 +150,6 @@ struct NodeDetailView: View {
         .sheet(item: $captureMode) { mode in
             switch mode {
             case .voice:  VoiceCaptureSheet(targetNodeID: nodeID)
-            case .text:   TextCaptureSheet(targetNodeID: nodeID)
             case .camera: CameraCaptureView(targetNodeID: nodeID)
             }
         }
@@ -144,6 +159,27 @@ struct NodeDetailView: View {
                     editedTags.append(createdName)
                 }
             }
+        }
+        .sheet(isPresented: $showDocumentPicker) {
+            DocumentPickerView { url in
+                Task { await store.appendDocumentItem(nodeID: nodeID, sourceURL: url) }
+            }
+        }
+        .alert("Add link", isPresented: $showLinkAddAlert) {
+            TextField("https://example.com", text: $linkDraft)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Add") { saveLink() }
+        } message: {
+            Text("Paste or type a URL to add it as a link entry.")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { keyboardVisible = true }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) { keyboardVisible = false }
         }
     }
 
@@ -173,9 +209,11 @@ struct NodeDetailView: View {
 
                 Divider().background(Color.white.opacity(0.12))
 
-                // Items
+                // Items — Stage 3.1a commit (b): every entry is rendered as
+                // an `EntryCard` regardless of type. Per-type rendering lives
+                // in `Views/Detail/Entry/*EntryBody.swift`.
                 ForEach(node.items) { item in
-                    ItemRow(item: item, nodeID: nodeID)
+                    EntryCard(item: item, nodeID: nodeID)
                 }
 
                 // Domain suggestion card
@@ -188,10 +226,25 @@ struct NodeDetailView: View {
                     MetaNodeBanner(nodeID: nodeID, showPromoteConfirmation: $showPromoteConfirmation)
                 }
 
-                // Add item
-                addItemButton
+                // Trailing spacer so the last entry isn't tucked under the
+                // floating "+" button. 80pt clears the 56pt button + 24pt
+                // bottom inset with a small breathing margin.
+                Spacer(minLength: 80)
             }
             .padding(20)
+            .dismissKeyboardOnTapOutside()
+        }
+        .overlay(alignment: .bottomTrailing) {
+            // Stage 3.1a commit (c) — floating "+" replaces the inline
+            // composer triad. Hidden whenever the keyboard is visible so
+            // it doesn't crowd active text input (title, summary, or any
+            // RichTextEditor body via accessory toolbar).
+            if !keyboardVisible {
+                floatingAddButton
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 24)
+                    .transition(.opacity)
+            }
         }
         .background { animatedBackground }
         .navigationTitle("")
@@ -252,30 +305,68 @@ struct NodeDetailView: View {
         }
     }
 
-    // MARK: - Add item button
+    // MARK: - Floating "+" button (Stage 3.1a commit (c))
 
-    private var addItemButton: some View {
-        HStack(spacing: 12) {
-            Text("Add item")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
-            Spacer()
-            Button { captureMode = .voice } label: {
-                Image(systemName: "mic.fill")
-                    .miniCapture()
+    /// Single entry point for adding entries. Bottom-right 56×56 white
+    /// circle matching the canvas/list `ActionButtonFan` styling, but
+    /// wired to a native SwiftUI `Menu` rather than the fan animation —
+    /// the dropdown is the right grammar inside a detail view, the fan
+    /// is the right grammar on the empty canvas. Order locked by brief:
+    /// Text, Camera, Voice, Link, Document, More... (More... is a
+    /// no-op stub seat for 3.1a; the eventual sheet ships when there's
+    /// something to put in it).
+    private var floatingAddButton: some View {
+        Menu {
+            Button {
+                // Inline append: create an empty text entry, expanded, and
+                // mark it for autofocus so the body's editor raises the
+                // keyboard on appearance. No sheet — the card itself is
+                // the writing surface inside a node.
+                Task { await store.appendEmptyTextItem(nodeID: nodeID) }
+            } label: {
+                Label("Text", systemImage: "pencil")
             }
             Button { captureMode = .camera } label: {
-                Image(systemName: "camera.fill")
-                    .miniCapture()
+                Label("Camera", systemImage: "camera.fill")
             }
-            Button { captureMode = .text } label: {
-                Image(systemName: "pencil")
-                    .miniCapture()
+            Button { captureMode = .voice } label: {
+                Label("Voice", systemImage: "mic.fill")
             }
+            Button {
+                linkDraft = ""
+                showLinkAddAlert = true
+            } label: {
+                Label("Link", systemImage: "link")
+            }
+            Button {
+                showDocumentPicker = true
+            } label: {
+                Label("Document", systemImage: "doc.fill")
+            }
+            Divider()
+            // Stage 3.1a stub — closure is intentionally empty. The menu
+            // seat is reserved for a future full-screen entry-type picker
+            // that ships when there are types beyond the basic six.
+            Button {} label: {
+                Label("More…", systemImage: "ellipsis")
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.black)
+                .frame(width: 56, height: 56)
+                .background(.white)
+                .clipShape(Circle())
+                .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
         }
-        .padding(16)
-        .background(Color.white.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    // MARK: - Link add
+
+    private func saveLink() {
+        let trimmed = linkDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        Task { await store.appendLinkItem(nodeID: nodeID, urlString: trimmed) }
     }
 
     // MARK: - Auto-save
@@ -335,198 +426,13 @@ private struct TagChip: View {
     }
 }
 
-// MARK: - Item row
-
-private struct ItemRow: View {
-    let item: NodeItem
-    let nodeID: String
-
-    @Environment(CorpusStore.self) private var store
-    @State private var imageURL: URL? = nil
-    @State private var editingText = ""
-
-    var body: some View {
-        switch item.type {
-        case .text:
-            textRow
-        case .audio:
-            audioRow
-        case .image:
-            imageRow
-        case .video:
-            videoRow
-        case .link:
-            linkRow
-        case .document:
-            documentRow
-        }
-    }
-
-    // MARK: Text
-
-    private var textRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            RichTextEditor(
-                text: $editingText,
-                onEndEditing: {
-                    guard editingText != (item.content ?? "") else { return }
-                    Task {
-                        await store.updateTextItem(
-                            itemID: item.id,
-                            newContent: editingText,
-                            nodeID: nodeID
-                        )
-                    }
-                }
-            )
-            .padding(12)
-            .background(Color.white.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .onAppear {
-                editingText = item.content ?? ""
-            }
-            itemMeta
-        }
-    }
-
-    // MARK: Audio
-
-    private var audioRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VoiceWaveformPlayer(item: item, nodeID: nodeID)
-            if let transcript = item.transcript, !transcript.isEmpty {
-                Text(transcript)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.horizontal, 12)
-            }
-            itemMeta
-        }
-    }
-
-    // MARK: Image
-
-    private var imageRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let url = imageURL {
-                AsyncImageFromURL(url: url)
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 200)
-                    .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.3)))
-                    .onAppear { loadImageURL() }
-            }
-            if let description = item.description, !description.isEmpty {
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.horizontal, 4)
-            }
-            itemMeta
-        }
-    }
-
-    // MARK: Video
-
-    private var videoRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let url = imageURL {
-                VideoPlayer(player: AVPlayer(url: url))
-                    .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 200)
-                    .overlay(Image(systemName: "video").foregroundStyle(.white.opacity(0.3)))
-                    .onAppear { loadImageURL() }
-            }
-            if let transcript = item.transcript, !transcript.isEmpty {
-                Text(transcript)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.horizontal, 4)
-            }
-            itemMeta
-        }
-    }
-
-    // MARK: Link
-
-    private var linkRow: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let title = item.title {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-            }
-            if let preview = item.preview {
-                Text(preview)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(2)
-            }
-            if let urlString = item.url, let url = URL(string: urlString) {
-                Link(urlString, destination: url)
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-                    .lineLimit(1)
-            }
-            itemMeta
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    // MARK: Document
-
-    private var documentRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "doc.fill")
-                .font(.title3)
-                .foregroundStyle(.white.opacity(0.6))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.file?.components(separatedBy: "/").last ?? "Document")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
-                if let description = item.description {
-                    Text(description)
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.5))
-                        .lineLimit(2)
-                }
-            }
-            Spacer()
-            itemMeta
-        }
-        .padding(12)
-        .background(Color.white.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    // MARK: Helpers
-
-    private var itemMeta: some View {
-        Text(item.createdAt, style: .relative)
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.25))
-        + Text(" ago")
-            .font(.caption2)
-            .foregroundStyle(.white.opacity(0.25))
-    }
-
-    private func loadImageURL() {
-        Task {
-            imageURL = await store.itemFileURL(for: item, nodeID: nodeID)
-        }
-    }
-}
-
 // MARK: - Voice waveform player
 
-private struct VoiceWaveformPlayer: View {
+/// Stage 3.1a commit (b) Phase 2 — `private` dropped so `VoiceEntryBody`
+/// (in `Views/Detail/Entry/`) can reference this player. Nested helpers
+/// (`WaveformBars`, `AudioPlaybackController`, `CachedPeaks`) remain private
+/// since they're only used inside this file.
+struct VoiceWaveformPlayer: View {
     let item: NodeItem
     let nodeID: String
 
@@ -910,7 +816,11 @@ private final class AudioPlaybackController: NSObject, AVAudioPlayerDelegate {
 
 // MARK: - Async image from URL
 
-private struct AsyncImageFromURL: View {
+/// Stage 3.1a commit (b) Phase 2 — `private` dropped so `ImageEntryBody`
+/// (in `Views/Detail/Entry/`) can reference this helper. Same rationale as
+/// `VoiceWaveformPlayer`: extraction moved the only consumer across a file
+/// boundary.
+struct AsyncImageFromURL: View {
     let url: URL
     @State private var image: UIImage? = nil
 
@@ -1058,15 +968,3 @@ private struct MetaNodeBanner: View {
     }
 }
 
-// MARK: - Mini capture button style
-
-private extension View {
-    func miniCapture() -> some View {
-        self
-            .font(.system(size: 16, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.75))
-            .frame(width: 36, height: 36)
-            .background(Color.white.opacity(0.1))
-            .clipShape(Circle())
-    }
-}

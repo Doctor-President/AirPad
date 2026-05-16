@@ -29,6 +29,7 @@
 		2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */; };
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
 		268567832FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567822FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift */; };
+		268567C32FB831BE00DCA8B4 /* EntryDeletionDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567C22FB831BE00DCA8B4 /* EntryDeletionDiagnostic.swift */; };
 		268567842FB831BE00DCA8B4 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567812FB831BE00DCA8B4 /* EntryMigration.swift */; };
 		268567962FB831BE00DCA8B4 /* TextEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567902FB831BE00DCA8B4 /* TextEntryBody.swift */; };
 		268567972FB831BE00DCA8B4 /* VoiceEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567912FB831BE00DCA8B4 /* VoiceEntryBody.swift */; };
@@ -166,6 +167,7 @@
 		25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateColoringPass.swift; sourceTree = "<group>"; };
 		268567812FB831BE00DCA8B4 /* EntryMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigration.swift; sourceTree = "<group>"; };
 		268567822FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
+		268567C22FB831BE00DCA8B4 /* EntryDeletionDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDeletionDiagnostic.swift; sourceTree = "<group>"; };
 		268567902FB831BE00DCA8B4 /* TextEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEntryBody.swift; sourceTree = "<group>"; };
 		268567912FB831BE00DCA8B4 /* VoiceEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntryBody.swift; sourceTree = "<group>"; };
 		268567922FB831BE00DCA8B4 /* ImageEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntryBody.swift; sourceTree = "<group>"; };
@@ -449,6 +451,7 @@
 			children = (
 				268567812FB831BE00DCA8B4 /* EntryMigration.swift */,
 				268567822FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift */,
+				268567C22FB831BE00DCA8B4 /* EntryDeletionDiagnostic.swift */,
 				DD4733E2421E070A68925125 /* BatchParser.swift */,
 				6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */,
 				38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */,
@@ -735,6 +738,7 @@
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,
 				E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */,
 				268567832FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift in Sources */,
+				268567C32FB831BE00DCA8B4 /* EntryDeletionDiagnostic.swift in Sources */,
 				268567842FB831BE00DCA8B4 /* EntryMigration.swift in Sources */,
 				268567962FB831BE00DCA8B4 /* TextEntryBody.swift in Sources */,
 				268567972FB831BE00DCA8B4 /* VoiceEntryBody.swift in Sources */,

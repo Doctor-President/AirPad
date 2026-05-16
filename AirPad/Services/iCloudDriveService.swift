@@ -117,6 +117,32 @@ actor iCloudDriveService {
         try FileManager.default.copyItem(at: sourceURL, to: destURL)
     }
 
+    /// Stage 3.1b — deletes the media file for an entry. Symmetric to
+    /// `saveItemFile`. Returns `true` if a file was found and removed,
+    /// `false` if no file existed at the expected path (already gone, never
+    /// created, or corrupted state). Only throws on actual filesystem errors
+    /// (permissions, disk full, root unavailable) — missing-file is a
+    /// recoverable no-op so `CorpusStore.deleteEntry` can still remove the
+    /// orphaned entry from `node.items`.
+    @discardableResult
+    func deleteItemFile(nodeID: String, itemID: String, fileExtension: String) throws -> Bool {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("nodes/\(nodeID)/items/\(itemID).\(fileExtension)")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return false }
+        try FileManager.default.removeItem(at: fileURL)
+        return true
+    }
+
+    /// Test-only sibling check used by `EntryDeletionDiagnostic` to assert
+    /// the file is gone from disk after a delete cycle. Lives here (not in
+    /// the diagnostic) so the diagnostic doesn't have to know how the actor
+    /// composes its root URL — single source of truth for item-path resolution.
+    func itemFileExists(nodeID: String, itemID: String, fileExtension: String) -> Bool {
+        guard let root = rootURL else { return false }
+        let fileURL = root.appendingPathComponent("nodes/\(nodeID)/items/\(itemID).\(fileExtension)")
+        return FileManager.default.fileExists(atPath: fileURL.path)
+    }
+
     // MARK: - Tags
 
     func saveTags(_ tags: [Tag]) throws {

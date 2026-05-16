@@ -482,14 +482,42 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
-    /// Deletes an entry from a node. No-op if the node or item is missing.
-    /// Future work (3.1b): also clean up any item-file artifacts (audio,
-    /// images, video) on disk. For 3.1a the file is left orphaned — same
-    /// behavior as the legacy flat-items model had before.
+    /// Deletes an entry from a node, cleaning up any associated media file
+    /// on disk first. No-op if the node or item is missing.
+    ///
+    /// Stage 3.1b — `item.file` is the relative path inside the node folder
+    /// (e.g. `"items/<itemID>.m4a"`); we parse the extension and hand off
+    /// to `iCloudDriveService.deleteItemFile` so file resolution stays in
+    /// one place. Failure modes per the 3.1b brief:
+    ///   • Missing file → log the inconsistency, proceed to remove the
+    ///     entry. This handles already-orphaned items from pre-3.1b corpora
+    ///     and the never-saved-due-to-prior-failure case.
+    ///   • Filesystem throw (permissions, disk full, root unavailable) →
+    ///     abort the deletion so the user can retry; the entry stays
+    ///     visible rather than leaving a silent orphaned file behind.
     func deleteEntry(itemID: String, nodeID: String) async {
         guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[nodeIdx]
         guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }) else { return }
+        let item = updated.items[itemIdx]
+        if let relativePath = item.file {
+            let ext = (relativePath as NSString).pathExtension
+            if !ext.isEmpty {
+                do {
+                    let removed = try await service.deleteItemFile(
+                        nodeID: nodeID,
+                        itemID: item.id,
+                        fileExtension: ext
+                    )
+                    if !removed {
+                        print("[CorpusStore] deleteEntry: media file missing for \(item.id) (\(relativePath)) — removing entry anyway")
+                    }
+                } catch {
+                    print("[CorpusStore] deleteEntry: media file removal failed for \(item.id) (\(relativePath)): \(error) — aborting entry removal")
+                    return
+                }
+            }
+        }
         updated.items.remove(at: itemIdx)
         updated.updatedAt = Date()
         await updateNode(updated)

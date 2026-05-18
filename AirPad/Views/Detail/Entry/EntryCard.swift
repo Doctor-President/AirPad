@@ -201,17 +201,21 @@ struct EntryCard: View {
         case .link:     LinkEntryBody(item: item, nodeID: nodeID)
         case .document: DocumentEntryBody(item: item, nodeID: nodeID)
         case .imageVideo:
-            // Stage 4.2 commit 3 — `SingleMediaBody` reads off `mediaItems`
-            // directly and hosts the in-card chrome strip with the "+" add-
-            // more button. Routed for ALL non-empty counts during commits
-            // 3–4: commit 4's `GalleryBody` will take over count ≥ 2 once it
-            // lands; until then, multi-item entries render their first item
-            // (the data is intact, only the rendering is single-view-limited).
-            if item.mediaItems?.isEmpty == false {
+            // Stage 4.2 commit 4 — dispatch on `mediaItems.count`:
+            //   1     → `SingleMediaBody` (commit 3)
+            //   ≥2    → `GalleryBody` (this commit; chrome shell + carousel/
+            //           bento placeholder media area until commits 5/6)
+            //   0/nil → `EmptyMediaPlaceholder` (T14 malformed-legacy path)
+            // The count==1 → count==2 transition flips the dispatch on the
+            // next render after `appendMediaItems` returns; the
+            // first-transition viewMode default is already in place at
+            // that point (written inside `appendMediaItems`).
+            let count = item.mediaItems?.count ?? 0
+            if count >= 2 {
+                GalleryBody(item: item, nodeID: nodeID)
+            } else if count == 1 {
                 SingleMediaBody(item: item, nodeID: nodeID)
             } else {
-                // T14 malformed-legacy case (file=nil → empty mediaItems).
-                // Explicit safe placeholder; commit 4 owns the proper empty UX.
                 EmptyMediaPlaceholder()
             }
         }

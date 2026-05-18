@@ -848,13 +848,24 @@ final class CorpusStore {
         // semantic weight for the N=1 image path (the AI description that
         // becomes the node title); for everything else it's empty.
         let isSingleImage = media.count == 1 && media[0].mediaType == .image
+
+        // Commit 4 — first-transition default for view mode. Set ONCE at the
+        // moment the entry first has ≥2 items; thereafter `setEntryViewMode`
+        // is the only writer. Single-item creations leave viewMode nil so
+        // a later "+" → 2 items transition (in `appendMediaItems`) gets a
+        // first-time default applied at THAT moment, not now.
+        let initialViewMode: GalleryViewMode? = media.count >= 2
+            ? (media.count <= 3 ? .carousel : .bento)
+            : nil
+
         let entry = NodeItem(
             id: parentItemID,
             type: .imageVideo,
             createdAt: now,
             file: gallery.first?.file,
             description: (isSingleImage && !description.isEmpty) ? description : nil,
-            mediaItems: gallery
+            mediaItems: gallery,
+            viewMode: initialViewMode
         )
 
         if let nodeID = targetNodeID, nodes.contains(where: { $0.id == nodeID }) {
@@ -914,9 +925,40 @@ final class CorpusStore {
             )
         }
         let existing = updated.items[itemIdx].mediaItems ?? []
-        updated.items[itemIdx].mediaItems = existing + appended
+        let combined = existing + appended
+        updated.items[itemIdx].mediaItems = combined
+
+        // Commit 4 — apply the first-transition view-mode default ONLY when
+        // (a) viewMode was previously unset AND (b) the entry now has ≥2
+        // items. Either of those alone is a no-op:
+        //   - viewMode already set → user (or an earlier transition) has
+        //     chosen; preserve it across incremental adds.
+        //   - combined.count still 1 → entry is still single-presentation,
+        //     `SingleMediaBody` renders it, viewMode stays nil.
+        if updated.items[itemIdx].viewMode == nil && combined.count >= 2 {
+            updated.items[itemIdx].viewMode = combined.count <= 3 ? .carousel : .bento
+        }
+
         updated.items[itemIdx].updatedAt = now
         updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    /// Stage 4.2 commit 4 — user-driven view-mode toggle for a `.imageVideo`
+    /// entry's gallery presentation. Single-item entries don't render through
+    /// `GalleryBody`, so the toggle is unreachable for them; this method is
+    /// permissive and writes whatever the caller asks regardless of count
+    /// (keeps the persistence layer dumb — `GalleryBody` is the gatekeeper).
+    /// Silently bails on missing node/entry, like the other entry mutators.
+    func setEntryViewMode(itemID: String, nodeID: String, viewMode: GalleryViewMode) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .imageVideo,
+              updated.items[itemIdx].viewMode != viewMode else { return }
+        updated.items[itemIdx].viewMode = viewMode
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
         await updateNode(updated)
     }
 

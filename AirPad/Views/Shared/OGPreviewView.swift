@@ -19,6 +19,12 @@ struct OGPreviewView: View {
     /// defocus while non-empty). Caller is responsible for persisting
     /// the URL and triggering the OG fetch.
     let onCommitURL: (String) -> Void
+    /// When false, strips the `Link(destination:)` wraps in states B/C/D
+    /// so a parent `onTapGesture` (e.g. the QuikCapture receipt overlay)
+    /// receives the tap instead of Safari being launched. State A still
+    /// renders its TextField — `interactive: false` is only used in
+    /// contexts where the URL is already set, so State A won't appear.
+    var interactive: Bool = true
 
     @Environment(CorpusStore.self) private var store
     @State private var draftURL: String = ""
@@ -98,11 +104,19 @@ struct OGPreviewView: View {
     private var bareURLBody: some View {
         Group {
             if let urlString = item.url, let url = URL(string: urlString) {
-                Link(urlString, destination: url)
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if interactive {
+                    Link(urlString, destination: url)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Text(urlString)
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
         }
     }
@@ -111,7 +125,7 @@ struct OGPreviewView: View {
 
     private var richStateBody: some View {
         Group {
-            if let urlString = item.url, let url = URL(string: urlString) {
+            if interactive, let urlString = item.url, let url = URL(string: urlString) {
                 Link(destination: url) {
                     cardContent
                 }

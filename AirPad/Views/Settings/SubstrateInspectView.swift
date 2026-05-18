@@ -1044,6 +1044,7 @@ struct SubstrateInspectView: View {
             case .audio, .video:     return item.transcript
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            case .imageVideo:        return nil
             }
         }
         .filter { !$0.isEmpty }

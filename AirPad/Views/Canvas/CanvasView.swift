@@ -878,6 +878,7 @@ private struct ItemCountsRow: View {
             case .video:    v += 1
             case .link:     l += 1
             case .document: d += 1
+            case .imageVideo: i += 1
             }
         }
         return (t, i, a, v, l, d)

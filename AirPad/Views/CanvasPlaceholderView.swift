@@ -165,6 +165,7 @@ private struct ItemCounts {
             case .video:    video += 1
             case .link:     link += 1
             case .document: document += 1
+            case .imageVideo: image += 1
             }
         }
     }

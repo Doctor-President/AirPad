@@ -200,6 +200,24 @@ struct EntryCard: View {
         case .video:    VideoEntryBody(item: item, nodeID: nodeID)
         case .link:     LinkEntryBody(item: item, nodeID: nodeID)
         case .document: DocumentEntryBody(item: item, nodeID: nodeID)
+        case .imageVideo:
+            // Stage 4.2 commit 1 — temporary dispatch to the legacy single-item
+            // bodies. Migration leaves `item.file` populated on a converted
+            // entry, so ImageEntryBody / VideoEntryBody continue to render
+            // correctly off the legacy field. Commit 3 (`SingleMediaBody`)
+            // swaps in the count-aware single-vs-gallery split that reads
+            // off `mediaItems`.
+            if let first = item.mediaItems?.first {
+                if first.mediaType == .video {
+                    VideoEntryBody(item: item, nodeID: nodeID)
+                } else {
+                    ImageEntryBody(item: item, nodeID: nodeID)
+                }
+            } else {
+                // T14 malformed-legacy case (file=nil → empty mediaItems).
+                // Explicit safe placeholder; commit 3 owns the proper empty UX.
+                EmptyMediaPlaceholder()
+            }
         }
     }
 
@@ -267,6 +285,10 @@ struct EntryCard: View {
             return item.url ?? displayName
         case .document:
             return item.file?.components(separatedBy: "/").last ?? displayName
+        case .imageVideo:
+            return item.mediaItems?.first?.file.components(separatedBy: "/").last
+                ?? item.file?.components(separatedBy: "/").last
+                ?? displayName
         }
     }
 }
@@ -371,5 +393,27 @@ private struct EntryTitleRow: View {
         + Text(" ago")
             .font(.caption2)
             .foregroundStyle(.white.opacity(0.4))
+    }
+}
+
+/// Stage 4.2 commit 1 — defensive placeholder for an `.imageVideo` entry
+/// that has no `mediaItems`. Reached only on the T14 malformed-legacy
+/// path (legacy `file == nil` migrated to `mediaItems: []`). Commit 3
+/// owns the proper empty-state UX inside `SingleMediaBody`.
+private struct EmptyMediaPlaceholder: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .fill(Color.white.opacity(0.06))
+            .frame(height: 120)
+            .overlay {
+                VStack(spacing: 6) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.title3)
+                        .foregroundStyle(.white.opacity(0.35))
+                    Text("No media")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+            }
     }
 }

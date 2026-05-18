@@ -347,6 +347,11 @@ private struct NodeCardItemCounts: View {
             case .video:    v += 1
             case .link:     l += 1
             case .document: d += 1
+            // Stage 4.2 — gallery entries are surfaced under the image
+            // chip pre-design of a dedicated gallery chip; the chip count
+            // reflects how many entries hold media, not how many media items
+            // they hold. Adequate until 4.2.x or 4.3 revisits list chips.
+            case .imageVideo: i += 1
             }
         }
         return (t, i, a, v, l, d)

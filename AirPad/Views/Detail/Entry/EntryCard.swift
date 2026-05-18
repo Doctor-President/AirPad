@@ -15,14 +15,25 @@ import UIKit
 ///   - chevron.down (expanded) / chevron.right (collapsed)
 ///   - no shadow
 ///
-/// Long-press gesture seat on the card body is RESERVED for Stage 3.1b
-/// (drag-to-reorder + multi-select). Deliberately unbound here.
+/// Stage 3.1b — the long-press gesture is now wired to the
+/// `EntryReorderController` injected via Environment. Long-press on a card
+/// chrome → controller lifts the card → drag tracks via translation →
+/// release commits a single `CorpusStore.moveEntry` (the snapshot pattern,
+/// per close-note in `sounding-board/2026-05-17-stage-3-1b-reorder-cleanup-close.md`).
 struct EntryCard: View {
 
     let item: NodeItem
     let nodeID: String
+    /// Index of this card within `node.items`. Required for the reorder
+    /// controller's parting math — the controller works in snapshot-index
+    /// space, not card-id space, so this card has to tell it where it sits.
+    let index: Int
+    /// All item IDs in the node, in current display order. Passed down so
+    /// the long-press path can snapshot without re-reading the store.
+    let snapshotIDs: [String]
 
     @Environment(CorpusStore.self) private var store
+    @Environment(EntryReorderController.self) private var reorder
 
     /// Local mirror of `item.isExpanded` so the chevron toggles instantly,
     /// independent of the persistence round-trip through the store. Kept in
@@ -33,9 +44,11 @@ struct EntryCard: View {
     @State private var renameDraft = ""
     @State private var showDeleteConfirmation = false
 
-    init(item: NodeItem, nodeID: String) {
+    init(item: NodeItem, nodeID: String, index: Int, snapshotIDs: [String]) {
         self.item = item
         self.nodeID = nodeID
+        self.index = index
+        self.snapshotIDs = snapshotIDs
         self._isExpanded = State(initialValue: item.isExpanded ?? true)
     }
 
@@ -43,28 +56,114 @@ struct EntryCard: View {
         item.displayName ?? item.type.defaultDisplayName
     }
 
+    /// Force-collapsed during reorder mode so every card renders as a
+    /// uniform-height title row, which is what the controller's slotPitch
+    /// math assumes. Restored to user-set expansion when reorder exits.
+    private var effectiveExpansion: Bool {
+        reorder.isReorderActive ? false : isExpanded
+    }
+
     var body: some View {
+        let presentation = reorder.presentation(forItemID: item.id, atIndex: index)
         VStack(alignment: .leading, spacing: 0) {
             EntryTitleRow(
                 displayName: displayName,
                 timestamp: item.updatedAt ?? item.createdAt,
-                isExpanded: isExpanded,
+                isExpanded: effectiveExpansion,
+                reorderActive: presentation.reorderActive,
                 onToggle: toggleExpansion,
                 onRename: beginRename,
                 onDuplicate: duplicate,
                 onCopy: copyContent,
                 onChangeType: {},
+                onReorder: enterReorderModeViaMenu,
                 onDelete: { showDeleteConfirmation = true }
             )
 
-            if isExpanded {
+            if effectiveExpansion {
                 bodyView
                     .padding(.top, 8)
             }
         }
         .padding(12)
-        .background(Color(.secondarySystemBackground))
+        .background {
+            // Color fill at the back, long-press recognizer in front of
+            // it but behind the foreground card content. Foreground
+            // interactive widgets (chevron, menu, text editors, waveform
+            // scrub) claim their own hits via separate UIViews. Touches
+            // that fall outside those widgets reach the recognizer, which
+            // races with the parent ScrollView's pan: hold still 0.5s →
+            // recognizer wins (lift); move → scroll wins.
+            ZStack {
+                Color(.secondarySystemBackground)
+                    .allowsHitTesting(false)
+                LongPressDragRecognizer(
+                    onLift: { touchY in
+                        reorder.lift(itemID: item.id, snapshotIDs: snapshotIDs)
+                        // Seed the touch-Y so the AutoScrollDriver has a
+                        // valid reading before the first `.changed` fires.
+                        // Without this, lifting near an edge and holding
+                        // still would never engage auto-scroll.
+                        reorder.updateDrag(translationY: 0, touchWindowY: touchY)
+                    },
+                    onChange: { translationY, touchY in
+                        reorder.updateDrag(translationY: translationY, touchWindowY: touchY)
+                    },
+                    onEnd: {
+                        guard let (from, to, slotDelta) = reorder.release() else { return }
+                        // Apply the in-memory reorder and the drag-offset
+                        // compensation in the SAME synchronous @MainActor
+                        // tick. SwiftUI batches both @Observable mutations
+                        // into one render, so the lifted card's visible
+                        // position is unchanged across the array reflow.
+                        //
+                        // Splitting these with an `await` (the prior shape:
+                        // `await store.moveEntry` then compensate) let
+                        // SwiftUI commit one frame with the new array order
+                        // but uncompensated dragTranslation while the disk
+                        // save was in flight — visible as a slotPitch ×
+                        // slotDelta flash before the landing animation,
+                        // which is why Apple's Notes/Reminders are
+                        // jolt-free: the reorder and the offset adjustment
+                        // are atomic to the view system.
+                        guard let updated = store.applyMoveEntry(nodeID: nodeID, from: from, to: to) else {
+                            reorder.exit()
+                            return
+                        }
+                        reorder.compensateForReorder(slotDelta: slotDelta)
+                        Task {
+                            // Persist asynchronously; yield one render so
+                            // the compensated frame commits before exit()
+                            // triggers the landing animation from the
+                            // compensated value to 0.
+                            await store.persistNode(updated)
+                            await Task.yield()
+                            reorder.exit()
+                        }
+                    },
+                    scrollDeltaProvider: { reorder.scrollDelta }
+                )
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
+        .shadow(
+            color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),
+            radius: presentation.isLifted ? EntryReorderController.liftedShadowRadius : 0,
+            y: presentation.isLifted ? EntryReorderController.liftedShadowOffsetY : 0
+        )
+        .offset(y: presentation.offsetY)
+        .zIndex(presentation.isLifted ? 1 : 0)
+        // Lifted card tracks the finger directly (no animation, no lag).
+        // Every other card animates: parting offsets slide in smoothly,
+        // and the landing on release (when isLifted flips back to false)
+        // also catches this animation policy for the formerly-lifted card.
+        .animation(
+            presentation.isLifted
+                ? nil
+                : .easeInOut(duration: EntryReorderController.landingAnimationDuration),
+            value: presentation.offsetY
+        )
         .onChange(of: item.isExpanded) { _, newValue in
             // Keep local state in sync if the model changes from elsewhere
             // (e.g. another device in a future sync world, or a programmatic
@@ -102,6 +201,15 @@ struct EntryCard: View {
         case .link:     LinkEntryBody(item: item, nodeID: nodeID)
         case .document: DocumentEntryBody(item: item, nodeID: nodeID)
         }
+    }
+
+    // MARK: - Reorder entry (menu path)
+
+    /// Menu-path entry into reorder mode: engages the controller without
+    /// lifting any card. User then long-presses to lift. "Done" toolbar
+    /// item is the exit ramp (no card lifted ⇒ no release auto-commit).
+    private func enterReorderModeViaMenu() {
+        reorder.engageMenuPath(snapshotIDs: snapshotIDs)
     }
 
     // MARK: - Menu actions
@@ -177,6 +285,12 @@ private struct EntryTitleRow: View {
     let displayName: String
     let timestamp: Date
     let isExpanded: Bool
+    /// Stage 3.1b — when reorder mode is active, the chevron is shown but
+    /// non-interactive, the ellipsis menu is hidden entirely, and the
+    /// timestamp is dimmed to reinforce "you're in a different mode."
+    /// Title row stays clean so the user can still read what they're
+    /// dragging.
+    let reorderActive: Bool
     let onToggle: () -> Void
     let onRename: () -> Void
     let onDuplicate: () -> Void
@@ -185,18 +299,28 @@ private struct EntryTitleRow: View {
     /// for the future smart-conversion prompt is reserved. Wired to a
     /// `.disabled(true)` menu button below; the closure is never called.
     let onChangeType: () -> Void
+    let onReorder: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
+            // Chevron-only Button with a generous 44pt tap target. Expanding
+            // the Button to the whole bar would block the background
+            // long-press recognizer from seeing touches on the title area
+            // (foreground Buttons claim hits exclusively in SwiftUI's hit
+            // test). 44pt is Apple's recommended minimum touch target and
+            // covers the 20pt visual chevron with enough forgiving slop to
+            // not be finicky. Title VStack + Spacer stay outside the Button
+            // so long-press on them still reaches the recognizer behind.
             Button(action: onToggle) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .frame(width: 20, height: 20)
+                    .foregroundStyle(.white.opacity(reorderActive ? 0.25 : 0.6))
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .disabled(reorderActive)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(displayName)
@@ -206,22 +330,30 @@ private struct EntryTitleRow: View {
                 timestampLabel
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
-            Menu {
-                Button("Rename", action: onRename)
-                Button("Duplicate", action: onDuplicate)
-                Button("Copy", action: onCopy)
-                Button("Change type", action: onChangeType)
-                    .disabled(true)
-                Divider()
-                Button("Delete", role: .destructive, action: onDelete)
-            } label: {
-                Image(systemName: "ellipsis")
+            if !reorderActive {
+                Menu {
+                    Button("Rename", action: onRename)
+                    Button("Duplicate", action: onDuplicate)
+                    Button("Copy", action: onCopy)
+                    Button("Change type", action: onChangeType)
+                        .disabled(true)
+                    Button("Reorder", action: onReorder)
+                    Divider()
+                    Button("Delete", role: .destructive, action: onDelete)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+            } else {
+                Image(systemName: "line.3.horizontal")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(.white.opacity(0.35))
                     .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
             }
         }
         .frame(minHeight: 44)

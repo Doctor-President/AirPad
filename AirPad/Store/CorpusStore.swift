@@ -523,6 +523,48 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 3.1b — moves an entry within a node's items array. Single
+    /// persisted mutation per reorder cycle: the controller holds the
+    /// transient drag state, the store sees one final commit. No-op if
+    /// `from == to`, indices are out of range, or the node is missing.
+    ///
+    /// `entry.updatedAt` is *not* touched (reordering is not editing); only
+    /// `node.updatedAt` bumps so the on-disk file reflects the new order.
+    func moveEntry(nodeID: String, from: Int, to: Int) async {
+        guard let updated = applyMoveEntry(nodeID: nodeID, from: from, to: to) else { return }
+        do { try await service.saveNode(updated) } catch {
+            print("[CorpusStore] moveEntry persist error: \(error)")
+        }
+    }
+
+    /// Synchronous in-memory half of `moveEntry`. Returned so a UI flow can
+    /// batch the array mutation with view-state compensation (e.g. the
+    /// reorder-drag landing) in a single SwiftUI render tick, then persist
+    /// to disk asynchronously via `persistNode(_:)`. Splitting the two halves
+    /// is the difference between a smooth landing and a one-frame flash at
+    /// `slotPitch × slotDelta` (T observed 2026-05-16).
+    @discardableResult
+    func applyMoveEntry(nodeID: String, from: Int, to: Int) -> Node? {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return nil }
+        var updated = nodes[nodeIdx]
+        let count = updated.items.count
+        guard from >= 0, from < count, to >= 0, to < count, from != to else { return nil }
+        let item = updated.items.remove(at: from)
+        updated.items.insert(item, at: to)
+        updated.updatedAt = Date()
+        nodes[nodeIdx] = updated
+        return updated
+    }
+
+    /// Persists a node already mutated in memory. Pair with `applyMoveEntry`
+    /// (or other sync mutators) when the call site needs to control exactly
+    /// when the disk save runs relative to view-state changes.
+    func persistNode(_ node: Node) async {
+        do { try await service.saveNode(node) } catch {
+            print("[CorpusStore] persistNode error: \(error)")
+        }
+    }
+
     /// Persists the collapsed/expanded state for an entry card. Does not
     /// bump the entry's `updatedAt` — collapse is UI state, not content
     /// edit. The node-level `updatedAt` still bumps so the on-disk file

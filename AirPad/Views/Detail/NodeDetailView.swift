@@ -33,6 +33,13 @@ struct NodeDetailView: View {
 
     @State private var bgPhase: Double = 0
 
+    /// Stage 3.1b — owns the entire transient drag-to-reorder UI state.
+    /// Injected into entry cards via Environment so each card can read its
+    /// own offset/lifted/parting treatment without prop-drilling through
+    /// the ForEach. See `EntryReorderController` for the snapshot pattern
+    /// rationale (controller-holds-the-snapshot, T 2026-05-16).
+    @State private var reorderController = EntryReorderController()
+
     private let circleColors: [(String, String, String)] = [
         ("9B6FE8", "F5C5A3", "E36B4E"),
         ("5B8FFF", "A78BFA", "F472B6"),
@@ -211,9 +218,13 @@ struct NodeDetailView: View {
 
                 // Items — Stage 3.1a commit (b): every entry is rendered as
                 // an `EntryCard` regardless of type. Per-type rendering lives
-                // in `Views/Detail/Entry/*EntryBody.swift`.
-                ForEach(node.items) { item in
-                    EntryCard(item: item, nodeID: nodeID)
+                // in `Views/Detail/Entry/*EntryBody.swift`. Stage 3.1b: each
+                // card needs its index + a snapshot of sibling IDs so the
+                // reorder controller can do its parting math without
+                // re-reading the store mid-drag.
+                let itemIDSnapshot = node.items.map(\.id)
+                ForEach(Array(node.items.enumerated()), id: \.element.id) { offset, item in
+                    EntryCard(item: item, nodeID: nodeID, index: offset, snapshotIDs: itemIDSnapshot)
                 }
 
                 // Domain suggestion card
@@ -230,6 +241,24 @@ struct NodeDetailView: View {
                 // floating "+" button. 80pt clears the 56pt button + 24pt
                 // bottom inset with a small breathing margin.
                 Spacer(minLength: 80)
+
+                // Stage 3.1b — invisible sentinel that introspects up to
+                // the enclosing UIScrollView and drives auto-scroll while
+                // a reorder card is lifted near the top/bottom edge zones.
+                // Lives inside the ScrollView content so its superview
+                // chain reaches UIScrollView. 1pt frame so it doesn't
+                // perturb layout; `allowsHitTesting(false)` so it never
+                // steals touches from cards or the floating "+".
+                AutoScrollDriver(
+                    isActive: reorderController.isCardLifted,
+                    touchWindowY: reorderController.currentTouchWindowY,
+                    edgeZone: EntryReorderController.edgeAutoScrollZone,
+                    onScrollDelta: { delta in
+                        reorderController.setScrollDelta(delta)
+                    }
+                )
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
             }
             .padding(20)
             .dismissKeyboardOnTapOutside()
@@ -238,8 +267,10 @@ struct NodeDetailView: View {
             // Stage 3.1a commit (c) — floating "+" replaces the inline
             // composer triad. Hidden whenever the keyboard is visible so
             // it doesn't crowd active text input (title, summary, or any
-            // RichTextEditor body via accessory toolbar).
-            if !keyboardVisible {
+            // RichTextEditor body via accessory toolbar). Stage 3.1b also
+            // hides it during reorder mode — no new entries while
+            // restructuring.
+            if !keyboardVisible && !reorderController.isReorderActive {
                 floatingAddButton
                     .padding(.trailing, 24)
                     .padding(.bottom, 24)
@@ -260,14 +291,27 @@ struct NodeDetailView: View {
                 .fontWeight(.semibold)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                        .foregroundStyle(.white.opacity(0.85))
+                if reorderController.isReorderActive {
+                    // Stage 3.1b — Done swaps in while reorder mode is
+                    // active. Exits the controller cleanly with no
+                    // commit; the long-press path's release-to-commit
+                    // path is unchanged.
+                    Button("Done") {
+                        reorderController.exit()
+                    }
+                    .foregroundStyle(.white)
+                    .fontWeight(.semibold)
+                } else {
+                    Button {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
                 }
             }
         }
+        .environment(reorderController)
     }
 
     // MARK: - Tags row

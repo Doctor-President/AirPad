@@ -174,8 +174,21 @@ struct QuikCaptureView: View {
         )
 
         Task {
+            // AT19.3c — eager OG fetch. Kick the fetch off in parallel with
+            // `addNode` so the request is already in flight by the time the
+            // node has landed in the store; under typical network conditions
+            // the metadata is back within the same task lifetime and lands
+            // on the entry before the user ever sees the bare-URL state.
+            async let fetchTask = OGMetadataService().fetch(url: url)
             await store.addNode(node, position: position)
-            if let ogTitle = await Self.fetchOGTitle(from: url),
+            let metadata = await fetchTask
+            await store.applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
+
+            // Propagate `ogTitle` to the node's display title and the entry's
+            // legacy `title` field so canvas + AI processing pick up the
+            // richer name instead of the bare host. `applyOGFetch` only
+            // touches the OG fields; these are 3.1a-shape mutations.
+            if let ogTitle = metadata?.title, !ogTitle.isEmpty,
                var current = store.nodes.first(where: { $0.id == nodeID }) {
                 current.title = ogTitle
                 if !current.items.isEmpty {
@@ -184,50 +197,8 @@ struct QuikCaptureView: View {
                 current.updatedAt = Date()
                 await store.updateNode(current)
             }
+
             await store.processNodeWithAI(nodeID: nodeID)
         }
-    }
-
-    private static func fetchOGTitle(from url: URL) async -> String? {
-        var request = URLRequest(url: url, timeoutInterval: 5)
-        request.setValue("Mozilla/5.0 (compatible; AirPad/1.0)", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let html = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        if let title = match(html, pattern: #"<meta\s+[^>]*property=["']og:title["'][^>]*content=["']([^"']+)["']"#) {
-            return decodeHTMLEntities(title)
-        }
-        if let title = match(html, pattern: #"<meta\s+[^>]*content=["']([^"']+)["'][^>]*property=["']og:title["']"#) {
-            return decodeHTMLEntities(title)
-        }
-        if let title = match(html, pattern: #"<title[^>]*>([^<]+)</title>"#) {
-            return decodeHTMLEntities(title.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return nil
-    }
-
-    private static func match(_ string: String, pattern: String) -> String? {
-        guard let regex = try? NSRegularExpression(
-            pattern: pattern,
-            options: [.caseInsensitive, .dotMatchesLineSeparators]
-        ) else { return nil }
-        let range = NSRange(string.startIndex..., in: string)
-        guard let match = regex.firstMatch(in: string, options: [], range: range),
-              match.numberOfRanges > 1,
-              let captureRange = Range(match.range(at: 1), in: string) else {
-            return nil
-        }
-        let result = String(string[captureRange])
-        return result.isEmpty ? nil : result
-    }
-
-    private static func decodeHTMLEntities(_ s: String) -> String {
-        s.replacingOccurrences(of: "&amp;", with: "&")
-         .replacingOccurrences(of: "&lt;", with: "<")
-         .replacingOccurrences(of: "&gt;", with: ">")
-         .replacingOccurrences(of: "&quot;", with: "\"")
-         .replacingOccurrences(of: "&#39;", with: "'")
-         .replacingOccurrences(of: "&apos;", with: "'")
     }
 }

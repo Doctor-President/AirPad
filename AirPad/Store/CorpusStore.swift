@@ -518,9 +518,42 @@ final class CorpusStore {
                 }
             }
         }
+        // AT19.3c — clean up the OG sidecar image for link entries. Independent
+        // of `item.file` cleanup above (link entries don't use `file`). The
+        // stored path is `items/<itemID>.og.<ext>`; we recover the dotted
+        // extension (`og.<ext>`) by stripping the `<itemID>.` prefix so the
+        // existing extension-agnostic `deleteItemFile` does the rest.
+        if let ogRelative = item.ogImageFile,
+           let dottedExt = ogSidecarExtension(from: ogRelative, itemID: item.id) {
+            do {
+                let removed = try await service.deleteItemFile(
+                    nodeID: nodeID,
+                    itemID: item.id,
+                    fileExtension: dottedExt
+                )
+                if !removed {
+                    print("[CorpusStore] deleteEntry: OG sidecar missing for \(item.id) (\(ogRelative)) — removing entry anyway")
+                }
+            } catch {
+                print("[CorpusStore] deleteEntry: OG sidecar removal failed for \(item.id) (\(ogRelative)): \(error) — aborting entry removal")
+                return
+            }
+        }
         updated.items.remove(at: itemIdx)
         updated.updatedAt = Date()
         await updateNode(updated)
+    }
+
+    /// AT19.3c — extracts the dotted file extension (e.g. `og.jpg`) from a
+    /// stored `ogImageFile` path like `items/<itemID>.og.jpg`. Returns nil
+    /// when the path doesn't start with the expected `<itemID>.` prefix so
+    /// a malformed value can't cause us to delete a wrong file.
+    private func ogSidecarExtension(from relativePath: String, itemID: String) -> String? {
+        let filename = (relativePath as NSString).lastPathComponent
+        let prefix = "\(itemID)."
+        guard filename.hasPrefix(prefix) else { return nil }
+        let ext = String(filename.dropFirst(prefix.count))
+        return ext.isEmpty ? nil : ext
     }
 
     // MARK: - AT19.3c — Link entry OG fetch lifecycle

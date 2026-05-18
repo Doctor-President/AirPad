@@ -26,6 +26,11 @@ import Foundation
 ///   T3 — deleteItemFile preserves a sibling file in the same items/ dir
 ///   T4 — deleteItemFile preserves files belonging to a different node
 ///   T5 — handles every media extension we ship (m4a, jpg, mp4, pdf)
+///   T6 — AT19.3c link OG sidecar: dotted extension `og.jpg` round-trips
+///        AND a sibling primary media file under the same itemID survives
+///        (the AT19.3c sidecar-cleanup branch fires independently of
+///        `item.file` cleanup, so a regression that confuses the two
+///        would corrupt user media).
 @available(iOS 17.0, *)
 @MainActor
 enum EntryDeletionDiagnostic {
@@ -154,6 +159,45 @@ enum EntryDeletionDiagnostic {
                 }
             } catch {
                 failures.append("T5: threw \(error)")
+            }
+        }
+
+        // T6 — AT19.3c OG sidecar with dotted extension. Two assertions:
+        //   (a) `og.jpg` round-trips through save + delete primitives,
+        //       proving the extension-agnostic contract handles dotted
+        //       extensions identically to bare ones (jpg, mp4, …).
+        //   (b) When an item carries BOTH a primary media file (`<id>.jpg`)
+        //       and an OG sidecar (`<id>.og.jpg`), deleting the sidecar
+        //       leaves the primary intact. A regression where the dotted
+        //       extension was misparsed could silently delete the primary
+        //       file at delete-entry time on a user's device; this pins
+        //       that contract so it breaks here first.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let itemID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let primarySrc = try writeTempFile(name: "\(itemID).primary.jpg", bytes: 24)
+                let sidecarSrc = try writeTempFile(name: "\(itemID).sidecar.jpg", bytes: 24)
+                try await service.saveItemFile(nodeID: nodeID, itemID: itemID, sourceURL: primarySrc, fileExtension: "jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: itemID, sourceURL: sidecarSrc, fileExtension: "og.jpg")
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: itemID, fileExtension: "og.jpg")) {
+                    failures.append("T6: og.jpg did not appear after saveItemFile")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: itemID, fileExtension: "jpg")) {
+                    failures.append("T6: primary .jpg did not appear after saveItemFile")
+                }
+                let removed = try await service.deleteItemFile(nodeID: nodeID, itemID: itemID, fileExtension: "og.jpg")
+                if !removed { failures.append("T6: deleteItemFile returned false on present og.jpg") }
+                if await service.itemFileExists(nodeID: nodeID, itemID: itemID, fileExtension: "og.jpg") {
+                    failures.append("T6: og.jpg still on disk after deleteItemFile")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: itemID, fileExtension: "jpg")) {
+                    failures.append("T6: primary .jpg collaterally removed when deleting og.jpg sibling")
+                }
+            } catch {
+                failures.append("T6: threw \(error)")
             }
         }
 

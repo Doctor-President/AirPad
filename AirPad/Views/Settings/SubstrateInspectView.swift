@@ -57,6 +57,14 @@ struct SubstrateInspectView: View {
     @State private var entryMigrationSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestInProgress: Bool = false
+
+    // AT19.3c commit 2 — temporary diagnostic for OGMetadataService. Retired
+    // inline in commit 5 once QuikCapture wires the service into the real
+    // capture flow. Lets T verify on device that LP + scrape return
+    // populated fields against a real URL before the UI lands.
+    @State private var ogTestURLText: String = ""
+    @State private var ogTestInProgress: Bool = false
+    @State private var ogTestResult: String? = nil
     @State private var exportInProgress: Bool = false
     @State private var exportResult: ExportResult? = nil
     @State private var exportError: String? = nil
@@ -527,6 +535,72 @@ struct SubstrateInspectView: View {
                 Text(r)
                     .font(.caption2)
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // AT19.3c commit 2 — TEMPORARY OG fetch tester. Retired in commit 5.
+            TextField("https://…", text: $ogTestURLText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(.URL)
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.8))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            Button {
+                guard !ogTestInProgress else { return }
+                let trimmed = ogTestURLText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let url = URL(string: trimmed), url.scheme == "http" || url.scheme == "https" else {
+                    ogTestResult = "FAIL: not a valid http(s) URL"
+                    return
+                }
+                ogTestInProgress = true
+                ogTestResult = nil
+                Task {
+                    let start = Date()
+                    let meta = await OGMetadataService().fetch(url: url)
+                    let elapsed = Date().timeIntervalSince(start)
+                    let summary: String
+                    if let meta {
+                        let imageInfo: String
+                        if let imgURL = meta.imageTempURL {
+                            let size = (try? FileManager.default.attributesOfItem(atPath: imgURL.path)[.size] as? Int) ?? 0
+                            imageInfo = "img=\(meta.imageExtension ?? "?")/\(size)B"
+                        } else {
+                            imageInfo = "img=nil"
+                        }
+                        summary = """
+                        OK (\(String(format: "%.2f", elapsed))s)
+                        title: \(meta.title ?? "nil")
+                        desc:  \(meta.description ?? "nil")
+                        site:  \(meta.siteName ?? "nil")
+                        \(imageInfo)
+                        """
+                    } else {
+                        summary = "FAIL: returned nil (\(String(format: "%.2f", elapsed))s)"
+                    }
+                    await MainActor.run {
+                        ogTestResult = summary
+                        ogTestInProgress = false
+                    }
+                }
+            } label: {
+                Text(ogTestInProgress ? "Fetching OG metadata…" : "Test OG fetch")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(ogTestInProgress)
+            if let r = ogTestResult {
+                Text(r)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(r.hasPrefix("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

@@ -216,6 +216,10 @@ final class LayoutService {
                 let title = item.title ?? ""
                 let preview = item.preview ?? ""
                 text = title + " " + preview
+            case .imageVideo:
+                // No aggregate text — gallery entries contribute via item
+                // count (below), not text length.
+                text = nil
             }
             if let t = text {
                 wordCount += t.split(separator: " ").count
@@ -224,7 +228,7 @@ final class LayoutService {
 
         // Count media items
         let mediaCount = node.items.filter {
-            $0.type == .image || $0.type == .video || $0.type == .audio || $0.type == .document
+            $0.type == .image || $0.type == .video || $0.type == .audio || $0.type == .document || $0.type == .imageVideo
         }.count
 
         // Content weight

@@ -177,8 +177,15 @@ final class CorpusStore {
                     switch filterState.itemType {
                     case .all:      return true
                     case .voice:    return item.type == .audio
+                    // Stage 4.2 — `.photo` and `.video` filters also match
+                    // `.imageVideo` entries that contain at least one item of
+                    // the matching media type, so the filter UI keeps working
+                    // post-migration (when legacy `.image` / `.video` entries
+                    // have been collapsed into `.imageVideo`).
                     case .photo:    return item.type == .image
+                        || (item.type == .imageVideo && (item.mediaItems?.contains(where: { $0.mediaType == .image }) ?? false))
                     case .video:    return item.type == .video
+                        || (item.type == .imageVideo && (item.mediaItems?.contains(where: { $0.mediaType == .video }) ?? false))
                     case .text:     return item.type == .text
                     case .link:     return item.type == .link
                     case .document: return item.type == .document
@@ -971,7 +978,7 @@ final class CorpusStore {
                     case .text:          return item.content
                     case .audio, .video: return item.transcript
                     case .link:          return item.title ?? item.url
-                    case .image, .document: return nil
+                    case .image, .document, .imageVideo: return nil
                     }
                 }.first(where: { !$0.isEmpty })
                 if let fallback, n.title.isEmpty || n.title == "Photo" || n.title == "Voice note" {
@@ -1537,7 +1544,7 @@ final class CorpusStore {
             case .link:
                 if let title = item.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
                 if let url = item.url, !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-            case .image, .video, .document:
+            case .image, .video, .document, .imageVideo:
                 continue
             }
         }
@@ -1592,6 +1599,11 @@ final class CorpusStore {
                             case .audio, .video: return item.transcript
                             case .link: return item.title ?? item.url
                             case .image, .document: return item.description
+                            // Stage 4.2 — gallery entries have no aggregate
+                            // description field; their AI text contribution
+                            // is empty (the per-item descriptions land in a
+                            // later workstream).
+                            case .imageVideo: return nil
                             }
                         }.filter { !$0.isEmpty }.joined(separator: "\n")
 
@@ -2701,6 +2713,7 @@ final class CorpusStore {
             case .audio, .video:     return item.transcript
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            case .imageVideo:        return nil
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
     }

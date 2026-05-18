@@ -2,7 +2,11 @@ import Foundation
 
 struct NodeItem: Codable, Identifiable, Equatable {
     let id: String
-    let type: NodeItemType
+    /// Mutable as of Stage 4.2 so `migrateEntrySchemaV1ToV2` can convert
+    /// `.image` and `.video` entries to the unified `.imageVideo` type in
+    /// place. No other code path mutates `type` — the only legitimate write
+    /// is the migration step.
+    var type: NodeItemType
     let createdAt: Date
 
     // text
@@ -63,6 +67,17 @@ struct NodeItem: Codable, Identifiable, Equatable {
     var ogImageFile: String?
     var ogFetchedAt: Date?
 
+    // Stage 4.2 — ordered media list backing an `.imageVideo` entry. Populated
+    // by `migrateEntrySchemaV1ToV2` for legacy `.image` / `.video` entries
+    // (one-element array; `GalleryItem.id` matches `NodeItem.id` so the
+    // existing sidecar path stays reachable without file moves) and by the
+    // creation/append flows for new gallery entries. Nil on every non-
+    // imageVideo entry; rendering reads off this field for `.imageVideo`
+    // and ignores the legacy `file` / `description` / `transcript` /
+    // `durationSeconds` fields (which remain populated on migrated entries
+    // as a diagnostic breadcrumb but are no longer authoritative).
+    var mediaItems: [GalleryItem]?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -76,6 +91,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case ogSiteName = "og_site_name"
         case ogImageFile = "og_image_file"
         case ogFetchedAt = "og_fetched_at"
+        case mediaItems = "media_items"
     }
 }
 
@@ -98,5 +114,37 @@ extension NodeItem {
             transcript: transcript,
             durationSeconds: duration
         )
+    }
+}
+
+/// Stage 4.2 — single media item inside an `.imageVideo` entry. Each item is
+/// persisted as a sidecar at `nodes/<nodeID>/items/<GalleryItem.id>.<ext>`;
+/// the file path computation uses `GalleryItem.id`, not the parent
+/// `NodeItem.id`, so a single entry can hold multiple files without
+/// collision. On migration from a v1 image/video entry, `GalleryItem.id` is
+/// set equal to the parent `NodeItem.id` so the existing sidecar file at
+/// `items/<entryID>.<ext>` stays reachable without renaming; items appended
+/// to an entry post-4.2 get fresh UUIDs.
+struct GalleryItem: Codable, Identifiable, Equatable {
+    /// Image vs video. Per-item so a single entry can interleave both.
+    enum MediaType: String, Codable, Equatable {
+        case image
+        case video
+    }
+
+    let id: String
+    let mediaType: MediaType
+    let file: String
+    /// Width divided by height of the underlying asset. Nil until the
+    /// renderer measures the loaded asset and persists back so that the
+    /// bento layout can size tiles without first loading every image.
+    var aspectRatio: Double?
+    let capturedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, file
+        case mediaType = "media_type"
+        case aspectRatio = "aspect_ratio"
+        case capturedAt = "captured_at"
     }
 }

@@ -78,6 +78,20 @@ struct NodeItem: Codable, Identifiable, Equatable {
     // as a diagnostic breadcrumb but are no longer authoritative).
     var mediaItems: [GalleryItem]?
 
+    // Stage 4.2 commit 4 — per-entry gallery view-mode persistence. Three-
+    // state semantics:
+    //   - nil: user has never chosen; renderer picks a count-based default
+    //     (≤3 → carousel, ≥4 → bento). Single-item entries also leave this
+    //     nil — they render via `SingleMediaBody`, which doesn't read
+    //     `viewMode`.
+    //   - .carousel / .bento: user (or the first single→multi transition)
+    //     wrote a value. The renderer honors it verbatim regardless of
+    //     count; incremental adds preserve the existing choice so the user's
+    //     toggle is the only thing that changes it after first transition.
+    // Additive optional, no entrySchemaVersion bump — `decodeIfPresent`
+    // handles legacy `node.json` files cleanly.
+    var viewMode: GalleryViewMode?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -92,7 +106,20 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case ogImageFile = "og_image_file"
         case ogFetchedAt = "og_fetched_at"
         case mediaItems = "media_items"
+        case viewMode = "view_mode"
     }
+}
+
+/// Stage 4.2 commit 4 — gallery presentation mode for an `.imageVideo` entry
+/// with ≥2 items. Persisted on `NodeItem.viewMode`. Raw values are
+/// snake_case-stable for the JSON encoding.
+enum GalleryViewMode: String, Codable, Equatable {
+    /// Horizontal scrollable strip. Default for entries with ≤3 items at the
+    /// moment they first become multi-item.
+    case carousel
+    /// Tiled grid with variable-size cells. Default for entries with ≥4
+    /// items at the moment they first become multi-item.
+    case bento
 }
 
 extension NodeItem {

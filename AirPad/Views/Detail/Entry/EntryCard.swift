@@ -201,21 +201,17 @@ struct EntryCard: View {
         case .link:     LinkEntryBody(item: item, nodeID: nodeID)
         case .document: DocumentEntryBody(item: item, nodeID: nodeID)
         case .imageVideo:
-            // Stage 4.2 commit 1 — temporary dispatch to the legacy single-item
-            // bodies. Migration leaves `item.file` populated on a converted
-            // entry, so ImageEntryBody / VideoEntryBody continue to render
-            // correctly off the legacy field. Commit 3 (`SingleMediaBody`)
-            // swaps in the count-aware single-vs-gallery split that reads
-            // off `mediaItems`.
-            if let first = item.mediaItems?.first {
-                if first.mediaType == .video {
-                    VideoEntryBody(item: item, nodeID: nodeID)
-                } else {
-                    ImageEntryBody(item: item, nodeID: nodeID)
-                }
+            // Stage 4.2 commit 3 — `SingleMediaBody` reads off `mediaItems`
+            // directly and hosts the in-card chrome strip with the "+" add-
+            // more button. Routed for ALL non-empty counts during commits
+            // 3–4: commit 4's `GalleryBody` will take over count ≥ 2 once it
+            // lands; until then, multi-item entries render their first item
+            // (the data is intact, only the rendering is single-view-limited).
+            if item.mediaItems?.isEmpty == false {
+                SingleMediaBody(item: item, nodeID: nodeID)
             } else {
                 // T14 malformed-legacy case (file=nil → empty mediaItems).
-                // Explicit safe placeholder; commit 3 owns the proper empty UX.
+                // Explicit safe placeholder; commit 4 owns the proper empty UX.
                 EmptyMediaPlaceholder()
             }
         }

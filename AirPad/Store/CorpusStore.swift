@@ -812,11 +812,13 @@ final class CorpusStore {
     /// batch becomes one entry with `mediaItems.count == media.count`, so a
     /// multi-select pick yields one gallery entry, not N separate entries.
     ///
-    /// Legacy `file` on the parent `NodeItem` is populated from `media[0]` so
-    /// the commit-1 EntryCard dispatch (which routes through the existing
-    /// `ImageEntryBody` / `VideoEntryBody`) can render the first item without
-    /// any further changes. `SingleMediaBody` (commit 3) will read off
-    /// `mediaItems` directly and we can drop the legacy `file` write then.
+    /// Legacy `file` on the parent `NodeItem` is populated from `media[0]` as
+    /// a transitional breadcrumb (introduced in commit 2 when the dispatch
+    /// still routed through `ImageEntryBody` / `VideoEntryBody`). Commit 3's
+    /// `SingleMediaBody` reads off `mediaItems` directly via
+    /// `resolveGalleryItemURL`, with the parent `file` retained as a
+    /// resolution fallback. Commit 8 cleanup can drop the legacy write once
+    /// the fallback path has no live consumers.
     func addMediaItems(
         toNodeID targetNodeID: String?,
         mediaItems media: [PendingMediaItem],
@@ -825,14 +827,11 @@ final class CorpusStore {
     ) async {
         guard !media.isEmpty else { return }
 
-        // TODO(commit 2 → commit 3): items[1...N] persist to disk and to
-        // `mediaItems` but are NOT visibly rendered until commit 3 introduces
-        // `SingleMediaBody` / `GalleryBody`. Until then, the commit-1 EntryCard
-        // dispatch routes through `ImageEntryBody` / `VideoEntryBody`, which
-        // render only the first gallery item (via the legacy `file` field
-        // written below). Multi-item entries created in this window are
-        // recoverable — the data is intact — they just look like single-item
-        // entries until the gallery renderer lands.
+        // TODO(commit 3 → commit 4): items[1...N] persist to disk and to
+        // `mediaItems` but are NOT visibly rendered until commit 4 introduces
+        // `GalleryBody`. Until then, commit 3's `SingleMediaBody` renders the
+        // first gallery item only; the rest are recoverable (data is intact)
+        // but invisible.
         let now = Date()
         let parentItemID = UUID().uuidString
         let gallery: [GalleryItem] = media.map { m in
@@ -883,6 +882,42 @@ final class CorpusStore {
             await persistMediaFiles(media, nodeID: node.id)
             await addNode(node, position: position)
         }
+    }
+
+    /// Stage 4.2 commit 3 — appends gallery items to an EXISTING `.imageVideo`
+    /// entry (the "+" chrome in `SingleMediaBody` / `GalleryBody`). Distinct
+    /// from `addMediaItems`, which always creates a new entry. The parent
+    /// entry's `mediaItems` array grows in place; sidecar files persist to the
+    /// same node directory; the entry's `updatedAt` bumps. Silently bails on
+    /// an empty batch or a missing node/entry — no partial writes.
+    func appendMediaItems(
+        toEntryID entryID: String,
+        nodeID: String,
+        mediaItems media: [PendingMediaItem]
+    ) async {
+        guard !media.isEmpty,
+              let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              updated.items[itemIdx].type == .imageVideo else { return }
+
+        await persistMediaFiles(media, nodeID: nodeID)
+
+        let now = Date()
+        let appended: [GalleryItem] = media.map { m in
+            GalleryItem(
+                id: m.itemID,
+                mediaType: m.mediaType,
+                file: "items/\(m.itemID).\(m.fileExtension)",
+                aspectRatio: nil,
+                capturedAt: now
+            )
+        }
+        let existing = updated.items[itemIdx].mediaItems ?? []
+        updated.items[itemIdx].mediaItems = existing + appended
+        updated.items[itemIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
     }
 
     private func persistMediaFiles(_ media: [PendingMediaItem], nodeID: String) async {
@@ -3126,6 +3161,27 @@ final class CorpusStore {
     func itemFileURL(for item: NodeItem, nodeID: String) async -> URL? {
         guard let file = item.file else { return nil }
         return await service.resolveItemPath(nodeID: nodeID, relativePath: file)
+    }
+
+    /// Stage 4.2 commit 3 — resolves a `GalleryItem` sidecar URL. Reads off
+    /// `GalleryItem.file` (which encodes the file's id-based path
+    /// `items/<GalleryItem.id>.<ext>`) and falls back to the parent
+    /// `NodeItem.file` if provided — useful for migrated single-item entries
+    /// where `GalleryItem.id == NodeItem.id` makes both paths identical and
+    /// either resolves equivalently. New gallery items (appended via "+") use
+    /// fresh UUIDs that don't collide with the parent's legacy `file`.
+    func resolveGalleryItemURL(
+        _ galleryItem: GalleryItem,
+        nodeID: String,
+        fallbackParentItem: NodeItem? = nil
+    ) async -> URL? {
+        if let url = await service.resolveItemPath(nodeID: nodeID, relativePath: galleryItem.file) {
+            return url
+        }
+        if let parent = fallbackParentItem, let parentFile = parent.file {
+            return await service.resolveItemPath(nodeID: nodeID, relativePath: parentFile)
+        }
+        return nil
     }
 
     // MARK: - Semantic placement (Task 4)

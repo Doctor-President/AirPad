@@ -3,6 +3,7 @@ import PhotosUI
 import UIKit
 import AVFoundation
 import Vision
+import UniformTypeIdentifiers
 
 /// Camera/photo-library capture sheet.
 /// Presents the system camera or photo picker, then saves the result as an image node (or appends to an existing node).
@@ -63,8 +64,8 @@ struct CameraCaptureView: View {
         }
         // PHPickerViewController for photo library
         .sheet(isPresented: $showingPicker) {
-            PhotoPickerWrapper { result in
-                Task { await handlePickerResult(result) }
+            PhotoPickerWrapper { results in
+                Task { await handlePickerResults(results) }
             }
         }
         // UIImagePickerController for live camera
@@ -104,55 +105,73 @@ struct CameraCaptureView: View {
 
     // MARK: - Handling results
 
-    private func handlePickerResult(_ result: PHPickerResult?) async {
-        guard let result else { return }
+    /// Stage 4.2 commit 2 — picker now returns `[PHPickerResult]` (multi-select
+    /// is enabled with `selectionLimit = 0`) and may contain a mix of images
+    /// and videos. Each result is normalized at this view layer into a
+    /// `CorpusStore.PendingMediaItem` (image data encoded as jpg + written to
+    /// temp, or movie file copied off the iOS-managed temp URL before it gets
+    /// reclaimed) and then handed to `addMediaItems` as one atomic batch — so
+    /// the resulting entry is a single `.imageVideo` with N gallery items, not
+    /// N separate entries.
+    ///
+    /// The single-image branch preserves the prior UX: AI description seeds
+    /// the node title and the OCR pass appends recognized text as a sibling
+    /// text item. Multi-select picks and the single-video case skip both —
+    /// per-item AI/OCR for galleries is out of scope for commit 2.
+    private func handlePickerResults(_ results: [PHPickerResult]) async {
+        guard !results.isEmpty else { dismiss(); return }
         isSaving = true
 
-        if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
-            let image: UIImage? = await withCheckedContinuation { continuation in
-                _ = result.itemProvider.loadObject(ofClass: UIImage.self) { reading, _ in
-                    continuation.resume(returning: reading as? UIImage)
+        var pending: [CorpusStore.PendingMediaItem] = []
+        var firstImage: (data: Data, uiImage: UIImage)? = nil
+
+        for result in results {
+            if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
+                guard let image = await loadImage(from: result.itemProvider),
+                      let data = image.jpegData(compressionQuality: 0.85) else { continue }
+                let itemID = UUID().uuidString
+                let tmpURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(itemID).jpg")
+                do {
+                    try data.write(to: tmpURL)
+                } catch {
+                    print("[CameraCapture] Image temp write error: \(error)")
+                    continue
                 }
-            }
-            if let image {
-                await handleCapturedImage(image)
-                return
+                pending.append(.init(itemID: itemID, mediaType: .image, sourceURL: tmpURL, fileExtension: "jpg"))
+                if firstImage == nil { firstImage = (data, image) }
+            } else if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
+                guard let (tmpURL, ext) = await loadVideo(from: result.itemProvider) else { continue }
+                pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext))
             }
         }
-        isSaving = false
-        dismiss()
-    }
 
-    private func handleCapturedImage(_ image: UIImage) async {
-        isSaving = true
-        let position = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
-        guard let data = image.jpegData(compressionQuality: 0.85) else {
+        guard !pending.isEmpty else {
             isSaving = false
             dismiss()
             return
         }
 
-        // AI image description is stubbed in S3 — returns nil on simulator, device support added later.
-        let description: String
-        if #available(iOS 26.0, *) {
-            description = await AIService().describeImage(data) ?? ""
-        } else {
-            description = ""
+        let isSingleImage = pending.count == 1 && pending[0].mediaType == .image
+        var description = ""
+        var ocrText = ""
+        if isSingleImage, let firstImage {
+            if #available(iOS 26.0, *) {
+                description = await AIService().describeImage(firstImage.data) ?? ""
+            }
+            ocrText = await Task.detached(priority: .userInitiated) {
+                Self.extractText(from: firstImage.uiImage)
+            }.value
         }
 
-        // Vision OCR — run on background thread so it doesn't block UI
-        let ocrText = await Task.detached(priority: .userInitiated) {
-            Self.extractText(from: image)
-        }.value
-
-        await store.addImageItem(
+        let position = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
+        await store.addMediaItems(
             toNodeID: targetNodeID,
-            imageData: data,
+            mediaItems: pending,
             description: description,
             position: position
         )
 
-        // If OCR found text, append it as a text item alongside the image
         if !ocrText.isEmpty {
             let affectedNodeID = targetNodeID ?? store.nodes.first?.id
             if let nodeID = affectedNodeID {
@@ -160,7 +179,6 @@ struct CameraCaptureView: View {
             }
         }
 
-        // Trigger AI tagging on the resulting node
         if let nodeID = targetNodeID {
             await store.processNodeWithAI(nodeID: nodeID)
         } else if let newest = store.nodes.first {
@@ -169,6 +187,110 @@ struct CameraCaptureView: View {
 
         isSaving = false
         dismiss()
+    }
+
+    /// Camera capture is always a single image — funneled through the same
+    /// `addMediaItems` path so it produces a `.imageVideo` entry with one
+    /// gallery item, matching the picker N=1 image case exactly.
+    private func handleCapturedImage(_ image: UIImage) async {
+        isSaving = true
+        guard let data = image.jpegData(compressionQuality: 0.85) else {
+            isSaving = false
+            dismiss()
+            return
+        }
+
+        let itemID = UUID().uuidString
+        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(itemID).jpg")
+        do {
+            try data.write(to: tmpURL)
+        } catch {
+            print("[CameraCapture] Image temp write error: \(error)")
+            isSaving = false
+            dismiss()
+            return
+        }
+
+        let description: String
+        if #available(iOS 26.0, *) {
+            description = await AIService().describeImage(data) ?? ""
+        } else {
+            description = ""
+        }
+
+        let ocrText = await Task.detached(priority: .userInitiated) {
+            Self.extractText(from: image)
+        }.value
+
+        let pending = CorpusStore.PendingMediaItem(
+            itemID: itemID,
+            mediaType: .image,
+            sourceURL: tmpURL,
+            fileExtension: "jpg"
+        )
+        let position = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
+        await store.addMediaItems(
+            toNodeID: targetNodeID,
+            mediaItems: [pending],
+            description: description,
+            position: position
+        )
+
+        if !ocrText.isEmpty {
+            let affectedNodeID = targetNodeID ?? store.nodes.first?.id
+            if let nodeID = affectedNodeID {
+                await store.appendItemToNode(nodeID: nodeID, item: .text(content: ocrText))
+            }
+        }
+
+        if let nodeID = targetNodeID {
+            await store.processNodeWithAI(nodeID: nodeID)
+        } else if let newest = store.nodes.first {
+            await store.processNodeWithAI(nodeID: newest.id)
+        }
+
+        isSaving = false
+        dismiss()
+    }
+
+    /// Bridges `loadObject(ofClass:)` into async. Returns nil if the provider
+    /// doesn't actually deliver a `UIImage` — caller already gated on
+    /// `canLoadObject(ofClass: UIImage.self)` so this is the failure tail.
+    private func loadImage(from provider: NSItemProvider) async -> UIImage? {
+        await withCheckedContinuation { continuation in
+            provider.loadObject(ofClass: UIImage.self) { reading, _ in
+                continuation.resume(returning: reading as? UIImage)
+            }
+        }
+    }
+
+    /// Bridges `loadFileRepresentation(forTypeIdentifier:)` into async. The
+    /// URL handed to the completion is reclaimed by iOS the moment the
+    /// completion returns, so the file is copied SYNCHRONOUSLY inside the
+    /// callback to a fresh temp path before the continuation resumes — the
+    /// destination URL the caller gets back is the one that owns the bytes.
+    /// Returns nil on copy failure or if the provider had no movie payload.
+    private func loadVideo(from provider: NSItemProvider) async -> (URL, String)? {
+        let movieType = UTType.movie.identifier
+        guard provider.hasItemConformingToTypeIdentifier(movieType) else { return nil }
+        return await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: movieType) { url, _ in
+                guard let url else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension
+                let destURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(UUID().uuidString).\(ext)")
+                do {
+                    try FileManager.default.copyItem(at: url, to: destURL)
+                    continuation.resume(returning: (destURL, ext))
+                } catch {
+                    print("[CameraCapture] Video temp copy error: \(error)")
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
     }
 
     private static func extractText(from image: UIImage) -> String {
@@ -233,12 +355,16 @@ private struct PermissionBanner: View {
 // MARK: - PHPickerViewController wrapper
 
 private struct PhotoPickerWrapper: UIViewControllerRepresentable {
-    let onPick: (PHPickerResult?) -> Void
+    let onPick: ([PHPickerResult]) -> Void
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var config = PHPickerConfiguration()
-        config.selectionLimit = 1
-        config.filter = .images
+        // Stage 4.2 commit 2 — multi-select unlocked (`selectionLimit = 0` is
+        // the iOS convention for "unlimited") and the filter expanded to
+        // accept videos alongside images. Both flow into a single
+        // `.imageVideo` entry via `addMediaItems`.
+        config.selectionLimit = 0
+        config.filter = .any(of: [.images, .videos])
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator
         return picker
@@ -249,12 +375,12 @@ private struct PhotoPickerWrapper: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
 
     final class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let onPick: (PHPickerResult?) -> Void
-        init(onPick: @escaping (PHPickerResult?) -> Void) { self.onPick = onPick }
+        let onPick: ([PHPickerResult]) -> Void
+        init(onPick: @escaping ([PHPickerResult]) -> Void) { self.onPick = onPick }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
-            onPick(results.first)
+            onPick(results)
         }
     }
 }

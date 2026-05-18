@@ -794,46 +794,80 @@ final class CorpusStore {
         await appendItemToNode(nodeID: nodeID, item: item)
     }
 
-    /// Creates a new image node or appends an image item to an existing node.
-    func addImageItem(
+    /// Stage 4.2 commit 2 — normalized payload for a single picked / captured
+    /// media file en route to a `.imageVideo` entry. Lives in CorpusStore (not
+    /// in PhotosUI types) so the store stays decoupled from the picker: the
+    /// view layer extracts every PHPickerResult into one of these before the
+    /// store sees it. `sourceURL` is a temp file the store consumes and
+    /// removes; the caller does not need to clean it up.
+    struct PendingMediaItem {
+        let itemID: String
+        let mediaType: GalleryItem.MediaType
+        let sourceURL: URL
+        let fileExtension: String
+    }
+
+    /// Creates a new `.imageVideo` node — or appends a `.imageVideo` entry to
+    /// an existing node — from a batch of picked / captured media files. The
+    /// batch becomes one entry with `mediaItems.count == media.count`, so a
+    /// multi-select pick yields one gallery entry, not N separate entries.
+    ///
+    /// Legacy `file` on the parent `NodeItem` is populated from `media[0]` so
+    /// the commit-1 EntryCard dispatch (which routes through the existing
+    /// `ImageEntryBody` / `VideoEntryBody`) can render the first item without
+    /// any further changes. `SingleMediaBody` (commit 3) will read off
+    /// `mediaItems` directly and we can drop the legacy `file` write then.
+    func addMediaItems(
         toNodeID targetNodeID: String?,
-        imageData: Data,
+        mediaItems media: [PendingMediaItem],
         description: String,
         position: CGPoint
     ) async {
-        let itemID = UUID().uuidString
-        let filename = "\(itemID).jpg"
-        let item = NodeItem(
-            id: itemID,
-            type: .image,
-            createdAt: Date(),
-            file: "items/\(filename)",
-            description: description.isEmpty ? nil : description
-        )
+        guard !media.isEmpty else { return }
 
-        let tmpURL = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        do {
-            try imageData.write(to: tmpURL)
-        } catch {
-            print("[CorpusStore] Image temp write error: \(error)")
-            return
+        // TODO(commit 2 → commit 3): items[1...N] persist to disk and to
+        // `mediaItems` but are NOT visibly rendered until commit 3 introduces
+        // `SingleMediaBody` / `GalleryBody`. Until then, the commit-1 EntryCard
+        // dispatch routes through `ImageEntryBody` / `VideoEntryBody`, which
+        // render only the first gallery item (via the legacy `file` field
+        // written below). Multi-item entries created in this window are
+        // recoverable — the data is intact — they just look like single-item
+        // entries until the gallery renderer lands.
+        let now = Date()
+        let parentItemID = UUID().uuidString
+        let gallery: [GalleryItem] = media.map { m in
+            GalleryItem(
+                id: m.itemID,
+                mediaType: m.mediaType,
+                file: "items/\(m.itemID).\(m.fileExtension)",
+                aspectRatio: nil,
+                capturedAt: now
+            )
         }
 
+        // Legacy breadcrumb fields — see method doc. `description` only carries
+        // semantic weight for the N=1 image path (the AI description that
+        // becomes the node title); for everything else it's empty.
+        let isSingleImage = media.count == 1 && media[0].mediaType == .image
+        let entry = NodeItem(
+            id: parentItemID,
+            type: .imageVideo,
+            createdAt: now,
+            file: gallery.first?.file,
+            description: (isSingleImage && !description.isEmpty) ? description : nil,
+            mediaItems: gallery
+        )
+
         if let nodeID = targetNodeID, nodes.contains(where: { $0.id == nodeID }) {
-            do {
-                try await service.saveItemFile(nodeID: nodeID, itemID: itemID, sourceURL: tmpURL, fileExtension: "jpg")
-            } catch {
-                print("[CorpusStore] Image save error: \(error)")
-            }
-            try? FileManager.default.removeItem(at: tmpURL)
-            await appendItemToNode(nodeID: nodeID, item: item)
+            await persistMediaFiles(media, nodeID: nodeID)
+            await appendItemToNode(nodeID: nodeID, item: entry)
         } else {
-            let now = Date()
+            let title = defaultMediaTitle(for: media, description: description)
             let node = Node(
                 id: UUID().uuidString,
                 createdAt: now,
                 updatedAt: now,
-                title: description.isEmpty ? "Photo" : String(description.prefix(60)),
+                title: title,
                 summary: "",
                 tags: [],
                 mood: nil,
@@ -841,18 +875,44 @@ final class CorpusStore {
                 provenance: nil,
                 threads: [],
                 location: nil,
-                items: [item],
+                items: [entry],
                 domain: nil,
                 domainConfirmed: false,
                 needsAIProcessing: true
             )
-            do {
-                try await service.saveItemFile(nodeID: node.id, itemID: itemID, sourceURL: tmpURL, fileExtension: "jpg")
-            } catch {
-                print("[CorpusStore] Image save error: \(error)")
-            }
-            try? FileManager.default.removeItem(at: tmpURL)
+            await persistMediaFiles(media, nodeID: node.id)
             await addNode(node, position: position)
+        }
+    }
+
+    private func persistMediaFiles(_ media: [PendingMediaItem], nodeID: String) async {
+        for m in media {
+            do {
+                try await service.saveItemFile(
+                    nodeID: nodeID,
+                    itemID: m.itemID,
+                    sourceURL: m.sourceURL,
+                    fileExtension: m.fileExtension
+                )
+            } catch {
+                print("[CorpusStore] Media save error (\(m.mediaType)): \(error)")
+            }
+            try? FileManager.default.removeItem(at: m.sourceURL)
+        }
+    }
+
+    private func defaultMediaTitle(for media: [PendingMediaItem], description: String) -> String {
+        if media.count == 1, media[0].mediaType == .image, !description.isEmpty {
+            return String(description.prefix(60))
+        }
+        let imageCount = media.filter { $0.mediaType == .image }.count
+        let videoCount = media.filter { $0.mediaType == .video }.count
+        switch (imageCount, videoCount) {
+        case (1, 0): return "Photo"
+        case (0, 1): return "Video"
+        case let (i, 0): return "Photos (\(i))"
+        case let (0, v): return "Videos (\(v))"
+        case let (i, v): return "Media (\(i + v))"
         }
     }
 

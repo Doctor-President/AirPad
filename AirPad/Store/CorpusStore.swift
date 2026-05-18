@@ -523,6 +523,80 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    // MARK: - AT19.3c — Link entry OG fetch lifecycle
+
+    /// AT19.3c — commits a URL on a link entry and clears any prior OG
+    /// metadata so the next `applyOGFetch` (or lazy on-view refetch)
+    /// starts clean. Does NOT delete a prior sidecar image from disk;
+    /// that orphan is bounded (a user rarely re-edits a link URL) and
+    /// stays out of the happy path until a re-edit cleanup pass is
+    /// scoped explicitly.
+    func setLinkEntryURL(nodeID: String, itemID: String, url: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }) else { return }
+        var item = updated.items[itemIdx]
+        item.url = url
+        item.ogTitle = nil
+        item.ogDescription = nil
+        item.ogSiteName = nil
+        item.ogImageFile = nil
+        item.ogFetchedAt = nil
+        item.updatedAt = Date()
+        updated.items[itemIdx] = item
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// AT19.3c — writes an `OGMetadataService.fetch` result back to a
+    /// link entry. Saves the sidecar image (if present) via
+    /// `saveItemFile`, populates the five OG fields, and stamps
+    /// `ogFetchedAt`. A nil `metadata` (service couldn't get anything
+    /// useful) still stamps `ogFetchedAt` so the lazy-fallback retry only
+    /// re-fires after the staleness window — without that stamp, every
+    /// view would re-hit a known-bad URL.
+    func applyOGFetch(nodeID: String, itemID: String, metadata: OGMetadata?) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }) else { return }
+        var item = updated.items[itemIdx]
+
+        var imageRelativePath: String? = nil
+        if let metadata, let tempURL = metadata.imageTempURL, let ext = metadata.imageExtension {
+            do {
+                try await service.saveItemFile(
+                    nodeID: nodeID,
+                    itemID: item.id,
+                    sourceURL: tempURL,
+                    fileExtension: "og.\(ext)"
+                )
+                imageRelativePath = "items/\(item.id).og.\(ext)"
+                try? FileManager.default.removeItem(at: tempURL)
+            } catch {
+                print("[CorpusStore] applyOGFetch: sidecar save failed for \(item.id): \(error)")
+                // Continue — still record the textual fields even if the
+                // image couldn't land.
+            }
+        }
+
+        item.ogTitle = metadata?.title
+        item.ogDescription = metadata?.description
+        item.ogSiteName = metadata?.siteName
+        item.ogImageFile = imageRelativePath
+        item.ogFetchedAt = Date()
+        updated.items[itemIdx] = item
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// AT19.3c — resolves the on-disk URL for a link entry's OG sidecar
+    /// image. Companion to `itemFileURL(for:nodeID:)` which only resolves
+    /// `item.file`; OG images live under a parallel field.
+    func ogImageFileURL(for item: NodeItem, nodeID: String) async -> URL? {
+        guard let relativePath = item.ogImageFile else { return nil }
+        return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
+    }
+
     /// Stage 3.1b — moves an entry within a node's items array. Single
     /// persisted mutation per reorder cycle: the controller holds the
     /// transient drag state, the store sees one final commit. No-op if

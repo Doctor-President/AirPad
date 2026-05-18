@@ -31,6 +31,7 @@
 		268567832FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567822FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift */; };
 		268567842FB831BE00DCA8B4 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567812FB831BE00DCA8B4 /* EntryMigration.swift */; };
 		268567862FBB4C1F00DCA8B4 /* OGMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567852FBB4C1F00DCA8B4 /* OGMetadataService.swift */; };
+		268567882FBB502B00DCA8B4 /* OGPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567872FBB502B00DCA8B4 /* OGPreviewView.swift */; };
 		268567962FB831BE00DCA8B4 /* TextEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567902FB831BE00DCA8B4 /* TextEntryBody.swift */; };
 		268567972FB831BE00DCA8B4 /* VoiceEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567912FB831BE00DCA8B4 /* VoiceEntryBody.swift */; };
 		268567982FB831BE00DCA8B4 /* ImageEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 268567922FB831BE00DCA8B4 /* ImageEntryBody.swift */; };
@@ -172,6 +173,7 @@
 		268567812FB831BE00DCA8B4 /* EntryMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigration.swift; sourceTree = "<group>"; };
 		268567822FB831BE00DCA8B4 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
 		268567852FBB4C1F00DCA8B4 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
+		268567872FBB502B00DCA8B4 /* OGPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGPreviewView.swift; sourceTree = "<group>"; };
 		268567902FB831BE00DCA8B4 /* TextEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEntryBody.swift; sourceTree = "<group>"; };
 		268567912FB831BE00DCA8B4 /* VoiceEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntryBody.swift; sourceTree = "<group>"; };
 		268567922FB831BE00DCA8B4 /* ImageEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntryBody.swift; sourceTree = "<group>"; };
@@ -536,6 +538,7 @@
 		DF9CD6E4FF1185B7CEF053EE /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				268567872FBB502B00DCA8B4 /* OGPreviewView.swift */,
 				5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */,
 				A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */,
 				B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */,
@@ -715,6 +718,7 @@
 				0284EB1329A9A5B1C0DF85D6 /* NeighborhoodService.swift in Sources */,
 				6ABE3E503556A6148E29F602 /* Node.swift in Sources */,
 				679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */,
+				268567882FBB502B00DCA8B4 /* OGPreviewView.swift in Sources */,
 				B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */,
 				9CC24D2F472D010E7128EB08 /* NodeGradientBackground.swift in Sources */,
 				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,

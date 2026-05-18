@@ -51,6 +51,18 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// Live edits in commit (b) onward will bump this.
     var updatedAt: Date?
 
+    // AT19.3c — OG preview metadata for link entries. Five additive optional
+    // fields populated by `OGMetadataService` after a successful
+    // `LPMetadataProvider` fetch. Image stored as sidecar at
+    // `nodes/<nodeID>/items/<id>.og.<ext>` to keep `node.json` small;
+    // `ogImageFile` holds just the filename. Legacy link entries decode
+    // cleanly via `decodeIfPresent` — no `entrySchemaVersion` bump.
+    var ogTitle: String?
+    var ogDescription: String?
+    var ogSiteName: String?
+    var ogImageFile: String?
+    var ogFetchedAt: Date?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -59,6 +71,11 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case displayName = "display_name"
         case isExpanded = "is_expanded"
         case updatedAt = "updated_at"
+        case ogTitle = "og_title"
+        case ogDescription = "og_description"
+        case ogSiteName = "og_site_name"
+        case ogImageFile = "og_image_file"
+        case ogFetchedAt = "og_fetched_at"
     }
 }
 

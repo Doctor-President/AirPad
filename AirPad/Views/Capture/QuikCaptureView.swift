@@ -10,6 +10,15 @@ struct QuikCaptureView: View {
     @State private var showTextCapture: Bool = false
     @State private var prefilledText: String = ""
     @State private var emptyClipboardMessageVisible: Bool = false
+    @State private var linkReceipt: LinkReceiptIDs? = nil
+
+    /// Identity pair for the QuikCapture link-receipt overlay. Tracking
+    /// both node + item IDs (vs just nodeID) keeps `QuikCaptureLinkReceipt`
+    /// resilient to future link entries that aren't `items[0]`.
+    private struct LinkReceiptIDs: Equatable {
+        let nodeID: String
+        let itemID: String
+    }
 
     var body: some View {
         ZStack {
@@ -56,6 +65,17 @@ struct QuikCaptureView: View {
                 .padding(.bottom, 48)
             }
         }
+        .overlay {
+            if let receipt = linkReceipt {
+                QuikCaptureLinkReceipt(
+                    nodeID: receipt.nodeID,
+                    itemID: receipt.itemID,
+                    onDismiss: { linkReceipt = nil }
+                )
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: linkReceipt)
         .sheet(isPresented: $showVoiceCapture) {
             VoiceCaptureSheet()
         }
@@ -181,6 +201,12 @@ struct QuikCaptureView: View {
             // on the entry before the user ever sees the bare-URL state.
             async let fetchTask = OGMetadataService().fetch(url: url)
             await store.addNode(node, position: position)
+            // AT19.3c commit 6 — receipt overlay. Present immediately after
+            // the node lands in the store so the receipt can resolve the
+            // item; if OG hasn't returned yet the overlay shows State B
+            // (bare URL) and upgrades to State C in-place when applyOGFetch
+            // mutates the store within the 1.0s window.
+            linkReceipt = LinkReceiptIDs(nodeID: nodeID, itemID: itemID)
             let metadata = await fetchTask
             await store.applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
 
@@ -199,6 +225,75 @@ struct QuikCaptureView: View {
             }
 
             await store.processNodeWithAI(nodeID: nodeID)
+        }
+    }
+}
+
+/// AT19.3c commit 6 — receipt modal shown after a clipboard URL is captured
+/// via QuikCapture. Renders `OGPreviewView` (non-interactive) so the user
+/// sees the same visual treatment they'll get on the canvas, with a
+/// "Web clipping captured" caption above it. Auto-dismisses after 2.0s;
+/// tap anywhere to dismiss early. Because the underlying `NodeItem` is
+/// read from the store on every render, applyOGFetch landing inside the
+/// 2.0s window animates the preview from bare-URL to rich card in place.
+private struct QuikCaptureLinkReceipt: View {
+
+    let nodeID: String
+    let itemID: String
+    let onDismiss: () -> Void
+
+    @Environment(CorpusStore.self) private var store
+    @State private var visible: Bool = false
+
+    private var currentItem: NodeItem? {
+        store.nodes.first(where: { $0.id == nodeID })?
+            .items.first(where: { $0.id == itemID })
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.65)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                Text("Web clipping captured")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+
+                if let item = currentItem {
+                    OGPreviewView(
+                        item: item,
+                        nodeID: nodeID,
+                        onCommitURL: { _ in },
+                        interactive: false
+                    )
+                    .padding(14)
+                    .background(Color(hex: "#1A1A20"))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+            }
+            .padding(.horizontal, 32)
+        }
+        .opacity(visible ? 1 : 0)
+        .contentShape(Rectangle())
+        .onTapGesture { dismiss() }
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.18)) { visible = true }
+            Task {
+                try? await Task.sleep(for: .seconds(2.0))
+                dismiss()
+            }
+        }
+    }
+
+    private func dismiss() {
+        // Idempotent: both the tap path and the auto-dismiss timer call
+        // this; whichever fires second is a no-op so `onDismiss` runs once.
+        guard visible else { return }
+        withAnimation(.easeIn(duration: 0.18)) { visible = false }
+        Task {
+            try? await Task.sleep(for: .milliseconds(180))
+            onDismiss()
         }
     }
 }

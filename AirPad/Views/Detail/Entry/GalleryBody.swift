@@ -6,23 +6,11 @@ import PhotosUI
 /// left, `ViewModeToggle` on the right) and a media area that branches on
 /// the resolved view mode.
 ///
-/// Commits 5 and 6 fill the carousel and bento media areas respectively.
-/// Until then this shell renders count- and mode-aware placeholders so the
-/// transition from `SingleMediaBody` is observable end-to-end:
-///   - "+" appends through `CorpusStore.appendMediaItems`, same flow as
-///     `SingleMediaBody`. A single-item entry growing to 2+ flips the
-///     dispatch in `EntryCard` from `SingleMediaBody` to `GalleryBody` on
-///     the next render — at which point the first-transition viewMode
-///     default written by `appendMediaItems` is already in place.
-///   - The view-mode toggle writes through `CorpusStore.setEntryViewMode`
-///     and round-trips via the store's `@Observable` state.
-///
-/// The placeholder media area exists so commit 4 ships a working build
-/// per T's "each commit leaves the app working" rule. It is visibly
-/// different from a finished gallery — explicitly labeled — so a user
-/// running commit 4 on-device sees the state honestly rather than thinking
-/// the gallery is broken. Commits 5/6 replace the placeholders one at a
-/// time.
+/// Commit 5 fills the carousel media area with `GalleryCarousel` — a proper
+/// horizontal renderer with aspect-aware variable-width tiles and snap-to-
+/// tile scrolling. Commit 6 fills the bento area with the deterministic
+/// packed grid. Both renderers share `GalleryItemTile` as the per-item
+/// primitive, sized externally by each parent.
 struct GalleryBody: View {
 
     let item: NodeItem
@@ -31,6 +19,19 @@ struct GalleryBody: View {
     @Environment(CorpusStore.self) private var store
 
     @State private var showingPicker = false
+    /// Per-session aspect-ratio overrides keyed by `GalleryItem.id`. Tiles
+    /// report their measured aspect on first load via
+    /// `onMeasuredAspect`; the override takes precedence over the model's
+    /// persisted `aspectRatio` during this session so layout updates
+    /// immediately without waiting for the store's @Observable round-trip.
+    /// Persistence is fire-and-forget alongside the override write — future
+    /// sessions read the persisted value and skip the measurement.
+    @State private var measuredAspects: [String: Double] = [:]
+    /// Drives the tap-to-fullscreen QuickLook sheet. Cleared on dismiss.
+    /// Commit 7 swaps the sheet content for a swipeable multi-item viewer;
+    /// the trigger surface (this @State) is unchanged so the swap is
+    /// content-only.
+    @State private var previewing: MediaPreviewIdentity? = nil
 
     private var galleryItems: [GalleryItem] { item.mediaItems ?? [] }
 
@@ -73,45 +74,90 @@ struct GalleryBody: View {
                 Task { await handlePickedMedia(results) }
             }
         }
+        .sheet(item: $previewing) { identity in
+            MediaFullscreenViewer(url: identity.url)
+        }
     }
 
-    // MARK: - Media area (commit-5/6 placeholder)
+    // MARK: - Media area
 
     @ViewBuilder
     private var mediaArea: some View {
         switch effectiveViewMode {
-        case .carousel: carouselPlaceholder
-        case .bento:    bentoPlaceholder
-        }
-    }
-
-    private var carouselPlaceholder: some View {
-        // Horizontal strip — sized so the visible state matches what
-        // commit 5's carousel will occupy, so the swap is content-only and
-        // doesn't reflow the card height.
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(galleryItems) { galleryItem in
-                    GalleryItemTile(galleryItem: galleryItem, nodeID: nodeID, parentItem: item)
-                        .frame(width: 180, height: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+        case .carousel:
+            GalleryCarousel(
+                galleryItems: galleryItems,
+                nodeID: nodeID,
+                parentItem: item,
+                aspectFor: { aspectForTile($0) },
+                onMeasuredAspect: { itemID, aspect in
+                    recordMeasured(itemID: itemID, aspect: aspect)
+                },
+                onTapTile: { tappedItem in
+                    Task {
+                        if let url = await store.resolveGalleryItemURL(
+                            tappedItem,
+                            nodeID: nodeID,
+                            fallbackParentItem: item
+                        ) {
+                            await MainActor.run { previewing = MediaPreviewIdentity(url: url) }
+                        }
+                    }
                 }
-            }
-            .padding(.horizontal, 2)
+            )
+        case .bento:
+            // Commit 6 replaces this with the proper deterministic packer.
+            // Until then the 2-col uniform grid is the right "compact,
+            // multi-item" baseline so a user who toggled to bento doesn't
+            // see a blank slate.
+            bentoPlaceholder
         }
-        .frame(height: 220)
     }
 
     private var bentoPlaceholder: some View {
-        // 2-column grid — commit 6 replaces with variable-tile bento, but
-        // a 2-col uniform grid is the right "compact, multi-item" visual
-        // baseline so the shell isn't visibly broken in the meantime.
         LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
             ForEach(galleryItems) { galleryItem in
-                GalleryItemTile(galleryItem: galleryItem, nodeID: nodeID, parentItem: item)
-                    .aspectRatio(1, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                GalleryItemTile(
+                    galleryItem: galleryItem,
+                    nodeID: nodeID,
+                    parentItem: item,
+                    onMeasuredAspect: { aspect in
+                        recordMeasured(itemID: galleryItem.id, aspect: aspect)
+                    }
+                )
+                .aspectRatio(1, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
             }
+        }
+    }
+
+    // MARK: - Aspect override pipeline
+
+    /// In-session aspect for a tile, falling back through:
+    ///   1. `measuredAspects[id]` — tile reported during this session.
+    ///   2. `galleryItem.aspectRatio` — persisted from an earlier session.
+    ///   3. `1.0` — square placeholder until the first measurement lands.
+    /// Clamped to the bento brief's anticipated working range (0.3, 4.0) so
+    /// a malformed/EXIF-mangled aspect can't produce a degenerate tile.
+    private func aspectForTile(_ galleryItem: GalleryItem) -> Double {
+        let raw = measuredAspects[galleryItem.id] ?? galleryItem.aspectRatio ?? 1.0
+        return min(max(raw, 0.3), 4.0)
+    }
+
+    /// Records a tile's measured aspect both in the session override (so
+    /// the next render uses it immediately) and on the persisted
+    /// `GalleryItem` (so future sessions skip the measurement). Idempotent
+    /// at the store layer — `setGalleryItemAspectRatio` no-ops if the
+    /// stored value already matches.
+    private func recordMeasured(itemID: String, aspect: Double) {
+        measuredAspects[itemID] = aspect
+        Task {
+            await store.setGalleryItemAspectRatio(
+                entryID: item.id,
+                nodeID: nodeID,
+                galleryItemID: itemID,
+                aspectRatio: aspect
+            )
         }
     }
 
@@ -145,51 +191,71 @@ struct GalleryBody: View {
     }
 }
 
-/// Stage 4.2 commit 4 — a single tile inside the carousel-/bento-placeholder
-/// renderers. Resolves the sidecar URL once via `resolveGalleryItemURL` and
-/// shows an `AsyncImageFromURL` for images / a static thumbnail badge for
-/// videos. Commits 5 and 6 will swap this for richer per-mode renderers
-/// (carousel uses a tappable inline player; bento uses a thumb with a play
-/// overlay), but the tile-level resolution + placeholder pattern is shared
-/// scaffolding both paths can keep.
-private struct GalleryItemTile: View {
+/// Stage 4.2 commit 5 — proper carousel renderer for the gallery presentation.
+///
+/// Design points fixed in this commit:
+///   - **Variable-width tiles.** Each tile's width = 220pt × aspect. Portrait
+///     shots stay portrait, landscape stays landscape — the brief's "original
+///     aspect with a max height" stance. Height is uniform at 220pt so the
+///     row reads as a single horizontal strip; reflow only happens
+///     left-to-right, never vertically.
+///   - **Snap-to-tile.** `.scrollTargetBehavior(.viewAligned)` +
+///     `.scrollTargetLayout()` on the `LazyHStack`. The view aligns to a
+///     tile's leading edge on settle so a partial-tile-mid-stream rest
+///     state is impossible — matches Apple Photos' carousel feel.
+///   - **Lazy.** `LazyHStack` means a 50-tile gallery doesn't decode 50
+///     UIImages on first render. Tiles materialize as they scroll into view.
+///   - **Tap → fullscreen.** Per-tile tap routes to `MediaFullscreenViewer`
+///     (QuickLook). Commit 7 replaces with a swipeable multi-item viewer;
+///     this commit keeps the same trigger surface so that swap is
+///     content-only.
+///
+/// Out of scope (deferred):
+///   - Scroll-position memory across navigation / view-mode toggles. Polish
+///     value; the user always lands on the first tile when re-entering. If
+///     that proves disruptive on real corpora, commit 8 can persist the
+///     position as a transient (not Codable) state on `GalleryBody`.
+///   - Per-tile delete / reorder gestures (commit 7).
+private struct GalleryCarousel: View {
 
-    let galleryItem: GalleryItem
+    let galleryItems: [GalleryItem]
     let nodeID: String
     let parentItem: NodeItem
+    let aspectFor: (GalleryItem) -> Double
+    let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
+    let onTapTile: (GalleryItem) -> Void
 
-    @Environment(CorpusStore.self) private var store
-    @State private var resolvedURL: URL? = nil
+    /// Uniform tile height. Matches the placeholder height shipped in
+    /// commit 4 so the visual transition from placeholder → real renderer
+    /// (and from real renderer → commit-6 bento on toggle) doesn't reflow
+    /// the entry card.
+    private static let tileHeight: CGFloat = 220
 
     var body: some View {
-        ZStack {
-            if let url = resolvedURL {
-                AsyncImageFromURL(url: url)
-                if galleryItem.mediaType == .video {
-                    // Static play-glyph badge — commit 5/6 swap for a
-                    // proper video-thumb pipeline; this gets the multi-item
-                    // visual right (you can see a video is a video) without
-                    // a full thumbnail extractor in commit 4.
-                    Image(systemName: "play.circle.fill")
-                        .font(.title)
-                        .foregroundStyle(.white.opacity(0.9))
-                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 8) {
+                ForEach(galleryItems) { galleryItem in
+                    GalleryItemTile(
+                        galleryItem: galleryItem,
+                        nodeID: nodeID,
+                        parentItem: parentItem,
+                        onMeasuredAspect: { aspect in
+                            onMeasuredAspect(galleryItem.id, aspect)
+                        }
+                    )
+                    .frame(
+                        width: Self.tileHeight * aspectFor(galleryItem),
+                        height: Self.tileHeight
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTapTile(galleryItem) }
                 }
-            } else {
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .overlay {
-                        Image(systemName: galleryItem.mediaType == .video ? "video" : "photo")
-                            .foregroundStyle(.white.opacity(0.3))
-                    }
             }
+            .padding(.horizontal, 2)
+            .scrollTargetLayout()
         }
-        .task(id: galleryItem.id) {
-            resolvedURL = await store.resolveGalleryItemURL(
-                galleryItem,
-                nodeID: nodeID,
-                fallbackParentItem: parentItem
-            )
-        }
+        .frame(height: Self.tileHeight)
+        .scrollTargetBehavior(.viewAligned)
     }
 }

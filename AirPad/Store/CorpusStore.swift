@@ -944,6 +944,39 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 4.2 commit 5 — persists the renderer-measured aspect ratio of
+    /// a `GalleryItem` to disk so future sessions lay out the carousel /
+    /// bento at the correct size without first decoding the full image.
+    /// Called by `GalleryBody` once `GalleryItemTile` reports a measurement
+    /// via `onMeasuredAspect`. Idempotent: a no-op when the stored value is
+    /// already within 0.005 of the measured value (matching the tile's own
+    /// reporting threshold).
+    ///
+    /// The persisted value is the source of truth for bento layout (commit
+    /// 6) which sizes every tile up front without loading images — letting
+    /// the measurement persist means the second visit to a node is
+    /// instant-correct, not flicker-then-correct.
+    func setGalleryItemAspectRatio(
+        entryID: String,
+        nodeID: String,
+        galleryItemID: String,
+        aspectRatio: Double
+    ) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var items = updated.items[itemIdx].mediaItems,
+              let galleryIdx = items.firstIndex(where: { $0.id == galleryItemID }) else { return }
+        if let existing = items[galleryIdx].aspectRatio, abs(existing - aspectRatio) < 0.005 { return }
+        items[galleryIdx].aspectRatio = aspectRatio
+        updated.items[itemIdx].mediaItems = items
+        // Aspect measurement is a renderer-driven write, not a user edit —
+        // intentionally NOT bumping `updatedAt` on the entry/node. Bumping
+        // would surface a "5 seconds ago" timestamp on the title row every
+        // time a user opens a node, which is the wrong UX signal.
+        await updateNode(updated)
+    }
+
     /// Stage 4.2 commit 4 — user-driven view-mode toggle for a `.imageVideo`
     /// entry's gallery presentation. Single-item entries don't render through
     /// `GalleryBody`, so the toggle is unreachable for them; this method is

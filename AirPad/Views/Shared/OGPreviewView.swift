@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // AT19.3c — single OG preview renderer shared by `LinkEntryBody` (detail
 // view) and the QuikCapture receipt modal (commit 6) so both surfaces
@@ -19,14 +20,25 @@ struct OGPreviewView: View {
     /// defocus while non-empty). Caller is responsible for persisting
     /// the URL and triggering the OG fetch.
     let onCommitURL: (String) -> Void
-    /// When false, strips the `Link(destination:)` wraps in states B/C/D
-    /// so a parent `onTapGesture` (e.g. the QuikCapture receipt overlay)
+    /// When false, omits the URL-open `onTapGesture` in states B/C/D so a
+    /// parent `onTapGesture` (e.g. the QuikCapture receipt overlay)
     /// receives the tap instead of Safari being launched. State A still
     /// renders its TextField — `interactive: false` is only used in
     /// contexts where the URL is already set, so State A won't appear.
+    ///
+    /// Prior to 2026-05-19 the interactive path used SwiftUI `Link`. That
+    /// was replaced with `Text/cardContent + .contentShape(Rectangle()) +
+    /// .onTapGesture { openURL(url) }`: Link's accessibility-link trait +
+    /// the detail-view ScrollView's `.dismissKeyboardOnTapOutside`
+    /// contentShape were combining to promote the Link's tap region
+    /// across the whole EntryCard, eating chevron/menu/long-press on
+    /// every link entry. The `.isLink` accessibility trait is preserved
+    /// on the new tap surface, and the open mechanism stays SwiftUI-
+    /// native via `@Environment(\.openURL)` (what Link uses internally).
     var interactive: Bool = true
 
     @Environment(CorpusStore.self) private var store
+    @Environment(\.openURL) private var openURL
     @State private var draftURL: String = ""
     @FocusState private var urlFieldFocused: Bool
     @State private var ogImage: UIImage? = nil
@@ -105,11 +117,14 @@ struct OGPreviewView: View {
         Group {
             if let urlString = item.url, let url = URL(string: urlString) {
                 if interactive {
-                    Link(urlString, destination: url)
+                    Text(urlString)
                         .font(.caption)
                         .foregroundStyle(.blue)
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .contentShape(Rectangle())
+                        .onTapGesture { openURL(url) }
+                        .accessibilityAddTraits(.isLink)
                 } else {
                     Text(urlString)
                         .font(.caption)
@@ -126,10 +141,10 @@ struct OGPreviewView: View {
     private var richStateBody: some View {
         Group {
             if interactive, let urlString = item.url, let url = URL(string: urlString) {
-                Link(destination: url) {
-                    cardContent
-                }
-                .buttonStyle(.plain)
+                cardContent
+                    .contentShape(Rectangle())
+                    .onTapGesture { openURL(url) }
+                    .accessibilityAddTraits(.isLink)
             } else {
                 cardContent
             }

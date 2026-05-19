@@ -47,6 +47,19 @@ struct GalleryBody: View {
     }
 
     var body: some View {
+        // Contract: `GalleryBody` is only reached from `EntryCard` when
+        // `mediaItems.count >= 2` (see EntryCard's `.imageVideo` dispatch).
+        // Belt-and-suspenders: if a future call site bypasses the dispatch
+        // and lands here with 0 or 1 items, render nothing rather than feed
+        // the layout planner degenerate input. `BentoLayout.plan` already
+        // returns an empty Plan for empty input — this guard keeps the
+        // contract enforcement in one place at the entry point.
+        if galleryItems.count >= 2 {
+            galleryContent
+        }
+    }
+
+    private var galleryContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             mediaArea
 
@@ -106,28 +119,26 @@ struct GalleryBody: View {
                 }
             )
         case .bento:
-            // Commit 6 replaces this with the proper deterministic packer.
-            // Until then the 2-col uniform grid is the right "compact,
-            // multi-item" baseline so a user who toggled to bento doesn't
-            // see a blank slate.
-            bentoPlaceholder
-        }
-    }
-
-    private var bentoPlaceholder: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
-            ForEach(galleryItems) { galleryItem in
-                GalleryItemTile(
-                    galleryItem: galleryItem,
-                    nodeID: nodeID,
-                    parentItem: item,
-                    onMeasuredAspect: { aspect in
-                        recordMeasured(itemID: galleryItem.id, aspect: aspect)
+            GalleryBento(
+                galleryItems: galleryItems,
+                nodeID: nodeID,
+                parentItem: item,
+                aspectFor: { aspectForTile($0) },
+                onMeasuredAspect: { itemID, aspect in
+                    recordMeasured(itemID: itemID, aspect: aspect)
+                },
+                onTapTile: { tappedItem in
+                    Task {
+                        if let url = await store.resolveGalleryItemURL(
+                            tappedItem,
+                            nodeID: nodeID,
+                            fallbackParentItem: item
+                        ) {
+                            await MainActor.run { previewing = MediaPreviewIdentity(url: url) }
+                        }
                     }
-                )
-                .aspectRatio(1, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
+                }
+            )
         }
     }
 
@@ -257,5 +268,82 @@ private struct GalleryCarousel: View {
         }
         .frame(height: Self.tileHeight)
         .scrollTargetBehavior(.viewAligned)
+    }
+}
+
+/// Stage 4.2 commit 6 — bento renderer. Wraps `BentoLayout` (the pure
+/// algorithm) and reuses `GalleryItemTile` (parent-owned-sizing contract
+/// from commit 5) so this struct's job is purely "consume a plan, draw the
+/// rows."
+///
+/// The plan recomputes on every redraw — it's cheap and deterministic, and
+/// recomputing means tile measurements (when a new aspect lands and
+/// `aspectFor(_:)` returns a fresh value) reflow the grid in one render
+/// pass without any explicit invalidation.
+///
+/// Width discovery: `.background { GeometryReader }` writes the container
+/// width into `@State availableWidth`. The first render uses a placeholder
+/// (cardWidth == 0 → empty plan → zero-height frame), the GeometryReader
+/// fires, `availableWidth` updates, and the second render lays out for
+/// real. SwiftUI handles the two-pass transparently; the only visible
+/// effect is a single-frame "0 height" on first appearance, which is the
+/// same behavior the carousel exhibits while its first tile loads.
+private struct GalleryBento: View {
+
+    let galleryItems: [GalleryItem]
+    let nodeID: String
+    let parentItem: NodeItem
+    let aspectFor: (GalleryItem) -> Double
+    let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
+    let onTapTile: (GalleryItem) -> Void
+
+    @State private var availableWidth: CGFloat = 0
+
+    private var plan: BentoLayout.Plan {
+        BentoLayout.plan(
+            items: galleryItems,
+            cardWidth: availableWidth,
+            aspectFor: { aspectFor($0) }
+        )
+    }
+
+    var body: some View {
+        VStack(spacing: BentoLayout.defaultGutter) {
+            ForEach(Array(plan.rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: BentoLayout.defaultGutter) {
+                    ForEach(row.indices, id: \.self) { itemIdx in
+                        let galleryItem = galleryItems[itemIdx]
+                        GalleryItemTile(
+                            galleryItem: galleryItem,
+                            nodeID: nodeID,
+                            parentItem: parentItem,
+                            onMeasuredAspect: { aspect in
+                                onMeasuredAspect(galleryItem.id, aspect)
+                            }
+                        )
+                        .frame(
+                            width: BentoLayout.tileWidth(
+                                forAspect: aspectFor(galleryItem),
+                                rowHeight: row.height
+                            ),
+                            height: row.height
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .contentShape(Rectangle())
+                        .onTapGesture { onTapTile(galleryItem) }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { availableWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, newValue in
+                        availableWidth = newValue
+                    }
+            }
+        }
     }
 }

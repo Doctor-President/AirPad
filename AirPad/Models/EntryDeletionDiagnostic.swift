@@ -31,6 +31,19 @@ import Foundation
 ///        (the AT19.3c sidecar-cleanup branch fires independently of
 ///        `item.file` cleanup, so a regression that confuses the two
 ///        would corrupt user media).
+///   T7 — Stage 4.2 gallery delete round-trip: a 2-item gallery (two
+///        distinct GalleryItem IDs in the same items/ dir) survives a
+///        single-item delete with the target file gone and the sibling
+///        file intact. Distinct from T3 in framing — T3 is "two unrelated
+///        items in the same node"; T7 is "two items inside one
+///        `.imageVideo` entry's mediaItems array" (same file shape, but
+///        the diagnostic anchor for the gallery deletion path).
+///   T8 — Stage 4.2 multi-item gallery middle-delete: a 3-item gallery
+///        with one delete at the **middle** index leaves both edge items
+///        (first + last) intact. Fan-out beyond T3/T7's 2-item case, and
+///        pins the ordering-preservation contract — a regression where
+///        the file primitive walks the wrong itemID would surface here
+///        with one of the edge items missing.
 @available(iOS 17.0, *)
 @MainActor
 enum EntryDeletionDiagnostic {
@@ -198,6 +211,70 @@ enum EntryDeletionDiagnostic {
                 }
             } catch {
                 failures.append("T6: threw \(error)")
+            }
+        }
+
+        // T7 — Stage 4.2 gallery delete round-trip: 2-item gallery shape.
+        // Two GalleryItems persisted as siblings in one node's items/ dir;
+        // delete one; verify the target is gone AND the sibling survives.
+        // The shape matches what `CorpusStore.deleteGalleryItem` produces
+        // at the file-primitive layer for a 2→1 gallery shrink.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let item1ID = UUID().uuidString
+            let item2ID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let src1 = try writeTempFile(name: "\(item1ID).jpg", bytes: 12)
+                let src2 = try writeTempFile(name: "\(item2ID).mp4", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: item1ID, sourceURL: src1, fileExtension: "jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: item2ID, sourceURL: src2, fileExtension: "mp4")
+                let removed = try await service.deleteItemFile(nodeID: nodeID, itemID: item1ID, fileExtension: "jpg")
+                if !removed { failures.append("T7: deleteItemFile returned false on present gallery item") }
+                if await service.itemFileExists(nodeID: nodeID, itemID: item1ID, fileExtension: "jpg") {
+                    failures.append("T7: gallery item 1 still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: item2ID, fileExtension: "mp4")) {
+                    failures.append("T7: gallery item 2 collaterally removed")
+                }
+            } catch {
+                failures.append("T7: threw \(error)")
+            }
+        }
+
+        // T8 — Stage 4.2 multi-item gallery middle-delete: 3 GalleryItems
+        // in one node's items/ dir; delete the middle one. Both edges
+        // (item 0 and item 2) must survive. Pins the ordering-preservation
+        // contract for the file primitive when called from the gallery
+        // delete path with a non-edge index.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let item0ID = UUID().uuidString
+            let item1ID = UUID().uuidString
+            let item2ID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let src0 = try writeTempFile(name: "\(item0ID).jpg", bytes: 12)
+                let src1 = try writeTempFile(name: "\(item1ID).jpg", bytes: 12)
+                let src2 = try writeTempFile(name: "\(item2ID).jpg", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: item0ID, sourceURL: src0, fileExtension: "jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: item1ID, sourceURL: src1, fileExtension: "jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: item2ID, sourceURL: src2, fileExtension: "jpg")
+                let removed = try await service.deleteItemFile(nodeID: nodeID, itemID: item1ID, fileExtension: "jpg")
+                if !removed { failures.append("T8: deleteItemFile returned false on present middle item") }
+                if await service.itemFileExists(nodeID: nodeID, itemID: item1ID, fileExtension: "jpg") {
+                    failures.append("T8: middle item still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: item0ID, fileExtension: "jpg")) {
+                    failures.append("T8: leading edge item collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: item2ID, fileExtension: "jpg")) {
+                    failures.append("T8: trailing edge item collaterally removed")
+                }
+            } catch {
+                failures.append("T8: threw \(error)")
             }
         }
 

@@ -24,7 +24,6 @@ struct CanvasView: View {
         s.backgroundColor = .clear
         return s
     }()
-    @State private var showGlowDebugPanel = false
 
     // MARK: - Capture mode
 
@@ -47,11 +46,6 @@ struct CanvasView: View {
             syncScene(nodes: store.visibleNodes)
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
-
-            // Inject test nodes for visual development
-            if showGlowDebugPanel && store.nodes.isEmpty {
-                injectTestNodes()
-            }
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Track additions against the raw node list so newly captured nodes
@@ -172,8 +166,6 @@ struct CanvasView: View {
                 nodeSummaryLayer
                 captureTargetBanner
                 drillDownBackButton
-                glowDebugPanelLayer
-                debugPanelToggleButton
 
                 if !store.isInDetailView {
                     VStack {
@@ -200,60 +192,6 @@ struct CanvasView: View {
                 onText:        { captureMode = .text },
                 onNodePicker:  { showingNodePicker = true }
             )
-        }
-    }
-
-    @ViewBuilder
-    private var glowDebugPanelLayer: some View {
-        if showGlowDebugPanel {
-            VStack {
-                HStack {
-                    Spacer()
-                    GlowDebugPanel(
-                        isVisible: $showGlowDebugPanel,
-                        onGlowReachChange: { scene.setGlowReach($0) },
-                        onGlowIntensityChange: { scene.setGlowIntensity($0) },
-                        onGlowFalloffChange: { scene.setGlowFalloff($0) },
-                        onGlowTintChange: { scene.setGlowTint($0) },
-                        onDisplacementAmplitudeChange: { scene.setDisplacementAmplitude($0) },
-                        onDisplacementSpeedChange: { scene.setDisplacementSpeed($0) },
-                        onCanvasNoiseFrequencyChange: { scene.setCanvasNoiseFrequency($0) },
-                        onNodeDeformIntensityChange: { scene.setNodeDeformIntensity($0) },
-                        onChromaticAberrationScaleChange: { scene.setChromaticAberrationScale($0) },
-                        onChromaticAberrationVelocityMultChange: { scene.setChromaticAberrationVelocityMult($0) },
-                        onChromaticAberrationDecayChange: { scene.setChromaticAberrationDecay($0) },
-                        onChromaticAberrationMaxChange: { scene.setChromaticAberrationMax($0) }
-                    )
-                    .padding(.trailing, 16)
-                    .padding(.top, 150)
-                }
-                Spacer()
-            }
-            .transition(.move(edge: .trailing).combined(with: .opacity))
-        }
-    }
-
-    @ViewBuilder
-    private var debugPanelToggleButton: some View {
-        VStack {
-            HStack {
-                Spacer()
-                Button {
-                    withAnimation(.spring(response: 0.3)) {
-                        showGlowDebugPanel.toggle()
-                    }
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .frame(width: 28, height: 28)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Circle())
-                }
-                .padding(.trailing, 16)
-                .padding(.top, 120)
-            }
-            Spacer()
         }
     }
 
@@ -604,105 +542,6 @@ struct CanvasView: View {
         return positions
     }
 
-    // MARK: - Test node injection
-
-    func injectTestNodes() {
-        Task {
-            // Create test tags cycling through palette indices 0-6
-            let testTags = [
-                Tag(id: UUID(), name: "pal0", colorHex: "#2D0A5E", createdAt: Date(), useCount: 0),
-                Tag(id: UUID(), name: "pal1", colorHex: "#041E2A", createdAt: Date(), useCount: 0),
-                Tag(id: UUID(), name: "pal2", colorHex: "#071A0A", createdAt: Date(), useCount: 0),
-                Tag(id: UUID(), name: "pal3", colorHex: "#0A0520", createdAt: Date(), useCount: 0),
-                Tag(id: UUID(), name: "pal4", colorHex: "#0A1020", createdAt: Date(), useCount: 0),
-                Tag(id: UUID(), name: "pal5", colorHex: "#041A1A", createdAt: Date(), useCount: 0),
-                Tag(id: UUID(), name: "pal6", colorHex: "#030A1A", createdAt: Date(), useCount: 0),
-            ]
-
-            // Add tags if they don't exist
-            for tag in testTags {
-                if !store.tags.contains(where: { $0.name == tag.name }) {
-                    await store.addTag(tag)
-                }
-            }
-
-            let testNodes = [
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    title: "Optimistic Adventures",
-                    summary: "A journey through whimsical landscapes and curious encounters",
-                    tags: ["pal0"],
-                    items: []
-                ),
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date().addingTimeInterval(-3600),
-                    updatedAt: Date(),
-                    title: "Emergence in Darkness",
-                    summary: "A group of individuals track themselves in a dark, empty void",
-                    tags: ["pal1"],
-                    items: []
-                ),
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date().addingTimeInterval(-7200),
-                    updatedAt: Date(),
-                    title: "Dog days of summer",
-                    summary: "A summer adventure with friends and family",
-                    tags: ["pal2"],
-                    items: []
-                ),
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date().addingTimeInterval(-10800),
-                    updatedAt: Date(),
-                    title: "God Macro Level Story",
-                    summary: "A story pretext is a god macro level (Biblical apocalypse)",
-                    tags: ["pal3"],
-                    items: []
-                ),
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date().addingTimeInterval(-14400),
-                    updatedAt: Date(),
-                    title: "Whole List",
-                    summary: "Collecting all the pieces together",
-                    tags: ["pal4"],
-                    items: []
-                ),
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date().addingTimeInterval(-18000),
-                    updatedAt: Date(),
-                    title: "Midnight Chronicles",
-                    summary: "Tales from the edge of twilight",
-                    tags: ["pal5"],
-                    items: []
-                ),
-                Node(
-                    id: "test-\(UUID().uuidString)",
-                    createdAt: Date().addingTimeInterval(-21600),
-                    updatedAt: Date(),
-                    title: "Ocean Depths",
-                    summary: "Exploring the mysteries beneath the waves",
-                    tags: ["pal6"],
-                    items: []
-                )
-            ]
-
-            for (index, node) in testNodes.enumerated() {
-                let angle = Double(index) * (2 * .pi / Double(testNodes.count))
-                let radius = 250.0  // Wide spacing to prevent overlap
-                let position = CGPoint(
-                    x: cos(angle) * radius,
-                    y: sin(angle) * radius
-                )
-                await store.addNode(node, position: position)
-            }
-        }
-    }
 }
 
 // MARK: - Node detail overlay (animated gradient card, morphs from circle)

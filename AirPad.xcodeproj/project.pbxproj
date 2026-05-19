@@ -80,8 +80,9 @@
 		8C06E3866E668409E3983A5D /* SubstrateSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */; };
 		8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D539DCAE9FDB57420DF7460 /* NodeListView.swift */; };
 		8DF5479C80E72F6CE5DCC035 /* SubstrateLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */; };
-		8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
+		1F2E3D4C5B6A7980BCDEF123 /* EntryVisualSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E5A1B2C3D6F7890ABCDEF12 /* EntryVisualSettings.swift */; };
+		2A3B4C5D6E7F8901CDEF1234 /* EntryVisualDevPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F6A2B3C4D7E8901BCDEF234 /* EntryVisualDevPanel.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
 		920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1213E716A9E302D0B777EDD /* EntryCard.swift */; };
 		92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 496C87CE26D129958AA115EF /* EntryMigration.swift */; };
@@ -140,6 +141,12 @@
 		F9BF2E691950BCBE9DA2906C /* CanvasLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */; };
 		FCC7997009DE3B635D382FFF /* VoiceCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */; };
 		FCF0EF49EFC72072CD23BFC4 /* EntryReorderController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */; };
+		7B9C0D1E2F30415263740102 /* Lato-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7A8B9C0D1E2F304152637401 /* Lato-Regular.ttf */; };
+		7D1E2F30415263740104ABCD /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7C0D1E2F30415263740103AB /* Lato-Bold.ttf */; };
+		8BF2526374859607B829F019 /* Fraunces_72pt-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8AF1526374859607B829F018 /* Fraunces_72pt-Regular.ttf */; };
+		8DF4526374859607B829F01B /* Fraunces_72pt-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8CF3526374859607B829F01A /* Fraunces_72pt-Bold.ttf */; };
+		8FF6526374859607B829F01D /* Lora-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8EF5526374859607B829F01C /* Lora-Regular.ttf */; };
+		91F8526374859607B829F01F /* Lora-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 90F7526374859607B829F01E /* Lora-Bold.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -263,8 +270,9 @@
 		D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentPickerView.swift; sourceTree = "<group>"; };
 		D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryFullscreenViewer.swift; sourceTree = "<group>"; };
 		D513DE977AA6A0B607CE5508 /* HDBSCANCluster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANCluster.swift; sourceTree = "<group>"; };
-		D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlowDebugPanel.swift; sourceTree = "<group>"; };
 		D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAP.swift; sourceTree = "<group>"; };
+		4E5A1B2C3D6F7890ABCDEF12 /* EntryVisualSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryVisualSettings.swift; sourceTree = "<group>"; };
+		5F6A2B3C4D7E8901BCDEF234 /* EntryVisualDevPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryVisualDevPanel.swift; sourceTree = "<group>"; };
 		D78B727835739390B86DF397 /* UMAPModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPModel.swift; sourceTree = "<group>"; };
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
@@ -290,6 +298,12 @@
 		F98C5EDB7B8428ABB080668F /* UberNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UberNode.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
 		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
+		7A8B9C0D1E2F304152637401 /* Lato-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Regular.ttf"; sourceTree = "<group>"; };
+		7C0D1E2F30415263740103AB /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
+		8AF1526374859607B829F018 /* Fraunces_72pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Regular.ttf"; sourceTree = "<group>"; };
+		8CF3526374859607B829F01A /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
+		8EF5526374859607B829F01C /* Lora-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lora-Regular.ttf"; sourceTree = "<group>"; };
+		90F7526374859607B829F01E /* Lora-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lora-Bold.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -327,7 +341,6 @@
 				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
-				D5784213015BE7A26C43FB15 /* GlowDebugPanel.swift */,
 				323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */,
 			);
 			path = Canvas;
@@ -516,6 +529,7 @@
 				9515265A45A3D3B7B626E916 /* Store */,
 				606CFA4703585800983C4127 /* Views */,
 				8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */,
+				80415263740101070ABCDEF1 /* Resources */,
 			);
 			path = AirPad;
 			sourceTree = "<group>";
@@ -539,6 +553,8 @@
 				DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */,
 				D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */,
 				A1213E716A9E302D0B777EDD /* EntryCard.swift */,
+				4E5A1B2C3D6F7890ABCDEF12 /* EntryVisualSettings.swift */,
+				5F6A2B3C4D7E8901BCDEF234 /* EntryVisualDevPanel.swift */,
 				579FF08E333E57A78D8A5C84 /* GalleryBody.swift */,
 				D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */,
 				6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */,
@@ -613,6 +629,51 @@
 				C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */,
 			);
 			path = Intents;
+			sourceTree = "<group>";
+		};
+		80415263740101070ABCDEF1 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				7F30415263740101060ABCDE /* Fonts */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		7F30415263740101060ABCDE /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				7E2F3041526374010105ABCD /* Lato */,
+				92F9526374859607B829F020 /* Fraunces */,
+				93FA526374859607B829F021 /* Lora */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
+		7E2F3041526374010105ABCD /* Lato */ = {
+			isa = PBXGroup;
+			children = (
+				7A8B9C0D1E2F304152637401 /* Lato-Regular.ttf */,
+				7C0D1E2F30415263740103AB /* Lato-Bold.ttf */,
+			);
+			path = Lato;
+			sourceTree = "<group>";
+		};
+		92F9526374859607B829F020 /* Fraunces */ = {
+			isa = PBXGroup;
+			children = (
+				8AF1526374859607B829F018 /* Fraunces_72pt-Regular.ttf */,
+				8CF3526374859607B829F01A /* Fraunces_72pt-Bold.ttf */,
+			);
+			path = Fraunces;
+			sourceTree = "<group>";
+		};
+		93FA526374859607B829F021 /* Lora */ = {
+			isa = PBXGroup;
+			children = (
+				8EF5526374859607B829F01C /* Lora-Regular.ttf */,
+				90F7526374859607B829F01E /* Lora-Bold.ttf */,
+			);
+			path = Lora;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -699,6 +760,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */,
+				7B9C0D1E2F30415263740102 /* Lato-Regular.ttf in Resources */,
+				7D1E2F30415263740104ABCD /* Lato-Bold.ttf in Resources */,
+				8BF2526374859607B829F019 /* Fraunces_72pt-Regular.ttf in Resources */,
+				8DF4526374859607B829F01B /* Fraunces_72pt-Bold.ttf in Resources */,
+				8FF6526374859607B829F01D /* Lora-Regular.ttf in Resources */,
+				91F8526374859607B829F01F /* Lora-Bold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -735,6 +802,8 @@
 				3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
 				920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */,
+				1F2E3D4C5B6A7980BCDEF123 /* EntryVisualSettings.swift in Sources */,
+				2A3B4C5D6E7F8901CDEF1234 /* EntryVisualDevPanel.swift in Sources */,
 				ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */,
 				92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */,
 				05B10604308289E3B1B57BC2 /* EntryMigrationSelfTest.swift in Sources */,
@@ -745,7 +814,6 @@
 				348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */,
 				CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */,
 				0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */,
-				8F1B24929825066BADCF2D59 /* GlowDebugPanel.swift in Sources */,
 				E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */,
 				130B5342B773AA3949CFC79C /* HDBSCANCluster.swift in Sources */,
 				CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */,

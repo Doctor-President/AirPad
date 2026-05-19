@@ -22,14 +22,24 @@ import UIKit
 @MainActor
 struct LongPressDragRecognizer: UIViewRepresentable {
 
-    let onLift: (CGFloat) -> Void
-    let onChange: (_ translationY: CGFloat, _ touchWindowY: CGFloat) -> Void
-    let onEnd: () -> Void
+    // All four callbacks are typed `@MainActor` so that unstructured `Task { ... }`
+    // bodies spawned inside them (notably the release-path Task in
+    // `EntryCard.onEnd` that calls `reorder.exit()`) inherit MainActor via
+    // `@_inheritActorContext` on `Task.init`. Without this, the closure runs
+    // in no-actor context — even though UIKit dispatches the selector on the
+    // main thread — and a deferred mutation of `@Observable` MainActor state
+    // can land off the actor SwiftUI is observing on, leaving views with
+    // stale state (regression filed 2026-05-18: reorder release left
+    // `EntryReorderController.mode` stuck in `.lifted` from the view layer's
+    // POV, killing chevron/menu/long-press on every card).
+    let onLift: @MainActor (CGFloat) -> Void
+    let onChange: @MainActor (_ translationY: CGFloat, _ touchWindowY: CGFloat) -> Void
+    let onEnd: @MainActor () -> Void
     /// Reads the controller's accumulated scroll delta since lift. Used
     /// when capturing `layoutShift` on first `.changed` so any auto-scroll
     /// that happened before the user moved their finger isn't mistakenly
     /// included in the collapse-reflow correction.
-    let scrollDeltaProvider: () -> CGFloat
+    let scrollDeltaProvider: @MainActor () -> CGFloat
 
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
@@ -61,11 +71,12 @@ struct LongPressDragRecognizer: UIViewRepresentable {
         )
     }
 
+    @MainActor
     final class Coordinator: NSObject {
-        var onLift: (CGFloat) -> Void
-        var onChange: (CGFloat, CGFloat) -> Void
-        var onEnd: () -> Void
-        var scrollDeltaProvider: () -> CGFloat
+        var onLift: @MainActor (CGFloat) -> Void
+        var onChange: @MainActor (CGFloat, CGFloat) -> Void
+        var onEnd: @MainActor () -> Void
+        var scrollDeltaProvider: @MainActor () -> CGFloat
         private var startY: CGFloat = 0
         private var startViewY: CGFloat = 0
         /// Captured on the first `.changed` after lift. Compensates for the
@@ -82,10 +93,10 @@ struct LongPressDragRecognizer: UIViewRepresentable {
         private var didLift = false
 
         init(
-            onLift: @escaping (CGFloat) -> Void,
-            onChange: @escaping (CGFloat, CGFloat) -> Void,
-            onEnd: @escaping () -> Void,
-            scrollDeltaProvider: @escaping () -> CGFloat
+            onLift: @escaping @MainActor (CGFloat) -> Void,
+            onChange: @escaping @MainActor (CGFloat, CGFloat) -> Void,
+            onEnd: @escaping @MainActor () -> Void,
+            scrollDeltaProvider: @escaping @MainActor () -> CGFloat
         ) {
             self.onLift = onLift
             self.onChange = onChange

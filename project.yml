@@ -84,6 +84,10 @@ targets:
           - "Info.plist"
           - "*.entitlements"
       - path: AirPad/Models
+        excludes:
+          - "EntryMigration.swift"
+          - "EntryMigrationSelfTest.swift"
+          - "EntryDeletionDiagnostic.swift"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share

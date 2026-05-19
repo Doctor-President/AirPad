@@ -27,11 +27,17 @@ struct GalleryBody: View {
     /// Persistence is fire-and-forget alongside the override write — future
     /// sessions read the persisted value and skip the measurement.
     @State private var measuredAspects: [String: Double] = [:]
-    /// Drives the tap-to-fullscreen QuickLook sheet. Cleared on dismiss.
-    /// Commit 7 swaps the sheet content for a swipeable multi-item viewer;
-    /// the trigger surface (this @State) is unchanged so the swap is
-    /// content-only.
-    @State private var previewing: MediaPreviewIdentity? = nil
+    /// Drives the tap-to-fullscreen swipeable viewer (commit 7). Holds the
+    /// start index so the viewer opens on whichever tile the user tapped;
+    /// cleared on dismiss.
+    @State private var viewerStart: GalleryViewerStart? = nil
+    /// Deferred-deletion buffer (commit 7). Set when the user confirms a
+    /// per-item delete inside the viewer; the actual store delete runs in
+    /// the sheet's `onDismiss` closure so the card behind the sheet
+    /// doesn't mutate while the viewer is still visible. See
+    /// `GalleryFullscreenViewer`'s top-of-file "Delete timing" section
+    /// for the full sequence.
+    @State private var pendingDeletion: String? = nil
 
     private var galleryItems: [GalleryItem] { item.mediaItems ?? [] }
 
@@ -87,8 +93,36 @@ struct GalleryBody: View {
                 Task { await handlePickedMedia(results) }
             }
         }
-        .sheet(item: $previewing) { identity in
-            MediaFullscreenViewer(url: identity.url)
+        .fullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
+            GalleryFullscreenViewer(
+                galleryItems: galleryItems,
+                nodeID: nodeID,
+                parentItem: item,
+                startIndex: start.index,
+                onRequestDelete: { gItem in
+                    // Stash the ID — the actual store delete runs in the
+                    // dismiss callback above so the card behind the sheet
+                    // can't mutate while the viewer is still visible.
+                    pendingDeletion = gItem.id
+                }
+            )
+            .environment(store)
+        }
+    }
+
+    /// Runs after the fullscreen viewer fully dismisses. If a per-item
+    /// delete was requested, this is where it actually hits the store —
+    /// so the dispatch flip (gallery → single on 2→1) lands on a card
+    /// that's no longer covered by the sheet.
+    private func flushPendingDeletion() {
+        guard let id = pendingDeletion else { return }
+        pendingDeletion = nil
+        Task {
+            await store.deleteGalleryItem(
+                entryID: item.id,
+                nodeID: nodeID,
+                galleryItemID: id
+            )
         }
     }
 
@@ -106,17 +140,7 @@ struct GalleryBody: View {
                 onMeasuredAspect: { itemID, aspect in
                     recordMeasured(itemID: itemID, aspect: aspect)
                 },
-                onTapTile: { tappedItem in
-                    Task {
-                        if let url = await store.resolveGalleryItemURL(
-                            tappedItem,
-                            nodeID: nodeID,
-                            fallbackParentItem: item
-                        ) {
-                            await MainActor.run { previewing = MediaPreviewIdentity(url: url) }
-                        }
-                    }
-                }
+                onTapTile: openViewer
             )
         case .bento:
             GalleryBento(
@@ -127,19 +151,18 @@ struct GalleryBody: View {
                 onMeasuredAspect: { itemID, aspect in
                     recordMeasured(itemID: itemID, aspect: aspect)
                 },
-                onTapTile: { tappedItem in
-                    Task {
-                        if let url = await store.resolveGalleryItemURL(
-                            tappedItem,
-                            nodeID: nodeID,
-                            fallbackParentItem: item
-                        ) {
-                            await MainActor.run { previewing = MediaPreviewIdentity(url: url) }
-                        }
-                    }
-                }
+                onTapTile: openViewer
             )
         }
+    }
+
+    /// Maps a tapped tile back to its index in `galleryItems` and opens
+    /// the swipeable viewer at that position. No-op if the item isn't
+    /// found (e.g., the gallery shrank between tap-emit and handler run);
+    /// the viewer's init also clamps defensively.
+    private func openViewer(_ tappedItem: GalleryItem) {
+        guard let idx = galleryItems.firstIndex(where: { $0.id == tappedItem.id }) else { return }
+        viewerStart = GalleryViewerStart(index: idx)
     }
 
     // MARK: - Aspect override pipeline

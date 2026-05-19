@@ -995,6 +995,67 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 4.2 commit 7 — per-item delete inside an `.imageVideo` entry's
+    /// gallery. Removes the sidecar file from disk, drops the GalleryItem
+    /// from `mediaItems`, and bumps `updatedAt` (this IS a user-driven
+    /// edit, unlike `setGalleryItemAspectRatio`).
+    ///
+    /// Failure modes mirror `deleteEntry`:
+    ///   • Missing file → log inconsistency, drop the GalleryItem anyway
+    ///     (handles already-orphaned or never-persisted cases)
+    ///   • Filesystem throw (permissions, disk full, root unavailable) →
+    ///     abort so the user can retry; the GalleryItem stays
+    ///
+    /// **Display-name stickiness (Stage 4.2 brief, commit 7 directive).**
+    /// We intentionally do NOT touch `item.displayName` on count drop. The
+    /// brief locks this: upward single → gallery auto-renames a default
+    /// "Image"/"Video" to "Gallery" (commit 8 owns that rule); downward
+    /// gallery → single keeps whatever name is currently set. The
+    /// downward stickiness is preserved by inaction here — commit 7's job
+    /// is to not interfere with the name, not to enforce it.
+    ///
+    /// Edge case: last item deleted (count → 0). Leaves `mediaItems: []`.
+    /// `EntryCard`'s dispatch routes that state to `EmptyMediaPlaceholder`,
+    /// same as the malformed-legacy T14 path. The gallery viewer never
+    /// reaches that state in a single session (one delete per viewer
+    /// lifetime — see `GalleryBody`'s deferred-delete pattern), so the
+    /// 0-count path is only reachable via repeated open/delete cycles.
+    func deleteGalleryItem(
+        entryID: String,
+        nodeID: String,
+        galleryItemID: String
+    ) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var items = updated.items[itemIdx].mediaItems,
+              let galleryIdx = items.firstIndex(where: { $0.id == galleryItemID }) else { return }
+
+        let gallery = items[galleryIdx]
+        let ext = (gallery.file as NSString).pathExtension
+        if !ext.isEmpty {
+            do {
+                let removed = try await service.deleteItemFile(
+                    nodeID: nodeID,
+                    itemID: gallery.id,
+                    fileExtension: ext
+                )
+                if !removed {
+                    print("[CorpusStore] deleteGalleryItem: file missing for \(gallery.id) (\(gallery.file)) — removing GalleryItem anyway")
+                }
+            } catch {
+                print("[CorpusStore] deleteGalleryItem: file removal failed for \(gallery.id) (\(gallery.file)): \(error) — aborting GalleryItem removal")
+                return
+            }
+        }
+
+        items.remove(at: galleryIdx)
+        updated.items[itemIdx].mediaItems = items
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     private func persistMediaFiles(_ media: [PendingMediaItem], nodeID: String) async {
         for m in media {
             do {

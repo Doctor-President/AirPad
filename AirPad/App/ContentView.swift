@@ -23,6 +23,14 @@ struct ContentView: View {
                 canvasBody
             }
         }
+        // Stage 4.4 — global dev-panel summon button. Mounted at the root
+        // so it's reachable from canvas, list, detail (pushed inside the
+        // canvas's NavigationStack), and QuikCapture. Self-deletes in
+        // commit 3 of Stage 4.4 along with `EntryVisualDevPanel` and
+        // `EntryVisualSettings`.
+        .overlay(alignment: .topTrailing) {
+            EntryVisualDevPanelHost()
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
                 router.entryMode = .canvas

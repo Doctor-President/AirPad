@@ -40,6 +40,11 @@ struct NodeDetailView: View {
     /// rationale (controller-holds-the-snapshot, T 2026-05-16).
     @State private var reorderController = EntryReorderController()
 
+    /// Stage 4.4 — dev-only runtime visual settings. The inter-card
+    /// spacing slider drives the nested entry-stack's `spacing:`. Removed
+    /// in commit 3 when the dev panel is deleted.
+    @State private var visualSettings = EntryVisualSettings.shared
+
     private let circleColors: [(String, String, String)] = [
         ("9B6FE8", "F5C5A3", "E36B4E"),
         ("5B8FFF", "A78BFA", "F472B6"),
@@ -222,9 +227,19 @@ struct NodeDetailView: View {
                 // card needs its index + a snapshot of sibling IDs so the
                 // reorder controller can do its parting math without
                 // re-reading the store mid-drag.
+                //
+                // Stage 4.4 — cards live in their own nested VStack so the
+                // dev panel's "inter-card spacing" slider only affects
+                // card-to-card distance, leaving the outer 24pt rhythm
+                // (title / summary / tags / divider) untouched. Regular
+                // VStack (not LazyVStack) so every card stays mounted —
+                // the reorder controller's lift/drag/release depends on
+                // all cards being present in the view tree.
                 let itemIDSnapshot = node.items.map(\.id)
-                ForEach(Array(node.items.enumerated()), id: \.element.id) { offset, item in
-                    EntryCard(item: item, nodeID: nodeID, index: offset, snapshotIDs: itemIDSnapshot)
+                VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
+                    ForEach(Array(node.items.enumerated()), id: \.element.id) { offset, item in
+                        EntryCard(item: item, nodeID: nodeID, index: offset, snapshotIDs: itemIDSnapshot)
+                    }
                 }
 
                 // Domain suggestion card

@@ -35,6 +35,13 @@ struct EntryCard: View {
     @Environment(CorpusStore.self) private var store
     @Environment(EntryReorderController.self) private var reorder
 
+    /// Stage 4.4 — dev-only runtime visual settings (corner radius, body
+    /// treatment, typography). The singleton is `@Observable`, so SwiftUI
+    /// re-renders the card when any toggle changes. Commit 2 of Stage 4.4
+    /// replaces these reads with `EntryCardMetrics` production constants
+    /// and commit 3 deletes the settings file along with the dev panel.
+    @State private var visualSettings = EntryVisualSettings.shared
+
     /// Local mirror of `item.isExpanded` so the chevron toggles instantly,
     /// independent of the persistence round-trip through the store. Kept in
     /// sync via `.onChange` against the model.
@@ -71,6 +78,7 @@ struct EntryCard: View {
                 timestamp: item.updatedAt ?? item.createdAt,
                 isExpanded: effectiveExpansion,
                 reorderActive: presentation.reorderActive,
+                titleFont: visualSettings.titleRowFont(),
                 onToggle: toggleExpansion,
                 onRename: beginRename,
                 onDuplicate: duplicate,
@@ -95,7 +103,7 @@ struct EntryCard: View {
             // races with the parent ScrollView's pan: hold still 0.5s →
             // recognizer wins (lift); move → scroll wins.
             ZStack {
-                Color(.secondarySystemBackground)
+                EntryCardBackground(treatment: visualSettings.bodyTreatment)
                     .allowsHitTesting(false)
                 LongPressDragRecognizer(
                     onLift: { touchY in
@@ -145,7 +153,7 @@ struct EntryCard: View {
                 )
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),
@@ -313,6 +321,10 @@ private struct EntryTitleRow: View {
     /// Title row stays clean so the user can still read what they're
     /// dragging.
     let reorderActive: Bool
+    /// Stage 4.4 — font for the display-name line, derived from the dev
+    /// panel's typography toggle. Removed in commit 3 when the dev panel
+    /// is deleted; the locked choice migrates to a constant in commit 2.
+    let titleFont: Font
     let onToggle: () -> Void
     let onRename: () -> Void
     let onDuplicate: () -> Void
@@ -346,7 +358,7 @@ private struct EntryTitleRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(displayName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(titleFont)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 timestampLabel

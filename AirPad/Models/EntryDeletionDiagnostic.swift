@@ -44,6 +44,20 @@ import Foundation
 ///        pins the ordering-preservation contract — a regression where
 ///        the file primitive walks the wrong itemID would surface here
 ///        with one of the edge items missing.
+///   T9 — Stage 4.5 multi-link entry delete: a 2-item link gallery where
+///        each LinkItem has BOTH an OG image sidecar (`og.jpg`) AND a
+///        favicon sidecar (`favicon.ico`) — four sidecars across two
+///        items in one entry. Deleting all four (the shape
+///        `CorpusStore.deleteEntry` produces for a multi-link entry via
+///        `deleteLinkItemSidecars`) removes each cleanly without touching
+///        an unrelated sibling sidecar in the same node. Parallel to T7's
+///        2-item shape but pins the dual-sidecar-per-item contract specific
+///        to LinkItem.
+///   T10 — Stage 4.5 per-link delete from a multi-link entry: a 3-item
+///        link gallery, each LinkItem with `og.jpg` + `favicon.ico`.
+///        Deleting just the middle LinkItem's two sidecars leaves both
+///        edge items' four sidecars intact. Parallel to T8 (middle-delete
+///        ordering preservation) but for LinkItem's dual sidecars.
 @available(iOS 17.0, *)
 @MainActor
 enum EntryDeletionDiagnostic {
@@ -275,6 +289,114 @@ enum EntryDeletionDiagnostic {
                 }
             } catch {
                 failures.append("T8: threw \(error)")
+            }
+        }
+
+        // T9 — Stage 4.5 multi-link entry delete: 2 LinkItems in one
+        // node's items/ dir, each with an OG image sidecar (`og.jpg`)
+        // AND a favicon sidecar (`favicon.ico`). Four sidecars total
+        // across two LinkItem IDs. Delete all four (the shape
+        // `deleteLinkItemSidecars` produces when called from
+        // `deleteEntry` for a multi-link entry); verify each is gone
+        // AND an unrelated bystander sidecar in the same node survives.
+        // Anchors the LinkItem-specific dual-sidecar contract.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let link1ID = UUID().uuidString
+            let link2ID = UUID().uuidString
+            let bystanderID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let l1og = try writeTempFile(name: "\(link1ID).og.jpg", bytes: 12)
+                let l1fav = try writeTempFile(name: "\(link1ID).favicon.ico", bytes: 12)
+                let l2og = try writeTempFile(name: "\(link2ID).og.jpg", bytes: 12)
+                let l2fav = try writeTempFile(name: "\(link2ID).favicon.ico", bytes: 12)
+                let bys = try writeTempFile(name: "\(bystanderID).jpg", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: link1ID, sourceURL: l1og, fileExtension: "og.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link1ID, sourceURL: l1fav, fileExtension: "favicon.ico")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link2ID, sourceURL: l2og, fileExtension: "og.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link2ID, sourceURL: l2fav, fileExtension: "favicon.ico")
+                try await service.saveItemFile(nodeID: nodeID, itemID: bystanderID, sourceURL: bys, fileExtension: "jpg")
+
+                // Delete all four LinkItem sidecars (the entry-delete shape).
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: link1ID, fileExtension: "og.jpg")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: link1ID, fileExtension: "favicon.ico")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: link2ID, fileExtension: "og.jpg")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: link2ID, fileExtension: "favicon.ico")
+
+                if await service.itemFileExists(nodeID: nodeID, itemID: link1ID, fileExtension: "og.jpg") {
+                    failures.append("T9: link1 og.jpg still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: link1ID, fileExtension: "favicon.ico") {
+                    failures.append("T9: link1 favicon.ico still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: link2ID, fileExtension: "og.jpg") {
+                    failures.append("T9: link2 og.jpg still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: link2ID, fileExtension: "favicon.ico") {
+                    failures.append("T9: link2 favicon.ico still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: bystanderID, fileExtension: "jpg")) {
+                    failures.append("T9: bystander sidecar collaterally removed")
+                }
+            } catch {
+                failures.append("T9: threw \(error)")
+            }
+        }
+
+        // T10 — Stage 4.5 per-link delete from a multi-link entry:
+        // 3 LinkItems in one entry's linkItems array, each with
+        // `og.jpg` + `favicon.ico`. Delete only the middle item's two
+        // sidecars (the shape `removeLinkItem` produces for a per-tile
+        // delete). Both edge items' four sidecars must survive. Pins
+        // the ordering-preservation contract for the LinkItem path
+        // when the delete is non-edge, parallel to T8.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let link0ID = UUID().uuidString
+            let link1ID = UUID().uuidString
+            let link2ID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let l0og = try writeTempFile(name: "\(link0ID).og.jpg", bytes: 12)
+                let l0fav = try writeTempFile(name: "\(link0ID).favicon.ico", bytes: 12)
+                let l1og = try writeTempFile(name: "\(link1ID).og.jpg", bytes: 12)
+                let l1fav = try writeTempFile(name: "\(link1ID).favicon.ico", bytes: 12)
+                let l2og = try writeTempFile(name: "\(link2ID).og.jpg", bytes: 12)
+                let l2fav = try writeTempFile(name: "\(link2ID).favicon.ico", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: link0ID, sourceURL: l0og, fileExtension: "og.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link0ID, sourceURL: l0fav, fileExtension: "favicon.ico")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link1ID, sourceURL: l1og, fileExtension: "og.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link1ID, sourceURL: l1fav, fileExtension: "favicon.ico")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link2ID, sourceURL: l2og, fileExtension: "og.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: link2ID, sourceURL: l2fav, fileExtension: "favicon.ico")
+
+                // Per-link delete of the middle LinkItem.
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: link1ID, fileExtension: "og.jpg")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: link1ID, fileExtension: "favicon.ico")
+
+                if await service.itemFileExists(nodeID: nodeID, itemID: link1ID, fileExtension: "og.jpg") {
+                    failures.append("T10: middle link og.jpg still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: link1ID, fileExtension: "favicon.ico") {
+                    failures.append("T10: middle link favicon.ico still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: link0ID, fileExtension: "og.jpg")) {
+                    failures.append("T10: leading link og.jpg collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: link0ID, fileExtension: "favicon.ico")) {
+                    failures.append("T10: leading link favicon.ico collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: link2ID, fileExtension: "og.jpg")) {
+                    failures.append("T10: trailing link og.jpg collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: link2ID, fileExtension: "favicon.ico")) {
+                    failures.append("T10: trailing link favicon.ico collaterally removed")
+                }
+            } catch {
+                failures.append("T10: threw \(error)")
             }
         }
 

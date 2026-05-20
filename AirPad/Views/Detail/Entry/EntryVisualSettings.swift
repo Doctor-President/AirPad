@@ -186,11 +186,36 @@ final class EntryVisualSettings {
         }
     }
 
+    // MARK: - Stroke
+
+    /// Outline stroke applied around each `EntryCard`. Orthogonal to the
+    /// body fill — stacks on top of whichever `BodyTreatment` is active.
+    /// Stored as a single JSON blob so the persistence pattern matches
+    /// the type-role storage above (one Codable struct per concept, not
+    /// five scalar keys for a single visual element).
+    struct StrokeSettings: Codable, Equatable {
+        /// 6-digit sRGB hex (no `#`). White starting point so colour
+        /// shows immediately on first enable; T dials from there.
+        var colorHex: String
+        /// 0.0 — 1.0. Applied on top of the picked colour so the picker
+        /// stays full-alpha and the slider owns the visibility dimension.
+        var opacity: Double
+        /// 0pt — 4pt. Default 0 means no stroke is rendered, so the panel
+        /// opens with "no change from production" (same baseline contract
+        /// as the type-scale defaults).
+        var width: CGFloat
+    }
+
+    static let defaultStroke = StrokeSettings(colorHex: "FFFFFF", opacity: 1.0, width: 0)
+    static let strokeOpacityRange: ClosedRange<Double> = 0...1
+    static let strokeWidthRange: ClosedRange<CGFloat> = 0...4
+
     // MARK: - Live values
 
     var bodyTreatment: BodyTreatment { didSet { persistShared() } }
     var cornerRadius: CGFloat { didSet { persistShared() } }
     var interCardSpacing: CGFloat { didSet { persistShared() } }
+    var stroke: StrokeSettings { didSet { persistStroke() } }
     /// Floating summon button visibility. Toggled off via the hide-eye
     /// inside the panel; only restored by uninstall/reinstall.
     var buttonVisible: Bool {
@@ -232,6 +257,7 @@ final class EntryVisualSettings {
         static let cornerRadius     = "entryVisualDevPanel.cornerRadius"
         static let interCardSpacing = "entryVisualDevPanel.interCardSpacing"
         static let buttonVisible    = "entryVisualDevPanel.buttonVisible"
+        static let stroke           = "entryVisualDevPanel.stroke"
         static func role(_ r: Role) -> String { "entryVisualDevPanel.role.\(r.rawValue)" }
     }
 
@@ -261,6 +287,15 @@ final class EntryVisualSettings {
         nodeSummary      = Self.loadRole(.nodeSummary,      defaults: d) ?? Role.nodeSummary.defaultSettings
         sectionTitle     = Self.loadRole(.sectionTitle,     defaults: d) ?? Role.sectionTitle.defaultSettings
         sectionTimestamp = Self.loadRole(.sectionTimestamp, defaults: d) ?? Role.sectionTimestamp.defaultSettings
+
+        // Stroke: single JSON blob. Falls through to "width: 0" default
+        // so the card edge is untouched until T explicitly enables it.
+        if let data = d.data(forKey: Keys.stroke),
+           let decoded = try? JSONDecoder().decode(StrokeSettings.self, from: data) {
+            stroke = decoded
+        } else {
+            stroke = Self.defaultStroke
+        }
     }
 
     private static func loadRole(_ role: Role, defaults d: UserDefaults) -> TypeRoleSettings? {
@@ -281,6 +316,12 @@ final class EntryVisualSettings {
             UserDefaults.standard.set(data, forKey: Keys.role(role))
         }
         logFontFamilyOnceIfNeeded(for: s.family)
+    }
+
+    private func persistStroke() {
+        if let data = try? JSONEncoder().encode(stroke) {
+            UserDefaults.standard.set(data, forKey: Keys.stroke)
+        }
     }
 
     // MARK: - Font diagnostic
@@ -366,5 +407,27 @@ struct EntryCardBackground: View {
             // is consulted. Present so the compiler is satisfied.
             Color.clear
         }
+    }
+}
+
+// MARK: - Hex extraction (stroke ColorPicker round-trip)
+
+/// Extracts a 6-digit sRGB hex string from a UIColor. Stroke storage in
+/// `EntryVisualSettings.StrokeSettings.colorHex` round-trips through this:
+/// the dev panel's ColorPicker outputs a SwiftUI Color, we wrap it as
+/// `UIColor(color).sRGBHexString` for persistence, then rebuild on read
+/// via `Color(hexString:)`. Wide-gamut → sRGB conversion is `getRed`'s
+/// job; alpha is dropped on purpose (the panel exposes opacity as its
+/// own slider so the picker stays full-alpha).
+///
+/// Deleted in commit 3 with the rest of the dev-panel scaffolding.
+extension UIColor {
+    var sRGBHexString: String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getRed(&r, green: &g, blue: &b, alpha: &a)
+        let ri = Int((max(0, min(1, r)) * 255).rounded())
+        let gi = Int((max(0, min(1, g)) * 255).rounded())
+        let bi = Int((max(0, min(1, b)) * 255).rounded())
+        return String(format: "%02X%02X%02X", ri, gi, bi)
     }
 }

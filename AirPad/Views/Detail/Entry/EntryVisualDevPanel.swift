@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Stage 4.4 — temporary in-app dev panel for tuning `EntryCard` +
 /// `NodeDetailView` visuals on device. Addendum 1a-i expands the typography
@@ -71,6 +72,8 @@ private struct EntryVisualDevPanelSheet: View {
                     cornerRadiusSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
                     interCardSpacingSection(settings: settings)
+                    Divider().background(Color.white.opacity(0.12))
+                    strokeSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
                     hideEyeRow
                 }
@@ -281,6 +284,98 @@ private struct EntryVisualDevPanelSheet: View {
             in: Double(EntryVisualSettings.interCardSpacingRange.lowerBound)
                 ... Double(EntryVisualSettings.interCardSpacingRange.upperBound),
             step: 1
+        )
+        .tint(.white.opacity(0.6))
+    }
+
+    // MARK: - Stroke
+
+    /// Stage 4.4 addendum 1a-iii — outline stroke control. Three dials:
+    /// system ColorPicker (alpha disabled — opacity is its own row so the
+    /// mental model stays "pick a hue, then dial visibility"), opacity
+    /// slider, width slider. Width defaults to 0pt so the section opens
+    /// at "no change from production" until T explicitly enables stroke.
+    @ViewBuilder
+    private func strokeSection(settings: EntryVisualSettings) -> some View {
+        let s = settings.stroke
+        VStack(alignment: .leading, spacing: 10) {
+            sectionRowHeader(
+                "Outline stroke",
+                value: String(format: "%.1fpt", s.width)
+            )
+
+            ColorPicker(
+                "Stroke color",
+                selection: Binding<Color>(
+                    get: { Color(hexString: settings.stroke.colorHex) },
+                    set: { newColor in
+                        var updated = settings.stroke
+                        updated.colorHex = UIColor(newColor).sRGBHexString
+                        settings.stroke = updated
+                    }
+                ),
+                supportsOpacity: false
+            )
+            .tint(.white.opacity(0.85))
+
+            opacityRow(settings: settings)
+            widthRow(settings: settings)
+        }
+    }
+
+    @ViewBuilder
+    private func opacityRow(settings: EntryVisualSettings) -> some View {
+        HStack {
+            Text("Opacity")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .textCase(.uppercase)
+                .tracking(0.5)
+            Spacer()
+            Text(String(format: "%.2f", settings.stroke.opacity))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        Slider(
+            value: Binding(
+                get: { settings.stroke.opacity },
+                set: { newValue in
+                    var updated = settings.stroke
+                    updated.opacity = newValue
+                    settings.stroke = updated
+                }
+            ),
+            in: EntryVisualSettings.strokeOpacityRange,
+            step: 0.05
+        )
+        .tint(.white.opacity(0.6))
+    }
+
+    @ViewBuilder
+    private func widthRow(settings: EntryVisualSettings) -> some View {
+        HStack {
+            Text("Width")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .textCase(.uppercase)
+                .tracking(0.5)
+            Spacer()
+            Text(String(format: "%.1fpt", settings.stroke.width))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.85))
+        }
+        Slider(
+            value: Binding(
+                get: { Double(settings.stroke.width) },
+                set: { newValue in
+                    var updated = settings.stroke
+                    updated.width = CGFloat((newValue * 10).rounded() / 10)  // snap 0.1pt
+                    settings.stroke = updated
+                }
+            ),
+            in: Double(EntryVisualSettings.strokeWidthRange.lowerBound)
+                ... Double(EntryVisualSettings.strokeWidthRange.upperBound),
+            step: 0.1
         )
         .tint(.white.opacity(0.6))
     }

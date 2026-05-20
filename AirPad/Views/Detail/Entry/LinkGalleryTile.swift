@@ -3,12 +3,15 @@ import UIKit
 
 /// Stage 4.5 commit 3 — single OG card for a `LinkItem`, parent-owned-
 /// sizing (the parent applies `.frame(width:height:)` and clips). The
-/// tile renders four shapes depending on which OG fields are populated:
+/// tile renders these shapes depending on which OG fields are populated:
 ///   - Image + text: OG image at top, then title/description/siteName.
+///   - Favicon + text (commit 4): tinted favicon block at top when the
+///     OG image is missing but a favicon was captured. Distinct visual
+///     treatment from full-bleed OG image — see `faviconBlock`.
 ///   - Text-only: title/description/siteName.
-///   - Image-only: OG image fills the tile, no overlay text.
-///   - Bare URL: shown when all four OG fields are nil (the tile has
-///     either not yet fetched or the page had no OG tags).
+///   - Bare URL: shown when all five OG fields (title, description,
+///     siteName, imageFile, faviconFile) are nil (the tile has either
+///     not yet fetched or the page had no usable metadata at all).
 ///
 /// Tap opens the URL via `@Environment(\.openURL)`. The 2026-05-19
 /// chrome-tap fix (commit 9c0c180) is preserved: we use
@@ -34,12 +37,14 @@ struct LinkGalleryTile: View {
     @Environment(CorpusStore.self) private var store
     @Environment(\.openURL) private var openURL
     @State private var ogImage: UIImage? = nil
+    @State private var faviconImage: UIImage? = nil
 
     private var hasAnyOG: Bool {
         linkItem.title?.isEmpty == false
             || linkItem.description?.isEmpty == false
             || linkItem.siteName?.isEmpty == false
             || linkItem.imageFile?.isEmpty == false
+            || linkItem.faviconFile?.isEmpty == false
     }
 
     var body: some View {
@@ -82,12 +87,18 @@ struct LinkGalleryTile: View {
         VStack(alignment: .leading, spacing: 0) {
             if linkItem.imageFile != nil {
                 imageBlock
+            } else if linkItem.faviconFile != nil {
+                faviconBlock
             }
             textBlock
-                .padding(linkItem.imageFile != nil ? 10 : 0)
+                .padding(hasImageOrFavicon ? 10 : 0)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var hasImageOrFavicon: Bool {
+        linkItem.imageFile != nil || linkItem.faviconFile != nil
     }
 
     @ViewBuilder
@@ -140,6 +151,37 @@ struct LinkGalleryTile: View {
             guard let url = await store.resolveLinkItemImageURL(linkItem, nodeID: nodeID) else { return }
             if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
                 ogImage = img
+            }
+        }
+    }
+
+    /// Stage 4.5 commit 4 — fallback image arm when no OG image is
+    /// available but a favicon is. Distinct treatment from `imageBlock`:
+    /// the favicon sits centered at a fixed 48×48 on a tinted background
+    /// that fills the same 100pt-tall slot, so the rich body's overall
+    /// layout matches the OG-image case while the visual treatment
+    /// reads as "icon, not photo." A SF Symbol globe shows during the
+    /// brief async load so the slot never collapses or flickers empty.
+    private var faviconBlock: some View {
+        ZStack {
+            Rectangle().fill(Color.white.opacity(0.06))
+            if let img = faviconImage {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 48, height: 48)
+            } else {
+                Image(systemName: "globe")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+        .frame(height: 100)
+        .task(id: linkItem.faviconFile) {
+            faviconImage = nil
+            guard let url = await store.resolveLinkItemFaviconURL(linkItem, nodeID: nodeID) else { return }
+            if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
+                faviconImage = img
             }
         }
     }

@@ -12,12 +12,9 @@ import SwiftUI
 /// path that produces a multi-link entry with nil `linkViewMode` would
 /// still render predictably here.
 ///
-/// Commit 4 replaces the placeholder grid arm with a proper 2-column
-/// uniform-tile grid and adds per-tile "…" menus (Open / Copy / Delete).
-/// Until then, grid mode renders a single-column vertical stack of the
-/// same tiles so the toggle is visibly functional — the user can see
-/// the persisted state flip even though the layout doesn't change shape
-/// until the proper grid lands.
+/// Stage 4.5 commit 5 — grid arm is now a real 2-column uniform-tile
+/// `LazyVGrid`, and `LinkGalleryTile` carries its own per-tile "…" menu
+/// (Open / Copy / Delete) in both carousel and grid modes.
 struct LinkGalleryBody: View {
 
     let item: NodeItem
@@ -86,7 +83,7 @@ struct LinkGalleryBody: View {
                 nodeID: nodeID
             )
         case .grid:
-            LinkGalleryGridPlaceholder(
+            LinkGalleryGrid(
                 linkItems: linkItems,
                 entryID: item.id,
                 nodeID: nodeID
@@ -133,27 +130,31 @@ private struct LinkGalleryCarousel: View {
     }
 }
 
-/// Stage 4.5 commit 3 — grid placeholder. A single-column vertical stack
-/// of fixed-height tiles. Commit 4 replaces this with the proper
-/// 2-column uniform-tile grid and adds per-tile "…" menus. Kept as a
-/// distinct view so the swap in commit 4 is a single import change in
-/// `LinkGalleryBody.tilesArea`.
-private struct LinkGalleryGridPlaceholder: View {
+/// Stage 4.5 commit 5 — real 2-column uniform-tile grid. Tile height
+/// matches the carousel's 180pt so toggling carousel ↔ grid doesn't
+/// reshape the tiles themselves, only the layout around them. Per-tile
+/// chrome (the "…" menu) lives on `LinkGalleryTile` itself and is
+/// shared across both modes.
+private struct LinkGalleryGrid: View {
     let linkItems: [LinkItem]
     let entryID: String
     let nodeID: String
 
-    private static let tileHeight: CGFloat = 120
+    private static let tileHeight: CGFloat = 180
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+    ]
 
     var body: some View {
-        VStack(spacing: 8) {
+        LazyVGrid(columns: columns, spacing: 8) {
             ForEach(linkItems) { linkItem in
                 LinkGalleryTile(
                     linkItem: linkItem,
                     entryID: entryID,
                     nodeID: nodeID
                 )
-                .frame(maxWidth: .infinity)
                 .frame(height: Self.tileHeight)
             }
         }

@@ -546,6 +546,18 @@ final class CorpusStore {
                 return
             }
         }
+        // Stage 4.5 commit 5 — clean up LinkItem-level OG + favicon sidecars
+        // for multi-link entries. Parallel to the legacy ogImageFile path
+        // above but iterates the linkItems array. Unlike the legacy path,
+        // failures here log-and-continue (don't abort entry removal): a
+        // partial cleanup leaves at most a few orphan files on disk, which
+        // is preferable to leaving the entry visible on screen after the
+        // user asked it gone.
+        if let linkItems = item.linkItems {
+            for linkItem in linkItems {
+                await deleteLinkItemSidecars(linkItem, nodeID: nodeID, logContext: "deleteEntry")
+            }
+        }
         updated.items.remove(at: itemIdx)
         updated.updatedAt = Date()
         await updateNode(updated)
@@ -561,6 +573,40 @@ final class CorpusStore {
         guard filename.hasPrefix(prefix) else { return nil }
         let ext = String(filename.dropFirst(prefix.count))
         return ext.isEmpty ? nil : ext
+    }
+
+    /// Stage 4.5 commit 5 — removes both the OG image and favicon sidecars
+    /// for a `LinkItem`, logging on failure. Used by `removeLinkItem`
+    /// (per-tile delete) and `deleteEntry` (whole-entry delete cleanup).
+    /// Log-and-continue on every failure path so callers can keep their
+    /// own success/failure contract; the worst case is a few orphan files
+    /// in `items/`, which the user can never see and which don't grow
+    /// without bound (one per deleted LinkItem at most).
+    private func deleteLinkItemSidecars(_ linkItem: LinkItem, nodeID: String, logContext: String) async {
+        if let path = linkItem.imageFile,
+           let dottedExt = ogSidecarExtension(from: path, itemID: linkItem.id) {
+            do {
+                _ = try await service.deleteItemFile(
+                    nodeID: nodeID,
+                    itemID: linkItem.id,
+                    fileExtension: dottedExt
+                )
+            } catch {
+                print("[CorpusStore] \(logContext): LinkItem OG sidecar removal failed for \(linkItem.id) (\(path)): \(error)")
+            }
+        }
+        if let path = linkItem.faviconFile,
+           let dottedExt = ogSidecarExtension(from: path, itemID: linkItem.id) {
+            do {
+                _ = try await service.deleteItemFile(
+                    nodeID: nodeID,
+                    itemID: linkItem.id,
+                    fileExtension: dottedExt
+                )
+            } catch {
+                print("[CorpusStore] \(logContext): LinkItem favicon sidecar removal failed for \(linkItem.id) (\(path)): \(error)")
+            }
+        }
     }
 
     // MARK: - AT19.3c — Link entry OG fetch lifecycle
@@ -970,6 +1016,46 @@ final class CorpusStore {
     func resolveLinkItemFaviconURL(_ linkItem: LinkItem, nodeID: String) async -> URL? {
         guard let relativePath = linkItem.faviconFile else { return nil }
         return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
+    }
+
+    /// Stage 4.5 commit 5 — resolves the effective OG image URL for a
+    /// `.link` entry that may be backed by either `linkItems[0]` or the
+    /// legacy NodeItem-level `ogImageFile`. `linkItems[0]` wins when
+    /// present so a 2→1 down-collapse (per-tile delete) keeps showing
+    /// the surviving LinkItem's image even though the legacy field
+    /// still holds the deleted item's data. Used by `OGPreviewView`.
+    func effectiveOGImageURL(for item: NodeItem, nodeID: String) async -> URL? {
+        let relativePath = item.linkItems?.first?.imageFile ?? item.ogImageFile
+        guard let relativePath else { return nil }
+        return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
+    }
+
+    /// Stage 4.5 commit 5 — removes a single `LinkItem` from a `.link`
+    /// entry's `linkItems` array and cleans up both its OG image and
+    /// favicon sidecars. Called from the per-tile … menu in
+    /// `LinkGalleryTile`. Down-collapse handling (count 2→1) does NOT
+    /// promote survivor data to legacy fields here; `OGPreviewView` now
+    /// reads from `linkItems[0]` when present, so the rendering stays
+    /// correct without a sync step. The 0-item edge case (count 1→0,
+    /// theoretically reachable via repeated removes) leaves the entry
+    /// with `linkItems: []`; `EntryCard` dispatches to `LinkEntryBody`
+    /// which renders State A (empty URL field) if both linkItems and
+    /// legacy `item.url` are empty — user can re-add or delete the
+    /// entry. No silent self-delete to avoid surprising the user.
+    func removeLinkItem(entryID: String, nodeID: String, linkItemID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var linkItems = updated.items[itemIdx].linkItems,
+              let linkIdx = linkItems.firstIndex(where: { $0.id == linkItemID }) else { return }
+
+        let removed = linkItems.remove(at: linkIdx)
+        await deleteLinkItemSidecars(removed, nodeID: nodeID, logContext: "removeLinkItem")
+
+        updated.items[itemIdx].linkItems = linkItems
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
     }
 
     /// Stage 3.1b — moves an entry within a node's items array. Single

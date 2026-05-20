@@ -20,6 +20,10 @@ import Foundation
 ///   `updatedAt`, `specializedType`).
 /// - 1 → 2: Stage 4.2 unified image/video gallery (`mediaItems` array,
 ///   `.image` / `.video` entry types collapsed into `.imageVideo`).
+/// - 2 → 3: Stage 4.5 link gallery (`linkItems` array on `.link`
+///   entries). Legacy `url` / `title` / `preview` / `og*` fields stay
+///   populated for v1/v2 compatibility; rendering reads `linkItems`
+///   when present.
 @discardableResult
 func migrateEntrySchemaIfNeeded(_ node: inout Node) -> Bool {
     var didMigrate = false
@@ -29,6 +33,10 @@ func migrateEntrySchemaIfNeeded(_ node: inout Node) -> Bool {
     }
     if node.entrySchemaVersion < 2 {
         migrateEntrySchemaV1ToV2(&node)
+        didMigrate = true
+    }
+    if node.entrySchemaVersion < 3 {
+        migrateEntrySchemaV2ToV3(&node)
         didMigrate = true
     }
     return didMigrate
@@ -122,4 +130,66 @@ private func migrateEntrySchemaV1ToV2(_ node: inout Node) {
         }
     }
     node.entrySchemaVersion = 2
+}
+
+// MARK: - v2 → v3 (Stage 4.5 link gallery)
+
+/// Converts every `.link` entry with `url` populated into a one-element
+/// `linkItems` array. The legacy `url` / `title` / `preview` / `og*` fields
+/// stay populated on the migrated entry — vestigial post-migration but
+/// harmless, useful as a diagnostic breadcrumb if `linkItems` is ever found
+/// inconsistent, and required for any v1/v2 read path that hasn't been
+/// updated to read from `linkItems` yet. Rendering reads `linkItems` when
+/// present.
+///
+/// `LinkItem.id` is set equal to the parent `NodeItem.id` so the existing
+/// OG-image sidecar at `nodes/<nodeID>/items/<entryID>.og.<ext>` stays
+/// reachable via `LinkItem.imageFile` without renaming. The OG fields are
+/// copied from the parent `NodeItem`'s OG-fetched fields directly — no
+/// network re-fetch is needed even though `OGMetadataService` has no
+/// explicit cache-lookup method, because the OG metadata was persisted
+/// on the parent `NodeItem` by `LinkEntryBody`'s first-render fetch.
+/// Entries that never completed an OG fetch carry nil OG fields into
+/// `linkItems[0]`; the new `LinkGalleryTile` (commit 3) will trigger a
+/// fetch on first render using the same staleness check
+/// `LinkEntryBody.refetchIfStaleOrMissing` uses today.
+///
+/// A `.link` entry with a nil `url` (the in-progress URL-entry state
+/// where the user opened a fresh link entry but hasn't committed a URL)
+/// is left with `linkItems = nil`. The renderer's State A path in
+/// `OGPreviewView` continues to drive URL entry; commit 2 routes the
+/// first URL commit through a store method that creates `linkItems`
+/// directly without going through this migration path again.
+///
+/// Other entry types (`text`, `audio`, `image`, `video`, `imageVideo`,
+/// `document`) are untouched by this step. Note that pre-v2 entries are
+/// already brought up to v2 by `migrateEntrySchemaV1ToV2` running first
+/// in the chain, so by the time this step runs, all image/video entries
+/// have type `.imageVideo` (not the legacy `.image` / `.video`).
+private func migrateEntrySchemaV2ToV3(_ node: inout Node) {
+    for i in node.items.indices {
+        let item = node.items[i]
+        guard item.type == .link else { continue }
+        // Idempotency safety: if a previous pass already populated
+        // linkItems (shouldn't be possible since entrySchemaVersion < 3
+        // gates entry here, but be defensive), leave the entry alone.
+        guard item.linkItems == nil else { continue }
+        guard let url = item.url, !url.isEmpty else {
+            // No URL committed yet — leave linkItems nil. The State A
+            // path in OGPreviewView still drives URL entry; commit 2's
+            // store method will create linkItems on first commit.
+            continue
+        }
+        let linkItem = LinkItem(
+            id: item.id,
+            url: url,
+            title: item.ogTitle,
+            description: item.ogDescription,
+            imageFile: item.ogImageFile,
+            siteName: item.ogSiteName,
+            capturedAt: item.createdAt
+        )
+        node.items[i].linkItems = [linkItem]
+    }
+    node.entrySchemaVersion = 3
 }

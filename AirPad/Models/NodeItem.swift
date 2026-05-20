@@ -92,6 +92,40 @@ struct NodeItem: Codable, Identifiable, Equatable {
     // handles legacy `node.json` files cleanly.
     var viewMode: GalleryViewMode?
 
+    // Stage 4.5 — ordered link list backing a `.link` entry. Populated by
+    // `migrateEntrySchemaV2ToV3` for legacy single-link entries (one-element
+    // array; `LinkItem.id` matches the parent `NodeItem.id` on migration so
+    // the existing OG-image sidecar stays reachable without file moves) and
+    // by the append flow shipping in commit 2 for multi-link entries. The
+    // legacy `url` / `title` / `preview` / `og*` fields stay populated as a
+    // diagnostic breadcrumb and for v1/v2 read-side compatibility. Nil on
+    // every non-link entry; nil on `.link` entries that have never had a
+    // URL committed (the State A TextField path in `OGPreviewView`
+    // continues to drive URL entry, and commit 2 will route the first URL
+    // commit through a store method that lifts the URL into `linkItems`
+    // directly). Rendering reads off this field when present and falls
+    // back to the legacy `url` field otherwise.
+    var linkItems: [LinkItem]?
+
+    // Stage 4.5 — per-entry link-gallery view-mode persistence. Mirrors
+    // `viewMode` for the media gallery (`.imageVideo`), but with its own
+    // enum (`LinkViewMode = carousel | grid`) because the link gallery
+    // replaces bento with a uniform 2-column grid. Three-state semantics:
+    //   - nil: user has never chosen; renderer picks a count-based default
+    //     (≤3 → carousel, ≥4 → grid) at the first transition with ≥2
+    //     items. Single-link entries leave this nil — they render via
+    //     `LinkEntryBody`, which doesn't read `linkViewMode`.
+    //   - .carousel / .grid: user (or the first single→multi transition)
+    //     wrote a value. The renderer honors it verbatim regardless of
+    //     count; incremental adds preserve the existing choice so the
+    //     user's toggle is the only thing that changes it after first
+    //     transition.
+    // Additive optional, no entrySchemaVersion bump on its own — the v3
+    // bump is driven by `linkItems`; `linkViewMode` rides along as nil for
+    // migrated entries (count is at most 1 post-migration so the count-
+    // based fallback covers them).
+    var linkViewMode: LinkViewMode?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -107,6 +141,8 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case ogFetchedAt = "og_fetched_at"
         case mediaItems = "media_items"
         case viewMode = "view_mode"
+        case linkItems = "link_items"
+        case linkViewMode = "link_view_mode"
     }
 }
 
@@ -174,4 +210,66 @@ struct GalleryItem: Codable, Identifiable, Equatable {
         case aspectRatio = "aspect_ratio"
         case capturedAt = "captured_at"
     }
+}
+
+/// Stage 4.5 — single link inside a `.link` entry. Each item carries the
+/// canonical URL plus the OG-fetched fields. Unlike `GalleryItem`, links
+/// have no sidecar file as their primary asset (the URL is the asset); the
+/// OG-fetched image is stored as a sidecar at
+/// `nodes/<nodeID>/items/<LinkItem.id>.og.<ext>`, with `imageFile` holding
+/// just the filename. The OG fields are optional because OG fetch is async
+/// and may not have completed by the time the item is persisted — the
+/// renderer falls back to bare-URL display while fields are nil.
+///
+/// On migration from a v2 single-link entry, `LinkItem.id` is set equal
+/// to the parent `NodeItem.id` so the existing OG-image sidecar at
+/// `items/<entryID>.og.<ext>` stays reachable without file moves — same
+/// strategy `migrateEntrySchemaV1ToV2` uses for `GalleryItem.id`. Items
+/// appended post-4.5 get fresh UUIDs.
+struct LinkItem: Codable, Identifiable, Equatable {
+    let id: String
+    /// Canonical URL string. Stored as `String` (not `URL`) to match the
+    /// legacy `NodeItem.url` shape and survive any edge URLs that
+    /// `URL(string:)` would reject but the user nonetheless wants to keep.
+    let url: String
+    /// OG-fetched fields. Nil until `OGMetadataService.fetch` completes;
+    /// remain nil indefinitely if the fetch fails or the page has no OG
+    /// tags. `LinkGalleryTile` falls back to bare-URL display when nil.
+    var title: String?
+    var description: String?
+    /// Filename (not URL) of the OG image sidecar at
+    /// `nodes/<nodeID>/items/<LinkItem.id>.og.<ext>`. Mirrors
+    /// `NodeItem.ogImageFile` conventions so the existing
+    /// `iCloudDriveService.saveItemFile` path can write it without
+    /// changes.
+    var imageFile: String?
+    var siteName: String?
+    /// Timestamp the item was added to the entry. For migrated entries,
+    /// copied from the parent `NodeItem.createdAt` so the original capture
+    /// moment is preserved. For appended items, the moment of append.
+    let capturedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, url, title, description
+        case imageFile = "image_file"
+        case siteName = "site_name"
+        case capturedAt = "captured_at"
+    }
+}
+
+/// Stage 4.5 — link-gallery presentation mode for a `.link` entry with ≥2
+/// items. Persisted on `NodeItem.linkViewMode`. Raw values are
+/// snake_case-stable for the JSON encoding. Distinct from
+/// `GalleryViewMode` (the media gallery's enum) because the link gallery
+/// replaces bento with a uniform 2-column grid — OG cards are roughly
+/// uniform in shape so the aspect-aware bento packer doesn't earn its
+/// keep here.
+enum LinkViewMode: String, Codable, Equatable {
+    /// Horizontal scrollable strip. Default for entries with ≤3 items at
+    /// the moment they first become multi-link.
+    case carousel
+    /// 2-column rectangular grid, deterministic left-to-right top-to-
+    /// bottom order. Default for entries with ≥4 items at the moment they
+    /// first become multi-link.
+    case grid
 }

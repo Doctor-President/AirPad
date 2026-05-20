@@ -221,7 +221,26 @@ struct EntryCard: View {
         case .audio:    VoiceEntryBody(item: item, nodeID: nodeID)
         case .image:    ImageEntryBody(item: item, nodeID: nodeID)
         case .video:    VideoEntryBody(item: item, nodeID: nodeID)
-        case .link:     LinkEntryBody(item: item, nodeID: nodeID)
+        case .link:
+            // Stage 4.5 commit 3 — count-based dispatch lands here:
+            //   1     → `LinkEntryBody` (existing single-link rendering;
+            //           preserves State A TextField when `linkItems` is
+            //           nil so in-progress URL entry keeps working)
+            //   ≥2    → `LinkGalleryBody` (commit 3 introduces this view;
+            //           chrome shell + carousel + 2-col grid)
+            //   0/nil → `LinkEntryBody` again (covers the "user opened a
+            //           fresh link entry but hasn't committed a URL"
+            //           case as well as any malformed v3 shape that
+            //           slipped through migration)
+            // Commit 1 (this commit) routes every `.link` entry to
+            // `LinkEntryBody`. Migrated single-link entries continue to
+            // render off the legacy `item.url` / `item.ogTitle` /
+            // `item.preview` fields (kept populated by
+            // `migrateEntrySchemaV2ToV3`); no visual change. Multi-link
+            // entries don't yet exist at this point — the `+`-append
+            // store method lands in commit 2 and `LinkGalleryBody`
+            // lands in commit 3.
+            LinkEntryBody(item: item, nodeID: nodeID)
         case .document: DocumentEntryBody(item: item, nodeID: nodeID)
         case .imageVideo:
             // Stage 4.2 commit 4 — dispatch on `mediaItems.count`:

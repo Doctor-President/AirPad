@@ -50,14 +50,50 @@ struct OGPreviewView: View {
         case bareFallback
     }
 
+    // Stage 4.5 commit 5 — `linkItems[0]` wins over the legacy NodeItem-
+    // level OG fields when present. This single rule keeps single-mode
+    // rendering correct after a per-tile delete drops a multi-link
+    // entry's count from 2 to 1: the surviving LinkItem drives the view,
+    // even though the legacy fields may still hold the deleted item's
+    // data. Falls back to legacy fields for QuikCapture-created entries
+    // (which never write linkItems) and pre-4.5 entries that never went
+    // multi-link. See `CorpusStore.removeLinkItem` for the policy.
+    private var effectiveURL: String? {
+        item.linkItems?.first?.url ?? item.url
+    }
+    private var effectiveTitle: String? {
+        item.linkItems?.first?.title ?? item.ogTitle
+    }
+    private var effectiveDescription: String? {
+        item.linkItems?.first?.description ?? item.ogDescription
+    }
+    private var effectiveSiteName: String? {
+        item.linkItems?.first?.siteName ?? item.ogSiteName
+    }
+    private var effectiveImageFile: String? {
+        item.linkItems?.first?.imageFile ?? item.ogImageFile
+    }
+
+    /// `LinkItem` has no per-item `ogFetchedAt`. When linkItems[0] is
+    /// the source, treat the URL as having been fetched — the gallery
+    /// tile's on-appear fetch (or `appendLinkItem`'s on-append fetch)
+    /// already ran by the time this view is reached. Successful-but-
+    /// empty OG fetches will land here as State D (bareFallback), same
+    /// as the legacy path; the gallery tile handles its own re-fetch
+    /// trigger via `hasAnyOG`.
+    private var hasBeenFetched: Bool {
+        if item.linkItems?.first != nil { return true }
+        return item.ogFetchedAt != nil
+    }
+
     private var state: PreviewState {
-        guard let urlString = item.url?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let urlString = effectiveURL?.trimmingCharacters(in: .whitespacesAndNewlines),
               !urlString.isEmpty else { return .empty }
-        guard item.ogFetchedAt != nil else { return .pending }
-        let hasMetadata = item.ogTitle?.isEmpty == false
-            || item.ogDescription?.isEmpty == false
-            || item.ogSiteName?.isEmpty == false
-            || item.ogImageFile?.isEmpty == false
+        guard hasBeenFetched else { return .pending }
+        let hasMetadata = effectiveTitle?.isEmpty == false
+            || effectiveDescription?.isEmpty == false
+            || effectiveSiteName?.isEmpty == false
+            || effectiveImageFile?.isEmpty == false
         return hasMetadata ? .rich : .bareFallback
     }
 
@@ -115,7 +151,7 @@ struct OGPreviewView: View {
 
     private var bareURLBody: some View {
         Group {
-            if let urlString = item.url, let url = URL(string: urlString) {
+            if let urlString = effectiveURL, let url = URL(string: urlString) {
                 if interactive {
                     Text(urlString)
                         .font(.caption)
@@ -140,7 +176,7 @@ struct OGPreviewView: View {
 
     private var richStateBody: some View {
         Group {
-            if interactive, let urlString = item.url, let url = URL(string: urlString) {
+            if interactive, let urlString = effectiveURL, let url = URL(string: urlString) {
                 cardContent
                     .contentShape(Rectangle())
                     .onTapGesture { openURL(url) }
@@ -152,35 +188,36 @@ struct OGPreviewView: View {
     }
 
     private var cardContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if item.ogImageFile != nil {
+        let imagePresent = effectiveImageFile != nil
+        return VStack(alignment: .leading, spacing: 0) {
+            if imagePresent {
                 imageBlock
             }
             VStack(alignment: .leading, spacing: 4) {
-                if let title = item.ogTitle, !title.isEmpty {
+                if let title = effectiveTitle, !title.isEmpty {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
-                if let description = item.ogDescription, !description.isEmpty {
+                if let description = effectiveDescription, !description.isEmpty {
                     Text(description)
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.55))
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
                 }
-                if let siteName = item.ogSiteName, !siteName.isEmpty {
+                if let siteName = effectiveSiteName, !siteName.isEmpty {
                     Text(siteName)
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.4))
                         .lineLimit(1)
                 }
             }
-            .padding(item.ogImageFile != nil ? 10 : 0)
+            .padding(imagePresent ? 10 : 0)
         }
-        .background(item.ogImageFile != nil ? Color.white.opacity(0.04) : Color.clear)
+        .background(imagePresent ? Color.white.opacity(0.04) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -203,9 +240,9 @@ struct OGPreviewView: View {
                     )
             }
         }
-        .task(id: item.ogImageFile) {
+        .task(id: effectiveImageFile) {
             ogImage = nil
-            guard let url = await store.ogImageFileURL(for: item, nodeID: nodeID) else { return }
+            guard let url = await store.effectiveOGImageURL(for: item, nodeID: nodeID) else { return }
             if let data = try? Data(contentsOf: url), let img = UIImage(data: data) {
                 ogImage = img
             }

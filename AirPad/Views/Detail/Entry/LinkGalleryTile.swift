@@ -60,7 +60,54 @@ struct LinkGalleryTile: View {
         .contentShape(Rectangle())
         .onTapGesture { if let url = URL(string: linkItem.url) { openURL(url) } }
         .accessibilityAddTraits(.isLink)
+        .overlay(alignment: .topTrailing) { tileMenu }
         .onAppear { fetchIfMissing() }
+    }
+
+    // MARK: - Per-tile menu
+
+    /// Stage 4.5 commit 5 — overlaid in the top-right corner so it floats
+    /// above the OG image or text without disrupting the tile's tap
+    /// region. The 28pt black-translucent circle reads as chrome (not
+    /// content) against both image and text backgrounds; the Menu's own
+    /// tap target intercepts before the tile's `.onTapGesture` fires.
+    private var tileMenu: some View {
+        Menu {
+            if let url = URL(string: linkItem.url) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("Open URL", systemImage: "safari")
+                }
+            }
+            Button {
+                UIPasteboard.general.string = linkItem.url
+            } label: {
+                Label("Copy URL", systemImage: "doc.on.doc")
+            }
+            Button(role: .destructive) {
+                Task {
+                    await store.removeLinkItem(
+                        entryID: entryID,
+                        nodeID: nodeID,
+                        linkItemID: linkItem.id
+                    )
+                }
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.5))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(6)
+        .accessibilityLabel("Link options")
     }
 
     // MARK: - Bare URL fallback

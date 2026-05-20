@@ -71,7 +71,15 @@ struct LinkEntryBody: View {
         }
     }
 
+    /// Stage 4.5 commit 5 — skip when `linkItems[0]` is present.
+    /// `LinkGalleryTile` owns its own freshness check via `hasAnyOG` and
+    /// triggers its own fetch on appear, so a single-mode entry whose
+    /// data lives in `linkItems[0]` (e.g. after a 2→1 down-collapse from
+    /// per-tile delete) doesn't need a parallel refetch here. Legacy-
+    /// only entries (no linkItems) still flow through the original
+    /// staleness check below.
     private func refetchIfStaleOrMissing() async {
+        if item.linkItems?.first != nil { return }
         guard let urlString = item.url, !urlString.isEmpty else { return }
         if let fetchedAt = item.ogFetchedAt,
            Date().timeIntervalSince(fetchedAt) < OGMetadataService.staleness {

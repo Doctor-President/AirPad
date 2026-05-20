@@ -1,13 +1,16 @@
 import SwiftUI
 import UIKit
 
-/// Stage 4.4 — dev-only runtime settings for `EntryCard` visual exploration.
+/// Stage 4.4 — dev-only runtime settings for `EntryCard` + `NodeDetailView`
+/// visual exploration.
 ///
-/// This is scaffolding for ONE design decision (commit 1 of Stage 4.4 ships
-/// the panel; commit 2 migrates the locked combination to `EntryCardMetrics`
-/// constants; commit 3 deletes this file outright). Future visual stages
-/// that need similar exploration will rebuild similar scaffolding from
-/// scratch; this is not intended as reusable infrastructure.
+/// **Self-deleting infrastructure.** Commit 1 shipped the panel; addendum
+/// 1a-i expands to a 4-role type scale (Node Title / Summary / Section
+/// Title / Section Timestamp) plus iOS 26 glass variants; 1a-iii adds the
+/// outline stroke. Commit 2 will migrate locked values to permanent
+/// `AirPadTypeScale` + `EntryCardMetrics` structs. Commit 3 deletes this
+/// file outright. Body-role typography deferred to Stage 2.3 (the editor's
+/// font management has its own regression surface).
 ///
 /// Singleton because the dev panel (mounted at `ContentView` root) and the
 /// cards (deep inside `NodeDetailView`) live in different view trees, and
@@ -22,62 +25,199 @@ final class EntryVisualSettings {
 
     // MARK: - Body treatment
 
+    /// Background fill style applied behind every `EntryCard`. iOS 26
+    /// glass variants render via `.glassEffect()`; on iOS 18-25 they fall
+    /// back to `.regularMaterial` so the picker still produces a
+    /// recognisable result on older devices.
     enum BodyTreatment: String, CaseIterable, Identifiable {
-        /// Solid color with reduced opacity — the gradient backdrop bleeds
-        /// through subtly. Closest to current production but softer.
-        case semiOpacity = "Semi-opacity"
-        /// SwiftUI `.ultraThinMaterial` — frosted blur with subtle tint.
-        case thinMaterial = "Thin material"
-        /// iOS 26 `.glassEffect()` — crystalline glass with programmable
-        /// tint. Falls back to `.regularMaterial` on iOS 18–25.
-        case liquidGlass = "Liquid glass"
+        case semiOpacity       = "Semi-opacity"
+        case thinMaterial      = "Thin material"
+        case glassRegular      = "Glass: Regular"
+        case glassClear        = "Glass: Clear"
+        case glassKleinBlue    = "Glass: Klein Blue"
+        case glassMango        = "Glass: Mango"
+        case glassElectricCyan = "Glass: Electric Cyan"
 
         var id: String { rawValue }
     }
 
-    // MARK: - Typography
+    // MARK: - Typography family
 
-    enum TypographyChoice: String, CaseIterable, Identifiable {
-        /// `.font(.system(...))` — current default, neutral baseline.
-        case sfPro = "SF Pro"
-        /// `.font(.system(..., design: .serif))` — Apple's contemporary
-        /// serif. Drop-in, no bundling.
-        case newYork = "New York"
-        /// Custom font via `.font(.custom("Lato-...", size:))`. Requires
-        /// the `Lato-*.ttf` family bundled and registered in Info.plist
-        /// under `UIAppFonts`. Falls back silently to system if missing.
-        case lato = "Lato"
-        /// Plain `Fraunces 72pt` cut (Regular + Bold). Soft/SuperSoft cuts
-        /// not bundled — see Stage 4.4 audit on 2026-05-19.
+    enum TypographyChoice: String, Codable, CaseIterable, Identifiable {
+        case sfPro    = "SF Pro"
+        case newYork  = "New York"
+        case lato     = "Lato"
         case fraunces = "Fraunces"
-        /// `Lora` static Regular + Bold.
-        case lora = "Lora"
+        case lora     = "Lora"
 
         var id: String { rawValue }
+
+        /// PostScript name for the bundled `.ttf`. We only bundled Regular
+        /// + Bold per custom family, so the weight picker collapses to a
+        /// binary file choice for Lato/Fraunces/Lora (see
+        /// `FontWeightChoice.clampsToBoldFile`). System families return
+        /// `nil` so callers route to `.system(...)` with a real weight.
+        func postScriptName(boldFile: Bool) -> String? {
+            switch self {
+            case .sfPro, .newYork:
+                return nil
+            case .lato:
+                return boldFile ? "Lato-Bold" : "Lato-Regular"
+            case .fraunces:
+                // PostScript name unverified on device. The runtime debug
+                // log in `logFontFamilyOnceIfNeeded(...)` resolves the
+                // actual name on first selection so T can correct here.
+                return boldFile ? "Fraunces72pt-Bold" : "Fraunces72pt-Regular"
+            case .lora:
+                return boldFile ? "Lora-Bold" : "Lora-Regular"
+            }
+        }
+    }
+
+    // MARK: - Font weight
+
+    /// Local Codable mirror of `Font.Weight` (the SwiftUI type isn't
+    /// Codable so it can't survive a JSON UserDefaults round-trip).
+    enum FontWeightChoice: String, Codable, CaseIterable, Identifiable {
+        case regular  = "Regular"
+        case medium   = "Medium"
+        case semibold = "Semibold"
+        case bold     = "Bold"
+
+        var id: String { rawValue }
+
+        var swiftUI: Font.Weight {
+            switch self {
+            case .regular:  return .regular
+            case .medium:   return .medium
+            case .semibold: return .semibold
+            case .bold:     return .bold
+            }
+        }
+
+        /// For bundled custom fonts (Lato/Fraunces/Lora) only Regular and
+        /// Bold .ttf files are shipped. The 4-option weight picker clamps:
+        /// regular/medium → Regular file, semibold/bold → Bold file. The
+        /// dev panel surfaces this as a caveat under the type-scale
+        /// section so T isn't surprised during iteration.
+        var clampsToBoldFile: Bool {
+            switch self {
+            case .regular, .medium:   return false
+            case .semibold, .bold:    return true
+            }
+        }
+    }
+
+    // MARK: - Type role
+
+    /// One slot in the type scale. Holds the three independent dimensions
+    /// (family / size / weight). Codable so each role serialises as a
+    /// single JSON blob in UserDefaults — cleaner than 15 scalar keys and
+    /// tolerant to adding a 6th role later without migration.
+    struct TypeRoleSettings: Codable, Equatable {
+        var family: TypographyChoice
+        var size: CGFloat
+        var weight: FontWeightChoice
+
+        func resolvedFont() -> Font {
+            if let postScript = family.postScriptName(boldFile: weight.clampsToBoldFile) {
+                // Custom fonts encode weight in the file name; the
+                // `.weight()` modifier on top of `.custom(...)` is a no-op
+                // and would only mislead, so we don't apply it.
+                return .custom(postScript, size: size)
+            }
+            let design: Font.Design = (family == .newYork) ? .serif : .default
+            return .system(size: size, weight: weight.swiftUI, design: design)
+        }
+    }
+
+    /// Four type-scale roles that the dev panel exposes. The Body role
+    /// (text rendered inside `RichTextEditor`) is intentionally absent —
+    /// deferred to Stage 2.3 where the editor's font management gets its
+    /// dedicated regression window.
+    enum Role: String, CaseIterable, Identifiable {
+        case nodeTitle
+        case nodeSummary
+        case sectionTitle
+        case sectionTimestamp
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .nodeTitle:        return "Node title"
+            case .nodeSummary:      return "Node summary"
+            case .sectionTitle:     return "Section title"
+            case .sectionTimestamp: return "Section timestamp"
+            }
+        }
+
+        /// Slider bounds (pt) — defaults sit comfortably in range. Step
+        /// 0.5pt per the addendum brief.
+        var sizeRange: ClosedRange<CGFloat> {
+            switch self {
+            case .nodeTitle:        return 22...36
+            case .nodeSummary:      return 13...22
+            case .sectionTitle:     return 13...20
+            case .sectionTimestamp: return 9...14
+            }
+        }
+
+        /// Defaults reproduce the pre-1a-i production look: the panel
+        /// opens at "no change" so toggling between roles is the only way
+        /// to introduce drift.
+        var defaultSettings: TypeRoleSettings {
+            switch self {
+            case .nodeTitle:
+                // `NodeDetailView.swift:205` — `.title2.weight(.bold)`
+                // ≈ 22pt bold.
+                return TypeRoleSettings(family: .sfPro, size: 22, weight: .bold)
+            case .nodeSummary:
+                // `NodeDetailView.swift:213` — `.body` = 17pt regular.
+                return TypeRoleSettings(family: .sfPro, size: 17, weight: .regular)
+            case .sectionTitle:
+                // `EntryCard.swift:361` — `.subheadline.weight(.semibold)`
+                // = 15pt semibold.
+                return TypeRoleSettings(family: .sfPro, size: 15, weight: .semibold)
+            case .sectionTimestamp:
+                // `EntryCard.swift:403` — `.caption2` = 11pt regular.
+                return TypeRoleSettings(family: .sfPro, size: 11, weight: .regular)
+            }
+        }
     }
 
     // MARK: - Live values
 
-    var bodyTreatment: BodyTreatment { didSet { persist() } }
-    var typography: TypographyChoice { didSet { persist() } }
-    var cornerRadius: CGFloat { didSet { persist() } }
-    var interCardSpacing: CGFloat { didSet { persist() } }
+    var bodyTreatment: BodyTreatment { didSet { persistShared() } }
+    var cornerRadius: CGFloat { didSet { persistShared() } }
+    var interCardSpacing: CGFloat { didSet { persistShared() } }
     /// Floating summon button visibility. Toggled off via the hide-eye
-    /// inside the panel; only restored by uninstall/reinstall or a
-    /// build-time bypass (see `EntryVisualDevPanel`).
+    /// inside the panel; only restored by uninstall/reinstall.
     var buttonVisible: Bool {
         didSet { UserDefaults.standard.set(buttonVisible, forKey: Keys.buttonVisible) }
+    }
+
+    var nodeTitle: TypeRoleSettings        { didSet { persistRole(.nodeTitle) } }
+    var nodeSummary: TypeRoleSettings      { didSet { persistRole(.nodeSummary) } }
+    var sectionTitle: TypeRoleSettings     { didSet { persistRole(.sectionTitle) } }
+    var sectionTimestamp: TypeRoleSettings { didSet { persistRole(.sectionTimestamp) } }
+
+    func settings(for role: Role) -> TypeRoleSettings {
+        switch role {
+        case .nodeTitle:        return nodeTitle
+        case .nodeSummary:      return nodeSummary
+        case .sectionTitle:     return sectionTitle
+        case .sectionTimestamp: return sectionTimestamp
+        }
     }
 
     // MARK: - Production defaults (mirrored from current code)
 
     static let defaultBodyTreatment: BodyTreatment = .semiOpacity
-    static let defaultTypography: TypographyChoice = .sfPro
     /// Matches `EntryCard.swift:148` — `cornerRadius: 12`.
     static let defaultCornerRadius: CGFloat = 12
-    /// Matches `NodeDetailView.swift:197` — outer VStack `spacing: 24`.
-    /// Stage 4.4 commit 1 isolates inter-card spacing into a nested
-    /// VStack so this slider only affects card-to-card distance.
+    /// Stage 4.4 commit 1 nested cards in their own VStack so this slider
+    /// only affects card-to-card distance.
     static let defaultInterCardSpacing: CGFloat = 24
 
     // MARK: - Slider ranges (locked with T on 2026-05-19)
@@ -88,21 +228,22 @@ final class EntryVisualSettings {
     // MARK: - Persistence
 
     private enum Keys {
-        static let bodyTreatment   = "entryVisualDevPanel.bodyTreatment"
-        static let typography      = "entryVisualDevPanel.typography"
-        static let cornerRadius    = "entryVisualDevPanel.cornerRadius"
+        static let bodyTreatment    = "entryVisualDevPanel.bodyTreatment"
+        static let cornerRadius     = "entryVisualDevPanel.cornerRadius"
         static let interCardSpacing = "entryVisualDevPanel.interCardSpacing"
-        static let buttonVisible   = "entryVisualDevPanel.buttonVisible"
+        static let buttonVisible    = "entryVisualDevPanel.buttonVisible"
+        static func role(_ r: Role) -> String { "entryVisualDevPanel.role.\(r.rawValue)" }
     }
 
     private init() {
         let d = UserDefaults.standard
 
+        // BodyTreatment: legacy "Liquid glass" raw value from commit 1 no
+        // longer matches any case after the glass-variant expansion, so
+        // it falls through to the default. That's fine — T's locked
+        // pre-1a-i selection was the placeholder, not the real glass.
         bodyTreatment = BodyTreatment(rawValue: d.string(forKey: Keys.bodyTreatment) ?? "")
             ?? Self.defaultBodyTreatment
-
-        typography = TypographyChoice(rawValue: d.string(forKey: Keys.typography) ?? "")
-            ?? Self.defaultTypography
 
         let storedRadius = d.double(forKey: Keys.cornerRadius)
         cornerRadius = storedRadius > 0 ? CGFloat(storedRadius) : Self.defaultCornerRadius
@@ -113,45 +254,42 @@ final class EntryVisualSettings {
         // Default visible. Object-typed read so the absence of the key
         // (first launch) defaults to `true` rather than `false`.
         buttonVisible = (d.object(forKey: Keys.buttonVisible) as? Bool) ?? true
+
+        // Per-role JSON blobs. Each falls through to the role's
+        // production-mirroring default if absent or unparseable.
+        nodeTitle        = Self.loadRole(.nodeTitle,        defaults: d) ?? Role.nodeTitle.defaultSettings
+        nodeSummary      = Self.loadRole(.nodeSummary,      defaults: d) ?? Role.nodeSummary.defaultSettings
+        sectionTitle     = Self.loadRole(.sectionTitle,     defaults: d) ?? Role.sectionTitle.defaultSettings
+        sectionTimestamp = Self.loadRole(.sectionTimestamp, defaults: d) ?? Role.sectionTimestamp.defaultSettings
     }
 
-    private func persist() {
+    private static func loadRole(_ role: Role, defaults d: UserDefaults) -> TypeRoleSettings? {
+        guard let data = d.data(forKey: Keys.role(role)) else { return nil }
+        return try? JSONDecoder().decode(TypeRoleSettings.self, from: data)
+    }
+
+    private func persistShared() {
         let d = UserDefaults.standard
-        d.set(bodyTreatment.rawValue,        forKey: Keys.bodyTreatment)
-        d.set(typography.rawValue,           forKey: Keys.typography)
-        d.set(Double(cornerRadius),          forKey: Keys.cornerRadius)
-        d.set(Double(interCardSpacing),      forKey: Keys.interCardSpacing)
+        d.set(bodyTreatment.rawValue,    forKey: Keys.bodyTreatment)
+        d.set(Double(cornerRadius),      forKey: Keys.cornerRadius)
+        d.set(Double(interCardSpacing),  forKey: Keys.interCardSpacing)
     }
 
-    // MARK: - Font derivation helpers
-
-    /// Title-row font for `EntryCard`. Derives from the typography toggle
-    /// while preserving the original weight/size relationship of the
-    /// current `.subheadline.weight(.semibold)` baseline.
-    func titleRowFont() -> Font {
-        logFontFamilyOnceIfNeeded(for: typography)
-        switch typography {
-        case .sfPro:
-            return .subheadline.weight(.semibold)
-        case .newYork:
-            return .system(.subheadline, design: .serif).weight(.semibold)
-        case .lato:
-            return .custom("Lato-Bold", size: 15)
-        case .fraunces:
-            // PostScript name unverified for Fraunces; the on-device debug
-            // log above resolves the actual name. If `.custom` misses, it
-            // falls back to system silently.
-            return .custom("Fraunces72pt-Bold", size: 15)
-        case .lora:
-            return .custom("Lora-Bold", size: 15)
+    private func persistRole(_ role: Role) {
+        let s = self.settings(for: role)
+        if let data = try? JSONEncoder().encode(s) {
+            UserDefaults.standard.set(data, forKey: Keys.role(role))
         }
+        logFontFamilyOnceIfNeeded(for: s.family)
     }
+
+    // MARK: - Font diagnostic
 
     /// Stage 4.4 dev-panel diagnostic: prints the PostScript names that
     /// UIKit registered for each custom-font family the first time that
-    /// typography choice is selected. Lets T verify the `.custom(...)`
-    /// names above on device without launching Font Book. Removed in
-    /// commit 3 with the rest of the dev panel scaffolding.
+    /// typography choice is selected. Lets T verify the
+    /// `postScriptName(boldFile:)` mappings on device without launching
+    /// Font Book. Removed in commit 3 with the rest of the dev panel.
     @ObservationIgnored private var loggedFamilies: Set<String> = []
     private func logFontFamilyOnceIfNeeded(for choice: TypographyChoice) {
         let family: String?
@@ -172,7 +310,7 @@ final class EntryVisualSettings {
 
 /// Renders the active body treatment as a SwiftUI view, ready to drop into
 /// `EntryCard`'s background slot. Branches at the iOS 26 boundary for the
-/// liquid-glass option so the codebase still builds against an iOS 18
+/// glass variants so the codebase still builds against an iOS 18
 /// deployment target.
 struct EntryCardBackground: View {
 
@@ -188,29 +326,45 @@ struct EntryCardBackground: View {
             Rectangle()
                 .fill(.ultraThinMaterial)
 
-        case .liquidGlass:
-            liquidGlassBackground
+        case .glassRegular, .glassClear,
+             .glassKleinBlue, .glassMango, .glassElectricCyan:
+            glassBackground
         }
     }
 
-    /// iOS 26 introduces `.glassEffect(...)` for true Liquid Glass. The
-    /// codebase deploys to iOS 18.0; older OS versions fall back to
-    /// `.regularMaterial` so the toggle still renders something visibly
-    /// distinct from `.ultraThinMaterial`. The exact iOS 26 API signature
-    /// can be refined once T verifies on iPhone 17 Pro Max (iOS 26.4).
+    /// Glass branch. iOS 26 calls `.glassEffect()` with the appropriate
+    /// `Glass` value; pre-iOS 26 falls back to `.regularMaterial` so
+    /// older devices still render something visually distinct from
+    /// `.ultraThinMaterial`. Tint hex values match the brief
+    /// (Klein Blue #1B59C2, Mango #E8820A, Electric Cyan #00BFFF).
     @ViewBuilder
-    private var liquidGlassBackground: some View {
+    private var glassBackground: some View {
         if #available(iOS 26.0, *) {
-            // Placeholder iOS 26 path — uses .regularMaterial as a
-            // visually-distinct stand-in until T confirms the precise
-            // `.glassEffect()` API shape. Stronger blur + tint than
-            // `.ultraThinMaterial` makes this branch already feel
-            // different in the design test.
-            Rectangle()
-                .fill(.regularMaterial)
+            glassEffectView
         } else {
             Rectangle()
                 .fill(.regularMaterial)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    private var glassEffectView: some View {
+        switch treatment {
+        case .glassRegular:
+            Color.clear.glassEffect(.regular, in: Rectangle())
+        case .glassClear:
+            Color.clear.glassEffect(.clear, in: Rectangle())
+        case .glassKleinBlue:
+            Color.clear.glassEffect(.regular.tint(Color(hexString: "1B59C2")), in: Rectangle())
+        case .glassMango:
+            Color.clear.glassEffect(.regular.tint(Color(hexString: "E8820A")), in: Rectangle())
+        case .glassElectricCyan:
+            Color.clear.glassEffect(.regular.tint(Color(hexString: "00BFFF")), in: Rectangle())
+        case .semiOpacity, .thinMaterial:
+            // Unreachable: outer switch handles these before this view
+            // is consulted. Present so the compiler is satisfied.
+            Color.clear
         }
     }
 }

@@ -200,17 +200,20 @@ struct NodeDetailView: View {
     private func content(node: Node) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // Title
+                // Title — Stage 4.4 addendum 1a-i: font sourced from the
+                // Node Title role in the dev-panel type scale. Default
+                // mirrors the prior `.title2.weight(.bold)` exactly.
                 TextField("Title", text: $editedTitle, axis: .vertical)
-                    .font(.title2.weight(.bold))
+                    .font(visualSettings.nodeTitle.resolvedFont())
                     .foregroundStyle(.white)
                     .tint(.white)
                     .focused($focusedField)
 
-                // Summary
+                // Summary — Stage 4.4 addendum 1a-i: Node Summary role.
+                // Default mirrors the prior `.body` exactly.
                 if !editedSummary.isEmpty || node.summary.isEmpty {
                     TextField("Summary", text: $editedSummary, axis: .vertical)
-                        .font(.body)
+                        .font(visualSettings.nodeSummary.resolvedFont())
                         .foregroundStyle(.white.opacity(0.75))
                         .tint(.white)
                         .focused($focusedField)

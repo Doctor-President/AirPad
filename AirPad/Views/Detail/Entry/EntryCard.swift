@@ -78,7 +78,8 @@ struct EntryCard: View {
                 timestamp: item.updatedAt ?? item.createdAt,
                 isExpanded: effectiveExpansion,
                 reorderActive: presentation.reorderActive,
-                titleFont: visualSettings.titleRowFont(),
+                titleFont: visualSettings.sectionTitle.resolvedFont(),
+                timestampFont: visualSettings.sectionTimestamp.resolvedFont(),
                 onToggle: toggleExpansion,
                 onRename: beginRename,
                 onDuplicate: duplicate,
@@ -321,10 +322,13 @@ private struct EntryTitleRow: View {
     /// Title row stays clean so the user can still read what they're
     /// dragging.
     let reorderActive: Bool
-    /// Stage 4.4 — font for the display-name line, derived from the dev
-    /// panel's typography toggle. Removed in commit 3 when the dev panel
-    /// is deleted; the locked choice migrates to a constant in commit 2.
+    /// Stage 4.4 — fonts for the display-name (Section Title role) and the
+    /// muted relative timestamp (Section Timestamp role). Both are derived
+    /// from the dev-panel type scale; removed in commit 3 when the panel
+    /// is deleted, with the locked choices migrating to `AirPadTypeScale`
+    /// constants in commit 2.
     let titleFont: Font
+    let timestampFont: Font
     let onToggle: () -> Void
     let onRename: () -> Void
     let onDuplicate: () -> Void
@@ -394,16 +398,16 @@ private struct EntryTitleRow: View {
     }
 
     /// Muted relative timestamp shown under the display name. Sized one step
-    /// smaller than the title (`.caption2` vs `.subheadline`) and dropped to
-    /// 0.4 opacity so the eye reads display name first, timestamp second.
-    /// Concatenation matches the pre-3.1a per-row footer treatment so the
-    /// "5 minutes ago" phrasing is unchanged.
+    /// smaller than the title and dropped to 0.4 opacity so the eye reads
+    /// display name first, timestamp second. Concatenation matches the
+    /// pre-3.1a per-row footer treatment so the "5 minutes ago" phrasing
+    /// is unchanged. Font is the Section Timestamp role from the dev panel.
     private var timestampLabel: some View {
         Text(timestamp, style: .relative)
-            .font(.caption2)
+            .font(timestampFont)
             .foregroundStyle(.white.opacity(0.4))
         + Text(" ago")
-            .font(.caption2)
+            .font(timestampFont)
             .foregroundStyle(.white.opacity(0.4))
     }
 }

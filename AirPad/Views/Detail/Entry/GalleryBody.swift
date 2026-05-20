@@ -76,7 +76,10 @@ struct GalleryBody: View {
                     .padding(.horizontal, 4)
             }
 
-            MediaEntryChrome(onAddMore: { showingPicker = true }) {
+            MediaEntryChrome(
+                onAdd: { showingPicker = true },
+                accessibilityLabel: "Add more media"
+            ) {
                 ViewModeToggle(active: effectiveViewMode) { newMode in
                     Task {
                         await store.setEntryViewMode(

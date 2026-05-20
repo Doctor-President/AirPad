@@ -1,20 +1,26 @@
 import SwiftUI
 
-/// AT19.3c — body slot for `.link` entries. Delegates rendering to
-/// `OGPreviewView` (shared with the QuikCapture receipt modal in commit 6)
-/// and owns the fetch lifecycle: on appear it refetches when stale or
-/// never-fetched; on URL commit (State A) it persists the URL and kicks
-/// off the initial fetch. Both paths share `triggerFetch` so writeback
-/// lives in one place.
+/// AT19.3c — body slot for `.link` entries with 0 or 1 link. Delegates
+/// rendering to `OGPreviewView` (shared with the QuikCapture receipt
+/// modal) and owns the fetch lifecycle: on appear it refetches when
+/// stale or never-fetched; on URL commit (State A) it persists the URL
+/// and kicks off the initial fetch. Both paths share `triggerFetch` so
+/// writeback lives in one place.
 ///
-/// Stage 4.5 commit 3 will wrap `OGPreviewView` in a VStack and add a
-/// `MediaEntryChrome`-parallel chrome row below it with a "+" button
-/// presenting `LinkAppendSheet` (the primitive that landed in commit 2).
-/// The sheet's `onCommit` will call `store.appendLinkItem(toEntryID:
-/// nodeID:url:)`, which lifts the legacy URL into `linkItems[0]` and
-/// appends the new LinkItem — at that point the multi-link → 2 transition
-/// kicks the renderer over to `LinkGalleryBody` via EntryCard's
-/// count-based dispatch.
+/// Stage 4.5 commit 3 — chrome row added below the OG preview with a
+/// "+" trigger that presents `LinkAppendSheet`. Committing a URL via
+/// the sheet calls `store.appendLinkItem`, which lifts the legacy URL
+/// into `linkItems[0]` and appends the new LinkItem as `linkItems[1]`;
+/// at that point EntryCard's count-based `.link` dispatch swaps the
+/// renderer over to `LinkGalleryBody` on the next pass.
+///
+/// The chrome row also appears on a fresh empty entry (State A in
+/// `OGPreviewView`) so the user always has the same "+" affordance.
+/// Tapping "+" before committing a URL still works — the resulting
+/// entry will have a single LinkItem (the freshly appended URL) and
+/// the legacy `item.url` will stay nil. The dispatch in EntryCard
+/// treats both "1 URL via legacy field" and "1 URL via linkItems[0]"
+/// as single-link and keeps this view on screen.
 struct LinkEntryBody: View {
 
     let item: NodeItem
@@ -22,12 +28,39 @@ struct LinkEntryBody: View {
 
     @Environment(CorpusStore.self) private var store
 
+    @State private var showingAppendSheet = false
+
     var body: some View {
-        OGPreviewView(
-            item: item,
-            nodeID: nodeID,
-            onCommitURL: handleURLCommit
-        )
+        VStack(alignment: .leading, spacing: 8) {
+            OGPreviewView(
+                item: item,
+                nodeID: nodeID,
+                onCommitURL: handleURLCommit
+            )
+
+            MediaEntryChrome(
+                onAdd: { showingAppendSheet = true },
+                accessibilityLabel: "Add link"
+            ) {
+                // Toggle slot stays empty on single-link entries — the
+                // chrome row matches `LinkGalleryBody`'s height contract
+                // so the visual transition single → multi doesn't
+                // resize, exactly the way `SingleMediaBody` keeps an
+                // empty trailing slot to match `GalleryBody`.
+                EmptyView()
+            }
+        }
+        .sheet(isPresented: $showingAppendSheet) {
+            LinkAppendSheet { url in
+                Task {
+                    await store.appendLinkItem(
+                        toEntryID: item.id,
+                        nodeID: nodeID,
+                        url: url
+                    )
+                }
+            }
+        }
         .onAppear { Task { await refetchIfStaleOrMissing() } }
     }
 

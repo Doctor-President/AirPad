@@ -14,20 +14,29 @@ enum MediaEntryChromeMetrics {
     static let height: CGFloat = 44
 }
 
-/// Stage 4.2 commit 3 — the in-card chrome strip rendered below the media in
-/// both single and gallery presentations. The "+" button on the left appends
-/// more media to this entry (calls `CorpusStore.appendMediaItems`, turning a
-/// single-item entry into a gallery, or growing an existing gallery). The
-/// trailing slot is empty in commit 3 and will host the Carousel/Bento
-/// view-mode toggle in commit 4 — sized to fit within
-/// `MediaEntryChromeMetrics.height` without resizing.
+/// Stage 4.2 commit 3 — the in-card chrome strip rendered below the body
+/// content in single and gallery presentations. The "+" button on the
+/// left appends to the entry (media items for `.imageVideo`, link items
+/// for `.link`); the trailing slot hosts a view-mode toggle when there
+/// are multiple items.
+///
+/// Stage 4.5 commit 3 — generalized for link entries via the
+/// `accessibilityLabel` parameter. The struct keeps its `Media`-prefixed
+/// name (and the `MediaEntryChromeMetrics` enum it pins to) because the
+/// 44pt height contract was first established in the media gallery and
+/// continues to be the source of truth — link surfaces follow that
+/// contract so a mixed feed reads with one rhythm.
 struct MediaEntryChrome<Trailing: View>: View {
-    let onAddMore: () -> Void
+    let onAdd: () -> Void
+    /// VoiceOver label for the "+" button. Required so each call site
+    /// names what's actually being added ("Add more media", "Add link"),
+    /// rather than every chrome row reading the same generic label.
+    let accessibilityLabel: String
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onAddMore) {
+            Button(action: onAdd) {
                 Image(systemName: "plus")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.75))
@@ -36,7 +45,7 @@ struct MediaEntryChrome<Trailing: View>: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Add more media")
+            .accessibilityLabel(accessibilityLabel)
 
             Spacer(minLength: 0)
 

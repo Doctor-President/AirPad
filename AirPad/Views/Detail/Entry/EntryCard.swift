@@ -222,25 +222,20 @@ struct EntryCard: View {
         case .image:    ImageEntryBody(item: item, nodeID: nodeID)
         case .video:    VideoEntryBody(item: item, nodeID: nodeID)
         case .link:
-            // Stage 4.5 commit 3 — count-based dispatch lands here:
-            //   1     → `LinkEntryBody` (existing single-link rendering;
-            //           preserves State A TextField when `linkItems` is
-            //           nil so in-progress URL entry keeps working)
-            //   ≥2    → `LinkGalleryBody` (commit 3 introduces this view;
-            //           chrome shell + carousel + 2-col grid)
-            //   0/nil → `LinkEntryBody` again (covers the "user opened a
-            //           fresh link entry but hasn't committed a URL"
-            //           case as well as any malformed v3 shape that
-            //           slipped through migration)
-            // Commit 1 (this commit) routes every `.link` entry to
-            // `LinkEntryBody`. Migrated single-link entries continue to
-            // render off the legacy `item.url` / `item.ogTitle` /
-            // `item.preview` fields (kept populated by
-            // `migrateEntrySchemaV2ToV3`); no visual change. Multi-link
-            // entries don't yet exist at this point — the `+`-append
-            // store method lands in commit 2 and `LinkGalleryBody`
-            // lands in commit 3.
-            LinkEntryBody(item: item, nodeID: nodeID)
+            // Stage 4.5 commit 3 — count-based dispatch on linkItems:
+            //   ≥2    → `LinkGalleryBody` (chrome shell + carousel +
+            //           grid-placeholder; commit 4 lands the proper
+            //           2-col grid + per-tile menu)
+            //   1/0/nil → `LinkEntryBody` (preserves State A TextField
+            //           when `linkItems` is nil so in-progress URL
+            //           entry keeps working; renders the lifted /
+            //           legacy single-link card otherwise)
+            let linkCount = item.linkItems?.count ?? 0
+            if linkCount >= 2 {
+                LinkGalleryBody(item: item, nodeID: nodeID)
+            } else {
+                LinkEntryBody(item: item, nodeID: nodeID)
+            }
         case .document: DocumentEntryBody(item: item, nodeID: nodeID)
         case .imageVideo:
             // Stage 4.2 commit 4 — dispatch on `mediaItems.count`:

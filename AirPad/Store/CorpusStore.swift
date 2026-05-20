@@ -637,6 +637,280 @@ final class CorpusStore {
         return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
     }
 
+    // MARK: - Stage 4.5 — Link gallery store methods
+
+    /// Stage 4.5 commit 2 — appends a single link to an EXISTING `.link`
+    /// entry's `linkItems` array, OG-fetching asynchronously. Parallel to
+    /// `appendMediaItems` for the media gallery. Silently bails on a
+    /// missing node/entry, a `.link` type mismatch, or an empty URL.
+    ///
+    /// Lift-on-append: if the entry has `linkItems == nil` but
+    /// `item.url` set (the post-`setLinkEntryURL` shape on entries created
+    /// post-commit-1 without a migration pass yet), the legacy URL is
+    /// lifted into `linkItems[0]` first by reusing the parent NodeItem's
+    /// `og*` fields — same shape as `migrateEntrySchemaV2ToV3` builds.
+    /// The new URL is then appended as `linkItems[1]`. This keeps the
+    /// invariant "any entry with a URL committed has linkItems
+    /// populated" alive post-append without needing a migration sweep.
+    ///
+    /// View-mode default: first-transition writer per §7 of the brief.
+    /// When `linkViewMode == nil && combined.count >= 2`, sets it to
+    /// `.carousel` for ≤3 items or `.grid` for ≥4 — same threshold as
+    /// `appendMediaItems` uses for the media gallery.
+    ///
+    /// Auto-rename to "Links" / "Links N" lands in commit 5 alongside
+    /// the matcher regex; commit 2 leaves displayName untouched.
+    ///
+    /// OG fetch: the new LinkItem is persisted with nil OG fields and
+    /// returned immediately; an unstructured `Task` kicks off
+    /// `OGMetadataService.fetch` and routes the result back through
+    /// `applyOGFetchToLinkItem` once the service completes. The fetch
+    /// is fire-and-forget from the caller's perspective — failure logs
+    /// inside `applyOGFetchToLinkItem` but does not block the append.
+    /// This matches `appendMediaItems`'s "persist now, render bare,
+    /// upgrade async" cadence — commit 3's `LinkGalleryTile` handles
+    /// the bare → rich transition when fields populate.
+    @discardableResult
+    func appendLinkItem(
+        toEntryID entryID: String,
+        nodeID: String,
+        url: String
+    ) async -> LinkItem? {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return nil }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              updated.items[itemIdx].type == .link else { return nil }
+
+        let now = Date()
+        var existing = updated.items[itemIdx].linkItems ?? []
+
+        // Lift-on-append: surface the legacy `url` + NodeItem-level OG
+        // fields into linkItems[0] before appending the new one. Mirrors
+        // the v2→v3 migration step's shape so the array converges on the
+        // same final layout regardless of whether the entry was migrated
+        // or appended into first.
+        if existing.isEmpty,
+           let legacyURL = updated.items[itemIdx].url,
+           !legacyURL.isEmpty {
+            existing.append(
+                LinkItem(
+                    id: updated.items[itemIdx].id,
+                    url: legacyURL,
+                    title: updated.items[itemIdx].ogTitle,
+                    description: updated.items[itemIdx].ogDescription,
+                    imageFile: updated.items[itemIdx].ogImageFile,
+                    siteName: updated.items[itemIdx].ogSiteName,
+                    capturedAt: updated.items[itemIdx].createdAt
+                )
+            )
+        }
+
+        let newItem = LinkItem(
+            id: UUID().uuidString,
+            url: trimmed,
+            title: nil,
+            description: nil,
+            imageFile: nil,
+            siteName: nil,
+            capturedAt: now
+        )
+        let combined = existing + [newItem]
+        updated.items[itemIdx].linkItems = combined
+
+        // First-transition view-mode default (gated per §7 of the brief).
+        if updated.items[itemIdx].linkViewMode == nil && combined.count >= 2 {
+            updated.items[itemIdx].linkViewMode = combined.count <= 3 ? .carousel : .grid
+        }
+
+        updated.items[itemIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
+
+        // Fire OG fetch for the newly appended LinkItem; the result lands
+        // back via `applyOGFetchToLinkItem` once the service completes.
+        // The lifted-from-legacy item (when it happened) keeps whatever OG
+        // fields were already populated on the parent NodeItem — its
+        // refetch-when-stale is handled at the render site (commit 3
+        // tile's onAppear), mirroring `LinkEntryBody.refetchIfStaleOrMissing`.
+        if let fetchURL = URL(string: trimmed) {
+            let capturedEntryID = entryID
+            let capturedNodeID = nodeID
+            let capturedLinkItemID = newItem.id
+            Task {
+                let metadata = await OGMetadataService().fetch(url: fetchURL)
+                await applyOGFetchToLinkItem(
+                    nodeID: capturedNodeID,
+                    entryID: capturedEntryID,
+                    linkItemID: capturedLinkItemID,
+                    metadata: metadata
+                )
+            }
+        }
+
+        return newItem
+    }
+
+    /// Stage 4.5 commit 2 — creates a new `.link` entry pre-populated with
+    /// N≥1 links. Parallel to `addMediaItems` for the media gallery.
+    /// Future-use shape: the brief lists this as the third
+    /// view-mode-default writer (creation-with-N≥2) alongside
+    /// `appendLinkItem` and `setEntryLinkViewMode`. No commit-2 caller
+    /// uses it yet — QuikCapture's single-URL creation path stays on
+    /// the legacy `createLinkNode` flow until a multi-URL capture
+    /// surface lands (separate workstream).
+    ///
+    /// View-mode default uses the same ≤3 → carousel / ≥4 → grid
+    /// threshold as `appendLinkItem`. Single-link creations leave
+    /// `linkViewMode = nil` so a later first-transition via append picks
+    /// the default at that moment, matching `addMediaItems`'s behavior.
+    @discardableResult
+    func addLinkItems(
+        toNodeID targetNodeID: String?,
+        urls: [String],
+        position: CGPoint
+    ) async -> NodeItem? {
+        let normalized = urls
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !normalized.isEmpty else { return nil }
+
+        let now = Date()
+        let parentItemID = UUID().uuidString
+        let linkItems: [LinkItem] = normalized.enumerated().map { (idx, u) in
+            LinkItem(
+                id: idx == 0 ? parentItemID : UUID().uuidString,
+                url: u,
+                title: nil,
+                description: nil,
+                imageFile: nil,
+                siteName: nil,
+                capturedAt: now
+            )
+        }
+
+        let initialViewMode: LinkViewMode? = normalized.count >= 2
+            ? (normalized.count <= 3 ? .carousel : .grid)
+            : nil
+
+        // displayName: single-link entries leave nil so the type default
+        // ("Link") wins on read; commit 5 lands the "Links" / "Links N"
+        // multi-link auto-rename and adds it here for N≥2.
+        let entry = NodeItem(
+            id: parentItemID,
+            type: .link,
+            createdAt: now,
+            url: normalized.first,
+            linkItems: linkItems,
+            linkViewMode: initialViewMode
+        )
+
+        let resolvedNodeID: String
+        if let nodeID = targetNodeID, nodes.contains(where: { $0.id == nodeID }) {
+            await appendItemToNode(nodeID: nodeID, item: entry)
+            resolvedNodeID = nodeID
+        } else {
+            let title = normalized.first.flatMap { URL(string: $0)?.host } ?? "Link"
+            let node = Node(
+                id: UUID().uuidString,
+                createdAt: now,
+                updatedAt: now,
+                title: title,
+                summary: "",
+                tags: [],
+                mood: nil,
+                isMeta: false,
+                provenance: nil,
+                threads: [],
+                location: nil,
+                items: [entry],
+                domain: nil,
+                domainConfirmed: false,
+                needsAIProcessing: true
+            )
+            await addNode(node, position: position)
+            resolvedNodeID = node.id
+        }
+
+        // Fire one OG fetch per LinkItem in the new entry. Each result
+        // routes back independently via `applyOGFetchToLinkItem`. Matches
+        // the per-item fan-out the gallery uses for media but for OG
+        // metadata instead of asset import.
+        for link in linkItems {
+            guard let fetchURL = URL(string: link.url) else { continue }
+            let capturedNodeID = resolvedNodeID
+            let capturedEntryID = parentItemID
+            let capturedLinkItemID = link.id
+            Task {
+                let metadata = await OGMetadataService().fetch(url: fetchURL)
+                await applyOGFetchToLinkItem(
+                    nodeID: capturedNodeID,
+                    entryID: capturedEntryID,
+                    linkItemID: capturedLinkItemID,
+                    metadata: metadata
+                )
+            }
+        }
+
+        return entry
+    }
+
+    /// Stage 4.5 commit 2 — writes an `OGMetadataService.fetch` result
+    /// back to a specific `LinkItem` in a `.link` entry. Parallel to
+    /// `applyOGFetch` for the legacy NodeItem-level OG fields, but
+    /// targets a single item in the `linkItems` array by id. The OG
+    /// image sidecar lands at `items/<linkItemID>.og.<ext>` — the
+    /// `LinkItem.id` (not the parent entry id) is the sidecar key, so
+    /// multi-link entries can hold N independent OG images without
+    /// collision. A nil `metadata` (service couldn't get anything
+    /// useful) is intentionally NOT written back here — without a
+    /// per-LinkItem `ogFetchedAt` field there's no staleness window to
+    /// gate; the caller (commit 3 tile renderer) handles the no-rich-
+    /// metadata case as a bare-URL render and may retry on next view.
+    func applyOGFetchToLinkItem(
+        nodeID: String,
+        entryID: String,
+        linkItemID: String,
+        metadata: OGMetadata?
+    ) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var linkItems = updated.items[itemIdx].linkItems,
+              let linkIdx = linkItems.firstIndex(where: { $0.id == linkItemID }) else { return }
+        guard let metadata else { return }
+
+        var imageRelativePath: String? = nil
+        if let tempURL = metadata.imageTempURL, let ext = metadata.imageExtension {
+            do {
+                try await service.saveItemFile(
+                    nodeID: nodeID,
+                    itemID: linkItemID,
+                    sourceURL: tempURL,
+                    fileExtension: "og.\(ext)"
+                )
+                imageRelativePath = "items/\(linkItemID).og.\(ext)"
+                try? FileManager.default.removeItem(at: tempURL)
+            } catch {
+                print("[CorpusStore] applyOGFetchToLinkItem: sidecar save failed for \(linkItemID): \(error)")
+                // Continue — still record the textual fields even if the
+                // image couldn't land.
+            }
+        }
+
+        var item = linkItems[linkIdx]
+        item.title = metadata.title
+        item.description = metadata.description
+        item.siteName = metadata.siteName
+        item.imageFile = imageRelativePath
+        linkItems[linkIdx] = item
+        updated.items[itemIdx].linkItems = linkItems
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Stage 3.1b — moves an entry within a node's items array. Single
     /// persisted mutation per reorder cycle: the controller holds the
     /// transient drag state, the store sees one final commit. No-op if

@@ -6,6 +6,15 @@ import SwiftUI
 /// never-fetched; on URL commit (State A) it persists the URL and kicks
 /// off the initial fetch. Both paths share `triggerFetch` so writeback
 /// lives in one place.
+///
+/// Stage 4.5 commit 3 will wrap `OGPreviewView` in a VStack and add a
+/// `MediaEntryChrome`-parallel chrome row below it with a "+" button
+/// presenting `LinkAppendSheet` (the primitive that landed in commit 2).
+/// The sheet's `onCommit` will call `store.appendLinkItem(toEntryID:
+/// nodeID:url:)`, which lifts the legacy URL into `linkItems[0]` and
+/// appends the new LinkItem — at that point the multi-link → 2 transition
+/// kicks the renderer over to `LinkGalleryBody` via EntryCard's
+/// count-based dispatch.
 struct LinkEntryBody: View {
 
     let item: NodeItem

@@ -244,6 +244,15 @@ struct LinkItem: Codable, Identifiable, Equatable {
     /// changes.
     var imageFile: String?
     var siteName: String?
+    /// Stage 4.5 commit 4 — filename (not URL) of the favicon sidecar at
+    /// `nodes/<nodeID>/items/<LinkItem.id>.favicon.<ext>`. Captured by
+    /// the favicon scraper in `OGMetadataService` and rendered as a
+    /// smaller, centered, tinted-bg fallback in `LinkGalleryTile` when
+    /// `imageFile` is nil. Independent of `imageFile` — both can be
+    /// populated, in which case `imageFile` wins the tile's image slot
+    /// and the favicon stays on disk as a no-op until a future surface
+    /// (e.g. tile menu, OG inspector) reads it.
+    var faviconFile: String?
     /// Timestamp the item was added to the entry. For migrated entries,
     /// copied from the parent `NodeItem.createdAt` so the original capture
     /// moment is preserved. For appended items, the moment of append.
@@ -253,6 +262,7 @@ struct LinkItem: Codable, Identifiable, Equatable {
         case id, url, title, description
         case imageFile = "image_file"
         case siteName = "site_name"
+        case faviconFile = "favicon_file"
         case capturedAt = "captured_at"
     }
 }

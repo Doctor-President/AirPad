@@ -702,6 +702,7 @@ final class CorpusStore {
                     description: updated.items[itemIdx].ogDescription,
                     imageFile: updated.items[itemIdx].ogImageFile,
                     siteName: updated.items[itemIdx].ogSiteName,
+                    faviconFile: nil,
                     capturedAt: updated.items[itemIdx].createdAt
                 )
             )
@@ -714,6 +715,7 @@ final class CorpusStore {
             description: nil,
             imageFile: nil,
             siteName: nil,
+            faviconFile: nil,
             capturedAt: now
         )
         let combined = existing + [newItem]
@@ -786,6 +788,7 @@ final class CorpusStore {
                 description: nil,
                 imageFile: nil,
                 siteName: nil,
+                faviconFile: nil,
                 capturedAt: now
             )
         }
@@ -899,11 +902,31 @@ final class CorpusStore {
             }
         }
 
+        // Stage 4.5 commit 4 — favicon sidecar lands alongside the OG
+        // image at `items/<linkItemID>.favicon.<ext>`. Independent failure
+        // mode: a failed favicon save doesn't invalidate OG image or text.
+        var faviconRelativePath: String? = nil
+        if let tempURL = metadata.faviconTempURL, let ext = metadata.faviconExtension {
+            do {
+                try await service.saveItemFile(
+                    nodeID: nodeID,
+                    itemID: linkItemID,
+                    sourceURL: tempURL,
+                    fileExtension: "favicon.\(ext)"
+                )
+                faviconRelativePath = "items/\(linkItemID).favicon.\(ext)"
+                try? FileManager.default.removeItem(at: tempURL)
+            } catch {
+                print("[CorpusStore] applyOGFetchToLinkItem: favicon sidecar save failed for \(linkItemID): \(error)")
+            }
+        }
+
         var item = linkItems[linkIdx]
         item.title = metadata.title
         item.description = metadata.description
         item.siteName = metadata.siteName
         item.imageFile = imageRelativePath
+        item.faviconFile = faviconRelativePath
         linkItems[linkIdx] = item
         updated.items[itemIdx].linkItems = linkItems
         updated.items[itemIdx].updatedAt = Date()
@@ -936,6 +959,16 @@ final class CorpusStore {
     /// matching what `applyOGFetchToLinkItem` writes.
     func resolveLinkItemImageURL(_ linkItem: LinkItem, nodeID: String) async -> URL? {
         guard let relativePath = linkItem.imageFile else { return nil }
+        return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
+    }
+
+    /// Stage 4.5 commit 4 — resolves the on-disk URL for a LinkItem's
+    /// favicon sidecar. Parallel to `resolveLinkItemImageURL`; the
+    /// relative path is stored on `LinkItem.faviconFile` as
+    /// `items/<linkID>.favicon.<ext>`, matching what
+    /// `applyOGFetchToLinkItem` writes.
+    func resolveLinkItemFaviconURL(_ linkItem: LinkItem, nodeID: String) async -> URL? {
+        guard let relativePath = linkItem.faviconFile else { return nil }
         return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
     }
 

@@ -24,6 +24,14 @@ struct OGMetadata: Equatable, Sendable {
     var imageTempURL: URL?
     /// File extension matching `imageTempURL`'s format, e.g. "jpg", "png".
     var imageExtension: String?
+    /// Stage 4.5 commit 4 — temp file URL holding the downloaded favicon
+    /// in its source format. Independent of `imageTempURL`; the favicon
+    /// renders as a smaller fallback in `LinkGalleryTile` when the OG
+    /// image is missing. Sourced via the favicon scraper or the
+    /// `/favicon.ico` convention fallback.
+    var faviconTempURL: URL?
+    /// File extension matching `faviconTempURL`'s format, e.g. "ico", "png".
+    var faviconExtension: String?
 }
 
 actor OGMetadataService {
@@ -45,6 +53,14 @@ actor OGMetadataService {
         let lpResult = await lp
         let scrapeResult = await scrape
 
+        // Favicon download is sequential after scrape so we can prefer the
+        // scraped `<link rel="icon">` URL when present. The `/favicon.ico`
+        // convention fallback (last resort) lives inside `fetchFavicon`.
+        let (faviconTempURL, faviconExtension) = await fetchFavicon(
+            scrapedURL: scrapeResult?.faviconRawURL,
+            pageURL: url
+        )
+
         let title = lpResult?.title
         let description = scrapeResult?.description
         let scrapeSite = scrapeResult?.siteName
@@ -56,10 +72,13 @@ actor OGMetadataService {
         // alone (without LP or scrape success) does NOT count — otherwise
         // every link with no OG data would still render as State C with
         // just a host string, defeating the lazy-fallback retry signal.
+        // Favicon counts as meaningful — a recognizable mark + host beats a
+        // bare URL string, which is the whole reason commit 4 added it.
         let hasMeaningful = title != nil
             || description != nil
             || imageTempURL != nil
             || scrapeSite != nil
+            || faviconTempURL != nil
         guard hasMeaningful else { return nil }
 
         return OGMetadata(
@@ -67,7 +86,9 @@ actor OGMetadataService {
             description: description,
             siteName: siteName,
             imageTempURL: imageTempURL,
-            imageExtension: imageExtension
+            imageExtension: imageExtension,
+            faviconTempURL: faviconTempURL,
+            faviconExtension: faviconExtension
         )
     }
 
@@ -138,11 +159,16 @@ actor OGMetadataService {
         }
     }
 
-    // MARK: - HTML scrape (description + site name)
+    // MARK: - HTML scrape (description + site name + favicon URL)
 
     private struct ScrapeResult: Sendable {
         var description: String?
         var siteName: String?
+        /// Stage 4.5 commit 4 — `<link rel="icon|shortcut icon|apple-touch-icon">`
+        /// resolved to an absolute URL using the page URL as base. Caller
+        /// downloads it in a second pass; the `/favicon.ico` convention
+        /// fallback runs when this is nil OR the download fails.
+        var faviconRawURL: URL?
     }
 
     private func scrapeOG(url: URL) async -> ScrapeResult? {
@@ -156,9 +182,108 @@ actor OGMetadataService {
         let description = Self.ogTagValue(in: html, property: "og:description")
             ?? Self.metaName(in: html, name: "description")
         let siteName = Self.ogTagValue(in: html, property: "og:site_name")
+        let faviconRawURL = Self.extractFaviconURL(in: html, base: url)
 
-        if description == nil && siteName == nil { return nil }
-        return ScrapeResult(description: description, siteName: siteName)
+        if description == nil && siteName == nil && faviconRawURL == nil { return nil }
+        return ScrapeResult(
+            description: description,
+            siteName: siteName,
+            faviconRawURL: faviconRawURL
+        )
+    }
+
+    // MARK: - Favicon fetch
+
+    /// Stage 4.5 commit 4 — two-stage cascade. Prefer the scraped
+    /// `<link rel="...">` URL when present (typically apple-touch-icon
+    /// at ~180px, far better than 16×16 `/favicon.ico`); fall back to
+    /// the `/favicon.ico` convention when scrape returned nothing or
+    /// the scraped URL failed to download. Returns `(nil, nil)` only
+    /// when both paths failed — most well-known domains will hit at
+    /// least the convention fallback.
+    private func fetchFavicon(scrapedURL: URL?, pageURL: URL) async -> (URL?, String?) {
+        if let scraped = scrapedURL,
+           let result = await Self.downloadFavicon(from: scraped, userAgent: userAgent) {
+            return result
+        }
+        if let scheme = pageURL.scheme,
+           let host = pageURL.host,
+           let fallback = URL(string: "\(scheme)://\(host)/favicon.ico"),
+           let result = await Self.downloadFavicon(from: fallback, userAgent: userAgent) {
+            return result
+        }
+        return (nil, nil)
+    }
+
+    private static func downloadFavicon(from url: URL, userAgent: String) async -> (URL, String)? {
+        var request = URLRequest(url: url, timeoutInterval: 5)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        guard
+            let (data, response) = try? await URLSession.shared.data(for: request),
+            !data.isEmpty
+        else { return nil }
+        // Some sites return 200 + HTML for missing favicons. Reject non-2xx
+        // when we have a status code; accept anything when the response
+        // isn't HTTPURLResponse (file:// etc., which shouldn't happen but
+        // shouldn't crash either).
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            return nil
+        }
+
+        // Extension priority: URL path extension when it's a known image
+        // format; otherwise "ico" because the `/favicon.ico` convention
+        // path has no explicit extension to read.
+        let pathExt = url.pathExtension.lowercased()
+        let normalizedExt: String
+        switch pathExt {
+        case "ico", "png", "gif", "svg", "webp":
+            normalizedExt = pathExt
+        case "jpg", "jpeg":
+            normalizedExt = "jpg"
+        default:
+            normalizedExt = "ico"
+        }
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("favicon-\(UUID().uuidString).\(normalizedExt)")
+        do {
+            try data.write(to: tmp, options: .atomic)
+            return (tmp, normalizedExt)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Stage 4.5 commit 4 — pulls the first matching `<link rel="...">`
+    /// href from the page HTML. Priority is apple-touch-icon → icon →
+    /// shortcut icon (Apple's hi-res variant first, then plain, then
+    /// the IE6-era legacy). Relative hrefs are resolved against
+    /// `base` so the caller always gets an absolute URL it can hand
+    /// straight to `URLSession`.
+    private static func extractFaviconURL(in html: String, base: URL) -> URL? {
+        let priorities = ["apple-touch-icon", "icon", "shortcut icon"]
+        for rel in priorities {
+            if let href = linkRelHref(in: html, rel: rel),
+               let resolved = URL(string: href, relativeTo: base)?.absoluteURL {
+                return resolved
+            }
+        }
+        return nil
+    }
+
+    private static func linkRelHref(in html: String, rel: String) -> String? {
+        let escaped = NSRegularExpression.escapedPattern(for: rel)
+        // Both attribute orderings: rel=…href=… and href=…rel=….
+        let patterns = [
+            #"<link\s+[^>]*rel=["']\#(escaped)["'][^>]*href=["']([^"']*)["']"#,
+            #"<link\s+[^>]*href=["']([^"']*)["'][^>]*rel=["']\#(escaped)["']"#
+        ]
+        for pattern in patterns {
+            if let match = firstCaptureGroup(html, pattern: pattern) {
+                return decodeHTMLEntities(match.trimmingCharacters(in: .whitespacesAndNewlines)).nilIfEmpty
+            }
+        }
+        return nil
     }
 
     private static func decodeHTML(data: Data) -> String? {

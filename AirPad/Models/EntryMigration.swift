@@ -187,6 +187,7 @@ private func migrateEntrySchemaV2ToV3(_ node: inout Node) {
             description: item.ogDescription,
             imageFile: item.ogImageFile,
             siteName: item.ogSiteName,
+            faviconFile: nil,
             capturedAt: item.createdAt
         )
         node.items[i].linkItems = [linkItem]

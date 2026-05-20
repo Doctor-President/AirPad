@@ -155,6 +155,20 @@ struct EntryCard: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
+        .overlay {
+            // Stage 4.4 addendum 1a-iii — outline stroke. Sits above the
+            // body fill, orthogonal to it. `.strokeBorder` keeps the line
+            // entirely inside the rounded-rect bounds so it never gets
+            // half-clipped against the `.clipShape` above. Width defaults
+            // to 0 (invisible) until T dials it up in the dev panel.
+            let s = visualSettings.stroke
+            RoundedRectangle(cornerRadius: visualSettings.cornerRadius)
+                .strokeBorder(
+                    Color(hexString: s.colorHex).opacity(s.opacity),
+                    lineWidth: s.width
+                )
+                .allowsHitTesting(false)
+        }
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),

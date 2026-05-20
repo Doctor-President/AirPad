@@ -911,6 +911,34 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 4.5 commit 3 — user-driven view-mode toggle for a `.link`
+    /// entry's gallery presentation. Parallel to `setEntryViewMode` for
+    /// `.imageVideo`. Permissive — writes regardless of `linkItems.count`
+    /// since the renderer (`LinkGalleryBody`) gates the toggle visibility
+    /// itself. Silently bails on missing node/entry or `.link` type
+    /// mismatch.
+    func setEntryLinkViewMode(itemID: String, nodeID: String, viewMode: LinkViewMode) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .link,
+              updated.items[itemIdx].linkViewMode != viewMode else { return }
+        updated.items[itemIdx].linkViewMode = viewMode
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Stage 4.5 commit 3 — resolves the on-disk URL for a LinkItem's OG
+    /// sidecar image. Parallel to `ogImageFileURL(for:nodeID:)` for the
+    /// legacy NodeItem-level OG image. The relative path is stored
+    /// verbatim on `LinkItem.imageFile` (e.g. `items/<linkID>.og.jpg`),
+    /// matching what `applyOGFetchToLinkItem` writes.
+    func resolveLinkItemImageURL(_ linkItem: LinkItem, nodeID: String) async -> URL? {
+        guard let relativePath = linkItem.imageFile else { return nil }
+        return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
+    }
+
     /// Stage 3.1b — moves an entry within a node's items array. Single
     /// persisted mutation per reorder cycle: the controller holds the
     /// transient drag state, the store sees one final commit. No-op if

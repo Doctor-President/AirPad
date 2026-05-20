@@ -41,7 +41,10 @@ struct SingleMediaBody: View {
                     .padding(.horizontal, 4)
             }
 
-            MediaEntryChrome(onAddMore: { showingPicker = true }) {
+            MediaEntryChrome(
+                onAdd: { showingPicker = true },
+                accessibilityLabel: "Add more media"
+            ) {
                 // Commit 4 fills this slot with the Carousel/Bento view-mode
                 // toggle. Empty in commit 3 — the chrome row exists at full
                 // height so the transition single → gallery is visually

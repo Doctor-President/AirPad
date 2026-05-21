@@ -407,6 +407,51 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] ensureEntrySchema: saveNode error for \(nodeID): \(error)")
         }
+
+        // Stage 4.6 commit 2 fix — kick document extraction for every
+        // `.document` entry whose `documentItems[0]` lacks an
+        // `extractionAttemptedAt` marker AND whose fileType is in the
+        // extractor's supported set. Migration is the moment legacy
+        // entries acquire `documentItems`; coupling extraction here
+        // removes view-lifecycle as the trigger surface for the
+        // legacy-entry-first-open race that left pre-4.6 documents
+        // stuck (their view-side `.task` fired before migration
+        // populated documentItems, returned early, then never
+        // re-fired). The `.task` in `DocumentEntryBody` remains as a
+        // safety net and as the primary trigger for new captures via
+        // `appendDocumentItem` (where migration doesn't run).
+        //
+        // Fire-and-forget: each Task awaits `extract()` then routes
+        // through `applyDocumentExtraction`. The outer call returns
+        // immediately so the caller (NodeDetailView.onAppear) isn't
+        // blocked on N file decodes.
+        let kickoffTargets: [(entryID: String, documentItem: DocumentItem)] =
+            node.items.compactMap { item in
+                guard item.type == .document,
+                      let documentItem = item.documentItems?.first,
+                      documentItem.extractionAttemptedAt == nil,
+                      DocumentExtractionService.supportedExtensions.contains(documentItem.fileType.lowercased())
+                else { return nil }
+                return (item.id, documentItem)
+            }
+        let capturedNodeID = nodeID
+        for target in kickoffTargets {
+            let documentItem = target.documentItem
+            let entryID = target.entryID
+            Task {
+                guard let url = await documentFileURL(for: documentItem, nodeID: capturedNodeID) else { return }
+                let extraction = await DocumentExtractionService().extract(
+                    fileURL: url,
+                    fileType: documentItem.fileType
+                )
+                await applyDocumentExtraction(
+                    nodeID: capturedNodeID,
+                    entryID: entryID,
+                    documentItemID: documentItem.id,
+                    extraction: extraction
+                )
+            }
+        }
     }
 
     // MARK: - Append items to existing nodes
@@ -1213,7 +1258,7 @@ final class CorpusStore {
         }
 
         let itemID = UUID().uuidString
-        let ext = sourceURL.pathExtension.isEmpty ? "bin" : sourceURL.pathExtension
+        let ext = sourceURL.pathExtension.isEmpty ? "bin" : sourceURL.pathExtension.lowercased()
         let originalFilename = sourceURL.lastPathComponent
         do {
             try await service.saveItemFile(
@@ -1227,6 +1272,27 @@ final class CorpusStore {
             return
         }
         let now = Date()
+        // Stage 4.6 commit 2 — populate `documentItems[0]` at capture time
+        // so new entries and v3→v4-migrated entries converge on the same
+        // shape. Extraction-derived fields (documentTitle, extractedText,
+        // thumbnailFile, pageCount, wordCount) start nil; the renderer's
+        // `.task` backfill in `DocumentEntryBody` fires
+        // `DocumentExtractionService` on first appear and routes the
+        // result back via `applyDocumentExtraction`. Single source of
+        // truth for "when extraction runs" — covers both new captures and
+        // migrated entries without a separate kick-off here.
+        let documentItem = DocumentItem(
+            id: itemID,
+            filePath: "items/\(itemID).\(ext)",
+            fileName: originalFilename,
+            fileType: ext,
+            documentTitle: nil,
+            extractedText: nil,
+            thumbnailFile: nil,
+            pageCount: nil,
+            wordCount: nil,
+            capturedAt: now
+        )
         let item = NodeItem(
             id: itemID,
             type: .document,
@@ -1234,9 +1300,97 @@ final class CorpusStore {
             file: "items/\(itemID).\(ext)",
             displayName: originalFilename,
             isExpanded: true,
-            updatedAt: now
+            updatedAt: now,
+            documentItems: [documentItem]
         )
         await appendItemToNode(nodeID: nodeID, item: item)
+    }
+
+    /// Stage 4.6 commit 2 — writeback for a `DocumentExtractionService`
+    /// pass. Mirrors `applyOGFetchToLinkItem`: moves the thumbnail temp
+    /// file (when present) into the corpus's `items/` directory as a
+    /// `.thumb.<ext>` sidecar via the existing `saveItemFile` path, then
+    /// updates the target `DocumentItem` in place with the extraction-
+    /// derived fields and bumps `updatedAt`.
+    ///
+    /// `extraction == nil` is the "extraction service couldn't produce
+    /// anything" path (timeout, unsupported format, malformed file). We
+    /// still write back so the entry-side `.task` gate sees a populated
+    /// `documentTitle` (falling back to `fileName`) and stops re-firing
+    /// on every render — otherwise a broken PDF would burn a 10s
+    /// timeout every time the user opens the node. Same invariant as
+    /// `applyOGFetch` stamping `ogFetchedAt` even on nil metadata.
+    ///
+    /// Silently bails on missing node/entry/documentItem so a node
+    /// deleted mid-extraction doesn't crash.
+    func applyDocumentExtraction(
+        nodeID: String,
+        entryID: String,
+        documentItemID: String,
+        extraction: DocumentExtraction?
+    ) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var docItems = updated.items[itemIdx].documentItems,
+              let docIdx = docItems.firstIndex(where: { $0.id == documentItemID }) else { return }
+
+        var thumbnailRelativePath: String? = nil
+        if let extraction,
+           let tempURL = extraction.thumbnailTempURL,
+           let ext = extraction.thumbnailExtension {
+            do {
+                try await service.saveItemFile(
+                    nodeID: nodeID,
+                    itemID: documentItemID,
+                    sourceURL: tempURL,
+                    fileExtension: "thumb.\(ext)"
+                )
+                thumbnailRelativePath = "items/\(documentItemID).thumb.\(ext)"
+                try? FileManager.default.removeItem(at: tempURL)
+            } catch {
+                print("[CorpusStore] applyDocumentExtraction: thumb sidecar save failed for \(documentItemID): \(error)")
+                // Continue — still record textual fields even if thumb couldn't land.
+            }
+        }
+
+        var docItem = docItems[docIdx]
+        docItem.documentTitle = extraction?.documentTitle
+        docItem.extractedText = extraction?.extractedText
+        docItem.thumbnailFile = thumbnailRelativePath
+        docItem.pageCount = extraction?.pageCount
+        docItem.wordCount = extraction?.wordCount
+        // Stage 4.6 commit 2 fix — stamp the staleness marker on every
+        // completion, success and failure alike. The gate in
+        // `DocumentEntryBody.extractIfNeeded` and the migration-driven
+        // kickoff in `ensureEntrySchema` both consult this to decide
+        // whether to re-attempt. Display title fallback now lives
+        // entirely in the renderer (`documentTitle ?? fileName`) —
+        // applyDocumentExtraction no longer abuses documentTitle as a
+        // "we tried" marker.
+        docItem.extractionAttemptedAt = Date()
+        docItems[docIdx] = docItem
+        updated.items[itemIdx].documentItems = docItems
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Stage 4.6 — resolves the on-disk URL for a `DocumentItem`'s
+    /// captured file. Parallel to `ogImageFileURL` for link OG images.
+    /// Used by `DocumentEntryBody`'s `.task` extraction backfill and by
+    /// later commits' Quick Look surface.
+    func documentFileURL(for documentItem: DocumentItem, nodeID: String) async -> URL? {
+        return await service.resolveItemPath(nodeID: nodeID, relativePath: documentItem.filePath)
+    }
+
+    /// Stage 4.6 — resolves the on-disk URL for a `DocumentItem`'s
+    /// thumbnail sidecar at `items/<documentItemID>.thumb.<ext>`. Nil
+    /// when the format has no thumbnail (TXT/MD/RTF) or extraction
+    /// hasn't run / didn't render one (e.g. malformed PDF).
+    func documentThumbnailFileURL(for documentItem: DocumentItem, nodeID: String) async -> URL? {
+        guard let relativePath = documentItem.thumbnailFile else { return nil }
+        return await service.resolveItemPath(nodeID: nodeID, relativePath: relativePath)
     }
 
     func appendItemToNodeWithAudio(nodeID: String, item: NodeItem, audioURL: URL, audioItemID: String) async {

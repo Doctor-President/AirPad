@@ -57,6 +57,8 @@ struct SubstrateInspectView: View {
     @State private var entryMigrationSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestInProgress: Bool = false
+    @State private var clipboardRouterSelfTestResult: String? = nil
+    @State private var clipboardRouterSelfTestInProgress: Bool = false
     @State private var exportInProgress: Bool = false
     @State private var exportResult: ExportResult? = nil
     @State private var exportError: String? = nil
@@ -524,6 +526,33 @@ struct SubstrateInspectView: View {
             .buttonStyle(.plain)
             .disabled(entryDeletionSelfTestInProgress)
             if let r = entryDeletionSelfTestResult {
+                Text(r)
+                    .font(.caption2)
+                    .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                guard !clipboardRouterSelfTestInProgress else { return }
+                clipboardRouterSelfTestInProgress = true
+                Task {
+                    let r = await ClipboardContentRouterDiagnostic.run()
+                    await MainActor.run {
+                        clipboardRouterSelfTestResult = r
+                        clipboardRouterSelfTestInProgress = false
+                    }
+                }
+            } label: {
+                Text(clipboardRouterSelfTestInProgress ? "Running clipboard-router self-tests…" : "Run clipboard-router self-tests")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(clipboardRouterSelfTestInProgress)
+            if let r = clipboardRouterSelfTestResult {
                 Text(r)
                     .font(.caption2)
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))

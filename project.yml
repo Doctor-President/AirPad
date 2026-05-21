@@ -59,6 +59,13 @@ targets:
       path: AirPad/Info.plist
       properties:
         CFBundleDisplayName: AirPad
+        UIAppFonts:
+          - Lato-Regular.ttf
+          - Lato-Bold.ttf
+          - Fraunces_72pt-Regular.ttf
+          - Fraunces_72pt-Bold.ttf
+          - Lora-Regular.ttf
+          - Lora-Bold.ttf
         UILaunchScreen: {}
         CFBundleURLTypes:
           - CFBundleURLName: com.doctorpresident.airpad
@@ -88,6 +95,7 @@ targets:
           - "EntryMigration.swift"
           - "EntryMigrationSelfTest.swift"
           - "EntryDeletionDiagnostic.swift"
+          - "ClipboardContentRouterDiagnostic.swift"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share

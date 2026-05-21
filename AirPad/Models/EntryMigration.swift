@@ -24,6 +24,17 @@ import Foundation
 ///   entries). Legacy `url` / `title` / `preview` / `og*` fields stay
 ///   populated for v1/v2 compatibility; rendering reads `linkItems`
 ///   when present.
+/// - 3 → 4: Stage 4.6 document gallery (`documentItems` array on
+///   `.document` entries). Legacy `file` / `description` fields stay
+///   populated for v1/v2/v3 compatibility; rendering reads
+///   `documentItems` when present. `LinkItem` snapshot fields
+///   (`snapshotText`, `snapshotAt`, `snapshotWordCount`) are bundled
+///   into this bump per the Phase 1 audit — every prior gallery
+///   enrichment bumped on shape change, so this matches the project
+///   contract even though the snapshot fields are themselves additive
+///   optional. The migration step itself does no work on `LinkItem`s
+///   (the new snapshot fields are nil for every pre-4.6 link until the
+///   user invokes the Snapshot gesture).
 @discardableResult
 func migrateEntrySchemaIfNeeded(_ node: inout Node) -> Bool {
     var didMigrate = false
@@ -37,6 +48,10 @@ func migrateEntrySchemaIfNeeded(_ node: inout Node) -> Bool {
     }
     if node.entrySchemaVersion < 3 {
         migrateEntrySchemaV2ToV3(&node)
+        didMigrate = true
+    }
+    if node.entrySchemaVersion < 4 {
+        migrateEntrySchemaV3ToV4(&node)
         didMigrate = true
     }
     return didMigrate
@@ -193,4 +208,88 @@ private func migrateEntrySchemaV2ToV3(_ node: inout Node) {
         node.items[i].linkItems = [linkItem]
     }
     node.entrySchemaVersion = 3
+}
+
+// MARK: - v3 → v4 (Stage 4.6 document gallery + link snapshot fields)
+
+/// Converts every `.document` entry with `file` populated into a one-element
+/// `documentItems` array. The legacy `file` / `description` fields stay
+/// populated on the migrated entry — vestigial post-migration but harmless,
+/// useful as a diagnostic breadcrumb if `documentItems` is ever found
+/// inconsistent, and required for any v1/v2/v3 read path that hasn't been
+/// updated to read from `documentItems` yet. Rendering reads
+/// `documentItems` when present.
+///
+/// `DocumentItem.id` is set equal to the parent `NodeItem.id` so the
+/// existing file sidecar at `nodes/<nodeID>/items/<entryID>.<ext>` stays
+/// reachable via `DocumentItem.filePath` without renaming — same strategy
+/// `migrateEntrySchemaV1ToV2` uses for `GalleryItem.id` and
+/// `migrateEntrySchemaV2ToV3` uses for `LinkItem.id`.
+///
+/// `extractedText`, `thumbnailFile`, `documentTitle`, `pageCount`, and
+/// `wordCount` are nil on migrated entries — extraction is async and
+/// expensive (PDF page-1 render, HTML JS execution), so we don't run it
+/// inside the migration. Commit 2 wires a backfill path that fires
+/// `DocumentExtractionService` on first render of a `.document` tile
+/// whose `extractedText` is nil, the same way Stage 4.5 backfills
+/// missing OG metadata via `LinkEntryBody.refetchIfStaleOrMissing`.
+///
+/// A `.document` entry with a nil `file` (a malformed legacy shape or
+/// a placeholder entry that never had a file attached) is left with
+/// `documentItems = nil`. The renderer's empty-state fallback in
+/// `DocumentEntryBody` handles those entries unchanged.
+///
+/// `LinkItem` snapshot fields (`snapshotText` / `snapshotAt` /
+/// `snapshotWordCount`) are bundled into the v4 bump but require no
+/// migration work — they're additive optional and nil for every
+/// pre-4.6 link until the user invokes the Snapshot gesture. Bundling
+/// them into v4 (rather than treating them as additive-without-bump)
+/// matches the project contract: every prior gallery enrichment
+/// (v1→v2 mediaItems, v2→v3 linkItems) bumped on shape change.
+///
+/// Other entry types (`text`, `audio`, `image`, `video`, `imageVideo`,
+/// `link`) are untouched by this step. Note that pre-v2 entries are
+/// already brought up to v2 by `migrateEntrySchemaV1ToV2` running
+/// first in the chain, so by the time this step runs, all
+/// image/video entries have type `.imageVideo` and `.document` is the
+/// only file-bearing type left.
+private func migrateEntrySchemaV3ToV4(_ node: inout Node) {
+    for i in node.items.indices {
+        let item = node.items[i]
+        guard item.type == .document else { continue }
+        // Idempotency safety: if a previous pass already populated
+        // documentItems (shouldn't be possible since entrySchemaVersion
+        // < 4 gates entry here, but be defensive), leave the entry alone.
+        guard item.documentItems == nil else { continue }
+        guard let file = item.file, !file.isEmpty else {
+            // No file committed — leave documentItems nil. The renderer's
+            // empty-state fallback handles those entries unchanged.
+            continue
+        }
+        // Derive fileName + fileType from the legacy sidecar path. The
+        // legacy `file` field for documents is the same UUID-named
+        // sidecar shape used by every other media type, so the last
+        // path component is the on-disk filename and the extension
+        // after the final `.` is the file type. We don't have the
+        // user-facing original filename (it was never stored
+        // pre-4.6), so we fall back to the on-disk filename — the
+        // user can rename the entry's displayName to give it a more
+        // recognizable label.
+        let onDiskName = (file as NSString).lastPathComponent
+        let ext = (onDiskName as NSString).pathExtension.lowercased()
+        let documentItem = DocumentItem(
+            id: item.id,
+            filePath: file,
+            fileName: onDiskName,
+            fileType: ext,
+            documentTitle: nil,
+            extractedText: nil,
+            thumbnailFile: nil,
+            pageCount: nil,
+            wordCount: nil,
+            capturedAt: item.createdAt
+        )
+        node.items[i].documentItems = [documentItem]
+    }
+    node.entrySchemaVersion = 4
 }

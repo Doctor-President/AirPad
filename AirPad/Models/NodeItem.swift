@@ -126,6 +126,36 @@ struct NodeItem: Codable, Identifiable, Equatable {
     // based fallback covers them).
     var linkViewMode: LinkViewMode?
 
+    // Stage 4.6 — ordered document list backing a `.document` entry.
+    // Populated by `migrateEntrySchemaV3ToV4` for legacy single-document
+    // entries (one-element array; `DocumentItem.id` matches the parent
+    // `NodeItem.id` on migration so the existing file sidecar stays
+    // reachable without renaming) and by the append-to-existing flow
+    // shipping in commit 2 for multi-document entries. The legacy `file`
+    // / `description` fields stay populated on migrated entries as a
+    // diagnostic breadcrumb. Nil on every non-document entry; nil on
+    // `.document` entries that have never had a file committed.
+    var documentItems: [DocumentItem]?
+
+    // Stage 4.6 — per-entry document-gallery view-mode persistence.
+    // Mirrors `linkViewMode` (carousel | grid) because document tiles are
+    // also roughly uniform-shape. Three-state semantics:
+    //   - nil: user has never chosen; renderer picks a count-based
+    //     default (≤3 → carousel, ≥4 → grid) at the first transition
+    //     with ≥2 items. Single-document entries leave this nil — they
+    //     render via `DocumentEntryBody`, which doesn't read
+    //     `documentViewMode`.
+    //   - .carousel / .grid: user (or the first single→multi transition)
+    //     wrote a value. The renderer honors it verbatim regardless of
+    //     count; incremental adds preserve the existing choice so the
+    //     user's toggle is the only thing that changes it after first
+    //     transition.
+    // Additive optional, no entrySchemaVersion bump on its own — the v4
+    // bump is driven by `documentItems`; `documentViewMode` rides along
+    // as nil for migrated entries (count is at most 1 post-migration so
+    // the count-based fallback covers them).
+    var documentViewMode: DocumentViewMode?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -143,6 +173,8 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case viewMode = "view_mode"
         case linkItems = "link_items"
         case linkViewMode = "link_view_mode"
+        case documentItems = "document_items"
+        case documentViewMode = "document_view_mode"
     }
 }
 
@@ -258,12 +290,48 @@ struct LinkItem: Codable, Identifiable, Equatable {
     /// moment is preserved. For appended items, the moment of append.
     let capturedAt: Date
 
+    // Stage 4.6 — user-invoked content snapshot. Distinct from the OG
+    // fields above: OG metadata is page-summary chrome (title +
+    // description + share image), while a snapshot is the actual visible
+    // body text pulled from the URL via a hidden `WKWebView` on user
+    // gesture. The substrate's embedding pipeline reads `snapshotText`
+    // the same way it reads `DocumentItem.extractedText` — both are the
+    // "extracted text on every collectible" seam called out in the
+    // Stage 4.6 brief.
+    //
+    // All three fields are additive optional. They're bundled into the
+    // v3→v4 bump (alongside the document changes) per the Phase 1 audit
+    // decision: every prior gallery enrichment bumped on shape change,
+    // so a single migration anchor for v4 matches the project contract.
+    // Existing LinkItems decode with these as nil and stay that way
+    // until the user explicitly invokes "Snapshot content" on the
+    // entry.
+
+    /// Visible text extracted from the URL at snapshot time. Nil until
+    /// the user invokes the Snapshot gesture; remains nil for links
+    /// where snapshotting failed (timeout, JS-rendered-but-empty,
+    /// anti-scraping block). Re-snapshotting replaces the prior value
+    /// in place — there's no snapshot history.
+    var snapshotText: String?
+    /// Timestamp the snapshot was taken. Nil when `snapshotText` is nil.
+    /// Used by the UI to show "snapshotted 3 days ago" and by future
+    /// staleness logic to suggest re-snapshotting links the user hasn't
+    /// refreshed in a long time.
+    var snapshotAt: Date?
+    /// Word count of `snapshotText`. Cached on disk so the tile can
+    /// render the metric without re-counting. Nil alongside
+    /// `snapshotText`.
+    var snapshotWordCount: Int?
+
     enum CodingKeys: String, CodingKey {
         case id, url, title, description
         case imageFile = "image_file"
         case siteName = "site_name"
         case faviconFile = "favicon_file"
         case capturedAt = "captured_at"
+        case snapshotText = "snapshot_text"
+        case snapshotAt = "snapshot_at"
+        case snapshotWordCount = "snapshot_word_count"
     }
 }
 
@@ -281,5 +349,101 @@ enum LinkViewMode: String, Codable, Equatable {
     /// 2-column rectangular grid, deterministic left-to-right top-to-
     /// bottom order. Default for entries with ≥4 items at the moment they
     /// first become multi-link.
+    case grid
+}
+
+/// Stage 4.6 — single document inside a `.document` entry. Each item carries
+/// the captured file as the primary asset (stored as a sidecar at
+/// `nodes/<nodeID>/items/<DocumentItem.id>.<ext>`) plus optional
+/// extraction-derived fields populated by `DocumentExtractionService`. The
+/// extraction fields are optional because (a) extraction is async and may
+/// not have completed by the time the item is persisted, and (b) only a
+/// subset of formats (PDF, HTML, TXT, MD, RTF) extract in v1 — Office
+/// formats and other complex types render via Quick Look but contribute
+/// nothing to `extractedText` until a future stage adds support.
+///
+/// `extractedText` is the substrate seam: the embedding pipeline (next
+/// workstream) will read this field for documents the same way it reads
+/// `LinkItem.snapshotText` for snapshotted links and `summaryEmbedding`
+/// for nodes. Documents that don't extract still render via Quick Look,
+/// but contribute no signal to the substrate.
+///
+/// On migration from a v3 single-document entry, `DocumentItem.id` is set
+/// equal to the parent `NodeItem.id` so the existing file sidecar at
+/// `items/<entryID>.<ext>` stays reachable via `filePath` without renaming
+/// — same strategy `migrateEntrySchemaV1ToV2` uses for `GalleryItem.id`
+/// and `migrateEntrySchemaV2ToV3` uses for `LinkItem.id`. Items appended
+/// post-4.6 get fresh UUIDs.
+struct DocumentItem: Codable, Identifiable, Equatable {
+    let id: String
+    /// Filename (not URL) of the document sidecar at
+    /// `nodes/<nodeID>/items/<DocumentItem.id>.<ext>`. Mirrors
+    /// `GalleryItem.file` conventions so the existing
+    /// `iCloudDriveService.saveItemFile` path can write it without
+    /// changes.
+    let filePath: String
+    /// Original filename at capture time, preserved for display. Distinct
+    /// from `filePath` (which is the UUID-named sidecar) so the user
+    /// always sees the name they recognize even though the on-disk file
+    /// is renamed for collision-free storage.
+    let fileName: String
+    /// Lowercased extension (e.g. `"pdf"`, `"html"`, `"txt"`). Used by
+    /// the renderer to pick the right thumbnail strategy and by
+    /// `DocumentExtractionService` to dispatch to the right extractor.
+    let fileType: String
+    /// Title derived from document metadata (PDF Title field, HTML
+    /// `<title>`) when extraction succeeds, or nil otherwise. The
+    /// renderer falls back to `fileName` when nil.
+    var documentTitle: String?
+    /// Visible text extracted from the document. Populated for PDF,
+    /// HTML, TXT, MD, RTF; nil for formats without v1 extraction support
+    /// (Office docs, images, etc.) and nil while extraction is in
+    /// flight. The substrate's embedding pipeline reads this field.
+    var extractedText: String?
+    /// Filename (not URL) of the thumbnail sidecar at
+    /// `nodes/<nodeID>/items/<DocumentItem.id>.thumb.<ext>`. Populated
+    /// for PDF (page-1 render) and HTML (viewport screenshot); nil for
+    /// formats that fall back to a generic-icon-with-extension overlay.
+    var thumbnailFile: String?
+    /// Page count from PDF metadata. Nil for non-PDF formats and for
+    /// PDFs where extraction hasn't completed yet.
+    var pageCount: Int?
+    /// Word count of `extractedText`. Cached on disk so the tile can
+    /// render the metric without re-counting on every render. Nil
+    /// alongside `extractedText`.
+    var wordCount: Int?
+    /// Timestamp the item was added to the entry. For migrated entries,
+    /// copied from the parent `NodeItem.createdAt` so the original
+    /// capture moment is preserved. For appended items, the moment of
+    /// append.
+    let capturedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case filePath = "file_path"
+        case fileName = "file_name"
+        case fileType = "file_type"
+        case documentTitle = "document_title"
+        case extractedText = "extracted_text"
+        case thumbnailFile = "thumbnail_file"
+        case pageCount = "page_count"
+        case wordCount = "word_count"
+        case capturedAt = "captured_at"
+    }
+}
+
+/// Stage 4.6 — document-gallery presentation mode for a `.document` entry
+/// with ≥2 items. Persisted on `NodeItem.documentViewMode`. Raw values are
+/// snake_case-stable for the JSON encoding. Mirrors `LinkViewMode` (not
+/// `GalleryViewMode`) because document tiles are roughly uniform in shape
+/// — the aspect-aware bento packer doesn't earn its keep on tiles that
+/// are all the same rectangle, same as for links.
+enum DocumentViewMode: String, Codable, Equatable {
+    /// Horizontal scrollable strip. Default for entries with ≤3 items at
+    /// the moment they first become multi-document.
+    case carousel
+    /// 2-column rectangular grid, deterministic left-to-right top-to-
+    /// bottom order. Default for entries with ≥4 items at the moment
+    /// they first become multi-document.
     case grid
 }

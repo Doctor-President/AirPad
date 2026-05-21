@@ -31,6 +31,17 @@ struct NodeDetailView: View {
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
 
+    /// Stage 4.6 commit 3 — capture-time modal for the canvas-level
+    /// "+ Document" path. When the user picks documents in a node that
+    /// already has a `.document` entry, we present a modal asking
+    /// whether to append to the most-recently-updated `.document` entry
+    /// or create a fresh one. First-document captures skip the modal
+    /// entirely (`addDocumentEntry` runs directly). The modal has no
+    /// per-session memory of the user's choice — it appears every
+    /// capture so each pick is a deliberate decision.
+    @State private var pendingDocumentURLs: [URL] = []
+    @State private var showDocumentAppendModal = false
+
     @State private var bgPhase: Double = 0
 
     /// Stage 3.1b — owns the entire transient drag-to-reorder UI state.
@@ -173,9 +184,56 @@ struct NodeDetailView: View {
             }
         }
         .sheet(isPresented: $showDocumentPicker) {
-            DocumentPickerView { url in
-                Task { await store.appendDocumentItem(nodeID: nodeID, sourceURL: url) }
+            DocumentPickerView { urls in
+                guard !urls.isEmpty else { return }
+                // Phase 1 rule: append-to-most-recently-updated for
+                // documents, with an explicit "New entry" override
+                // surfaced via the capture-time modal. First-document
+                // captures (no existing `.document` entry) skip the
+                // modal and create directly.
+                if let n = node, n.items.contains(where: { $0.type == .document }) {
+                    pendingDocumentURLs = urls
+                    showDocumentAppendModal = true
+                } else {
+                    Task { await store.addDocumentEntry(nodeID: nodeID, sourceURLs: urls) }
+                }
             }
+        }
+        .confirmationDialog(
+            "Append to existing Documents entry?",
+            isPresented: $showDocumentAppendModal,
+            titleVisibility: .visible
+        ) {
+            Button("Append") {
+                let urls = pendingDocumentURLs
+                let nodeIDCopy = nodeID
+                if let targetID = mostRecentDocumentEntryID() {
+                    Task {
+                        await store.appendDocumentItems(
+                            toEntryID: targetID,
+                            nodeID: nodeIDCopy,
+                            sourceURLs: urls
+                        )
+                    }
+                } else {
+                    // Race fallback: a delete between picker dismiss and
+                    // modal action could leave us with no append target.
+                    // Fall through to a fresh entry rather than dropping
+                    // the user's picked files.
+                    Task { await store.addDocumentEntry(nodeID: nodeIDCopy, sourceURLs: urls) }
+                }
+                pendingDocumentURLs = []
+            }
+            Button("New entry") {
+                let urls = pendingDocumentURLs
+                Task { await store.addDocumentEntry(nodeID: nodeID, sourceURLs: urls) }
+                pendingDocumentURLs = []
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDocumentURLs = []
+            }
+        } message: {
+            Text("Append these documents to your most recent Documents entry, or create a new entry?")
         }
         .alert("Add link", isPresented: $showLinkAddAlert) {
             TextField("https://example.com", text: $linkDraft)
@@ -421,6 +479,21 @@ struct NodeDetailView: View {
                 .clipShape(Circle())
                 .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
         }
+    }
+
+    // MARK: - Document capture helpers
+
+    /// Stage 4.6 commit 3 — resolves the modal's "Append" target. Most-
+    /// recently-updated wins by `updatedAt` (falling back to `createdAt`
+    /// for entries that haven't been edited since creation). Nil only
+    /// when the node has no `.document` entries; the modal would not
+    /// have been shown in that case, but the guard handles the race
+    /// where a delete lands between picker dismiss and modal action.
+    private func mostRecentDocumentEntryID() -> String? {
+        node?.items
+            .filter { $0.type == .document }
+            .max(by: { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) })?
+            .id
     }
 
     // MARK: - Link add

@@ -237,16 +237,19 @@ struct EntryCard: View {
                 LinkEntryBody(item: item, nodeID: nodeID)
             }
         case .document:
-            // Stage 4.6 commit 1 — defensive route. Commit 3 will swap
-            // this for count-based dispatch on `documentItems` mirroring
-            // the `.link` route added in Stage 4.5 commit 3 (≥2 →
-            // `DocumentGalleryBody`, otherwise → `DocumentEntryBody`).
-            // For commit 1 every count routes to `DocumentEntryBody` so
-            // the app ships visually unchanged from v3 (per the "each
-            // commit leaves the app working" rule). `DocumentEntryBody`
-            // continues to read legacy `file` / `description`; commit 2
-            // teaches it to also read `documentItems` when present.
-            DocumentEntryBody(item: item, nodeID: nodeID)
+            // Stage 4.6 commit 3 — count-based dispatch on `documentItems`:
+            //   ≥2    → `DocumentGalleryBody` (carousel + chrome "+";
+            //           the carousel/grid toggle and grid renderer land
+            //           in C4 together)
+            //   1/0/nil → `DocumentEntryBody` (single-doc renderer with
+            //           thumbnail-less title row; reads documentItems[0]
+            //           when present, falls back to legacy `file`)
+            let documentCount = item.documentItems?.count ?? 0
+            if documentCount >= 2 {
+                DocumentGalleryBody(item: item, nodeID: nodeID)
+            } else {
+                DocumentEntryBody(item: item, nodeID: nodeID)
+            }
         case .imageVideo:
             // Stage 4.2 commit 4 — dispatch on `mediaItems.count`:
             //   1     → `SingleMediaBody` (commit 3)

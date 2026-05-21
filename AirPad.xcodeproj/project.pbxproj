@@ -138,6 +138,8 @@
 		D5EB544A1177511F99074F74 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */; };
 		D920C62968AB09FDDB9124A4 /* DocumentEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */; };
+		A1B2C3D4E5F60718293A4B5C /* DocumentGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5D /* DocumentGalleryBody.swift */; };
+		A1B2C3D4E5F60718293A4B6C /* DocumentGalleryTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B6D /* DocumentGalleryTile.swift */; };
 		D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
@@ -290,6 +292,8 @@
 		D78B727835739390B86DF397 /* UMAPModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPModel.swift; sourceTree = "<group>"; };
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5D /* DocumentGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryBody.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B6D /* DocumentGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryTile.swift; sourceTree = "<group>"; };
 		DB97C8C89A4E56E95903000D /* BentoLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BentoLayout.swift; sourceTree = "<group>"; };
 		DD4733E2421E070A68925125 /* BatchParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchParser.swift; sourceTree = "<group>"; };
 		DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANLinkage.swift; sourceTree = "<group>"; };
@@ -579,6 +583,8 @@
 			children = (
 				DB97C8C89A4E56E95903000D /* BentoLayout.swift */,
 				DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */,
+				A1B2C3D4E5F60718293A4B5D /* DocumentGalleryBody.swift */,
+				A1B2C3D4E5F60718293A4B6D /* DocumentGalleryTile.swift */,
 				D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */,
 				A1213E716A9E302D0B777EDD /* EntryCard.swift */,
 				ECACE148A0B50511A83212FE /* EntryVisualDevPanel.swift */,
@@ -814,6 +820,8 @@
 				481B80E93834B0485E835938 /* CorpusQuerySheet.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
 				D920C62968AB09FDDB9124A4 /* DocumentEntryBody.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5C /* DocumentGalleryBody.swift in Sources */,
+				A1B2C3D4E5F60718293A4B6C /* DocumentGalleryTile.swift in Sources */,
 				3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
 				920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */,

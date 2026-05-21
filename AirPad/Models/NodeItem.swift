@@ -418,6 +418,26 @@ struct DocumentItem: Codable, Identifiable, Equatable {
     /// append.
     let capturedAt: Date
 
+    // Stage 4.6 commit 2 fix — staleness marker for the extraction
+    // pass. Stamped by `applyDocumentExtraction` on every completion
+    // regardless of success or failure, so the gate in
+    // `DocumentEntryBody`'s `.task` and `CorpusStore.ensureEntrySchema`'s
+    // migration-driven kickoff can distinguish "never attempted" (nil)
+    // from "attempted recently" (within the staleness window) from
+    // "attempted long ago, worth retrying" (older than the window).
+    //
+    // Parallels `NodeItem.ogFetchedAt` for link OG fetches — same
+    // retry-on-staleness pattern, same lazy backfill cadence. The
+    // threshold (`DocumentExtractionService.staleness`) matches
+    // `OGMetadataService.staleness` at 7 days: long enough that
+    // persistently broken files don't loop, short enough that transient
+    // failures (iCloud lazy materialization, momentary timeout)
+    // self-heal on the next view after the window elapses.
+    //
+    // Additive optional — decodes as nil from existing v4 JSONs, no
+    // v4→v5 bump needed.
+    var extractionAttemptedAt: Date?
+
     enum CodingKeys: String, CodingKey {
         case id
         case filePath = "file_path"
@@ -429,6 +449,7 @@ struct DocumentItem: Codable, Identifiable, Equatable {
         case pageCount = "page_count"
         case wordCount = "word_count"
         case capturedAt = "captured_at"
+        case extractionAttemptedAt = "extraction_attempted_at"
     }
 }
 

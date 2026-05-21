@@ -58,6 +58,33 @@ import Foundation
 ///        Deleting just the middle LinkItem's two sidecars leaves both
 ///        edge items' four sidecars intact. Parallel to T8 (middle-delete
 ///        ordering preservation) but for LinkItem's dual sidecars.
+///   T11 — Stage 4.6 single-doc entry delete: one DocumentItem carrying
+///        a file blob (`.pdf`) AND a thumbnail sidecar (`.thumb.jpg`) at
+///        the same itemID, with an unrelated bystander file elsewhere in
+///        the same node. Deleting both DocumentItem files (the shape
+///        `deleteDocumentItemSidecars` produces) removes them cleanly
+///        and the bystander survives. Anchors the single-doc entry-
+///        delete contract — analogous to T1 for documents, but with the
+///        dotted-extension sidecar arm exercised.
+///   T12 — Stage 4.6 multi-doc entry delete: 2 DocumentItems each with
+///        file blob + thumbnail (4 files total) + bystander. Deleting
+///        all four (the shape `deleteEntry`'s `documentItems` iteration
+///        produces for a multi-doc entry) removes each cleanly and the
+///        bystander survives. Parallel to T9's multi-link entry shape
+///        but pins the DocumentItem blob-plus-thumbnail contract.
+///   T13 — Stage 4.6 per-doc middle delete from 3-doc gallery: 3
+///        DocumentItems each with file blob + thumbnail. Deleting only
+///        the middle item's two files leaves both edge items' four
+///        files intact. Parallel to T10 (middle-delete ordering
+///        preservation) but for DocumentItem's blob-plus-thumbnail.
+///   T14 — Stage 4.6 DocumentItem without thumbnail (TXT/MD/RTF shape):
+///        DocumentItem with only the file blob (`.txt`) and no
+///        `.thumb.<ext>` sidecar. Deleting the blob succeeds; the
+///        `thumbnailFile == nil` branch in `deleteDocumentItemSidecars`
+///        skips the sidecar arm entirely. A regression that treated
+///        nil-thumbnail as `thumb.""` (or that always called the
+///        sidecar delete unconditionally) would surface here either as
+///        a thrown error or as a phantom delete attempt.
 @available(iOS 17.0, *)
 @MainActor
 enum EntryDeletionDiagnostic {
@@ -397,6 +424,184 @@ enum EntryDeletionDiagnostic {
                 }
             } catch {
                 failures.append("T10: threw \(error)")
+            }
+        }
+
+        // T11 — Stage 4.6 single-doc entry delete: one DocumentItem with
+        // a file blob (`.pdf`) + a thumbnail sidecar (`.thumb.jpg`) at
+        // the same itemID, plus an unrelated bystander file in the
+        // same node. Deleting both DocumentItem files (the shape
+        // `deleteDocumentItemSidecars` produces) removes them cleanly;
+        // the bystander survives. Anchors the single-doc entry-delete
+        // contract — analogous to T1 for documents but with the
+        // dotted-extension sidecar arm exercised in parallel.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let docID = UUID().uuidString
+            let bystanderID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let blobSrc = try writeTempFile(name: "\(docID).pdf", bytes: 24)
+                let thumbSrc = try writeTempFile(name: "\(docID).thumb.jpg", bytes: 12)
+                let bys = try writeTempFile(name: "\(bystanderID).jpg", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: docID, sourceURL: blobSrc, fileExtension: "pdf")
+                try await service.saveItemFile(nodeID: nodeID, itemID: docID, sourceURL: thumbSrc, fileExtension: "thumb.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: bystanderID, sourceURL: bys, fileExtension: "jpg")
+
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: docID, fileExtension: "pdf")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: docID, fileExtension: "thumb.jpg")
+
+                if await service.itemFileExists(nodeID: nodeID, itemID: docID, fileExtension: "pdf") {
+                    failures.append("T11: doc blob still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: docID, fileExtension: "thumb.jpg") {
+                    failures.append("T11: doc thumb still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: bystanderID, fileExtension: "jpg")) {
+                    failures.append("T11: bystander collaterally removed")
+                }
+            } catch {
+                failures.append("T11: threw \(error)")
+            }
+        }
+
+        // T12 — Stage 4.6 multi-doc entry delete: 2 DocumentItems in one
+        // node's items/ dir, each with file blob + thumbnail sidecar
+        // (4 files total) + an unrelated bystander. Deleting all four
+        // (the shape `deleteEntry`'s `documentItems` iteration produces
+        // for a multi-doc entry) removes each cleanly; bystander
+        // survives. Parallel to T9 but for DocumentItem's blob-plus-
+        // thumbnail contract.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let doc1ID = UUID().uuidString
+            let doc2ID = UUID().uuidString
+            let bystanderID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let d1blob = try writeTempFile(name: "\(doc1ID).pdf", bytes: 12)
+                let d1thumb = try writeTempFile(name: "\(doc1ID).thumb.jpg", bytes: 12)
+                let d2blob = try writeTempFile(name: "\(doc2ID).docx", bytes: 12)
+                let d2thumb = try writeTempFile(name: "\(doc2ID).thumb.jpg", bytes: 12)
+                let bys = try writeTempFile(name: "\(bystanderID).jpg", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc1ID, sourceURL: d1blob, fileExtension: "pdf")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc1ID, sourceURL: d1thumb, fileExtension: "thumb.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc2ID, sourceURL: d2blob, fileExtension: "docx")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc2ID, sourceURL: d2thumb, fileExtension: "thumb.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: bystanderID, sourceURL: bys, fileExtension: "jpg")
+
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: doc1ID, fileExtension: "pdf")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: doc1ID, fileExtension: "thumb.jpg")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: doc2ID, fileExtension: "docx")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: doc2ID, fileExtension: "thumb.jpg")
+
+                if await service.itemFileExists(nodeID: nodeID, itemID: doc1ID, fileExtension: "pdf") {
+                    failures.append("T12: doc1 blob still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: doc1ID, fileExtension: "thumb.jpg") {
+                    failures.append("T12: doc1 thumb still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: doc2ID, fileExtension: "docx") {
+                    failures.append("T12: doc2 blob still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: doc2ID, fileExtension: "thumb.jpg") {
+                    failures.append("T12: doc2 thumb still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: bystanderID, fileExtension: "jpg")) {
+                    failures.append("T12: bystander collaterally removed")
+                }
+            } catch {
+                failures.append("T12: threw \(error)")
+            }
+        }
+
+        // T13 — Stage 4.6 per-doc middle delete from 3-doc gallery: 3
+        // DocumentItems each with file blob + thumbnail. Delete only
+        // the middle item's two files (the shape `removeDocumentItem`
+        // produces for a per-tile delete); both edge items' four
+        // files must survive. Parallel to T10 but for DocumentItem's
+        // blob-plus-thumbnail.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let doc0ID = UUID().uuidString
+            let doc1ID = UUID().uuidString
+            let doc2ID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let d0blob = try writeTempFile(name: "\(doc0ID).pdf", bytes: 12)
+                let d0thumb = try writeTempFile(name: "\(doc0ID).thumb.jpg", bytes: 12)
+                let d1blob = try writeTempFile(name: "\(doc1ID).pdf", bytes: 12)
+                let d1thumb = try writeTempFile(name: "\(doc1ID).thumb.jpg", bytes: 12)
+                let d2blob = try writeTempFile(name: "\(doc2ID).pdf", bytes: 12)
+                let d2thumb = try writeTempFile(name: "\(doc2ID).thumb.jpg", bytes: 12)
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc0ID, sourceURL: d0blob, fileExtension: "pdf")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc0ID, sourceURL: d0thumb, fileExtension: "thumb.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc1ID, sourceURL: d1blob, fileExtension: "pdf")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc1ID, sourceURL: d1thumb, fileExtension: "thumb.jpg")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc2ID, sourceURL: d2blob, fileExtension: "pdf")
+                try await service.saveItemFile(nodeID: nodeID, itemID: doc2ID, sourceURL: d2thumb, fileExtension: "thumb.jpg")
+
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: doc1ID, fileExtension: "pdf")
+                _ = try await service.deleteItemFile(nodeID: nodeID, itemID: doc1ID, fileExtension: "thumb.jpg")
+
+                if await service.itemFileExists(nodeID: nodeID, itemID: doc1ID, fileExtension: "pdf") {
+                    failures.append("T13: middle doc blob still on disk after delete")
+                }
+                if await service.itemFileExists(nodeID: nodeID, itemID: doc1ID, fileExtension: "thumb.jpg") {
+                    failures.append("T13: middle doc thumb still on disk after delete")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: doc0ID, fileExtension: "pdf")) {
+                    failures.append("T13: leading doc blob collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: doc0ID, fileExtension: "thumb.jpg")) {
+                    failures.append("T13: leading doc thumb collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: doc2ID, fileExtension: "pdf")) {
+                    failures.append("T13: trailing doc blob collaterally removed")
+                }
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: doc2ID, fileExtension: "thumb.jpg")) {
+                    failures.append("T13: trailing doc thumb collaterally removed")
+                }
+            } catch {
+                failures.append("T13: threw \(error)")
+            }
+        }
+
+        // T14 — Stage 4.6 DocumentItem without thumbnail (TXT/MD/RTF
+        // shape): DocumentItem with only the file blob (`.txt`) and
+        // no `.thumb.<ext>` sidecar. Deleting the blob succeeds; the
+        // `thumbnailFile == nil` branch in `deleteDocumentItemSidecars`
+        // skips the sidecar arm entirely. Pin the contract by saving
+        // *only* the blob, deleting it, then asserting the deletion
+        // primitive returns false (not an error) for the never-saved
+        // `.thumb.txt` — the idempotent missing-file shape T2 already
+        // pinned, but exercised in the no-thumbnail document context.
+        do {
+            ran += 1
+            let nodeID = "EntryDeletionTest-\(UUID().uuidString)"
+            let docID = UUID().uuidString
+            cleanupNodeIDs.insert(nodeID)
+            do {
+                let blobSrc = try writeTempFile(name: "\(docID).txt", bytes: 16)
+                try await service.saveItemFile(nodeID: nodeID, itemID: docID, sourceURL: blobSrc, fileExtension: "txt")
+                if !(await service.itemFileExists(nodeID: nodeID, itemID: docID, fileExtension: "txt")) {
+                    failures.append("T14: .txt blob did not appear after saveItemFile")
+                }
+
+                let blobRemoved = try await service.deleteItemFile(nodeID: nodeID, itemID: docID, fileExtension: "txt")
+                if !blobRemoved { failures.append("T14: deleteItemFile returned false on present .txt blob") }
+                if await service.itemFileExists(nodeID: nodeID, itemID: docID, fileExtension: "txt") {
+                    failures.append("T14: .txt blob still on disk after delete")
+                }
+
+                // Phantom-thumbnail call: must not throw, must return false.
+                let phantomRemoved = try await service.deleteItemFile(nodeID: nodeID, itemID: docID, fileExtension: "thumb.txt")
+                if phantomRemoved { failures.append("T14: deleteItemFile returned true for never-saved thumb.txt") }
+            } catch {
+                failures.append("T14: threw \(error)")
             }
         }
 

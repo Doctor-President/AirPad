@@ -605,6 +605,20 @@ final class CorpusStore {
                 await deleteLinkItemSidecars(linkItem, nodeID: nodeID, logContext: "deleteEntry")
             }
         }
+        // Stage 4.6 commit 4 — clean up DocumentItem-level file blobs +
+        // thumbnail sidecars. Parallel to the linkItems iteration above.
+        // The legacy `item.file` cleanup near the top of this method
+        // already removed `items/<parentItemID>.<ext>`, which matches
+        // `documentItems[0].filePath` when the entry was born via
+        // `addDocumentEntry`. This iteration is idempotent —
+        // `deleteItemFile` returns false on missing — so the legacy
+        // path's attempt at `documentItems[0]` doesn't surface a
+        // doubled error, and items at index 1+ get cleaned up here.
+        if let documentItems = item.documentItems {
+            for docItem in documentItems {
+                await deleteDocumentItemSidecars(docItem, nodeID: nodeID, logContext: "deleteEntry")
+            }
+        }
         updated.items.remove(at: itemIdx)
         updated.updatedAt = Date()
         await updateNode(updated)
@@ -652,6 +666,47 @@ final class CorpusStore {
                 )
             } catch {
                 print("[CorpusStore] \(logContext): LinkItem favicon sidecar removal failed for \(linkItem.id) (\(path)): \(error)")
+            }
+        }
+    }
+
+    /// Stage 4.6 commit 4 — removes both the file blob and the thumbnail
+    /// sidecar for a `DocumentItem`. Used by `removeDocumentItem`
+    /// (per-tile delete) and by `deleteEntry`'s `documentItems`
+    /// iteration. Log-and-continue on every failure path so callers can
+    /// keep their own success/failure contract; the worst case is a few
+    /// orphan files in `items/`, which the user can never see and which
+    /// don't grow without bound (one blob + one thumbnail per deleted
+    /// DocumentItem at most).
+    ///
+    /// File blob is at `items/<id>.<fileType>`; thumbnail at
+    /// `items/<id>.thumb.<thumbExt>`. The thumbnail's dotted extension
+    /// (`thumb.<ext>`) is recovered via the existing `ogSidecarExtension`
+    /// helper — same shape ("strip the `<id>.` prefix, keep the rest"),
+    /// despite the helper's link-era name; reused rather than duplicated
+    /// since the shape is identical.
+    private func deleteDocumentItemSidecars(_ docItem: DocumentItem, nodeID: String, logContext: String) async {
+        if !docItem.fileType.isEmpty {
+            do {
+                _ = try await service.deleteItemFile(
+                    nodeID: nodeID,
+                    itemID: docItem.id,
+                    fileExtension: docItem.fileType
+                )
+            } catch {
+                print("[CorpusStore] \(logContext): DocumentItem file blob removal failed for \(docItem.id) (\(docItem.filePath)): \(error)")
+            }
+        }
+        if let path = docItem.thumbnailFile,
+           let dottedExt = ogSidecarExtension(from: path, itemID: docItem.id) {
+            do {
+                _ = try await service.deleteItemFile(
+                    nodeID: nodeID,
+                    itemID: docItem.id,
+                    fileExtension: dottedExt
+                )
+            } catch {
+                print("[CorpusStore] \(logContext): DocumentItem thumbnail removal failed for \(docItem.id) (\(path)): \(error)")
             }
         }
     }
@@ -1079,6 +1134,24 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 4.6 commit 4 — user-driven view-mode toggle for a `.document`
+    /// entry's gallery presentation. Direct parallel to
+    /// `setEntryLinkViewMode`. Permissive — writes regardless of
+    /// `documentItems.count` since the renderer (`DocumentGalleryBody`)
+    /// gates the toggle's visibility itself. Silently bails on missing
+    /// node/entry or `.document` type mismatch.
+    func setEntryDocumentViewMode(itemID: String, nodeID: String, viewMode: DocumentViewMode) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .document,
+              updated.items[itemIdx].documentViewMode != viewMode else { return }
+        updated.items[itemIdx].documentViewMode = viewMode
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Stage 4.5 commit 3 — resolves the on-disk URL for a LinkItem's OG
     /// sidecar image. Parallel to `ogImageFileURL(for:nodeID:)` for the
     /// legacy NodeItem-level OG image. The relative path is stored
@@ -1134,6 +1207,43 @@ final class CorpusStore {
         await deleteLinkItemSidecars(removed, nodeID: nodeID, logContext: "removeLinkItem")
 
         updated.items[itemIdx].linkItems = linkItems
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Stage 4.6 commit 4 — removes a single `DocumentItem` from a
+    /// `.document` entry's `documentItems` array and cleans up both
+    /// its file blob and thumbnail sidecar. Called from the per-tile
+    /// `…` menu in `DocumentGalleryTile`. Direct parallel to
+    /// `removeLinkItem`.
+    ///
+    /// Down-collapse handling (count 2→1): no legacy-field promotion
+    /// needed — `DocumentEntryBody` reads `documentItems[0]` for
+    /// rendering when present, so the survivor still displays
+    /// correctly even though `item.file` may point at the deleted
+    /// item's path. The stale legacy field is harmless on screen and
+    /// `deleteEntry`'s file-cleanup pass is idempotent against the
+    /// already-deleted file.
+    ///
+    /// The single-doc `…` menu omits Delete (per the Stage 4.6 C4 brief
+    /// confirmation), so 1→0 is unreachable through this method —
+    /// `removeDocumentItem` only fires from the multi-doc gallery tile.
+    /// Belt-and-suspenders: if a future caller does drive 1→0, the
+    /// entry survives with `documentItems: []`, `EntryCard` dispatches
+    /// to `DocumentEntryBody`, which falls back to the legacy
+    /// `item.file` filename — same shape as the link side's State A.
+    func removeDocumentItem(entryID: String, nodeID: String, documentItemID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var documentItems = updated.items[itemIdx].documentItems,
+              let docIdx = documentItems.firstIndex(where: { $0.id == documentItemID }) else { return }
+
+        let removed = documentItems.remove(at: docIdx)
+        await deleteDocumentItemSidecars(removed, nodeID: nodeID, logContext: "removeDocumentItem")
+
+        updated.items[itemIdx].documentItems = documentItems
         updated.items[itemIdx].updatedAt = Date()
         updated.updatedAt = Date()
         await updateNode(updated)

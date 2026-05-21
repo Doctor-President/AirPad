@@ -38,6 +38,7 @@ struct LinkGalleryTile: View {
     @Environment(\.openURL) private var openURL
     @State private var ogImage: UIImage? = nil
     @State private var faviconImage: UIImage? = nil
+    @State private var isSnapshotting = false
 
     private var hasAnyOG: Bool {
         linkItem.title?.isEmpty == false
@@ -85,6 +86,15 @@ struct LinkGalleryTile: View {
             } label: {
                 Label("Copy URL", systemImage: "doc.on.doc")
             }
+            Button {
+                performSnapshot()
+            } label: {
+                Label(
+                    linkItem.snapshotAt == nil ? "Save content" : "Update content",
+                    systemImage: linkItem.snapshotAt == nil ? "square.and.arrow.down" : "arrow.clockwise"
+                )
+            }
+            .disabled(isSnapshotting)
             Button(role: .destructive) {
                 Task {
                     await store.removeLinkItem(
@@ -171,6 +181,12 @@ struct LinkGalleryTile: View {
                     .foregroundStyle(.white.opacity(0.4))
                     .lineLimit(1)
             }
+            if let wordCount = linkItem.snapshotWordCount, wordCount > 0 {
+                Text("\(wordCount.formatted()) words saved")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.4))
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -247,6 +263,33 @@ struct LinkGalleryTile: View {
                 entryID: capturedEntryID,
                 linkItemID: capturedLinkID,
                 metadata: metadata
+            )
+        }
+    }
+
+    /// Stage 4.6 commit 5 — user-invoked snapshot trigger from the tile
+    /// menu. `isSnapshotting` gates the menu item disabled during the
+    /// pass; a nil result from `LinkSnapshotService.snapshot` (timeout,
+    /// load failure, empty body) silently no-ops and the menu re-enables
+    /// on the next tick so the user can retry. Success routes through
+    /// `applyLinkSnapshot`, which writes the trio
+    /// (snapshotText/snapshotAt/snapshotWordCount) and the tile re-renders
+    /// with the word-count chip + the menu label flipped to
+    /// "Update content."
+    private func performSnapshot() {
+        guard !isSnapshotting, let url = URL(string: linkItem.url) else { return }
+        isSnapshotting = true
+        let capturedNodeID = nodeID
+        let capturedEntryID = entryID
+        let capturedLinkID = linkItem.id
+        Task { @MainActor in
+            defer { isSnapshotting = false }
+            guard let result = await LinkSnapshotService().snapshot(url: url) else { return }
+            await store.applyLinkSnapshot(
+                nodeID: capturedNodeID,
+                entryID: capturedEntryID,
+                linkItemID: capturedLinkID,
+                snapshot: result
             )
         }
     }

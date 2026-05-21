@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// AT19.3c — body slot for `.link` entries with 0 or 1 link. Delegates
 /// rendering to `OGPreviewView` (shared with the QuikCapture receipt
@@ -21,14 +22,40 @@ import SwiftUI
 /// the legacy `item.url` will stay nil. The dispatch in EntryCard
 /// treats both "1 URL via legacy field" and "1 URL via linkItems[0]"
 /// as single-link and keeps this view on screen.
+///
+/// Stage 4.6 commit 5 — top-right overlaid `…` menu surfaces Open URL /
+/// Copy URL / Save content (or "Update content" once a snapshot exists).
+/// Delete intentionally omitted on the single-link menu: removing the
+/// only LinkItem would leave the entry empty and entry-level delete
+/// already lives on the EntryCard menu. The Save/Update item routes
+/// through `LinkSnapshotService` and `CorpusStore.applyLinkSnapshot`;
+/// `isSnapshotting` disables the item during the pass. When the
+/// snapshot lands, a "N,NNN words saved" chip appears below the OG
+/// preview — same surface treatment as `LinkGalleryTile`'s chip.
+///
+/// Snapshot affordance is gated on the presence of `linkItems[0]`. A
+/// legacy v2 entry with no `linkItems` (rare post-migration; defensive
+/// branch) shows Open / Copy but hides Save content, because the
+/// snapshot trio has no `LinkItem` to attach to. New captures and
+/// migrated entries always have `linkItems[0]`.
 struct LinkEntryBody: View {
 
     let item: NodeItem
     let nodeID: String
 
     @Environment(CorpusStore.self) private var store
+    @Environment(\.openURL) private var openURL
 
     @State private var showingAppendSheet = false
+    @State private var isSnapshotting = false
+
+    private var snapshotLinkItem: LinkItem? { item.linkItems?.first }
+
+    private var resolvedURLString: String? {
+        if let urlString = snapshotLinkItem?.url, !urlString.isEmpty { return urlString }
+        if let urlString = item.url, !urlString.isEmpty { return urlString }
+        return nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -37,6 +64,15 @@ struct LinkEntryBody: View {
                 nodeID: nodeID,
                 onCommitURL: handleURLCommit
             )
+            .overlay(alignment: .topTrailing) { tileMenu }
+
+            if let wordCount = snapshotLinkItem?.snapshotWordCount, wordCount > 0 {
+                Text("\(wordCount.formatted()) words saved")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.4))
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
+            }
 
             MediaEntryChrome(
                 onAdd: { showingAppendSheet = true },
@@ -62,6 +98,79 @@ struct LinkEntryBody: View {
             }
         }
         .onAppear { Task { await refetchIfStaleOrMissing() } }
+    }
+
+    /// Stage 4.6 commit 5 — single-link menu, no Delete. Same chrome
+    /// posture as `DocumentEntryBody.tileMenu` (28pt black-translucent
+    /// circle, top-right). The Save/Update item is hidden when there's
+    /// no LinkItem to attach the snapshot to (legacy v2 defensive
+    /// branch); Open/Copy still work off the legacy `item.url`.
+    @ViewBuilder
+    private var tileMenu: some View {
+        if let urlString = resolvedURLString {
+            Menu {
+                if let url = URL(string: urlString) {
+                    Button { openURL(url) } label: {
+                        Label("Open URL", systemImage: "safari")
+                    }
+                }
+                Button {
+                    UIPasteboard.general.string = urlString
+                } label: {
+                    Label("Copy URL", systemImage: "doc.on.doc")
+                }
+                if snapshotLinkItem != nil {
+                    Button {
+                        performSnapshot()
+                    } label: {
+                        Label(
+                            snapshotLinkItem?.snapshotAt == nil ? "Save content" : "Update content",
+                            systemImage: snapshotLinkItem?.snapshotAt == nil ? "square.and.arrow.down" : "arrow.clockwise"
+                        )
+                    }
+                    .disabled(isSnapshotting)
+                }
+            } label: {
+                ZStack {
+                    Circle()
+                        .fill(Color.black.opacity(0.5))
+                        .frame(width: 28, height: 28)
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(6)
+            .accessibilityLabel("Link options")
+        }
+    }
+
+    /// Stage 4.6 commit 5 — user-invoked snapshot trigger from the
+    /// single-link menu. Parallel shape to `LinkGalleryTile.performSnapshot`:
+    /// `isSnapshotting` gates the menu item disabled during the pass;
+    /// a nil result silently no-ops and the menu re-enables on the
+    /// next tick. Success routes through `applyLinkSnapshot`, which
+    /// writes the trio (snapshotText/snapshotAt/snapshotWordCount) on
+    /// `linkItems[0]`, then the entry re-renders with the word-count
+    /// chip and the menu label flipped to "Update content."
+    private func performSnapshot() {
+        guard !isSnapshotting,
+              let linkItem = snapshotLinkItem,
+              let url = URL(string: linkItem.url) else { return }
+        isSnapshotting = true
+        let capturedNodeID = nodeID
+        let capturedEntryID = item.id
+        let capturedLinkID = linkItem.id
+        Task { @MainActor in
+            defer { isSnapshotting = false }
+            guard let result = await LinkSnapshotService().snapshot(url: url) else { return }
+            await store.applyLinkSnapshot(
+                nodeID: capturedNodeID,
+                entryID: capturedEntryID,
+                linkItemID: capturedLinkID,
+                snapshot: result
+            )
+        }
     }
 
     private func handleURLCommit(_ urlString: String) {

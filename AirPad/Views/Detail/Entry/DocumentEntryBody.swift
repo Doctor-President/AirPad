@@ -25,6 +25,15 @@ import UIKit
 /// canvas-level "+ Document" path, where the user could plausibly
 /// intend either append or new entry.
 ///
+/// Stage 4.6 commit 4 — preview-block tap → Quick Look via
+/// `DocumentQuickLookViewer` sheet driven by `DocumentPreviewIdentity`
+/// (`@State` so each tap presents fresh, same pattern as
+/// `DocumentGalleryTile`). Top-right overlaid `…` menu surfaces Open /
+/// Share / Copy filename — Delete intentionally omitted on the
+/// single-doc menu because removing the only `DocumentItem` would
+/// leave an empty `.document` entry; entry-level delete still lives
+/// on the EntryCard menu and is the correct affordance for that flow.
+///
 /// Thumbnail rendering parallels `DocumentGalleryTile.thumbnailBlock`:
 /// state-driven `UIImage` load via `store.documentThumbnailFileURL`,
 /// format-specific SF Symbol fallback (`doc.richtext.fill` for PDF,
@@ -57,6 +66,8 @@ struct DocumentEntryBody: View {
 
     @State private var thumbnail: UIImage? = nil
     @State private var showingAppendSheet = false
+    @State private var previewIdentity: DocumentPreviewIdentity? = nil
+    @State private var shareIdentity: DocumentShareIdentity? = nil
 
     private static let thumbnailHeight: CGFloat = 120
 
@@ -89,6 +100,13 @@ struct DocumentEntryBody: View {
                 }
             }
         }
+        .sheet(item: $previewIdentity) { identity in
+            DocumentQuickLookViewer(url: identity.url)
+                .ignoresSafeArea()
+        }
+        .sheet(item: $shareIdentity) { identity in
+            DocumentShareSheet(items: [identity.url])
+        }
         .task { await extractIfNeeded() }
     }
 
@@ -109,6 +127,9 @@ struct DocumentEntryBody: View {
         }
         .frame(height: Self.thumbnailHeight)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await openInQuickLook() } }
+        .overlay(alignment: .topTrailing) { tileMenu }
         .task(id: documentItem?.thumbnailFile) {
             thumbnail = nil
             guard let docItem = documentItem else { return }
@@ -166,6 +187,52 @@ struct DocumentEntryBody: View {
             parts.append("\(words) words")
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private var tileMenu: some View {
+        Menu {
+            Button {
+                Task { await openInQuickLook() }
+            } label: {
+                Label("Open", systemImage: "doc.text.magnifyingglass")
+            }
+            Button {
+                Task { await prepareShare() }
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            Button {
+                guard let docItem = documentItem else { return }
+                UIPasteboard.general.string = docItem.fileName
+            } label: {
+                Label("Copy filename", systemImage: "doc.on.doc")
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.black.opacity(0.5))
+                    .frame(width: 28, height: 28)
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(6)
+        .accessibilityLabel("Document options")
+    }
+
+    @MainActor
+    private func openInQuickLook() async {
+        guard let docItem = documentItem else { return }
+        guard let url = await store.documentFileURL(for: docItem, nodeID: nodeID) else { return }
+        previewIdentity = DocumentPreviewIdentity(url: url)
+    }
+
+    @MainActor
+    private func prepareShare() async {
+        guard let docItem = documentItem else { return }
+        guard let url = await store.documentFileURL(for: docItem, nodeID: nodeID) else { return }
+        shareIdentity = DocumentShareIdentity(url: url)
     }
 
     private func extractIfNeeded() async {

@@ -1116,6 +1116,37 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 4.6 commit 5 — writeback for a `LinkSnapshotService` pass.
+    /// Mirrors `applyOGFetchToLinkItem`'s ID-match guards (node → entry
+    /// → linkItems → linkIdx) so a LinkItem that was deleted while the
+    /// snapshot was in flight no-ops cleanly. Writes `snapshotText`,
+    /// `snapshotAt`, and `snapshotWordCount` atomically — the trio
+    /// either all land or none do, so the renderer never sees a
+    /// partially populated snapshot. No sidecar handling here:
+    /// `snapshotText` is in-line on the LinkItem, not a file blob.
+    func applyLinkSnapshot(
+        nodeID: String,
+        entryID: String,
+        linkItemID: String,
+        snapshot: LinkSnapshot
+    ) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var linkItems = updated.items[itemIdx].linkItems,
+              let linkIdx = linkItems.firstIndex(where: { $0.id == linkItemID }) else { return }
+
+        var item = linkItems[linkIdx]
+        item.snapshotText = snapshot.text
+        item.snapshotAt = snapshot.capturedAt
+        item.snapshotWordCount = snapshot.wordCount
+        linkItems[linkIdx] = item
+        updated.items[itemIdx].linkItems = linkItems
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Stage 4.5 commit 3 — user-driven view-mode toggle for a `.link`
     /// entry's gallery presentation. Parallel to `setEntryViewMode` for
     /// `.imageVideo`. Permissive — writes regardless of `linkItems.count`

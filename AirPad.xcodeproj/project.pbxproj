@@ -116,6 +116,7 @@
 		AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */; };
 		ADFBFB77F411E0BDD3FA43F6 /* EntryVisualDevPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECACE148A0B50511A83212FE /* EntryVisualDevPanel.swift */; };
 		AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3366166820015E0F584466E9 /* OGMetadataService.swift */; };
+		A1B2C3D4E5F60718293A4B9C /* LinkSnapshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B9D /* LinkSnapshotService.swift */; };
 		AE9C0E76D1F909B7C3197976 /* SubstrateColoringPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */; };
 		AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */; };
 		B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B37326A27826C7715C130B6 /* SingleMediaBody.swift */; };
@@ -208,6 +209,7 @@
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteKitView.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B9D /* LinkSnapshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSnapshotService.swift; sourceTree = "<group>"; };
 		338373B19F63427D62FB1D74 /* UMAPSGD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSGD.swift; sourceTree = "<group>"; };
 		38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusIndex.swift; sourceTree = "<group>"; };
 		38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodService.swift; sourceTree = "<group>"; };
@@ -394,6 +396,7 @@
 				B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */,
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
+				A1B2C3D4E5F60718293A4B9D /* LinkSnapshotService.swift */,
 				38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */,
 				3366166820015E0F584466E9 /* OGMetadataService.swift */,
 				988F66299DD79745A824B3A0 /* RelatednessService.swift */,
@@ -878,6 +881,7 @@
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
 				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
 				AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */,
+				A1B2C3D4E5F60718293A4B9C /* LinkSnapshotService.swift in Sources */,
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
 				9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */,
 				99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */,

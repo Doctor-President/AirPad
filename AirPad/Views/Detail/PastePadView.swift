@@ -83,6 +83,29 @@ struct PastePadView: View {
                 .opacity(isPrimed ? 1.0 : 0.55)
         }
         .clipShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
+        .overlay {
+            // Perimeter shimmer stroke — only visible while primed.
+            // Same TimelineView clock the label reads, so the stroke's
+            // opacity peak lines up with the gradient band crossing
+            // the label's horizontal center (phase 0.5). One bell pulse
+            // per cycle via sin(π·phase); same opacity range as the
+            // text shimmer (`baseOpacity` → `peakOpacity`). `strokeBorder`
+            // keeps the line wholly inside the rounded-rect bounds so
+            // it never gets half-clipped by `.clipShape` above (mirrors
+            // the EntryCard stroke pattern).
+            if isPrimed {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                    let phase = Self.shimmerPhase(at: context.date)
+                    let strokeOpacity = Self.strokeOpacity(at: phase)
+                    RoundedRectangle(cornerRadius: visualSettings.cornerRadius)
+                        .strokeBorder(
+                            Color.white.opacity(strokeOpacity),
+                            lineWidth: Shimmer.strokeWidth
+                        )
+                }
+                .allowsHitTesting(false)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
         .onTapGesture { handleTap() }
         .onAppear {
@@ -190,6 +213,18 @@ struct PastePadView: View {
         return -band + travel * phase
     }
 
+    /// Stroke opacity at the current shimmer phase. One bell-shaped
+    /// pulse per cycle (sin(π·phase) — zero at endpoints, peak at
+    /// phase 0.5), so the stroke's brightest instant coincides with
+    /// the gradient band reaching the label's horizontal center. Maps
+    /// `[0, 1]` of the curve onto the same `baseOpacity → peakOpacity`
+    /// range the text shimmer uses.
+    private static func strokeOpacity(at phase: CGFloat) -> Double {
+        let curve = sin(.pi * phase) // 0 at endpoints, 1 at phase 0.5
+        let span = Shimmer.peakOpacity - Shimmer.baseOpacity
+        return Shimmer.baseOpacity + Double(curve) * span
+    }
+
     // MARK: - Label text
 
     /// Type-aware labels per the brief's locked table. Multi-item
@@ -263,6 +298,10 @@ struct PastePadView: View {
         /// any instant. Wider → softer (slower visual transition);
         /// narrower → crisper (more obvious sweep).
         static let bandWidth: CGFloat = 0.45
+        /// Perimeter shimmer-stroke thickness. 1pt reads as a border
+        /// accent against the card-background fill without crossing
+        /// into "highlight" territory.
+        static let strokeWidth: CGFloat = 1.0
     }
 }
 

@@ -40,14 +40,23 @@ import UniformTypeIdentifiers
 enum ClipboardContent {
     case url(URL)
     case image(UIImage)
-    /// File URL conforming to `public.movie`. Loaded synchronously
-    /// from the pasteboard's per-item `public.movie` data — but rare in
-    /// practice on iOS (most "video on clipboard" cases come through
-    /// the Share Extension, not the system clipboard).
+    /// File URL for a video. The router materializes pasteboard bytes
+    /// to a temp file under the concrete UTI's preferred extension
+    /// (e.g., `.mp4`) and returns the temp URL — Files.app's Copy
+    /// publishes video data under the concrete content type, not
+    /// `public.file-url`, so the URL the handler receives is owned by
+    /// the router's temp dir, not by the source app. The temp file is
+    /// reaped by iOS automatically; `persistMediaFiles` copies out
+    /// (not moves) so the URL remains valid through the handler's
+    /// defensive temp-copy step.
     case video(URL)
     /// File URL plus a lowercase extension hint (`"pdf"`, `"docx"`,
     /// `"txt"`, …) for paste handlers to drive the Stage 4.6 documents
-    /// flow and the append-vs-new-entry modal.
+    /// flow and the append-vs-new-entry modal. As with `.video`, the
+    /// URL points into the router's temp dir when the pasteboard
+    /// shape is the Files.app typed-data form (the common case); rare
+    /// third-party apps that register `public.file-url` directly are
+    /// surfaced via the legacy fallback in classify path 5.
     case file(URL, fileType: String)
     case text(String)
     /// Multi-item batch. Per-item classifications in clipboard order;
@@ -90,7 +99,7 @@ enum ClipboardContentRouter {
         //    pasteboard machinery (e.g., `mailto:`, `tel:`, custom app
         //    schemes — iOS auto-promotes plain-text URI strings onto
         //    `public.url` when assigned via `pasteboard.string`) falls
-        //    through to path 5, where it classifies as `.text` content.
+        //    through to path 6, where it classifies as `.text` content.
         //    The user copied content that looks like a URI, not a web
         //    link to fetch OG metadata for.
         if conforms(types, to: .url),
@@ -107,23 +116,67 @@ enum ClipboardContentRouter {
             return .image(image)
         }
 
-        // 3. Video file URL (public.movie subtree).
-        if conforms(types, to: .movie),
-           let url = firstValue(pasteboard, type: UTType.movie.identifier, in: indexSet) as? URL {
-            return .video(url)
+        // 3. Video — Files.app's Copy publishes the bytes under the
+        //    concrete UTI (e.g., `public.mpeg-4`), not the abstract
+        //    `public.movie`. A direct query against `public.movie`
+        //    returns nil on that path, so the C2 shape (a single
+        //    `public.movie` URL query) missed every real-world video
+        //    paste from Files.app. Walk the declared types, pick the
+        //    first concrete identifier that conforms to `public.movie`,
+        //    then try Data first (Files.app / Share-Sheet shape — bytes
+        //    materialized to a temp file the handler can copy out of)
+        //    and URL second (legacy shape, retained so any source that
+        //    DOES register a URL still classifies).
+        if let videoTypeID = types.first(where: { UTType($0)?.conforms(to: .movie) == true }) {
+            if let data = firstData(pasteboard, type: videoTypeID, in: indexSet) {
+                let ext = UTType(videoTypeID)?.preferredFilenameExtension ?? "mov"
+                if let tempURL = writeTempFile(data: data, ext: ext) {
+                    return .video(tempURL)
+                }
+            }
+            if let url = firstValue(pasteboard, type: videoTypeID, in: indexSet) as? URL {
+                return .video(url)
+            }
         }
 
-        // 4. Document file URL — anything conforming to `public.file-url`
-        //    or `public.content` that isn't already classified above.
-        //    Best-effort: the iOS clipboard rarely carries arbitrary
-        //    file URLs (Files.app drag-and-drop is the usual source);
-        //    surface what we can detect via per-item type query.
+        // 4. Document file — Files.app and most share flows place the
+        //    file's bytes on the pasteboard under the file's content
+        //    UTI (e.g., `com.adobe.pdf` for a PDF, `public.zip` for a
+        //    zip), NOT under `public.file-url`. The C2 shape only
+        //    queried `public.file-url`, so the PDF-from-Files.app paste
+        //    fell through every path and classified as `.empty`. Walk
+        //    the declared types; pick the first identifier that (a)
+        //    conforms to `public.data`, (b) isn't already handled by
+        //    paths 1–3, and (c) doesn't conform to `public.text` (so
+        //    plain-text / RTF / HTML stay on the text path below — see
+        //    "TXT-from-Files.app" follow-up note). Materialize to a
+        //    temp file so downstream handlers see a stable URL.
+        if let fileTypeID = types.first(where: { typeID in
+            guard let ut = UTType(typeID) else { return false }
+            if ut.conforms(to: .image) { return false }
+            if ut.conforms(to: .movie) { return false }
+            if ut.conforms(to: .url) { return false }
+            if ut.conforms(to: .text) { return false }
+            return ut.conforms(to: .data)
+        }),
+        let data = firstData(pasteboard, type: fileTypeID, in: indexSet) {
+            let ext = UTType(fileTypeID)?.preferredFilenameExtension ?? "bin"
+            if let tempURL = writeTempFile(data: data, ext: ext) {
+                return .file(tempURL, fileType: ext)
+            }
+        }
+
+        // 5. Legacy `public.file-url` fallback. Retained for the rare
+        //    third-party app that DOES put a file URL directly on the
+        //    pasteboard (instead of the typed-data shape Files.app
+        //    uses). Files.app paste does not reach this branch in
+        //    practice — path 4 catches it.
         if let fileURL = firstValue(pasteboard, type: UTType.fileURL.identifier, in: indexSet) as? URL {
             let ext = fileURL.pathExtension.lowercased()
             return .file(fileURL, fileType: ext)
         }
 
-        // 5. Plain text — including URL-in-text coercion (URL precedence
+        // 6. Plain text — including URL-in-text coercion (URL precedence
         //    rule, but applied here because the pasteboard didn't
         //    surface a `public.url` directly).
         if conforms(types, to: .text),
@@ -155,13 +208,32 @@ enum ClipboardContentRouter {
         firstValue(pasteboard, type: type, in: set) as? Data
     }
 
+    /// Writes pasteboard-materialized bytes into the temp directory so
+    /// downstream paste handlers (`handlePastedVideo`, `handlePastedFile`)
+    /// receive a stable file URL. The temp file is not tracked: iOS's
+    /// tmp-dir reaper handles cleanup, and `persistMediaFiles` /
+    /// `saveItemFile` both copy out (not move), so the handler's own
+    /// temp-copy step still works against this URL without competing
+    /// with the source. Returns nil on a write failure — caller falls
+    /// through to the next classification branch (`.empty` in the worst
+    /// case).
+    private static func writeTempFile(data: Data, ext: String) -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).\(ext)")
+        do {
+            try data.write(to: url)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
     /// Parses a string as an http/https URL only. Trims surrounding
     /// whitespace; rejects strings containing internal whitespace
     /// (multi-line paste of prose that happens to start with a URL
     /// stays as text). The scheme + host check delegates to
     /// `isWebURL` so the same web-link filter applies whether the URL
     /// arrived via `public.url` (path 1) or via string coercion
-    /// (path 5).
+    /// (path 6).
     private static func parseHTTPURL(from string: String) -> URL? {
         let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -171,7 +243,7 @@ enum ClipboardContentRouter {
     }
 
     /// Web-link filter shared by path 1 (direct `public.url`) and
-    /// path 5 (string-parsed URL). A URL classifies as `.url` only if
+    /// path 6 (string-parsed URL). A URL classifies as `.url` only if
     /// it has an http or https scheme AND a non-empty host. Non-web
     /// URI schemes (`mailto:`, `tel:`, `sms:`, `airpad://`, etc.) and
     /// schemeless or host-less URLs fall through to `.text` — they're

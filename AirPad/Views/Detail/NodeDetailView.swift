@@ -518,12 +518,11 @@ struct NodeDetailView: View {
         Task { await store.appendLinkItem(nodeID: nodeID, urlString: trimmed) }
     }
 
-    // MARK: - Paste Pad handlers (Stage 4.7 C3)
+    // MARK: - Paste Pad handlers (Stage 4.7 C3 + C4)
 
     /// Dispatches a classified clipboard payload through the existing
-    /// per-type capture paths. Multi-item is parked until C4; empty
-    /// can't reach this callback because `PastePadView` gates the tap
-    /// on `isPrimed`.
+    /// per-type capture paths. Empty can't reach this callback because
+    /// `PastePadView` gates the tap on `isPrimed`.
     private func handlePastedContent(_ content: ClipboardContent) {
         switch content {
         case .url(let url):
@@ -536,9 +535,8 @@ struct NodeDetailView: View {
             handlePastedFile(url, fileType: fileType)
         case .text(let text):
             handlePastedText(text)
-        case .multi:
-            // C4 territory — multi-item routing + per-type modal.
-            break
+        case .multi(let items):
+            handlePastedMulti(items)
         case .empty:
             break
         }
@@ -636,6 +634,142 @@ struct NodeDetailView: View {
         } else {
             let targetNodeID = nodeID
             Task { await store.addDocumentEntry(nodeID: targetNodeID, sourceURLs: [url]) }
+        }
+    }
+
+    /// Stage 4.7 C4 — multi-item batch dispatch. The router guarantees
+    /// (a) `.multi` is never nested and (b) `.empty` items are filtered
+    /// out before the batch reaches us, so the switch below only sees
+    /// concrete single-kind cases. The dispatch deliberately deviates
+    /// from "literally iterate and call each per-type handler" so that
+    /// per-type batching rules are honored exactly once for the whole
+    /// batch:
+    ///
+    ///   - Images + videos collapse into a SINGLE `PendingMediaItem`
+    ///     batch routed through one `appendMediaItems` / `addMediaItems`
+    ///     call. That preserves the Stage 4.2 contract that a batched
+    ///     capture is ONE gallery entry — looping the C3 single-image
+    ///     handler N times would race on `mostRecentMediaEntryID`
+    ///     (each tick sees the pre-task state) and could create N
+    ///     parallel gallery entries instead of one.
+    ///   - Files collapse into a single document destination decision:
+    ///     the Stage 4.6 modal is shown ONCE with `pendingDocumentURLs`
+    ///     holding the full batch, so the user picks Append / New /
+    ///     Cancel for the whole batch (not per file). When no
+    ///     `.document` entry exists yet, `addDocumentEntry` runs
+    ///     directly with the full URL array.
+    ///   - URLs and text entries each remain individual entries (Stage
+    ///     4.5 + 3.1 contracts — no link batching, no text batching),
+    ///     but they're serialized inside a single `Task` so clipboard
+    ///     order is preserved on the node's items list rather than
+    ///     racing through N parallel `Task { await store… }` calls.
+    ///
+    /// Per-type within-batch order = clipboard order. Cross-type order
+    /// is media → URLs → text → files (modal). The Stage 4.7 brief
+    /// does not pin a cross-type order; this one keeps the modal
+    /// pop-up last so the silent dispatches surface before the user
+    /// sees a confirmation sheet.
+    private func handlePastedMulti(_ items: [ClipboardContent]) {
+        var mediaBatch: [CorpusStore.PendingMediaItem] = []
+        var urlTargets: [String] = []
+        var textBodies: [String] = []
+        var fileURLs: [URL] = []
+
+        for item in items {
+            switch item {
+            case .url(let url):
+                urlTargets.append(url.absoluteString)
+            case .image(let image):
+                if let pending = makePendingImageItem(from: image) {
+                    mediaBatch.append(pending)
+                }
+            case .video(let url):
+                if let pending = makePendingVideoItem(from: url) {
+                    mediaBatch.append(pending)
+                }
+            case .file(let url, _):
+                fileURLs.append(url)
+            case .text(let text):
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { textBodies.append(text) }
+            case .multi, .empty:
+                // Router contract: `.multi` is never nested, `.empty`
+                // is filtered before reaching the batch. These cases
+                // are unreachable in practice; the switch must be
+                // exhaustive.
+                continue
+            }
+        }
+
+        let targetNodeID = nodeID
+
+        // Media batch → one gallery destination.
+        if !mediaBatch.isEmpty {
+            let batch = mediaBatch
+            if let existingID = mostRecentMediaEntryID() {
+                Task {
+                    await store.appendMediaItems(
+                        toEntryID: existingID,
+                        nodeID: targetNodeID,
+                        mediaItems: batch
+                    )
+                }
+            } else {
+                Task {
+                    await store.addMediaItems(
+                        toNodeID: targetNodeID,
+                        mediaItems: batch,
+                        description: "",
+                        position: .zero
+                    )
+                }
+            }
+        }
+
+        // Links — serialized inside one Task so clipboard order is
+        // reflected in the node's items list.
+        if !urlTargets.isEmpty {
+            let urls = urlTargets
+            Task {
+                for urlString in urls {
+                    await store.appendLinkItem(nodeID: targetNodeID, urlString: urlString)
+                }
+            }
+        }
+
+        // Text — serialized inside one Task for the same ordering
+        // reason. Each text body becomes its own `.text` entry.
+        if !textBodies.isEmpty {
+            let bodies = textBodies
+            Task {
+                let now = Date()
+                for text in bodies {
+                    let item = NodeItem(
+                        id: UUID().uuidString,
+                        type: .text,
+                        createdAt: now,
+                        content: text,
+                        displayName: nil,
+                        isExpanded: true,
+                        updatedAt: now
+                    )
+                    await store.appendItemToNode(nodeID: targetNodeID, item: item)
+                }
+            }
+        }
+
+        // Files — single Stage 4.6 modal decision for the whole batch
+        // when a `.document` entry already exists; otherwise direct
+        // `addDocumentEntry` with the full URL array (Stage 4.6 lets a
+        // single entry hold N≥1 documents in one call).
+        if !fileURLs.isEmpty {
+            if let n = node, n.items.contains(where: { $0.type == .document }) {
+                pendingDocumentURLs = fileURLs
+                showDocumentAppendModal = true
+            } else {
+                let urls = fileURLs
+                Task { await store.addDocumentEntry(nodeID: targetNodeID, sourceURLs: urls) }
+            }
         }
     }
 

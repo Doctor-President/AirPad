@@ -14,6 +14,7 @@
 		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
 		07CB581F48846F9CC3814049 /* UberNodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */; };
 		0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA8C82636A7D9E2E115A203 /* AVKit.framework */; };
+		09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A13C2113DC9781B455DF42 /* PastePadView.swift */; };
 		0A1E663CC31AC33AC01C329C /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0DA4D90F51F7EBBB06AF43BF /* UMAPRandom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EAC56542567C77B0E89E836 /* UMAPRandom.swift */; };
 		0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */; };
@@ -258,6 +259,7 @@
 		7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCaptureSheet.swift; sourceTree = "<group>"; };
 		804D3764E120F2398822E16A /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		88A13C2113DC9781B455DF42 /* PastePadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePadView.swift; sourceTree = "<group>"; };
 		894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPickerWrapper.swift; sourceTree = "<group>"; };
 		8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentQuickLookViewer.swift; sourceTree = "<group>"; };
 		8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewQueueSheet.swift; sourceTree = "<group>"; };
@@ -436,6 +438,7 @@
 				187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
 				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
+				88A13C2113DC9781B455DF42 /* PastePadView.swift */,
 			);
 			path = Detail;
 			sourceTree = "<group>";
@@ -891,6 +894,7 @@
 				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
 				AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */,
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
+				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,
 				9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */,
 				99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */,
 				883D93742F1EAF7DECF5E18F /* QuarantineWarningIcon.swift in Sources */,

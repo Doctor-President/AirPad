@@ -313,6 +313,15 @@ struct NodeDetailView: View {
                     MetaNodeBanner(nodeID: nodeID, showPromoteConfirmation: $showPromoteConfirmation)
                 }
 
+                // Stage 4.7 C2 — Paste Pad visual stub. Renders the
+                // state-aware affordance + shimmer; tap is a no-op
+                // pending C3, which lifts `onPaste` into a per-type
+                // dispatch (handlePastedURL / Image / Video / File /
+                // Text / Multi). Placed inside the entries VStack so
+                // it lives in the same horizontal-padding rhythm as
+                // the entry cards above it.
+                PastePadView(onPaste: { _ in })
+
                 // Trailing spacer so the last entry isn't tucked under the
                 // floating "+" button. 80pt clears the 56pt button + 24pt
                 // bottom inset with a small breathing margin.

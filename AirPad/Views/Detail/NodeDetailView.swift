@@ -313,14 +313,19 @@ struct NodeDetailView: View {
                     MetaNodeBanner(nodeID: nodeID, showPromoteConfirmation: $showPromoteConfirmation)
                 }
 
-                // Stage 4.7 C2 — Paste Pad visual stub. Renders the
-                // state-aware affordance + shimmer; tap is a no-op
-                // pending C3, which lifts `onPaste` into a per-type
-                // dispatch (handlePastedURL / Image / Video / File /
-                // Text / Multi). Placed inside the entries VStack so
-                // it lives in the same horizontal-padding rhythm as
-                // the entry cards above it.
-                PastePadView(onPaste: { _ in })
+                // Stage 4.7 C3 — Paste Pad wired to per-type routing.
+                // The callback dispatches each ClipboardContent kind
+                // through its existing capture path: URL → new link
+                // entry (Stage 4.5 always-create-new); Image / Video →
+                // append to most-recent .imageVideo entry if present,
+                // else new gallery entry (Stage 4.2 rule); File →
+                // reuse the Stage 4.6 modal (Append / New entry /
+                // Cancel) if a .document entry already exists, else
+                // direct add; Text → new text entry pre-populated
+                // with the pasted content. Multi-item is a no-op
+                // pending C4. Empty content can't reach this callback
+                // (PastePadView gates the tap on isPrimed).
+                PastePadView(onPaste: handlePastedContent)
 
                 // Trailing spacer so the last entry isn't tucked under the
                 // floating "+" button. 80pt clears the 56pt button + 24pt
@@ -511,6 +516,184 @@ struct NodeDetailView: View {
         let trimmed = linkDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         Task { await store.appendLinkItem(nodeID: nodeID, urlString: trimmed) }
+    }
+
+    // MARK: - Paste Pad handlers (Stage 4.7 C3)
+
+    /// Dispatches a classified clipboard payload through the existing
+    /// per-type capture paths. Multi-item is parked until C4; empty
+    /// can't reach this callback because `PastePadView` gates the tap
+    /// on `isPrimed`.
+    private func handlePastedContent(_ content: ClipboardContent) {
+        switch content {
+        case .url(let url):
+            handlePastedURL(url)
+        case .image(let image):
+            handlePastedImage(image)
+        case .video(let url):
+            handlePastedVideo(url)
+        case .file(let url, let fileType):
+            handlePastedFile(url, fileType: fileType)
+        case .text(let text):
+            handlePastedText(text)
+        case .multi:
+            // C4 territory — multi-item routing + per-type modal.
+            break
+        case .empty:
+            break
+        }
+    }
+
+    private func handlePastedURL(_ url: URL) {
+        Task { await store.appendLinkItem(nodeID: nodeID, urlString: url.absoluteString) }
+    }
+
+    private func handlePastedText(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let now = Date()
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .text,
+            createdAt: now,
+            content: text,
+            displayName: nil,
+            isExpanded: true,
+            updatedAt: now
+        )
+        // No `pendingAutoFocusItemID` write — the entry already has the
+        // pasted content, so we don't raise the keyboard on creation.
+        Task { await store.appendItemToNode(nodeID: nodeID, item: item) }
+    }
+
+    /// Appends the pasted image to the most-recently-updated `.imageVideo`
+    /// entry on this node, or creates a fresh gallery entry when none
+    /// exists. Mirrors the Stage 4.2 append-vs-new rule for picker /
+    /// camera capture so paste lands in the same gallery the user is
+    /// already curating.
+    private func handlePastedImage(_ image: UIImage) {
+        guard let pending = makePendingImageItem(from: image) else { return }
+        let targetNodeID = nodeID
+        if let existingID = mostRecentMediaEntryID() {
+            Task {
+                await store.appendMediaItems(
+                    toEntryID: existingID,
+                    nodeID: targetNodeID,
+                    mediaItems: [pending]
+                )
+            }
+        } else {
+            Task {
+                await store.addMediaItems(
+                    toNodeID: targetNodeID,
+                    mediaItems: [pending],
+                    description: "",
+                    position: .zero
+                )
+            }
+        }
+    }
+
+    /// Same shape as `handlePastedImage` but with a security-scoped
+    /// copy from the clipboard's file URL into our temp directory
+    /// before handing off to `PendingMediaItem` — `persistMediaFiles`
+    /// deletes the source URL after save, and clipboard URLs may point
+    /// at Files.app-managed storage we must not touch.
+    private func handlePastedVideo(_ url: URL) {
+        guard let pending = makePendingVideoItem(from: url) else { return }
+        let targetNodeID = nodeID
+        if let existingID = mostRecentMediaEntryID() {
+            Task {
+                await store.appendMediaItems(
+                    toEntryID: existingID,
+                    nodeID: targetNodeID,
+                    mediaItems: [pending]
+                )
+            }
+        } else {
+            Task {
+                await store.addMediaItems(
+                    toNodeID: targetNodeID,
+                    mediaItems: [pending],
+                    description: "",
+                    position: .zero
+                )
+            }
+        }
+    }
+
+    /// Routes a single pasted file through the Stage 4.6 capture-time
+    /// modal: when the node already has a `.document` entry the user
+    /// chooses Append / New entry / Cancel; otherwise a fresh entry is
+    /// added directly. `addDocumentEntry` handles security-scoped
+    /// resource access internally and copies the source into the
+    /// corpus, so we pass the clipboard URL straight through.
+    private func handlePastedFile(_ url: URL, fileType: String) {
+        _ = fileType  // reserved for future per-extension routing
+        if let n = node, n.items.contains(where: { $0.type == .document }) {
+            pendingDocumentURLs = [url]
+            showDocumentAppendModal = true
+        } else {
+            let targetNodeID = nodeID
+            Task { await store.addDocumentEntry(nodeID: targetNodeID, sourceURLs: [url]) }
+        }
+    }
+
+    /// Most-recently-updated `.imageVideo` entry, or nil when the node
+    /// has no media gallery yet. Mirrors `mostRecentDocumentEntryID()`
+    /// — same fallback ladder (`updatedAt` → `createdAt`).
+    private func mostRecentMediaEntryID() -> String? {
+        node?.items
+            .filter { $0.type == .imageVideo }
+            .max(by: { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) })?
+            .id
+    }
+
+    /// Writes the pasted `UIImage` as PNG into the temp directory and
+    /// wraps it in a `PendingMediaItem`. `persistMediaFiles` will copy
+    /// the temp file into the corpus and then delete our temp — the
+    /// owned-temp pattern keeps the corpus-side delete safe regardless
+    /// of what the clipboard pointed at originally.
+    private func makePendingImageItem(from image: UIImage) -> CorpusStore.PendingMediaItem? {
+        let itemID = UUID().uuidString
+        let ext = "png"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(itemID).\(ext)")
+        guard let data = image.pngData() else { return nil }
+        do {
+            try data.write(to: tempURL)
+        } catch {
+            return nil
+        }
+        return CorpusStore.PendingMediaItem(
+            itemID: itemID,
+            mediaType: .image,
+            sourceURL: tempURL,
+            fileExtension: ext
+        )
+    }
+
+    /// Copies the clipboard video file into our temp directory under a
+    /// fresh UUID so the corpus-side delete in `persistMediaFiles`
+    /// targets our temp, never the Files.app-managed original. Wraps
+    /// the copy in `startAccessingSecurityScopedResource` for URLs
+    /// produced by Files.app pickers / drops.
+    private func makePendingVideoItem(from sourceURL: URL) -> CorpusStore.PendingMediaItem? {
+        let itemID = UUID().uuidString
+        let ext = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension.lowercased()
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(itemID).\(ext)")
+        let needsScope = sourceURL.startAccessingSecurityScopedResource()
+        defer { if needsScope { sourceURL.stopAccessingSecurityScopedResource() } }
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+        } catch {
+            return nil
+        }
+        return CorpusStore.PendingMediaItem(
+            itemID: itemID,
+            mediaType: .video,
+            sourceURL: tempURL,
+            fileExtension: ext
+        )
     }
 
     // MARK: - Auto-save

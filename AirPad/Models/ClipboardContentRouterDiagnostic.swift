@@ -35,38 +35,21 @@ import UniformTypeIdentifiers
 ///   T11 — multi-item with one empty item → single-survivor collapses
 ///        back to `.url` (the router strips empty items before deciding
 ///        single-vs-multi)
-///
-/// Documented mock-construction limitation (not automated):
-///   T12/T13 — file (`.file(URL, fileType:)`) and video (`.video(URL)`)
-///        classification cannot be exercised via the unique-pasteboard
-///        + `pb.items = [[UTType.identifier: URL]]` approach. iOS's
-///        items-dict storage doesn't make a URL value conform to the
-///        dict-key UTType: querying `values(forPasteboardType:
-///        "public.movie", inItemSet:)` against an item dict where
-///        `public.movie` maps to a URL returns nil, not the URL. The
-///        real-world surface (Files.app drag/drop, third-party share
-///        flows) populates the pasteboard via `NSItemProvider`, which
-///        sniffs the file extension and registers proper UTType
-///        conformance — that path works against the router; the test
-///        mock can't reach it without restructuring the router to
-///        an async classification shape (deferred-data-load), which
-///        would bend production code for a test artifact and was
-///        rejected in C1 design. Manual device-verify covers these
-///        branches instead — see "Manual device-verify checklist"
-///        below.
-///
-/// Manual device-verify checklist (one-time per release; record results
-/// in the C5 close note):
-///   - Drag a `.pdf` from Files.app into a third-party app's
-///     copy-to-clipboard flow; in AirPad's SubstrateInspectView tap
-///     "Run clipboard-router self-tests" with the clipboard primed —
-///     no automated assertion, but inspect that `PastePadView`'s label
-///     state (when it lands in C2) reads "Paste document here" rather
-///     than empty or text. Equivalent direct check: extend the
-///     diagnostic to print `ClipboardContentRouter.classify(.general)`
-///     when invoked with a primed clipboard.
-///   - Same flow with a `.mp4` file from Files.app → label state
-///     reads "Paste video here".
+///   T12 — PDF data under the concrete `com.adobe.pdf` UTI → `.file`
+///        with extension `"pdf"`. Pins the Files.app-copy shape: the
+///        bytes arrive under the file's content UTI (not under
+///        `public.file-url`), and the router materializes them to a
+///        temp file the handler can copy out of. Locked in when the
+///        C3 follow-up fix added the typed-data path 4 after the
+///        original `public.file-url`-only path 4 returned `.empty`
+///        on real-world Files.app paste.
+///   T13 — MP4 data under the concrete `public.mpeg-4` UTI → `.video`
+///        with the temp URL ending in `.mp4`. Same Files.app-copy
+///        shape as T12 but exercising the video branch (path 3),
+///        which similarly walks the declared types for the concrete
+///        `.movie`-conforming identifier rather than querying the
+///        abstract `public.movie` (which returns nil on the typed-
+///        data store).
 @available(iOS 17.0, *)
 @MainActor
 enum ClipboardContentRouterDiagnostic {
@@ -273,10 +256,69 @@ enum ClipboardContentRouterDiagnostic {
             }
         }
 
-        // T12 / T13 — file and video classification: not automated. See
-        // the "Documented mock-construction limitation" block in the
-        // file header. Manual device-verify checklist covers these
-        // branches against real Files.app sources.
+        // T12 — PDF data under the concrete content UTI. Mirrors the
+        //       Files.app-copy shape: bytes registered under
+        //       `com.adobe.pdf`, not under `public.file-url`. The
+        //       router walks declared types, picks the first
+        //       `.data`-conforming non-text non-image non-movie non-url
+        //       identifier, materializes its bytes to a temp file, and
+        //       returns `.file(tempURL, fileType: "pdf")`.
+        do {
+            ran += 1
+            let pb = UIPasteboard.withUniqueName()
+            cleanup.append(pb.name)
+            let pdfData = makeTinyPDFData()
+            pb.items = [[UTType.pdf.identifier: pdfData]]
+            let result = ClipboardContentRouter.classify(pb)
+            if case .file(let url, let fileType) = result {
+                if fileType != "pdf" {
+                    failures.append("T12: expected fileType 'pdf', got '\(fileType)'")
+                }
+                if url.pathExtension.lowercased() != "pdf" {
+                    failures.append("T12: temp URL extension expected 'pdf', got '\(url.pathExtension)'")
+                }
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    failures.append("T12: temp file does not exist at \(url.path)")
+                }
+                // Clean up the router's temp file so we don't leak in
+                // diagnostic runs. Production relies on iOS's tmp-dir
+                // reaper; the diagnostic clears its own bytes.
+                try? FileManager.default.removeItem(at: url)
+            } else {
+                failures.append("T12: expected .file, got \(label(result))")
+            }
+        }
+
+        // T13 — MP4 data under the concrete `public.mpeg-4` UTI.
+        //       Mirrors the Files.app-copy shape for video: bytes
+        //       under the concrete `.movie`-conforming identifier,
+        //       not under the abstract `public.movie`. Router walks
+        //       declared types, picks the `.movie`-conforming
+        //       identifier, materializes bytes to a temp file under
+        //       its preferred extension, returns `.video(tempURL)`.
+        do {
+            ran += 1
+            let pb = UIPasteboard.withUniqueName()
+            cleanup.append(pb.name)
+            // Tiny placeholder bytes — the router doesn't validate the
+            // payload, only that `firstData(...)` returns non-nil under
+            // a `.movie`-conforming UTI. Real MP4 byte validity is the
+            // downstream AVFoundation pipeline's concern.
+            let videoData = Data([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
+            pb.items = [[UTType.mpeg4Movie.identifier: videoData]]
+            let result = ClipboardContentRouter.classify(pb)
+            if case .video(let url) = result {
+                if url.pathExtension.lowercased() != "mp4" {
+                    failures.append("T13: temp URL extension expected 'mp4', got '\(url.pathExtension)'")
+                }
+                if !FileManager.default.fileExists(atPath: url.path) {
+                    failures.append("T13: temp file does not exist at \(url.path)")
+                }
+                try? FileManager.default.removeItem(at: url)
+            } else {
+                failures.append("T13: expected .video, got \(label(result))")
+            }
+        }
 
         // Cleanup: drop every uniquely-named pasteboard we created. Any
         // leftover named pasteboard from a crashed mid-run is invisible
@@ -300,6 +342,17 @@ enum ClipboardContentRouterDiagnostic {
             UIColor.red.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
         }
+    }
+
+    /// Tiny placeholder bytes used by T12. Not a valid PDF — the
+    /// router doesn't validate the payload, it only checks that the
+    /// pasteboard returns non-nil `Data` for a `.data`-conforming
+    /// non-text UTI. Header bytes mimic the PDF magic so anything
+    /// downstream that DOES sniff content (extraction services) will
+    /// see "looks like a PDF" without us shipping a full corpus
+    /// fixture for the diagnostic.
+    private static func makeTinyPDFData() -> Data {
+        Data([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x34]) // "%PDF-1.4"
     }
 
     private static func label(_ content: ClipboardContent) -> String {

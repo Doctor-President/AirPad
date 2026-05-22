@@ -22,26 +22,41 @@ import UIKit
 /// itself is full-width within that container, matching how `EntryCard`
 /// lays itself out.
 ///
-/// Clipboard observation lifecycle:
-///   - `.onAppear` → read + classify, then start subscriptions
-///   - `UIPasteboard.changedNotification` → re-read + reclassify
-///   - `UIApplication.didBecomeActiveNotification` → re-read on
-///     foreground (cross-app copies don't always re-post
-///     `changedNotification` when AirPad was backgrounded; this is the
-///     narrow divergence from the brief's "only on changedNotification"
-///     language — the acceptance "Clipboard change while user is in
-///     detail view: Paste Pad updates label and state within a beat"
-///     requires it for the common path of "user leaves AirPad, copies
-///     something elsewhere, returns").
+/// Clipboard observation lifecycle (Stage 4.7 C4 — prompt-free):
+///   - `.onAppear` → `detectKind()` (no-prompt: numberOfItems +
+///     types(forItemSet:) only)
+///   - `UIPasteboard.changedNotification` → `detectKind()`
+///   - `UIApplication.didBecomeActiveNotification` → `detectKind()`
+///     (cross-app copies don't always re-post `changedNotification`
+///     when AirPad was backgrounded; this is the narrow divergence
+///     from the brief's "only on changedNotification" language — the
+///     acceptance "Clipboard change while user is in detail view:
+///     Paste Pad updates label and state within a beat" requires it
+///     for the common path of "user leaves AirPad, copies something
+///     elsewhere, returns").
+///   - Tap → `classify()` (full content read; this is the only
+///     prompt-triggering call site)
 ///   - `.onDisappear` → no explicit teardown needed (`.onReceive`
 ///     subscriptions live with the view's lifetime)
 ///
-/// **iOS 14+ pasteboard banner is expected.** Reading
-/// `UIPasteboard.general` triggers a system "AirPad pasted from <app>"
-/// banner. That's iOS's intended privacy surface; we don't fight it.
-/// To minimize how often it fires we read only at the three points
-/// above — never on every redraw. The router's classification is pure
-/// and synchronous; we don't re-read inside the body.
+/// **iOS 16+ "Allow Paste" alert is expected, not suppressible.**
+/// Reading pasteboard *values* (the `values`/`data`/`string`/`url`/
+/// `image` family) triggers the system alert **once per clipboard
+/// change** — once the user taps "Allow Paste" for a given
+/// `changeCount`, subsequent reads against the same contents don't
+/// reprompt; a new copy elsewhere advances `changeCount` and the next
+/// read prompts again. The only documented suppressor is
+/// `UIPasteControl` / `PasteButton` (iOS 16+/17+), which is
+/// incompatible with our shimmer label (no custom-label API). So we
+/// don't fight the alert — we minimize how often it fires by keeping
+/// the prompt-triggering call (`classify`) off the appear / changed /
+/// foreground paths entirely. The label is driven by `detectKind`,
+/// which uses only documented no-prompt APIs (`numberOfItems`,
+/// `types(forItemSet:)`, UTType conformance on the returned type
+/// identifiers — none read content bytes). The full `classify()` runs
+/// only on tap, so the user's tap IS the consent signal for the
+/// prompt. The legacy iOS 14+ "AirPad pasted from <app>" banner still
+/// appears post-tap; we don't fight that either.
 ///
 /// **Shimmer animation — tunable.** Constants at the bottom of this
 /// file (`Shimmer.cycle`, `.baseOpacity`, `.peakOpacity`, `.bandWidth`)
@@ -56,7 +71,11 @@ struct PastePadView: View {
     /// and wire the real handler in C3.
     let onPaste: (ClipboardContent) -> Void
 
-    @State private var content: ClipboardContent = .empty
+    /// Detection-only kind driving the label and primed state. Updated
+    /// from `detectKind()` on appear / changed / foreground — no
+    /// content read, no prompt. The full `ClipboardContent` payload is
+    /// resolved on tap inside `handleTap`.
+    @State private var kind: ClipboardKind = .empty
 
     /// Stage 4.4 dev-panel surface; same instance `EntryCard` reads so
     /// Paste Pad tracks corner-radius / body-treatment changes during
@@ -64,7 +83,7 @@ struct PastePadView: View {
     @State private var visualSettings = EntryVisualSettings.shared
 
     private var isPrimed: Bool {
-        if case .empty = content { return false }
+        if case .empty = kind { return false }
         return true
     }
 
@@ -116,13 +135,13 @@ struct PastePadView: View {
         .contentShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
         .onTapGesture { handleTap() }
         .onAppear {
-            refreshFromClipboard()
+            refreshKindFromClipboard()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIPasteboard.changedNotification)) { _ in
-            refreshFromClipboard()
+            refreshKindFromClipboard()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-            refreshFromClipboard()
+            refreshKindFromClipboard()
         }
         .animation(.easeInOut(duration: 0.2), value: isPrimed)
     }
@@ -131,7 +150,7 @@ struct PastePadView: View {
 
     @ViewBuilder
     private var label: some View {
-        let text = Self.labelText(for: content)
+        let text = Self.labelText(for: kind)
 
         if isPrimed {
             // Brightness-only shimmer: render the label twice — once at
@@ -181,20 +200,29 @@ struct PastePadView: View {
 
     private func handleTap() {
         // Empty state is a deliberate no-op per the brief — no toast,
-        // no error. Tap on primed → invoke callback (C3 wires routing).
+        // no error. Tap on primed → invoke the full classifier (the
+        // ONE call site that reads content bytes and so trips iOS's
+        // "Allow Paste" alert; user's tap IS the consent signal). Race
+        // guard: if the clipboard was cleared between detection and
+        // tap, classify returns `.empty` and we silently drop — the
+        // detection-state label flips on the next changedNotification.
         guard isPrimed else { return }
+        let content = ClipboardContentRouter.classify()
+        if case .empty = content { return }
         onPaste(content)
     }
 
     // MARK: - Clipboard refresh
 
-    private func refreshFromClipboard() {
-        let next = ClipboardContentRouter.classify()
-        // Pasteboard reads themselves don't invoke SwiftUI redraws — we
-        // assign the result, and the `isPrimed` derived state drives the
-        // visual transition. The `.animation` modifier on the view
-        // handles the cross-fade between empty and primed surfaces.
-        content = next
+    private func refreshKindFromClipboard() {
+        // Detection-only path: no `values`/`data`/`string` calls, so
+        // no "Allow Paste" prompt. The full classifier runs in
+        // `handleTap` once the user signals intent. Pasteboard reads
+        // themselves don't invoke SwiftUI redraws — we assign the
+        // result, and the `isPrimed` derived state drives the visual
+        // transition. The `.animation` modifier on the view handles
+        // the cross-fade between empty and primed surfaces.
+        kind = ClipboardContentRouter.detectKind()
     }
 
     // MARK: - Shimmer math
@@ -256,8 +284,8 @@ struct PastePadView: View {
     /// receives one of two shapes:
     ///   - all items same kind → "Paste N {plural-kind} here"
     ///   - mixed kinds → "Paste N items here"
-    static func labelText(for content: ClipboardContent) -> String {
-        switch content {
+    static func labelText(for kind: ClipboardKind) -> String {
+        switch kind {
         case .empty: return "Paste anything"
         case .url: return "Paste link here"
         case .image: return "Paste image here"
@@ -269,7 +297,7 @@ struct PastePadView: View {
         }
     }
 
-    private static func multiLabel(for items: [ClipboardContent]) -> String {
+    private static func multiLabel(for items: [ClipboardKind]) -> String {
         let n = items.count
         guard n >= 2 else {
             // Defensive — router collapses singletons before emitting
@@ -280,14 +308,14 @@ struct PastePadView: View {
         // verify all others match. Plain text in a multi-item batch is
         // unusual; the brief doesn't lock its plural so it falls
         // through to "items" via the no-plural branch below.
-        let kind = pluralKind(for: items[0])
+        let plural = pluralKind(for: items[0])
         for item in items.dropFirst() {
-            if pluralKind(for: item) != kind {
+            if pluralKind(for: item) != plural {
                 return "Paste \(n) items here"
             }
         }
-        if let kind {
-            return "Paste \(n) \(kind) here"
+        if let plural {
+            return "Paste \(n) \(plural) here"
         }
         return "Paste \(n) items here"
     }
@@ -296,8 +324,8 @@ struct PastePadView: View {
     /// item shares this kind. Nil for kinds that don't have a
     /// brief-locked plural — those fall through to the generic
     /// "items" wording.
-    private static func pluralKind(for item: ClipboardContent) -> String? {
-        switch item {
+    private static func pluralKind(for kind: ClipboardKind) -> String? {
+        switch kind {
         case .url: return "links"
         case .image: return "images"
         case .video: return "videos"

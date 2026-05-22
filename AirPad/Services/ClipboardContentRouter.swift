@@ -66,6 +66,38 @@ enum ClipboardContent {
     case empty
 }
 
+/// Payload-free shape of `ClipboardContent`. The router emits this from
+/// `detectKind(_:)` using only iOS's documented no-prompt pasteboard
+/// APIs (`numberOfItems`, `types(forItemSet:)`, UTType conformance
+/// checks on the returned identifiers) — no `values`/`data`/`string`/
+/// `url`/`image` reads, which are what trip iOS 16+'s "Allow Paste"
+/// alert. PastePadView uses this on appear / `changedNotification` /
+/// `didBecomeActive` to drive the label and the primed state without
+/// burning a prompt per detail-view entry; the full `classify(_:)` (and
+/// its content reads) runs only on user-initiated tap, so the prompt
+/// fires at most once per session.
+///
+/// Edge cases vs. `classify(_:)`:
+///   - Non-web URI schemes (`mailto:`, `tel:`, `airpad://`) detect as
+///     `.url` (we can only test type conformance, not the scheme).
+///     `classify` then downgrades to `.text` on tap via `isWebURL`. The
+///     label shows "Paste link here" briefly then the handler routes as
+///     text. Acceptable per the C4 design — the prompt elimination is
+///     worth the rare label-vs-payload mismatch.
+///   - URL-in-text content (a plain-string URL with no `public.url`
+///     declaration) detects as `.text`. `classify` upgrades to `.url`
+///     on tap via `parseHTTPURL`. The label says "Paste text here" but
+///     the URL routing fires correctly.
+enum ClipboardKind: Equatable {
+    case url
+    case image
+    case video
+    case file
+    case text
+    case multi([ClipboardKind])
+    case empty
+}
+
 enum ClipboardContentRouter {
 
     /// Synchronous classification entry point. Default argument
@@ -186,6 +218,87 @@ enum ClipboardContentRouter {
                 return .url(parsed)
             }
             return .text(text)
+        }
+
+        return .empty
+    }
+
+    // MARK: - Prompt-free detection (Stage 4.7 C4)
+
+    /// Prompt-free classification. Returns a `ClipboardKind` describing
+    /// what's on the pasteboard, using only no-prompt APIs
+    /// (`numberOfItems`, `types(forItemSet:)`, UTType conformance on
+    /// type identifiers). Per-item precedence mirrors `classifyItem`'s
+    /// numbered paths so the label the user sees matches the kind the
+    /// tap-time `classify` will resolve to (modulo the documented edge
+    /// cases on `ClipboardKind`).
+    static func detectKind(_ pasteboard: UIPasteboard = .general) -> ClipboardKind {
+        let count = pasteboard.numberOfItems
+        if count == 0 { return .empty }
+
+        var kinds: [ClipboardKind] = []
+        kinds.reserveCapacity(count)
+        for i in 0..<count {
+            let kind = detectKindForItem(pasteboard, at: i)
+            if case .empty = kind { continue }
+            kinds.append(kind)
+        }
+
+        if kinds.isEmpty { return .empty }
+        if kinds.count == 1 { return kinds[0] }
+        return .multi(kinds)
+    }
+
+    private static func detectKindForItem(_ pasteboard: UIPasteboard, at index: Int) -> ClipboardKind {
+        let indexSet = IndexSet(integer: index)
+        let types = (pasteboard.types(forItemSet: indexSet)?.first) ?? []
+
+        // 1. URL — `public.url` but NOT `public.file-url` (file-url
+        //    conforms to url in UTI hierarchy; we want it on the legacy
+        //    file path, matching `classifyItem`'s ordering where path 1
+        //    fails `isWebURL` on a file-url and path 5 catches it).
+        if types.contains(where: { id in
+            guard let ut = UTType(id) else { return false }
+            if ut.conforms(to: .fileURL) { return false }
+            return ut.conforms(to: .url)
+        }) {
+            return .url
+        }
+
+        // 2. Image.
+        if conforms(types, to: .image) {
+            return .image
+        }
+
+        // 3. Video — concrete UTI conforming to `public.movie`.
+        if types.contains(where: { UTType($0)?.conforms(to: .movie) == true }) {
+            return .video
+        }
+
+        // 4. Document file — concrete UTI conforming to `public.data`
+        //    that isn't already handled by paths 1–3 and isn't text.
+        //    Mirrors `classifyItem` path 4.
+        if types.contains(where: { id in
+            guard let ut = UTType(id) else { return false }
+            if ut.conforms(to: .image) { return false }
+            if ut.conforms(to: .movie) { return false }
+            if ut.conforms(to: .url) { return false }
+            if ut.conforms(to: .text) { return false }
+            return ut.conforms(to: .data)
+        }) {
+            return .file
+        }
+
+        // 5. Legacy `public.file-url` — third-party apps that put a
+        //    file URL directly on the pasteboard.
+        if conforms(types, to: .fileURL) {
+            return .file
+        }
+
+        // 6. Plain text. URL-in-text upgrades on tap via `classify`'s
+        //    `parseHTTPURL`; detection-only stays as `.text`.
+        if conforms(types, to: .text) {
+            return .text
         }
 
         return .empty

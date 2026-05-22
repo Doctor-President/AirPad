@@ -76,7 +76,7 @@ struct PastePadView: View {
 
             label
         }
-        .frame(maxWidth: .infinity, minHeight: 80)
+        .frame(maxWidth: .infinity, minHeight: 120)
         .padding(.horizontal, 16)
         .background {
             EntryCardBackground(treatment: visualSettings.bodyTreatment)
@@ -85,21 +85,28 @@ struct PastePadView: View {
         .clipShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
         .overlay {
             // Perimeter shimmer stroke — only visible while primed.
-            // Same TimelineView clock the label reads, so the stroke's
-            // opacity peak lines up with the gradient band crossing
-            // the label's horizontal center (phase 0.5). One bell pulse
-            // per cycle via sin(π·phase); same opacity range as the
-            // text shimmer (`baseOpacity` → `peakOpacity`). `strokeBorder`
-            // keeps the line wholly inside the rounded-rect bounds so
-            // it never gets half-clipped by `.clipShape` above (mirrors
-            // the EntryCard stroke pattern).
+            // Spatial modulation (a moving bright band), not a uniform
+            // opacity pulse, so the stroke and the text read as one
+            // unified shimmer rather than two synced effects. The
+            // gradient's bright peak is horizontally co-located with
+            // the text band's bright peak — same phase math, same
+            // bandWidth fraction, same baseOpacity → peakOpacity range.
+            // `strokeBorder` keeps the line wholly inside the
+            // rounded-rect bounds (so `.clipShape` above doesn't
+            // half-clip it; mirrors the EntryCard stroke pattern).
+            //
+            // The horizontal nature of LinearGradient means the top and
+            // bottom edges shimmer in direct sync with the text band;
+            // the left and right edges show a single instant of the
+            // gradient at any time — they brighten and dim as the band
+            // sweeps past, which still reads as part of the same
+            // perimeter shimmer.
             if isPrimed {
                 TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
                     let phase = Self.shimmerPhase(at: context.date)
-                    let strokeOpacity = Self.strokeOpacity(at: phase)
                     RoundedRectangle(cornerRadius: visualSettings.cornerRadius)
                         .strokeBorder(
-                            Color.white.opacity(strokeOpacity),
+                            Self.strokeGradient(at: phase),
                             lineWidth: Shimmer.strokeWidth
                         )
                 }
@@ -213,16 +220,34 @@ struct PastePadView: View {
         return -band + travel * phase
     }
 
-    /// Stroke opacity at the current shimmer phase. One bell-shaped
-    /// pulse per cycle (sin(π·phase) — zero at endpoints, peak at
-    /// phase 0.5), so the stroke's brightest instant coincides with
-    /// the gradient band reaching the label's horizontal center. Maps
-    /// `[0, 1]` of the curve onto the same `baseOpacity → peakOpacity`
-    /// range the text shimmer uses.
-    private static func strokeOpacity(at phase: CGFloat) -> Double {
-        let curve = sin(.pi * phase) // 0 at endpoints, 1 at phase 0.5
-        let span = Shimmer.peakOpacity - Shimmer.baseOpacity
-        return Shimmer.baseOpacity + Double(curve) * span
+    /// Stroke gradient at the current shimmer phase. Matches the text
+    /// shimmer's spatial structure: a bright band of width
+    /// `Shimmer.bandWidth` (fraction of label width) whose center
+    /// tracks the text band's center exactly. Outside the band the
+    /// stroke is at `baseOpacity`; at the band's center it reaches
+    /// `peakOpacity`.
+    ///
+    /// Mechanics: the gradient spans only the band itself
+    /// (`startPoint.x` to `endPoint.x` covers the band's horizontal
+    /// extent in unit space). SwiftUI extrapolates outside that range
+    /// to the boundary stop color — which is `baseOpacity` on both
+    /// ends — so the rest of the stroke shows uniform base brightness
+    /// while the band region carries the peak. When the band is
+    /// off-screen (`phase` 0 or 1), the entire visible stroke sits at
+    /// base. Identical to how the text band's leading/trailing edges
+    /// sweep off-frame at the cycle boundaries.
+    private static func strokeGradient(at phase: CGFloat) -> LinearGradient {
+        let bandHalf = Shimmer.bandWidth / 2
+        let center = -bandHalf + (1 + Shimmer.bandWidth) * phase
+        return LinearGradient(
+            colors: [
+                Color.white.opacity(Shimmer.baseOpacity),
+                Color.white.opacity(Shimmer.peakOpacity),
+                Color.white.opacity(Shimmer.baseOpacity)
+            ],
+            startPoint: UnitPoint(x: center - bandHalf, y: 0.5),
+            endPoint: UnitPoint(x: center + bandHalf, y: 0.5)
+        )
     }
 
     // MARK: - Label text

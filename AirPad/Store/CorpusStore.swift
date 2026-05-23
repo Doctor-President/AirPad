@@ -1805,7 +1805,8 @@ final class CorpusStore {
         toNodeID targetNodeID: String?,
         mediaItems media: [PendingMediaItem],
         description: String,
-        position: CGPoint
+        position: CGPoint,
+        targetCollectionID: String? = nil
     ) async {
         guard !media.isEmpty else { return }
 
@@ -1894,7 +1895,8 @@ final class CorpusStore {
                 items: [entry],
                 domain: nil,
                 domainConfirmed: false,
-                needsAIProcessing: true
+                needsAIProcessing: true,
+                collectionIDs: [targetCollectionID].compactMap { $0 }
             )
             await persistMediaFiles(media, nodeID: node.id)
             await addNode(node, position: position)

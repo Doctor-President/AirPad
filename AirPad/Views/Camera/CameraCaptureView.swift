@@ -12,6 +12,11 @@ struct CameraCaptureView: View {
     /// If set, the captured image is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Dashboard Stage 4 — if set (and `targetNodeID` is nil), the newly
+    /// created node is stamped with this collection ID and the collection is
+    /// marked as recently used. Ignored when appending to an existing node.
+    var targetCollectionID: String? = nil
+
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -169,7 +174,8 @@ struct CameraCaptureView: View {
             toNodeID: targetNodeID,
             mediaItems: pending,
             description: description,
-            position: position
+            position: position,
+            targetCollectionID: targetCollectionID
         )
 
         if !ocrText.isEmpty {
@@ -183,6 +189,10 @@ struct CameraCaptureView: View {
             await store.processNodeWithAI(nodeID: nodeID)
         } else if let newest = store.nodes.first {
             await store.processNodeWithAI(nodeID: newest.id)
+        }
+
+        if targetNodeID == nil, let cid = targetCollectionID {
+            store.markCollectionUsed(cid)
         }
 
         isSaving = false
@@ -233,7 +243,8 @@ struct CameraCaptureView: View {
             toNodeID: targetNodeID,
             mediaItems: [pending],
             description: description,
-            position: position
+            position: position,
+            targetCollectionID: targetCollectionID
         )
 
         if !ocrText.isEmpty {
@@ -247,6 +258,10 @@ struct CameraCaptureView: View {
             await store.processNodeWithAI(nodeID: nodeID)
         } else if let newest = store.nodes.first {
             await store.processNodeWithAI(nodeID: newest.id)
+        }
+
+        if targetNodeID == nil, let cid = targetCollectionID {
+            store.markCollectionUsed(cid)
         }
 
         isSaving = false

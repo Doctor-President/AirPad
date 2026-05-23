@@ -15,6 +15,11 @@ struct TextCaptureSheet: View {
     /// If set, the captured text is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Dashboard Stage 4 — if set (and `targetNodeID` is nil), the newly
+    /// created node is stamped with this collection ID and the collection is
+    /// marked as recently used. Ignored when appending to an existing node.
+    var targetCollectionID: String? = nil
+
     /// Optional pre-populated text (e.g. from clipboard).
     var initialText: String = ""
 
@@ -88,7 +93,8 @@ struct TextCaptureSheet: View {
             items: [.text(content: trimmed)],
             domain: nil,
             domainConfirmed: false,
-            needsAIProcessing: false
+            needsAIProcessing: false,
+            collectionIDs: [targetCollectionID].compactMap { $0 }
         )
 
         // Slight random spread so nodes don't all stack at center
@@ -103,6 +109,9 @@ struct TextCaptureSheet: View {
                 await store.processNodeWithAI(nodeID: targetID)
             } else {
                 await store.addNode(node, position: position)
+                if let cid = targetCollectionID {
+                    store.markCollectionUsed(cid)
+                }
                 await store.processNodeWithAI(nodeID: node.id)
             }
         }

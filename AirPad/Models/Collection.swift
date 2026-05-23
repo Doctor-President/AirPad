@@ -47,6 +47,29 @@ struct NodeCollection: Codable, Identifiable, Hashable {
 }
 
 extension NodeCollection {
+    /// Stage 4 c4.4 — translates a pill-rail selection into the Node fields
+    /// that get stamped on capture. Journal writes a start-of-day
+    /// `journalDate` (the membership rule the dashboard uses); user
+    /// collections go into `collectionIDs`; nil leaves the node loose
+    /// (Corpus-only). Centralized so every capture surface stays in sync.
+    struct CaptureStamp {
+        let collectionIDs: [String]
+        let journalDate: Date?
+    }
+
+    static func captureStamp(forCollectionID id: String?) -> CaptureStamp {
+        guard let id else {
+            return CaptureStamp(collectionIDs: [], journalDate: nil)
+        }
+        if id == journalID {
+            return CaptureStamp(
+                collectionIDs: [],
+                journalDate: Calendar.current.startOfDay(for: Date())
+            )
+        }
+        return CaptureStamp(collectionIDs: [id], journalDate: nil)
+    }
+
     /// SwiftUI-preview helper only. Production dashboard derives rows from
     /// `CorpusStore.collections` plus virtual Corpus/Journal entries.
     static func sample(now: Date = Date()) -> [NodeCollection] {

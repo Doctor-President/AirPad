@@ -257,6 +257,7 @@ struct VoiceCaptureSheet: View {
             : String(transcript.prefix(40))
 
         let now = Date()
+        let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
         let node = Node(
             id: nodeID,
             createdAt: now,
@@ -279,7 +280,8 @@ struct VoiceCaptureSheet: View {
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: false,
-            collectionIDs: [targetCollectionID].compactMap { $0 }
+            journalDate: stamp.journalDate,
+            collectionIDs: stamp.collectionIDs
         )
 
         let position = CGPoint(

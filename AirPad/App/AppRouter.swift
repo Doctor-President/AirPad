@@ -4,11 +4,11 @@ import Observation
 @MainActor
 @Observable
 final class AppRouter {
-    enum EntryMode: Sendable { case canvas, quikCapture }
+    enum EntryMode: Sendable { case dashboard, canvas, quikCapture }
 
     static var shared: AppRouter?
 
-    var entryMode: EntryMode = .canvas
+    var entryMode: EntryMode = .dashboard
 
     init() {
         AppRouter.shared = self

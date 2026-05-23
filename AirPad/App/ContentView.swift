@@ -17,6 +17,8 @@ struct ContentView: View {
     var body: some View {
         Group {
             switch router.entryMode {
+            case .dashboard:
+                DashboardView()
             case .quikCapture:
                 QuikCaptureView()
             case .canvas:
@@ -33,7 +35,7 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
-                router.entryMode = .canvas
+                router.entryMode = .dashboard
             }
         }
     }

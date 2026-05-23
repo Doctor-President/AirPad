@@ -86,6 +86,13 @@ final class CorpusStore {
 
     var nodes: [Node] = []
     var tags: [Tag] = []
+    /// Dashboard Stage 3 — persisted user collections (id + name only). The
+    /// virtual Corpus and Journal rows are NOT stored here; the dashboard
+    /// prepends them as derived rows at render time. Seeded with Field Notes /
+    /// Reading / Studio on first launch (when `collections.json` is absent);
+    /// after that the array reflects whatever the user has, including an empty
+    /// list if they delete them all in a later stage.
+    var collections: [NodeCollection] = []
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
     /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
@@ -288,6 +295,15 @@ final class CorpusStore {
                 await persistTags()
             } else {
                 tags = loadedTags
+            }
+            // Dashboard Stage 3 — seed user collections on first launch
+            // (nil = file absent). Empty array means the user has explicitly
+            // cleared their collections in a later stage; respect that.
+            if let loadedCollections = try await service.loadCollections() {
+                collections = loadedCollections
+            } else {
+                collections = Self.defaultUserCollections()
+                await persistCollections()
             }
         } catch {
             print("[CorpusStore] Load error: \(error)")
@@ -2277,6 +2293,28 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Tags save error: \(error)")
         }
+    }
+
+    // MARK: - Collection persistence (Dashboard Stage 3)
+
+    private func persistCollections() async {
+        do {
+            try await service.saveCollections(collections)
+        } catch {
+            print("[CorpusStore] Collections save error: \(error)")
+        }
+    }
+
+    /// Seeded once on first launch (when `collections.json` is absent). The
+    /// IDs match the values previously hardcoded in `NodeCollection.sample()`
+    /// so existing dashboard screenshots stay recognizable; the names are the
+    /// only meaningful payload.
+    private static func defaultUserCollections() -> [NodeCollection] {
+        [
+            NodeCollection(id: "field-notes", name: "Field Notes"),
+            NodeCollection(id: "reading", name: "Reading"),
+            NodeCollection(id: "studio", name: "Studio"),
+        ]
     }
 
     private static func tier1SeedTags() -> [Tag] {

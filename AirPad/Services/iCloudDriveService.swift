@@ -168,6 +168,25 @@ actor iCloudDriveService {
         return root.appendingPathComponent("nodes/\(nodeID)/\(relativePath)")
     }
 
+    // MARK: - Collections (Dashboard Stage 3)
+
+    func saveCollections(_ collections: [NodeCollection]) throws {
+        let root = try requireRoot()
+        let data = try JSONEncoder.airPad.encode(collections)
+        try data.write(to: root.appendingPathComponent("collections.json"), options: .atomic)
+    }
+
+    /// Returns nil when the file is absent (first launch). Returns an empty
+    /// array when the user has explicitly deleted all their collections.
+    /// CorpusStore relies on this distinction to seed defaults exactly once.
+    func loadCollections() throws -> [NodeCollection]? {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("collections.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode([NodeCollection].self, from: data)
+    }
+
     // MARK: - Canvas layout
 
     func saveCanvasLayout(_ layout: CanvasLayout) throws {

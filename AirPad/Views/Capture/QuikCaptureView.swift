@@ -10,7 +10,14 @@ struct QuikCaptureView: View {
     /// pill rail is interactive and `selectedCollectionID` drives the stamp.
     var forcedCollectionID: String? = nil
 
+    /// c4.6 — where the user entered QuikCapture from. Drives the exit
+    /// pill's behavior and label. Defaults to .urlScheme to keep the
+    /// pre-c4.6 behavior intact for any legacy call site that doesn't
+    /// thread origin through (the router always passes one in production).
+    var origin: AppRouter.QuikCaptureOrigin = .urlScheme
+
     @Environment(CorpusStore.self) private var store
+    @Environment(AppRouter.self) private var router
 
     @State private var showVoiceCapture: Bool = false
     @State private var showCameraCapture: Bool = false
@@ -221,9 +228,19 @@ struct QuikCaptureView: View {
 
     private var exitPill: some View {
         Button {
-            UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
+            switch origin {
+            case .dashboard:
+                // In-app entry — return to where the user came from so the
+                // dashboard's nav state stays intact.
+                router.entryMode = .dashboard
+            case .urlScheme:
+                // External entry — suspend the app so the user lands back
+                // on the home screen / origin app instead of being dumped
+                // into the dashboard they never asked to see.
+                UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
+            }
         } label: {
-            Text("Exit QuikCapture ↩")
+            Text(exitPillLabel)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12)
@@ -232,6 +249,13 @@ struct QuikCaptureView: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private var exitPillLabel: String {
+        switch origin {
+        case .dashboard: "← Dashboard"
+        case .urlScheme: "Exit QuikCapture ↩"
+        }
     }
 
     private func captureButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {

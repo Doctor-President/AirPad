@@ -11,7 +11,9 @@ import SwiftUI
 ///      larger text, more vertical padding) and routes to canvas via entry-
 ///      mode flip. User-collection rows push `CollectionView` onto the
 ///      dashboard's NavigationStack.
-///   4. Persistent floating "+" bottom-right (no-op pending C3 capture flow).
+///   4. Persistent floating "+" bottom-right — routes to QuikCapture with
+///      `.dashboard` origin so the exit pill returns here rather than
+///      suspending the app (c4.6).
 struct DashboardView: View {
 
     @Environment(AppRouter.self) private var router
@@ -185,7 +187,9 @@ struct DashboardView: View {
             Spacer()
             HStack {
                 Spacer()
-                Button(action: {}) {
+                Button {
+                    router.entryMode = .quikCapture(forcedCollectionID: nil, origin: .dashboard)
+                } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 24, weight: .semibold))
                         .foregroundStyle(.black)

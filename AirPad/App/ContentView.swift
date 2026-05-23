@@ -19,8 +19,8 @@ struct ContentView: View {
             switch router.entryMode {
             case .dashboard:
                 DashboardView()
-            case .quikCapture(let forcedCollectionID):
-                QuikCaptureView(forcedCollectionID: forcedCollectionID)
+            case .quikCapture(let forcedCollectionID, let origin):
+                QuikCaptureView(forcedCollectionID: forcedCollectionID, origin: origin)
             case .canvas:
                 canvasBody
             }

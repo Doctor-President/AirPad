@@ -85,6 +85,13 @@ struct Node: Codable, Identifiable, Hashable {
     /// in the custom decoder means existing nodes silently decode as `nil` —
     /// no schema-version bump required.
     var journalDate: Date?
+    /// Dashboard Stage 3 — IDs of user collections this node belongs to.
+    /// Corpus is implicit (every node) and Journal is derived from
+    /// `journalDate`, so neither appears in this array. Stored as a plain
+    /// `[String]` for ergonomic call sites (no optional unwrap on read);
+    /// `decodeIfPresent ?? []` on the decoder side means legacy nodes
+    /// silently decode as empty — no schema-version bump required.
+    var collectionIDs: [String]
     /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
     var source: String?
     /// SB126 Stage 2 — `NLEmbedding.sentenceEmbedding(for: .english)` of the
@@ -173,6 +180,7 @@ struct Node: Codable, Identifiable, Hashable {
         case needsAIProcessing = "needs_ai_processing"
         case needsReview = "needs_review"
         case journalDate = "journal_date"
+        case collectionIDs = "collection_ids"
         case tagSources = "tag_sources"
         case contentEmbedding = "content_embedding"
         case fmSuggestedNeighborhoodID = "fm_suggested_neighborhood_id"
@@ -213,6 +221,7 @@ struct Node: Codable, Identifiable, Hashable {
         needsAIProcessing: Bool = false,
         needsReview: Bool = false,
         journalDate: Date? = nil,
+        collectionIDs: [String] = [],
         source: String? = nil,
         contentEmbedding: [Float]? = nil,
         fmSuggestedNeighborhoodID: String? = nil,
@@ -246,6 +255,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.needsAIProcessing           = needsAIProcessing
         self.needsReview                 = needsReview
         self.journalDate                 = journalDate
+        self.collectionIDs               = collectionIDs
         self.source                      = source
         self.contentEmbedding            = contentEmbedding
         self.fmSuggestedNeighborhoodID   = fmSuggestedNeighborhoodID
@@ -286,6 +296,7 @@ extension Node {
         needsAIProcessing         = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
         needsReview               = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
         journalDate               = try c.decodeIfPresent(Date.self,      forKey: .journalDate)
+        collectionIDs             = try c.decodeIfPresent([String].self,  forKey: .collectionIDs) ?? []
         source                    = try c.decodeIfPresent(String.self,    forKey: .source)
         contentEmbedding          = try c.decodeIfPresent([Float].self,   forKey: .contentEmbedding)
         fmSuggestedNeighborhoodID = try c.decodeIfPresent(String.self,    forKey: .fmSuggestedNeighborhoodID)

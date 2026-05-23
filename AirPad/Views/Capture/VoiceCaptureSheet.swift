@@ -9,6 +9,11 @@ struct VoiceCaptureSheet: View {
     /// If set, the captured audio is appended to this node instead of creating a new one.
     var targetNodeID: String? = nil
 
+    /// Dashboard Stage 4 — if set (and `targetNodeID` is nil), the newly
+    /// created node is stamped with this collection ID and the collection is
+    /// marked as recently used. Ignored when appending to an existing node.
+    var targetCollectionID: String? = nil
+
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -273,7 +278,8 @@ struct VoiceCaptureSheet: View {
             ].compactMap { $0 },
             domain: nil,
             domainConfirmed: false,
-            needsAIProcessing: false
+            needsAIProcessing: false,
+            collectionIDs: [targetCollectionID].compactMap { $0 }
         )
 
         let position = CGPoint(
@@ -294,6 +300,9 @@ struct VoiceCaptureSheet: View {
             } else {
                 // Create new node
                 await store.addNodeWithAudio(node, audioURL: audioURL, audioItemID: audioItemID, position: position)
+                if let cid = targetCollectionID {
+                    store.markCollectionUsed(cid)
+                }
                 await store.processNodeWithAI(nodeID: node.id)
             }
         }

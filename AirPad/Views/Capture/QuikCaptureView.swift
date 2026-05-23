@@ -3,6 +3,14 @@ import UIKit
 
 struct QuikCaptureView: View {
 
+    /// Dashboard Stage 4 — if set, every capture surface launched from this
+    /// view (voice, camera, text, clipboard text, link) stamps the new node
+    /// with this collection ID and marks the collection as recently used.
+    /// Default nil preserves the pre-Stage-4 URL-scheme entry behavior.
+    /// c4.3 will wire `EntryMode.quikCapture(forcedCollectionID:)` and the
+    /// pill row to this field.
+    var targetCollectionID: String? = nil
+
     @Environment(CorpusStore.self) private var store
 
     @State private var showVoiceCapture: Bool = false
@@ -77,13 +85,13 @@ struct QuikCaptureView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: linkReceipt)
         .sheet(isPresented: $showVoiceCapture) {
-            VoiceCaptureSheet()
+            VoiceCaptureSheet(targetCollectionID: targetCollectionID)
         }
         .sheet(isPresented: $showCameraCapture) {
-            CameraCaptureView()
+            CameraCaptureView(targetCollectionID: targetCollectionID)
         }
         .sheet(isPresented: $showTextCapture) {
-            TextCaptureSheet(initialText: prefilledText)
+            TextCaptureSheet(targetCollectionID: targetCollectionID, initialText: prefilledText)
         }
     }
 
@@ -186,7 +194,8 @@ struct QuikCaptureView: View {
             items: [item],
             domain: nil,
             domainConfirmed: false,
-            needsAIProcessing: true
+            needsAIProcessing: true,
+            collectionIDs: [targetCollectionID].compactMap { $0 }
         )
         let position = CGPoint(
             x: Double.random(in: -80...80),
@@ -201,6 +210,9 @@ struct QuikCaptureView: View {
             // on the entry before the user ever sees the bare-URL state.
             async let fetchTask = OGMetadataService().fetch(url: url)
             await store.addNode(node, position: position)
+            if let cid = targetCollectionID {
+                store.markCollectionUsed(cid)
+            }
             // AT19.3c commit 6 — receipt overlay. Present immediately after
             // the node lands in the store so the receipt can resolve the
             // item; if OG hasn't returned yet the overlay shows State B

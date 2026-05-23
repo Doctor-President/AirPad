@@ -379,6 +379,49 @@ final class CorpusStore {
         // Single-node insert does not trigger evaluation against an incomplete corpus (SB123).
     }
 
+    // MARK: - Journal find-or-create (Dashboard Stage 2)
+
+    /// Returns today's journal Node, creating it if it doesn't exist yet.
+    ///
+    /// Journal nodes are identified by `Node.journalDate` matching the start of
+    /// some day; one node per day. Lookup compares against
+    /// `Calendar.current.startOfDay(for: Date())` so a journal entry written
+    /// late at night is the same node as one written that morning, but a new
+    /// day always rolls over to a fresh node at midnight local time.
+    ///
+    /// On first create, an empty text item is appended via
+    /// `appendEmptyTextItem` so the detail view auto-focuses the editor — the
+    /// journal prompt's "drop me into writing" intent. Returning to an
+    /// existing journal node does NOT auto-append; the user picks up where
+    /// they left off, or taps "+" inside detail to add another entry.
+    func findOrCreateTodayJournalNode() async -> Node? {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        if let existing = nodes.first(where: { node in
+            guard let d = node.journalDate else { return false }
+            return cal.isDate(d, inSameDayAs: today)
+        }) {
+            return existing
+        }
+        let now = Date()
+        let f = DateFormatter()
+        f.dateFormat = "MMMM d, yyyy"
+        let title = "Journal · \(f.string(from: now))"
+        let node = Node(
+            id: UUID().uuidString,
+            createdAt: now,
+            updatedAt: now,
+            title: title,
+            summary: "",
+            tags: [],
+            journalDate: today,
+            entrySchemaVersion: 1
+        )
+        await addNode(node, position: .zero)
+        _ = await appendEmptyTextItem(nodeID: node.id)
+        return nodes.first(where: { $0.id == node.id })
+    }
+
     // MARK: - Update existing nodes
 
     func updateNode(_ updated: Node) async {

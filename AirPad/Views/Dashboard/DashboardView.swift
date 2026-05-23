@@ -1,25 +1,23 @@
 import SwiftUI
 
-/// Dashboard C1 — app root.
+/// Dashboard — app root.
 ///
 /// Layout (top → bottom):
 ///   1. Header — AirPad wordmark centered, right-aligned Inbox + Recents +
 ///      Settings icons. Inbox badge stub = 0 (hidden when zero).
-///   2. Today section — `TodayCardView`.
+///   2. Today section — `TodayCardView`. Journal prompt opens today's journal
+///      node via `CorpusStore.findOrCreateTodayJournalNode`.
 ///   3. Collections section — Corpus row pinned first (visually distinct:
-///      larger text, more vertical padding), then user rows (name dominant,
-///      with node count + last-entry timestamp).
-///   4. Persistent floating "+" bottom-right.
-///
-/// C1 constraints: all taps no-op except the journal entry prompt placeholder.
-/// Canvas + detail unaffected; this view is unwired (C1.3) until C1.4 swaps
-/// the app entry point.
+///      larger text, more vertical padding) and routes to canvas via entry-
+///      mode flip. User-collection rows push `CollectionView` onto the
+///      dashboard's NavigationStack.
+///   4. Persistent floating "+" bottom-right (no-op pending C3 capture flow).
 struct DashboardView: View {
 
     @Environment(AppRouter.self) private var router
+    @Environment(CorpusStore.self) private var store
 
     @State private var collections: [NodeCollection] = NodeCollection.sample()
-    @State private var showJournalPlaceholder = false
     @State private var path = NavigationPath()
 
     var body: some View {
@@ -44,8 +42,8 @@ struct DashboardView: View {
             .navigationDestination(for: NodeCollection.self) { collection in
                 CollectionView(collection: collection)
             }
-            .sheet(isPresented: $showJournalPlaceholder) {
-                journalPlaceholderSheet
+            .navigationDestination(for: Node.self) { node in
+                NodeDetailView(nodeID: node.id)
             }
         }
     }
@@ -110,7 +108,15 @@ struct DashboardView: View {
     // MARK: - Today
 
     private var todaySection: some View {
-        TodayCardView(onJournalPromptTap: { showJournalPlaceholder = true })
+        TodayCardView(onJournalPromptTap: openTodayJournal)
+    }
+
+    private func openTodayJournal() {
+        Task {
+            if let node = await store.findOrCreateTodayJournalNode() {
+                path.append(node)
+            }
+        }
     }
 
     // MARK: - Collections
@@ -167,23 +173,6 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: - Journal placeholder sheet
-
-    private var journalPlaceholderSheet: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 14) {
-                Text("Journal entry")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text("Capture wiring lands in C2.")
-                    .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.55))
-            }
-        }
-        .presentationDetents([.medium])
-        .presentationBackground(.black)
-    }
 }
 
 // MARK: - Collection row

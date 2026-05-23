@@ -79,6 +79,12 @@ struct Node: Codable, Identifiable, Hashable {
     var needsAIProcessing: Bool
     /// Router flag: system isn't confident this belongs in corpus, user should confirm.
     var needsReview: Bool
+    /// Dashboard Stage 2 — start-of-day marker for journal nodes. Non-nil
+    /// indicates this is the journal node for that day; lookup key for the
+    /// dashboard's "today's journal" find-or-create. Optional + decodeIfPresent
+    /// in the custom decoder means existing nodes silently decode as `nil` —
+    /// no schema-version bump required.
+    var journalDate: Date?
     /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
     var source: String?
     /// SB126 Stage 2 — `NLEmbedding.sentenceEmbedding(for: .english)` of the
@@ -166,6 +172,7 @@ struct Node: Codable, Identifiable, Hashable {
         case domainConfirmed = "domain_confirmed"
         case needsAIProcessing = "needs_ai_processing"
         case needsReview = "needs_review"
+        case journalDate = "journal_date"
         case tagSources = "tag_sources"
         case contentEmbedding = "content_embedding"
         case fmSuggestedNeighborhoodID = "fm_suggested_neighborhood_id"
@@ -205,6 +212,7 @@ struct Node: Codable, Identifiable, Hashable {
         domainConfirmed: Bool = false,
         needsAIProcessing: Bool = false,
         needsReview: Bool = false,
+        journalDate: Date? = nil,
         source: String? = nil,
         contentEmbedding: [Float]? = nil,
         fmSuggestedNeighborhoodID: String? = nil,
@@ -237,6 +245,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.domainConfirmed             = domainConfirmed
         self.needsAIProcessing           = needsAIProcessing
         self.needsReview                 = needsReview
+        self.journalDate                 = journalDate
         self.source                      = source
         self.contentEmbedding            = contentEmbedding
         self.fmSuggestedNeighborhoodID   = fmSuggestedNeighborhoodID
@@ -276,6 +285,7 @@ extension Node {
         domainConfirmed           = try c.decodeIfPresent(Bool.self,      forKey: .domainConfirmed) ?? false
         needsAIProcessing         = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
         needsReview               = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
+        journalDate               = try c.decodeIfPresent(Date.self,      forKey: .journalDate)
         source                    = try c.decodeIfPresent(String.self,    forKey: .source)
         contentEmbedding          = try c.decodeIfPresent([Float].self,   forKey: .contentEmbedding)
         fmSuggestedNeighborhoodID = try c.decodeIfPresent(String.self,    forKey: .fmSuggestedNeighborhoodID)

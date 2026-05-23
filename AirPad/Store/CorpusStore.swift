@@ -93,6 +93,25 @@ final class CorpusStore {
     /// after that the array reflects whatever the user has, including an empty
     /// list if they delete them all in a later stage.
     var collections: [NodeCollection] = []
+
+    /// Dashboard Stage 4 — id of the collection the user most recently
+    /// captured into or scoped into. Drives the QuikCapture pill's initial
+    /// selection when reopened from the Dashboard "+". Persisted to
+    /// UserDefaults (per-device UI affordance, not synced — `iCloudDriveService`
+    /// is reserved for sync-worthy state).
+    var lastUsedCollectionID: String? = Self.loadLastUsedCollectionID() {
+        didSet { Self.saveLastUsedCollectionID(lastUsedCollectionID) }
+    }
+
+    /// Dashboard Stage 4 — per-collection last-interaction timestamps that
+    /// drive the QuikCapture pill rail's recency order. Updated whenever the
+    /// user enters a collection's `CollectionView` or captures into one.
+    /// Persisted next to `lastUsedCollectionID` in UserDefaults so the two stay
+    /// consistent across launches; intentionally NOT in `collections.json` so
+    /// every pill tap doesn't rewrite that file.
+    var collectionLastUsedAt: [String: Date] = Self.loadCollectionLastUsedAt() {
+        didSet { Self.saveCollectionLastUsedAt(collectionLastUsedAt) }
+    }
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
     /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
@@ -2315,6 +2334,61 @@ final class CorpusStore {
             NodeCollection(id: "reading", name: "Reading"),
             NodeCollection(id: "studio", name: "Studio"),
         ]
+    }
+
+    // MARK: - Collection mutation (Dashboard Stage 4)
+
+    /// Records that the user interacted with this collection — either by
+    /// entering its `CollectionView` or by capturing a node into it. Updates
+    /// both the single "last used" pointer (for pill pre-selection) and the
+    /// per-collection recency map (for pill rail ordering). The two `didSet`
+    /// observers fan out to UserDefaults.
+    func markCollectionUsed(_ collectionID: String) {
+        lastUsedCollectionID = collectionID
+        collectionLastUsedAt[collectionID] = Date()
+    }
+
+    /// Create and persist a new user collection from a name. Trims the name
+    /// and assigns a fresh UUID; new collections always start with empty
+    /// membership. Returns the created collection so the caller can hand it
+    /// straight to the pill rail as the active selection.
+    @discardableResult
+    func createCollection(name: String) async -> NodeCollection {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let collection = NodeCollection(id: UUID().uuidString, name: trimmed)
+        collections.append(collection)
+        await persistCollections()
+        return collection
+    }
+
+    // MARK: - UserDefaults helpers (Dashboard Stage 4)
+
+    private static let udLastUsedCollectionIDKey = "com.airpad.dashboard.lastUsedCollectionID"
+    private static let udCollectionLastUsedAtKey = "com.airpad.dashboard.collectionLastUsedAt"
+
+    private static func loadLastUsedCollectionID() -> String? {
+        UserDefaults.standard.string(forKey: udLastUsedCollectionIDKey)
+    }
+
+    private static func saveLastUsedCollectionID(_ value: String?) {
+        if let value {
+            UserDefaults.standard.set(value, forKey: udLastUsedCollectionIDKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: udLastUsedCollectionIDKey)
+        }
+    }
+
+    private static func loadCollectionLastUsedAt() -> [String: Date] {
+        guard let data = UserDefaults.standard.data(forKey: udCollectionLastUsedAtKey),
+              let map = try? JSONDecoder().decode([String: Date].self, from: data)
+        else { return [:] }
+        return map
+    }
+
+    private static func saveCollectionLastUsedAt(_ map: [String: Date]) {
+        if let data = try? JSONEncoder().encode(map) {
+            UserDefaults.standard.set(data, forKey: udCollectionLastUsedAtKey)
+        }
     }
 
     private static func tier1SeedTags() -> [Tag] {

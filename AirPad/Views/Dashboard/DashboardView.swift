@@ -20,26 +20,33 @@ struct DashboardView: View {
 
     @State private var collections: [NodeCollection] = NodeCollection.sample()
     @State private var showJournalPlaceholder = false
+    @State private var path = NavigationPath()
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
+        NavigationStack(path: $path) {
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    header
-                        .padding(.top, 6)
-                    todaySection
-                    collectionsSection
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        header
+                            .padding(.top, 6)
+                        todaySection
+                        collectionsSection
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 120)
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 120)
-            }
 
-            floatingPlusButton
-        }
-        .sheet(isPresented: $showJournalPlaceholder) {
-            journalPlaceholderSheet
+                floatingPlusButton
+            }
+            .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
+            .navigationDestination(for: NodeCollection.self) { collection in
+                CollectionView(collection: collection)
+            }
+            .sheet(isPresented: $showJournalPlaceholder) {
+                journalPlaceholderSheet
+            }
         }
     }
 
@@ -128,10 +135,12 @@ struct DashboardView: View {
 
     /// Corpus row routes to the existing canvas (no scoping — Corpus is the
     /// "everything" view). User-collection rows push a scoped CollectionView
-    /// onto the dashboard's nav stack (wired in C2.3).
+    /// onto the dashboard's nav stack.
     private func tap(_ collection: NodeCollection) {
         if collection.isCorpus {
             router.entryMode = .canvas
+        } else {
+            path.append(collection)
         }
     }
 

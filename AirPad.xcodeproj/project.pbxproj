@@ -132,6 +132,7 @@
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
+		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
 		B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */; };
 		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
@@ -245,6 +246,7 @@
 		64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCAN.swift; sourceTree = "<group>"; };
 		66610DC5B90AC2729F2B6F1D /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
+		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
 		68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModeToggle.swift; sourceTree = "<group>"; };
 		6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionButtonFan.swift; sourceTree = "<group>"; };
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
@@ -594,6 +596,7 @@
 		A1059810ABACBA240F7761FF /* Dashboard */ = {
 			isa = PBXGroup;
 			children = (
+				688537782A3AA4A7F0B436F9 /* CollectionView.swift */,
 				88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */,
 				9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */,
 			);
@@ -853,6 +856,7 @@
 				86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */,
 				FD2F516F643CD089B6E84F12 /* ClipboardContentRouterDiagnostic.swift in Sources */,
 				1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */,
+				B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */,
 				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
 				92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */,
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,

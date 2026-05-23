@@ -13,7 +13,7 @@ import Foundation
 /// they will be derived from `CorpusStore.nodes` and per-collection membership
 /// (whose storage shape is still open — `Node.collectionIDs` vs a separate
 /// index). For C1 the values are hardcoded in `NodeCollection.sample`.
-struct NodeCollection: Identifiable, Equatable {
+struct NodeCollection: Identifiable, Hashable {
     let id: String
     var name: String
     var nodeCount: Int

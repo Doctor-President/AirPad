@@ -15,6 +15,7 @@ struct QuikCaptureView: View {
     @State private var showVoiceCapture: Bool = false
     @State private var showCameraCapture: Bool = false
     @State private var showTextCapture: Bool = false
+    @State private var showCollectionCreation: Bool = false
     @State private var prefilledText: String = ""
     @State private var emptyClipboardMessageVisible: Bool = false
     @State private var linkReceipt: LinkReceiptIDs? = nil
@@ -104,6 +105,16 @@ struct QuikCaptureView: View {
         .sheet(isPresented: $showTextCapture) {
             TextCaptureSheet(targetCollectionID: effectiveCollectionID, initialText: prefilledText)
         }
+        .sheet(isPresented: $showCollectionCreation) {
+            CollectionCreationSheet { newCollection in
+                // Pin the new collection as the active selection and bump
+                // its recency so it lands at the front of the rail. This
+                // matches the "tap-a-pill" interaction the user just
+                // implicitly performed by choosing to create it.
+                store.markCollectionUsed(newCollection.id)
+                selectedCollectionID = newCollection.id
+            }
+        }
         .onAppear {
             // c4.4 — pre-select the user's last-used pill on entry. Forced
             // mode (CollectionView "+" path in c4.7) wins; in that case we
@@ -143,9 +154,39 @@ struct QuikCaptureView: View {
                 ForEach(railCollections) { collection in
                     pill(for: collection, isLocked: isLocked)
                 }
+                if !isLocked {
+                    newCollectionPill
+                }
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    /// c4.5 — "New +" pill at the far right. Always scrolls with the rest
+    /// of the rail (not pinned), discoverable as the last entry. Hidden
+    /// when the rail is locked (forced-collection capture path) since
+    /// creating a new collection mid-forced-capture would create a useless
+    /// orphan: the new node still lands in `forcedCollectionID`, not the
+    /// just-created one.
+    private var newCollectionPill: some View {
+        Button {
+            showCollectionCreation = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .bold))
+                Text("New")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(0.75))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .overlay(
+                Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1)
+            )
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func pill(for collection: NodeCollection, isLocked: Bool) -> some View {

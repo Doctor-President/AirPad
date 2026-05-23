@@ -76,7 +76,10 @@ struct ContentView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
                         } else {
-                            HStack(alignment: .center) {
+                            HStack(alignment: .center, spacing: 8) {
+                                DashboardBackButton {
+                                    router.entryMode = .dashboard
+                                }
                                 ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
                                     var s = store.filterState
                                     s.viewMode = mode
@@ -209,6 +212,24 @@ private struct ViewTogglePill: View {
             .padding(.vertical, 13)
             .background(viewMode == mode ? Color.white : Color.clear)
             .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Dashboard back button
+
+private struct DashboardBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(Color(white: 0.18))
+                .clipShape(Circle())
         }
         .buttonStyle(.plain)
     }

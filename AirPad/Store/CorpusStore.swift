@@ -99,7 +99,7 @@ final class CorpusStore {
     /// selection when reopened from the Dashboard "+". Persisted to
     /// UserDefaults (per-device UI affordance, not synced — `iCloudDriveService`
     /// is reserved for sync-worthy state).
-    var lastUsedCollectionID: String? = Self.loadLastUsedCollectionID() {
+    var lastUsedCollectionID: String? = CorpusStore.loadLastUsedCollectionID() {
         didSet { Self.saveLastUsedCollectionID(lastUsedCollectionID) }
     }
 
@@ -109,7 +109,7 @@ final class CorpusStore {
     /// Persisted next to `lastUsedCollectionID` in UserDefaults so the two stay
     /// consistent across launches; intentionally NOT in `collections.json` so
     /// every pill tap doesn't rewrite that file.
-    var collectionLastUsedAt: [String: Date] = Self.loadCollectionLastUsedAt() {
+    var collectionLastUsedAt: [String: Date] = CorpusStore.loadCollectionLastUsedAt() {
         didSet { Self.saveCollectionLastUsedAt(collectionLastUsedAt) }
     }
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])

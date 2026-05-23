@@ -6,8 +6,12 @@ import SwiftUI
 /// collection row is tapped. (The Corpus row routes to canvas instead — see
 /// `DashboardView.tap`.) Lists member nodes; tapping a row pushes
 /// `NodeDetailView` via the parent stack's `navigationDestination(for:
-/// Node.self)`. An empty state stands in when no members exist yet — true for
-/// freshly-seeded user collections until C4 wires assignment UI.
+/// Node.self)`.
+///
+/// Floating "+" routes to QuikCapture with `forcedCollectionID = collection.id`
+/// so captures land here without the pill rail needing to be touched (c4.7).
+/// `markCollectionUsed` on appear bumps recency so the pill rail's ordering
+/// reflects collections the user actually visits.
 ///
 /// Membership rules:
 ///   • Journal: nodes with `journalDate != nil`, sorted by `journalDate` desc.
@@ -18,6 +22,7 @@ struct CollectionView: View {
     let collection: NodeCollection
 
     @Environment(CorpusStore.self) private var store
+    @Environment(AppRouter.self) private var router
 
     private var members: [Node] {
         if collection.isJournal {
@@ -39,12 +44,17 @@ struct CollectionView: View {
             } else {
                 memberList
             }
+
+            floatingPlusButton
         }
         .navigationTitle(collection.name)
         .navigationBarTitleDisplayMode(.large)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbarBackground(.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
+        .onAppear {
+            store.markCollectionUsed(collection.id)
+        }
     }
 
     // MARK: - Member list
@@ -61,7 +71,35 @@ struct CollectionView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            .padding(.bottom, 32)
+            .padding(.bottom, 120)
+        }
+    }
+
+    // MARK: - Floating "+"
+
+    private var floatingPlusButton: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    router.entryMode = .quikCapture(
+                        forcedCollectionID: collection.id,
+                        origin: .dashboard
+                    )
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 60, height: 60)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 20)
+                .padding(.bottom, 28)
+            }
         }
     }
 

@@ -132,9 +132,9 @@ struct RichTextEditor: UIViewRepresentable {
             host.view.translatesAutoresizingMaskIntoConstraints = false
             host.view.backgroundColor = .clear
 
-            let container = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 44))
+            let container = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 56))
             container.autoresizingMask = .flexibleWidth
-            container.backgroundColor = UIColor(white: 0.12, alpha: 1.0)
+            container.backgroundColor = .clear
             container.addSubview(host.view)
             NSLayoutConstraint.activate([
                 host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1071,30 +1071,38 @@ struct RichTextToolbar: View {
     @Bindable var state: RichTextEditorState
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                button(icon: "bold", active: state.isBold, action: state.toggleBold)
-                button(icon: "italic", active: state.isItalic, action: state.toggleItalic)
-                button(icon: "underline", active: state.isUnderline, action: state.toggleUnderline)
-                button(icon: "strikethrough", active: state.isStrikethrough, action: state.toggleStrikethrough)
-                separator
-                button(icon: "list.bullet", active: state.isBulletList, action: state.toggleBulletList)
-                button(icon: "list.number", active: state.isNumberedList, action: state.toggleNumberedList)
-                button(icon: "decrease.indent", active: false, action: state.outdent)
-                button(icon: "increase.indent", active: false, action: state.indent)
-                separator
-                button(icon: "chevron.left.forwardslash.chevron.right", active: state.isInlineCode, action: state.toggleInlineCode)
-                button(icon: "link", active: false, action: state.insertLink)
-                separator
-                button(icon: "arrow.uturn.backward", active: false, enabled: state.canUndo, action: state.undo)
-                button(icon: "arrow.uturn.forward", active: false, enabled: state.canRedo, action: state.redo)
-                separator
-                button(icon: "keyboard.chevron.compact.down", active: false, action: state.dismissKeyboard)
+        HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    button(icon: "bold", active: state.isBold, action: state.toggleBold)
+                    button(icon: "italic", active: state.isItalic, action: state.toggleItalic)
+                    button(icon: "underline", active: state.isUnderline, action: state.toggleUnderline)
+                    button(icon: "strikethrough", active: state.isStrikethrough, action: state.toggleStrikethrough)
+                    separator
+                    button(icon: "list.bullet", active: state.isBulletList, action: state.toggleBulletList)
+                    button(icon: "list.number", active: state.isNumberedList, action: state.toggleNumberedList)
+                    button(icon: "decrease.indent", active: false, action: state.outdent)
+                    button(icon: "increase.indent", active: false, action: state.indent)
+                    separator
+                    button(icon: "chevron.left.forwardslash.chevron.right", active: state.isInlineCode, action: state.toggleInlineCode)
+                    button(icon: "link", active: false, action: state.insertLink)
+                    separator
+                    button(icon: "arrow.uturn.backward", active: false, enabled: state.canUndo, action: state.undo)
+                    button(icon: "arrow.uturn.forward", active: false, enabled: state.canRedo, action: state.redo)
+                }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 8)
+            separator
+            button(icon: "keyboard.chevron.compact.down", active: false, action: state.dismissKeyboard)
+                .padding(.trailing, 6)
         }
-        .frame(height: 44)
-        .background(Color(white: 0.12))
+        .frame(height: 48)
+        .background(
+            Capsule(style: .continuous).fill(Color(white: 0.12))
+        )
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
     }
 
     private var separator: some View {
@@ -1115,8 +1123,8 @@ struct RichTextToolbar: View {
                 .font(.system(size: 16, weight: .medium))
                 .frame(width: 36, height: 36)
                 .foregroundStyle(enabled ? (active ? Color.white : Color.white.opacity(0.75)) : Color.white.opacity(0.3))
-                .background(active ? Color.white.opacity(0.15) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .background(active ? Color.white.opacity(0.18) : Color.clear)
+                .clipShape(Capsule(style: .continuous))
         }
         .disabled(!enabled)
     }

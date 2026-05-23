@@ -6,7 +6,6 @@ struct ContentView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
     @Environment(SelectionService.self) private var selection
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
@@ -32,11 +31,6 @@ struct ContentView: View {
         // `EntryVisualSettings`.
         .overlay(alignment: .topTrailing) {
             EntryVisualDevPanelHost()
-        }
-        .onChange(of: scenePhase) { _, newPhase in
-            if newPhase == .background {
-                router.entryMode = .dashboard
-            }
         }
     }
 

@@ -17,8 +17,36 @@ struct DashboardView: View {
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
 
-    @State private var collections: [NodeCollection] = NodeCollection.sample()
     @State private var path = NavigationPath()
+
+    /// Dashboard Stage 3 — rows are derived at render time from
+    /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
+    /// persisted user collections; counts and `lastEntryAt` are computed
+    /// from `Node.collectionIDs` membership (and `Node.journalDate` for the
+    /// Journal row) so they stay honest as nodes are added or moved.
+    private var displayedCollections: [NodeCollection] {
+        let corpus = NodeCollection(
+            id: NodeCollection.corpusID,
+            name: "Corpus",
+            nodeCount: store.nodes.count,
+            lastEntryAt: store.nodes.map(\.createdAt).max()
+        )
+        let journalNodes = store.nodes.filter { $0.journalDate != nil }
+        let journal = NodeCollection(
+            id: NodeCollection.journalID,
+            name: "Journal",
+            nodeCount: journalNodes.count,
+            lastEntryAt: journalNodes.compactMap(\.journalDate).max()
+        )
+        let userRows: [NodeCollection] = store.collections.map { collection in
+            let members = store.nodes.filter { $0.collectionIDs.contains(collection.id) }
+            var row = collection
+            row.nodeCount = members.count
+            row.lastEntryAt = members.map(\.createdAt).max()
+            return row
+        }
+        return [corpus, journal] + userRows
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -130,7 +158,7 @@ struct DashboardView: View {
                 .tracking(0.8)
 
             VStack(spacing: 8) {
-                ForEach(collections) { collection in
+                ForEach(displayedCollections) { collection in
                     CollectionRow(collection: collection, onTap: { tap(collection) })
                 }
             }

@@ -3,13 +3,12 @@ import UIKit
 
 struct QuikCaptureView: View {
 
-    /// Dashboard Stage 4 — if set, every capture surface launched from this
-    /// view (voice, camera, text, clipboard text, link) stamps the new node
-    /// with this collection ID and marks the collection as recently used.
-    /// Default nil preserves the pre-Stage-4 URL-scheme entry behavior.
-    /// c4.3 will wire `EntryMode.quikCapture(forcedCollectionID:)` and the
-    /// pill row to this field.
-    var targetCollectionID: String? = nil
+    /// Dashboard Stage 4 c4.3 — when non-nil, pins every capture to a specific
+    /// collection (CollectionView "+" path in c4.7). The pill rail still
+    /// renders but is locked: taps are no-ops and only the forced pill shows
+    /// as selected. When nil (URL-scheme entry, dashboard "+" in c4.6) the
+    /// pill rail is interactive and `selectedCollectionID` drives the stamp.
+    var forcedCollectionID: String? = nil
 
     @Environment(CorpusStore.self) private var store
 
@@ -19,6 +18,15 @@ struct QuikCaptureView: View {
     @State private var prefilledText: String = ""
     @State private var emptyClipboardMessageVisible: Bool = false
     @State private var linkReceipt: LinkReceiptIDs? = nil
+    /// c4.3 — local pill selection. c4.4 will hydrate this from
+    /// `store.lastUsedCollectionID` on appear and persist taps back.
+    @State private var selectedCollectionID: String? = nil
+
+    /// The collection ID actually stamped onto new captures. Forced (from
+    /// router) wins over local pill selection.
+    private var effectiveCollectionID: String? {
+        forcedCollectionID ?? selectedCollectionID
+    }
 
     /// Identity pair for the QuikCapture link-receipt overlay. Tracking
     /// both node + item IDs (vs just nodeID) keeps `QuikCaptureLinkReceipt`
@@ -41,6 +49,11 @@ struct QuikCaptureView: View {
                 .padding(.top, 12)
 
                 Spacer()
+
+                if !store.collections.isEmpty {
+                    pillRow
+                        .padding(.bottom, 20)
+                }
 
                 if emptyClipboardMessageVisible {
                     Text("Nothing in clipboard yet.")
@@ -85,14 +98,54 @@ struct QuikCaptureView: View {
         }
         .animation(.easeInOut(duration: 0.18), value: linkReceipt)
         .sheet(isPresented: $showVoiceCapture) {
-            VoiceCaptureSheet(targetCollectionID: targetCollectionID)
+            VoiceCaptureSheet(targetCollectionID: effectiveCollectionID)
         }
         .sheet(isPresented: $showCameraCapture) {
-            CameraCaptureView(targetCollectionID: targetCollectionID)
+            CameraCaptureView(targetCollectionID: effectiveCollectionID)
         }
         .sheet(isPresented: $showTextCapture) {
-            TextCaptureSheet(targetCollectionID: targetCollectionID, initialText: prefilledText)
+            TextCaptureSheet(targetCollectionID: effectiveCollectionID, initialText: prefilledText)
         }
+    }
+
+    // MARK: - Pill rail (c4.3 scaffold)
+
+    /// Renders one capsule per user collection. Selected pill is white-on-
+    /// black; unselected pills are subtle. When `forcedCollectionID` is set
+    /// the rail is locked: only the forced pill highlights and taps no-op
+    /// (the call-site that set forcedCollectionID gets to pin the context).
+    /// c4.4 will fold in Journal, recency ordering, and persistence; c4.5
+    /// adds the "New +" pill.
+    private var pillRow: some View {
+        let isLocked = forcedCollectionID != nil
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(store.collections) { collection in
+                    pill(for: collection, isLocked: isLocked)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func pill(for collection: NodeCollection, isLocked: Bool) -> some View {
+        let isSelected = effectiveCollectionID == collection.id
+        return Button {
+            guard !isLocked else { return }
+            // Tap-to-toggle: tapping the selected pill clears the selection
+            // and the next capture lands loose (Corpus-only).
+            selectedCollectionID = isSelected ? nil : collection.id
+        } label: {
+            Text(collection.name)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(isSelected ? .black : .white.opacity(isLocked ? 0.35 : 0.75))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(isSelected ? Color.white : Color(white: 0.18))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isLocked)
     }
 
     private var exitPill: some View {
@@ -195,7 +248,7 @@ struct QuikCaptureView: View {
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: true,
-            collectionIDs: [targetCollectionID].compactMap { $0 }
+            collectionIDs: [effectiveCollectionID].compactMap { $0 }
         )
         let position = CGPoint(
             x: Double.random(in: -80...80),
@@ -210,7 +263,7 @@ struct QuikCaptureView: View {
             // on the entry before the user ever sees the bare-URL state.
             async let fetchTask = OGMetadataService().fetch(url: url)
             await store.addNode(node, position: position)
-            if let cid = targetCollectionID {
+            if let cid = effectiveCollectionID {
                 store.markCollectionUsed(cid)
             }
             // AT19.3c commit 6 — receipt overlay. Present immediately after

@@ -30,7 +30,7 @@ struct AirPadApp: App {
                 }
                 .onOpenURL { url in
                     guard url.scheme == "airpad", url.host == "quikcapture" else { return }
-                    router.entryMode = .quikCapture
+                    router.entryMode = .quikCapture(forcedCollectionID: nil)
                 }
         }
     }

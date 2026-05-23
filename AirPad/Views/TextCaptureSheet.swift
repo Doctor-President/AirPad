@@ -78,6 +78,7 @@ struct TextCaptureSheet: View {
 
         let title = String(trimmed.prefix(40))
         let now = Date()
+        let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
         let node = Node(
             id: UUID().uuidString,
             createdAt: now,
@@ -94,7 +95,8 @@ struct TextCaptureSheet: View {
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: false,
-            collectionIDs: [targetCollectionID].compactMap { $0 }
+            journalDate: stamp.journalDate,
+            collectionIDs: stamp.collectionIDs
         )
 
         // Slight random spread so nodes don't all stack at center

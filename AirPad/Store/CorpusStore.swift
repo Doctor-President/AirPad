@@ -1880,6 +1880,7 @@ final class CorpusStore {
             await appendItemToNode(nodeID: nodeID, item: entry)
         } else {
             let title = defaultMediaTitle(for: media, description: description)
+            let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
             let node = Node(
                 id: UUID().uuidString,
                 createdAt: now,
@@ -1896,7 +1897,8 @@ final class CorpusStore {
                 domain: nil,
                 domainConfirmed: false,
                 needsAIProcessing: true,
-                collectionIDs: [targetCollectionID].compactMap { $0 }
+                journalDate: stamp.journalDate,
+                collectionIDs: stamp.collectionIDs
             )
             await persistMediaFiles(media, nodeID: node.id)
             await addNode(node, position: position)

@@ -50,10 +50,8 @@ struct QuikCaptureView: View {
 
                 Spacer()
 
-                if !store.collections.isEmpty {
-                    pillRow
-                        .padding(.bottom, 20)
-                }
+                pillRow
+                    .padding(.bottom, 20)
 
                 if emptyClipboardMessageVisible {
                     Text("Nothing in clipboard yet.")
@@ -106,21 +104,43 @@ struct QuikCaptureView: View {
         .sheet(isPresented: $showTextCapture) {
             TextCaptureSheet(targetCollectionID: effectiveCollectionID, initialText: prefilledText)
         }
+        .onAppear {
+            // c4.4 — pre-select the user's last-used pill on entry. Forced
+            // mode (CollectionView "+" path in c4.7) wins; in that case we
+            // leave selectedCollectionID alone and the locked pill comes
+            // from `effectiveCollectionID = forcedCollectionID` directly.
+            if forcedCollectionID == nil, selectedCollectionID == nil {
+                selectedCollectionID = store.lastUsedCollectionID
+            }
+        }
     }
 
-    // MARK: - Pill rail (c4.3 scaffold)
+    // MARK: - Pill rail (c4.4)
 
-    /// Renders one capsule per user collection. Selected pill is white-on-
-    /// black; unselected pills are subtle. When `forcedCollectionID` is set
-    /// the rail is locked: only the forced pill highlights and taps no-op
-    /// (the call-site that set forcedCollectionID gets to pin the context).
-    /// c4.4 will fold in Journal, recency ordering, and persistence; c4.5
-    /// adds the "New +" pill.
+    /// Builds the rail's display order: virtual Journal pill prepended to
+    /// `store.collections`, then the whole list sorted by
+    /// `collectionLastUsedAt` desc. Items with no recency entry fall to the
+    /// tail (their relative order preserved by stable sort). c4.5 will
+    /// append the "New +" pill at the very end.
+    private var railCollections: [NodeCollection] {
+        let journal = NodeCollection(id: NodeCollection.journalID, name: "Journal")
+        let all = [journal] + store.collections
+        return all.sorted { a, b in
+            let aDate = store.collectionLastUsedAt[a.id] ?? .distantPast
+            let bDate = store.collectionLastUsedAt[b.id] ?? .distantPast
+            return aDate > bDate
+        }
+    }
+
+    /// Renders one capsule per rail entry (Journal + user collections).
+    /// Selected pill is white-on-black; unselected pills are subtle. When
+    /// `forcedCollectionID` is set the rail is locked: only the forced pill
+    /// highlights and taps no-op.
     private var pillRow: some View {
         let isLocked = forcedCollectionID != nil
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(store.collections) { collection in
+                ForEach(railCollections) { collection in
                     pill(for: collection, isLocked: isLocked)
                 }
             }
@@ -132,9 +152,19 @@ struct QuikCaptureView: View {
         let isSelected = effectiveCollectionID == collection.id
         return Button {
             guard !isLocked else { return }
-            // Tap-to-toggle: tapping the selected pill clears the selection
-            // and the next capture lands loose (Corpus-only).
-            selectedCollectionID = isSelected ? nil : collection.id
+            if isSelected {
+                // Deselect: drop the pin without bumping recency. A pure
+                // deselect isn't a positive interaction, so it shouldn't
+                // promote the collection in the rail's order.
+                selectedCollectionID = nil
+                store.lastUsedCollectionID = nil
+            } else {
+                // Tap selects: bump recency AND set the active pin. Bumping
+                // recency on tap (vs only on capture) lets the rail respond
+                // to the user's expressed intent immediately.
+                store.markCollectionUsed(collection.id)
+                selectedCollectionID = collection.id
+            }
         } label: {
             Text(collection.name)
                 .font(.system(size: 13, weight: .semibold))
@@ -232,6 +262,7 @@ struct QuikCaptureView: View {
             title: initialTitle,
             preview: nil
         )
+        let stamp = NodeCollection.captureStamp(forCollectionID: effectiveCollectionID)
         let node = Node(
             id: nodeID,
             createdAt: now,
@@ -248,7 +279,8 @@ struct QuikCaptureView: View {
             domain: nil,
             domainConfirmed: false,
             needsAIProcessing: true,
-            collectionIDs: [effectiveCollectionID].compactMap { $0 }
+            journalDate: stamp.journalDate,
+            collectionIDs: stamp.collectionIDs
         )
         let position = CGPoint(
             x: Double.random(in: -80...80),

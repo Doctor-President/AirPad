@@ -16,6 +16,8 @@ import SwiftUI
 /// the app entry point.
 struct DashboardView: View {
 
+    @Environment(AppRouter.self) private var router
+
     @State private var collections: [NodeCollection] = NodeCollection.sample()
     @State private var showJournalPlaceholder = false
 
@@ -116,9 +118,20 @@ struct DashboardView: View {
 
             VStack(spacing: 8) {
                 ForEach(collections) { collection in
-                    CollectionRow(collection: collection)
+                    CollectionRow(collection: collection, onTap: { tap(collection) })
                 }
             }
+        }
+    }
+
+    // MARK: - Row taps
+
+    /// Corpus row routes to the existing canvas (no scoping — Corpus is the
+    /// "everything" view). User-collection rows push a scoped CollectionView
+    /// onto the dashboard's nav stack (wired in C2.3).
+    private func tap(_ collection: NodeCollection) {
+        if collection.isCorpus {
+            router.entryMode = .canvas
         }
     }
 
@@ -168,9 +181,10 @@ struct DashboardView: View {
 
 private struct CollectionRow: View {
     let collection: NodeCollection
+    let onTap: () -> Void
 
     var body: some View {
-        Button(action: {}) {
+        Button(action: onTap) {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(collection.name)

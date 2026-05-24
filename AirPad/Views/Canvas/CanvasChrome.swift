@@ -34,7 +34,7 @@ struct CanvasChrome: View {
             // CanvasView/NodeListView handle their own internal blur for the
             // non-fan layers when fanExpanded; the fan stays sharp inside them.
             Group {
-                if store.filterState.viewMode == .graph {
+                if store.filterState.viewMode == .systemGraph {
                     CanvasView(fanExpanded: $fanExpanded, scope: scope)
                 } else {
                     NodeListView(fanExpanded: $fanExpanded, scope: scope)
@@ -179,8 +179,8 @@ private struct ViewTogglePill: View {
 
     var body: some View {
         HStack(spacing: 2) {
-            modeButton(.graph, icon: "circle.hexagongrid.fill", label: "Graph")
-            modeButton(.list,  icon: "list.bullet",             label: "List")
+            modeButton(.systemGraph, icon: "circle.hexagongrid.fill", label: "Graph")
+            modeButton(.list,        icon: "list.bullet",             label: "List")
         }
         .padding(4)
         .background(Color(white: 0.18))   // deliberately opaque — NOT opacity(0.08) which vanishes on black

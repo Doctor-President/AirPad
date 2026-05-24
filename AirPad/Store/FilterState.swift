@@ -1,7 +1,21 @@
 import Foundation
 
+/// Which canvas presentation the chrome's view-mode selector is showing.
+///
+/// Extended in C1 of the Canvas Chrome arc from the original binary
+/// graph/list pair into a 5-way set so the slide-out menu (C2/C3) can
+/// surface multiple canvas modes. `.systemGraph` keeps the legacy raw
+/// value `"graph"` so existing persisted `FilterState` rounds-trips
+/// unchanged — no migration needed. `.userGraph`, `.grid`, `.timeline`
+/// are stubs in C1 (no UI path exposes them yet); C2/C3 will mount the
+/// "coming soon" treatment inside the canvas surface when the slide-out
+/// menu makes them selectable.
 enum ViewMode: String, Codable {
-    case graph, list
+    case systemGraph = "graph"
+    case list
+    case userGraph = "user_graph"
+    case grid
+    case timeline
 }
 
 enum SortOrder: String, Codable {
@@ -49,7 +63,7 @@ enum ThreadStatusFilter: String, Codable, CaseIterable {
 }
 
 struct FilterState: Codable {
-    var viewMode: ViewMode = .graph
+    var viewMode: ViewMode = .systemGraph
     var sortOrder: SortOrder = .recency
     var itemType: ItemTypeFilter = .all
     var tagName: String? = nil

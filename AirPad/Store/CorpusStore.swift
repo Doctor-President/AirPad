@@ -195,7 +195,59 @@ final class CorpusStore {
 
     /// Nodes after applying the active filter and sort order.
     var filteredNodes: [Node] {
-        var result = nodes
+        applyActiveFilter(to: nodes)
+    }
+
+    /// Nodes visible on canvas after applying filters and drill-down state.
+    /// When drilled into an Über-node, returns only its child nodes.
+    var visibleNodes: [Node] {
+        applyActiveDrillDown(to: filteredNodes)
+    }
+
+    // MARK: - Scope-aware accessors (Canvas Chrome arc, A1)
+
+    /// Raw nodes within `scope`, no filter or sort applied. `.corpus` returns
+    /// every node; `.collection(id)` resolves membership — journal slice when
+    /// id is `NodeCollection.journalID`, otherwise nodes whose
+    /// `collectionIDs` contains id.
+    func nodes(in scope: CanvasScope) -> [Node] {
+        switch scope {
+        case .corpus:
+            return nodes
+        case .collection(let id) where id == NodeCollection.journalID:
+            return nodes.filter { $0.journalDate != nil }
+        case .collection(let id):
+            return nodes.filter { $0.collectionIDs.contains(id) }
+        }
+    }
+
+    /// Scope's nodes after applying the active `filterState`. A1 reuses the
+    /// single global `filterState` for both scopes; per-scope filterState
+    /// lands in commit A2.
+    func filteredNodes(in scope: CanvasScope) -> [Node] {
+        switch scope {
+        case .corpus:
+            return filteredNodes
+        case .collection:
+            return applyActiveFilter(to: nodes(in: scope))
+        }
+    }
+
+    /// Scope's nodes after filters and (corpus-only) drill-down. Collection
+    /// scopes currently have no drill-down concept, so visible == filtered.
+    func visibleNodes(in scope: CanvasScope) -> [Node] {
+        switch scope {
+        case .corpus:
+            return visibleNodes
+        case .collection:
+            return filteredNodes(in: scope)
+        }
+    }
+
+    // MARK: - Filter / drill-down primitives (shared by corpus + scoped paths)
+
+    private func applyActiveFilter(to source: [Node]) -> [Node] {
+        var result = source
 
         if filterState.itemType != .all {
             result = result.filter { node in
@@ -240,16 +292,13 @@ final class CorpusStore {
         return result
     }
 
-    /// Nodes visible on canvas after applying filters and drill-down state.
-    /// When drilled into an Über-node, returns only its child nodes.
-    var visibleNodes: [Node] {
+    private func applyActiveDrillDown(to source: [Node]) -> [Node] {
         guard let drilledClusterID = canvasState?.drilledInto,
               let cluster = uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) else {
-            return filteredNodes
+            return source
         }
-        // Filter to only child nodes of the drilled-into cluster
         let childIDs = Set(cluster.childNodeIDs)
-        return filteredNodes.filter { childIDs.contains($0.id) }
+        return source.filter { childIDs.contains($0.id) }
     }
 
     private let service = iCloudDriveService()

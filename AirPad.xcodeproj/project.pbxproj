@@ -71,6 +71,7 @@
 		5F8E37E87E6B3DAC5C0E38A9 /* Lora-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 46B2E50D5AC047E8D52B2013 /* Lora-Regular.ttf */; };
 		60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */; };
 		60D696FF61EBB144201B1E88 /* HDBSCANSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E0A70C721C874921860A43 /* HDBSCANSelfTest.swift */; };
+		61D32212DD37FB3544769B8A /* CanvasChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */; };
 		629990192B6017CAA6D5DF1D /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
 		6353A53FA1E910980685F823 /* ActionButtonFan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */; };
 		679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD659A40CE161F15D371C285 /* NodeCardView.swift */; };
@@ -323,6 +324,7 @@
 		DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANLinkage.swift; sourceTree = "<group>"; };
 		DEE52A59E0B190ECA764DE9A /* MediaThumbnailLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaThumbnailLoader.swift; sourceTree = "<group>"; };
 		DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEntryBody.swift; sourceTree = "<group>"; };
+		E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasChrome.swift; sourceTree = "<group>"; };
 		E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissModifier.swift; sourceTree = "<group>"; };
 		E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryBody.swift; sourceTree = "<group>"; };
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
@@ -385,6 +387,7 @@
 			isa = PBXGroup;
 			children = (
 				ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */,
+				E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */,
 				9348EE6BAC36DA4236BB5780 /* CanvasState.swift */,
 				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
@@ -854,6 +857,7 @@
 				97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */,
 				524632EA61033FFCA11734F8 /* BentoLayout.swift in Sources */,
 				D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */,
+				61D32212DD37FB3544769B8A /* CanvasChrome.swift in Sources */,
 				734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */,
 				69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */,
 				85903919E22420C824ADCD93 /* CanvasScope.swift in Sources */,

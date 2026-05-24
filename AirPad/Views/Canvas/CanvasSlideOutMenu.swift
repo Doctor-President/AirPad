@@ -134,7 +134,16 @@ struct CanvasSlideOutMenu: View {
 
     private func modeRow(_ mode: ViewMode) -> some View {
         let isActive = (mode == currentMode)
-        return Button(action: { dismiss(then: { onSelectMode(mode) }) }) {
+        // Stub modes (`.userGraph`, `.grid`, `.timeline`) render dimmed with
+        // a "Coming soon" subtitle but tap is a no-op — body switcher is
+        // binary today and a stub-select would land on List, which is
+        // worse UX than the menu just not responding. Will become an active
+        // select + canvas overlay in a later commit.
+        let tappable = mode.isAvailable
+        return Button(action: {
+            guard tappable else { return }
+            dismiss(then: { onSelectMode(mode) })
+        }) {
             HStack(spacing: 12) {
                 Image(systemName: mode.icon)
                     .font(.system(size: 16, weight: .semibold))

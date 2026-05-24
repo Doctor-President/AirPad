@@ -86,7 +86,7 @@ struct ContentView: View {
                                             showQuarantineReview = true
                                         }
                                     }
-                                    SelectButton { selection.enter() }
+                                    SelectButton { selection.enter(scope: .corpus) }
                                     SettingsButton { showSettings = true }
                                     FilterButton(activeCount: store.filterState.activeFilterCount) {
                                         showFilterPanel = true

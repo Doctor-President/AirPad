@@ -106,6 +106,7 @@
 		920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1213E716A9E302D0B777EDD /* EntryCard.swift */; };
 		92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 496C87CE26D129958AA115EF /* EntryMigration.swift */; };
 		92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */; };
+		933F90BAF8522AC82045E273 /* CanvasSlideOutMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */; };
 		9427669EFA4ECACBF0439D06 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
 		9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
@@ -331,6 +332,7 @@
 		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateRelaxationPass.swift; sourceTree = "<group>"; };
 		EB1C4F8AC8EFA42414AB9073 /* VoiceEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntryBody.swift; sourceTree = "<group>"; };
+		EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSlideOutMenu.swift; sourceTree = "<group>"; };
 		ECACE148A0B50511A83212FE /* EntryVisualDevPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryVisualDevPanel.swift; sourceTree = "<group>"; };
 		ED287727ED25FF9291551213 /* HDBSCANReachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANReachability.swift; sourceTree = "<group>"; };
 		ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouterDiagnostic.swift; sourceTree = "<group>"; };
@@ -388,6 +390,7 @@
 			children = (
 				ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */,
 				E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */,
+				EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */,
 				9348EE6BAC36DA4236BB5780 /* CanvasState.swift */,
 				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
@@ -861,6 +864,7 @@
 				734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */,
 				69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */,
 				85903919E22420C824ADCD93 /* CanvasScope.swift in Sources */,
+				933F90BAF8522AC82045E273 /* CanvasSlideOutMenu.swift in Sources */,
 				94765E10145D5017BDE18696 /* CanvasState.swift in Sources */,
 				14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */,
 				CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */,

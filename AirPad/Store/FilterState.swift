@@ -18,6 +18,45 @@ enum ViewMode: String, Codable {
     case timeline
 }
 
+extension ViewMode {
+    /// Display order in the C2 slide-out menu. Not enum declaration order
+    /// because that would put `.list` between the two graph modes (raw
+    /// value `"graph"` had to stay first to preserve persistence).
+    static let menuOrder: [ViewMode] = [
+        .systemGraph, .userGraph, .list, .grid, .timeline
+    ]
+
+    var displayName: String {
+        switch self {
+        case .systemGraph: return "System Graph"
+        case .userGraph:   return "User Graph"
+        case .list:        return "List"
+        case .grid:        return "Grid"
+        case .timeline:    return "Timeline"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .systemGraph: return "circle.hexagongrid.fill"
+        case .userGraph:   return "point.3.connected.trianglepath.dotted"
+        case .list:        return "list.bullet"
+        case .grid:        return "square.grid.2x2"
+        case .timeline:    return "calendar.day.timeline.left"
+        }
+    }
+
+    /// `false` for C1's stub modes — UI surfaces them with a "Coming soon"
+    /// affordance but still allows tap-selection (canvas mounts the
+    /// coming-soon overlay; gates non-functional substrate ops).
+    var isAvailable: Bool {
+        switch self {
+        case .systemGraph, .list:          return true
+        case .userGraph, .grid, .timeline: return false
+        }
+    }
+}
+
 enum SortOrder: String, Codable {
     case recency, thematic
 }

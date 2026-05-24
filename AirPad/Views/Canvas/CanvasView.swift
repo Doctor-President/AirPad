@@ -8,6 +8,11 @@ struct CanvasView: View {
     @Environment(SelectionService.self) private var selection
     @State private var canvasState = CanvasState()
     @Binding var fanExpanded: Bool
+    /// What slice of the corpus this canvas renders. Defaults to `.corpus`
+    /// so the existing ContentView call site (the only one in A1) keeps its
+    /// behavior unchanged. Collection canvases pass `.collection(id)` once
+    /// commit D1 wires them up.
+    var scope: CanvasScope = .corpus
     @State private var captureMode: CaptureMode? = nil
     @State private var captureTargetNodeID: String? = nil  // nil = create new node
     @State private var showingNodePicker = false
@@ -42,50 +47,53 @@ struct CanvasView: View {
             scene.canvasState = canvasState
             scene.selection = selection
             store.canvasState = canvasState
-            previousNodeIDs = Set(store.filteredNodes.map { $0.id })
-            syncScene(nodes: store.visibleNodes)
+            previousNodeIDs = Set(store.filteredNodes(in: scope).map { $0.id })
+            syncScene(nodes: store.visibleNodes(in: scope))
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
         }
         .onChange(of: store.nodes) { old, newNodes in
-            // Track additions against the raw node list so newly captured nodes
-            // get the drop-in animation even if filteredNodes would include them.
-            let newIDs = Set(newNodes.map { $0.id })
+            // Observe the broad signal (raw nodes) so collection scopes still
+            // pick up membership changes that don't visibly add/remove from
+            // the scope. Compare scoped IDs so `addedID` correctly fires the
+            // drop-in animation only for nodes that landed in this canvas.
+            let scopedNew = store.nodes(in: scope)
+            let newIDs = Set(scopedNew.map { $0.id })
             let addedID = newIDs.subtracting(previousNodeIDs).first
             previousNodeIDs = newIDs
-            print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), visibleNodes=\(store.visibleNodes.count), layoutPositions=\(store.canvasLayout.positions.count)")
-            syncScene(nodes: store.visibleNodes, newNodeID: addedID)
+            print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), visibleNodes=\(store.visibleNodes(in: scope).count), layoutPositions=\(store.canvasLayout.positions.count)")
+            syncScene(nodes: store.visibleNodes(in: scope), newNodeID: addedID)
             kickOffSubstrateAutoFitIfNeeded()
         }
         .onChange(of: SubstrateLayoutService.shared.generation) { _, _ in
             // SB139 Stage 4c1 — fit/load/clear in the substrate service bumps
             // `generation`. Re-sync so substrate-derived positions replace
             // legacy ones (or vice versa on clear).
-            syncScene(nodes: store.visibleNodes)
+            syncScene(nodes: store.visibleNodes(in: scope))
         }
         .onChange(of: store.filteredNodes) { old, filtered in
             // Re-sync when filter state changes (tag filter, type filter, etc.)
-            print("[Canvas] onChange(filteredNodes): \(old.count)→\(filtered.count), visibleNodes=\(store.visibleNodes.count)")
-            syncScene(nodes: store.visibleNodes)
+            print("[Canvas] onChange(filteredNodes): \(old.count)→\(filtered.count), visibleNodes=\(store.visibleNodes(in: scope).count)")
+            syncScene(nodes: store.visibleNodes(in: scope))
         }
         .onChange(of: store.tags) { _, _ in
-            syncScene(nodes: store.visibleNodes)
+            syncScene(nodes: store.visibleNodes(in: scope))
         }
         .onChange(of: store.filterState.sortOrder) { _, newOrder in
-            rearrangeForSortOrder(newOrder, nodes: store.visibleNodes)
+            rearrangeForSortOrder(newOrder, nodes: store.visibleNodes(in: scope))
         }
         .onChange(of: store.canvasNeedsSync) { _, _ in
             // Fired by batchImportText after canvasLayout is updated with all new positions.
             // Belt-and-suspenders: ensures the scene reflects the final store state even if
             // the per-node onChange chain was coalesced or ran before canvasLayout was ready.
-            previousNodeIDs = Set(store.nodes.map { $0.id })
-            print("[Canvas] canvasNeedsSync: forcing full resync — visibleNodes=\(store.visibleNodes.count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
-            syncScene(nodes: store.visibleNodes)
+            previousNodeIDs = Set(store.nodes(in: scope).map { $0.id })
+            print("[Canvas] canvasNeedsSync: forcing full resync — visibleNodes=\(store.visibleNodes(in: scope).count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
+            syncScene(nodes: store.visibleNodes(in: scope))
             print("[Canvas] canvasNeedsSync: after syncScene sprites=\(scene.spriteCount)")
         }
         .onChange(of: canvasState.drilledInto) { oldValue, newValue in
             // Drill-down state changed — resync to show only child nodes or full canvas
-            print("[Canvas] onChange(drilledInto): \(newValue ?? "nil"), visibleNodes=\(store.visibleNodes.count)")
+            print("[Canvas] onChange(drilledInto): \(newValue ?? "nil"), visibleNodes=\(store.visibleNodes(in: scope).count)")
 
             // Find Über-node position for expansion animation
             let expandingFrom: CGPoint?
@@ -102,7 +110,7 @@ struct CanvasView: View {
                 expandingFrom = nil
             }
 
-            syncScene(nodes: store.visibleNodes, expandingFrom: expandingFrom)
+            syncScene(nodes: store.visibleNodes(in: scope), expandingFrom: expandingFrom)
         }
         .onChange(of: canvasState.pendingNavigationNodeID) { _, nodeID in
             guard let nodeID, let node = store.nodes.first(where: { $0.id == nodeID }) else { return }
@@ -121,7 +129,7 @@ struct CanvasView: View {
 
     private var canvasStack: some View {
         canvasZStack
-            .animation(.spring(response: 0.28), value: store.nodes.isEmpty)
+            .animation(.spring(response: 0.28), value: store.nodes(in: scope).isEmpty)
             .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
             .animation(.spring(response: 0.28), value: captureTargetNodeID)
             .navigationDestination(for: Node.self) { node in
@@ -157,7 +165,7 @@ struct CanvasView: View {
                     .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
                     .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
 
-                if store.nodes.isEmpty {
+                if store.nodes(in: scope).isEmpty {
                     EmptyStateOverlay()
                         .transition(.opacity)
                 }
@@ -186,7 +194,7 @@ struct CanvasView: View {
 
             ActionButtonFan(
                 isExpanded: $fanExpanded,
-                isEmpty: store.nodes.isEmpty,
+                isEmpty: store.nodes(in: scope).isEmpty,
                 onVoice:       { captureMode = .voice },
                 onCamera:      { captureMode = .camera },
                 onText:        { captureMode = .text },

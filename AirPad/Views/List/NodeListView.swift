@@ -23,6 +23,10 @@ struct NodeListView: View {
 
     @State private var scrollToFirstAfterSort = false
     @Binding var fanExpanded: Bool
+    /// What slice of the corpus this list renders. Defaults to `.corpus` so
+    /// the existing ContentView call site keeps its behavior unchanged.
+    /// Collection canvases pass `.collection(id)` once D1 wires them up.
+    var scope: CanvasScope = .corpus
     @State private var captureMode: ListCaptureMode? = nil
     @State private var captureTargetNodeID: String? = nil
     @State private var showingNodePicker = false
@@ -90,7 +94,7 @@ struct NodeListView: View {
 
                     ActionButtonFan(
                         isExpanded: $fanExpanded,
-                        isEmpty: store.nodes.isEmpty,
+                        isEmpty: store.nodes(in: scope).isEmpty,
                         onVoice:       { captureMode = .voice },
                         onCamera:      { captureMode = .camera },
                         onText:        { captureMode = .text },
@@ -124,6 +128,9 @@ struct NodeListView: View {
             navHaptic.prepare()
             buildItems()
         }
+        // Observe the broad filteredNodes signal — for collection scopes this
+        // still fires whenever any filter input changes; `buildItems` reads
+        // through the scoped accessor.
         .onChange(of: store.filteredNodes) { _, _ in buildItems() }
         .onChange(of: store.filterState.sortOrder) { _, _ in
             buildItems()
@@ -237,7 +244,7 @@ struct NodeListView: View {
     // MARK: - Build display items
 
     private func buildItems() {
-        let nodes = store.filteredNodes
+        let nodes = store.filteredNodes(in: scope)
         guard !nodes.isEmpty else { displayItems = []; return }
 
         let sentCount = min(3, nodes.count)

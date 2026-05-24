@@ -1,18 +1,17 @@
 import SwiftUI
 
-/// Full canvas surface — body switcher (graph/list) + overlay chrome (top
-/// row, selection header, batch bar, banners) + chrome-driven sheets. Extracted
-/// from `ContentView` in B1 of the Canvas Chrome arc so a collection canvas
-/// (D1) can mount the same surface with `scope = .collection(id)` instead of
-/// duplicating the chrome cluster.
+/// Full canvas surface — body switcher (5 view modes) + overlay chrome
+/// (top row, selection header, batch bar, banners) + chrome-driven sheets
+/// + the C2 slide-out menu. Extracted from `ContentView` in B1; the top-row
+/// cluster collapsed to a single ellipsis trigger in C3 (this commit).
 ///
 /// Scope-aware pieces:
 ///   - body switcher passes `scope` into `CanvasView` / `NodeListView`
 ///   - `SelectButton` enters selection on this scope
-/// Scope-fixed pieces (B1 keeps corpus behavior verbatim; D1 will branch the
-/// dashboard-back/quarantine/settings chrome for collection scopes):
-///   - DashboardBackButton, QuarantineWarningIcon, SettingsButton, FilterButton
-///     currently operate on corpus state regardless of `scope`.
+/// Scope-fixed pieces (D1 will branch dashboard-back / quarantine /
+/// settings / filter for collection scopes):
+///   - DashboardBackButton and the slide-out's Settings / Quarantine /
+///     Filter rows currently operate on corpus state regardless of `scope`.
 struct CanvasChrome: View {
 
     var scope: CanvasScope = .corpus
@@ -24,9 +23,18 @@ struct CanvasChrome: View {
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
+    @State private var showSlideOutMenu = false
     @State private var fanExpanded = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
+
+    /// Dot indicator on the ellipsis trigger when something inside the
+    /// menu has live state — active filters or quarantined entries. The
+    /// menu rows themselves carry the specific counts; the trigger just
+    /// nudges the user to look inside.
+    private var menuHasAttention: Bool {
+        store.filterState.activeFilterCount > 0 || quarantineStore.entries.count > 0
+    }
 
     var body: some View {
         ZStack {
@@ -68,23 +76,12 @@ struct CanvasChrome: View {
                                 DashboardBackButton {
                                     router.entryMode = .dashboard
                                 }
-                                ViewTogglePill(viewMode: store.filterState.viewMode) { mode in
-                                    var s = store.filterState
-                                    s.viewMode = mode
-                                    store.filterState = s
-                                }
                                 Spacer()
                                 HStack(spacing: 10) {
-                                    if quarantineStore.entries.count > 0 {
-                                        QuarantineWarningIcon(count: quarantineStore.entries.count) {
-                                            showQuarantineReview = true
-                                        }
-                                    }
                                     SelectButton { selection.enter(scope: scope) }
-                                    SettingsButton { showSettings = true }
-                                    FilterButton(activeCount: store.filterState.activeFilterCount) {
-                                        showFilterPanel = true
-                                    }
+                                    MenuButton(
+                                        hasAttention: menuHasAttention
+                                    ) { showSlideOutMenu = true }
                                 }
                             }
                             .padding(.horizontal, 16)
@@ -130,6 +127,23 @@ struct CanvasChrome: View {
             }
             .blur(radius: fanExpanded ? 12 : 0)
             .animation(.easeInOut(duration: 0.22), value: fanExpanded)
+
+            // Slide-out menu sits outside the blur scope so it stays sharp
+            // even if the fan happens to be expanded under it.
+            CanvasSlideOutMenu(
+                isPresented: $showSlideOutMenu,
+                currentMode: store.filterState.viewMode,
+                filterActiveCount: store.filterState.activeFilterCount,
+                quarantineCount: quarantineStore.entries.count,
+                onSelectMode: { mode in
+                    var s = store.filterState
+                    s.viewMode = mode
+                    store.filterState = s
+                },
+                onFilter: { showFilterPanel = true },
+                onSettings: { showSettings = true },
+                onQuarantineReview: { showQuarantineReview = true }
+            )
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
@@ -171,40 +185,6 @@ struct CanvasChrome: View {
     }
 }
 
-// MARK: - View toggle pill
-
-private struct ViewTogglePill: View {
-    let viewMode: ViewMode
-    let onSelect: (ViewMode) -> Void
-
-    var body: some View {
-        HStack(spacing: 2) {
-            modeButton(.systemGraph, icon: "circle.hexagongrid.fill", label: "Graph")
-            modeButton(.list,        icon: "list.bullet",             label: "List")
-        }
-        .padding(4)
-        .background(Color(white: 0.18))   // deliberately opaque — NOT opacity(0.08) which vanishes on black
-        .clipShape(Capsule())
-    }
-
-    private func modeButton(_ mode: ViewMode, icon: String, label: String) -> some View {
-        Button { onSelect(mode) } label: {
-            HStack(spacing: 5) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(label)
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(viewMode == mode ? .black : .white.opacity(0.55))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 13)
-            .background(viewMode == mode ? Color.white : Color.clear)
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Dashboard back button
 
 private struct DashboardBackButton: View {
@@ -223,48 +203,28 @@ private struct DashboardBackButton: View {
     }
 }
 
-// MARK: - Settings button
+// MARK: - Menu (ellipsis) button
 
-private struct SettingsButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(Color(white: 0.18))
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Filter button
-
-private struct FilterButton: View {
-    let activeCount: Int
+private struct MenuButton: View {
+    let hasAttention: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "slider.horizontal.3")
+                Image(systemName: "ellipsis")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 48, height: 48)
                     .background(Color(white: 0.18))
                     .clipShape(Circle())
 
-                if activeCount > 0 {
-                    Text("\(activeCount)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 16, height: 16)
-                        .background(Color.blue)
-                        .clipShape(Circle())
-                        .offset(x: 5, y: -5)
+                if hasAttention {
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 10, height: 10)
+                        .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
+                        .offset(x: 2, y: -2)
                 }
             }
         }

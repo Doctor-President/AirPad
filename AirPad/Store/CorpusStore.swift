@@ -149,9 +149,31 @@ final class CorpusStore {
     /// finished. The dev substrate inspect view observes this for progress.
     var substrateBackfill: SubstrateBackfillState? = nil
 
-    /// Active filter + view mode. Persisted to UserDefaults.
-    var filterState: FilterState = FilterState.load() {
-        didSet { filterState.save() }
+    /// Per-scope filter + view mode storage. Each canvas surface (corpus +
+    /// every collection canvas) has its own persisted state. Backed by a
+    /// JSON dict in UserDefaults (`FilterStates.load/save`). Mutated only
+    /// via `setFilterState(_:for:)` so persistence stays in lockstep.
+    private var filterStates: [String: FilterState] = FilterStates.load()
+
+    /// Active filter + view mode for the corpus scope. Existing call sites
+    /// that read or write `store.filterState` continue to target the corpus
+    /// scope — chrome rewrites (Phase C) plumb explicit `CanvasScope`
+    /// bindings where per-scope state matters.
+    var filterState: FilterState {
+        get { filterState(for: .corpus) }
+        set { setFilterState(newValue, for: .corpus) }
+    }
+
+    /// Per-scope getter. Returns a default `FilterState()` for scopes that
+    /// haven't been touched yet — first read of a collection canvas inherits
+    /// the type's defaults (graph view, recency sort, no filters).
+    func filterState(for scope: CanvasScope) -> FilterState {
+        filterStates[scope.key] ?? FilterState()
+    }
+
+    func setFilterState(_ state: FilterState, for scope: CanvasScope) {
+        filterStates[scope.key] = state
+        FilterStates.save(filterStates)
     }
 
     /// Thread suggestions waiting to be shown to the user (one at a time in UI).
@@ -193,9 +215,9 @@ final class CorpusStore {
     /// Debounced cluster refresh task (Task 3)
     private var clusterRefreshTask: Task<Void, Never>?
 
-    /// Nodes after applying the active filter and sort order.
+    /// Nodes after applying the active corpus-scope filter and sort order.
     var filteredNodes: [Node] {
-        applyActiveFilter(to: nodes)
+        applyActiveFilter(to: nodes, scope: .corpus)
     }
 
     /// Nodes visible on canvas after applying filters and drill-down state.
@@ -221,15 +243,13 @@ final class CorpusStore {
         }
     }
 
-    /// Scope's nodes after applying the active `filterState`. A1 reuses the
-    /// single global `filterState` for both scopes; per-scope filterState
-    /// lands in commit A2.
+    /// Scope's nodes after applying that scope's `FilterState`.
     func filteredNodes(in scope: CanvasScope) -> [Node] {
         switch scope {
         case .corpus:
             return filteredNodes
         case .collection:
-            return applyActiveFilter(to: nodes(in: scope))
+            return applyActiveFilter(to: nodes(in: scope), scope: scope)
         }
     }
 
@@ -246,13 +266,14 @@ final class CorpusStore {
 
     // MARK: - Filter / drill-down primitives (shared by corpus + scoped paths)
 
-    private func applyActiveFilter(to source: [Node]) -> [Node] {
+    private func applyActiveFilter(to source: [Node], scope: CanvasScope) -> [Node] {
+        let state = filterState(for: scope)
         var result = source
 
-        if filterState.itemType != .all {
+        if state.itemType != .all {
             result = result.filter { node in
                 node.items.contains { item in
-                    switch filterState.itemType {
+                    switch state.itemType {
                     case .all:      return true
                     case .voice:    return item.type == .audio
                     // Stage 4.2 — `.photo` and `.video` filters also match
@@ -272,17 +293,17 @@ final class CorpusStore {
             }
         }
 
-        if let tag = filterState.tagName {
+        if let tag = state.tagName {
             result = result.filter { $0.tags.contains(tag) }
         }
 
-        switch filterState.threadStatus {
+        switch state.threadStatus {
         case .all:         break
         case .threadsOnly: result = result.filter { !$0.threads.isEmpty || $0.isMeta }
         case .pulledOnly:  result = result.filter { $0.isMeta }
         }
 
-        switch filterState.sortOrder {
+        switch state.sortOrder {
         case .recency:
             result = result.sorted { $0.createdAt > $1.createdAt }
         case .thematic:

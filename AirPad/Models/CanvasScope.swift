@@ -16,3 +16,16 @@ enum CanvasScope: Hashable, Sendable {
     case corpus
     case collection(String)
 }
+
+extension CanvasScope {
+    /// Stable string key for dict-keying and persistence. Reuses the
+    /// `NodeCollection` reserved IDs so per-scope storage (e.g. the per-
+    /// scope `FilterState` dict added in A2) keys cleanly onto the same
+    /// id space the rest of the app uses.
+    var key: String {
+        switch self {
+        case .corpus:                 return NodeCollection.corpusID
+        case .collection(let id):     return id
+        }
+    }
+}

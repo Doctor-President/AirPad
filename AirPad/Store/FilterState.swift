@@ -64,18 +64,45 @@ struct FilterState: Codable {
         return n
     }
 
-    private static let udKey = "com.airpad.filterState"
+    fileprivate static let legacyUDKey = "com.airpad.filterState"
 
+    /// Legacy single-global loader. Kept for the one-time migration path
+    /// in `FilterStates.load`; new persistence runs through `FilterStates`
+    /// (per-scope dict) — see A2 of the Canvas Chrome arc.
     static func load() -> FilterState {
-        guard let data = UserDefaults.standard.data(forKey: udKey),
+        guard let data = UserDefaults.standard.data(forKey: legacyUDKey),
               let state = try? JSONDecoder().decode(FilterState.self, from: data)
         else { return FilterState() }
         return state
     }
+}
 
-    func save() {
-        if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: FilterState.udKey)
+// MARK: - Per-scope persistence (Canvas Chrome arc, A2)
+
+/// Storage for per-scope `FilterState`, keyed by `CanvasScope.key`. Each
+/// canvas surface (corpus + every collection canvas) has its own persisted
+/// view-mode / sort / filter state — confirmed during A2 scoping as a real
+/// user preference. Persisted as a single JSON dict under one UserDefaults
+/// key so save is O(1) regardless of how many collections exist.
+enum FilterStates {
+    fileprivate static let udKey = "com.airpad.filterStates"
+
+    static func load() -> [String: FilterState] {
+        if let data = UserDefaults.standard.data(forKey: udKey),
+           let dict = try? JSONDecoder().decode([String: FilterState].self, from: data) {
+            return dict
+        }
+        // First launch after A2: migrate the legacy single-global value into
+        // the corpus-scope slot so users keep their existing preferences. The
+        // legacy key is left in UserDefaults — harmless and a safety net if
+        // we ever need to roll back.
+        let legacy = FilterState.load()
+        return [NodeCollection.corpusID: legacy]
+    }
+
+    static func save(_ states: [String: FilterState]) {
+        if let data = try? JSONEncoder().encode(states) {
+            UserDefaults.standard.set(data, forKey: udKey)
         }
     }
 }

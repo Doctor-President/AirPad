@@ -24,6 +24,7 @@ struct DashboardView: View {
     @State private var path = NavigationPath()
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
+    @State private var showCreateCollectionSheet = false
 
     /// Dashboard Stage 3 — rows are derived at render time from
     /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
@@ -78,6 +79,9 @@ struct DashboardView: View {
             }
             .sheet(item: $renameTarget) { collection in
                 RenameCollectionSheet(collectionID: collection.id, currentName: collection.name)
+            }
+            .sheet(isPresented: $showCreateCollectionSheet) {
+                CollectionCreationSheet { _ in }
             }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
@@ -192,6 +196,7 @@ struct DashboardView: View {
                         onDelete: canDelete(collection) ? { deleteTarget = collection } : nil
                     )
                 }
+                NewCollectionButton { showCreateCollectionSheet = true }
             }
         }
     }
@@ -337,6 +342,39 @@ private struct CollectionRow: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .short
         return f.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+// MARK: - New Collection button
+
+/// Bottom-of-list affordance to create a new user collection. Quieter than
+/// a `CollectionRow` so it reads as auxiliary — a thin stroke instead of a
+/// solid fill, centered "+ New Collection" label. Same outer shape and
+/// vertical rhythm as user-collection rows so the section stays aligned.
+private struct NewCollectionButton: View {
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("New Collection")
+                    .font(.system(size: 15, weight: .semibold))
+            }
+            .foregroundStyle(.white.opacity(0.7))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(white: 0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

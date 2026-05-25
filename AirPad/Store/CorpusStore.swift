@@ -3703,6 +3703,131 @@ final class CorpusStore {
         }
     }
 
+    // MARK: - Batch collection membership
+
+    /// Adds `ids` to `collectionID`. Idempotent — already-members are
+    /// untouched. The Journal collection is virtual (membership lives in
+    /// `Node.journalDate`, not `collectionIDs`), so `journalID` stamps
+    /// start-of-day on nodes that aren't already journaled.
+    func addNodes(ids: Set<String>, toCollection collectionID: String) async {
+        guard !ids.isEmpty else { return }
+        let now = Date()
+        let isJournal = (collectionID == NodeCollection.journalID)
+        let stampDate = isJournal ? Calendar.current.startOfDay(for: now) : nil
+
+        var changedNodes: [Node] = []
+        for index in nodes.indices {
+            guard ids.contains(nodes[index].id) else { continue }
+            var node = nodes[index]
+            if isJournal {
+                guard node.journalDate == nil else { continue }
+                node.journalDate = stampDate
+            } else {
+                guard !node.collectionIDs.contains(collectionID) else { continue }
+                node.collectionIDs.append(collectionID)
+            }
+            node.updatedAt = now
+            nodes[index] = node
+            changedNodes.append(node)
+        }
+        for node in changedNodes {
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] addNodes(toCollection): saveNode error for \(node.id): \(error)")
+            }
+        }
+        if !changedNodes.isEmpty {
+            markCollectionUsed(collectionID)
+        }
+    }
+
+    /// Removes `ids` from `collectionID`. Idempotent. For `journalID` clears
+    /// `journalDate` rather than touching `collectionIDs` (Journal is virtual).
+    /// Node stays in Corpus and in any other collections it belongs to.
+    func removeNodes(ids: Set<String>, fromCollection collectionID: String) async {
+        guard !ids.isEmpty else { return }
+        let now = Date()
+        let isJournal = (collectionID == NodeCollection.journalID)
+
+        var changedNodes: [Node] = []
+        for index in nodes.indices {
+            guard ids.contains(nodes[index].id) else { continue }
+            var node = nodes[index]
+            if isJournal {
+                guard node.journalDate != nil else { continue }
+                node.journalDate = nil
+            } else {
+                guard let removeAt = node.collectionIDs.firstIndex(of: collectionID) else { continue }
+                node.collectionIDs.remove(at: removeAt)
+            }
+            node.updatedAt = now
+            nodes[index] = node
+            changedNodes.append(node)
+        }
+        for node in changedNodes {
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] removeNodes(fromCollection): saveNode error for \(node.id): \(error)")
+            }
+        }
+    }
+
+    /// One-shot: adds `ids` to `toCollection` and removes them from
+    /// `fromCollection` in a single per-node pass so a node never appears in
+    /// both intermediate states on disk. No-ops when source == target.
+    func moveNodes(ids: Set<String>, from fromCollection: String, to toCollection: String) async {
+        guard !ids.isEmpty, fromCollection != toCollection else { return }
+        let now = Date()
+        let fromIsJournal = (fromCollection == NodeCollection.journalID)
+        let toIsJournal = (toCollection == NodeCollection.journalID)
+        let stampDate = toIsJournal ? Calendar.current.startOfDay(for: now) : nil
+
+        var changedNodes: [Node] = []
+        for index in nodes.indices {
+            guard ids.contains(nodes[index].id) else { continue }
+            var node = nodes[index]
+            var mutated = false
+
+            if toIsJournal {
+                if node.journalDate == nil {
+                    node.journalDate = stampDate
+                    mutated = true
+                }
+            } else if !node.collectionIDs.contains(toCollection) {
+                node.collectionIDs.append(toCollection)
+                mutated = true
+            }
+
+            if fromIsJournal {
+                if node.journalDate != nil {
+                    node.journalDate = nil
+                    mutated = true
+                }
+            } else if let removeAt = node.collectionIDs.firstIndex(of: fromCollection) {
+                node.collectionIDs.remove(at: removeAt)
+                mutated = true
+            }
+
+            if mutated {
+                node.updatedAt = now
+                nodes[index] = node
+                changedNodes.append(node)
+            }
+        }
+        for node in changedNodes {
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] moveNodes: saveNode error for \(node.id): \(error)")
+            }
+        }
+        if !changedNodes.isEmpty {
+            markCollectionUsed(toCollection)
+        }
+    }
+
     func clearAllData() async {
         do {
             try await service.deleteAllData()

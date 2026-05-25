@@ -118,9 +118,12 @@ struct DashboardView: View {
 
     private var header: some View {
         ZStack {
-            Text("AirPad")
-                .font(.system(size: 18, weight: .semibold))
+            Image("AirPadLogo")
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
                 .foregroundStyle(.white)
+                .frame(height: 56)
                 .frame(maxWidth: .infinity, alignment: .center)
 
             HStack(spacing: 10) {

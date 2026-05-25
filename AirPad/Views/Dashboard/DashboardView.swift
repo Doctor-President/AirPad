@@ -9,8 +9,10 @@ import SwiftUI
 ///      node via `CorpusStore.findOrCreateTodayJournalNode`.
 ///   3. Collections section — Corpus row pinned first (visually distinct:
 ///      larger text, more vertical padding) and routes to canvas via entry-
-///      mode flip. User-collection rows push `CollectionView` onto the
-///      dashboard's NavigationStack.
+///      mode flip. User-collection rows + Journal route to a scoped canvas
+///      via `router.entryMode = .collectionCanvas(id:)` (Canvas Chrome arc
+///      D1c — was a NavigationStack push pre-D1c, but the inner stack in
+///      CanvasView/NodeListView collided with the dashboard's outer one).
 ///   4. Persistent floating "+" bottom-right — routes to QuikCapture with
 ///      `.dashboard` origin so the exit pill returns here rather than
 ///      suspending the app (c4.6).
@@ -69,9 +71,6 @@ struct DashboardView: View {
                 floatingPlusButton
             }
             .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
-            .navigationDestination(for: NodeCollection.self) { collection in
-                CollectionView(collection: collection)
-            }
             .navigationDestination(for: Node.self) { node in
                 NodeDetailView(nodeID: node.id)
             }
@@ -170,13 +169,14 @@ struct DashboardView: View {
     // MARK: - Row taps
 
     /// Corpus row routes to the existing canvas (no scoping — Corpus is the
-    /// "everything" view). User-collection rows push a scoped CollectionView
-    /// onto the dashboard's nav stack.
+    /// "everything" view). User-collection rows + Journal route to a scoped
+    /// canvas surface via `router.entryMode = .collectionCanvas(id:)` —
+    /// nested NavigationStacks broke the push-based variant (D1c).
     private func tap(_ collection: NodeCollection) {
         if collection.isCorpus {
             router.entryMode = .canvas
         } else {
-            path.append(collection)
+            router.entryMode = .collectionCanvas(id: collection.id)
         }
     }
 

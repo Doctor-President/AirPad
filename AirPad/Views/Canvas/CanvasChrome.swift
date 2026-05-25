@@ -10,8 +10,11 @@ import SwiftUI
 ///   - `SelectButton` enters selection on this scope
 ///   - view-mode / filter reads + writes use `store.filterState(for: scope)`
 ///     and `setFilterState(_, for: scope)`; `FilterPanelView` mirrors
-///   - back chevron routes to dashboard from corpus, dismisses for collection
 /// Scope-fixed pieces (intentional — global tools):
+///   - Back chevron unconditionally returns to dashboard via the router.
+///     Both corpus and collection canvases route in via `AppRouter.entryMode`
+///     (D1c — was a NavigationStack push pre-D1c, but the inner stack in
+///     CanvasView/NodeListView collided with the dashboard's outer stack).
 ///   - Settings and Quarantine rows operate on global state regardless of
 ///     scope. Collection canvases share the same settings/quarantine surfaces.
 struct CanvasChrome: View {
@@ -22,7 +25,6 @@ struct CanvasChrome: View {
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
     @Environment(SelectionService.self) private var selection
-    @Environment(\.dismiss) private var dismiss
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
@@ -95,10 +97,7 @@ struct CanvasChrome: View {
                         } else {
                             HStack(alignment: .center, spacing: 8) {
                                 DashboardBackButton {
-                                    switch scope {
-                                    case .corpus:     router.entryMode = .dashboard
-                                    case .collection: dismiss()
-                                    }
+                                    router.entryMode = .dashboard
                                 }
                                 Spacer()
                                 HStack(spacing: 10) {

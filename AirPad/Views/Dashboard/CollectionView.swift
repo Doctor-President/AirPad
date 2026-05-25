@@ -1,22 +1,23 @@
 import SwiftUI
 
-/// Dashboard Stage 3 — scoped collection view.
+/// Dashboard Stage 3 — scoped collection canvas (Canvas Chrome arc D1).
 ///
 /// Pushed onto the dashboard's `NavigationStack` when a Journal or user-
 /// collection row is tapped. (The Corpus row routes to canvas instead — see
-/// `DashboardView.tap`.) Lists member nodes; tapping a row pushes
-/// `NodeDetailView` via the parent stack's `navigationDestination(for:
-/// Node.self)`.
+/// `DashboardView.tap`.) D1 swapped the previous custom scroll-list for the
+/// full `CanvasChrome` surface, scoped to `.collection(id)` so the canvas
+/// graph/list/menus all operate on this collection's membership instead of
+/// the whole corpus. Membership resolution + per-scope filter state live in
+/// `CorpusStore` (see `nodes(in:)`, `visibleNodes(in:)`, `filterState(for:)`).
 ///
-/// Floating "+" routes to QuikCapture with `forcedCollectionID = collection.id`
-/// so captures land here without the pill rail needing to be touched (c4.7).
-/// `markCollectionUsed` on appear bumps recency so the pill rail's ordering
-/// reflects collections the user actually visits.
+/// The nav bar is hidden so the chrome's top row owns the header surface;
+/// the collection name will surface in chrome top row in D2.
 ///
-/// Membership rules:
-///   • Journal: nodes with `journalDate != nil`, sorted by `journalDate` desc.
-///   • User collection: nodes whose `collectionIDs` contains `collection.id`,
-///     sorted by `createdAt` desc.
+/// Floating "+" stays outside the chrome and routes to QuikCapture with
+/// `forcedCollectionID = collection.id` so captures land in this collection
+/// without the pill rail needing to be touched (c4.7). `markCollectionUsed`
+/// on appear bumps recency so the pill rail's ordering reflects collections
+/// the user actually visits.
 struct CollectionView: View {
 
     let collection: NodeCollection
@@ -24,54 +25,14 @@ struct CollectionView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
 
-    private var members: [Node] {
-        if collection.isJournal {
-            return store.nodes
-                .filter { $0.journalDate != nil }
-                .sorted { ($0.journalDate ?? .distantPast) > ($1.journalDate ?? .distantPast) }
-        }
-        return store.nodes
-            .filter { $0.collectionIDs.contains(collection.id) }
-            .sorted { $0.createdAt > $1.createdAt }
-    }
-
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-
-            if members.isEmpty {
-                emptyState
-            } else {
-                memberList
-            }
-
+            CanvasChrome(scope: .collection(collection.id))
             floatingPlusButton
         }
-        .navigationTitle(collection.name)
-        .navigationBarTitleDisplayMode(.large)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbarBackground(.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             store.markCollectionUsed(collection.id)
-        }
-    }
-
-    // MARK: - Member list
-
-    private var memberList: some View {
-        ScrollView {
-            VStack(spacing: 8) {
-                ForEach(members) { node in
-                    NavigationLink(value: node) {
-                        NodeRow(node: node, isJournal: collection.isJournal)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 120)
         }
     }
 
@@ -101,76 +62,6 @@ struct CollectionView: View {
                 .padding(.bottom, 28)
             }
         }
-    }
-
-    // MARK: - Empty state
-
-    private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "tray")
-                .font(.system(size: 32, weight: .regular))
-                .foregroundStyle(.white.opacity(0.35))
-            Text("No nodes yet")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.6))
-            Text(collection.isJournal
-                ? "Start a journal entry from the dashboard's Today card."
-                : "Assignment lands in a later stage.")
-                .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.4))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-        }
-    }
-}
-
-// MARK: - Node row
-
-/// Minimal node row matching the dashboard's CollectionRow visual language.
-/// Deliberately not a `NodeCardView` — that one is the legacy list view's
-/// gradient card and pulls in animation + palette layers we don't want here.
-private struct NodeRow: View {
-    let node: Node
-    let isJournal: Bool
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(titleText)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                Text(subtitleText)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.3))
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(white: 0.07))
-        )
-    }
-
-    private var titleText: String {
-        if !node.title.isEmpty { return node.title }
-        if let first = node.items.first?.content, !first.isEmpty { return first }
-        return "Untitled"
-    }
-
-    private var subtitleText: String {
-        if isJournal, let d = node.journalDate {
-            let f = DateFormatter()
-            f.dateFormat = "EEEE, MMMM d"
-            return f.string(from: d)
-        }
-        return node.relativeTimestamp
     }
 }
 

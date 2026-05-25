@@ -13,6 +13,8 @@ struct ContentView: View {
                 QuikCaptureView(forcedCollectionID: forcedCollectionID, origin: origin)
             case .canvas:
                 CanvasChrome(scope: .corpus)
+            case .collectionCanvas(let id):
+                CollectionView(collectionID: id)
             }
         }
         // Stage 4.4 — global dev-panel summon button. Mounted at the root

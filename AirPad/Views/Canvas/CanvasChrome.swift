@@ -120,7 +120,10 @@ struct CanvasChrome: View {
                         Spacer()
                         BatchActionBar(
                             count: selection.count,
+                            scope: scope,
                             tags: store.tags,
+                            collections: store.collections,
+                            collectionLastUsedAt: store.collectionLastUsedAt,
                             onDelete: { showBatchDeleteConfirmation = true },
                             onPickExistingTag: { tagName in
                                 let ids = selection.selected
@@ -129,7 +132,30 @@ struct CanvasChrome: View {
                                     await MainActor.run { selection.exit() }
                                 }
                             },
-                            onAddNewTag: { showBatchAddTagSheet = true }
+                            onAddNewTag: { showBatchAddTagSheet = true },
+                            onAddToCollection: { collectionID in
+                                let ids = selection.selected
+                                Task {
+                                    await store.addNodes(ids: ids, toCollection: collectionID)
+                                    await MainActor.run { selection.exit() }
+                                }
+                            },
+                            onRemoveFromCurrentCollection: {
+                                guard case .collection(let currentID) = scope else { return }
+                                let ids = selection.selected
+                                Task {
+                                    await store.removeNodes(ids: ids, fromCollection: currentID)
+                                    await MainActor.run { selection.exit() }
+                                }
+                            },
+                            onMoveToCollection: { targetID in
+                                guard case .collection(let currentID) = scope else { return }
+                                let ids = selection.selected
+                                Task {
+                                    await store.moveNodes(ids: ids, from: currentID, to: targetID)
+                                    await MainActor.run { selection.exit() }
+                                }
+                            }
                         )
                         .padding(.horizontal, 16)
                         .padding(.bottom, 24)
@@ -480,10 +506,26 @@ private struct SelectionHeader: View {
 
 private struct BatchActionBar: View {
     let count: Int
+    let scope: CanvasScope
     let tags: [Tag]
+    let collections: [NodeCollection]
+    let collectionLastUsedAt: [String: Date]
     let onDelete: () -> Void
     let onPickExistingTag: (String) -> Void
     let onAddNewTag: () -> Void
+    let onAddToCollection: (String) -> Void
+    let onRemoveFromCurrentCollection: () -> Void
+    let onMoveToCollection: (String) -> Void
+
+    private var isCollectionScope: Bool {
+        if case .collection = scope { return true } else { return false }
+    }
+
+    /// Excluded from Add/Move pickers so the user can't pick the collection
+    /// they're already in. Nil at corpus scope — picker shows everything.
+    private var currentCollectionID: String? {
+        if case .collection(let id) = scope { return id } else { return nil }
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -499,6 +541,58 @@ private struct BatchActionBar: View {
                     Image(systemName: "tag")
                         .font(.system(size: 14, weight: .semibold))
                     Text("Tag (\(count))")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(Color(white: 0.18))
+                .clipShape(Capsule())
+            }
+            .disabled(count == 0)
+            .opacity(count == 0 ? 0.5 : 1.0)
+
+            Menu {
+                if isCollectionScope {
+                    Menu {
+                        CollectionPickerMenuContent(
+                            collections: collections,
+                            collectionLastUsedAt: collectionLastUsedAt,
+                            excludeID: currentCollectionID,
+                            onPick: onAddToCollection
+                        )
+                    } label: {
+                        Label("Add to…", systemImage: "plus")
+                    }
+                    Button {
+                        onRemoveFromCurrentCollection()
+                    } label: {
+                        Label("Remove from current", systemImage: "minus")
+                    }
+                    Menu {
+                        CollectionPickerMenuContent(
+                            collections: collections,
+                            collectionLastUsedAt: collectionLastUsedAt,
+                            excludeID: currentCollectionID,
+                            onPick: onMoveToCollection
+                        )
+                    } label: {
+                        Label("Move to…", systemImage: "arrow.right")
+                    }
+                } else {
+                    CollectionPickerMenuContent(
+                        collections: collections,
+                        collectionLastUsedAt: collectionLastUsedAt,
+                        excludeID: nil,
+                        onPick: onAddToCollection
+                    )
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Collections (\(count))")
                         .font(.system(size: 15, weight: .semibold))
                 }
                 .foregroundStyle(.white)

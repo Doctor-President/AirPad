@@ -149,6 +149,18 @@ final class CorpusStore {
     /// finished. The dev substrate inspect view observes this for progress.
     var substrateBackfill: SubstrateBackfillState? = nil
 
+    /// True while any of the long-running model operations are in flight.
+    /// Drives the C4 ModelProcessingIndicator in the canvas chrome — ORs the
+    /// three observable signals that take multiple seconds and matter to the
+    /// user. Per-call AI requests and neighborhood/cluster refreshes are NOT
+    /// included (they're too short-lived to be useful visual cues).
+    var isAnyModelProcessing: Bool {
+        let substrateActive   = substrateBackfill.map { !$0.done } ?? false
+        let embeddingActive   = backfillingEmbeddings.map { !$0.done } ?? false
+        let reprocessingActive = reprocessing.map { !$0.done } ?? false
+        return substrateActive || embeddingActive || reprocessingActive
+    }
+
     /// Per-scope filter + view mode storage. Each canvas surface (corpus +
     /// every collection canvas) has its own persisted state. Backed by a
     /// JSON dict in UserDefaults (`FilterStates.load/save`). Mutated only

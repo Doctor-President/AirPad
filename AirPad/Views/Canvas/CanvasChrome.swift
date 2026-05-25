@@ -8,10 +8,12 @@ import SwiftUI
 /// Scope-aware pieces:
 ///   - body switcher passes `scope` into `CanvasView` / `NodeListView`
 ///   - `SelectButton` enters selection on this scope
-/// Scope-fixed pieces (D1 will branch dashboard-back / quarantine /
-/// settings / filter for collection scopes):
-///   - DashboardBackButton and the slide-out's Settings / Quarantine /
-///     Filter rows currently operate on corpus state regardless of `scope`.
+///   - view-mode / filter reads + writes use `store.filterState(for: scope)`
+///     and `setFilterState(_, for: scope)`; `FilterPanelView` mirrors
+///   - back chevron routes to dashboard from corpus, dismisses for collection
+/// Scope-fixed pieces (intentional — global tools):
+///   - Settings and Quarantine rows operate on global state regardless of
+///     scope. Collection canvases share the same settings/quarantine surfaces.
 struct CanvasChrome: View {
 
     var scope: CanvasScope = .corpus
@@ -20,6 +22,7 @@ struct CanvasChrome: View {
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
     @Environment(SelectionService.self) private var selection
+    @Environment(\.dismiss) private var dismiss
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
@@ -28,12 +31,16 @@ struct CanvasChrome: View {
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
 
+    private var filterState: FilterState {
+        store.filterState(for: scope)
+    }
+
     /// Dot indicator on the ellipsis trigger when something inside the
     /// menu has live state — active filters or quarantined entries. The
     /// menu rows themselves carry the specific counts; the trigger just
     /// nudges the user to look inside.
     private var menuHasAttention: Bool {
-        store.filterState.activeFilterCount > 0 || quarantineStore.entries.count > 0
+        filterState.activeFilterCount > 0 || quarantineStore.entries.count > 0
     }
 
     var body: some View {
@@ -42,13 +49,13 @@ struct CanvasChrome: View {
             // CanvasView/NodeListView handle their own internal blur for the
             // non-fan layers when fanExpanded; the fan stays sharp inside them.
             Group {
-                if store.filterState.viewMode == .systemGraph {
+                if filterState.viewMode == .systemGraph {
                     CanvasView(fanExpanded: $fanExpanded, scope: scope)
                 } else {
                     NodeListView(fanExpanded: $fanExpanded, scope: scope)
                 }
             }
-            .animation(.easeInOut(duration: 0.22), value: store.filterState.viewMode)
+            .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
 
             // Overlays that live above the canvas but behind the fan — these all
             // blur uniformly when the fan is expanded so the focal effect is
@@ -88,7 +95,10 @@ struct CanvasChrome: View {
                         } else {
                             HStack(alignment: .center, spacing: 8) {
                                 DashboardBackButton {
-                                    router.entryMode = .dashboard
+                                    switch scope {
+                                    case .corpus:     router.entryMode = .dashboard
+                                    case .collection: dismiss()
+                                    }
                                 }
                                 Spacer()
                                 HStack(spacing: 10) {
@@ -146,13 +156,13 @@ struct CanvasChrome: View {
             // even if the fan happens to be expanded under it.
             CanvasSlideOutMenu(
                 isPresented: $showSlideOutMenu,
-                currentMode: store.filterState.viewMode,
-                filterActiveCount: store.filterState.activeFilterCount,
+                currentMode: filterState.viewMode,
+                filterActiveCount: filterState.activeFilterCount,
                 quarantineCount: quarantineStore.entries.count,
                 onSelectMode: { mode in
-                    var s = store.filterState
+                    var s = filterState
                     s.viewMode = mode
-                    store.filterState = s
+                    store.setFilterState(s, for: scope)
                 },
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },
@@ -161,7 +171,7 @@ struct CanvasChrome: View {
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
-            FilterPanelView()
+            FilterPanelView(scope: scope)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -249,8 +259,12 @@ private struct MenuButton: View {
 // MARK: - Filter panel
 
 struct FilterPanelView: View {
+    var scope: CanvasScope = .corpus
+
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+
+    private var state: FilterState { store.filterState(for: scope) }
 
     var body: some View {
         NavigationStack {
@@ -258,8 +272,8 @@ struct FilterPanelView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     filterSection("Sort") {
                         HStack(spacing: 8) {
-                            filterPill("Recent",   isActive: store.filterState.sortOrder == .recency)  { mutate { $0.sortOrder = .recency } }
-                            filterPill("Thematic", isActive: store.filterState.sortOrder == .thematic) { mutate { $0.sortOrder = .thematic } }
+                            filterPill("Recent",   isActive: state.sortOrder == .recency)  { mutate { $0.sortOrder = .recency } }
+                            filterPill("Thematic", isActive: state.sortOrder == .thematic) { mutate { $0.sortOrder = .thematic } }
                         }
                     }
 
@@ -270,7 +284,7 @@ struct FilterPanelView: View {
                                     filterPill(
                                         type.displayName,
                                         icon: type.icon,
-                                        isActive: store.filterState.itemType == type
+                                        isActive: state.itemType == type
                                     ) { mutate { $0.itemType = type } }
                                 }
                             }
@@ -281,14 +295,14 @@ struct FilterPanelView: View {
                         filterSection("Tag") {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
-                                    filterPill("All", isActive: store.filterState.tagName == nil) {
+                                    filterPill("All", isActive: state.tagName == nil) {
                                         mutate { $0.tagName = nil }
                                     }
                                     ForEach(store.tags) { tag in
                                         filterPill(
                                             tag.name,
                                             color: Color(hex: tag.colorHex),
-                                            isActive: store.filterState.tagName == tag.name
+                                            isActive: state.tagName == tag.name
                                         ) { mutate { $0.tagName = tag.name } }
                                     }
                                 }
@@ -299,7 +313,7 @@ struct FilterPanelView: View {
                     filterSection("Threads") {
                         HStack(spacing: 8) {
                             ForEach(ThreadStatusFilter.allCases, id: \.self) { status in
-                                filterPill(status.displayName, isActive: store.filterState.threadStatus == status) {
+                                filterPill(status.displayName, isActive: state.threadStatus == status) {
                                     mutate { $0.threadStatus = status }
                                 }
                             }
@@ -319,7 +333,7 @@ struct FilterPanelView: View {
                     Button("Done") { dismiss() }
                         .foregroundStyle(.white)
                 }
-                if store.filterState.activeFilterCount > 0 {
+                if state.activeFilterCount > 0 {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Clear all") { mutate {
                             $0.sortOrder = .recency
@@ -337,9 +351,9 @@ struct FilterPanelView: View {
     }
 
     private func mutate(_ block: (inout FilterState) -> Void) {
-        var s = store.filterState
+        var s = state
         block(&s)
-        store.filterState = s
+        store.setFilterState(s, for: scope)
     }
 
     @ViewBuilder

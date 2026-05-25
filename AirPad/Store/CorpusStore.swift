@@ -2447,6 +2447,53 @@ final class CorpusStore {
         return collection
     }
 
+    /// Rename a user collection in place. No-ops on empty / whitespace-only
+    /// names and on missing IDs (Corpus/Journal are virtual and never appear
+    /// in `collections`, so passing their reserved IDs is a silent no-op).
+    func renameCollection(id collectionID: String, to newName: String) async {
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = collections.firstIndex(where: { $0.id == collectionID })
+        else { return }
+        collections[index].name = trimmed
+        await persistCollections()
+    }
+
+    /// Delete a user collection and strip its ID from every node's
+    /// `collectionIDs`. Nodes themselves are not deleted — they persist in
+    /// Corpus (and any other collections they belong to). Recency state for
+    /// the removed collection is also cleaned up so a deleted ID can't
+    /// linger as the `lastUsedCollectionID` or pin a phantom entry in the
+    /// pill rail. Silent no-op on missing IDs (Corpus / Journal / unknown).
+    func deleteCollection(id collectionID: String) async {
+        guard collections.contains(where: { $0.id == collectionID }) else { return }
+        collections.removeAll { $0.id == collectionID }
+        await persistCollections()
+
+        let now = Date()
+        var changedNodes: [Node] = []
+        for index in nodes.indices {
+            guard let removeAt = nodes[index].collectionIDs.firstIndex(of: collectionID) else { continue }
+            var node = nodes[index]
+            node.collectionIDs.remove(at: removeAt)
+            node.updatedAt = now
+            nodes[index] = node
+            changedNodes.append(node)
+        }
+        for node in changedNodes {
+            do {
+                try await service.saveNode(node)
+            } catch {
+                print("[CorpusStore] deleteCollection: saveNode error for \(node.id): \(error)")
+            }
+        }
+
+        collectionLastUsedAt.removeValue(forKey: collectionID)
+        if lastUsedCollectionID == collectionID {
+            lastUsedCollectionID = nil
+        }
+    }
+
     // MARK: - UserDefaults helpers (Dashboard Stage 4)
 
     private static let udLastUsedCollectionIDKey = "com.airpad.dashboard.lastUsedCollectionID"

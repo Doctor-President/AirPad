@@ -63,6 +63,20 @@ struct CanvasChrome: View {
                     }
                 }
 
+                // C4 — top-center "thinking" pill. Sits alongside the topRow
+                // (back chevron / select / ellipsis), in the same blur scope
+                // so the fan expansion treats it as chrome. Hidden in
+                // selection mode and inside detail views so the surface stays
+                // calm during focused interactions.
+                if !store.isInDetailView && !selection.isActive && store.isAnyModelProcessing {
+                    VStack {
+                        ModelProcessingIndicator()
+                            .padding(.top, 22)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        Spacer()
+                    }
+                }
+
                 if !store.isInDetailView {
                     VStack(spacing: 0) {
                         if selection.isActive {

@@ -192,14 +192,16 @@ struct CanvasView: View {
             .blur(radius: fanExpanded ? 12 : 0)
             .animation(.easeInOut(duration: 0.22), value: fanExpanded)
 
-            ActionButtonFan(
-                isExpanded: $fanExpanded,
-                isEmpty: store.nodes(in: scope).isEmpty,
-                onVoice:       { captureMode = .voice },
-                onCamera:      { captureMode = .camera },
-                onText:        { captureMode = .text },
-                onNodePicker:  { showingNodePicker = true }
-            )
+            if !selection.isActive {
+                ActionButtonFan(
+                    isExpanded: $fanExpanded,
+                    isEmpty: store.nodes(in: scope).isEmpty,
+                    onVoice:       { captureMode = .voice },
+                    onCamera:      { captureMode = .camera },
+                    onText:        { captureMode = .text },
+                    onNodePicker:  { showingNodePicker = true }
+                )
+            }
         }
     }
 

@@ -22,6 +22,8 @@ struct DashboardView: View {
     @Environment(CorpusStore.self) private var store
 
     @State private var path = NavigationPath()
+    @State private var renameTarget: NodeCollection?
+    @State private var deleteTarget: NodeCollection?
 
     /// Dashboard Stage 3 — rows are derived at render time from
     /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
@@ -74,7 +76,30 @@ struct DashboardView: View {
             .navigationDestination(for: Node.self) { node in
                 NodeDetailView(nodeID: node.id)
             }
+            .sheet(item: $renameTarget) { collection in
+                RenameCollectionSheet(collectionID: collection.id, currentName: collection.name)
+            }
+            .confirmationDialog(
+                deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
+                isPresented: deleteDialogBinding,
+                titleVisibility: .visible,
+                presenting: deleteTarget
+            ) { collection in
+                Button("Delete", role: .destructive) {
+                    Task { await store.deleteCollection(id: collection.id) }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { _ in
+                Text("Nodes will remain in your corpus.")
+            }
         }
+    }
+
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        )
     }
 
     // MARK: - Header
@@ -160,7 +185,12 @@ struct DashboardView: View {
 
             VStack(spacing: 8) {
                 ForEach(displayedCollections) { collection in
-                    CollectionRow(collection: collection, onTap: { tap(collection) })
+                    CollectionRow(
+                        collection: collection,
+                        onTap: { tap(collection) },
+                        onRename: canManage(collection) ? { renameTarget = collection } : nil,
+                        onDelete: canDelete(collection) ? { deleteTarget = collection } : nil
+                    )
                 }
             }
         }
@@ -178,6 +208,22 @@ struct DashboardView: View {
         } else {
             router.entryMode = .collectionCanvas(id: collection.id)
         }
+    }
+
+    /// Rows that expose the ellipsis menu. Corpus and Journal are system
+    /// surfaces — Corpus has no user-editable name; Journal rename is
+    /// deferred (the "Journal" label is hardcoded across capture + dashboard
+    /// + chrome surfaces, so renaming it is its own arc).
+    private func canManage(_ collection: NodeCollection) -> Bool {
+        !collection.isSystem
+    }
+
+    /// Rows that expose the Delete entry inside the ellipsis menu. Same as
+    /// `canManage` today since Journal has no ellipsis at all — kept as a
+    /// distinct predicate so the row code doesn't need to relearn the
+    /// reasoning if Journal gains rename later.
+    private func canDelete(_ collection: NodeCollection) -> Bool {
+        !collection.isSystem
     }
 
     // MARK: - Floating "+"
@@ -212,31 +258,63 @@ struct DashboardView: View {
 private struct CollectionRow: View {
     let collection: NodeCollection
     let onTap: () -> Void
+    /// Nil → no ellipsis menu on this row (Corpus, Journal).
+    let onRename: (() -> Void)?
+    /// Nil → Delete entry hidden inside the ellipsis menu. Only meaningful
+    /// when `onRename` is also non-nil (the menu itself is gated on rename).
+    let onDelete: (() -> Void)?
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(collection.name)
-                        .font(nameFont)
-                        .foregroundStyle(.white)
-                    Text(subtitle)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.5))
+        HStack(alignment: .center, spacing: 8) {
+            Button(action: onTap) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(collection.name)
+                            .font(nameFont)
+                            .foregroundStyle(.white)
+                        Text(subtitle)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.3))
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, verticalPadding)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(white: collection.isCorpus ? 0.10 : 0.07))
-            )
+            .buttonStyle(.plain)
+
+            if let onRename {
+                Menu {
+                    Button {
+                        onRename()
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    if let onDelete {
+                        Button(role: .destructive) {
+                            onDelete()
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.3))
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 18)
+        .padding(.vertical, verticalPadding)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(white: collection.isCorpus ? 0.10 : 0.07))
+        )
     }
 
     private var nameFont: Font {

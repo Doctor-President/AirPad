@@ -25,6 +25,8 @@ struct DashboardView: View {
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
     @State private var showCreateCollectionSheet = false
+    @State private var showRecents = false
+    @State private var showSettings = false
 
     /// Dashboard Stage 3 — rows are derived at render time from
     /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
@@ -83,6 +85,12 @@ struct DashboardView: View {
             .sheet(isPresented: $showCreateCollectionSheet) {
                 CollectionCreationSheet { _ in }
             }
+            .sheet(isPresented: $showRecents) {
+                NodePickerSheet(onSelect: { node in path.append(node) })
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                 isPresented: deleteDialogBinding,
@@ -118,8 +126,8 @@ struct DashboardView: View {
             HStack(spacing: 10) {
                 Spacer()
                 inboxButton
-                headerIconButton(systemName: "clock.arrow.circlepath")
-                headerIconButton(systemName: "gearshape.fill")
+                headerIconButton(systemName: "clock.arrow.circlepath") { showRecents = true }
+                headerIconButton(systemName: "gearshape.fill") { showSettings = true }
             }
         }
         .frame(height: 48)
@@ -151,8 +159,8 @@ struct DashboardView: View {
         .buttonStyle(.plain)
     }
 
-    private func headerIconButton(systemName: String) -> some View {
-        Button(action: {}) {
+    private func headerIconButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.white)

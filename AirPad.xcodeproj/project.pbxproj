@@ -128,6 +128,7 @@
 		ACB61EF70E11DC8884EE3A6F /* Lora-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D414766388E3034250D0E1AE /* Lora-Bold.ttf */; };
 		ACEC4360C76A6F362AA87972 /* UMAPModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78B727835739390B86DF397 /* UMAPModel.swift */; };
 		AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */; };
+		AD35DBA4F029E70A9B72068F /* CollectionPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */; };
 		ADFBFB77F411E0BDD3FA43F6 /* EntryVisualDevPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECACE148A0B50511A83212FE /* EntryVisualDevPanel.swift */; };
 		AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3366166820015E0F584466E9 /* OGMetadataService.swift */; };
 		AE9C0E76D1F909B7C3197976 /* SubstrateColoringPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */; };
@@ -216,6 +217,7 @@
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
+		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateColoringPass.swift; sourceTree = "<group>"; };
 		26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Regular.ttf"; sourceTree = "<group>"; };
@@ -442,6 +444,14 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		37218568793A17FDE4D48112 /* Collections */ = {
+			isa = PBXGroup;
+			children = (
+				22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */,
+			);
+			path = Collections;
+			sourceTree = "<group>";
+		};
 		42000A952BB227D442A86185 /* Lato */ = {
 			isa = PBXGroup;
 			children = (
@@ -482,6 +492,7 @@
 				E1C39505C0E8DDE7019D8F77 /* Camera */,
 				1098DD62B5B4D5B3A78424EB /* Canvas */,
 				60660408D5EEF211EB72BA7D /* Capture */,
+				37218568793A17FDE4D48112 /* Collections */,
 				A1059810ABACBA240F7761FF /* Dashboard */,
 				4457977889C2B78493EC5AD7 /* Detail */,
 				E2DA2EA8F4AA00E1FCC24AFC /* List */,
@@ -873,6 +884,7 @@
 				FD2F516F643CD089B6E84F12 /* ClipboardContentRouterDiagnostic.swift in Sources */,
 				1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */,
 				5A03FDA3ADA663B72A753A5C /* CollectionCreationSheet.swift in Sources */,
+				AD35DBA4F029E70A9B72068F /* CollectionPickerMenu.swift in Sources */,
 				B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */,
 				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
 				92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */,

@@ -236,7 +236,14 @@ struct QuikCaptureView: View {
             case .urlScheme:
                 // External entry — suspend the app so the user lands back
                 // on the home screen / origin app instead of being dumped
-                // into the dashboard they never asked to see.
+                // into the dashboard they never asked to see. Reset the
+                // router before suspending: the process isn't killed (just
+                // backgrounded), so without the reset the next foreground
+                // would land on a stale QuikCapture surface. The
+                // scenePhase→dashboard hook that previously masked this
+                // was removed in 6171312 because it clobbered in-progress
+                // edit sessions on incidental backgrounding.
+                router.entryMode = .dashboard
                 UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
             }
         } label: {

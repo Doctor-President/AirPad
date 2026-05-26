@@ -29,7 +29,6 @@ struct CanvasChrome: View {
     @State private var showSettings = false
     @State private var showQuarantineReview = false
     @State private var showSlideOutMenu = false
-    @State private var fanExpanded = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
 
@@ -47,14 +46,15 @@ struct CanvasChrome: View {
 
     var body: some View {
         ZStack {
-            // Main content — switches between graph and list mode.
-            // CanvasView/NodeListView handle their own internal blur for the
-            // non-fan layers when fanExpanded; the fan stays sharp inside them.
+            // Main content — switches between graph and list mode. Each
+            // owns its own NavigationStack; the floating "+" trigger lives
+            // inside them so navigation handoff from the in-app capture
+            // overlay can push onto the local path.
             Group {
                 if filterState.viewMode == .systemGraph {
-                    CanvasView(fanExpanded: $fanExpanded, scope: scope)
+                    CanvasView(scope: scope)
                 } else {
-                    NodeListView(fanExpanded: $fanExpanded, scope: scope)
+                    NodeListView(scope: scope)
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
@@ -174,11 +174,8 @@ struct CanvasChrome: View {
                 }
 
             }
-            .blur(radius: fanExpanded ? 12 : 0)
-            .animation(.easeInOut(duration: 0.22), value: fanExpanded)
 
-            // Slide-out menu sits outside the blur scope so it stays sharp
-            // even if the fan happens to be expanded under it.
+            // Slide-out menu sits outside any blur scope so it stays sharp.
             CanvasSlideOutMenu(
                 isPresented: $showSlideOutMenu,
                 currentMode: filterState.viewMode,

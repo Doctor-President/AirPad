@@ -16,54 +16,21 @@ import SwiftUI
 /// list / menus operate on the collection's membership (see
 /// `CorpusStore.nodes(in:)`, `visibleNodes(in:)`, `filterState(for:)`).
 ///
-/// Floating "+" stays outside the chrome and routes to QuikCapture with
-/// `forcedCollectionID = id` so captures land in this collection without
-/// the pill rail needing to be touched (c4.7). `markCollectionUsed` on
-/// appear bumps recency so the pill rail's ordering reflects collections
-/// the user actually visits.
+/// The floating "+" lives inside CanvasView / NodeListView (the surfaces
+/// CanvasChrome switches between), so this wrapper just hosts the chrome
+/// and bumps recency on appear. The "+" inside those views reads `scope`
+/// to pin the in-app capture overlay to this collection.
 struct CollectionView: View {
 
     let collectionID: String
 
     @Environment(CorpusStore.self) private var store
-    @Environment(AppRouter.self) private var router
 
     var body: some View {
-        ZStack {
-            CanvasChrome(scope: .collection(collectionID))
-            floatingPlusButton
-        }
-        .onAppear {
-            store.markCollectionUsed(collectionID)
-        }
-    }
-
-    // MARK: - Floating "+"
-
-    private var floatingPlusButton: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Button {
-                    router.entryMode = .quikCapture(
-                        forcedCollectionID: collectionID,
-                        origin: .dashboard
-                    )
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.black)
-                        .frame(width: 60, height: 60)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 20)
-                .padding(.bottom, 28)
+        CanvasChrome(scope: .collection(collectionID))
+            .onAppear {
+                store.markCollectionUsed(collectionID)
             }
-        }
     }
 }
 

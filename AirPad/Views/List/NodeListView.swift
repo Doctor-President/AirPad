@@ -15,6 +15,7 @@ struct NodeListView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
+    @Environment(AppRouter.self) private var router
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
     @State private var displayItems: [ListItem] = []
@@ -22,14 +23,10 @@ struct NodeListView: View {
     @State private var isJumping = false
 
     @State private var scrollToFirstAfterSort = false
-    @Binding var fanExpanded: Bool
     /// What slice of the corpus this list renders. Defaults to `.corpus` so
     /// the existing ContentView call site keeps its behavior unchanged.
     /// Collection canvases pass `.collection(id)` once D1 wires them up.
     var scope: CanvasScope = .corpus
-    @State private var captureMode: ListCaptureMode? = nil
-    @State private var captureTargetNodeID: String? = nil
-    @State private var showingNodePicker = false
     @State private var centerIdx = 0
 
     private let cardHeight: CGFloat = 168
@@ -37,11 +34,6 @@ struct NodeListView: View {
     private let topBarHeight: CGFloat = 110  // Graph/List toggle bar + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
-
-    enum ListCaptureMode: String, Identifiable {
-        case voice, text, camera
-        var id: String { rawValue }
-    }
 
     var body: some View {
         GeometryReader { geo in
@@ -82,46 +74,28 @@ struct NodeListView: View {
                                     GhostQueryField()
                                         .frame(maxWidth: .infinity)
                                     Spacer()
-                                        .frame(width: 68) // reserve space for ActionButtonFan + button
+                                        .frame(width: 68) // reserve space for the "+" trigger
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 24)
                             }
                         }
                     }
-                    .blur(radius: fanExpanded ? 12 : 0)
-                    .animation(.easeInOut(duration: 0.22), value: fanExpanded)
 
-                    if !selection.isActive {
-                        ActionButtonFan(
-                            isExpanded: $fanExpanded,
-                            isEmpty: store.nodes(in: scope).isEmpty,
-                            onVoice:       { captureMode = .voice },
-                            onCamera:      { captureMode = .camera },
-                            onText:        { captureMode = .text },
-                            onNodePicker:  { showingNodePicker = true }
-                        )
+                    if !selection.isActive && !store.isInDetailView {
+                        captureTriggerButton
                     }
                 }
                 .navigationDestination(for: Node.self) { node in
                     NodeDetailView(nodeID: node.id)
                         .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
                 }
-                .sheet(item: $captureMode) { mode in
-                    switch mode {
-                    case .voice:  VoiceCaptureSheet(targetNodeID: captureTargetNodeID)
-                    case .text:   TextCaptureSheet(targetNodeID: captureTargetNodeID)
-                    case .camera: CameraCaptureView(targetNodeID: captureTargetNodeID)
-                    }
-                }
-                .sheet(isPresented: $showingNodePicker) {
-                    NodePickerSheet(onSelect: { node in
-                        navigationPath.append(node)
-                    })
-                }
-                .onChange(of: captureMode) { _, mode in
-                    if mode != nil { fanExpanded = false }
-                    if mode == nil { captureTargetNodeID = nil }
+                .onChange(of: router.pendingNodeNavigationID) { _, newValue in
+                    guard let id = newValue,
+                          let node = store.nodes.first(where: { $0.id == id })
+                    else { return }
+                    navigationPath.append(node)
+                    router.pendingNodeNavigationID = nil
                 }
             }
         }
@@ -138,6 +112,30 @@ struct NodeListView: View {
             buildItems()
             scrollToFirstAfterSort = true
         }
+    }
+
+    // MARK: - Capture trigger
+
+    /// Floating "+" — triggers the in-app capture overlay
+    /// (ws-in-app-capture-overlay). The overlay is mounted at ContentView
+    /// and floats over this list; navigation handoff from the overlay
+    /// arrives via `router.pendingNodeNavigationID` and is pushed onto our
+    /// own `navigationPath`.
+    private var captureTriggerButton: some View {
+        Button {
+            router.captureOverlay = CaptureOverlayContext(scope: scope)
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.black)
+                .frame(width: 60, height: 60)
+                .background(Color.white)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 28)
     }
 
     // MARK: - Scroll content

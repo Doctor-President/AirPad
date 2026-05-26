@@ -6,16 +6,13 @@ struct CanvasView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
+    @Environment(AppRouter.self) private var router
     @State private var canvasState = CanvasState()
-    @Binding var fanExpanded: Bool
     /// What slice of the corpus this canvas renders. Defaults to `.corpus`
     /// so the existing ContentView call site (the only one in A1) keeps its
     /// behavior unchanged. Collection canvases pass `.collection(id)` once
     /// commit D1 wires them up.
     var scope: CanvasScope = .corpus
-    @State private var captureMode: CaptureMode? = nil
-    @State private var captureTargetNodeID: String? = nil  // nil = create new node
-    @State private var showingNodePicker = false
     @State private var previousNodeIDs: Set<String> = []
     @State private var navigationPath = NavigationPath()
     @State private var localTagSuggestions: TagSuggestionContext? = nil
@@ -29,13 +26,6 @@ struct CanvasView: View {
         s.backgroundColor = .clear
         return s
     }()
-
-    // MARK: - Capture mode
-
-    enum CaptureMode: String, Identifiable {
-        case voice, text, camera
-        var id: String { rawValue }
-    }
 
     // MARK: - Body
 
@@ -131,16 +121,9 @@ struct CanvasView: View {
         canvasZStack
             .animation(.spring(response: 0.28), value: store.nodes(in: scope).isEmpty)
             .animation(.spring(response: 0.28), value: canvasState.selectedNodeID)
-            .animation(.spring(response: 0.28), value: captureTargetNodeID)
             .navigationDestination(for: Node.self) { node in
                 NodeDetailView(nodeID: node.id)
                     .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
-            }
-            .sheet(item: $captureMode, content: captureModeSheet)
-            .sheet(isPresented: $showingNodePicker) {
-                NodePickerSheet(onSelect: { node in
-                    navigationPath.append(node)
-                })
             }
             .sheet(item: $localTagSuggestions) { context in
                 tagCreationSheet(context: context)
@@ -148,9 +131,12 @@ struct CanvasView: View {
             .onChange(of: store.pendingTagSuggestions) { _, new in
                 if let new, localTagSuggestions == nil { localTagSuggestions = new }
             }
-            .onChange(of: captureMode) { _, mode in
-                if mode != nil { fanExpanded = false }
-                if mode == nil { captureTargetNodeID = nil }
+            .onChange(of: router.pendingNodeNavigationID) { _, newValue in
+                guard let id = newValue,
+                      let node = store.nodes.first(where: { $0.id == id })
+                else { return }
+                navigationPath.append(node)
+                router.pendingNodeNavigationID = nil
             }
     }
 
@@ -172,7 +158,6 @@ struct CanvasView: View {
 
                 focalEngagementOverlay
                 nodeSummaryLayer
-                captureTargetBanner
                 drillDownBackButton
 
                 if !store.isInDetailView {
@@ -182,27 +167,40 @@ struct CanvasView: View {
                             GhostQueryField()
                                 .frame(maxWidth: .infinity)
                             Spacer()
-                                .frame(width: 68) // reserve space for ActionButtonFan + button
+                                .frame(width: 68) // reserve space for the "+" trigger
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 24)
                     }
                 }
             }
-            .blur(radius: fanExpanded ? 12 : 0)
-            .animation(.easeInOut(duration: 0.22), value: fanExpanded)
 
-            if !selection.isActive {
-                ActionButtonFan(
-                    isExpanded: $fanExpanded,
-                    isEmpty: store.nodes(in: scope).isEmpty,
-                    onVoice:       { captureMode = .voice },
-                    onCamera:      { captureMode = .camera },
-                    onText:        { captureMode = .text },
-                    onNodePicker:  { showingNodePicker = true }
-                )
+            if !selection.isActive && !store.isInDetailView {
+                captureTriggerButton
             }
         }
+    }
+
+    /// Floating "+" — triggers the in-app capture overlay
+    /// (ws-in-app-capture-overlay). The overlay is mounted at ContentView
+    /// and floats over this canvas; navigation handoff from the overlay
+    /// arrives via `router.pendingNodeNavigationID` and is pushed onto our
+    /// own `navigationPath` (see `canvasStack`).
+    private var captureTriggerButton: some View {
+        Button {
+            router.captureOverlay = CaptureOverlayContext(scope: scope)
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.black)
+                .frame(width: 60, height: 60)
+                .background(Color.white)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 20)
+        .padding(.bottom, 28)
     }
 
     @ViewBuilder
@@ -235,15 +233,6 @@ struct CanvasView: View {
                 Spacer()
             }
             .transition(.move(edge: .leading).combined(with: .opacity))
-        }
-    }
-
-    @ViewBuilder
-    private func captureModeSheet(_ mode: CaptureMode) -> some View {
-        switch mode {
-        case .voice:  VoiceCaptureSheet(targetNodeID: captureTargetNodeID)
-        case .text:   TextCaptureSheet(targetNodeID: captureTargetNodeID)
-        case .camera: CameraCaptureView(targetNodeID: captureTargetNodeID)
         }
     }
 
@@ -333,30 +322,6 @@ struct CanvasView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .ignoresSafeArea()
             .transition(.opacity)
-        }
-    }
-
-    @ViewBuilder
-    private var captureTargetBanner: some View {
-        if let targetID = captureTargetNodeID,
-           let targetNode = store.nodes.first(where: { $0.id == targetID }) {
-            VStack {
-                HStack {
-                    Label("Adding to: \(targetNode.title)", systemImage: "arrow.up.circle")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .padding(.top, 8)
-                        .onTapGesture { captureTargetNodeID = nil }
-                    Spacer()
-                }
-                .padding(.leading, 16)
-                Spacer()
-            }
-            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

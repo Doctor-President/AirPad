@@ -136,6 +136,7 @@
 		B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B37326A27826C7715C130B6 /* SingleMediaBody.swift */; };
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
+		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
@@ -311,6 +312,7 @@
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
+		C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPillRail.swift; sourceTree = "<group>"; };
 		C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureIntent.swift; sourceTree = "<group>"; };
 		C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FoundationModels.framework; path = System/Library/Frameworks/FoundationModels.framework; sourceTree = SDKROOT; };
 		CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCoord2D.swift; sourceTree = "<group>"; };
@@ -482,6 +484,7 @@
 			children = (
 				6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */,
 				6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */,
+				C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */,
 				B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */,
 				67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */,
 				3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */,
@@ -888,6 +891,7 @@
 				1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */,
 				5A03FDA3ADA663B72A753A5C /* CollectionCreationSheet.swift in Sources */,
 				AD35DBA4F029E70A9B72068F /* CollectionPickerMenu.swift in Sources */,
+				B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */,
 				B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */,
 				50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */,
 				92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */,

@@ -58,8 +58,12 @@ struct QuikCaptureView: View {
 
                 Spacer()
 
-                pillRow
-                    .padding(.bottom, 20)
+                CollectionPillRail(
+                    selectedCollectionID: $selectedCollectionID,
+                    lockedID: forcedCollectionID,
+                    onCreateNew: { showCollectionCreation = true }
+                )
+                .padding(.bottom, 20)
 
                 if emptyClipboardMessageVisible {
                     Text("Nothing in clipboard yet.")
@@ -131,99 +135,6 @@ struct QuikCaptureView: View {
                 selectedCollectionID = store.lastUsedCollectionID
             }
         }
-    }
-
-    // MARK: - Pill rail (c4.4)
-
-    /// Builds the rail's display order: virtual Journal pill prepended to
-    /// `store.collections`, then the whole list sorted by
-    /// `collectionLastUsedAt` desc. Items with no recency entry fall to the
-    /// tail (their relative order preserved by stable sort). c4.5 will
-    /// append the "New +" pill at the very end.
-    private var railCollections: [NodeCollection] {
-        let journal = NodeCollection(id: NodeCollection.journalID, name: "Journal")
-        let all = [journal] + store.collections
-        return all.sorted { a, b in
-            let aDate = store.collectionLastUsedAt[a.id] ?? .distantPast
-            let bDate = store.collectionLastUsedAt[b.id] ?? .distantPast
-            return aDate > bDate
-        }
-    }
-
-    /// Renders one capsule per rail entry (Journal + user collections).
-    /// Selected pill is white-on-black; unselected pills are subtle. When
-    /// `forcedCollectionID` is set the rail is locked: only the forced pill
-    /// highlights and taps no-op.
-    private var pillRow: some View {
-        let isLocked = forcedCollectionID != nil
-        return ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(railCollections) { collection in
-                    pill(for: collection, isLocked: isLocked)
-                }
-                if !isLocked {
-                    newCollectionPill
-                }
-            }
-            .padding(.horizontal, 16)
-        }
-    }
-
-    /// c4.5 — "New +" pill at the far right. Always scrolls with the rest
-    /// of the rail (not pinned), discoverable as the last entry. Hidden
-    /// when the rail is locked (forced-collection capture path) since
-    /// creating a new collection mid-forced-capture would create a useless
-    /// orphan: the new node still lands in `forcedCollectionID`, not the
-    /// just-created one.
-    private var newCollectionPill: some View {
-        Button {
-            showCollectionCreation = true
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .bold))
-                Text("New")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .foregroundStyle(.white.opacity(0.75))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .overlay(
-                Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1)
-            )
-            .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func pill(for collection: NodeCollection, isLocked: Bool) -> some View {
-        let isSelected = effectiveCollectionID == collection.id
-        return Button {
-            guard !isLocked else { return }
-            if isSelected {
-                // Deselect: drop the pin without bumping recency. A pure
-                // deselect isn't a positive interaction, so it shouldn't
-                // promote the collection in the rail's order.
-                selectedCollectionID = nil
-                store.lastUsedCollectionID = nil
-            } else {
-                // Tap selects: bump recency AND set the active pin. Bumping
-                // recency on tap (vs only on capture) lets the rail respond
-                // to the user's expressed intent immediately.
-                store.markCollectionUsed(collection.id)
-                selectedCollectionID = collection.id
-            }
-        } label: {
-            Text(collection.name)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? .black : .white.opacity(isLocked ? 0.35 : 0.75))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(isSelected ? Color.white : Color(white: 0.18))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(isLocked)
     }
 
     private var exitPill: some View {

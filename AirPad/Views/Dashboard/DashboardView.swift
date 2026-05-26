@@ -91,6 +91,18 @@ struct DashboardView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+            // In-app capture overlay handoff. The overlay (mounted at
+            // ContentView) writes the picked / newly-captured node ID into
+            // `router.pendingNodeNavigationID`; here we resolve it against
+            // the store and push onto the dashboard's own NavigationStack.
+            // Clear the field after handling so it fires exactly once.
+            .onChange(of: router.pendingNodeNavigationID) { _, newValue in
+                guard let id = newValue,
+                      let node = store.nodes.first(where: { $0.id == id })
+                else { return }
+                path.append(node)
+                router.pendingNodeNavigationID = nil
+            }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                 isPresented: deleteDialogBinding,
@@ -250,7 +262,7 @@ struct DashboardView: View {
             HStack {
                 Spacer()
                 Button {
-                    router.entryMode = .quikCapture(forcedCollectionID: nil, origin: .dashboard)
+                    router.captureOverlay = CaptureOverlayContext(scope: .corpus)
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 24, weight: .semibold))

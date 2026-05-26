@@ -26,6 +26,13 @@ struct CaptureOverlayView: View {
 
     @State private var selectedCollectionID: String? = nil
 
+    /// Tag names selected via the `TagPillRail` (5-most-recent) and/or the
+    /// `TagSelectionSheet` ("More..." surface). Applied to the new node at
+    /// capture commit via `store.applyTags` — see the three commit paths
+    /// (`handlePotentialNewNode`, `commitLink`, `createDocumentNode`).
+    /// Empty selection is valid; capture proceeds normally with no tags.
+    @State private var selectedTagNames: Set<String> = []
+
     @State private var showVoiceCapture = false
     @State private var showCameraCapture = false
     @State private var showTextCapture = false
@@ -33,6 +40,7 @@ struct CaptureOverlayView: View {
     @State private var showLinkAlert = false
     @State private var showCollectionCreation = false
     @State private var showNodePicker = false
+    @State private var showTagSheet = false
 
     @State private var linkDraft: String = ""
 
@@ -98,6 +106,9 @@ struct CaptureOverlayView: View {
                 dismissAndNavigate(to: node.id)
             }
         }
+        .sheet(isPresented: $showTagSheet) {
+            TagSelectionSheet(selectedTagNames: $selectedTagNames)
+        }
         .alert("Add link", isPresented: $showLinkAlert) {
             TextField("https://example.com", text: $linkDraft)
                 .keyboardType(.URL)
@@ -126,6 +137,7 @@ struct CaptureOverlayView: View {
             Spacer()
             addToNodeButton
             collectionRail
+            tagRail
             entryTypeRow
                 .padding(.bottom, 32)
         }
@@ -167,6 +179,16 @@ struct CaptureOverlayView: View {
                 onCreateNew: { showCollectionCreation = true }
             )
         }
+    }
+
+    /// Tag rail sits between the collection rail and the entry-type row.
+    /// Independent of scope — tags apply in both `.corpus` and
+    /// `.collection(id)` capture contexts.
+    private var tagRail: some View {
+        TagPillRail(
+            selectedTagNames: $selectedTagNames,
+            onMore: { showTagSheet = true }
+        )
     }
 
     private func fixedCollectionPin(forID id: String) -> some View {
@@ -298,7 +320,15 @@ struct CaptureOverlayView: View {
         guard let snapshot = pendingCaptureSnapshot,
               let newID = store.nodes.first(where: { !snapshot.contains($0.id) })?.id
         else { return }
-        dismissAndNavigate(to: newID)
+        let tagsToApply = Array(selectedTagNames)
+        if tagsToApply.isEmpty {
+            dismissAndNavigate(to: newID)
+            return
+        }
+        Task {
+            await store.applyTags(tagsToApply, toNodeID: newID, source: .user)
+            dismissAndNavigate(to: newID)
+        }
     }
 
     private func clearPendingCapture() {
@@ -313,11 +343,15 @@ struct CaptureOverlayView: View {
         let trimmed = linkDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         linkDraft = ""
         guard !trimmed.isEmpty, let url = URL(string: trimmed) else { return }
+        let tagsToApply = Array(selectedTagNames)
         Task {
             let (nodeID, _) = await store.addLinkNode(
                 url: url,
                 targetCollectionID: effectiveCollectionID
             )
+            if !tagsToApply.isEmpty {
+                await store.applyTags(tagsToApply, toNodeID: nodeID, source: .user)
+            }
             dismissAndNavigate(to: nodeID)
         }
     }
@@ -356,10 +390,14 @@ struct CaptureOverlayView: View {
             x: Double.random(in: -80...80),
             y: Double.random(in: -80...80)
         )
+        let tagsToApply = Array(selectedTagNames)
         Task {
             await store.addNode(placeholder, position: position)
             if let cid = effectiveCollectionID {
                 store.markCollectionUsed(cid)
+            }
+            if !tagsToApply.isEmpty {
+                await store.applyTags(tagsToApply, toNodeID: nodeID, source: .user)
             }
             _ = await store.addDocumentEntry(nodeID: nodeID, sourceURLs: urls)
             dismissAndNavigate(to: nodeID)

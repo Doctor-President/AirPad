@@ -451,11 +451,10 @@ struct NodeDetailView: View {
     // MARK: - Floating "+" button (Stage 3.1a commit (c))
 
     /// Single entry point for adding entries. Bottom-right 56×56 white
-    /// circle matching the canvas/list `ActionButtonFan` styling, but
-    /// wired to a native SwiftUI `Menu` rather than the fan animation —
-    /// the dropdown is the right grammar inside a detail view, the fan
-    /// is the right grammar on the empty canvas. Order locked by brief:
-    /// Text, Camera, Voice, Link, Document, More... (More... is a
+    /// circle wired to a native SwiftUI `Menu` — the dropdown is the
+    /// right grammar inside a detail view, where the canvas / list "+"
+    /// instead opens the full in-app capture overlay. Order locked by
+    /// brief: Text, Camera, Voice, Link, Document, More... (More... is a
     /// no-op stub seat for 3.1a; the eventual sheet ships when there's
     /// something to put in it).
     private var floatingAddButton: some View {

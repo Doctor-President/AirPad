@@ -143,6 +143,15 @@ struct NodeDetailView: View {
             store.isInDetailView = false
             saveIfChanged()
         }
+        .onChange(of: node?.title) { old, new in
+            if editedTitle == (old ?? "") { editedTitle = new ?? "" }
+        }
+        .onChange(of: node?.summary) { old, new in
+            if editedSummary == (old ?? "") { editedSummary = new ?? "" }
+        }
+        .onChange(of: node?.tags) { old, new in
+            if editedTags == (old ?? []) { editedTags = new ?? [] }
+        }
         .confirmationDialog(
             "Make it permanent?",
             isPresented: $showPromoteConfirmation,

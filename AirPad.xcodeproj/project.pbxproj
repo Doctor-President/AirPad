@@ -142,6 +142,7 @@
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
+		B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC513418FD53025E45C9B6 /* BlockChunker.swift */; };
 		B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */; };
 		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
 		C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1822A03D5407145464AB94 /* AppRouter.swift */; };
@@ -233,6 +234,7 @@
 		323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteKitView.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
 		338373B19F63427D62FB1D74 /* UMAPSGD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSGD.swift; sourceTree = "<group>"; };
+		34AC513418FD53025E45C9B6 /* BlockChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChunker.swift; sourceTree = "<group>"; };
 		376265F2CCAF46EDE2216E54 /* NodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeBlock.swift; sourceTree = "<group>"; };
 		38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusIndex.swift; sourceTree = "<group>"; };
 		38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodService.swift; sourceTree = "<group>"; };
@@ -433,6 +435,7 @@
 				7A44945C77B8E8010F9421AC /* HDBSCAN */,
 				78757359D9135582165FEA36 /* UMAP */,
 				E617FBB5C1757939CF37710B /* AIService.swift */,
+				34AC513418FD53025E45C9B6 /* BlockChunker.swift */,
 				39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */,
 				04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */,
 				B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */,
@@ -885,6 +888,7 @@
 				D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */,
 				97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */,
 				524632EA61033FFCA11734F8 /* BentoLayout.swift in Sources */,
+				B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */,
 				D6D1FFF3000672E37FB9A96A /* CameraCaptureView.swift in Sources */,
 				61D32212DD37FB3544769B8A /* CanvasChrome.swift in Sources */,
 				734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */,

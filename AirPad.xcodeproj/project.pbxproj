@@ -122,6 +122,7 @@
 		A13084DE621F1F87415AC97F /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
+		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
 		ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */; };
 		AC00CAAEA3AB86F2D4455FD1 /* UMAPFindAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */; };
 		ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7814673E5A10B9F5E391DA4 /* SettingsView.swift */; };
@@ -248,6 +249,7 @@
 		4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkEntryBody.swift; sourceTree = "<group>"; };
 		4EAC56542567C77B0E89E836 /* UMAPRandom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPRandom.swift; sourceTree = "<group>"; };
 		579FF08E333E57A78D8A5C84 /* GalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryBody.swift; sourceTree = "<group>"; };
+		586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPillRail.swift; sourceTree = "<group>"; };
 		592EF17AD51166EAA3E577F2 /* CanvasScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasScope.swift; sourceTree = "<group>"; };
 		5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateSelfTest.swift; sourceTree = "<group>"; };
 		5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridView.swift; sourceTree = "<group>"; };
@@ -487,6 +489,7 @@
 				C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */,
 				B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */,
 				67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */,
+				586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */,
 				3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */,
 			);
 			path = Capture;
@@ -982,6 +985,7 @@
 				8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */,
 				AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */,
 				729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */,
+				AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */,
 				2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */,
 				019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */,
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,

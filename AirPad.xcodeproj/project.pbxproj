@@ -19,6 +19,7 @@
 		0A1E663CC31AC33AC01C329C /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0DA4D90F51F7EBBB06AF43BF /* UMAPRandom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EAC56542567C77B0E89E836 /* UMAPRandom.swift */; };
 		0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */; };
+		0E4728F3BB69F32DCABA416B /* CaptureOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */; };
 		0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */; };
 		0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */; };
@@ -243,6 +244,7 @@
 		495540C7C08695DEA4B137D3 /* DocumentGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryTile.swift; sourceTree = "<group>"; };
 		496C87CE26D129958AA115EF /* EntryMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigration.swift; sourceTree = "<group>"; };
 		497A2D223E494E948D445DFF /* NodeGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGradientBackground.swift; sourceTree = "<group>"; };
+		49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOverlayView.swift; sourceTree = "<group>"; };
 		4D539DCAE9FDB57420DF7460 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
 		4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkEntryBody.swift; sourceTree = "<group>"; };
 		4EAC56542567C77B0E89E836 /* UMAPRandom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPRandom.swift; sourceTree = "<group>"; };
@@ -483,6 +485,7 @@
 			isa = PBXGroup;
 			children = (
 				6A83DC80F346033224EFCA60 /* ActionButtonFan.swift */,
+				49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */,
 				6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */,
 				C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */,
 				B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */,
@@ -885,6 +888,7 @@
 				94765E10145D5017BDE18696 /* CanvasState.swift in Sources */,
 				14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */,
 				CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */,
+				0E4728F3BB69F32DCABA416B /* CaptureOverlayView.swift in Sources */,
 				A795741744098AF3B305335B /* CardBlurTest.swift in Sources */,
 				86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */,
 				FD2F516F643CD089B6E84F12 /* ClipboardContentRouterDiagnostic.swift in Sources */,

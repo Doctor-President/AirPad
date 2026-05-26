@@ -36,7 +36,25 @@ final class AppRouter {
 
     var entryMode: EntryMode = .dashboard
 
+    /// In-app capture overlay state. Non-nil presents the blur overlay above
+    /// the active entry mode (dashboard / canvas / collectionCanvas) without
+    /// changing entry mode itself — the user stays in their current context
+    /// and the overlay slides over it. Nil dismisses the overlay.
+    ///
+    /// Distinct from `.quikCapture` entry mode: that's the external (URL
+    /// scheme / lock screen) full-screen QuikCapture surface, which remains
+    /// unchanged by the in-app capture overlay arc.
+    var captureOverlay: CaptureOverlayContext? = nil
+
     init() {
         AppRouter.shared = self
     }
+}
+
+/// Context for the in-app capture overlay. `scope` controls whether the
+/// collection pill rail is interactive (`.corpus`: full rail, defaults to
+/// last-used) or locked to a fixed pin (`.collection(id)`: rail shows the
+/// active collection only, taps no-op — capture lands in that collection).
+struct CaptureOverlayContext: Sendable, Equatable {
+    var scope: CanvasScope
 }

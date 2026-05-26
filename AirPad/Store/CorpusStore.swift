@@ -112,6 +112,18 @@ final class CorpusStore {
     var collectionLastUsedAt: [String: Date] = CorpusStore.loadCollectionLastUsedAt() {
         didSet { Self.saveCollectionLastUsedAt(collectionLastUsedAt) }
     }
+
+    /// Per-tag last-user-touch timestamps that drive the capture overlay's
+    /// `TagPillRail` recency order. Keyed by tag name (the same identity the
+    /// tag vocabulary uses on `Node.tags`). Bumped on `.user`-sourced
+    /// `applyTags` and on `addTag(_:toNodes:)`; `.model`-sourced applies are
+    /// intentionally NOT bumped — the rail surfaces what the user reaches
+    /// for, not what AI inferred. Mirrors the `collectionLastUsedAt`
+    /// persistence model: UserDefaults via `didSet`, not in `tags.json`, so
+    /// every pill tap doesn't rewrite that file.
+    var tagLastUsedAt: [String: Date] = CorpusStore.loadTagLastUsedAt() {
+        didSet { Self.saveTagLastUsedAt(tagLastUsedAt) }
+    }
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
     /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
@@ -2466,12 +2478,18 @@ final class CorpusStore {
     }
 
     func deleteTag(id: UUID) async {
+        let removedName = tags.first(where: { $0.id == id })?.name
         tags.removeAll { $0.id == id }
+        if let removedName {
+            tagLastUsedAt.removeValue(forKey: removedName)
+        }
         await persistTags()
     }
 
     /// Applies tag names to a node, merging with its existing tags (no duplicates).
     /// `source` records provenance in `tagSources` — never downgrades `.user` to `.model`.
+    /// `.user`-sourced applies bump `tagLastUsedAt` for each name (drives the
+    /// capture overlay's `TagPillRail` recency); `.model` applies do not.
     func applyTags(_ tagNames: [String], toNodeID nodeID: String, source: TagSource = .user) async {
         guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[idx]
@@ -2481,6 +2499,12 @@ final class CorpusStore {
             }
             if source == .user || updated.tagSources[name] == nil {
                 updated.tagSources[name] = TagOrigin(source: source)
+            }
+        }
+        if source == .user {
+            let now = Date()
+            for name in tagNames {
+                tagLastUsedAt[name] = now
             }
         }
         await updateNode(updated)
@@ -2592,6 +2616,7 @@ final class CorpusStore {
 
     private static let udLastUsedCollectionIDKey = "com.airpad.dashboard.lastUsedCollectionID"
     private static let udCollectionLastUsedAtKey = "com.airpad.dashboard.collectionLastUsedAt"
+    private static let udTagLastUsedAtKey = "com.airpad.capture.tagLastUsedAt"
 
     private static func loadLastUsedCollectionID() -> String? {
         UserDefaults.standard.string(forKey: udLastUsedCollectionIDKey)
@@ -2615,6 +2640,19 @@ final class CorpusStore {
     private static func saveCollectionLastUsedAt(_ map: [String: Date]) {
         if let data = try? JSONEncoder().encode(map) {
             UserDefaults.standard.set(data, forKey: udCollectionLastUsedAtKey)
+        }
+    }
+
+    private static func loadTagLastUsedAt() -> [String: Date] {
+        guard let data = UserDefaults.standard.data(forKey: udTagLastUsedAtKey),
+              let map = try? JSONDecoder().decode([String: Date].self, from: data)
+        else { return [:] }
+        return map
+    }
+
+    private static func saveTagLastUsedAt(_ map: [String: Date]) {
+        if let data = try? JSONEncoder().encode(map) {
+            UserDefaults.standard.set(data, forKey: udTagLastUsedAtKey)
         }
     }
 
@@ -3842,6 +3880,8 @@ final class CorpusStore {
                 print("[CorpusStore] addTag(batch): saveNode error for \(node.id): \(error)")
             }
         }
+
+        tagLastUsedAt[trimmed] = Date()
     }
 
     // MARK: - Batch collection membership

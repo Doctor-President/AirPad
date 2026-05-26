@@ -23,12 +23,32 @@ struct QuikCaptureView: View {
     @State private var showCameraCapture: Bool = false
     @State private var showTextCapture: Bool = false
     @State private var showCollectionCreation: Bool = false
+    @State private var showTagSheet: Bool = false
     @State private var prefilledText: String = ""
     @State private var emptyClipboardMessageVisible: Bool = false
     @State private var linkReceipt: LinkReceiptIDs? = nil
     /// c4.3 — local pill selection. c4.4 will hydrate this from
     /// `store.lastUsedCollectionID` on appear and persist taps back.
     @State private var selectedCollectionID: String? = nil
+
+    /// Tag names selected via the `TagPillRail` and/or `TagSelectionSheet`
+    /// "More..." surface. Persists across captures within a QuikCapture
+    /// session (same grammar as `selectedCollectionID` — pick once, applies
+    /// to every subsequent capture until cleared). Resets to empty on next
+    /// session entry (URL-scheme reentry recreates @State). Applied to the
+    /// new node at capture commit via `store.applyTags`.
+    @State private var selectedTagNames: Set<String> = []
+
+    /// Snapshot of `store.nodes.id`s captured at the moment the user taps
+    /// Voice/Camera/Text/Clipboard-text. The reactive `onChange(of:
+    /// store.nodes.count)` observer diffs against this to find the
+    /// newly-landed node and apply selected tags. Mirrors
+    /// `CaptureOverlayView.armNewNodeCapture` — the inner capture sheets
+    /// dispatch `Task { await addNode }` then `dismiss()` synchronously, so
+    /// `onDismiss` snapshots miss the new node. 3s self-cleaning timeout
+    /// covers cancelled / failed captures.
+    @State private var pendingCaptureSnapshot: Set<String>? = nil
+    @State private var captureTimeoutTask: Task<Void, Never>? = nil
 
     /// The collection ID actually stamped onto new captures. Forced (from
     /// router) wins over local pill selection.
@@ -63,6 +83,12 @@ struct QuikCaptureView: View {
                     lockedID: forcedCollectionID,
                     onCreateNew: { showCollectionCreation = true }
                 )
+                .padding(.bottom, 12)
+
+                TagPillRail(
+                    selectedTagNames: $selectedTagNames,
+                    onMore: { showTagSheet = true }
+                )
                 .padding(.bottom, 20)
 
                 if emptyClipboardMessageVisible {
@@ -76,15 +102,18 @@ struct QuikCaptureView: View {
                 HStack(spacing: 0) {
                     Spacer()
                     captureButton(symbol: "mic.fill", label: "Voice") {
+                        armNewNodeCapture()
                         showVoiceCapture = true
                     }
                     Spacer()
                     captureButton(symbol: "camera.fill", label: "Camera") {
+                        armNewNodeCapture()
                         showCameraCapture = true
                     }
                     Spacer()
                     captureButton(symbol: "pencil", label: "Text") {
                         prefilledText = ""
+                        armNewNodeCapture()
                         showTextCapture = true
                     }
                     Spacer()
@@ -125,6 +154,12 @@ struct QuikCaptureView: View {
                 store.markCollectionUsed(newCollection.id)
                 selectedCollectionID = newCollection.id
             }
+        }
+        .sheet(isPresented: $showTagSheet) {
+            TagSelectionSheet(selectedTagNames: $selectedTagNames)
+        }
+        .onChange(of: store.nodes.count) { _, _ in
+            handlePotentialNewNode()
         }
         .onAppear {
             // c4.4 — pre-select the user's last-used pill on entry. Forced
@@ -204,11 +239,43 @@ struct QuikCaptureView: View {
                     createLinkNode(url: url)
                 } else if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     prefilledText = text
+                    armNewNodeCapture()
                     showTextCapture = true
                 } else {
                     showEmptyClipboardMessage()
                 }
             }
+        }
+    }
+
+    // MARK: - Reactive new-node tag application
+
+    /// Snapshot the current node-ID set at the moment the user taps a
+    /// capture button. The `onChange(of: store.nodes.count)` observer
+    /// diffs against this snapshot when the inner sheet's `addNode` lands
+    /// and applies `selectedTagNames` to the new node. 3s timeout
+    /// self-cleans the snapshot if the capture is cancelled or fails.
+    private func armNewNodeCapture() {
+        pendingCaptureSnapshot = Set(store.nodes.map(\.id))
+        captureTimeoutTask?.cancel()
+        captureTimeoutTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            pendingCaptureSnapshot = nil
+        }
+    }
+
+    private func handlePotentialNewNode() {
+        guard let snapshot = pendingCaptureSnapshot,
+              let newID = store.nodes.first(where: { !snapshot.contains($0.id) })?.id
+        else { return }
+        let tagsToApply = Array(selectedTagNames)
+        pendingCaptureSnapshot = nil
+        captureTimeoutTask?.cancel()
+        captureTimeoutTask = nil
+        guard !tagsToApply.isEmpty else { return }
+        Task {
+            await store.applyTags(tagsToApply, toNodeID: newID, source: .user)
         }
     }
 
@@ -227,6 +294,7 @@ struct QuikCaptureView: View {
     // MARK: - Link node creation
 
     private func createLinkNode(url: URL) {
+        let tagsToApply = Array(selectedTagNames)
         Task {
             // AT19.3c commit 6 — receipt overlay. Present immediately after
             // the node lands in the store so the receipt can resolve the
@@ -239,6 +307,9 @@ struct QuikCaptureView: View {
                 url: url,
                 targetCollectionID: effectiveCollectionID
             )
+            if !tagsToApply.isEmpty {
+                await store.applyTags(tagsToApply, toNodeID: nodeID, source: .user)
+            }
             linkReceipt = LinkReceiptIDs(nodeID: nodeID, itemID: itemID)
         }
     }

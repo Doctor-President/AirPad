@@ -98,6 +98,33 @@ actor iCloudDriveService {
         }
     }
 
+    // MARK: - Block embedding sidecar
+
+    /// Per-node block-embedding sidecar at `nodes/<nodeID>/blocks.json`.
+    /// Derived data — regenerable from node text via `BlockChunker`. Lives
+    /// inside the node's own directory so `deleteNode` (which removes the
+    /// whole directory) auto-cleans it; no symmetric delete method is
+    /// needed.
+    func saveBlockIndex(_ index: NodeBlockIndex, forNodeID nodeID: String) throws {
+        let root = try requireRoot()
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+        let data = try JSONEncoder.airPad.encode(index)
+        try data.write(to: nodeDir.appendingPathComponent("blocks.json"), options: .atomic)
+    }
+
+    /// Returns nil when the sidecar is absent — callers treat that as
+    /// "never built" and trigger a fresh chunk + embed pass. Mirrors
+    /// `loadCollections` rather than `loadTags`: missing-file is a
+    /// meaningful signal here, not an empty list.
+    func loadBlockIndex(forNodeID nodeID: String) throws -> NodeBlockIndex? {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("nodes/\(nodeID)/blocks.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode(NodeBlockIndex.self, from: data)
+    }
+
     // MARK: - Media files
 
     /// Copies a media file (audio, image, video) into the node's `items/` subdirectory.

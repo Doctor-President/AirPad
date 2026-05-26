@@ -227,84 +227,19 @@ struct QuikCaptureView: View {
     // MARK: - Link node creation
 
     private func createLinkNode(url: URL) {
-        let nodeID = UUID().uuidString
-        let itemID = UUID().uuidString
-        let now = Date()
-        let initialTitle = url.host ?? url.absoluteString
-
-        let item = NodeItem(
-            id: itemID,
-            type: .link,
-            createdAt: now,
-            content: nil,
-            file: nil,
-            description: nil,
-            transcript: nil,
-            durationSeconds: nil,
-            url: url.absoluteString,
-            title: initialTitle,
-            preview: nil
-        )
-        let stamp = NodeCollection.captureStamp(forCollectionID: effectiveCollectionID)
-        let node = Node(
-            id: nodeID,
-            createdAt: now,
-            updatedAt: now,
-            title: initialTitle,
-            summary: "",
-            tags: [],
-            mood: nil,
-            isMeta: false,
-            provenance: nil,
-            threads: [],
-            location: nil,
-            items: [item],
-            domain: nil,
-            domainConfirmed: false,
-            needsAIProcessing: true,
-            journalDate: stamp.journalDate,
-            collectionIDs: stamp.collectionIDs
-        )
-        let position = CGPoint(
-            x: Double.random(in: -80...80),
-            y: Double.random(in: -80...80)
-        )
-
         Task {
-            // AT19.3c — eager OG fetch. Kick the fetch off in parallel with
-            // `addNode` so the request is already in flight by the time the
-            // node has landed in the store; under typical network conditions
-            // the metadata is back within the same task lifetime and lands
-            // on the entry before the user ever sees the bare-URL state.
-            async let fetchTask = OGMetadataService().fetch(url: url)
-            await store.addNode(node, position: position)
-            if let cid = effectiveCollectionID {
-                store.markCollectionUsed(cid)
-            }
             // AT19.3c commit 6 — receipt overlay. Present immediately after
             // the node lands in the store so the receipt can resolve the
             // item; if OG hasn't returned yet the overlay shows State B
             // (bare URL) and upgrades to State C in-place when applyOGFetch
-            // mutates the store within the 1.0s window.
+            // mutates the store within the 1.0s window. The OG fetch +
+            // title upgrade + AI processing run silently inside
+            // `store.addLinkNode` after this call returns.
+            let (nodeID, itemID) = await store.addLinkNode(
+                url: url,
+                targetCollectionID: effectiveCollectionID
+            )
             linkReceipt = LinkReceiptIDs(nodeID: nodeID, itemID: itemID)
-            let metadata = await fetchTask
-            await store.applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
-
-            // Propagate `ogTitle` to the node's display title and the entry's
-            // legacy `title` field so canvas + AI processing pick up the
-            // richer name instead of the bare host. `applyOGFetch` only
-            // touches the OG fields; these are 3.1a-shape mutations.
-            if let ogTitle = metadata?.title, !ogTitle.isEmpty,
-               var current = store.nodes.first(where: { $0.id == nodeID }) {
-                current.title = ogTitle
-                if !current.items.isEmpty {
-                    current.items[0].title = ogTitle
-                }
-                current.updatedAt = Date()
-                await store.updateNode(current)
-            }
-
-            await store.processNodeWithAI(nodeID: nodeID)
         }
     }
 }

@@ -496,6 +496,100 @@ final class CorpusStore {
         // Single-node insert does not trigger evaluation against an incomplete corpus (SB123).
     }
 
+    /// Creates a new link node from a URL and kicks off the OG-fetch + AI
+    /// pipeline in the background. Returns once the node has landed in the
+    /// store (so callers can immediately present receipts or navigate to it);
+    /// the OG metadata + title upgrade + AI processing continue silently
+    /// after return.
+    ///
+    /// Extracted from `QuikCaptureView.createLinkNode` (AT19.3c) so the
+    /// in-app capture overlay can share the pipeline without duplicating
+    /// the OG/AI orchestration. QuikCapture's receipt overlay UX stays on
+    /// the QuikCapture side — it just calls this and uses the returned IDs.
+    @discardableResult
+    func addLinkNode(url: URL, targetCollectionID: String?) async -> (nodeID: String, itemID: String) {
+        let nodeID = UUID().uuidString
+        let itemID = UUID().uuidString
+        let now = Date()
+        let initialTitle = url.host ?? url.absoluteString
+
+        let item = NodeItem(
+            id: itemID,
+            type: .link,
+            createdAt: now,
+            content: nil,
+            file: nil,
+            description: nil,
+            transcript: nil,
+            durationSeconds: nil,
+            url: url.absoluteString,
+            title: initialTitle,
+            preview: nil
+        )
+        let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
+        let node = Node(
+            id: nodeID,
+            createdAt: now,
+            updatedAt: now,
+            title: initialTitle,
+            summary: "",
+            tags: [],
+            mood: nil,
+            isMeta: false,
+            provenance: nil,
+            threads: [],
+            location: nil,
+            items: [item],
+            domain: nil,
+            domainConfirmed: false,
+            needsAIProcessing: true,
+            journalDate: stamp.journalDate,
+            collectionIDs: stamp.collectionIDs
+        )
+        let position = CGPoint(
+            x: Double.random(in: -80...80),
+            y: Double.random(in: -80...80)
+        )
+
+        // Eager OG fetch: detached so it runs in parallel with addNode and
+        // survives this function's return — the inner pipeline awaits its
+        // value below. Mirrors the `async let fetchTask` shape of the
+        // pre-refactor QuikCapture path.
+        let fetchHandle = Task.detached { await OGMetadataService().fetch(url: url) }
+
+        await addNode(node, position: position)
+        if let cid = targetCollectionID {
+            markCollectionUsed(cid)
+        }
+
+        // Continue OG + title upgrade + AI in the background. Caller has
+        // already received the IDs and can present receipts / navigate;
+        // applyOGFetch will mutate the store live and any observer (the
+        // QuikCapture receipt, the detail view's entry card) upgrades
+        // in place.
+        Task { [self] in
+            let metadata = await fetchHandle.value
+            await applyOGFetch(nodeID: nodeID, itemID: itemID, metadata: metadata)
+
+            // Propagate OG title to display title + legacy item title so
+            // canvas + AI pipeline pick up the rich name (matches the
+            // 3.1a-shape mutation pattern in the original QuikCapture
+            // path).
+            if let ogTitle = metadata?.title, !ogTitle.isEmpty,
+               var current = nodes.first(where: { $0.id == nodeID }) {
+                current.title = ogTitle
+                if !current.items.isEmpty {
+                    current.items[0].title = ogTitle
+                }
+                current.updatedAt = Date()
+                await updateNode(current)
+            }
+            await processNodeWithAI(nodeID: nodeID)
+        }
+
+        return (nodeID, itemID)
+    }
+
     // MARK: - Journal find-or-create (Dashboard Stage 2)
 
     /// Returns today's journal Node, creating it if it doesn't exist yet.

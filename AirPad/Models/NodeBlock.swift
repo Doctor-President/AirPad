@@ -12,8 +12,12 @@ struct NodeBlock: Codable, Equatable {
     /// so future jump-to-block UX can keep deep links valid through edits.
     let blockID: String
 
-    /// Parent `NodeItem.id`. Lets the chunker scope rebuilds to a single
-    /// item when only one item's content changed.
+    /// ID of the most specific source-of-text record. `NodeItem.id` for
+    /// `.text` / `.audio` / single-image / legacy-link entries; the inner
+    /// `DocumentItem.id` or `LinkItem.id` when the parent entry holds a
+    /// gallery of sub-items each with their own extracted text. Per-sub-item
+    /// keying lets one stale document inside a multi-doc entry invalidate
+    /// without poisoning its siblings.
     let itemID: String
 
     /// Position within the item's chunked output. Display/order signal —

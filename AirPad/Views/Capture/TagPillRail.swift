@@ -52,8 +52,20 @@ struct TagPillRail: View {
         }
     }
 
+    /// Resolves the tag's stored color, falling back to gray when the tag
+    /// is missing from the vocabulary or its hex doesn't parse — matches
+    /// `TagChip` in `NodeDetailView` so capture-time and node-detail
+    /// surfaces read as the same tag.
+    private func color(for tagName: String) -> Color {
+        guard let tag = store.tags.first(where: { $0.name == tagName }),
+              let parsed = Color(hex: tag.colorHex)
+        else { return .gray }
+        return parsed
+    }
+
     private func pill(for tagName: String) -> some View {
         let isSelected = selectedTagNames.contains(tagName)
+        let tagColor = color(for: tagName)
         return Button {
             if isSelected {
                 selectedTagNames.remove(tagName)
@@ -63,10 +75,16 @@ struct TagPillRail: View {
         } label: {
             Text(tagName)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? .black : .white.opacity(0.75))
+                .foregroundStyle(.white)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(isSelected ? Color.white : Color(white: 0.18))
+                .background(isSelected ? tagColor : tagColor.opacity(0.18))
+                .overlay(
+                    Capsule().stroke(
+                        isSelected ? Color.clear : tagColor.opacity(0.5),
+                        lineWidth: 1
+                    )
+                )
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)

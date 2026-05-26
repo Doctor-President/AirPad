@@ -46,6 +46,14 @@ final class AppRouter {
     /// unchanged by the in-app capture overlay arc.
     var captureOverlay: CaptureOverlayContext? = nil
 
+    /// One-shot navigation handoff from the capture overlay. Set when the
+    /// user picks a node in `NodePickerSheet` or completes a capture that
+    /// should drop them into the detail view. Each NavigationStack-owning
+    /// surface (DashboardView, CanvasView, NodeListView) observes this and
+    /// appends the matching node to its own path, then clears the field so
+    /// it fires exactly once.
+    var pendingNodeNavigationID: String? = nil
+
     init() {
         AppRouter.shared = self
     }

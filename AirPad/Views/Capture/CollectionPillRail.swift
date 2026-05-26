@@ -6,9 +6,15 @@ import SwiftUI
 ///
 /// Rail order: virtual Journal pill prepended, then all user collections
 /// sorted by `collectionLastUsedAt` desc (unmapped entries fall to the tail
-/// via `.distantPast`, stable order preserved). Tap on a non-selected pill
-/// bumps recency AND pins selection; tap on the selected pill deselects
-/// without bumping recency (pure deselect isn't a positive interaction).
+/// via `.distantPast`, stable order preserved). Tap pins selection and
+/// updates `lastUsedCollectionID` for next-session pre-hydration, but does
+/// NOT bump `collectionLastUsedAt` — the rail order stays stable across
+/// the multi-tap selection session (same grammar as `TagPillRail`). Tap on
+/// the selected pill deselects.
+///
+/// Recency is bumped via other paths: entering a CollectionView
+/// (`.onAppear` calls `markCollectionUsed`), creating a new collection via
+/// `CollectionCreationSheet`, and document creation in the overlay.
 ///
 /// Modes:
 /// - **Interactive** (`lockedID == nil`): rail responds to taps; "New +"
@@ -63,7 +69,7 @@ struct CollectionPillRail: View {
                 selectedCollectionID = nil
                 store.lastUsedCollectionID = nil
             } else {
-                store.markCollectionUsed(collection.id)
+                store.lastUsedCollectionID = collection.id
                 selectedCollectionID = collection.id
             }
         } label: {

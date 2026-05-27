@@ -166,6 +166,32 @@ final class LibrarianState {
     /// or once we add a model name → known-window-size map.
     static let askPassageCharBudget: Int = 12_000
 
+    /// Full-context char budget — drives the context ring visualization.
+    /// Wider than `askPassageCharBudget` because the ring tracks
+    /// everything that flows to the model (system prompt + retrieved
+    /// passages + question + future multi-turn history) against the
+    /// model's full window, not just the passage reservation. Sized to a
+    /// 4096-token (~16k char) Mistral / LM Studio default with a small
+    /// safety margin so the ring hits ~85% before the model errors.
+    static let contextBudgetChars: Int = 14_000
+
+    /// 0…1 estimate of how much of the context window will be consumed
+    /// by the current/next query. Drives the ring color/fill in the
+    /// surface header.
+    ///
+    /// c6a scope: system-prompt baseline + current input length only.
+    /// The retrieval reservation (`askPassageCharBudget`) is *not*
+    /// counted here — passages are committed per query, not held across
+    /// turns, so adding them to the standing fill makes the ring read
+    /// "almost full" before the user has typed anything. Multi-turn
+    /// history accrual lands the `sessionHistory` term in c6b/c6c.
+    var contextFillFraction: Double {
+        let baseline = askSystemPrompt.count
+        let questionChars = inputText.count
+        let used = baseline + questionChars
+        return min(1.0, Double(used) / Double(Self.contextBudgetChars))
+    }
+
     /// Greedy first-fit trim by character count. The `!result.isEmpty` guard
     /// guarantees at least one passage is sent even if the top match alone
     /// blows the budget — better to overshoot by one block than to send a

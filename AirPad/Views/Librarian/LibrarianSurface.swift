@@ -119,10 +119,7 @@ struct LibrarianSurface: View {
                 .frame(maxWidth: .infinity)
 
             HStack {
-                Image(systemName: librarian.activeMode.sfSymbol)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
+                modeIconWithRing(librarian: librarian)
                     .padding(.leading, 16)
                 Spacer()
             }
@@ -132,6 +129,23 @@ struct LibrarianSurface: View {
         .onTapGesture {
             librarian.surfaceMode = .expanded
         }
+    }
+
+    /// Mode icon + context ring composed as one unit so both surface
+    /// states (collapsed pill, expanded header) share the same hit
+    /// target and ring placement. Ring sits one pixel of breathing room
+    /// outside the 32pt icon frame; tap inside the ring still triggers
+    /// the parent action.
+    @ViewBuilder
+    private func modeIconWithRing(librarian: LibrarianState) -> some View {
+        ZStack {
+            ContextRing(fraction: librarian.contextFillFraction)
+            Image(systemName: librarian.activeMode.sfSymbol)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+        }
+        .frame(width: 38, height: 38)
     }
 
     // MARK: - Expanded
@@ -144,10 +158,7 @@ struct LibrarianSurface: View {
                 Button {
                     showModeDropdown = true
                 } label: {
-                    Image(systemName: librarian.activeMode.sfSymbol)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(.white)
-                        .frame(width: 32, height: 32)
+                    modeIconWithRing(librarian: librarian)
                 }
                 .buttonStyle(.plain)
                 .popover(isPresented: $showModeDropdown, arrowEdge: .top) {

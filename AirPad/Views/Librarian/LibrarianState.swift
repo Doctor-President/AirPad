@@ -15,12 +15,18 @@ import FoundationModels
 @MainActor
 final class LibrarianState {
 
-    /// Surface state — collapsed pill vs expanded chrome. Future commits
-    /// add `.iconOnly` once the mode icon can persist as ambient
-    /// presence after a chevron-collapse.
+    /// Surface state — collapsed pill, default expanded chrome, or
+    /// fullScreen for the drag-up-to-fill mode (c13). All three
+    /// states share the same chrome; only the outer frame height
+    /// shifts. `.fullScreen` exists in every mode (not just
+    /// Research) so any pipeline that wants more vertical room —
+    /// long Ask transcripts, busy Research stages, future Provoke
+    /// observation threads — can claim it. Future commits add
+    /// `.iconOnly` for chevron-collapse-but-stay-present.
     enum SurfaceMode: Sendable {
         case collapsed
         case expanded
+        case fullScreen
     }
 
     /// Librarian mode — which pipeline runs on send. For c3 this is

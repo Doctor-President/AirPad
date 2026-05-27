@@ -80,6 +80,9 @@ targets:
         NSSpeechRecognitionUsageDescription: "AirPad uses speech recognition to transcribe your voice notes."
         NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as ideas."
         NSPhotoLibraryUsageDescription: "AirPad can add photos from your library to an idea."
+        NSLocalNetworkUsageDescription: "AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
 
   AirPadShare:
     type: app-extension

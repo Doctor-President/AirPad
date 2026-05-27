@@ -432,16 +432,43 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
                 .lineLimit(1...4)
 
-            Button {
-                Task { await librarian.executeQuery(store: store) }
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
+            // Keyboard is up + field is empty → swap send for a
+            // dismiss-keyboard affordance. Sending is a no-op while
+            // empty (button is disabled) so the slot doubles as the
+            // most useful action available right now: get the
+            // keyboard out of the way and let the surface go back
+            // to full height. With text in the field, send wins —
+            // sending naturally unfocuses and dismisses the
+            // keyboard, so a separate dismiss is redundant.
+            let showDismissButton = keyboardHeight > 0
+                && librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+            if showDismissButton {
+                Button {
+                    isInputFocused = false
+                } label: {
+                    Image(systemName: "keyboard.chevron.compact.down")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 10)
+                .accessibilityLabel("Dismiss keyboard")
+                .transition(.opacity)
+            } else {
+                Button {
+                    Task { await librarian.executeQuery(store: store) }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
+                }
+                .buttonStyle(.plain)
+                .disabled(!sendIsEnabled(librarian: librarian))
+                .padding(.trailing, 10)
+                .transition(.opacity)
             }
-            .buttonStyle(.plain)
-            .disabled(!sendIsEnabled(librarian: librarian))
-            .padding(.trailing, 10)
         }
         .frame(minHeight: 48)
         .background(Color.white.opacity(0.04))

@@ -92,11 +92,11 @@ struct LibrarianSurface: View {
             switch librarian.surfaceMode {
             case .collapsed:
                 collapsedBody(librarian: librarian)
-            case .expanded:
+            case .expanded, .fullScreen:
                 expandedBody(librarian: librarian)
             }
         }
-        .frame(height: librarian.surfaceMode == .collapsed ? 78 : 452)
+        .frame(height: surfaceFrameHeight(for: librarian.surfaceMode))
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: librarian.surfaceMode)
         .onAppear {
             startGradientAnimation()
@@ -115,6 +115,65 @@ struct LibrarianSurface: View {
                 onOpenNote: { router.pendingNodeNavigationID = context.nodeID }
             )
             .environment(store)
+        }
+    }
+
+    /// Frame height per surface mode. `.fullScreen` claims most of
+    /// the device's vertical space — the parent VStack absorbs the
+    /// rest via its `Spacer`, and the host's bottom padding keeps
+    /// the surface off the home indicator. Capped at the visible
+    /// screen height so a giant simulator size doesn't blow past
+    /// the safe area; floored generously so the drag actually feels
+    /// like it claimed the screen even on a compact device.
+    private func surfaceFrameHeight(for mode: LibrarianState.SurfaceMode) -> CGFloat {
+        switch mode {
+        case .collapsed: return 78
+        case .expanded:  return 452
+        case .fullScreen:
+            let screenH = UIScreen.main.bounds.height
+            return max(560, screenH - 160)
+        }
+    }
+
+    /// Top-edge drag grabber. Vertical drag commits on release to the
+    /// next/previous surface mode (collapsed ↔ expanded ↔ fullScreen).
+    /// Threshold-based rather than live-tracked so the spring
+    /// animation owns the transition — a partial drag snaps back
+    /// rather than leaving the surface at a half-state height.
+    @ViewBuilder
+    private func dragGrabber(librarian: LibrarianState) -> some View {
+        Capsule()
+            .fill(Color.white.opacity(0.22))
+            .frame(width: 38, height: 5)
+            .frame(height: 22)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 6)
+                    .onEnded { value in
+                        let dy = value.translation.height
+                        if dy < -40 {
+                            advanceSurface(librarian: librarian, direction: .up)
+                        } else if dy > 40 {
+                            advanceSurface(librarian: librarian, direction: .down)
+                        }
+                    }
+            )
+            .accessibilityLabel("Drag to resize Librarian")
+    }
+
+    private enum SurfaceDragDirection { case up, down }
+
+    /// State machine for drag transitions. Up grows the surface
+    /// (collapsed→expanded→fullScreen, fullScreen stays); down
+    /// shrinks (fullScreen→expanded→collapsed, collapsed stays).
+    private func advanceSurface(librarian: LibrarianState, direction: SurfaceDragDirection) {
+        switch (librarian.surfaceMode, direction) {
+        case (.collapsed, .up):    librarian.surfaceMode = .expanded
+        case (.expanded, .up):     librarian.surfaceMode = .fullScreen
+        case (.fullScreen, .down): librarian.surfaceMode = .expanded
+        case (.expanded, .down):   librarian.surfaceMode = .collapsed
+        default: break
         }
     }
 
@@ -165,7 +224,10 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func expandedBody(librarian: LibrarianState) -> some View {
         VStack(spacing: 0) {
-            // Header: mode icon (tap → dropdown) + chevron (tap → collapse)
+            dragGrabber(librarian: librarian)
+                .padding(.top, 6)
+
+            // Header: mode icon (tap → dropdown) + chevron (tap → step down)
             HStack {
                 Button {
                     showModeDropdown = true
@@ -189,7 +251,7 @@ struct LibrarianSurface: View {
                 }
 
                 Button {
-                    librarian.surfaceMode = .collapsed
+                    advanceSurface(librarian: librarian, direction: .down)
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 14, weight: .semibold))
@@ -199,7 +261,7 @@ struct LibrarianSurface: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
+            .padding(.top, 2)
             .padding(.bottom, 6)
 
             scopeChipRow(librarian: librarian)

@@ -23,10 +23,17 @@ struct NodeCollection: Codable, Identifiable, Hashable {
 
     static let corpusID = "_corpus"
     static let journalID = "_journal"
+    /// Librarian-managed reserved ID. Unlike Corpus/Journal (which are
+    /// virtual), this collection is *persisted* in `CorpusStore.collections`
+    /// — the dashboard renders it as a real row alongside user collections.
+    /// Materialized lazily on the first `LibrarianState.saveSessionAsNode`
+    /// call so users who never use Librarian don't see it.
+    static let librarianSessionsID = "_librarian_sessions"
 
     var isCorpus: Bool { id == Self.corpusID }
     var isJournal: Bool { id == Self.journalID }
-    var isSystem: Bool { isCorpus || isJournal }
+    var isLibrarianSessions: Bool { id == Self.librarianSessionsID }
+    var isSystem: Bool { isCorpus || isJournal || isLibrarianSessions }
 
     init(id: String, name: String, nodeCount: Int = 0, lastEntryAt: Date? = nil) {
         self.id = id

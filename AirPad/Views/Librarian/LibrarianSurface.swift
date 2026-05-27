@@ -33,6 +33,8 @@ struct LibrarianSurface: View {
     @State private var gradientRotation: Double = 0
     @State private var showModeDropdown = false
     @State private var presentedCitation: PresentedCitation? = nil
+    @State private var showEndDialog = false
+    @State private var isSavingSession = false
     @FocusState private var isInputFocused: Bool
 
     /// Identifiable wrapper so `.sheet(item:)` re-presents when the user
@@ -227,7 +229,76 @@ struct LibrarianSurface: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: .infinity)
+
+            endSessionFooter(librarian: librarian)
         }
+        .confirmationDialog(
+            "End session?",
+            isPresented: $showEndDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Save to corpus") {
+                Task { await saveSession(librarian: librarian) }
+            }
+            Button("Clear", role: .destructive) {
+                librarian.clearSession()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Save this session as a note, or clear it without saving.")
+        }
+    }
+
+    /// Footer row holding the End button. Visible whenever the session
+    /// has *anything* — either live turns or a compacted summary —
+    /// since post-compaction the live history is empty but the session
+    /// itself is very much in progress. Counter shows total turns
+    /// (compacted + live) so the user's sense of "how much have I done
+    /// this session" survives a compaction pass. Save is async
+    /// (`addNode` writes JSON + recomputes layout) so the button shows
+    /// a progress state while in flight.
+    @ViewBuilder
+    private func endSessionFooter(librarian: LibrarianState) -> some View {
+        let liveCount = librarian.sessionHistory.count
+        let totalCount = liveCount + librarian.compactedExchangeCount
+        let hasSession = liveCount > 0 || librarian.compactedSummary != nil
+        if hasSession {
+            HStack {
+                Spacer()
+                Button {
+                    showEndDialog = true
+                } label: {
+                    HStack(spacing: 6) {
+                        if isSavingSession {
+                            ProgressView()
+                                .controlSize(.mini)
+                                .tint(.white.opacity(0.7))
+                        } else {
+                            Image(systemName: "stop.circle")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        Text(isSavingSession ? "Saving…" : "End session (\(totalCount))")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.06))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isSavingSession)
+                Spacer()
+            }
+            .padding(.bottom, 10)
+        }
+    }
+
+    private func saveSession(librarian: LibrarianState) async {
+        isSavingSession = true
+        _ = await librarian.saveSessionAsNode(store: store)
+        librarian.clearSession()
+        isSavingSession = false
     }
 
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {

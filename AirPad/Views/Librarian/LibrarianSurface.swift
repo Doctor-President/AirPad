@@ -35,6 +35,7 @@ struct LibrarianSurface: View {
     @State private var presentedCitation: PresentedCitation? = nil
     @State private var showEndDialog = false
     @State private var isSavingSession = false
+    @State private var researchExportCopied = false
     @FocusState private var isInputFocused: Bool
 
     /// Bound to the same key Settings writes (c7). Drives the personal-voice
@@ -656,10 +657,7 @@ struct LibrarianSurface: View {
         case .frame:
             researchFrameStage(librarian: librarian)
         case .export:
-            researchStubStage(
-                title: "Export the briefing",
-                detail: "Copy or share the selected nodes + frame as a single prompt. Lands next."
-            )
+            researchExportStage(librarian: librarian)
         case .importReview:
             researchStubStage(
                 title: "Import the response",
@@ -667,6 +665,281 @@ struct LibrarianSurface: View {
             )
         }
     }
+
+    // MARK: - Stage 3 (Export)
+
+    /// Stage 3 — Export. Assembles the briefing text from the user's
+    /// frame plus the selected nodes' titles and bodies, optionally
+    /// appending a JSON-schema instruction when the Stage 2 toggle is
+    /// on. Shows node / word / token-estimate metrics, a read-only
+    /// preview, and Copy + Share actions. The user pastes the result
+    /// into Claude, ChatGPT, or any other long-context model.
+    @ViewBuilder
+    private func researchExportStage(librarian: LibrarianState) -> some View {
+        let briefing = researchBriefingText(librarian: librarian)
+        let metrics = researchExportMetrics(text: briefing, librarian: librarian)
+
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    researchExportMetricsRow(metrics: metrics)
+
+                    researchExportPreview(text: briefing)
+
+                    researchExportActions(librarian: librarian, briefing: briefing)
+
+                    Text("Works with Claude, ChatGPT, and other long-context models. Paste this briefing into a fresh conversation.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .padding(.top, 2)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .frame(maxHeight: .infinity)
+
+            researchExportFooter(librarian: librarian)
+        }
+    }
+
+    private struct ResearchExportMetrics {
+        let nodeCount: Int
+        let wordCount: Int
+        let tokenEstimate: Int
+    }
+
+    /// ~4 chars/token is the established English-text heuristic for both
+    /// Anthropic and OpenAI tokenizers — close enough to size a briefing
+    /// against a 200k-context Claude or 128k-context GPT without
+    /// shipping a real tokenizer to the device.
+    private static let researchTokenCharsPerToken: Double = 4.0
+
+    private func researchExportMetrics(text: String, librarian: LibrarianState) -> ResearchExportMetrics {
+        let words = text
+            .split(whereSeparator: { $0.isWhitespace || $0.isNewline })
+            .count
+        let tokens = Int((Double(text.count) / Self.researchTokenCharsPerToken).rounded())
+        return ResearchExportMetrics(
+            nodeCount: librarian.researchSelectedNodeIDs.count,
+            wordCount: words,
+            tokenEstimate: tokens
+        )
+    }
+
+    @ViewBuilder
+    private func researchExportMetricsRow(metrics: ResearchExportMetrics) -> some View {
+        HStack(spacing: 16) {
+            researchMetricChip(value: "\(metrics.nodeCount)", label: "nodes")
+            researchMetricChip(value: researchAbbreviated(metrics.wordCount), label: "words")
+            researchMetricChip(value: "~" + researchAbbreviated(metrics.tokenEstimate), label: "tokens")
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func researchMetricChip(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.system(size: 16, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.white.opacity(0.45))
+                .textCase(.uppercase)
+                .tracking(0.4)
+        }
+    }
+
+    /// Compact form for word/token counts so a 12,400-word briefing
+    /// renders "12.4k" instead of blowing out the chip row.
+    private func researchAbbreviated(_ value: Int) -> String {
+        if value >= 1000 {
+            let k = Double(value) / 1000.0
+            return String(format: "%.1fk", k)
+        }
+        return "\(value)"
+    }
+
+    @ViewBuilder
+    private func researchExportPreview(text: String) -> some View {
+        Text(text.isEmpty ? "Nothing to export yet — pick at least one node in Stage 1." : text)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(.white.opacity(text.isEmpty ? 0.4 : 0.8))
+            .lineLimit(nil)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(Color.white.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func researchExportActions(librarian: LibrarianState, briefing: String) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                UIPasteboard.general.string = briefing
+                researchExportCopied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.4))
+                    researchExportCopied = false
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: researchExportCopied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(researchExportCopied ? "Copied" : "Copy")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.12))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(briefing.isEmpty)
+
+            ShareLink(item: briefing) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Share")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity)
+                .background(Color.white.opacity(0.12))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(briefing.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private func researchExportFooter(librarian: LibrarianState) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                librarian.researchStage = .frame
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                librarian.researchStage = .importReview
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Next")
+                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.18))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.03))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(Color.white.opacity(0.08)),
+            alignment: .top
+        )
+    }
+
+    /// Build the full briefing text. Frame goes first (the user's
+    /// instruction to the model), followed by the selected nodes as
+    /// titled sections so the model can ground its reasoning in
+    /// specific passages, optionally followed by a JSON-schema
+    /// instruction when the Stage 2 toggle is on.
+    ///
+    /// Body fallbacks: `summary` first (AI-derived gist), else
+    /// concatenated text-bearing items. Empty selection returns just
+    /// the frame so the preview still reads sensibly while the user
+    /// is iterating on Stage 2 wording.
+    private func researchBriefingText(librarian: LibrarianState) -> String {
+        let frame = librarian.researchFrameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let selectedIDs = librarian.researchSelectedNodeIDs
+        let selectedNodes = store.nodes
+            .filter { selectedIDs.contains($0.id) }
+            .sorted { $0.updatedAt > $1.updatedAt }
+
+        var sections: [String] = []
+        if !frame.isEmpty {
+            sections.append(frame)
+        }
+
+        if !selectedNodes.isEmpty {
+            sections.append("Here are \(selectedNodes.count) note\(selectedNodes.count == 1 ? "" : "s") from my corpus:")
+            for node in selectedNodes {
+                sections.append(researchBriefingSection(for: node))
+            }
+        }
+
+        if librarian.researchRequestStructuredReturn {
+            sections.append(Self.researchStructuredReturnInstruction)
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    private func researchBriefingSection(for node: Node) -> String {
+        let title = node.title.isEmpty ? "Untitled" : node.title
+        var lines: [String] = ["## \(title)"]
+        if !node.summary.isEmpty {
+            lines.append(node.summary)
+        } else {
+            let bodies = node.items.compactMap { $0.content }.filter { !$0.isEmpty }
+            if !bodies.isEmpty {
+                lines.append(bodies.joined(separator: "\n\n"))
+            }
+        }
+        return lines.joined(separator: "\n\n")
+    }
+
+    /// Schema instruction appended when the user has flipped the
+    /// Stage 2 structured-return toggle. Targeted at Stage 4's import
+    /// parser — a flat JSON array of `{title, content}` objects keeps
+    /// the model honest and the parser simple. Tags / metadata can
+    /// land in a follow-up if the import flow grows richer.
+    private static let researchStructuredReturnInstruction = """
+    Return your response as JSON in this exact shape so AirPad can import the result:
+
+    ```json
+    [
+      { "title": "Note title", "content": "Full note body in markdown" },
+      …
+    ]
+    ```
+
+    Include one object per distinct insight, pattern, or new note worth capturing. Use plain markdown inside `content`. Do not wrap the JSON in any extra commentary.
+    """
 
     // MARK: - Stage 2 (Frame)
 

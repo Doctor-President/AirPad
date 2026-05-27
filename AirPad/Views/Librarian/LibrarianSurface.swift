@@ -671,15 +671,269 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// Stage 1 placeholder for c8.1 — replaced with the real candidate
-    /// list + selection UI in c8.2. Kept identical in shape to the stub
-    /// panels so the stepper transition reads as same-surface.
+    /// Stage 1 — Select. Scrollable list of candidate nodes from the
+    /// active scope, grouped by substrate cluster when available.
+    /// Tap-to-toggle selection; pre-seeded with the most recently
+    /// updated nodes within the scope as a starting point. Each cluster
+    /// section header offers a Select all affordance.
+    ///
+    /// Substrate ranking by cosine similarity to recent activity is the
+    /// design target (per brief); recency seeding is the c8.2 proxy
+    /// until the substrate-similarity service surfaces a public API.
     @ViewBuilder
     private func researchSelectStage(librarian: LibrarianState) -> some View {
-        researchStubStage(
-            title: "Select nodes",
-            detail: "Pick the nodes you want the model to reason across. Lands in the next commit."
+        let candidates = researchCandidates(librarian: librarian)
+        let groups = researchClusterGroups(candidates: candidates)
+
+        VStack(spacing: 0) {
+            if candidates.isEmpty {
+                researchStubStage(
+                    title: "No nodes in scope",
+                    detail: "Switch scope above to pick nodes from a different slice of the corpus."
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14, pinnedViews: []) {
+                        ForEach(groups, id: \.label) { group in
+                            researchClusterSection(group: group, librarian: librarian)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .frame(maxHeight: .infinity)
+
+                researchSelectFooter(librarian: librarian)
+            }
+        }
+        .onAppear { researchSeedSelectionIfNeeded(librarian: librarian, candidates: candidates) }
+        .onChange(of: librarian.selectedScope) { _, _ in
+            researchSeedSelectionIfNeeded(librarian: librarian, candidates: candidates)
+        }
+    }
+
+    /// Source list for Stage 1 — every node in the active scope, sorted
+    /// by `updatedAt` descending so the top of the list is what the user
+    /// has been working on most recently.
+    private func researchCandidates(librarian: LibrarianState) -> [Node] {
+        store.nodes(in: librarian.selectedScope)
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Section model — one per cluster (or one "Unclustered" bucket when
+    /// substrate placements aren't available yet). `clusterID` is the
+    /// raw HDBSCAN label or `nil` when substrate wasn't consulted; the
+    /// label is what gets rendered.
+    private struct ResearchClusterGroup {
+        let label: String
+        let clusterID: Int?
+        let nodes: [Node]
+    }
+
+    /// Group candidates by substrate cluster. Falls back to a single
+    /// "All notes" bucket when no placements exist (small corpus, pre-
+    /// fit, or the substrate service isn't loaded). Noise nodes (cluster
+    /// `-1`) land in their own "Outliers" bucket so the user can still
+    /// reach them but the visual separation matches the canvas.
+    private func researchClusterGroups(candidates: [Node]) -> [ResearchClusterGroup] {
+        guard let placements = SubstrateLayoutService.shared.canvasPlacements(),
+              !placements.isEmpty else {
+            return [ResearchClusterGroup(label: "All notes", clusterID: nil, nodes: candidates)]
+        }
+        let clusterByID: [String: Int] = Dictionary(
+            uniqueKeysWithValues: placements.map { ($0.nodeID, $0.clusterID) }
         )
+        var buckets: [Int?: [Node]] = [:]
+        for node in candidates {
+            let cluster = clusterByID[node.id]
+            buckets[cluster, default: []].append(node)
+        }
+        // Stable ordering: real clusters first (by ID asc), then noise (-1),
+        // then "unplaced" (nodes the substrate hasn't seen yet) so the user's
+        // most recent captures don't disappear into a trailing tail.
+        let realClusters = buckets.keys.compactMap { $0 }.filter { $0 >= 0 }.sorted()
+        var ordered: [ResearchClusterGroup] = []
+        for id in realClusters {
+            guard let nodes = buckets[id] else { continue }
+            ordered.append(ResearchClusterGroup(label: "Cluster \(id + 1)", clusterID: id, nodes: nodes))
+        }
+        if let noise = buckets[-1] {
+            ordered.append(ResearchClusterGroup(label: "Outliers", clusterID: -1, nodes: noise))
+        }
+        if let unplaced = buckets[nil] {
+            ordered.append(ResearchClusterGroup(label: "Recently added", clusterID: nil, nodes: unplaced))
+        }
+        return ordered
+    }
+
+    @ViewBuilder
+    private func researchClusterSection(group: ResearchClusterGroup, librarian: LibrarianState) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(group.label.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(.white.opacity(0.5))
+                Text("\(group.nodes.count)")
+                    .font(.system(size: 10, weight: .regular).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.3))
+                Spacer()
+                Button {
+                    toggleSelectAllInCluster(group: group, librarian: librarian)
+                } label: {
+                    Text(allSelected(in: group, librarian: librarian) ? "Deselect all" : "Select all")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.65))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.07))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 2)
+
+            ForEach(group.nodes, id: \.id) { node in
+                researchCandidateRow(node: node, librarian: librarian)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func researchCandidateRow(node: Node, librarian: LibrarianState) -> some View {
+        let isSelected = librarian.researchSelectedNodeIDs.contains(node.id)
+        Button {
+            if isSelected {
+                librarian.researchSelectedNodeIDs.remove(node.id)
+            } else {
+                librarian.researchSelectedNodeIDs.insert(node.id)
+            }
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(isSelected ? Color(hexString: "00BFFF") : .white.opacity(0.3))
+                    .frame(width: 22, height: 22)
+
+                Circle()
+                    .fill(researchNodeColor(node))
+                    .frame(width: 8, height: 8)
+                    .padding(.top, 7)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(node.title.isEmpty ? "Untitled" : node.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(isSelected ? 0.95 : 0.8))
+                        .lineLimit(1)
+                    if let snippet = researchSnippet(node: node), !snippet.isEmpty {
+                        Text(snippet)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.4))
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(Rectangle())
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func researchSelectFooter(librarian: LibrarianState) -> some View {
+        let count = librarian.researchSelectedNodeIDs.count
+        HStack(spacing: 12) {
+            Text(count == 0 ? "No nodes selected" : "\(count) selected")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(count == 0 ? 0.4 : 0.85))
+            Spacer()
+            Button {
+                librarian.researchStage = .frame
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Next")
+                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(count == 0 ? .white.opacity(0.3) : .white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(count == 0 ? Color.white.opacity(0.06) : Color.white.opacity(0.18))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(count == 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.03))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(Color.white.opacity(0.08)),
+            alignment: .top
+        )
+    }
+
+    /// Tag-derived color, mirroring `NodePickerSheet.nodeColor`. The
+    /// substrate-color path (`SubstrateLayoutService.colorHSB`) is
+    /// canvas-only — Stage 1 reads with the same primitive every other
+    /// node-list surface uses so the dot doesn't drift between views.
+    private func researchNodeColor(_ node: Node) -> Color {
+        guard let tag = node.tags.first,
+              let storeTag = store.tags.first(where: { $0.name == tag })
+        else { return .gray.opacity(0.6) }
+        return Color(hex: storeTag.colorHex) ?? .gray.opacity(0.6)
+    }
+
+    /// Two-line preview text. Pulls from `summary` first (the AI-derived
+    /// gist), falling back to the first item carrying text content,
+    /// falling back to nil. Pre-trimmed to keep the row light even on
+    /// long notes.
+    private func researchSnippet(node: Node) -> String? {
+        if !node.summary.isEmpty { return node.summary }
+        for item in node.items {
+            if let content = item.content, !content.isEmpty {
+                return String(content.prefix(240))
+            }
+        }
+        return nil
+    }
+
+    private func allSelected(in group: ResearchClusterGroup, librarian: LibrarianState) -> Bool {
+        guard !group.nodes.isEmpty else { return false }
+        return group.nodes.allSatisfy { librarian.researchSelectedNodeIDs.contains($0.id) }
+    }
+
+    private func toggleSelectAllInCluster(group: ResearchClusterGroup, librarian: LibrarianState) {
+        if allSelected(in: group, librarian: librarian) {
+            for node in group.nodes {
+                librarian.researchSelectedNodeIDs.remove(node.id)
+            }
+        } else {
+            for node in group.nodes {
+                librarian.researchSelectedNodeIDs.insert(node.id)
+            }
+        }
+    }
+
+    /// Seeds an initial selection when first entering Stage 1 (or when
+    /// scope changes). Picks the top-5 most-recently-updated candidates
+    /// as the substrate-recency proxy. Does nothing when the scope key
+    /// already matches the last seeded key — preserving the user's
+    /// explicit edits across collapse/expand and stage navigation.
+    private static let researchSeedCount = 5
+    private func researchSeedSelectionIfNeeded(librarian: LibrarianState, candidates: [Node]) {
+        let key = librarian.selectedScope.key
+        guard librarian.researchLastSeededScopeKey != key else { return }
+        librarian.researchLastSeededScopeKey = key
+        librarian.researchSelectedNodeIDs.removeAll()
+        let seeds = candidates.prefix(Self.researchSeedCount)
+        for node in seeds {
+            librarian.researchSelectedNodeIDs.insert(node.id)
+        }
     }
 
     @ViewBuilder

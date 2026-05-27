@@ -61,16 +61,25 @@ enum ModelRouter {
         case ollamaNoModels
         case ollamaBadEndpoint(String)
         case ollamaTransport(String)
-        case ollamaBadResponse
+        case ollamaHTTPError(path: String, status: Int, body: String)
+        case ollamaBadResponse(path: String, body: String)
 
         var errorDescription: String? {
             switch self {
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
-            case .ollamaNoModels: return "Ollama is reachable but has no models loaded. Pull a model first (e.g. `ollama pull llama3.2`)."
+            case .ollamaNoModels: return "Endpoint is reachable but no models are loaded. Load a model in LM Studio / pull one with `ollama pull <name>`."
             case .ollamaBadEndpoint(let s): return "Ollama endpoint is not a valid URL: \(s)"
             case .ollamaTransport(let s): return "Couldn't reach Ollama: \(s)"
-            case .ollamaBadResponse: return "Ollama returned an unexpected response."
+            case .ollamaHTTPError(let path, let status, let body):
+                return "Endpoint returned HTTP \(status) at \(path): \(Self.truncate(body))"
+            case .ollamaBadResponse(let path, let body):
+                return "Endpoint returned an unexpected response at \(path): \(Self.truncate(body))"
             }
+        }
+
+        private static func truncate(_ s: String) -> String {
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.count > 240 ? String(trimmed.prefix(240)) + "…" : trimmed
         }
     }
 
@@ -107,7 +116,8 @@ enum ModelRouter {
         }
         let modelName = try await firstOllamaModel(base: base)
 
-        var request = URLRequest(url: base.appendingPathComponent("v1/chat/completions"))
+        let path = "v1/chat/completions"
+        var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
@@ -121,11 +131,12 @@ enum ModelRouter {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _): (Data, URLResponse)
-        do {
-            (data, _) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw RouterError.ollamaTransport(error.localizedDescription)
+        let (data, response) = try await runRequest(request, path: path)
+        let bodyString = String(data: data, encoding: .utf8) ?? ""
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            print("[ModelRouter] \(path) HTTP \(http.statusCode): \(bodyString)")
+            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: bodyString)
         }
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -134,30 +145,44 @@ enum ModelRouter {
               let message = first["message"] as? [String: Any],
               let content = message["content"] as? String
         else {
-            throw RouterError.ollamaBadResponse
+            print("[ModelRouter] \(path) parse failure. body=\(bodyString)")
+            throw RouterError.ollamaBadResponse(path: path, body: bodyString)
         }
         return content
     }
 
     private static func firstOllamaModel(base: URL) async throws -> String {
-        var request = URLRequest(url: base.appendingPathComponent("v1/models"))
+        let path = "v1/models"
+        var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "GET"
 
-        let (data, _): (Data, URLResponse)
-        do {
-            (data, _) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw RouterError.ollamaTransport(error.localizedDescription)
+        let (data, response) = try await runRequest(request, path: path)
+        let bodyString = String(data: data, encoding: .utf8) ?? ""
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            print("[ModelRouter] \(path) HTTP \(http.statusCode): \(bodyString)")
+            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: bodyString)
         }
 
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let entries = json["data"] as? [[String: Any]]
         else {
-            throw RouterError.ollamaBadResponse
+            print("[ModelRouter] \(path) parse failure. body=\(bodyString)")
+            throw RouterError.ollamaBadResponse(path: path, body: bodyString)
         }
         guard let firstID = entries.compactMap({ $0["id"] as? String }).first else {
             throw RouterError.ollamaNoModels
         }
+        print("[ModelRouter] picked model id=\(firstID) from \(path)")
         return firstID
+    }
+
+    private static func runRequest(_ request: URLRequest, path: String) async throws -> (Data, URLResponse) {
+        do {
+            return try await URLSession.shared.data(for: request)
+        } catch {
+            print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
+            throw RouterError.ollamaTransport(error.localizedDescription)
+        }
     }
 }

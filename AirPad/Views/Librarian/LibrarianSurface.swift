@@ -32,7 +32,18 @@ struct LibrarianSurface: View {
     @State private var textOpacity: Double = 0.55
     @State private var gradientRotation: Double = 0
     @State private var showModeDropdown = false
+    @State private var presentedCitation: PresentedCitation? = nil
     @FocusState private var isInputFocused: Bool
+
+    /// Identifiable wrapper so `.sheet(item:)` re-presents when the user
+    /// taps a different chip without dismissing first. Carries the
+    /// full citation list so the sheet can compute its bracket indices
+    /// against the same numbering the model saw.
+    private struct PresentedCitation: Identifiable {
+        let nodeID: String
+        let citations: [BlockMatch]
+        var id: String { nodeID }
+    }
 
     private var activeWhispers: [String] {
         store.ghostQuerySuggestions
@@ -84,6 +95,14 @@ struct LibrarianSurface: View {
             if newMode == .collapsed {
                 isInputFocused = false
             }
+        }
+        .sheet(item: $presentedCitation) { context in
+            CitationSheet(
+                nodeID: context.nodeID,
+                allCitations: context.citations,
+                onOpenNote: { router.pendingNodeNavigationID = context.nodeID }
+            )
+            .environment(store)
         }
     }
 
@@ -271,7 +290,7 @@ struct LibrarianSurface: View {
 
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(uniqueNodeIDs, id: \.self) { nodeID in
-                            citationChip(nodeID: nodeID)
+                            citationChip(nodeID: nodeID, allCitations: citations)
                         }
                     }
                 }
@@ -298,16 +317,18 @@ struct LibrarianSurface: View {
         return ordered
     }
 
-    /// Single source chip — node color dot + node title. Tap hands
-    /// navigation off to the host NavigationStack via the router (same
-    /// pattern as retrieval rows).
+    /// Single source chip — node color dot + node title. Tap opens
+    /// `CitationSheet` so the user can read the actual passages that
+    /// fed the prompt before deciding to jump into the note. The
+    /// "Open" button in the sheet hands navigation off to the host
+    /// NavigationStack (same pattern as retrieval rows).
     @ViewBuilder
-    private func citationChip(nodeID: String) -> some View {
+    private func citationChip(nodeID: String, allCitations: [BlockMatch]) -> some View {
         let node = store.nodes.first { $0.id == nodeID }
         let title = node?.title ?? "Untitled"
 
         Button {
-            router.pendingNodeNavigationID = nodeID
+            presentedCitation = PresentedCitation(nodeID: nodeID, citations: allCitations)
         } label: {
             HStack(spacing: 6) {
                 Circle()

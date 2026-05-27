@@ -204,48 +204,52 @@ struct LibrarianSurface: View {
             scopeChipRow(librarian: librarian)
                 .padding(.bottom, 8)
 
-            // Input row
-            HStack(spacing: 8) {
-                TextField("Ask anything...", text: Binding(
-                    get: { librarian.inputText },
-                    set: { librarian.inputText = $0 }
-                ), axis: .vertical)
-                    .focused($isInputFocused)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(.white)
-                    .tint(.white)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .lineLimit(1...4)
+            if librarian.activeMode == .research {
+                researchPanel(librarian: librarian)
+            } else {
+                // Input row
+                HStack(spacing: 8) {
+                    TextField("Ask anything...", text: Binding(
+                        get: { librarian.inputText },
+                        set: { librarian.inputText = $0 }
+                    ), axis: .vertical)
+                        .focused($isInputFocused)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .lineLimit(1...4)
 
-                Button {
-                    Task { await librarian.executeQuery(store: store) }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
+                    Button {
+                        Task { await librarian.executeQuery(store: store) }
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!sendIsEnabled(librarian: librarian))
+                    .padding(.trailing, 10)
                 }
-                .buttonStyle(.plain)
-                .disabled(!sendIsEnabled(librarian: librarian))
-                .padding(.trailing, 10)
-            }
-            .frame(minHeight: 48)
-            .background(Color.white.opacity(0.04))
-            .clipShape(RoundedRectangle(cornerRadius: 22))
-            .overlay(
-                RoundedRectangle(cornerRadius: 22)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-            )
-            .padding(.horizontal, 12)
+                .frame(minHeight: 48)
+                .background(Color.white.opacity(0.04))
+                .clipShape(RoundedRectangle(cornerRadius: 22))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22)
+                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                )
+                .padding(.horizontal, 12)
 
-            // Response / suggestion area
-            ScrollView {
-                responseContent(librarian: librarian)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Response / suggestion area
+                ScrollView {
+                    responseContent(librarian: librarian)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
 
             endSessionFooter(librarian: librarian)
         }
@@ -581,6 +585,121 @@ struct LibrarianSurface: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    // MARK: - Research mode (c8)
+
+    /// Replaces the Ask input + response area when `activeMode == .research`.
+    /// Renders the four-stage stepper above and the per-stage content below.
+    /// Stage 1 lights up in c8.2; Stages 2–4 are stub placeholders pointing
+    /// at upcoming commits.
+    @ViewBuilder
+    private func researchPanel(librarian: LibrarianState) -> some View {
+        VStack(spacing: 12) {
+            researchStepper(librarian: librarian)
+                .padding(.horizontal, 16)
+
+            researchStageContent(librarian: librarian)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(.top, 2)
+    }
+
+    /// Four-dot stepper. Numbered chip + stage name + connector line.
+    /// Tap a stage to jump there (no validation gates for c8 — Stage 1 is
+    /// the only one with real content; later commits add per-stage
+    /// `canAdvance` rules).
+    @ViewBuilder
+    private func researchStepper(librarian: LibrarianState) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(LibrarianState.ResearchStage.allCases.enumerated()), id: \.element) { idx, stage in
+                researchStepperDot(stage: stage, librarian: librarian)
+                if idx < LibrarianState.ResearchStage.allCases.count - 1 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.12))
+                        .frame(height: 1)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func researchStepperDot(stage: LibrarianState.ResearchStage, librarian: LibrarianState) -> some View {
+        let isActive = librarian.researchStage == stage
+        let isPast = stage.rawValue < librarian.researchStage.rawValue
+        Button {
+            librarian.researchStage = stage
+        } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    Circle()
+                        .fill(isActive || isPast ? Color.white.opacity(0.85) : Color.white.opacity(0.08))
+                        .frame(width: 22, height: 22)
+                    Text("\(stage.rawValue + 1)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(isActive || isPast ? .black : .white.opacity(0.5))
+                }
+                Text(stage.displayName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(isActive ? .white : .white.opacity(0.4))
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func researchStageContent(librarian: LibrarianState) -> some View {
+        switch librarian.researchStage {
+        case .select:
+            researchSelectStage(librarian: librarian)
+        case .frame:
+            researchStubStage(
+                title: "Frame the session",
+                detail: "Tell the model what you want from this conversation. Lands next."
+            )
+        case .export:
+            researchStubStage(
+                title: "Export the briefing",
+                detail: "Copy or share the selected nodes + frame as a single prompt. Lands next."
+            )
+        case .importReview:
+            researchStubStage(
+                title: "Import the response",
+                detail: "Paste the model's reply; review candidate nodes before they enter the corpus. Lands next."
+            )
+        }
+    }
+
+    /// Stage 1 placeholder for c8.1 — replaced with the real candidate
+    /// list + selection UI in c8.2. Kept identical in shape to the stub
+    /// panels so the stepper transition reads as same-surface.
+    @ViewBuilder
+    private func researchSelectStage(librarian: LibrarianState) -> some View {
+        researchStubStage(
+            title: "Select nodes",
+            detail: "Pick the nodes you want the model to reason across. Lands in the next commit."
+        )
+    }
+
+    @ViewBuilder
+    private func researchStubStage(title: String, detail: String) -> some View {
+        VStack(spacing: 10) {
+            Spacer(minLength: 0)
+            Image(systemName: "graduationcap")
+                .font(.system(size: 28, weight: .regular))
+                .foregroundStyle(.white.opacity(0.35))
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.75))
+            Text(detail)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.4))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Scope chips

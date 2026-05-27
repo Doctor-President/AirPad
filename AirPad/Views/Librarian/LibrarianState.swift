@@ -52,6 +52,26 @@ final class LibrarianState {
         }
     }
 
+    /// Research-mode stepper position. Four stages per brief: Select →
+    /// Frame → Export → Import. The user moves forward / back manually;
+    /// nothing auto-advances. Persisted on `LibrarianState` so collapse
+    /// and re-expand returns to the same stage.
+    enum ResearchStage: Int, Sendable, CaseIterable {
+        case select = 0
+        case frame = 1
+        case export = 2
+        case importReview = 3
+
+        var displayName: String {
+            switch self {
+            case .select: return "Select"
+            case .frame: return "Frame"
+            case .export: return "Export"
+            case .importReview: return "Import"
+            }
+        }
+    }
+
     /// Result of a mode pipeline. `retrieval` carries node IDs (resolved
     /// against the store at render time) so the list stays correct if a
     /// node was deleted between query and display. `ask` carries both
@@ -179,6 +199,30 @@ final class LibrarianState {
     /// Studio Mistral), with enough margin that the post-compaction
     /// prompt still fits comfortably even if the summary runs long.
     static let compactionThreshold: Double = 0.85
+
+    // MARK: - Research mode (c8)
+
+    /// Current stage in the Research-mode stepper. Survives surface
+    /// collapse/expand and mode toggling so a half-built research
+    /// session resumes where the user left off.
+    var researchStage: ResearchStage = .select
+
+    /// Nodes the user has picked in Stage 1 (Select). Carries forward
+    /// to Stage 2 (Frame) and Stage 3 (Export) as the working set.
+    /// Set, not array, so duplicate-pick toggles are O(1) and the
+    /// surface can use `contains` without scanning.
+    var researchSelectedNodeIDs: Set<String> = []
+
+    /// True once the surface has seeded an initial selection on first
+    /// entry to Stage 1. Gates the pre-selection pass so changing scope
+    /// or returning to Stage 1 doesn't keep clobbering the user's
+    /// explicit edits.
+    var researchInitializedSelection: Bool = false
+
+    /// Stage 2 text — research-session framing the user wants the
+    /// model to honor. Empty until Stage 2 lands; held here so it
+    /// survives stepping back to Stage 1 and forward again.
+    var researchFrameText: String = ""
 
     /// Dispatches to the per-mode pipeline. Navigate uses block-level
     /// embedding retrieval (no LLM); Ask uses block-embedding retrieval
@@ -323,6 +367,10 @@ final class LibrarianState {
         compactedSummary = nil
         compactedExchangeCount = 0
         compactedCitationIDs = []
+        researchStage = .select
+        researchSelectedNodeIDs.removeAll()
+        researchInitializedSelection = false
+        researchFrameText = ""
     }
 
     /// Builds a corpus Node from the current session and persists it

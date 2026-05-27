@@ -142,53 +142,47 @@ struct CanvasView: View {
 
     private var canvasZStack: some View {
         ZStack(alignment: .bottomTrailing) {
-            ZStack(alignment: .bottomTrailing) {
-                Color(red: 0.027, green: 0.027, blue: 0.039)
-                    .ignoresSafeArea()
+            Color(red: 0.027, green: 0.027, blue: 0.039)
+                .ignoresSafeArea()
 
-                SpriteKitView(scene: scene)
-                    .ignoresSafeArea()
-                    .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
-                    .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+            SpriteKitView(scene: scene)
+                .ignoresSafeArea()
+                .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
+                .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
 
-                if store.nodes(in: scope).isEmpty {
-                    EmptyStateOverlay()
-                        .transition(.opacity)
-                }
-
-                focalEngagementOverlay
-                nodeSummaryLayer
-                drillDownBackButton
-
-                if !store.isInDetailView {
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 12) {
-                            LibrarianSurface()
-                                .frame(maxWidth: .infinity)
-                            if router.librarian.surfaceMode == .collapsed {
-                                Spacer()
-                                    .frame(width: 68) // reserve space for the "+" trigger
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
-                    }
-                }
+            if store.nodes(in: scope).isEmpty {
+                EmptyStateOverlay()
+                    .transition(.opacity)
             }
 
-            if !selection.isActive && !store.isInDetailView {
-                captureTriggerButton
+            focalEngagementOverlay
+            nodeSummaryLayer
+            drillDownBackButton
+
+            if !store.isInDetailView {
+                VStack(spacing: 12) {
+                    Spacer()
+                    if !selection.isActive {
+                        HStack {
+                            Spacer()
+                            captureTriggerButton
+                        }
+                    }
+                    LibrarianSurface()
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
+                .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
             }
         }
     }
 
-    /// Floating "+" — triggers the in-app capture overlay
-    /// (ws-in-app-capture-overlay). The overlay is mounted at ContentView
-    /// and floats over this canvas; navigation handoff from the overlay
-    /// arrives via `router.pendingNodeNavigationID` and is pushed onto our
-    /// own `navigationPath` (see `canvasStack`).
+    /// "+" capture trigger — sits above the LibrarianSurface in the
+    /// bottom-anchored VStack so it rides up with the morphing surface
+    /// rather than overlapping it. Tap presents the in-app capture overlay
+    /// (mounted at ContentView); navigation handoff arrives via
+    /// `router.pendingNodeNavigationID` and is pushed onto our own
+    /// `navigationPath` (see `canvasStack`).
     private var captureTriggerButton: some View {
         Button {
             router.captureOverlay = CaptureOverlayContext(scope: scope)
@@ -202,8 +196,6 @@ struct CanvasView: View {
                 .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
         }
         .buttonStyle(.plain)
-        .padding(.trailing, 20)
-        .padding(.bottom, 28)
     }
 
     @ViewBuilder

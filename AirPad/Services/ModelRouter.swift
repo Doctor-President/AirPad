@@ -106,6 +106,13 @@ enum ModelRouter {
     /// than hardcoding — most home setups have exactly one model loaded,
     /// and a hardcoded default would fail silently when the user runs
     /// something else (qwen, mistral, gemma).
+    ///
+    /// System prompt is folded into the first user message rather than
+    /// sent as a separate `system` role. Mistral's Jinja chat template
+    /// (and several other instruction templates) reject a standalone
+    /// system message with HTTP 400, since the template expects the
+    /// conversation to start with `user`. Concatenation works across all
+    /// OpenAI-compatible templates so we always fold.
     private static func generateOllama(
         endpoint: String,
         systemPrompt: String,
@@ -121,12 +128,14 @@ enum ModelRouter {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
+        let foldedUserContent = systemPrompt.isEmpty
+            ? userPrompt
+            : "\(systemPrompt)\n\n\(userPrompt)"
         let body: [String: Any] = [
             "model": modelName,
             "stream": false,
             "messages": [
-                ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": userPrompt]
+                ["role": "user", "content": foldedUserContent]
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

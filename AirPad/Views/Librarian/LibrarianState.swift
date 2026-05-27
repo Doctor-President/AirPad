@@ -213,11 +213,12 @@ final class LibrarianState {
     /// surface can use `contains` without scanning.
     var researchSelectedNodeIDs: Set<String> = []
 
-    /// True once the surface has seeded an initial selection on first
-    /// entry to Stage 1. Gates the pre-selection pass so changing scope
-    /// or returning to Stage 1 doesn't keep clobbering the user's
-    /// explicit edits.
-    var researchInitializedSelection: Bool = false
+    /// Scope key under which the current `researchSelectedNodeIDs` was
+    /// seeded. `nil` means "never seeded." When the active scope's key
+    /// changes (e.g. user switches from Corpus to a collection), the
+    /// surface re-seeds; while the key matches, the user's explicit
+    /// edits are preserved across collapse/expand and stage navigation.
+    var researchLastSeededScopeKey: String? = nil
 
     /// Stage 2 text — research-session framing the user wants the
     /// model to honor. Empty until Stage 2 lands; held here so it
@@ -369,7 +370,7 @@ final class LibrarianState {
         compactedCitationIDs = []
         researchStage = .select
         researchSelectedNodeIDs.removeAll()
-        researchInitializedSelection = false
+        researchLastSeededScopeKey = nil
         researchFrameText = ""
     }
 

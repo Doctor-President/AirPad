@@ -78,16 +78,28 @@ struct LibrarianSurface: View {
 
     @ViewBuilder
     private func collapsedBody(librarian: LibrarianState) -> some View {
-        Text(displayText)
-            .font(.system(size: 16, weight: .light))
-            .foregroundStyle(.white)
-            .opacity(textOpacity)
-            .padding(.horizontal, 20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                librarian.surfaceMode = .expanded
+        ZStack {
+            Text(displayText)
+                .font(.system(size: 16, weight: .light))
+                .foregroundStyle(.white)
+                .opacity(textOpacity)
+                .padding(.horizontal, 56)
+                .frame(maxWidth: .infinity)
+
+            HStack {
+                Image(systemName: librarian.activeMode.sfSymbol)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .padding(.leading, 16)
+                Spacer()
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            librarian.surfaceMode = .expanded
+        }
     }
 
     // MARK: - Expanded

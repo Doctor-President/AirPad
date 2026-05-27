@@ -39,54 +39,47 @@ struct NodeListView: View {
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
-                    ZStack(alignment: .bottomTrailing) {
-                        Color.black.ignoresSafeArea()
-                        BackgroundGridView()
-                            .ignoresSafeArea()
-                            .allowsHitTesting(false)
-                        listContent(containerHeight: geo.size.height)
-                        VStack(spacing: 0) {
-                            LinearGradient(
-                                colors: [.black, .clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: 100)
-                            .allowsHitTesting(false)
-
-                            Spacer()
-
-                            LinearGradient(
-                                colors: [.clear, .black],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                            .frame(height: 100)
-                            .allowsHitTesting(false)
-                        }
-                        .allowsHitTesting(false)
+                    Color.black.ignoresSafeArea()
+                    BackgroundGridView()
                         .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                    listContent(containerHeight: geo.size.height)
+                    VStack(spacing: 0) {
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 100)
+                        .allowsHitTesting(false)
 
-                        if !store.isInDetailView {
-                            VStack {
-                                Spacer()
-                                HStack(spacing: 12) {
-                                    LibrarianSurface()
-                                        .frame(maxWidth: .infinity)
-                                    if router.librarian.surfaceMode == .collapsed {
-                                        Spacer()
-                                            .frame(width: 68) // reserve space for the "+" trigger
-                                    }
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 24)
-                                .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
-                            }
-                        }
+                        Spacer()
+
+                        LinearGradient(
+                            colors: [.clear, .black],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: 100)
+                        .allowsHitTesting(false)
                     }
+                    .allowsHitTesting(false)
+                    .ignoresSafeArea()
 
-                    if !selection.isActive && !store.isInDetailView {
-                        captureTriggerButton
+                    if !store.isInDetailView {
+                        VStack(spacing: 12) {
+                            Spacer()
+                            if !selection.isActive {
+                                HStack {
+                                    Spacer()
+                                    captureTriggerButton
+                                }
+                            }
+                            LibrarianSurface()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
                     }
                 }
                 .navigationDestination(for: Node.self) { node in
@@ -119,11 +112,12 @@ struct NodeListView: View {
 
     // MARK: - Capture trigger
 
-    /// Floating "+" — triggers the in-app capture overlay
-    /// (ws-in-app-capture-overlay). The overlay is mounted at ContentView
-    /// and floats over this list; navigation handoff from the overlay
-    /// arrives via `router.pendingNodeNavigationID` and is pushed onto our
-    /// own `navigationPath`.
+    /// "+" capture trigger — sits above the LibrarianSurface in the
+    /// bottom-anchored VStack so it rides up with the morphing surface
+    /// rather than overlapping it. Tap presents the in-app capture overlay
+    /// (mounted at ContentView); navigation handoff arrives via
+    /// `router.pendingNodeNavigationID` and is pushed onto our own
+    /// `navigationPath`.
     private var captureTriggerButton: some View {
         Button {
             router.captureOverlay = CaptureOverlayContext(scope: scope)
@@ -137,8 +131,6 @@ struct NodeListView: View {
                 .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
         }
         .buttonStyle(.plain)
-        .padding(.trailing, 20)
-        .padding(.bottom, 28)
     }
 
     // MARK: - Scroll content

@@ -129,33 +129,18 @@ final class LibrarianState {
     /// an error so the user sees explicit no-match feedback rather than
     /// a confusing empty list.
     ///
-    /// Retrieves `2 * topK` candidates then filters by scope membership
-    /// so a narrow collection still has a chance of yielding 5 results.
-    /// Final cap at 5 to match the pre-scope behavior.
+    /// Scope is threaded *into* the candidate set (not applied as a
+    /// post-filter) so a narrow collection can fill its `topK` from
+    /// in-scope blocks rather than losing every top corpus match to the
+    /// scope cut.
     private func runNavigatePipeline(query: String, store: CorpusStore) async {
-        let allowed = allowedNodeIDs(scope: selectedScope, store: store)
-        let candidateIDs = await store.findRelevantNodes(query: query, topK: 10)
-        let filteredIDs = allowed.map { set in candidateIDs.filter(set.contains) } ?? candidateIDs
-        let matchedIDs = Array(filteredIDs.prefix(5))
+        let matchedIDs = await store.findRelevantNodes(query: query, scope: selectedScope, topK: 5)
         if matchedIDs.isEmpty {
             response = .error("No matches yet. Try a different phrasing, or wait for content to finish embedding.")
         } else {
             response = .retrieval(matchedIDs)
         }
         isLoading = false
-    }
-
-    /// Resolves a scope to the set of node IDs that count as in-scope, or
-    /// `nil` for `.corpus` (no filtering needed). Returning `nil` rather
-    /// than `Set(store.nodes.map { $0.id })` lets the caller cheaply
-    /// short-circuit when no filtering is required.
-    private func allowedNodeIDs(scope: CanvasScope, store: CorpusStore) -> Set<String>? {
-        switch scope {
-        case .corpus:
-            return nil
-        case .collection:
-            return Set(store.nodes(in: scope).map { $0.id })
-        }
     }
 
     /// Ask mode — block-embedding retrieval feeds the prompt context,
@@ -202,12 +187,7 @@ final class LibrarianState {
     }
 
     private func runAskPipeline(query: String, store: CorpusStore) async {
-        let allowed = allowedNodeIDs(scope: selectedScope, store: store)
-        let candidateMatches = await store.findRelevantBlockMatches(query: query, topK: 16)
-        let inScopeMatches = allowed.map { set in
-            candidateMatches.filter { set.contains($0.nodeID) }
-        } ?? candidateMatches
-        let allMatches = Array(inScopeMatches.prefix(8))
+        let allMatches = await store.findRelevantBlockMatches(query: query, scope: selectedScope, topK: 8)
         let citations = Self.trimToCharBudget(allMatches, budget: Self.askPassageCharBudget)
         if citations.count < allMatches.count {
             print("[Librarian] Ask: trimmed citations \(allMatches.count) → \(citations.count) to fit \(Self.askPassageCharBudget)-char budget")
@@ -232,8 +212,14 @@ final class LibrarianState {
 
     /// Standing system prompt for Ask. Personal-model-prompt prefix lands
     /// in c11; until then this is the only steering the user gets.
+    ///
+    /// The "do not append a References / Sources section" clause is load-
+    /// bearing for Mistral and Llama-family instruct templates, which
+    /// otherwise hallucinate a `References:` block at the end — AirPad
+    /// renders citations as chips below the answer, so an in-text list
+    /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        "You are a reflective AI that helps someone think across their own corpus. Be specific, concise, and never generic. When you reference a passage, mark it inline with bracket numbers like [1] [2] matching the numbered passages in the user prompt."
+        "You are a reflective AI that helps someone think across their own corpus. Be specific, concise, and never generic. When you reference a passage, mark it inline with bracket numbers like [1] [2] matching the numbered passages in the user prompt. Do not append a References, Sources, or Citations section at the end of your response — AirPad renders citations separately. End your reply at the end of the prose answer."
     }
 
     private func buildAskContext(
@@ -256,7 +242,7 @@ final class LibrarianState {
 
             Question: \(query)
 
-            Answer in 2-4 paragraphs. Reference passages inline with their bracket numbers when relevant. Stay specific to the passages above — don't invent content.
+            Answer in 2-4 paragraphs. Reference passages inline with their bracket numbers when relevant. Stay specific to the passages above — don't invent content. Do not append a References, Sources, or Citations section — stop after the prose answer.
             """
         }
         return """

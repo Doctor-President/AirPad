@@ -270,48 +270,15 @@ struct LibrarianSurface: View {
             if librarian.activeMode == .research {
                 researchPanel(librarian: librarian)
             } else {
-                // Input row
-                HStack(spacing: 8) {
-                    TextField("Ask anything...", text: Binding(
-                        get: { librarian.inputText },
-                        set: { librarian.inputText = $0 }
-                    ), axis: .vertical)
-                        .focused($isInputFocused)
-                        .font(.system(size: 16, weight: .regular))
-                        .foregroundStyle(.white)
-                        .tint(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .lineLimit(1...4)
+                // Conversation transcript (flexes), input row beneath
+                // it — chat-app convention so new messages land near
+                // the typing area.
+                transcriptView(librarian: librarian)
+                    .frame(maxHeight: .infinity)
 
-                    Button {
-                        Task { await librarian.executeQuery(store: store) }
-                    } label: {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!sendIsEnabled(librarian: librarian))
-                    .padding(.trailing, 10)
-                }
-                .frame(minHeight: 48)
-                .background(Color.white.opacity(0.04))
-                .clipShape(RoundedRectangle(cornerRadius: 22))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22)
-                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                )
-                .padding(.horizontal, 12)
-
-                // Response / suggestion area
-                ScrollView {
-                    responseContent(librarian: librarian)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: .infinity)
+                inputRow(librarian: librarian)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
             }
 
             endSessionFooter(librarian: librarian)
@@ -390,97 +357,310 @@ struct LibrarianSurface: View {
             && !librarian.isLoading
     }
 
+    // MARK: - Chat layout (c14)
+
+    /// Input row at the bottom of the chat pane. Lifted out of
+    /// `expandedBody` so the transcript can sit above it as the
+    /// flexing element — chat-app convention: history scrolls above,
+    /// typing happens at the bottom near the keyboard.
     @ViewBuilder
-    private func responseContent(librarian: LibrarianState) -> some View {
-        if librarian.isLoading {
-            ProgressView()
+    private func inputRow(librarian: LibrarianState) -> some View {
+        HStack(spacing: 8) {
+            TextField("Ask anything...", text: Binding(
+                get: { librarian.inputText },
+                set: { librarian.inputText = $0 }
+            ), axis: .vertical)
+                .focused($isInputFocused)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(.white)
                 .tint(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 40)
-        } else if let response = librarian.response {
-            switch response {
-            case .insight(let text):
-                Text(text)
-                    .font(.system(size: 16))
-                    .foregroundStyle(.white)
-                    .lineSpacing(8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .lineLimit(1...4)
+
+            Button {
+                Task { await librarian.executeQuery(store: store) }
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
+            }
+            .buttonStyle(.plain)
+            .disabled(!sendIsEnabled(librarian: librarian))
+            .padding(.trailing, 10)
+        }
+        .frame(minHeight: 48)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    /// Stable id for the bottom anchor used by the scroll-to-latest
+    /// behavior. Sentinel string, not a real exchange id.
+    private static let transcriptBottomAnchor = "_transcript_bottom"
+
+    /// The conversation pane. Renders compacted summary (if any) +
+    /// each exchange in `sessionHistory` + any in-flight or error
+    /// tail. When the session is empty *and* nothing is pending,
+    /// falls through to the existing ghost-whisper suggestions so
+    /// the surface still feels alive on first open.
+    @ViewBuilder
+    private func transcriptView(librarian: LibrarianState) -> some View {
+        let isResponseError: Bool = {
+            guard let response = librarian.response else { return false }
+            if case .error = response { return true }
+            return false
+        }()
+        let hasAny = !librarian.sessionHistory.isEmpty
+            || librarian.compactedSummary != nil
+            || librarian.pendingQuery != nil
+            || librarian.isLoading
+            || isResponseError
+
+        if hasAny {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let summary = librarian.compactedSummary, !summary.isEmpty {
+                            transcriptCompactedPreamble(summary: summary, turns: librarian.compactedExchangeCount)
+                        }
+
+                        ForEach(Array(librarian.sessionHistory.enumerated()), id: \.element.id) { idx, exchange in
+                            let isLatest = (idx == librarian.sessionHistory.count - 1)
+                            let liveCitations: [BlockMatch]? = {
+                                guard isLatest else { return nil }
+                                if case let .ask(_, citations, _)? = librarian.response {
+                                    return citations
+                                }
+                                return nil
+                            }()
+                            transcriptExchange(
+                                librarian: librarian,
+                                exchange: exchange,
+                                liveCitations: liveCitations
+                            )
+                        }
+
+                        transcriptInflightTail(librarian: librarian)
+
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.transcriptBottomAnchor)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-
-            case .retrieval(let nodeIDs):
-                retrievalList(nodeIDs: nodeIDs)
-
-            case .ask(let text, let citations, let provider):
-                askResponse(text: text, citations: citations, provider: provider)
-
-            case .error(let message):
-                Text(message)
-                    .font(.system(size: 16))
-                    .foregroundStyle(Color(hexString: "E8820A"))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onChange(of: librarian.sessionHistory.count) { _, _ in
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                    }
+                }
+                .onChange(of: librarian.isLoading) { _, _ in
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                    }
+                }
+                .onAppear {
+                    proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                }
             }
         } else {
-            suggestionsList(librarian: librarian)
+            ScrollView {
+                suggestionsList(librarian: librarian)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
-    /// Ask-mode response — markdown body via `AttributedString`, citation
-    /// chips stacked below. Tapping a chip drops the user into the cited
-    /// node's detail view; the citation sheet (multi-citation pull
-    /// quotes) lands in c5c.
-    ///
-    /// Chips are deduplicated by `nodeID` — one chip per source node even
-    /// when multiple blocks from the same note ranked into the top-K. The
-    /// numbered `[N]` markers stay in the model's prose (one per block,
-    /// driven by prompt construction in `LibrarianState`), but the chip
-    /// row reads as "source notes" rather than "passages." Pull quotes
-    /// per node land with the citation sheet (c5c).
+    /// Preamble pill for a session that has at least one compaction
+    /// pass behind it. Sits above the live history so the user sees
+    /// the conversation's full arc, not just the post-compaction tail.
     @ViewBuilder
-    private func askResponse(text: String, citations: [BlockMatch], provider: String) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(attributedMarkdown(text))
-                .font(.system(size: 16))
+    private func transcriptCompactedPreamble(summary: String, turns: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Earlier in session — \(turns) turn\(turns == 1 ? "" : "s") compacted")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.45))
+                .textCase(.uppercase)
+                .tracking(0.4)
+            Text(summary)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.75))
+                .lineSpacing(3)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.04))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    /// One historical exchange. Renders as: right-aligned query
+    /// bubble, then the response body (markdown / retrieval / plain
+    /// text per the exchange's mode), then citation chips when
+    /// applicable. `liveCitations` is non-nil only for the most
+    /// recent exchange when it still matches `librarian.response`'s
+    /// .ask citations — that lets the latest chips open the
+    /// `CitationSheet` for block-level pull quotes, while older
+    /// chips navigate direct (no live BlockMatch data to drive the
+    /// sheet).
+    @ViewBuilder
+    private func transcriptExchange(
+        librarian: LibrarianState,
+        exchange: LibrarianState.LibrarianExchange,
+        liveCitations: [BlockMatch]?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            transcriptQueryBubble(text: exchange.query)
+            transcriptResponseBody(librarian: librarian, exchange: exchange, liveCitations: liveCitations)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func transcriptQueryBubble(text: String) -> some View {
+        HStack {
+            Spacer(minLength: 32)
+            Text(text)
+                .font(.system(size: 15, weight: .regular))
                 .foregroundStyle(.white)
-                .lineSpacing(6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+                .lineSpacing(3)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(Color(hexString: "00BFFF").opacity(0.18))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+    }
 
-            let uniqueNodeIDs = dedupedNodeIDs(citations: citations)
-            if !uniqueNodeIDs.isEmpty {
-                Divider().background(Color.white.opacity(0.08))
+    @ViewBuilder
+    private func transcriptResponseBody(
+        librarian: LibrarianState,
+        exchange: LibrarianState.LibrarianExchange,
+        liveCitations: [BlockMatch]?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !exchange.responseText.isEmpty {
+                Text(attributedMarkdown(exchange.responseText))
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .lineSpacing(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            } else if !exchange.citationNodeIDs.isEmpty {
+                // Retrieval-only turn (Navigate mode) — render the
+                // matched nodes inline so the transcript shows the
+                // actual answer (a list of notes), not an empty bubble.
+                retrievalList(nodeIDs: exchange.citationNodeIDs)
+            }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Sources")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.4))
-                        .textCase(.uppercase)
+            if !exchange.citationNodeIDs.isEmpty && !exchange.responseText.isEmpty {
+                transcriptCitationRow(
+                    nodeIDs: exchange.citationNodeIDs,
+                    liveCitations: liveCitations
+                )
+            }
+        }
+    }
 
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(uniqueNodeIDs, id: \.self) { nodeID in
-                            citationChip(nodeID: nodeID, allCitations: citations)
-                        }
+    /// Citation chip row beneath an Ask response. Latest exchange
+    /// gets the live-citation sheet (block-level pull quotes); older
+    /// exchanges nav-direct to the source note since we no longer
+    /// hold the BlockMatch data needed to power the sheet.
+    @ViewBuilder
+    private func transcriptCitationRow(
+        nodeIDs: [String],
+        liveCitations: [BlockMatch]?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Sources")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.4))
+                .textCase(.uppercase)
+
+            LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(nodeIDs, id: \.self) { nodeID in
+                    if let liveCitations {
+                        citationChip(nodeID: nodeID, allCitations: liveCitations)
+                    } else {
+                        transcriptHistoricalChip(nodeID: nodeID)
                     }
                 }
             }
-
-            Text(provider)
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.3))
         }
     }
 
-    /// Returns node IDs in order of first appearance in `citations`,
-    /// dropping later duplicates. Order matters — first-appearance
-    /// roughly tracks "strongest match" since `findRelevantBlockMatches`
-    /// returns matches sorted by score.
-    private func dedupedNodeIDs(citations: [BlockMatch]) -> [String] {
-        var seen = Set<String>()
-        var ordered: [String] = []
-        for match in citations {
-            if seen.insert(match.nodeID).inserted {
-                ordered.append(match.nodeID)
+    @ViewBuilder
+    private func transcriptHistoricalChip(nodeID: String) -> some View {
+        let node = store.nodes.first { $0.id == nodeID }
+        let title = node?.title ?? "Untitled"
+
+        Button {
+            router.pendingNodeNavigationID = nodeID
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(citationDotColor(node: node))
+                    .frame(width: 8, height: 8)
+
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.06))
+            .clipShape(Capsule())
         }
-        return ordered
+        .buttonStyle(.plain)
+    }
+
+    /// In-flight tail: the user's just-sent query as a bubble +
+    /// thinking spinner, OR an error pill when the latest pipeline
+    /// failed (errors aren't appended to history, so they only show
+    /// here). Returns an empty view when neither is active.
+    @ViewBuilder
+    private func transcriptInflightTail(librarian: LibrarianState) -> some View {
+        if let pending = librarian.pendingQuery, librarian.isLoading {
+            VStack(alignment: .leading, spacing: 10) {
+                transcriptQueryBubble(text: pending)
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(.white.opacity(0.6))
+                    Text("Thinking…")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+        } else if librarian.isLoading {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.white.opacity(0.6))
+                Text("Thinking…")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+        } else if case let .error(message)? = librarian.response {
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(Color(hexString: "E8820A"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(hexString: "E8820A").opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
     }
 
     /// Single source chip — node color dot + node title. Tap opens

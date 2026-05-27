@@ -165,6 +165,15 @@ final class LibrarianState {
     /// True while a query is in flight against the language model.
     var isLoading: Bool = false
 
+    /// Snapshot of the user's query at the moment `executeQuery` fires.
+    /// Lets the chat transcript render a pending bubble for the
+    /// in-flight question while the model is still working — without
+    /// it, the user's just-sent message would be invisible until the
+    /// response lands and `appendExchange` adds the pair to history.
+    /// Cleared when the pipeline completes (success, error, or
+    /// retrieval no-match).
+    var pendingQuery: String? = nil
+
     /// Completed exchanges in the current session. Appended in order
     /// by each pipeline on successful completion (errors are skipped).
     /// c6c: history is threaded back into Ask prompts so the model
@@ -485,6 +494,12 @@ final class LibrarianState {
         let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
 
+        // Snapshot the query for the transcript's in-flight bubble,
+        // then clear the input field — chat-app convention so the
+        // user can immediately type a follow-up without manually
+        // clearing what they just sent.
+        pendingQuery = query
+        inputText = ""
         isLoading = true
         response = nil
 
@@ -496,6 +511,8 @@ final class LibrarianState {
         case .research, .provoke:
             await runLegacyClassifyPipeline(query: query, store: store)
         }
+
+        pendingQuery = nil
     }
 
     /// Navigate mode — block-embedding retrieval. Returns the top nodes
@@ -628,6 +645,7 @@ final class LibrarianState {
         researchImportParseMode = .none
         researchImportError = nil
         researchImportAcceptedCount = 0
+        pendingQuery = nil
     }
 
     /// Builds a corpus Node from the current session and persists it

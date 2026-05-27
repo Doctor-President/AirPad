@@ -73,11 +73,14 @@ struct NodeListView: View {
                                 HStack(spacing: 12) {
                                     LibrarianSurface()
                                         .frame(maxWidth: .infinity)
-                                    Spacer()
-                                        .frame(width: 68) // reserve space for the "+" trigger
+                                    if router.librarian.surfaceMode == .collapsed {
+                                        Spacer()
+                                            .frame(width: 68) // reserve space for the "+" trigger
+                                    }
                                 }
                                 .padding(.horizontal, 16)
                                 .padding(.bottom, 24)
+                                .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
                             }
                         }
                     }

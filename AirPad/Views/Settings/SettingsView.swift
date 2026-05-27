@@ -17,6 +17,15 @@ struct SettingsView: View {
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
 
+    // Librarian c7 — standing system-prompt prefix injected on every Librarian
+    // query. Same key LibrarianState reads, so edits here take effect on the
+    // next Ask without app restart.
+    @AppStorage("librarianPersonalPrompt") private var librarianPersonalPrompt = ""
+
+    private static let librarianPersonalPromptMaxChars = 300
+    private static let librarianPersonalPromptPlaceholder =
+        "Ex: Be direct and honest. I'm a creative professional who thinks in systems. Connect insights to my work and don't shy away from uncomfortable observations."
+
     // UI state
     @State private var connectionTestResult: String? = nil
     @State private var isTestingConnection = false
@@ -127,6 +136,49 @@ struct SettingsView: View {
                 }
                 Spacer()
             }
+
+            personalPromptField
+        }
+    }
+
+    private var personalPromptField: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Personal voice")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.4))
+                Spacer()
+                Text("\(librarianPersonalPrompt.count) / \(Self.librarianPersonalPromptMaxChars)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(
+                        librarianPersonalPrompt.count >= Self.librarianPersonalPromptMaxChars
+                        ? .orange.opacity(0.8)
+                        : .white.opacity(0.3)
+                    )
+            }
+            TextField(
+                Self.librarianPersonalPromptPlaceholder,
+                text: $librarianPersonalPrompt,
+                axis: .vertical
+            )
+            .font(.subheadline)
+            .foregroundStyle(.white)
+            .tint(.white)
+            .lineLimit(3...8)
+            .padding(12)
+            .background(Color.white.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .onChange(of: librarianPersonalPrompt) { _, new in
+                if new.count > Self.librarianPersonalPromptMaxChars {
+                    librarianPersonalPrompt = String(
+                        new.prefix(Self.librarianPersonalPromptMaxChars)
+                    )
+                }
+            }
+
+            Text("Prepended to every Librarian query — shapes how the model engages with you.")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.3))
         }
     }
 

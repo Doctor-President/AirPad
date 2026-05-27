@@ -497,8 +497,8 @@ final class LibrarianState {
         isLoading = false
     }
 
-    /// Standing system prompt for Ask. Personal-model-prompt prefix lands
-    /// in c11; until then this is the only steering the user gets.
+    /// Standing system prompt for Ask. Composed of the optional user-set
+    /// personal voice (c7) followed by the baseline steering.
     ///
     /// The "do not append a References / Sources section" clause is load-
     /// bearing for Mistral and Llama-family instruct templates, which
@@ -506,7 +506,28 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        "You are a reflective AI that helps someone think across their own corpus. Be specific, concise, and never generic. When you reference a passage, mark it inline with bracket numbers like [1] [2] matching the numbered passages in the user prompt. Do not append a References, Sources, or Citations section at the end of your response — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their own corpus. Be specific, concise, and never generic. When you reference a passage, mark it inline with bracket numbers like [1] [2] matching the numbered passages in the user prompt. Do not append a References, Sources, or Citations section at the end of your response — AirPad renders citations separately. End your reply at the end of the prose answer."
+        return personalVoicePrefix + base
+    }
+
+    /// User-defined standing voice (c7) — read fresh on each prompt build
+    /// so Settings edits take effect on the next Ask without re-creating
+    /// the session. Returns "" when unset or whitespace-only; otherwise
+    /// returns the trimmed text followed by a blank line so it
+    /// concatenates cleanly into whatever follows.
+    private var personalVoicePrefix: String {
+        let raw = UserDefaults.standard.string(forKey: "librarianPersonalPrompt") ?? ""
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return trimmed + "\n\n"
+    }
+
+    /// Surface-visible flag for the personal-voice indicator. Pure UI hook —
+    /// the prompt builder reads UserDefaults directly so changes in Settings
+    /// land on the next Ask regardless of whether the surface re-evaluated.
+    var hasPersonalVoice: Bool {
+        let raw = UserDefaults.standard.string(forKey: "librarianPersonalPrompt") ?? ""
+        return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func buildAskContext(
@@ -702,7 +723,7 @@ final class LibrarianState {
                 }
             } else {
                 let insightPrompt = """
-                You are a reflective AI that helps someone understand patterns in their own thinking.
+                \(personalVoicePrefix)You are a reflective AI that helps someone understand patterns in their own thinking.
 
                 Their corpus:
                 \(corpusSummary)

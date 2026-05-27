@@ -37,6 +37,11 @@ struct LibrarianSurface: View {
     @State private var isSavingSession = false
     @FocusState private var isInputFocused: Bool
 
+    /// Bound to the same key Settings writes (c7). Drives the personal-voice
+    /// indicator in the expanded header so toggling the prompt in Settings
+    /// reflects here without dismount.
+    @AppStorage("librarianPersonalPrompt") private var librarianPersonalPrompt = ""
+
     /// Identifiable wrapper so `.sheet(item:)` re-presents when the user
     /// taps a different chip without dismissing first. Carries the
     /// full citation list so the sheet can compute its bracket indices
@@ -49,6 +54,10 @@ struct LibrarianSurface: View {
 
     private var activeWhispers: [String] {
         store.ghostQuerySuggestions
+    }
+
+    private var hasPersonalVoice: Bool {
+        !librarianPersonalPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var displayText: String {
@@ -169,6 +178,14 @@ struct LibrarianSurface: View {
                 }
 
                 Spacer()
+
+                if hasPersonalVoice {
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .frame(width: 22, height: 32)
+                        .accessibilityLabel("Personal voice active")
+                }
 
                 Button {
                     librarian.surfaceMode = .collapsed

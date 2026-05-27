@@ -388,6 +388,21 @@ final class CorpusStore {
         blockEmbedding.enqueueRebuild(node: node)
     }
 
+    /// Librarian Navigate-mode entry point. Hands the query off to the
+    /// block-embedding service and returns deduped node IDs ranked by
+    /// best-block cosine similarity. Kept here (rather than exposing the
+    /// service directly) so `blockEmbedding` stays private and the
+    /// candidate-set policy (full corpus today; scope-chip filter when
+    /// chips land) lives in one place.
+    func findRelevantNodes(query: String, topK: Int = 5) async -> [String] {
+        let candidateIDs = nodes.map { $0.id }
+        return await blockEmbedding.findRelevantNodeIDs(
+            query: query,
+            candidateNodeIDs: candidateIDs,
+            topK: topK
+        )
+    }
+
     /// Suggestions surfaced by the Ghost Query Field. Built from the corpus summary if present,
     /// with a fixed fallback list so the field is never empty (e.g., on a fresh install).
     var ghostQuerySuggestions: [String] {

@@ -181,6 +181,45 @@ final class BlockEmbeddingService {
         return Array(scored.prefix(topK)).map { $0.block }
     }
 
+    /// Navigate-mode retrieval — ranks nodes by their best-scoring block.
+    /// Returns node IDs sorted by best-block cosine similarity descending,
+    /// capped at `topK`. Nodes with no sidecar or no dimension-matching
+    /// blocks are silently dropped; nodes with at least one valid block
+    /// are scored even if other blocks are stale.
+    ///
+    /// Distinct from `findRelevantBlocks` because Navigate cares about
+    /// *which nodes* the query lives in, not which blocks. Pull-quote
+    /// citation (Ask mode, c5+) is the block-level path.
+    func findRelevantNodeIDs(
+        query: String,
+        candidateNodeIDs: [String],
+        topK: Int = 5
+    ) async -> [String] {
+        let substrate = SubstrateService.shared
+        guard await substrate.ensureLoaded(),
+              let qvec = substrate.embed(query),
+              !qvec.isEmpty else { return [] }
+
+        var nodeScores: [(nodeID: String, score: Float)] = []
+        for nodeID in candidateNodeIDs {
+            do {
+                guard let index = try await storage.loadBlockIndex(forNodeID: nodeID) else { continue }
+                var bestScore: Float = -.infinity
+                for block in index.blocks where block.embedding.count == qvec.count {
+                    let s = Self.cosine(qvec, block.embedding)
+                    if s > bestScore { bestScore = s }
+                }
+                if bestScore > -.infinity {
+                    nodeScores.append((nodeID, bestScore))
+                }
+            } catch {
+                print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
+            }
+        }
+        nodeScores.sort { $0.score > $1.score }
+        return Array(nodeScores.prefix(topK)).map { $0.nodeID }
+    }
+
     // MARK: - Helpers
 
     private static func reuseKey(itemID: String, sourceHash: String) -> String {

@@ -81,10 +81,12 @@ final class LibrarianState {
     /// True while a query is in flight against the language model.
     var isLoading: Bool = false
 
-    /// Runs the classify → respond pipeline. Updates `response` and
-    /// `isLoading` on the main actor. The store is injected at call
-    /// site because LibrarianState doesn't own a reference; the caller
-    /// (LibrarianSurface) pulls it from the environment.
+    /// Dispatches to the per-mode pipeline. Navigate uses block-level
+    /// embedding retrieval (no FM round-trip); every other mode currently
+    /// shares the legacy classify → respond pipeline absorbed from
+    /// `CorpusQuerySheet` (Ask gets its own pipeline in c5+, Research /
+    /// Provoke later still). The store is injected at call site because
+    /// LibrarianState doesn't own a reference.
     func executeQuery(store: CorpusStore) async {
         let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
@@ -92,6 +94,33 @@ final class LibrarianState {
         isLoading = true
         response = nil
 
+        switch activeMode {
+        case .navigate:
+            await runNavigatePipeline(query: query, store: store)
+        case .ask, .research, .provoke:
+            await runLegacyClassifyPipeline(query: query, store: store)
+        }
+    }
+
+    /// Navigate mode — block-embedding retrieval. Returns the top nodes
+    /// ranked by best-block cosine similarity to the query. No LLM call,
+    /// no title hallucination, no iOS 26 gate. Empty result surfaces as
+    /// an error so the user sees explicit no-match feedback rather than
+    /// a confusing empty list.
+    private func runNavigatePipeline(query: String, store: CorpusStore) async {
+        let matchedIDs = await store.findRelevantNodes(query: query, topK: 5)
+        if matchedIDs.isEmpty {
+            response = .error("No matches yet. Try a different phrasing, or wait for content to finish embedding.")
+        } else {
+            response = .retrieval(matchedIDs)
+        }
+        isLoading = false
+    }
+
+    /// Legacy classify → respond pipeline carried over from
+    /// `CorpusQuerySheet`. Runs for Ask / Research / Provoke until each
+    /// mode lands its own pipeline.
+    private func runLegacyClassifyPipeline(query: String, store: CorpusStore) async {
         // Truncate to 30 most recent nodes when the corpus is large
         // (matches pre-Librarian CorpusQuerySheet behavior; replaced
         // with embedding-driven retrieval in a later commit).

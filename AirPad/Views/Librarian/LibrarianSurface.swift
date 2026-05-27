@@ -242,6 +242,13 @@ struct LibrarianSurface: View {
     /// chips stacked below. Tapping a chip drops the user into the cited
     /// node's detail view; the citation sheet (multi-citation pull
     /// quotes) lands in c5c.
+    ///
+    /// Chips are deduplicated by `nodeID` — one chip per source node even
+    /// when multiple blocks from the same note ranked into the top-K. The
+    /// numbered `[N]` markers stay in the model's prose (one per block,
+    /// driven by prompt construction in `LibrarianState`), but the chip
+    /// row reads as "source notes" rather than "passages." Pull quotes
+    /// per node land with the citation sheet (c5c).
     @ViewBuilder
     private func askResponse(text: String, citations: [BlockMatch], provider: String) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -252,18 +259,19 @@ struct LibrarianSurface: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
 
-            if !citations.isEmpty {
+            let uniqueNodeIDs = dedupedNodeIDs(citations: citations)
+            if !uniqueNodeIDs.isEmpty {
                 Divider().background(Color.white.opacity(0.08))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Citations")
+                    Text("Sources")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.4))
                         .textCase(.uppercase)
 
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(citations.enumerated()), id: \.offset) { idx, match in
-                            citationChip(index: idx + 1, match: match)
+                        ForEach(uniqueNodeIDs, id: \.self) { nodeID in
+                            citationChip(nodeID: nodeID)
                         }
                     }
                 }
@@ -275,22 +283,33 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// Single-citation chip — index + node color dot + node title. Tap
-    /// hands navigation off to the host NavigationStack via the router
-    /// (same pattern as retrieval rows).
+    /// Returns node IDs in order of first appearance in `citations`,
+    /// dropping later duplicates. Order matters — first-appearance
+    /// roughly tracks "strongest match" since `findRelevantBlockMatches`
+    /// returns matches sorted by score.
+    private func dedupedNodeIDs(citations: [BlockMatch]) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for match in citations {
+            if seen.insert(match.nodeID).inserted {
+                ordered.append(match.nodeID)
+            }
+        }
+        return ordered
+    }
+
+    /// Single source chip — node color dot + node title. Tap hands
+    /// navigation off to the host NavigationStack via the router (same
+    /// pattern as retrieval rows).
     @ViewBuilder
-    private func citationChip(index: Int, match: BlockMatch) -> some View {
-        let node = store.nodes.first { $0.id == match.nodeID }
+    private func citationChip(nodeID: String) -> some View {
+        let node = store.nodes.first { $0.id == nodeID }
         let title = node?.title ?? "Untitled"
 
         Button {
-            router.pendingNodeNavigationID = match.nodeID
+            router.pendingNodeNavigationID = nodeID
         } label: {
             HStack(spacing: 6) {
-                Text("[\(index)]")
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-
                 Circle()
                     .fill(citationDotColor(node: node))
                     .frame(width: 8, height: 8)

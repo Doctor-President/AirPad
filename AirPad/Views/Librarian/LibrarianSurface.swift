@@ -96,7 +96,7 @@ struct LibrarianSurface: View {
                 expandedBody(librarian: librarian)
             }
         }
-        .frame(height: librarian.surfaceMode == .collapsed ? 52 : 452)
+        .frame(height: librarian.surfaceMode == .collapsed ? 78 : 452)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: librarian.surfaceMode)
         .onAppear {
             startGradientAnimation()

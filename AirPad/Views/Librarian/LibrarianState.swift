@@ -72,6 +72,20 @@ final class LibrarianState {
     /// `.ask`, matching the pre-c3 single-pipeline behavior.
     var activeMode: Mode = .ask
 
+    /// Active scope — narrows retrieval to a slice of the corpus. Seeded
+    /// from the host surface's scope at first mount (so a Librarian opened
+    /// on a Collection canvas defaults to that collection). User can
+    /// change it via the chip row above the input. Navigate + Ask honor
+    /// this; Research / Provoke (still on the legacy pipeline) currently
+    /// ignore it and will be brought in when each lands its own pipeline.
+    var selectedScope: CanvasScope = .corpus
+
+    /// Key of the host scope that last seeded `selectedScope`. The surface
+    /// re-seeds on appear when the host scope changes, but leaves the
+    /// user's explicit selection alone within the same host. Without this,
+    /// every remount would clobber a manually-picked scope.
+    var lastSeededHostKey: String? = nil
+
     /// User's in-flight query text, lifted into session state so the
     /// surface can be driven from outside (whisper inline-tap pre-load
     /// in a later commit) and so it survives surface remounts when the
@@ -114,14 +128,34 @@ final class LibrarianState {
     /// no title hallucination, no iOS 26 gate. Empty result surfaces as
     /// an error so the user sees explicit no-match feedback rather than
     /// a confusing empty list.
+    ///
+    /// Retrieves `2 * topK` candidates then filters by scope membership
+    /// so a narrow collection still has a chance of yielding 5 results.
+    /// Final cap at 5 to match the pre-scope behavior.
     private func runNavigatePipeline(query: String, store: CorpusStore) async {
-        let matchedIDs = await store.findRelevantNodes(query: query, topK: 5)
+        let allowed = allowedNodeIDs(scope: selectedScope, store: store)
+        let candidateIDs = await store.findRelevantNodes(query: query, topK: 10)
+        let filteredIDs = allowed.map { set in candidateIDs.filter(set.contains) } ?? candidateIDs
+        let matchedIDs = Array(filteredIDs.prefix(5))
         if matchedIDs.isEmpty {
             response = .error("No matches yet. Try a different phrasing, or wait for content to finish embedding.")
         } else {
             response = .retrieval(matchedIDs)
         }
         isLoading = false
+    }
+
+    /// Resolves a scope to the set of node IDs that count as in-scope, or
+    /// `nil` for `.corpus` (no filtering needed). Returning `nil` rather
+    /// than `Set(store.nodes.map { $0.id })` lets the caller cheaply
+    /// short-circuit when no filtering is required.
+    private func allowedNodeIDs(scope: CanvasScope, store: CorpusStore) -> Set<String>? {
+        switch scope {
+        case .corpus:
+            return nil
+        case .collection:
+            return Set(store.nodes(in: scope).map { $0.id })
+        }
     }
 
     /// Ask mode — block-embedding retrieval feeds the prompt context,
@@ -168,7 +202,12 @@ final class LibrarianState {
     }
 
     private func runAskPipeline(query: String, store: CorpusStore) async {
-        let allMatches = await store.findRelevantBlockMatches(query: query, topK: 8)
+        let allowed = allowedNodeIDs(scope: selectedScope, store: store)
+        let candidateMatches = await store.findRelevantBlockMatches(query: query, topK: 16)
+        let inScopeMatches = allowed.map { set in
+            candidateMatches.filter { set.contains($0.nodeID) }
+        } ?? candidateMatches
+        let allMatches = Array(inScopeMatches.prefix(8))
         let citations = Self.trimToCharBudget(allMatches, budget: Self.askPassageCharBudget)
         if citations.count < allMatches.count {
             print("[Librarian] Ask: trimmed citations \(allMatches.count) → \(citations.count) to fit \(Self.askPassageCharBudget)-char budget")

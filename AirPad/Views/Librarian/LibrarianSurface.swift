@@ -13,6 +13,18 @@ import SwiftUI
 /// detail-view push — mirroring the capture-overlay pattern.
 struct LibrarianSurface: View {
 
+    /// Scope of the host surface this Librarian is mounted on (Corpus
+    /// canvas, Journal canvas, or a specific collection canvas/list).
+    /// Used to seed `LibrarianState.selectedScope` on first appear in a
+    /// new host so the Librarian defaults to the slice the user is
+    /// already looking at. Defaults to `.corpus` for hosts that don't
+    /// thread a scope through yet.
+    let hostScope: CanvasScope
+
+    init(hostScope: CanvasScope = .corpus) {
+        self.hostScope = hostScope
+    }
+
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
 
@@ -61,11 +73,12 @@ struct LibrarianSurface: View {
                 expandedBody(librarian: librarian)
             }
         }
-        .frame(height: librarian.surfaceMode == .collapsed ? 52 : 420)
+        .frame(height: librarian.surfaceMode == .collapsed ? 52 : 452)
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: librarian.surfaceMode)
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
+            seedScopeFromHostIfNeeded(librarian: librarian)
         }
         .onChange(of: librarian.surfaceMode) { _, newMode in
             if newMode == .collapsed {
@@ -137,7 +150,10 @@ struct LibrarianSurface: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
-            .padding(.bottom, 10)
+            .padding(.bottom, 6)
+
+            scopeChipRow(librarian: librarian)
+                .padding(.bottom, 8)
 
             // Input row
             HStack(spacing: 8) {
@@ -426,6 +442,67 @@ struct LibrarianSurface: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    // MARK: - Scope chips
+
+    /// Horizontal chip row above the input. Tap selects a scope; the
+    /// selection is the source of truth for retrieval (Navigate + Ask).
+    /// Order mirrors `CollectionPillRail`: Corpus and Journal first
+    /// (system slices), then user collections most-recently-used first.
+    @ViewBuilder
+    private func scopeChipRow(librarian: LibrarianState) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                scopeChip(scope: .corpus, label: "Corpus", librarian: librarian)
+                scopeChip(scope: .collection(NodeCollection.journalID), label: "Journal", librarian: librarian)
+                ForEach(userCollectionsByLastUsed, id: \.id) { collection in
+                    scopeChip(
+                        scope: .collection(collection.id),
+                        label: collection.name,
+                        librarian: librarian
+                    )
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private var userCollectionsByLastUsed: [NodeCollection] {
+        store.collections.sorted { a, b in
+            let aDate = store.collectionLastUsedAt[a.id] ?? .distantPast
+            let bDate = store.collectionLastUsedAt[b.id] ?? .distantPast
+            return aDate > bDate
+        }
+    }
+
+    @ViewBuilder
+    private func scopeChip(scope: CanvasScope, label: String, librarian: LibrarianState) -> some View {
+        let isSelected = librarian.selectedScope == scope
+        Button {
+            librarian.selectedScope = scope
+        } label: {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(isSelected ? .black : .white.opacity(0.7))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(isSelected ? Color.white : Color.white.opacity(0.08))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Seeds `selectedScope` from the host the first time the surface
+    /// appears in that host. Tracks the last-seeded host key on
+    /// `LibrarianState` so within a single host the user's explicit
+    /// chip selection survives remounts. Crossing into a different
+    /// host (Corpus → Reading collection, say) re-seeds.
+    private func seedScopeFromHostIfNeeded(librarian: LibrarianState) {
+        let key = hostScope.key
+        guard librarian.lastSeededHostKey != key else { return }
+        librarian.selectedScope = hostScope
+        librarian.lastSeededHostKey = key
     }
 
     // MARK: - Animations

@@ -372,6 +372,10 @@ final class CorpusStore {
     /// sidecar. Lazy so it composes with the existing `private let service`
     /// initializer (Swift forbids cross-property defaults). All 16 of this
     /// store's node-save paths funnel through `saveAndEnqueue` below.
+    /// `@ObservationIgnored` because `@Observable` generates init accessors
+    /// for stored properties and rejects lazy ones — and this service is a
+    /// non-observable dependency holder, not UI state.
+    @ObservationIgnored
     private lazy var blockEmbedding = BlockEmbeddingService(storage: service)
 
     /// Node persistence funnel. Replaces every direct

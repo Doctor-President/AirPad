@@ -70,10 +70,10 @@ struct LibrarianSurface: View {
         @Bindable var librarian = router.librarian
 
         ZStack {
-            RoundedRectangle(cornerRadius: 28)
+            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
                 .fill(Color(red: 0.04, green: 0.04, blue: 0.06))
 
-            RoundedRectangle(cornerRadius: 28)
+            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
                 .strokeBorder(
                     AngularGradient(
                         colors: [
@@ -132,6 +132,19 @@ struct LibrarianSurface: View {
         case .fullScreen:
             let screenH = UIScreen.main.bounds.height
             return max(560, screenH - 160)
+        }
+    }
+
+    /// Corner radius per surface mode. Collapsed reads as a true pill
+    /// (radius == half its 78pt height) so the corner arc is
+    /// concentric with the 38pt circular mode icon — same "roundness
+    /// language" as the icon ring. Expanded / fullScreen keep the
+    /// softer 28pt rectangle since at those heights a full pill would
+    /// look like a tall capsule, not a surface.
+    private func surfaceCornerRadius(for mode: LibrarianState.SurfaceMode) -> CGFloat {
+        switch mode {
+        case .collapsed: return 39
+        case .expanded, .fullScreen: return 28
         }
     }
 

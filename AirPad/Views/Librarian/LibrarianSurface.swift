@@ -292,6 +292,7 @@ struct LibrarianSurface: View {
                 inputRow(librarian: librarian)
                     .padding(.horizontal, 12)
                     .padding(.top, 6)
+                    .padding(.bottom, 14)
             }
 
             endSessionFooter(librarian: librarian)

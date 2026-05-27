@@ -141,6 +141,8 @@ struct SubstrateInspectView: View {
                     Divider().background(Color.white.opacity(0.1))
                     backfillSection
                     Divider().background(Color.white.opacity(0.1))
+                    blockBackfillSection
+                    Divider().background(Color.white.opacity(0.1))
                     selfTestSection
                     Divider().background(Color.white.opacity(0.1))
                     substrateLayoutSection
@@ -425,6 +427,50 @@ struct SubstrateInspectView: View {
     private func progressLine(_ s: SubstrateBackfillState) -> String {
         if s.done { return "done · \(s.batchTotal) attempted" }
         return "\(s.current)/\(s.batchTotal)"
+    }
+
+    // MARK: - Block embedding backfill (C5)
+
+    private var blockBackfillSection: some View {
+        let state = store.backfillingBlocks
+        let inFlight = state != nil && state?.done == false
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Block embeddings")
+            HStack(spacing: 8) {
+                Text("Walks every node and rebuilds the per-node `blocks.json` sidecar. Idempotent — embeddings are reused on hash match.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.4))
+                Spacer(minLength: 0)
+                Button {
+                    Task { await store.backfillBlockEmbeddings() }
+                } label: {
+                    Text(inFlight ? "Running…" : "Run")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.purple.opacity(inFlight ? 0.3 : 0.6))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(inFlight)
+            }
+            if let s = state {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(blockProgressLine(s))
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.5))
+                    Text("rebuilt=\(s.rebuilt) skipped_embedder=\(s.skippedEmbedder)")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+            }
+        }
+    }
+
+    private func blockProgressLine(_ s: BackfillBlockEmbeddingState) -> String {
+        if s.done { return "done · \(s.total) nodes" }
+        return "\(s.current)/\(s.total)"
     }
 
     // MARK: - Self tests

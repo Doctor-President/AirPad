@@ -78,6 +78,21 @@ struct SubstrateBackfillState: Equatable {
     var lastRunAt: Date?
 }
 
+// MARK: - Block embedding backfill progress (C5)
+
+/// Surface state for `backfillBlockEmbeddings`. The dev substrate inspect view
+/// observes the `backfillingBlocks` property to show progress + per-outcome
+/// counts. `rebuilt` is the number of nodes whose sidecar was (re)written;
+/// `skippedEmbedder` counts nodes where `SubstrateService.ensureLoaded` failed
+/// and the rebuild bailed before chunking.
+struct BackfillBlockEmbeddingState: Equatable {
+    var total: Int
+    var current: Int
+    var rebuilt: Int
+    var skippedEmbedder: Int
+    var done: Bool
+}
+
 /// Central state store for the AirPad corpus.
 /// @MainActor ensures all mutations happen on the main thread, keeping SwiftUI observation correct.
 @Observable
@@ -160,6 +175,10 @@ final class CorpusStore {
     /// SB139 Stage 1 — non-nil while substrate backfill is running or just
     /// finished. The dev substrate inspect view observes this for progress.
     var substrateBackfill: SubstrateBackfillState? = nil
+
+    /// Block embedding C5 — non-nil while `backfillBlockEmbeddings` is running
+    /// or just finished. Same observation pattern as `substrateBackfill`.
+    var backfillingBlocks: BackfillBlockEmbeddingState? = nil
 
     /// True while any of the long-running model operations are in flight.
     /// Drives the C4 ModelProcessingIndicator in the canvas chrome — ORs the
@@ -2956,6 +2975,72 @@ final class CorpusStore {
         // Force re-cluster against the freshly populated substrate so isolate
         // routing has something to chew on without requiring a relaunch.
         invalidateNeighborhoods()
+    }
+
+    // MARK: - Block embedding backfill (C5)
+
+    /// Walks every node and (re)builds its `blocks.json` sidecar via
+    /// `BlockEmbeddingService.rebuild`. Manual dev trigger — the steady-state
+    /// path is `saveAndEnqueue`'s debounced enqueue. Idempotent: rebuild
+    /// reuses embeddings on `(itemID, sourceHash)` match, so a re-run on an
+    /// already-populated corpus is cheap.
+    ///
+    /// Per-rebuild yields are handled inside the service (5ms between embeds);
+    /// this loop adds one more 5ms yield between nodes so a large corpus
+    /// doesn't lock the main thread between sidecar writes.
+    @available(iOS 17.0, *)
+    func backfillBlockEmbeddings() async {
+        let total = nodes.count
+        backfillingBlocks = BackfillBlockEmbeddingState(
+            total: total,
+            current: 0,
+            rebuilt: 0,
+            skippedEmbedder: 0,
+            done: false
+        )
+        guard total > 0 else {
+            backfillingBlocks = BackfillBlockEmbeddingState(
+                total: 0, current: 0, rebuilt: 0, skippedEmbedder: 0, done: true
+            )
+            print("[BlockBackfill] Complete: nothing to do")
+            return
+        }
+
+        let embedderLoaded = await SubstrateService.shared.ensureLoaded()
+        if !embedderLoaded {
+            print("[BlockBackfill] embedder unavailable; marking all skipped")
+            backfillingBlocks = BackfillBlockEmbeddingState(
+                total: total,
+                current: total,
+                rebuilt: 0,
+                skippedEmbedder: total,
+                done: true
+            )
+            return
+        }
+
+        var rebuilt = 0
+        for (idx, node) in nodes.enumerated() {
+            await blockEmbedding.rebuild(node: node)
+            rebuilt += 1
+            backfillingBlocks = BackfillBlockEmbeddingState(
+                total: total,
+                current: idx + 1,
+                rebuilt: rebuilt,
+                skippedEmbedder: 0,
+                done: false
+            )
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+
+        print("[BlockBackfill] Complete: \(total) nodes, \(rebuilt) rebuilt")
+        backfillingBlocks = BackfillBlockEmbeddingState(
+            total: total,
+            current: total,
+            rebuilt: rebuilt,
+            skippedEmbedder: 0,
+            done: true
+        )
     }
 
     // MARK: - SB139 Stage 1 — substrate pipeline

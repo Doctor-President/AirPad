@@ -659,11 +659,257 @@ struct LibrarianSurface: View {
         case .export:
             researchExportStage(librarian: librarian)
         case .importReview:
-            researchStubStage(
-                title: "Import the response",
-                detail: "Paste the model's reply; review candidate nodes before they enter the corpus. Lands next."
+            researchImportStage(librarian: librarian)
+        }
+    }
+
+    // MARK: - Stage 4 (Import)
+
+    /// Stage 4 — Import. User pastes the model's reply (either the
+    /// raw transcript or the structured JSON Stage 2's toggle asked
+    /// for). AirPad parses on text-change into review candidates;
+    /// the user accepts or dismisses each one individually. Nothing
+    /// enters the corpus until the user taps Accept.
+    @ViewBuilder
+    private func researchImportStage(librarian: LibrarianState) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    researchImportPasteArea(librarian: librarian)
+                    researchImportStatusRow(librarian: librarian)
+                    if let error = librarian.researchImportError {
+                        Text(error)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color(hexString: "E8820A"))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(hexString: "E8820A").opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    researchImportCandidateList(librarian: librarian)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .frame(maxHeight: .infinity)
+
+            researchImportFooter(librarian: librarian)
+        }
+    }
+
+    @ViewBuilder
+    private func researchImportPasteArea(librarian: LibrarianState) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Paste the model's reply")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+                .textCase(.uppercase)
+                .tracking(0.4)
+            ZStack(alignment: .topLeading) {
+                if librarian.researchImportText.isEmpty {
+                    Text("Paste here — JSON from a structured return, or the full transcript with `## headings` per candidate note.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .allowsHitTesting(false)
+                }
+                TextEditor(text: Binding(
+                    get: { librarian.researchImportText },
+                    set: { newValue in
+                        librarian.researchImportText = newValue
+                        librarian.parseImportPaste()
+                    }
+                ))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .frame(minHeight: 110, maxHeight: 180)
+            }
+            .background(Color.white.opacity(0.04))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
             )
         }
+    }
+
+    @ViewBuilder
+    private func researchImportStatusRow(librarian: LibrarianState) -> some View {
+        HStack(spacing: 8) {
+            researchImportModeBadge(mode: librarian.researchImportParseMode)
+            Spacer()
+            if librarian.researchImportAcceptedCount > 0 {
+                Text("\(librarian.researchImportAcceptedCount) added to corpus")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color(hexString: "00BFFF"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func researchImportModeBadge(mode: LibrarianState.ImportParseMode) -> some View {
+        let (label, color): (String?, Color) = {
+            switch mode {
+            case .none:
+                return (nil, .clear)
+            case .structuredJSON:
+                return ("Detected: structured JSON", Color(hexString: "00BFFF"))
+            case .transcriptHeadingSplit:
+                return ("Detected: transcript with headings", .white.opacity(0.6))
+            case .transcriptSingle:
+                return ("Detected: single block (no headings found)", .white.opacity(0.6))
+            }
+        }()
+        if let label {
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(color)
+        }
+    }
+
+    @ViewBuilder
+    private func researchImportCandidateList(librarian: LibrarianState) -> some View {
+        if librarian.researchImportCandidates.isEmpty {
+            if librarian.researchImportText.isEmpty {
+                Text("Paste a model reply above to extract candidate notes. AirPad understands JSON from the structured-return toggle, or markdown with `## headings`.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .padding(.top, 4)
+            } else if librarian.researchImportAcceptedCount > 0 {
+                Text("All candidates reviewed. Paste another reply to extract more, or head back.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.4))
+                    .padding(.top, 4)
+            }
+        } else {
+            VStack(spacing: 10) {
+                ForEach(librarian.researchImportCandidates) { candidate in
+                    researchImportCandidateCard(librarian: librarian, candidate: candidate)
+                }
+            }
+        }
+    }
+
+    /// One candidate card. Title up top, body preview below (3-line
+    /// clamp so a long imported note doesn't dominate the review
+    /// surface), Accept + Dismiss in a row. Accept is the cyan-tinted
+    /// affirmative; Dismiss is muted so the eye doesn't read it as
+    /// the primary action.
+    @ViewBuilder
+    private func researchImportCandidateCard(
+        librarian: LibrarianState,
+        candidate: LibrarianState.ImportCandidate
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(candidate.title)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+
+            if !candidate.content.isEmpty {
+                Text(candidate.content)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    Task { @MainActor in
+                        await librarian.acceptImportCandidate(id: candidate.id, store: store)
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Accept")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color(hexString: "00BFFF").opacity(0.22))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    librarian.dismissImportCandidate(id: candidate.id)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Dismiss")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.white.opacity(0.08))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    /// Stage 4 footer. Back goes to Export. There's no Next — Import
+    /// is the terminal stage. Once the user has accepted what they
+    /// wanted, they close the session via the surface-level End
+    /// affordance (no per-stage Done needed).
+    @ViewBuilder
+    private func researchImportFooter(librarian: LibrarianState) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                librarian.researchStage = .export
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            let remaining = librarian.researchImportCandidates.count
+            if remaining > 0 {
+                Text("\(remaining) to review")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.03))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(Color.white.opacity(0.08)),
+            alignment: .top
+        )
     }
 
     // MARK: - Stage 3 (Export)

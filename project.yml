@@ -81,8 +81,16 @@ targets:
         NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as ideas."
         NSPhotoLibraryUsageDescription: "AirPad can add photos from your library to an idea."
         NSLocalNetworkUsageDescription: "AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate."
+        # ATS exception for user-configured local-AI endpoints. NSAllowsLocalNetworking
+        # is too narrow — it only covers .local / link-local / unqualified hostnames,
+        # not RFC 1918 ranges (10.x, 192.168.x, 172.16-31.x) and not Tailscale CGNAT
+        # (100.64.0.0/10). Since the endpoint is user-supplied at runtime, no static
+        # flag is more narrow than this. Privacy oath remains enforced in code:
+        # ModelRouter only routes to Ollama when the user has explicitly entered an
+        # endpoint in Settings — ATS is not the privacy gate, the empty-endpoint
+        # check is. No other URLSession HTTP paths exist in the app today.
         NSAppTransportSecurity:
-          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
 
   AirPadShare:
     type: app-extension

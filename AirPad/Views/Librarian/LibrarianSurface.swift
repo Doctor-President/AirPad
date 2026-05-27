@@ -19,6 +19,7 @@ struct LibrarianSurface: View {
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
     @State private var gradientRotation: Double = 0
+    @State private var showModeDropdown = false
     @FocusState private var isInputFocused: Bool
 
     private var activeWhispers: [String] {
@@ -94,10 +95,21 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func expandedBody(librarian: LibrarianState) -> some View {
         VStack(spacing: 0) {
-            // Header: empty 32pt slot (mode icon lands here in c3) + chevron
+            // Header: mode icon (tap → dropdown) + chevron (tap → collapse)
             HStack {
-                Color.clear
-                    .frame(width: 32, height: 32)
+                Button {
+                    showModeDropdown = true
+                } label: {
+                    Image(systemName: librarian.activeMode.sfSymbol)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showModeDropdown, arrowEdge: .top) {
+                    modeDropdown(librarian: librarian)
+                        .presentationCompactAdaptation(.popover)
+                }
 
                 Spacer()
 
@@ -238,6 +250,43 @@ struct LibrarianSurface: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func modeDropdown(librarian: LibrarianState) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(LibrarianState.Mode.allCases, id: \.self) { mode in
+                Button {
+                    librarian.activeMode = mode
+                    showModeDropdown = false
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: mode.sfSymbol)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white)
+                            .frame(width: 22)
+
+                        Text(mode.displayName)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(.white)
+
+                        Spacer(minLength: 16)
+
+                        if mode == librarian.activeMode {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(minWidth: 180)
+        .background(Color(red: 0.04, green: 0.04, blue: 0.06))
     }
 
     @ViewBuilder

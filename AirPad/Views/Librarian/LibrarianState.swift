@@ -16,11 +16,40 @@ import FoundationModels
 final class LibrarianState {
 
     /// Surface state — collapsed pill vs expanded chrome. Future commits
-    /// add `.iconOnly` once the mode icon lands and can persist as
-    /// ambient presence.
+    /// add `.iconOnly` once the mode icon can persist as ambient
+    /// presence after a chevron-collapse.
     enum SurfaceMode: Sendable {
         case collapsed
         case expanded
+    }
+
+    /// Librarian mode — which pipeline runs on send. For c3 this is
+    /// purely state + visual (the dropdown changes the active icon);
+    /// per-mode pipelines land in c4+ (Navigate first). Today every
+    /// mode runs the same classify → respond pipeline.
+    enum Mode: Sendable, CaseIterable {
+        case navigate
+        case ask
+        case research
+        case provoke
+
+        var displayName: String {
+            switch self {
+            case .navigate: return "Navigate"
+            case .ask: return "Ask"
+            case .research: return "Research"
+            case .provoke: return "Provoke"
+            }
+        }
+
+        var sfSymbol: String {
+            switch self {
+            case .navigate: return "location.magnifyingglass"
+            case .ask: return "sparkles"
+            case .research: return "graduationcap.fill"
+            case .provoke: return "bolt.fill"
+            }
+        }
     }
 
     /// Result of the classify → respond pipeline. `retrieval` carries
@@ -33,6 +62,11 @@ final class LibrarianState {
     }
 
     var surfaceMode: SurfaceMode = .collapsed
+
+    /// Active mode — drives the mode-icon symbol in the expanded header
+    /// and (in later commits) which pipeline runs on send. Defaults to
+    /// `.ask`, matching the pre-c3 single-pipeline behavior.
+    var activeMode: Mode = .ask
 
     /// User's in-flight query text, lifted into session state so the
     /// surface can be driven from outside (whisper inline-tap pre-load

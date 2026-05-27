@@ -349,6 +349,22 @@ final class CorpusStore {
     private let service = iCloudDriveService()
     private let layoutService = LayoutService()
 
+    /// Block embedding C4 — write-through trigger for the per-node block
+    /// sidecar. Lazy so it composes with the existing `private let service`
+    /// initializer (Swift forbids cross-property defaults). All 16 of this
+    /// store's node-save paths funnel through `saveAndEnqueue` below.
+    private lazy var blockEmbedding = BlockEmbeddingService(storage: service)
+
+    /// Node persistence funnel. Replaces every direct
+    /// `service.saveNode(...)` call in CorpusStore so the block-embedding
+    /// write-through trigger can't be forgotten when future save paths
+    /// land. Throws what the storage actor throws — callers keep their
+    /// existing do/catch error handling intact.
+    private func saveAndEnqueue(_ node: Node) async throws {
+        try await service.saveNode(node)
+        blockEmbedding.enqueueRebuild(node: node)
+    }
+
     /// Suggestions surfaced by the Ghost Query Field. Built from the corpus summary if present,
     /// with a fixed fallback list so the field is never empty (e.g., on a fresh install).
     var ghostQuerySuggestions: [String] {
@@ -491,7 +507,7 @@ final class CorpusStore {
         newLayout.positions[node.id] = CanvasPosition(x: Double(position.x), y: Double(position.y))
         newLayout.updatedAt = Date()
         do {
-            try await service.saveNode(node)
+            try await saveAndEnqueue(node)
             try await service.saveCanvasLayout(newLayout)
             nodes.insert(node, at: 0)
             canvasLayout = newLayout
@@ -651,7 +667,7 @@ final class CorpusStore {
         guard let idx = nodes.firstIndex(where: { $0.id == updated.id }) else { return }
         nodes[idx] = updated
         do {
-            try await service.saveNode(updated)
+            try await saveAndEnqueue(updated)
         } catch {
             print("[CorpusStore] Update error: \(error)")
         }
@@ -669,7 +685,7 @@ final class CorpusStore {
         guard didMigrate else { return }
         nodes[idx] = node
         do {
-            try await service.saveNode(node)
+            try await saveAndEnqueue(node)
         } catch {
             print("[CorpusStore] ensureEntrySchema: saveNode error for \(nodeID): \(error)")
         }
@@ -1555,7 +1571,7 @@ final class CorpusStore {
     /// `node.updatedAt` bumps so the on-disk file reflects the new order.
     func moveEntry(nodeID: String, from: Int, to: Int) async {
         guard let updated = applyMoveEntry(nodeID: nodeID, from: from, to: to) else { return }
-        do { try await service.saveNode(updated) } catch {
+        do { try await saveAndEnqueue(updated) } catch {
             print("[CorpusStore] moveEntry persist error: \(error)")
         }
     }
@@ -1583,7 +1599,7 @@ final class CorpusStore {
     /// (or other sync mutators) when the call site needs to control exactly
     /// when the disk save runs relative to view-state changes.
     func persistNode(_ node: Node) async {
-        do { try await service.saveNode(node) } catch {
+        do { try await saveAndEnqueue(node) } catch {
             print("[CorpusStore] persistNode error: \(error)")
         }
     }
@@ -2600,7 +2616,7 @@ final class CorpusStore {
         }
         for node in changedNodes {
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] deleteCollection: saveNode error for \(node.id): \(error)")
             }
@@ -2967,7 +2983,7 @@ final class CorpusStore {
         print("[Substrate] Migrated \(changed.count) embedder_error → fm_error (had vectors)")
         Task {
             for node in changed {
-                do { try await service.saveNode(node) }
+                do { try await saveAndEnqueue(node) }
                 catch { print("[Substrate] migration save error: \(error)") }
             }
         }
@@ -3536,7 +3552,7 @@ final class CorpusStore {
             }
 
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] Inbox import error: \(error)")
                 continue
@@ -3638,7 +3654,7 @@ final class CorpusStore {
             )
 
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
                 savedNodes.append(node)
                 print("[Batch] [\(index + 1)/\(total)] Saved \(node.id)")
             } catch {
@@ -3797,7 +3813,7 @@ final class CorpusStore {
         }
         for node in changedNodes {
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] deleteNodes: saveNode error for \(node.id): \(error)")
             }
@@ -3875,7 +3891,7 @@ final class CorpusStore {
         }
         for node in changedNodes {
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] addTag(batch): saveNode error for \(node.id): \(error)")
             }
@@ -3913,7 +3929,7 @@ final class CorpusStore {
         }
         for node in changedNodes {
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] addNodes(toCollection): saveNode error for \(node.id): \(error)")
             }
@@ -3948,7 +3964,7 @@ final class CorpusStore {
         }
         for node in changedNodes {
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] removeNodes(fromCollection): saveNode error for \(node.id): \(error)")
             }
@@ -3999,7 +4015,7 @@ final class CorpusStore {
         }
         for node in changedNodes {
             do {
-                try await service.saveNode(node)
+                try await saveAndEnqueue(node)
             } catch {
                 print("[CorpusStore] moveNodes: saveNode error for \(node.id): \(error)")
             }
@@ -4027,7 +4043,7 @@ final class CorpusStore {
     func promoteRejectedBlock(_ block: RejectedBlock) async {
         let node = BatchParser.makeNodes(texts: [block.text], importTimestamp: block.importTimestamp).first!
         do {
-            try await service.saveNode(node)
+            try await saveAndEnqueue(node)
             nodes.insert(node, at: 0)
             removeFromReviewQueue(id: block.id)
             await processNodeWithAI(nodeID: node.id, suppressTagSheet: false)
@@ -4071,7 +4087,7 @@ final class CorpusStore {
 
         // Save to disk and add to store
         do {
-            try await service.saveNode(node)
+            try await saveAndEnqueue(node)
             nodes.insert(node, at: 0)
             quarantineStore?.remove(entry)
             print("[Quarantine] Rescued entry as node \(nodeID)")

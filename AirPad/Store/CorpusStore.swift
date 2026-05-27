@@ -2637,6 +2637,23 @@ final class CorpusStore {
         return collection
     }
 
+    /// Idempotent first-write creator for the Librarian Sessions system
+    /// collection. Materializes the reserved-ID collection the first time
+    /// a user actually saves a session — no eager seeding at launch, so
+    /// users who never use Librarian don't see the row. Subsequent calls
+    /// no-op. Self-healing: if the user later deletes the collection, the
+    /// next session save recreates it; nodes that lost membership during
+    /// the delete stay where they are (moving them is a user action).
+    func ensureLibrarianSessionsCollection() async {
+        guard !collections.contains(where: { $0.id == NodeCollection.librarianSessionsID }) else { return }
+        let collection = NodeCollection(
+            id: NodeCollection.librarianSessionsID,
+            name: "Librarian Sessions"
+        )
+        collections.append(collection)
+        await persistCollections()
+    }
+
     /// Rename a user collection in place. No-ops on empty / whitespace-only
     /// names and on missing IDs (Corpus/Journal are virtual and never appear
     /// in `collections`, so passing their reserved IDs is a silent no-op).

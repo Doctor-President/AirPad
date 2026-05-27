@@ -31,8 +31,15 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>AirPad uses the camera to capture photos and videos as ideas.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AirPad needs microphone access to record voice notes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

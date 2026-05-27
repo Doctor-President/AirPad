@@ -42,6 +42,7 @@
 		2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */; };
 		26E14B3E298318D333114703 /* TodayCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */; };
 		2733262BA259E300B3613CF3 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
+		2813856C0295021A410E3FE1 /* ModelRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */; };
 		299AECA5A73FE92E7FB0378B /* ImageEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1051A2630769178DF195B38B /* ImageEntryBody.swift */; };
 		2B4E58DDB1092B8D07102CC3 /* RelatednessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988F66299DD79745A824B3A0 /* RelatednessService.swift */; };
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
@@ -364,6 +365,7 @@
 		F98C5EDB7B8428ABB080668F /* UberNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UberNode.swift; sourceTree = "<group>"; };
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
 		FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSnapshotService.swift; sourceTree = "<group>"; };
+		FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRouter.swift; sourceTree = "<group>"; };
 		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -445,6 +447,7 @@
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
 				FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */,
+				FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */,
 				38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */,
 				3366166820015E0F584466E9 /* OGMetadataService.swift */,
 				988F66299DD79745A824B3A0 /* RelatednessService.swift */,
@@ -969,6 +972,7 @@
 				588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */,
 				2066C6BE5B2E00550E919724 /* MediaThumbnailLoader.swift in Sources */,
 				E76F2F630607772910AA020A /* ModelProcessingIndicator.swift in Sources */,
+				2813856C0295021A410E3FE1 /* ModelRouter.swift in Sources */,
 				79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */,
 				0284EB1329A9A5B1C0DF85D6 /* NeighborhoodService.swift in Sources */,
 				6ABE3E503556A6148E29F602 /* Node.swift in Sources */,

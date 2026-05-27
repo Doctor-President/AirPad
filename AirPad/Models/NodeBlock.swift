@@ -64,6 +64,17 @@ struct NodeBlock: Codable, Equatable {
     }
 }
 
+/// One match from block-level retrieval — carries the block, its parent
+/// node ID, and the cosine score so callers (Librarian Ask mode) can
+/// render citation chips and pull quotes without re-walking the sidecar.
+/// `NodeBlock` itself doesn't carry `nodeID` (it lives inside a
+/// `NodeBlockIndex`), so retrieval surfaces it explicitly.
+struct BlockMatch: Sendable {
+    let block: NodeBlock
+    let nodeID: String
+    let score: Float
+}
+
 /// Sidecar root for a single node's block embeddings. One file per node at
 /// `nodes/<nodeID>/blocks.json`, inside the node's own directory so
 /// `iCloudDriveService.deleteNode` (which removes the whole directory)

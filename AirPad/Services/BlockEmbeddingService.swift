@@ -150,8 +150,11 @@ final class BlockEmbeddingService {
     // MARK: - Retrieval
 
     /// Stage 2 of two-stage retrieval — Stage 1 narrows by node-level
-    /// embedding, this ranks blocks within the surviving candidates. Returns
-    /// blocks sorted by cosine similarity descending, capped at `topK`.
+    /// embedding, this ranks blocks within the surviving candidates.
+    /// Returns matches sorted by cosine similarity descending, capped at
+    /// `topK`. Each match carries the block, its parent node ID, and
+    /// the score so Ask-mode citation rendering doesn't have to walk
+    /// the sidecar again.
     ///
     /// Dimension-mismatched blocks (left over from a prior embedder version
     /// that the rebuild path hasn't caught yet) are silently filtered. Empty
@@ -160,25 +163,29 @@ final class BlockEmbeddingService {
         query: String,
         candidateNodeIDs: [String],
         topK: Int = 50
-    ) async -> [NodeBlock] {
+    ) async -> [BlockMatch] {
         let substrate = SubstrateService.shared
         guard await substrate.ensureLoaded(),
               let qvec = substrate.embed(query),
               !qvec.isEmpty else { return [] }
 
-        var scored: [(block: NodeBlock, score: Float)] = []
+        var scored: [BlockMatch] = []
         for nodeID in candidateNodeIDs {
             do {
                 guard let index = try await storage.loadBlockIndex(forNodeID: nodeID) else { continue }
                 for block in index.blocks where block.embedding.count == qvec.count {
-                    scored.append((block, Self.cosine(qvec, block.embedding)))
+                    scored.append(BlockMatch(
+                        block: block,
+                        nodeID: nodeID,
+                        score: Self.cosine(qvec, block.embedding)
+                    ))
                 }
             } catch {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
         scored.sort { $0.score > $1.score }
-        return Array(scored.prefix(topK)).map { $0.block }
+        return Array(scored.prefix(topK))
     }
 
     /// Navigate-mode retrieval — ranks nodes by their best-scoring block.

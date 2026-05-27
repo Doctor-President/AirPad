@@ -208,6 +208,9 @@ struct LibrarianSurface: View {
             case .retrieval(let nodeIDs):
                 retrievalList(nodeIDs: nodeIDs)
 
+            case .ask(let text, let citations, let provider):
+                askResponse(text: text, citations: citations, provider: provider)
+
             case .error(let message):
                 Text(message)
                     .font(.system(size: 16))
@@ -217,6 +220,99 @@ struct LibrarianSurface: View {
         } else {
             suggestionsList(librarian: librarian)
         }
+    }
+
+    /// Ask-mode response — markdown body via `AttributedString`, citation
+    /// chips stacked below. Tapping a chip drops the user into the cited
+    /// node's detail view; the citation sheet (multi-citation pull
+    /// quotes) lands in c5c.
+    @ViewBuilder
+    private func askResponse(text: String, citations: [BlockMatch], provider: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(attributedMarkdown(text))
+                .font(.system(size: 16))
+                .foregroundStyle(.white)
+                .lineSpacing(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+
+            if !citations.isEmpty {
+                Divider().background(Color.white.opacity(0.08))
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Citations")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .textCase(.uppercase)
+
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(citations.enumerated()), id: \.offset) { idx, match in
+                            citationChip(index: idx + 1, match: match)
+                        }
+                    }
+                }
+            }
+
+            Text(provider)
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.3))
+        }
+    }
+
+    /// Single-citation chip — index + node color dot + node title. Tap
+    /// hands navigation off to the host NavigationStack via the router
+    /// (same pattern as retrieval rows).
+    @ViewBuilder
+    private func citationChip(index: Int, match: BlockMatch) -> some View {
+        let node = store.nodes.first { $0.id == match.nodeID }
+        let title = node?.title ?? "Untitled"
+
+        Button {
+            router.pendingNodeNavigationID = match.nodeID
+        } label: {
+            HStack(spacing: 6) {
+                Text("[\(index)]")
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+
+                Circle()
+                    .fill(citationDotColor(node: node))
+                    .frame(width: 8, height: 8)
+
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.06))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func citationDotColor(node: Node?) -> Color {
+        guard let primary = node?.primaryTag,
+              let storeTag = store.tags.first(where: { $0.name == primary }),
+              let color = Color(hex: storeTag.colorHex)
+        else { return .gray.opacity(0.6) }
+        return color
+    }
+
+    /// `AttributedString` markdown with a forgiving fallback — if the
+    /// model emits something the parser chokes on, we still show the
+    /// raw text rather than dropping the answer entirely.
+    private func attributedMarkdown(_ text: String) -> AttributedString {
+        if let parsed = try? AttributedString(
+            markdown: text,
+            options: AttributedString.MarkdownParsingOptions(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) {
+            return parsed
+        }
+        return AttributedString(text)
     }
 
     @ViewBuilder

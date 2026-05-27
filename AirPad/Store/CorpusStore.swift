@@ -403,6 +403,20 @@ final class CorpusStore {
         )
     }
 
+    /// Librarian Ask-mode entry point. Returns top block matches across
+    /// the candidate set — the caller (Librarian) builds the prompt
+    /// context from these and surfaces the same matches as citation
+    /// chips so the response and the citation set come from one
+    /// retrieval pass. Same scoping policy as `findRelevantNodes`.
+    func findRelevantBlockMatches(query: String, topK: Int = 8) async -> [BlockMatch] {
+        let candidateIDs = nodes.map { $0.id }
+        return await blockEmbedding.findRelevantBlocks(
+            query: query,
+            candidateNodeIDs: candidateIDs,
+            topK: topK
+        )
+    }
+
     /// Suggestions surfaced by the Ghost Query Field. Built from the corpus summary if present,
     /// with a fixed fallback list so the field is never empty (e.g., on a fresh install).
     var ghostQuerySuggestions: [String] {

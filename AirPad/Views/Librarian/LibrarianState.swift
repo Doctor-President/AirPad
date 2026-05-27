@@ -52,12 +52,16 @@ final class LibrarianState {
         }
     }
 
-    /// Result of the classify → respond pipeline. `retrieval` carries
-    /// node IDs (resolved against the store at render time) so the list
-    /// stays correct if a node was deleted between query and display.
+    /// Result of a mode pipeline. `retrieval` carries node IDs (resolved
+    /// against the store at render time) so the list stays correct if a
+    /// node was deleted between query and display. `ask` carries both
+    /// the rendered text and the citation blocks used to build the
+    /// prompt — the chip row reads from the same retrieval pass that
+    /// produced the text so the two never disagree.
     enum QueryResponse: Sendable {
         case insight(String)
         case retrieval([String])
+        case ask(text: String, citations: [BlockMatch], provider: String)
         case error(String)
     }
 
@@ -82,10 +86,11 @@ final class LibrarianState {
     var isLoading: Bool = false
 
     /// Dispatches to the per-mode pipeline. Navigate uses block-level
-    /// embedding retrieval (no FM round-trip); every other mode currently
-    /// shares the legacy classify → respond pipeline absorbed from
-    /// `CorpusQuerySheet` (Ask gets its own pipeline in c5+, Research /
-    /// Provoke later still). The store is injected at call site because
+    /// embedding retrieval (no LLM); Ask uses block-embedding retrieval
+    /// to feed prompt context and routes via `ModelRouter` (FM default,
+    /// Ollama if configured). Research and Provoke still share the
+    /// legacy classify → respond pipeline absorbed from `CorpusQuerySheet`
+    /// until each lands its own. Store is injected at call site because
     /// LibrarianState doesn't own a reference.
     func executeQuery(store: CorpusStore) async {
         let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -97,7 +102,9 @@ final class LibrarianState {
         switch activeMode {
         case .navigate:
             await runNavigatePipeline(query: query, store: store)
-        case .ask, .research, .provoke:
+        case .ask:
+            await runAskPipeline(query: query, store: store)
+        case .research, .provoke:
             await runLegacyClassifyPipeline(query: query, store: store)
         }
     }
@@ -115,6 +122,73 @@ final class LibrarianState {
             response = .retrieval(matchedIDs)
         }
         isLoading = false
+    }
+
+    /// Ask mode — block-embedding retrieval feeds the prompt context,
+    /// the same matches surface as citation chips. The response is a
+    /// rich-text answer routed through `ModelRouter` (FM by default,
+    /// Ollama when an endpoint is configured). The citations and the
+    /// text come from one retrieval pass so the chip row can't drift
+    /// from what the model actually saw.
+    ///
+    /// Citation markers (`[1] [2]`) are *requested* in the prompt but
+    /// not enforced post-hoc — even if the model omits them, the chips
+    /// still anchor the answer to its sources. Inline-marker parsing
+    /// lands when the citation sheet does (c5c).
+    private func runAskPipeline(query: String, store: CorpusStore) async {
+        let citations = await store.findRelevantBlockMatches(query: query, topK: 8)
+        let context = buildAskContext(citations: citations, store: store)
+        let userPrompt = buildAskUserPrompt(query: query, context: context, hasCitations: !citations.isEmpty)
+
+        let provider = ModelRouter.active.displayName
+        do {
+            let text = try await ModelRouter.generate(
+                systemPrompt: askSystemPrompt,
+                userPrompt: userPrompt
+            )
+            response = .ask(text: text, citations: citations, provider: provider)
+        } catch let error as ModelRouter.RouterError {
+            response = .error(error.errorDescription ?? "Couldn't reach the model.")
+        } catch {
+            response = .error("Something went wrong. Try again.")
+        }
+        isLoading = false
+    }
+
+    /// Standing system prompt for Ask. Personal-model-prompt prefix lands
+    /// in c11; until then this is the only steering the user gets.
+    private var askSystemPrompt: String {
+        "You are a reflective AI that helps someone think across their own corpus. Be specific, concise, and never generic. When you reference a passage, mark it inline with bracket numbers like [1] [2] matching the numbered passages in the user prompt."
+    }
+
+    private func buildAskContext(
+        citations: [BlockMatch],
+        store: CorpusStore
+    ) -> String {
+        guard !citations.isEmpty else { return "" }
+        return citations.enumerated().map { idx, match in
+            let title = store.nodes.first { $0.id == match.nodeID }?.title ?? "Untitled"
+            return "[\(idx + 1)] From \"\(title)\":\n\(match.block.text)"
+        }.joined(separator: "\n\n---\n\n")
+    }
+
+    private func buildAskUserPrompt(query: String, context: String, hasCitations: Bool) -> String {
+        if hasCitations {
+            return """
+            Relevant passages from the user's corpus:
+
+            \(context)
+
+            Question: \(query)
+
+            Answer in 2-4 paragraphs. Reference passages inline with their bracket numbers when relevant. Stay specific to the passages above — don't invent content.
+            """
+        }
+        return """
+        Question: \(query)
+
+        The user's corpus has nothing semantically close to this query. Answer briefly (2-3 sentences) and let them know you didn't find specific source material.
+        """
     }
 
     /// Legacy classify → respond pipeline carried over from

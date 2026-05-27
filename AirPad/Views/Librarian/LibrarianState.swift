@@ -221,9 +221,21 @@ final class LibrarianState {
     var researchLastSeededScopeKey: String? = nil
 
     /// Stage 2 text — research-session framing the user wants the
-    /// model to honor. Empty until Stage 2 lands; held here so it
+    /// model to honor. Pre-populated by the surface from selected-node
+    /// context on first entry; user can edit freely. Held here so it
     /// survives stepping back to Stage 1 and forward again.
     var researchFrameText: String = ""
+
+    /// True after the surface has populated a default frame suggestion
+    /// for the current research session. Gate so re-entering Stage 2
+    /// doesn't clobber an explicit clear-to-empty by the user.
+    var researchFrameSeeded: Bool = false
+
+    /// Stage 2 toggle — asks the model in Stage 3 (Export) to return a
+    /// structured JSON shape that Stage 4 (Import) can parse directly
+    /// into candidate nodes. Lives here so the user's preference
+    /// survives stage navigation; consumed by Export prompt assembly.
+    var researchRequestStructuredReturn: Bool = false
 
     /// Dispatches to the per-mode pipeline. Navigate uses block-level
     /// embedding retrieval (no LLM); Ask uses block-embedding retrieval
@@ -372,6 +384,8 @@ final class LibrarianState {
         researchSelectedNodeIDs.removeAll()
         researchLastSeededScopeKey = nil
         researchFrameText = ""
+        researchFrameSeeded = false
+        researchRequestStructuredReturn = false
     }
 
     /// Builds a corpus Node from the current session and persists it

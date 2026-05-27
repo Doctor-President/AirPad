@@ -14,6 +14,7 @@
 		0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		05B10604308289E3B1B57BC2 /* EntryMigrationSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */; };
 		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
+		07BB3A967E5BCDC6E3CB2B52 /* LibrarianState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B05B92C729C4833EC93C3A4A /* LibrarianState.swift */; };
 		07C8518A53FA5439187CAE4B /* NodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376265F2CCAF46EDE2216E54 /* NodeBlock.swift */; };
 		07CB581F48846F9CC3814049 /* UberNodeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */; };
 		0888BEFE345DC3469F36CC46 /* AVKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA8C82636A7D9E2E115A203 /* AVKit.framework */; };
@@ -23,7 +24,6 @@
 		0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */; };
 		0E4728F3BB69F32DCABA416B /* CaptureOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */; };
 		0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
-		0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */ = {isa = PBXBuildFile; fileRef = B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */; };
 		0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */; };
 		11D8040AE3C48E6498A1F6A6 /* UMAPSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */; };
 		130B5342B773AA3949CFC79C /* HDBSCANCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = D513DE977AA6A0B607CE5508 /* HDBSCANCluster.swift */; };
@@ -71,6 +71,7 @@
 		59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */; };
 		5A03FDA3ADA663B72A753A5C /* CollectionCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */; };
 		5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */; };
+		5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */; };
 		5F8E37E87E6B3DAC5C0E38A9 /* Lora-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 46B2E50D5AC047E8D52B2013 /* Lora-Regular.ttf */; };
 		60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */; };
 		60D696FF61EBB144201B1E88 /* HDBSCANSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E0A70C721C874921860A43 /* HDBSCANSelfTest.swift */; };
@@ -263,6 +264,7 @@
 		5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateSelfTest.swift; sourceTree = "<group>"; };
 		5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridView.swift; sourceTree = "<group>"; };
 		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
+		6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSurface.swift; sourceTree = "<group>"; };
 		6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionCreationSheet.swift; sourceTree = "<group>"; };
 		613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryTile.swift; sourceTree = "<group>"; };
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -313,8 +315,8 @@
 		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
 		AE402981E931009EBB3F93EE /* Neighborhood.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Neighborhood.swift; sourceTree = "<group>"; };
 		B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadService.swift; sourceTree = "<group>"; };
+		B05B92C729C4833EC93C3A4A /* LibrarianState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianState.swift; sourceTree = "<group>"; };
 		B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodePickerSheet.swift; sourceTree = "<group>"; };
-		B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhostQueryField.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
 		BB4E63F786821E7025A5C3A0 /* MediaFullscreenViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFullscreenViewer.swift; sourceTree = "<group>"; };
@@ -516,6 +518,7 @@
 				37218568793A17FDE4D48112 /* Collections */,
 				A1059810ABACBA240F7761FF /* Dashboard */,
 				4457977889C2B78493EC5AD7 /* Detail */,
+				A4B743E14DBF0611388FD4DE /* Librarian */,
 				E2DA2EA8F4AA00E1FCC24AFC /* List */,
 				2B9615A52E1C8DCD63462128 /* Settings */,
 				DF9CD6E4FF1185B7CEF053EE /* Shared */,
@@ -662,6 +665,15 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		A4B743E14DBF0611388FD4DE /* Librarian */ = {
+			isa = PBXGroup;
+			children = (
+				B05B92C729C4833EC93C3A4A /* LibrarianState.swift */,
+				6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */,
+			);
+			path = Librarian;
+			sourceTree = "<group>";
+		};
 		BC83C0C59C50DAD4C160BC1C /* Entry */ = {
 			isa = PBXGroup;
 			children = (
@@ -719,7 +731,6 @@
 			children = (
 				5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */,
 				A486E02334E4E4056C81AA71 /* CorpusQuerySheet.swift */,
-				B19E6C6B18DBABD6FD558BD7 /* GhostQueryField.swift */,
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
 				497A2D223E494E948D445DFF /* NodeGradientBackground.swift */,
 				BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */,
@@ -937,7 +948,6 @@
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
 				348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */,
 				CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */,
-				0EACEA13F977A2F47F9705AE /* GhostQueryField.swift in Sources */,
 				E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */,
 				130B5342B773AA3949CFC79C /* HDBSCANCluster.swift in Sources */,
 				CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */,
@@ -949,6 +959,8 @@
 				5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */,
+				07BB3A967E5BCDC6E3CB2B52 /* LibrarianState.swift in Sources */,
+				5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */,
 				2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */,
 				598AB294337257CEED19A5BC /* LinkEntryBody.swift in Sources */,
 				C3D20531250163A764EAB625 /* LinkGalleryBody.swift in Sources */,

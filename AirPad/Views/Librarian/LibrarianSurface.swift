@@ -1,13 +1,20 @@
 import SwiftUI
 
-struct GhostQueryField: View {
+/// Collapsed-pill state of the Librarian morphing surface. Visually
+/// identical to the pre-Librarian `GhostQueryField` for commit 1 — same
+/// dark fill, rotating angular-gradient border, cycling ghost whispers.
+/// Tapping opens `CorpusQuerySheet` (today's typing affordance) until
+/// in-place morphing lands in a subsequent commit. Session state (sheet
+/// presentation, pending query text) lives on `AppRouter.librarian` so
+/// future mounts at the ContentView root can drive the same surface.
+struct LibrarianSurface: View {
 
     @Environment(CorpusStore.self) private var store
+    @Environment(AppRouter.self) private var router
+
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
     @State private var gradientRotation: Double = 0
-    @State private var showQuerySheet = false
-    @State private var querySheetInitialText = ""
     @State private var sheetDetent: PresentationDetent = .medium
 
     private var activeWhispers: [String] {
@@ -20,12 +27,12 @@ struct GhostQueryField: View {
     }
 
     var body: some View {
+        @Bindable var librarian = router.librarian
+
         ZStack {
-            // Dark fill
             RoundedRectangle(cornerRadius: 28)
                 .fill(Color(red: 0.04, green: 0.04, blue: 0.06))
 
-            // Gradient border with rotation animation
             RoundedRectangle(cornerRadius: 28)
                 .strokeBorder(
                     AngularGradient(
@@ -42,7 +49,6 @@ struct GhostQueryField: View {
                     lineWidth: 1.5
                 )
 
-            // Ghost text
             Text(displayText)
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(.white)
@@ -51,17 +57,20 @@ struct GhostQueryField: View {
         }
         .frame(height: 52)
         .onTapGesture {
-            querySheetInitialText = displayText
-            showQuerySheet = true
+            librarian.pendingQueryText = displayText
+            librarian.isPresentingQuerySheet = true
         }
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
         }
-        .sheet(isPresented: $showQuerySheet) {
-            CorpusQuerySheet(isPresented: $showQuerySheet, initialQuery: querySheetInitialText)
-                .presentationDetents([.medium, .large], selection: $sheetDetent)
-                .presentationBackground(Color(red: 0.04, green: 0.04, blue: 0.06))
+        .sheet(isPresented: $librarian.isPresentingQuerySheet) {
+            CorpusQuerySheet(
+                isPresented: $librarian.isPresentingQuerySheet,
+                initialQuery: librarian.pendingQueryText
+            )
+            .presentationDetents([.medium, .large], selection: $sheetDetent)
+            .presentationBackground(Color(red: 0.04, green: 0.04, blue: 0.06))
         }
     }
 
@@ -78,18 +87,15 @@ struct GhostQueryField: View {
     }
 
     private func cycleWhisper() {
-        // Fade out
         withAnimation(.easeInOut(duration: 0.6)) {
             textOpacity = 0
         }
 
-        // Swap text after fade out completes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
             let count = activeWhispers.count
             guard count > 0 else { return }
             currentWhisperIndex = (currentWhisperIndex + 1) % count
 
-            // Fade in
             withAnimation(.easeInOut(duration: 0.6)) {
                 textOpacity = 0.55
             }

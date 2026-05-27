@@ -54,6 +54,14 @@ final class AppRouter {
     /// it fires exactly once.
     var pendingNodeNavigationID: String? = nil
 
+    /// Librarian session state — the morphing query / synthesis surface.
+    /// Travels across canvas, list, and (future) detail-view mounts so an
+    /// in-flight session survives navigation between surfaces. Single
+    /// source of truth for sheet presentation today and for surface mode,
+    /// scope chip selection, and conversation history as those land in
+    /// subsequent commits.
+    @ObservationIgnored let librarian = LibrarianState()
+
     init() {
         AppRouter.shared = self
     }

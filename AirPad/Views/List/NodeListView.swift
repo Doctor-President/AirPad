@@ -71,7 +71,7 @@ struct NodeListView: View {
                             VStack {
                                 Spacer()
                                 HStack(spacing: 12) {
-                                    GhostQueryField()
+                                    LibrarianSurface()
                                         .frame(maxWidth: .infinity)
                                     Spacer()
                                         .frame(width: 68) // reserve space for the "+" trigger

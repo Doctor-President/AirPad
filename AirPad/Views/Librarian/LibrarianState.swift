@@ -135,8 +135,44 @@ final class LibrarianState {
     /// not enforced post-hoc — even if the model omits them, the chips
     /// still anchor the answer to its sources. Inline-marker parsing
     /// lands when the citation sheet does (c5c).
+    /// Soft cap on passage content sent in the Ask prompt. Local models
+    /// (Ollama / LM Studio) often run with a context window much smaller
+    /// than the underlying model supports — LM Studio defaults a
+    /// 32k-context Mistral-7B to 4096 unless reconfigured, which blows up
+    /// silently with a Channel Error mid-stream. 12,000 chars (~3000
+    /// tokens) leaves headroom for the system prompt, the user question,
+    /// and the model's response inside a 4096-token window.
+    ///
+    /// Tunable: raise once the surface exposes a model-side window value
+    /// or once we add a model name → known-window-size map.
+    static let askPassageCharBudget: Int = 12_000
+
+    /// Greedy first-fit trim by character count. The `!result.isEmpty` guard
+    /// guarantees at least one passage is sent even if the top match alone
+    /// blows the budget — better to overshoot by one block than to send a
+    /// citation-free prompt that quietly drops the user's corpus. Per-block
+    /// overhead (~50 chars) accounts for the numbered label and separator
+    /// in `buildAskContext`.
+    private static func trimToCharBudget(_ matches: [BlockMatch], budget: Int) -> [BlockMatch] {
+        var used = 0
+        var result: [BlockMatch] = []
+        for match in matches {
+            let cost = match.block.text.count + 50
+            if used + cost > budget && !result.isEmpty {
+                break
+            }
+            result.append(match)
+            used += cost
+        }
+        return result
+    }
+
     private func runAskPipeline(query: String, store: CorpusStore) async {
-        let citations = await store.findRelevantBlockMatches(query: query, topK: 8)
+        let allMatches = await store.findRelevantBlockMatches(query: query, topK: 8)
+        let citations = Self.trimToCharBudget(allMatches, budget: Self.askPassageCharBudget)
+        if citations.count < allMatches.count {
+            print("[Librarian] Ask: trimmed citations \(allMatches.count) → \(citations.count) to fit \(Self.askPassageCharBudget)-char budget")
+        }
         let context = buildAskContext(citations: citations, store: store)
         let userPrompt = buildAskUserPrompt(query: query, context: context, hasCitations: !citations.isEmpty)
 

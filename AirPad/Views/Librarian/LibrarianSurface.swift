@@ -654,10 +654,7 @@ struct LibrarianSurface: View {
         case .select:
             researchSelectStage(librarian: librarian)
         case .frame:
-            researchStubStage(
-                title: "Frame the session",
-                detail: "Tell the model what you want from this conversation. Lands next."
-            )
+            researchFrameStage(librarian: librarian)
         case .export:
             researchStubStage(
                 title: "Export the briefing",
@@ -668,6 +665,152 @@ struct LibrarianSurface: View {
                 title: "Import the response",
                 detail: "Paste the model's reply; review candidate nodes before they enter the corpus. Lands next."
             )
+        }
+    }
+
+    // MARK: - Stage 2 (Frame)
+
+    /// Stage 2 — Frame. Multi-line text editor pre-populated with a
+    /// suggestion derived from the user's Stage 1 selection. Carries a
+    /// schema-aware-return toggle whose effect is realized when Stage 3
+    /// (Export) assembles the briefing prompt; storing it here keeps
+    /// the user's preference across stage navigation.
+    @ViewBuilder
+    private func researchFrameStage(librarian: LibrarianState) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("What do you want from this conversation?")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.top, 4)
+
+                    researchFrameEditor(librarian: librarian)
+
+                    researchStructuredToggle(librarian: librarian)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            }
+            .frame(maxHeight: .infinity)
+
+            researchFrameFooter(librarian: librarian)
+        }
+        .onAppear { researchSeedFrameIfNeeded(librarian: librarian) }
+    }
+
+    @ViewBuilder
+    private func researchFrameEditor(librarian: LibrarianState) -> some View {
+        TextField(
+            "Tell the model what you want from this session…",
+            text: Binding(
+                get: { librarian.researchFrameText },
+                set: { librarian.researchFrameText = $0 }
+            ),
+            axis: .vertical
+        )
+        .font(.system(size: 14))
+        .foregroundStyle(.white)
+        .tint(.white)
+        .lineLimit(4...10)
+        .padding(12)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func researchStructuredToggle(librarian: LibrarianState) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle(isOn: Binding(
+                get: { librarian.researchRequestStructuredReturn },
+                set: { librarian.researchRequestStructuredReturn = $0 }
+            )) {
+                Text("Request schema-aware structured return")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            .tint(Color(hexString: "00BFFF"))
+
+            Text("Asks the model to reply in a JSON shape AirPad can import directly in Stage 4.")
+                .font(.system(size: 11))
+                .foregroundStyle(.white.opacity(0.4))
+        }
+    }
+
+    @ViewBuilder
+    private func researchFrameFooter(librarian: LibrarianState) -> some View {
+        let count = librarian.researchSelectedNodeIDs.count
+        HStack(spacing: 12) {
+            Button {
+                librarian.researchStage = .select
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Text("\(count) node\(count == 1 ? "" : "s")")
+                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.45))
+
+            Button {
+                librarian.researchStage = .export
+            } label: {
+                HStack(spacing: 4) {
+                    Text("Next")
+                        .font(.system(size: 13, weight: .semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.white.opacity(0.18))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.03))
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundStyle(Color.white.opacity(0.08)),
+            alignment: .top
+        )
+    }
+
+    /// Populate `researchFrameText` with a default suggestion on first
+    /// entry to Stage 2. Re-entering the same session leaves the user's
+    /// text alone (including deliberate clear-to-empty). The suggestion
+    /// is intentionally simple — the brief's "AirPad suggests a frame"
+    /// is satisfied by a sensible question seed that the user can keep,
+    /// edit, or wipe; richer substrate-aware framing is a follow-up.
+    private func researchSeedFrameIfNeeded(librarian: LibrarianState) {
+        guard !librarian.researchFrameSeeded else { return }
+        librarian.researchFrameSeeded = true
+        guard librarian.researchFrameText.isEmpty else { return }
+        let count = librarian.researchSelectedNodeIDs.count
+        if count == 0 {
+            librarian.researchFrameText = "What patterns or open questions emerge across this slice of the corpus?"
+        } else {
+            librarian.researchFrameText = "What patterns, tensions, or open questions emerge across these \(count) notes?"
         }
     }
 

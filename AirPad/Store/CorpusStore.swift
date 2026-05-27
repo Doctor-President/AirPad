@@ -392,10 +392,14 @@ final class CorpusStore {
     /// block-embedding service and returns deduped node IDs ranked by
     /// best-block cosine similarity. Kept here (rather than exposing the
     /// service directly) so `blockEmbedding` stays private and the
-    /// candidate-set policy (full corpus today; scope-chip filter when
-    /// chips land) lives in one place.
-    func findRelevantNodes(query: String, topK: Int = 5) async -> [String] {
-        let candidateIDs = nodes.map { $0.id }
+    /// candidate-set policy lives in one place.
+    ///
+    /// `scope` narrows the candidate set *before* ranking — passing a
+    /// scope into `topK` post-filter would let a narrow collection lose
+    /// every top corpus match, so we filter the candidate IDs upstream
+    /// and let `topK` count in-scope hits.
+    func findRelevantNodes(query: String, scope: CanvasScope = .corpus, topK: Int = 5) async -> [String] {
+        let candidateIDs = nodes(in: scope).map { $0.id }
         return await blockEmbedding.findRelevantNodeIDs(
             query: query,
             candidateNodeIDs: candidateIDs,
@@ -408,8 +412,8 @@ final class CorpusStore {
     /// context from these and surfaces the same matches as citation
     /// chips so the response and the citation set come from one
     /// retrieval pass. Same scoping policy as `findRelevantNodes`.
-    func findRelevantBlockMatches(query: String, topK: Int = 8) async -> [BlockMatch] {
-        let candidateIDs = nodes.map { $0.id }
+    func findRelevantBlockMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
+        let candidateIDs = nodes(in: scope).map { $0.id }
         return await blockEmbedding.findRelevantBlocks(
             query: query,
             candidateNodeIDs: candidateIDs,

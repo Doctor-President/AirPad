@@ -237,6 +237,237 @@ final class LibrarianState {
     /// survives stage navigation; consumed by Export prompt assembly.
     var researchRequestStructuredReturn: Bool = false
 
+    /// Stage 4 paste buffer — the raw text the user pasted from
+    /// Claude / ChatGPT / etc. Held on state so it survives stage
+    /// navigation; the parser re-runs whenever this changes.
+    var researchImportText: String = ""
+
+    /// Stage 4 candidates — the parsed proposals from
+    /// `researchImportText`. Each one is review-then-accept; nothing
+    /// enters the corpus until the user taps Accept on a specific
+    /// candidate (per brief: "Nothing enters corpus without explicit
+    /// user acceptance"). Cleared on each parse run.
+    var researchImportCandidates: [ImportCandidate] = []
+
+    /// Stage 4 parser detection result — surfaces "JSON" vs
+    /// "transcript" mode to the user so they can verify the parser
+    /// understood their paste. `.none` when the buffer is empty.
+    var researchImportParseMode: ImportParseMode = .none
+
+    /// Stage 4 parse-error message. Populated when the paste looked
+    /// like JSON but didn't decode against the expected schema; nil
+    /// otherwise. Transcript mode never errors — it falls back to a
+    /// single-candidate "Imported notes" wrap.
+    var researchImportError: String? = nil
+
+    /// Stage 4 — number of candidates the user has accepted into the
+    /// corpus this stage entry. Drives the running "X notes added"
+    /// indicator above the review list so the user has a visible
+    /// confirmation each Accept landed. Resets when the paste buffer
+    /// is re-parsed (so re-pasting after acceptance shows a fresh count).
+    var researchImportAcceptedCount: Int = 0
+
+    /// Stage 4 candidate proposal — one node-to-be from the parsed
+    /// paste. `id` is a UUID minted at parse time so SwiftUI's
+    /// `ForEach` can drive Accept/Dismiss without stable keys from
+    /// the upstream content.
+    struct ImportCandidate: Identifiable, Sendable, Hashable {
+        let id: String
+        var title: String
+        var content: String
+    }
+
+    enum ImportParseMode: Sendable {
+        case none
+        case structuredJSON
+        case transcriptHeadingSplit
+        case transcriptSingle
+    }
+
+    /// Parses `researchImportText` into `researchImportCandidates`.
+    /// Detection order: strip markdown fences → try JSON array of
+    /// `{title, content}` (the schema Stage 3's structured-return
+    /// toggle requests) → fall back to heading split on `## Title`
+    /// → fall back to a single "Imported notes" candidate containing
+    /// the whole paste. Resets `researchImportAcceptedCount` because
+    /// a new paste implies a new round of review.
+    func parseImportPaste() {
+        researchImportAcceptedCount = 0
+        researchImportError = nil
+        let raw = researchImportText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else {
+            researchImportCandidates = []
+            researchImportParseMode = .none
+            return
+        }
+
+        let unfenced = Self.stripCodeFence(raw)
+        if Self.looksLikeJSONArray(unfenced) {
+            do {
+                let decoded = try JSONDecoder().decode([ImportCandidateDTO].self, from: Data(unfenced.utf8))
+                let mapped = decoded.compactMap { dto -> ImportCandidate? in
+                    let title = dto.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let content = dto.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !title.isEmpty || !content.isEmpty else { return nil }
+                    return ImportCandidate(
+                        id: UUID().uuidString,
+                        title: title.isEmpty ? "Untitled" : title,
+                        content: content
+                    )
+                }
+                if !mapped.isEmpty {
+                    researchImportCandidates = mapped
+                    researchImportParseMode = .structuredJSON
+                    return
+                }
+                researchImportError = "JSON parsed but contained no usable entries."
+            } catch {
+                researchImportError = "Couldn't parse as structured JSON. Expected an array of {title, content} objects. Falling back to transcript mode."
+            }
+        }
+
+        // Heading-split fallback. Look for `## ` (or `### `) lines as
+        // section markers; everything between two headings (or between
+        // a heading and EOF) becomes one candidate.
+        let headingCandidates = Self.splitTranscriptByHeadings(raw)
+        if !headingCandidates.isEmpty {
+            researchImportCandidates = headingCandidates
+            researchImportParseMode = .transcriptHeadingSplit
+            return
+        }
+
+        // Single-candidate wrap — last-resort so any non-empty paste
+        // still produces a reviewable proposal.
+        researchImportCandidates = [
+            ImportCandidate(id: UUID().uuidString, title: "Imported notes", content: raw)
+        ]
+        researchImportParseMode = .transcriptSingle
+    }
+
+    /// Removes the given candidate without writing anything to the
+    /// corpus. The user is rejecting the proposal — no corpus mutation,
+    /// no provenance trail.
+    func dismissImportCandidate(id: String) {
+        researchImportCandidates.removeAll { $0.id == id }
+    }
+
+    /// Accepts a single candidate — creates a Node, persists it via
+    /// `CorpusStore.addNode`, then removes the candidate from the
+    /// review list and bumps the accepted-count badge.
+    ///
+    /// Scope-routing: when the librarian session's `selectedScope`
+    /// is a user collection, the new node joins that collection
+    /// (mirrors the dashboard's pill-rail capture rule). Corpus-wide
+    /// scope leaves the node loose. Journal scope is treated as
+    /// corpus-loose since imported research candidates are not
+    /// day-stamped entries. `needsAIProcessing: true` so the
+    /// substrate pipeline picks the new node up and tags / embeds it.
+    @discardableResult
+    func acceptImportCandidate(id: String, store: CorpusStore) async -> String? {
+        guard let candidate = researchImportCandidates.first(where: { $0.id == id }) else { return nil }
+        let now = Date()
+        let collectionIDs: [String]
+        switch selectedScope {
+        case .corpus:
+            collectionIDs = []
+        case .collection(let cid):
+            collectionIDs = (cid == NodeCollection.journalID) ? [] : [cid]
+        }
+        let node = Node(
+            id: UUID().uuidString,
+            createdAt: now,
+            updatedAt: now,
+            title: candidate.title,
+            summary: "",
+            tags: [],
+            isMeta: false,
+            items: candidate.content.isEmpty ? [] : [NodeItem.text(content: candidate.content)],
+            needsAIProcessing: true,
+            collectionIDs: collectionIDs,
+            source: "librarian-import",
+            entrySchemaVersion: 1
+        )
+        let position = CGPoint(
+            x: Double.random(in: -80...80),
+            y: Double.random(in: -80...80)
+        )
+        await store.addNode(node, position: position)
+        researchImportCandidates.removeAll { $0.id == id }
+        researchImportAcceptedCount += 1
+        return node.id
+    }
+
+    /// Strips a leading/trailing fenced code block (```json … ``` or
+    /// ``` … ```) so the JSON decoder sees the bare array. Models
+    /// commonly wrap structured returns in fences even when explicitly
+    /// asked not to, so paying for one round of forgiveness here costs
+    /// less than rejecting valid output on a stylistic technicality.
+    private static func stripCodeFence(_ s: String) -> String {
+        var text = s
+        if text.hasPrefix("```") {
+            if let endOfFirstLine = text.firstIndex(of: "\n") {
+                text = String(text[text.index(after: endOfFirstLine)...])
+            }
+        }
+        if text.hasSuffix("```") {
+            text = String(text.dropLast(3))
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func looksLikeJSONArray(_ s: String) -> Bool {
+        let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.hasPrefix("[") && trimmed.hasSuffix("]")
+    }
+
+    /// Splits transcript text by `## Heading` lines (also accepts
+    /// `### `) into candidate nodes. Returns empty when no headings
+    /// are found so the caller can fall back to the single-candidate
+    /// wrap. Headings are normalized — leading `#` chars and any
+    /// trailing colon are trimmed.
+    private static func splitTranscriptByHeadings(_ text: String) -> [ImportCandidate] {
+        let lines = text.components(separatedBy: "\n")
+        var sections: [(title: String, body: [String])] = []
+        var current: (title: String, body: [String])? = nil
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("## ") || trimmed.hasPrefix("### ") {
+                if let prev = current {
+                    sections.append(prev)
+                }
+                let title = trimmed
+                    .drop { $0 == "#" }
+                    .trimmingCharacters(in: .whitespaces)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+                current = (title: title.isEmpty ? "Untitled" : title, body: [])
+            } else if current != nil {
+                current?.body.append(line)
+            }
+        }
+        if let prev = current {
+            sections.append(prev)
+        }
+        guard !sections.isEmpty else { return [] }
+        return sections.compactMap { section -> ImportCandidate? in
+            let body = section.body.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !body.isEmpty || !section.title.isEmpty else { return nil }
+            return ImportCandidate(
+                id: UUID().uuidString,
+                title: section.title,
+                content: body
+            )
+        }
+    }
+
+    /// Decoder shape for the structured-return JSON. Internal to the
+    /// parser; `ImportCandidate` is the post-parse representation
+    /// (carries a UUID id for SwiftUI keying).
+    private struct ImportCandidateDTO: Decodable {
+        let title: String
+        let content: String
+    }
+
     /// Dispatches to the per-mode pipeline. Navigate uses block-level
     /// embedding retrieval (no LLM); Ask uses block-embedding retrieval
     /// to feed prompt context and routes via `ModelRouter` (FM default,
@@ -386,6 +617,11 @@ final class LibrarianState {
         researchFrameText = ""
         researchFrameSeeded = false
         researchRequestStructuredReturn = false
+        researchImportText = ""
+        researchImportCandidates = []
+        researchImportParseMode = .none
+        researchImportError = nil
+        researchImportAcceptedCount = 0
     }
 
     /// Builds a corpus Node from the current session and persists it

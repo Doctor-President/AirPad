@@ -38,6 +38,15 @@ struct LibrarianSurface: View {
     @State private var researchExportCopied = false
     @FocusState private var isInputFocused: Bool
 
+    /// Live keyboard height, observed via UIResponder notifications.
+    /// Drives fullScreen frame compression so the surface stays
+    /// anchored at the bottom and shrinks between screen top and
+    /// keyboard top, rather than letting the default safe-area
+    /// inset push the (taller-than-available) frame off the top.
+    /// Stays 0 in collapsed / expanded modes — those frames are
+    /// short enough that the natural keyboard push works fine.
+    @State private var keyboardHeight: CGFloat = 0
+
     /// Bound to the same key Settings writes (c7). Drives the personal-voice
     /// indicator in the expanded header so toggling the prompt in Settings
     /// reflects here without dismount.
@@ -116,6 +125,31 @@ struct LibrarianSurface: View {
             )
             .environment(store)
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
+        ) { note in
+            // willShow can fire repeatedly (frame change on language
+            // switch, autofill bar appear, etc.) — always take the
+            // latest end-frame height so the surface follows.
+            guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+            // Adjust for the host VStack's bottom padding (24pt in
+            // NodeListView / CanvasView): the keyboard overlaps that
+            // padding, so the *effective* lift on the surface is
+            // keyboard height minus the host's bottom inset. Without
+            // this, we'd over-compress and leave a visible gap below
+            // the surface.
+            let lift = max(0, frame.height - 24)
+            withAnimation(.easeOut(duration: 0.25)) {
+                keyboardHeight = lift
+            }
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+        ) { _ in
+            withAnimation(.easeOut(duration: 0.25)) {
+                keyboardHeight = 0
+            }
+        }
     }
 
     /// Frame height per surface mode. `.fullScreen` claims most of
@@ -131,7 +165,13 @@ struct LibrarianSurface: View {
         case .expanded:  return 452
         case .fullScreen:
             let screenH = UIScreen.main.bounds.height
-            return max(560, screenH - 160)
+            // Subtract observed keyboard height so the surface
+            // compresses between the screen top and the keyboard top
+            // when the input is focused. The floor stays generous
+            // enough that the transcript pane still has usable space
+            // even with the keyboard up on a compact device.
+            let raw = screenH - 160 - keyboardHeight
+            return max(keyboardHeight > 0 ? 280 : 560, raw)
         }
     }
 

@@ -241,17 +241,42 @@ final class SubstrateLayoutService {
         let seed = defaultRNGSeed()
         let fitVersion = nextFitVersion
 
+        // SB139 Stage 4c2 — PCA whitening upstream of UMAP. NLContextualEmbedding
+        // (and BERT-family embedders generally) compress into an anisotropic
+        // cone; raw cosines on AirPad's corpus measured p10–p90 = 0.153 with
+        // block-anchor pooling, well below HDBSCAN's separation floor.
+        // Whitening re-spheres the empirical distribution so each principal
+        // axis contributes equally — the geometry, not the model, is the
+        // lever (see `feedback_nlcontextual_embedding_cluster_ceiling`).
+        // Nil whitening (degenerate inputs, N<2) falls through to raw —
+        // preserves pre-4c2 behavior for tiny corpora.
+        let whitening = SubstrateWhitening.fit(vectors: inputs.map(\.vector))
+        let umapInputs: [(nodeID: String, vector: [Float])]
+        if let whitening {
+            umapInputs = inputs.map { input in
+                (input.nodeID, SubstrateWhitening.apply(vector: input.vector, transform: whitening))
+            }
+        } else {
+            umapInputs = inputs
+        }
+
         // Detached so UMAP math doesn't block main. State mutation
         // happens after we hop back.
-        let model = try await Task.detached(priority: .userInitiated) {
+        var model = try await Task.detached(priority: .userInitiated) {
             try UMAP.fit(
-                trainingInputs: inputs,
+                trainingInputs: umapInputs,
                 hyperparameters: hyperparameters,
                 rngSeed: seed,
                 targetConstraints: targetConstraints,
                 fitVersion: fitVersion
             )
         }.value
+        // Inject whitening params onto the returned model so `project(...)`
+        // can re-apply them at newcomer transform time. `UMAP.fit` doesn't
+        // know about whitening — it just stores the K-dim vectors it
+        // received, and `inputDimension` reflects K automatically.
+        model.whiteningMean = whitening?.mean
+        model.whiteningMatrix = whitening?.matrix
 
         self.fittedModel = model
         self.lastActivityAt = Date()
@@ -276,7 +301,18 @@ final class SubstrateLayoutService {
         guard let v = substrateVector(for: node) else {
             throw UMAPError.nodeLacksSubstrateVector(nodeID: node.id)
         }
-        let coord = try UMAP.transform(inputVector: v, through: model)
+        // SB139 Stage 4c2 — newcomer must traverse the same μ + W the
+        // training set saw, else it lands in raw-space while every fit
+        // point sits in whitened-space (silent geometric corruption).
+        // Pre-v3 fits carry nil whitening params; raw passthrough then.
+        let vForUmap: [Float]
+        if let mean = model.whiteningMean, let matrix = model.whiteningMatrix {
+            let transform = SubstrateWhitening.Transform(mean: mean, matrix: matrix)
+            vForUmap = SubstrateWhitening.apply(vector: v, transform: transform)
+        } else {
+            vForUmap = v
+        }
+        let coord = try UMAP.transform(inputVector: vForUmap, through: model)
         self.lastActivityAt = Date()
         return coord
     }

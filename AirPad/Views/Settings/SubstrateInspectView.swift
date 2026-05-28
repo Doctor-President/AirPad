@@ -86,6 +86,12 @@ struct SubstrateInspectView: View {
     @State private var blockCosineDistError: String? = nil
     @State private var blockCosineDistCoverage: (withBlocks: Int, withoutBlocks: Int)? = nil
 
+    // SB139 Stage 4c2 commit E — inspect-view cluster rename alert state.
+    // Mirrors the canvas rename UX so the dev surface stays parity with
+    // what a user sees on the canvas overlay.
+    @State private var inspectClusterBeingRenamedID: UUID? = nil
+    @State private var inspectClusterRenameDraft: String = ""
+
     struct CosineDistResult: Equatable {
         let pairCount: Int
         let vectorCount: Int
@@ -200,8 +206,42 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.white)
                 }
             }
+            // SB139 Stage 4c2 commit E — cluster rename alert. Mirrors
+            // the canvas overlay's rename UX; cancels on dismiss without
+            // saving so an accidental tap is harmless.
+            .alert("Rename cluster", isPresented: Binding(
+                get: { inspectClusterBeingRenamedID != nil },
+                set: { if !$0 { inspectClusterBeingRenamedID = nil } }
+            )) {
+                TextField("Label", text: $inspectClusterRenameDraft)
+                    .textInputAutocapitalization(.words)
+                Button("Cancel", role: .cancel) {
+                    inspectClusterBeingRenamedID = nil
+                    inspectClusterRenameDraft = ""
+                }
+                Button("Save") {
+                    commitInspectClusterRename()
+                }
+            } message: {
+                Text("Up to 32 characters. The FM label service will not overwrite a manual rename — use Clear to re-open it.")
+            }
         }
         .presentationBackground(.black)
+    }
+
+    /// Commit the inspect-view cluster rename draft. Same rules as the
+    /// canvas-side rename: trim, drop-if-empty, cap at 32 chars, stamp
+    /// `.user` source so the FM label service refuses to overwrite.
+    private func commitInspectClusterRename() {
+        defer {
+            inspectClusterBeingRenamedID = nil
+            inspectClusterRenameDraft = ""
+        }
+        guard let pid = inspectClusterBeingRenamedID else { return }
+        let trimmed = inspectClusterRenameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let capped = String(trimmed.prefix(32))
+        SubstrateClusterRegistry.shared.setLabel(persistentID: pid, label: capped, source: .user)
     }
 
     // MARK: - Coverage
@@ -1822,23 +1862,73 @@ struct SubstrateInspectView: View {
     }
 
     private func clusterIdentityRow(_ identity: SubstrateClusterIdentity) -> some View {
-        HStack {
-            Text("s\(identity.paletteSlot)")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 36, alignment: .leading)
-            Text(String(identity.id.uuidString.prefix(8)))
-                .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.55))
-            Spacer()
-            Text("n=\(identity.memberCount)")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.7))
-            Text("f\(identity.firstSeenFitVersion)→\(identity.lastSeenFitVersion)")
-                .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.45))
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("s\(identity.paletteSlot)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 36, alignment: .leading)
+                Text(String(identity.id.uuidString.prefix(8)))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.55))
+                Spacer()
+                Text("n=\(identity.memberCount)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.7))
+                Text("f\(identity.firstSeenFitVersion)→\(identity.lastSeenFitVersion)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.45))
+            }
+            // SB139 Stage 4c2 commit E — label row + rename/clear affordances.
+            // Empty label rendered as "—" so the row height stays consistent;
+            // source tag (fm / user) is the only signal that distinguishes an
+            // FM cache from an authoritative manual rename.
+            HStack(spacing: 6) {
+                Text(identity.label ?? "—")
+                    .font(.caption2)
+                    .foregroundStyle(identity.label == nil
+                        ? .white.opacity(0.35)
+                        : .white.opacity(0.9))
+                    .lineLimit(1)
+                if let source = identity.labelSource {
+                    Text(source == .user ? "user" : "fm")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(source == .user
+                            ? .yellow.opacity(0.8)
+                            : .white.opacity(0.45))
+                }
+                Spacer()
+                Button {
+                    inspectClusterBeingRenamedID = identity.id
+                    inspectClusterRenameDraft = identity.label ?? ""
+                } label: {
+                    Text("Rename")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                if identity.label != nil {
+                    Button {
+                        SubstrateClusterRegistry.shared.clearLabel(persistentID: identity.id)
+                    } label: {
+                        Text("Clear")
+                            .font(.caption2)
+                            .foregroundStyle(.red.opacity(0.7))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.05))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.leading, 36)
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, 3)
     }
 
     @MainActor

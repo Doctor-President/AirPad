@@ -18,6 +18,12 @@ struct CanvasView: View {
     @State private var localTagSuggestions: TagSuggestionContext? = nil
     @State private var isDismissing = false
 
+    /// SB139 Stage 4c2 commit E — cluster identity being renamed by the
+    /// user via long-press → "Rename" on a cluster label badge. Drives
+    /// the rename alert + text-field binding.
+    @State private var clusterBeingRenamedID: UUID? = nil
+    @State private var clusterRenameDraft: String = ""
+
     @Namespace private var zoomNamespace
 
     @State private var scene: CorpusPhysicsScene = {
@@ -135,6 +141,23 @@ struct CanvasView: View {
             }
             .sheet(item: $localTagSuggestions) { context in
                 tagCreationSheet(context: context)
+            }
+            .alert("Rename cluster", isPresented: Binding(
+                get: { clusterBeingRenamedID != nil },
+                set: { if !$0 { clusterBeingRenamedID = nil } }
+            )) {
+                TextField("Label", text: $clusterRenameDraft)
+                    .textInputAutocapitalization(.words)
+                    .autocorrectionDisabled(false)
+                Button("Cancel", role: .cancel) {
+                    clusterBeingRenamedID = nil
+                    clusterRenameDraft = ""
+                }
+                Button("Save") {
+                    commitClusterRename()
+                }
+            } message: {
+                Text("Up to 32 characters. The FM label service will not overwrite a manual rename — use Clear label to re-open it.")
             }
             .onChange(of: store.pendingTagSuggestions) { _, new in
                 if let new, localTagSuggestions == nil { localTagSuggestions = new }
@@ -262,9 +285,13 @@ struct CanvasView: View {
     ///
     /// Labels read from `SubstrateClusterRegistry.shared.label(for:)`;
     /// unlabeled clusters render nothing (waiting for FM via
-    /// `SubstrateClusterLabelService`). `.allowsHitTesting(false)` here —
-    /// Commit E adds rename/clear via a long-press menu on a separate
-    /// hit-testing affordance.
+    /// `SubstrateClusterLabelService`).
+    ///
+    /// SB139 Stage 4c2 commit E — each badge carries a `.contextMenu`
+    /// with Rename + Clear label. Hit-testing is intentionally narrow:
+    /// the outer `ZStack` doesn't block input, and each badge's frame
+    /// matches the visible pill, so long-press lands only inside a pill
+    /// and sprite gestures elsewhere on the overlay pass through.
     @ViewBuilder
     private var clusterLabelOverlay: some View {
         let visible = !canvasState.isZoomed
@@ -290,15 +317,50 @@ struct CanvasView: View {
                                 Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
                             )
                             .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+                            .contextMenu {
+                                Button {
+                                    beginRenamingCluster(pid)
+                                } label: {
+                                    Label("Rename", systemImage: "pencil")
+                                }
+                                Button(role: .destructive) {
+                                    registry.clearLabel(persistentID: pid)
+                                } label: {
+                                    Label("Clear label", systemImage: "arrow.counterclockwise")
+                                }
+                            }
                             .position(pos)
                             .transition(.opacity)
                     }
                 }
             }
-            .allowsHitTesting(false)
             .ignoresSafeArea()
             .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
         }
+    }
+
+    /// Open the rename alert for `pid`, seeding the draft from the
+    /// current label so the user can edit in place.
+    private func beginRenamingCluster(_ pid: UUID) {
+        clusterRenameDraft = SubstrateClusterRegistry.shared.label(for: pid) ?? ""
+        clusterBeingRenamedID = pid
+    }
+
+    /// Commit the rename draft. Trims whitespace, drops empty input
+    /// (treat as cancel), caps at 32 chars to keep the badge tidy.
+    /// Stamps `.user` source so the FM label service will not overwrite
+    /// it on subsequent passes; a separate "Clear label" gesture
+    /// re-opens the identity to `.fm` regeneration.
+    private func commitClusterRename() {
+        defer {
+            clusterBeingRenamedID = nil
+            clusterRenameDraft = ""
+        }
+        guard let pid = clusterBeingRenamedID else { return }
+        let trimmed = clusterRenameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let capped = String(trimmed.prefix(32))
+        SubstrateClusterRegistry.shared.setLabel(persistentID: pid, label: capped, source: .user)
     }
 
     /// Tag-colored gradient that tracks the focal node during honeycomb engagement.

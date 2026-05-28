@@ -54,6 +54,22 @@ struct UMAPHyperparameters: Codable, Hashable {
         negativeSampleRate: 5,
         nEpochs: nil
     )
+
+    /// SB139 Stage 4c2 — substrate-canvas variant. Whitening widens the
+    /// per-axis variance vs. raw NLContextualEmbedding inputs; the
+    /// umap-learn-parity `minDist=0.1` then over-spreads against the
+    /// whitened geometry and collapses the 2D fit toward a diagonal
+    /// line. Tightening to 0.05 lets clusters separate without the
+    /// dimension collapse. Other params unchanged.
+    static let substrateWhitened = UMAPHyperparameters(
+        nComponents: 2,
+        nNeighbors: 15,
+        minDist: 0.05,
+        spread: 1.0,
+        learningRate: 1.0,
+        negativeSampleRate: 5,
+        nEpochs: nil
+    )
 }
 
 // MARK: - Target constraints (cluster-blessing forward-compat)

@@ -1331,10 +1331,11 @@ struct SubstrateInspectView: View {
             .disabled(backfillInFlight || refusedCount == 0)
 
             // Per-fit hyperparameter overrides for the 2026-05-12 density
-            // sweep (n_neighbors × min_dist). Empty → UMAP defaults (15,
-            // 0.1). Resolved values land in UMAPFitInspectResult and the
-            // JSON export's fit_metadata.umap_hyperparameters envelope so
-            // sweep runs are self-documenting.
+            // sweep (n_neighbors × min_dist). Empty → substrate-whitened
+            // defaults (15, 0.05). Resolved values land in
+            // UMAPFitInspectResult and the JSON export's
+            // fit_metadata.umap_hyperparameters envelope so sweep runs
+            // are self-documenting.
             HStack(spacing: 8) {
                 Text("n_neighbors")
                     .font(.caption2)
@@ -1356,7 +1357,7 @@ struct SubstrateInspectView: View {
                 Text("min_dist")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.6))
-                TextField("0.1", text: $umapMinDistText)
+                TextField("0.05", text: $umapMinDistText)
                     .font(.caption2.monospaced())
                     .foregroundStyle(.white)
                     .keyboardType(.decimalPad)
@@ -1365,7 +1366,7 @@ struct SubstrateInspectView: View {
                     .background(Color.white.opacity(0.05))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .frame(width: 70)
-                Text(umapMinDistText.isEmpty ? "default 0.1" : "")
+                Text(umapMinDistText.isEmpty ? "default 0.05" : "")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.35))
             }
@@ -1476,10 +1477,13 @@ struct SubstrateInspectView: View {
         umapFitError = nil
         defer { umapFitInProgress = false }
 
-        // Resolve overrides. Empty text falls through to UMAP defaults
-        // (15, 0.1) via UMAPHyperparameters.default. Validation surfaces
-        // bad input before fit starts so the user gets immediate feedback.
-        var hp = UMAPHyperparameters.default
+        // Resolve overrides. Empty text falls through to the substrate-
+        // canvas tuned defaults (15, 0.05) via UMAPHyperparameters
+        // .substrateWhitened — the whitened-input regime needs tighter
+        // minDist than umap-learn's parity-default 0.1 to avoid the
+        // diagonal-line collapse. Validation surfaces bad input before
+        // fit starts so the user gets immediate feedback.
+        var hp = UMAPHyperparameters.substrateWhitened
         let nbrsTrimmed = umapNNeighborsText.trimmingCharacters(in: .whitespaces)
         if !nbrsTrimmed.isEmpty {
             guard let n = Int(nbrsTrimmed), n >= 2 else {
@@ -1491,7 +1495,7 @@ struct SubstrateInspectView: View {
         let mdTrimmed = umapMinDistText.trimmingCharacters(in: .whitespaces)
         if !mdTrimmed.isEmpty {
             guard let d = Double(mdTrimmed), d >= 0.0, d <= 0.99 else {
-                umapFitError = "min_dist must be empty (default 0.1) or in [0.0, 0.99]"
+                umapFitError = "min_dist must be empty (default 0.05) or in [0.0, 0.99]"
                 return
             }
             hp.minDist = d

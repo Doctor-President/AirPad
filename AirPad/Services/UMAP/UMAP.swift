@@ -64,8 +64,15 @@ enum UMAP {
             throw UMAPError.targetConstraintsUnsupported
         }
         precondition(!rngSeed.isEmpty, "rngSeed must contain at least one element")
-        precondition(hyperparameters.nComponents == 2,
-                     "UMAP.fit only supports nComponents == 2 in Stage 4a")
+        // SB139 Stage 4c2 c3 — N-D generalization. The SGD/init machinery
+        // has always taken `numDim` parametrically; the 4a precondition
+        // existed only because `SubstrateCoord2D` was the persisted output
+        // shape. c3 stores `coordND: [Float]` instead, so any
+        // `nComponents >= 2` round-trips. Today every fit still runs at
+        // `nComponents=2` (canvas display); the relaxation is architectural
+        // insurance for a future mid-D clustering or embedder swap.
+        precondition(hyperparameters.nComponents >= 2,
+                     "UMAP.fit requires nComponents >= 2 (2D canvas-visible shape minimum)")
         precondition(trainingInputs.count > hyperparameters.nNeighbors,
                      "trainingInputs count (\(trainingInputs.count)) must exceed nNeighbors (\(hyperparameters.nNeighbors))")
 
@@ -116,20 +123,23 @@ enum UMAP {
             epochLimit: nil
         )
 
-        // Step 7 — assemble. SubstrateCoord2D is Float; the Double→Float
-        // cast is the documented precision floor for persisted coords.
+        // Step 7 — assemble. Coords are persisted as `[Float]` of length
+        // `numDim` to support N-D fits (SB139 Stage 4c2 c3); the
+        // Double→Float cast is the documented precision floor for
+        // persisted coords. Canvas-display consumers read `point.coord2D`
+        // via the TrainingPoint computed accessor.
         let inputDimension = trainingInputs[0].vector.count
         var points: [UMAPFittedModel.TrainingPoint] = []
         points.reserveCapacity(numObs)
         for i in 0..<numObs {
-            let coord = SubstrateCoord2D(
-                x: Float(embedding[i * numDim + 0]),
-                y: Float(embedding[i * numDim + 1])
-            )
+            var coordND = [Float](repeating: 0, count: numDim)
+            for d in 0..<numDim {
+                coordND[d] = Float(embedding[i * numDim + d])
+            }
             points.append(.init(
                 nodeID: trainingInputs[i].nodeID,
                 inputVector: trainingInputs[i].vector,
-                coord2D: coord
+                coordND: coordND
             ))
         }
 

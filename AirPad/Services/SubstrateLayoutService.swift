@@ -216,7 +216,7 @@ final class SubstrateLayoutService {
     @discardableResult
     func fit(
         allNodes: [Node],
-        hyperparameters: UMAPHyperparameters = .default,
+        hyperparameters: UMAPHyperparameters = .substrateWhitened,
         targetConstraints: TargetConstraints? = nil
     ) async throws -> UMAPFittedModel {
         // Filter at the boundary: thin-content nodes produce false-positive

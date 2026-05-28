@@ -294,21 +294,32 @@ struct CanvasView: View {
     /// and sprite gestures elsewhere on the overlay pass through.
     @ViewBuilder
     private var clusterLabelOverlay: some View {
+        // SB139 Stage 4c2 fix — hide ONLY on true focal engagement, full
+        // zoom, or drill-in. The earlier `disengagingFocalNodeID == nil`
+        // gate kept labels hidden through the shrink-back transition, and
+        // a stale `lingerFocalNodeID` from a prior engagement could leave
+        // `disengagingFocalNodeID` set into the next free pan — making it
+        // look like normal pan hides labels. Dropping the check restores
+        // labels the instant true engagement ends.
         let visible = !canvasState.isZoomed
             && !isDismissing
             && canvasState.currentFocalNodeID == nil
-            && canvasState.disengagingFocalNodeID == nil
             && canvasState.drilledInto == nil
 
         if visible {
             // SB139 Stage 4c2 fix — clamp badge centers to the safe area
             // minus each badge's half-extent so labels at near-edge
-            // centroids stay fully visible instead of getting clipped by
-            // the notch / home indicator / screen edge.
+            // centroids stay fully visible. ZStack uses topLeading
+            // alignment and each badge positions itself via `.offset`
+            // (intrinsic frame) rather than `.position` (flexible frame
+            // that hit-tests across the full layer and would block
+            // SpriteKit gestures like strand engagement — the strand
+            // regression we hit after cE removed
+            // `.allowsHitTesting(false)` to enable contextMenu).
             GeometryReader { geo in
                 let centroids = canvasState.clusterCentroidScreenPositions
                 let registry = SubstrateClusterRegistry.shared
-                ZStack {
+                ZStack(alignment: .topLeading) {
                     ForEach(Array(centroids.keys), id: \.self) { pid in
                         if let label = registry.label(for: pid),
                            let pos = centroids[pid] {
@@ -832,10 +843,18 @@ private struct NodeDetailOverlay: View {
 
 /// One cluster-label pill, anchored at the cluster centroid in screen
 /// space. Measures its own rendered size with a `BadgeSizeKey` preference
-/// and clamps the `.position(...)` center to keep the full capsule inside
-/// the safe area regardless of how close the centroid sits to a screen
-/// edge. Without this clamp, near-edge clusters render with their label
-/// clipped against the notch, home indicator, or screen border.
+/// and clamps the centered position to keep the full capsule inside the
+/// safe area regardless of how close the centroid sits to a screen edge.
+///
+/// **Why `.offset(...)` instead of `.position(...)`:** the `.position`
+/// modifier wraps the view in a flexible frame that fills the parent and
+/// draws the content centered at the given point. That flexible frame
+/// hit-tests across the *entire* layer, which would block SpriteKit
+/// gestures like strand engagement and camera pan that need to reach the
+/// canvas underneath. `.offset(...)` preserves the badge's intrinsic
+/// frame, so only the visible pill area intercepts touches — the
+/// contextMenu still works on the badge, and touches outside it pass
+/// through to the scene.
 private struct ClusterLabelBadge: View {
     let label: String
     let screenPosition: CGPoint
@@ -882,6 +901,7 @@ private struct ClusterLabelBadge: View {
                 }
             )
             .onPreferenceChange(BadgeSizeKey.self) { badgeSize = $0 }
+            .contentShape(Capsule())
             .contextMenu {
                 Button { onRename() } label: {
                     Label("Rename", systemImage: "pencil")
@@ -890,7 +910,10 @@ private struct ClusterLabelBadge: View {
                     Label("Clear label", systemImage: "arrow.counterclockwise")
                 }
             }
-            .position(clampedPosition)
+            .offset(
+                x: clampedPosition.x - badgeSize.width / 2,
+                y: clampedPosition.y - badgeSize.height / 2
+            )
             .transition(.opacity)
     }
 }

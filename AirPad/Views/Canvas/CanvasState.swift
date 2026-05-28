@@ -45,4 +45,14 @@ final class CanvasState {
 
     /// Node ID to push to detail view via navigationPath (set by grace tap).
     var pendingNavigationNodeID: String? = nil
+
+    /// SB139 Stage 4c2 commit D — screen-space centroid of each persistent
+    /// cluster identity, recomputed every frame by `CorpusPhysicsScene` so
+    /// the SwiftUI label overlay tracks pan/zoom/relaxation. Keys are
+    /// `SubstrateClusterIdentity.id`; values are SpriteKit-view coords
+    /// (matches `focalNodeScreenPosition`'s convention). Empty when no
+    /// substrate fit is loaded, or when the persistent-ID lookup hasn't
+    /// caught up to a fresh fit yet (one-frame transient on `generation`
+    /// bump — re-render harmless).
+    var clusterCentroidScreenPositions: [UUID: CGPoint] = [:]
 }

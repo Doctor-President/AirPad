@@ -142,6 +142,7 @@
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
+		B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
@@ -308,6 +309,7 @@
 		9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoScrollDriver.swift; sourceTree = "<group>"; };
 		988F66299DD79745A824B3A0 /* RelatednessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatednessService.swift; sourceTree = "<group>"; };
 		9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayCardView.swift; sourceTree = "<group>"; };
+		9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterRegistry.swift; sourceTree = "<group>"; };
 		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Regular.ttf"; sourceTree = "<group>"; };
 		A1213E716A9E302D0B777EDD /* EntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryCard.swift; sourceTree = "<group>"; };
@@ -458,6 +460,7 @@
 				92F8312336CC2A7C1C2763EF /* SelectionService.swift */,
 				780B6A68830590DBDA5189D1 /* StrandService.swift */,
 				6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */,
+				9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */,
 				25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */,
 				7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */,
 				E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */,
@@ -1010,6 +1013,7 @@
 				7701571E5153DEFA1B4F4D82 /* SpriteKitView.swift in Sources */,
 				9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */,
 				35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */,
+				B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */,
 				AE9C0E76D1F909B7C3197976 /* SubstrateColoringPass.swift in Sources */,
 				0A1E663CC31AC33AC01C329C /* SubstrateCoord2D.swift in Sources */,
 				E862499ADFEA34CD14EEC082 /* SubstrateInspectView.swift in Sources */,

@@ -49,6 +49,27 @@ struct SubstrateClusterIdentity: Codable, Hashable, Identifiable {
     /// Cached count = `memberNodeIDs.count`. Carried separately so the
     /// dev inspect view can render without materializing the array.
     var memberCount: Int
+    /// Human-readable label for this cluster. `nil` until the label
+    /// service generates one (Commit C) or the user assigns one
+    /// (Commit E). Once set, never overwritten by the label service —
+    /// staleness gating is "never re-label unless explicitly cleared"
+    /// (T decision, 2026-05-28). Clearing is via `clearLabel`.
+    var label: String?
+    /// How `label` was produced. Nil iff `label` is nil. The label
+    /// service refuses to overwrite `.user` even when membership shifts.
+    var labelSource: LabelSource?
+    /// Wall-clock at label assignment. Diagnostic — not consulted for
+    /// staleness; carries forward across refits with the label itself.
+    var labelGeneratedAt: Date?
+}
+
+/// Origin of an identity's label. `.fm` is the Foundation-Models-generated
+/// default; `.user` indicates a manual rename via the inspect surface and
+/// is treated as authoritative — the label service must not overwrite it.
+@available(iOS 17.0, *)
+enum LabelSource: String, Codable, Hashable {
+    case fm
+    case user
 }
 
 @available(iOS 17.0, *)
@@ -227,6 +248,57 @@ final class SubstrateClusterRegistry {
     /// Single identity lookup. Nil if unknown.
     func identity(for id: UUID) -> SubstrateClusterIdentity? {
         identities[id]
+    }
+
+    /// Label for an identity. Nil if unknown or unlabeled.
+    func label(for id: UUID) -> String? {
+        identities[id]?.label
+    }
+
+    // MARK: - Label mutation
+    //
+    // Two write paths exist: `setLabel` is called by the label service
+    // (Commit C, source `.fm`) and the inspect-surface rename (Commit E,
+    // source `.user`); `clearLabel` is called by the inspect surface's
+    // "clear label" affordance and re-opens the identity to a future
+    // `.fm` regeneration. Staleness policy: the label service must
+    // gate its calls on `identity.label == nil` — this registry does
+    // not enforce "don't overwrite" on `setLabel` so the user-rename
+    // path can replace either kind.
+    //
+    // Both mutators persist synchronously so a label survives a crash
+    // immediately after assignment.
+
+    /// Assign or replace a label for an identity. No-op if the identity
+    /// is unknown. Persists the registry on success.
+    func setLabel(persistentID: UUID, label: String, source: LabelSource) {
+        ensureLoaded()
+        guard var identity = identities[persistentID] else { return }
+        identity.label = label
+        identity.labelSource = source
+        identity.labelGeneratedAt = Date()
+        identities[persistentID] = identity
+        do {
+            try persist()
+        } catch {
+            print("[SubstrateClusterRegistry] setLabel persist failed: \(error)")
+        }
+    }
+
+    /// Clear the label on an identity, re-opening it to a future `.fm`
+    /// regeneration. No-op if the identity is unknown.
+    func clearLabel(persistentID: UUID) {
+        ensureLoaded()
+        guard var identity = identities[persistentID] else { return }
+        identity.label = nil
+        identity.labelSource = nil
+        identity.labelGeneratedAt = nil
+        identities[persistentID] = identity
+        do {
+            try persist()
+        } catch {
+            print("[SubstrateClusterRegistry] clearLabel persist failed: \(error)")
+        }
     }
 
     /// All identities sorted by first-seen-fit then palette slot for the

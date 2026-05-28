@@ -102,6 +102,7 @@ final class SubstrateClusterLabelService {
         // Deterministic order across runs so the dev-inspect logs read
         // the same on repeat passes.
         let orderedPIDs = unlabeled.keys.sorted { $0.uuidString < $1.uuidString }
+        print("[SubstrateClusterLabelService] starting pass: \(orderedPIDs.count) unlabeled clusters")
         for pid in orderedPIDs {
             let nodeIDs = unlabeled[pid] ?? []
             do {
@@ -109,13 +110,21 @@ final class SubstrateClusterLabelService {
                     persistentID: pid,
                     nodeIDs: nodeIDs,
                     summaryProvider: summaryProvider
-                ) else { continue }
+                ) else {
+                    // Silent skip path before today: members empty OR
+                    // sanitize wiped FM output to nothing. Both now log
+                    // inside generateLabel; this catch-all just notes the
+                    // loop kept going past the skipped cluster.
+                    print("[SubstrateClusterLabelService] skipped cluster \(pid) (see generateLabel log above)")
+                    continue
+                }
                 registry.setLabel(persistentID: pid, label: label, source: .fm)
                 print("[SubstrateClusterLabelService] labeled cluster \(pid) → \(label)")
             } catch {
                 print("[SubstrateClusterLabelService] label failed for \(pid): \(error)")
             }
         }
+        print("[SubstrateClusterLabelService] pass complete")
     }
 
     /// Produce a single label for one cluster. Returns nil when the
@@ -132,7 +141,10 @@ final class SubstrateClusterLabelService {
             if trimmed.isEmpty { return nil }
             return String(trimmed.prefix(Self.maxSummaryChars))
         }
-        guard !members.isEmpty else { return nil }
+        guard !members.isEmpty else {
+            print("[SubstrateClusterLabelService] cluster \(persistentID): no member text from \(nodeIDs.count) nodes — summaryProvider returned nil/empty for all")
+            return nil
+        }
 
         let numbered = members.enumerated()
             .map { "\($0.offset + 1). \($0.element)" }
@@ -154,7 +166,16 @@ final class SubstrateClusterLabelService {
             userPrompt: userPrompt
         )
         let sanitized = Self.sanitize(raw)
-        return sanitized.isEmpty ? nil : sanitized
+        if sanitized.isEmpty {
+            // FM produced bytes but sanitize wiped them. Most common
+            // cause post-2026-05-28: comma-amputate-first truncated to
+            // empty because the FM response started with a comma. Log
+            // the raw bytes so we can see what came back.
+            let preview = raw.prefix(120).replacingOccurrences(of: "\n", with: "⏎")
+            print("[SubstrateClusterLabelService] cluster \(persistentID): FM raw \(raw.count) chars sanitized to empty. raw[..120]=\"\(preview)\"")
+            return nil
+        }
+        return sanitized
     }
 
     /// Strip FM filler, surrounding quotes/markdown, trailing punctuation,

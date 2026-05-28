@@ -301,41 +301,31 @@ struct CanvasView: View {
             && canvasState.drilledInto == nil
 
         if visible {
-            let centroids = canvasState.clusterCentroidScreenPositions
-            let registry = SubstrateClusterRegistry.shared
-            ZStack {
-                ForEach(Array(centroids.keys), id: \.self) { pid in
-                    if let label = registry.label(for: pid),
-                       let pos = centroids[pid] {
-                        Text(label)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.95))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(
-                                Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+            // SB139 Stage 4c2 fix — clamp badge centers to the safe area
+            // minus each badge's half-extent so labels at near-edge
+            // centroids stay fully visible instead of getting clipped by
+            // the notch / home indicator / screen edge.
+            GeometryReader { geo in
+                let centroids = canvasState.clusterCentroidScreenPositions
+                let registry = SubstrateClusterRegistry.shared
+                ZStack {
+                    ForEach(Array(centroids.keys), id: \.self) { pid in
+                        if let label = registry.label(for: pid),
+                           let pos = centroids[pid] {
+                            ClusterLabelBadge(
+                                label: label,
+                                screenPosition: pos,
+                                containerSize: geo.size,
+                                safeInsets: geo.safeAreaInsets,
+                                onRename: { beginRenamingCluster(pid) },
+                                onClear: { registry.clearLabel(persistentID: pid) }
                             )
-                            .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
-                            .contextMenu {
-                                Button {
-                                    beginRenamingCluster(pid)
-                                } label: {
-                                    Label("Rename", systemImage: "pencil")
-                                }
-                                Button(role: .destructive) {
-                                    registry.clearLabel(persistentID: pid)
-                                } label: {
-                                    Label("Clear label", systemImage: "arrow.counterclockwise")
-                                }
-                            }
-                            .position(pos)
-                            .transition(.opacity)
+                        }
                     }
                 }
+                .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
             }
             .ignoresSafeArea()
-            .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
         }
     }
 
@@ -835,6 +825,80 @@ private struct NodeDetailOverlay: View {
             isExpanded = false
             showText = false
         }
+    }
+}
+
+// MARK: - Cluster label badge
+
+/// One cluster-label pill, anchored at the cluster centroid in screen
+/// space. Measures its own rendered size with a `BadgeSizeKey` preference
+/// and clamps the `.position(...)` center to keep the full capsule inside
+/// the safe area regardless of how close the centroid sits to a screen
+/// edge. Without this clamp, near-edge clusters render with their label
+/// clipped against the notch, home indicator, or screen border.
+private struct ClusterLabelBadge: View {
+    let label: String
+    let screenPosition: CGPoint
+    let containerSize: CGSize
+    let safeInsets: EdgeInsets
+    let onRename: () -> Void
+    let onClear: () -> Void
+
+    @State private var badgeSize: CGSize = .zero
+
+    private static let edgeMargin: CGFloat = 8
+
+    /// `screenPosition` is the badge *center*. Clamp it so the badge's
+    /// half-extent stays inside the safe-area rect on every side. If the
+    /// safe-area rect is narrower than the badge itself (degenerate), we
+    /// pin to the leading/top edge so the badge is at least anchored
+    /// rather than oscillating.
+    private var clampedPosition: CGPoint {
+        guard badgeSize.width > 0, badgeSize.height > 0 else { return screenPosition }
+        let halfW = badgeSize.width / 2
+        let halfH = badgeSize.height / 2
+        let minX = safeInsets.leading + halfW + Self.edgeMargin
+        let maxX = containerSize.width - safeInsets.trailing - halfW - Self.edgeMargin
+        let minY = safeInsets.top + halfH + Self.edgeMargin
+        let maxY = containerSize.height - safeInsets.bottom - halfH - Self.edgeMargin
+        return CGPoint(
+            x: min(max(screenPosition.x, minX), max(minX, maxX)),
+            y: min(max(screenPosition.y, minY), max(minY, maxY))
+        )
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(.white.opacity(0.95))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: BadgeSizeKey.self, value: proxy.size)
+                }
+            )
+            .onPreferenceChange(BadgeSizeKey.self) { badgeSize = $0 }
+            .contextMenu {
+                Button { onRename() } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                Button(role: .destructive) { onClear() } label: {
+                    Label("Clear label", systemImage: "arrow.counterclockwise")
+                }
+            }
+            .position(clampedPosition)
+            .transition(.opacity)
+    }
+}
+
+private struct BadgeSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
     }
 }
 

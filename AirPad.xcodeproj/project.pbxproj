@@ -120,6 +120,7 @@
 		98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */; };
 		99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0642041A7F8A258DF0FF065C /* QuarantineStore.swift */; };
 		9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780B6A68830590DBDA5189D1 /* StrandService.swift */; };
+		9CA473D3F2ECA00AAC3BBEC2 /* SubstrateWhitening.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */; };
 		9CC24D2F472D010E7128EB08 /* NodeGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497A2D223E494E948D445DFF /* NodeGradientBackground.swift */; };
 		9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 579FF08E333E57A78D8A5C84 /* GalleryBody.swift */; };
 		9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */; };
@@ -325,6 +326,7 @@
 		B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodePickerSheet.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
+		B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateWhitening.swift; sourceTree = "<group>"; };
 		BB4E63F786821E7025A5C3A0 /* MediaFullscreenViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaFullscreenViewer.swift; sourceTree = "<group>"; };
 		BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGPreviewView.swift; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
@@ -568,6 +570,7 @@
 		78757359D9135582165FEA36 /* UMAP */ = {
 			isa = PBXGroup;
 			children = (
+				B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */,
 				D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */,
 				7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */,
 				7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */,
@@ -1025,6 +1028,7 @@
 				C87A28595DB3F99CAB512AE5 /* SubstrateRelaxationPass.swift in Sources */,
 				8C06E3866E668409E3983A5D /* SubstrateSelfTest.swift in Sources */,
 				1539FED677BC12C88E719D24 /* SubstrateService.swift in Sources */,
+				9CA473D3F2ECA00AAC3BBEC2 /* SubstrateWhitening.swift in Sources */,
 				072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */,
 				8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */,
 				AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */,

@@ -33,7 +33,7 @@ struct SubstrateInspectView: View {
     // Doubles persist directly to the keys StrandService reads via
     // UserDefaults.standard.double(forKey:). Default 0 ⇒ service default
     // (the service falls back when stored value is 0/missing).
-    @AppStorage("ff.strandSnap") private var strandSnapFlag = false
+    @AppStorage("ff.strandSnap") private var strandSnapFlag = true
     @AppStorage("strand.ringRadiusMultiplier") private var strandRingRadiusMultiplier: Double = 0
     @AppStorage("strand.minAngularSeparationDeg") private var strandMinAngularSeparationDeg: Double = 0
     @AppStorage("strand.blendedThreshold") private var strandBlendedThreshold: Double = 0

@@ -125,18 +125,71 @@ struct UMAPFittedModel: Codable {
     /// this array correspond to indices in the internal k-NN graph.
     var trainingPoints: [TrainingPoint]
 
-    /// Per-node fit record: the 512-dim vector that went in, the 2D coord
-    /// that came out, and the canonical node ID this point represents.
+    /// Per-node fit record: the 512-dim vector that went in, the projected
+    /// coord that came out, and the canonical node ID this point represents.
+    ///
+    /// **SB139 Stage 4c2 c3 — N-D generalization.** `coordND` replaces the
+    /// 4a/4b `coord2D` field so the model can carry projections at any
+    /// `hyperparameters.nComponents`. Today every fit still runs at 2D
+    /// (canvas display); consumers read `coord2D` via the computed
+    /// accessor. The relaxation is architectural insurance for a future
+    /// mid-D clustering pass or embedder swap (a 10D mid-D pivot was
+    /// implemented + reverted same day after the diagnostic confirmed
+    /// `NLContextualEmbedding`'s variance — not the projection dim — is
+    /// the cluster-count ceiling). Custom `Codable` migrates v1 records
+    /// (which serialized a `coord2D` object) to v2 (`coordND` array) at
+    /// decode time so on-disk fits from before this change continue to
+    /// load.
     struct TrainingPoint: Codable {
         var nodeID: String
         var inputVector: [Float]
-        var coord2D: SubstrateCoord2D
+        var coordND: [Float]
+
+        /// 2D shorthand for canvas-display consumers. Reads the first two
+        /// elements of `coordND`; precondition fails if the projection is
+        /// 1D (which UMAP.fit doesn't produce — `nNeighbors` lower bound
+        /// keeps the minimum useful `nComponents` at 2).
+        var coord2D: SubstrateCoord2D {
+            precondition(coordND.count >= 2, "TrainingPoint.coord2D requires coordND.count >= 2")
+            return SubstrateCoord2D(x: coordND[0], y: coordND[1])
+        }
+
+        init(nodeID: String, inputVector: [Float], coordND: [Float]) {
+            self.nodeID = nodeID
+            self.inputVector = inputVector
+            self.coordND = coordND
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case nodeID, inputVector, coordND, coord2D
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.nodeID = try c.decode(String.self, forKey: .nodeID)
+            self.inputVector = try c.decode([Float].self, forKey: .inputVector)
+            if let nd = try c.decodeIfPresent([Float].self, forKey: .coordND) {
+                self.coordND = nd
+            } else {
+                // v1 migration: legacy file shipped only `coord2D`.
+                let xy = try c.decode(SubstrateCoord2D.self, forKey: .coord2D)
+                self.coordND = [xy.x, xy.y]
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(nodeID, forKey: .nodeID)
+            try c.encode(inputVector, forKey: .inputVector)
+            try c.encode(coordND, forKey: .coordND)
+        }
     }
 
     /// Current `schemaVersion` to stamp on freshly-fit models. Bump in
     /// lockstep with shape changes; older values trigger migration at
-    /// load time (no migrations exist yet — 4a is the first ship).
-    static let currentSchemaVersion: Int = 1
+    /// load time. v2 — TrainingPoint emits `coordND: [Float]` instead of
+    /// `coord2D: SubstrateCoord2D`; v1 decode is migrated transparently.
+    static let currentSchemaVersion: Int = 2
 }
 
 // MARK: - Errors

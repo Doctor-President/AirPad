@@ -277,10 +277,10 @@ enum UMAPSelfTest {
                 trainingPoints: [
                     .init(nodeID: "n0",
                           inputVector: [1, 0, 0, 0],
-                          coord2D: SubstrateCoord2D(x:  0.5, y: -0.5)),
+                          coordND: [0.5, -0.5]),
                     .init(nodeID: "n1",
                           inputVector: [0, 1, 0, 0],
-                          coord2D: SubstrateCoord2D(x: -0.5, y:  0.5)),
+                          coordND: [-0.5, 0.5]),
                 ]
             )
 

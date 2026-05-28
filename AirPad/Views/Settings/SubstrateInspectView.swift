@@ -76,6 +76,8 @@ struct SubstrateInspectView: View {
     @State private var clusterExportInProgress: Bool = false
     @State private var clusterExportResult: ExportResult? = nil
     @State private var clusterExportError: String? = nil
+    @State private var simulateRefitInProgress: Bool = false
+    @State private var simulateRefitError: String? = nil
 
     struct ExportResult: Equatable {
         let url: URL
@@ -148,6 +150,8 @@ struct SubstrateInspectView: View {
                     substrateLayoutSection
                     Divider().background(Color.white.opacity(0.1))
                     substrateClusterSection
+                    Divider().background(Color.white.opacity(0.1))
+                    substrateClusterIdentitySection
                     Divider().background(Color.white.opacity(0.1))
                     strandsSection
                     Divider().background(Color.white.opacity(0.1))
@@ -1694,6 +1698,143 @@ struct SubstrateInspectView: View {
         let raw = override ?? minClusterSize
         let clamped = Swift.min(n - 1, raw)
         return clamped == 0 ? 1 : clamped
+    }
+
+    // MARK: - Stage 4c2 — cluster identity registry
+
+    private var substrateClusterIdentitySection: some View {
+        let registry = SubstrateClusterRegistry.shared
+        let identities = registry.allIdentities()
+        let modelLoaded = SubstrateLayoutService.shared.fittedModel != nil
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Stage 4c2 — cluster identity registry")
+            statRow("Tracked identities", "\(identities.count)")
+            statRow("Next palette slot", "\(registry.nextPaletteSlot)")
+            statRow("Last fit version", "\(registry.lastFitVersion)")
+
+            HStack(spacing: 8) {
+                Text("match_threshold")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.6))
+                Text(String(format: "%.2f", registry.matchThreshold))
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white)
+                Spacer()
+                Stepper(
+                    "",
+                    value: Binding(
+                        get: { registry.matchThreshold },
+                        set: { newValue in
+                            registry.matchThreshold = newValue
+                            try? registry.persist()
+                        }
+                    ),
+                    in: 0.50...0.90,
+                    step: 0.05
+                )
+                .labelsHidden()
+                .tint(.white.opacity(0.6))
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    Task { await runSimulateRefit() }
+                } label: {
+                    Text(simulateRefitInProgress ? "Refitting…" : "Simulate refit (re-cluster + match)")
+                        .font(.caption2)
+                        .foregroundStyle(.purple.opacity((simulateRefitInProgress || !modelLoaded) ? 0.4 : 0.7))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(simulateRefitInProgress || !modelLoaded)
+
+                Button {
+                    do {
+                        try registry.clear()
+                    } catch {
+                        simulateRefitError = "reset failed: \(error)"
+                    }
+                } label: {
+                    Text("Reset registry")
+                        .font(.caption2)
+                        .foregroundStyle(.red.opacity(0.7))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if let err = simulateRefitError {
+                Text(err)
+                    .font(.caption2)
+                    .foregroundStyle(.red.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if !identities.isEmpty {
+                Text("Identities (slot · uuid · n · fits)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.top, 4)
+                ForEach(identities) { clusterIdentityRow($0) }
+            }
+        }
+    }
+
+    private func clusterIdentityRow(_ identity: SubstrateClusterIdentity) -> some View {
+        HStack {
+            Text("s\(identity.paletteSlot)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 36, alignment: .leading)
+            Text(String(identity.id.uuidString.prefix(8)))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.55))
+            Spacer()
+            Text("n=\(identity.memberCount)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.7))
+            Text("f\(identity.firstSeenFitVersion)→\(identity.lastSeenFitVersion)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.45))
+        }
+        .padding(.vertical, 1)
+    }
+
+    @MainActor
+    private func runSimulateRefit() async {
+        simulateRefitInProgress = true
+        simulateRefitError = nil
+        defer { simulateRefitInProgress = false }
+
+        guard SubstrateLayoutService.shared.fittedModel != nil else {
+            simulateRefitError = "no fitted UMAP model — run the UMAP fit above first"
+            return
+        }
+        let mcs = Int(hdbscanMinClusterSizeText) ?? 8
+        guard mcs >= 2 else {
+            simulateRefitError = "min_cluster_size must be ≥ 2"
+            return
+        }
+        let msTrim = hdbscanMinSamplesText.trimmingCharacters(in: .whitespaces)
+        let ms: Int
+        if msTrim.isEmpty {
+            ms = mcs
+        } else if let parsed = Int(msTrim), parsed >= 1 {
+            ms = parsed
+        } else {
+            simulateRefitError = "min_samples must be empty (auto) or ≥ 1"
+            return
+        }
+        SubstrateLayoutService.shared.runClustering(
+            minClusterSize: mcs,
+            minSamples: ms
+        )
     }
 
     // MARK: - Reusable bits

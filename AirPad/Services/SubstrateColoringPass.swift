@@ -163,7 +163,13 @@ enum SubstrateColoringPass {
                 out[p.nodeID] = noiseColor
                 continue
             }
-            let baseHue = clusterPalette[p.clusterID % clusterPalette.count]
+            // SB139 Stage 4c2 commit 1 — palette slot is stable across
+            // refits via `SubstrateClusterRegistry` and is preferred over
+            // the session-local HDBSCAN label. Falls back to `clusterID`
+            // only when the registry hasn't populated yet (transitional;
+            // matches prior session-local behavior).
+            let slot = p.paletteSlot ?? p.clusterID
+            let baseHue = clusterPalette[slot % clusterPalette.count]
             var hue = baseHue + offsets[i] * maxHueJitter
             // Wrap into [0, 1).
             hue = hue - floor(hue)

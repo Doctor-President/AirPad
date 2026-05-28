@@ -57,6 +57,15 @@ final class SubstrateLayoutService {
     /// whenever a fit completes or a model loads; cleared on `clear()`.
     private(set) var clusterLabels: [Int]?
 
+    /// SB139 Stage 4c2 commit 1 — persistent UUIDs for the currently-loaded
+    /// cluster labels. Index-aligned with `clusterLabels` and
+    /// `fittedModel.trainingPoints`. `nil` for noise points and when no
+    /// fit has run yet. Sourced from `SubstrateClusterRegistry` after each
+    /// `runClustering()`; stable across refits when membership overlap
+    /// holds. Consumers (color, label, future user-rename) key on this
+    /// rather than the raw HDBSCAN label.
+    private(set) var persistentClusterIDs: [UUID?]?
+
     /// SB139 Stage 4c1.1 — per-node HSB color, keyed by node ID. Computed
     /// by `SubstrateColoringPass` from current placements + cluster
     /// labels. Refreshed in lockstep with `clusterLabels` (same generation).
@@ -261,6 +270,7 @@ final class SubstrateLayoutService {
     func clear() throws {
         self.fittedModel = nil
         self.clusterLabels = nil
+        self.persistentClusterIDs = nil
         self.colorHSB = nil
         self.displayCanvasPositions = nil
         self.relaxationInputHash = nil
@@ -268,6 +278,10 @@ final class SubstrateLayoutService {
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
+        // SB139 Stage 4c2 commit 1 — identity must not survive a model
+        // reset. The 4d undo path that needs to re-establish identity will
+        // do so via the snapshot-restore flow, not the persisted registry.
+        try? SubstrateClusterRegistry.shared.clear()
         self.lastActivityAt = Date()
         generation &+= 1
     }
@@ -307,13 +321,25 @@ final class SubstrateLayoutService {
     // MARK: - Clustering (SB139 Stage 4c1)
 
     /// Per-node view emitted to the canvas: 2D coord + cluster assignment.
-    /// `clusterID == -1` is the HDBSCAN noise label. Cross-fit cluster
-    /// identity is not stable (HDBSCAN renumbers on every fit) — consumers
-    /// must treat the ID as valid only for the current `generation`.
+    ///
+    /// `clusterID == -1` is the HDBSCAN noise label and is session-local —
+    /// HDBSCAN renumbers on every fit, so this value is valid only for the
+    /// current `generation` and is retained as a diagnostic.
+    ///
+    /// `persistentClusterID` and `paletteSlot` are stable across refits via
+    /// `SubstrateClusterRegistry` (recall-on-prior bipartite match at the
+    /// registry's `matchThreshold`). Consumers that need cross-fit
+    /// stability — color, label rendering, user renames — key on these.
+    /// Both are `nil` for noise points (no cluster) and for placements
+    /// produced before `SubstrateClusterRegistry` is wired through (defensive
+    /// nil-handling at the callsite preserves the prior session-local
+    /// behavior).
     struct CanvasPlacement {
         var nodeID: String
         var coord: SubstrateCoord2D
         var clusterID: Int
+        var persistentClusterID: UUID?
+        var paletteSlot: Int?
     }
 
     /// Run HDBSCAN on the currently-loaded fitted model's 2D coords. Pinned
@@ -324,12 +350,14 @@ final class SubstrateLayoutService {
     func runClustering(minClusterSize: Int = 5, minSamples: Int = 2) {
         guard let model = fittedModel else {
             clusterLabels = nil
+            persistentClusterIDs = nil
             colorHSB = nil
             return
         }
         let pts = model.trainingPoints
         guard pts.count >= 2 else {
             clusterLabels = nil
+            persistentClusterIDs = nil
             colorHSB = nil
             return
         }
@@ -340,10 +368,34 @@ final class SubstrateLayoutService {
             minSamples: minSamples
         )
         clusterLabels = result.labels
+
+        // SB139 Stage 4c2 commit 1 — resolve session-local HDBSCAN labels
+        // to persistent UUIDs. Mutation and persistence are owned by the
+        // registry; we just consume the index-aligned mapping.
+        let nodeIDs = pts.map(\.nodeID)
+        let persistentIDs = SubstrateClusterRegistry.shared.resolvePersistentIDs(
+            currentLabels: result.labels,
+            nodeIDs: nodeIDs,
+            fitVersion: model.fitVersion
+        )
+        persistentClusterIDs = persistentIDs
+
         // 4c1.1 — color derives from placements (truth coord + cluster). Compute
         // once per fit/load so the canvas can read it imperatively per-node.
-        let placements = zip(pts, result.labels).map { point, label in
-            CanvasPlacement(nodeID: point.nodeID, coord: point.coord2D, clusterID: label)
+        // Palette slots come from the registry so color is stable across
+        // refits even though `result.labels` renumbers.
+        let registry = SubstrateClusterRegistry.shared
+        let placements: [CanvasPlacement] = zip(pts, result.labels).enumerated().map { idx, pair in
+            let (point, label) = pair
+            let pid = persistentIDs[idx]
+            let slot = pid.flatMap { registry.paletteSlot(for: $0) }
+            return CanvasPlacement(
+                nodeID: point.nodeID,
+                coord: point.coord2D,
+                clusterID: label,
+                persistentClusterID: pid,
+                paletteSlot: slot
+            )
         }
         colorHSB = SubstrateColoringPass.map(placements)
         lastActivityAt = Date()
@@ -358,8 +410,22 @@ final class SubstrateLayoutService {
         guard let model = fittedModel, let labels = clusterLabels else { return nil }
         let pts = model.trainingPoints
         guard pts.count == labels.count else { return nil }
-        return zip(pts, labels).map { point, label in
-            CanvasPlacement(nodeID: point.nodeID, coord: point.coord2D, clusterID: label)
+        let pids = persistentClusterIDs
+        let registry = SubstrateClusterRegistry.shared
+        return zip(pts, labels).enumerated().map { idx, pair in
+            let (point, label) = pair
+            // Persistent IDs may legitimately lag clusterLabels by one
+            // generation (rare, transitional). Defensive nil-handling
+            // preserves the prior session-local behavior at the seam.
+            let pid = (pids != nil && pids!.count == labels.count) ? pids![idx] : nil
+            let slot = pid.flatMap { registry.paletteSlot(for: $0) }
+            return CanvasPlacement(
+                nodeID: point.nodeID,
+                coord: point.coord2D,
+                clusterID: label,
+                persistentClusterID: pid,
+                paletteSlot: slot
+            )
         }
     }
 

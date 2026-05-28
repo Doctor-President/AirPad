@@ -53,10 +53,13 @@ final class SubstrateClusterLabelService {
     /// output.
     private static let maxSummaryChars = 220
 
-    /// Label sanitization word cap. Matches the prompt's "1 to 4 words"
+    /// Label sanitization word cap. Matches the prompt's "1 to 3 words"
     /// instruction — anything longer is FM ignoring the constraint and
-    /// gets trimmed.
-    private static let maxLabelWords = 4
+    /// gets trimmed. Tightened from 4 → 3 on 2026-05-28 after observing
+    /// multi-token comma-list leakage ("DataHandlingImpacts, PrivacyRights,
+    /// …") — the comma-list rejection in `sanitize` is the primary
+    /// defense; this cap is the backstop.
+    private static let maxLabelWords = 3
 
     /// Generate `.fm` labels for any persistent clusters in
     /// `persistentIDByNodeID` whose registry identity has `label == nil`.
@@ -136,7 +139,7 @@ final class SubstrateClusterLabelService {
             .joined(separator: "\n")
 
         let systemPrompt = """
-        You name clusters of personal notes. Given the notes in one cluster, produce a short label that captures their shared theme. The label MUST be 1 to 4 words, Title Case, no punctuation, no quotes, no trailing period. Return ONLY the label — nothing else.
+        You name clusters of personal notes. Given the notes in one cluster, produce a short label that captures their shared theme. The label MUST be 1 to 3 words, Title Case, no punctuation, no quotes, no commas, no trailing period, no list. Return ONLY the label — nothing else.
         """
 
         let userPrompt = """
@@ -186,6 +189,15 @@ final class SubstrateClusterLabelService {
         let trailingPunct: Set<Character> = [".", ",", ";", ":", "!", "?"]
         while let l = line.last, trailingPunct.contains(l) {
             line = String(line.dropLast())
+        }
+
+        // Comma-list rejection. FM occasionally returns a tag list
+        // ("DataHandlingImpacts, PrivacyRights, OnDevicePrinciples, …")
+        // even when the system prompt asks for one label. Truncate at the
+        // first comma so the word cap operates on the leading phrase
+        // only — preserves a usable label without echoing the violation.
+        if let commaIdx = line.firstIndex(of: ",") {
+            line = String(line[..<commaIdx]).trimmingCharacters(in: .whitespaces)
         }
 
         let words = line.split(whereSeparator: { $0.isWhitespace })

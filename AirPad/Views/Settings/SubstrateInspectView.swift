@@ -92,6 +92,11 @@ struct SubstrateInspectView: View {
     @State private var inspectClusterBeingRenamedID: UUID? = nil
     @State private var inspectClusterRenameDraft: String = ""
 
+    // SB139 Stage 4c2 — feedback for the bulk-clear-FM-labels button.
+    // Shows the count cleared + regen kickoff status so T can confirm
+    // the action ran without diving into logs.
+    @State private var clearFMLabelsFeedback: String? = nil
+
     struct CosineDistResult: Equatable {
         let pairCount: Int
         let vectorCount: Int
@@ -1848,6 +1853,33 @@ struct SubstrateInspectView: View {
                 .buttonStyle(.plain)
             }
 
+            // SB139 Stage 4c2 — bulk clear of FM-sourced labels +
+            // regeneration kickoff. Per-identity Clear ships in the row
+            // below, but when the sanitizer or system prompt changes the
+            // existing pile of labels needs to refresh in one motion.
+            // `.user` renames stay untouched (registry filters on source).
+            HStack(spacing: 8) {
+                Button {
+                    clearAndRelabelFMClusters()
+                } label: {
+                    Text("Clear all FM labels (regen)")
+                        .font(.caption2)
+                        .foregroundStyle(.orange.opacity(modelLoaded ? 0.85 : 0.4))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!modelLoaded)
+
+                if let feedback = clearFMLabelsFeedback {
+                    Text(feedback)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+
             if let err = simulateRefitError {
                 Text(err)
                     .font(.caption2)
@@ -1933,6 +1965,53 @@ struct SubstrateInspectView: View {
             .padding(.leading, 36)
         }
         .padding(.vertical, 3)
+    }
+
+    /// Null every `.fm`-sourced label in the registry, then kick off a
+    /// regeneration pass against the currently-loaded fitted model.
+    /// `.user` renames are preserved (registry filters on source).
+    /// Mirrors the canvas's `kickOffClusterLabelingIfNeeded` so the
+    /// summary-provider order (substrate summary → summary → title)
+    /// stays the same single source of truth for label inputs.
+    @MainActor
+    private func clearAndRelabelFMClusters() {
+        let registry = SubstrateClusterRegistry.shared
+        let cleared = registry.clearAllFMLabels()
+
+        let service = SubstrateLayoutService.shared
+        guard let model = service.fittedModel,
+              let pids = service.persistentClusterIDs,
+              model.trainingPoints.count == pids.count else {
+            clearFMLabelsFeedback = "cleared \(cleared); no model loaded — regen skipped"
+            return
+        }
+
+        var persistentIDByNodeID: [String: UUID] = [:]
+        persistentIDByNodeID.reserveCapacity(pids.count)
+        for (i, point) in model.trainingPoints.enumerated() {
+            if let pid = pids[i] {
+                persistentIDByNodeID[point.nodeID] = pid
+            }
+        }
+        guard !persistentIDByNodeID.isEmpty else {
+            clearFMLabelsFeedback = "cleared \(cleared); no persistent IDs to relabel"
+            return
+        }
+
+        let nodesByID = Dictionary(uniqueKeysWithValues: store.nodes.map { ($0.id, $0) })
+        clearFMLabelsFeedback = "cleared \(cleared) · regenerating…"
+        Task { @MainActor in
+            await SubstrateClusterLabelService.shared.labelMissingClusters(
+                persistentIDByNodeID: persistentIDByNodeID,
+                summaryProvider: { nodeID in
+                    guard let node = nodesByID[nodeID] else { return nil }
+                    if let s = node.substrateSummary, !s.isEmpty { return s }
+                    if !node.summary.isEmpty { return node.summary }
+                    return node.title.isEmpty ? nil : node.title
+                }
+            )
+            clearFMLabelsFeedback = "cleared \(cleared) · regen complete"
+        }
     }
 
     @MainActor

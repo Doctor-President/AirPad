@@ -1175,6 +1175,7 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         syncFocalToCanvasState()
+        syncClusterCentroidsToCanvasState()
 
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
@@ -1184,6 +1185,16 @@ final class CorpusPhysicsScene: SKScene {
     /// Tracks last focal-id pushed to CanvasState so we can detect transitions to
     /// nil and dispatch a single clear instead of polling canvasState off-isolation.
     private var lastSyncedFocalID: String? = nil
+
+    /// SB139 Stage 4c2 commit D — cached nodeID → persistent cluster UUID
+    /// lookup. Rebuilt only when the substrate service's `generation`
+    /// counter advances (fit/load/clear/runClustering); per-frame the
+    /// centroid pass walks this map without touching the service.
+    private var nodeIDToPersistentClusterID: [String: UUID] = [:]
+
+    /// Generation snapshot for `nodeIDToPersistentClusterID`. Sentinel
+    /// `-1` forces the first build on first frame.
+    private var lastSeenSubstrateGeneration: Int = -1
 
     /// Bridges the engaged focal node's screen-space center and diameter to
     /// CanvasState every frame so the SwiftUI gradient overlay can track it as the
@@ -1226,6 +1237,88 @@ final class CorpusPhysicsScene: SKScene {
             }
             lastSyncedFocalID = nil
         }
+    }
+
+    /// SB139 Stage 4c2 commit D — recompute per-persistent-cluster screen
+    /// centroids and bridge them to CanvasState for the SwiftUI label
+    /// overlay. Runs every frame so labels track pan, zoom, and PBD
+    /// relaxation without lag — averaging ~200 sprite positions and
+    /// converting two centroids is sub-millisecond.
+    ///
+    /// The nodeID → persistent-cluster-UUID lookup is cached and rebuilt
+    /// only when `SubstrateLayoutService.shared.generation` advances
+    /// (fit/load/clear/runClustering), so the per-frame cost is just the
+    /// sprite scan + averaging + the view-coord conversion.
+    private func syncClusterCentroidsToCanvasState() {
+        guard let view = self.view else { return }
+
+        // SpriteKit invokes update(_:) on the main thread, so the
+        // @MainActor singletons + canvasState are safe to touch under
+        // assumeIsolated. The closure batches all isolated work so we
+        // pay a single isolation assertion per frame.
+        MainActor.assumeIsolated {
+            let service = SubstrateLayoutService.shared
+            let currentGeneration = service.generation
+            if currentGeneration != lastSeenSubstrateGeneration {
+                lastSeenSubstrateGeneration = currentGeneration
+                rebuildNodeIDToPersistentClusterIDMap(from: service)
+            }
+
+            guard !nodeIDToPersistentClusterID.isEmpty else {
+                if canvasState?.clusterCentroidScreenPositions.isEmpty == false {
+                    canvasState?.clusterCentroidScreenPositions = [:]
+                }
+                return
+            }
+
+            // Accumulate sprite positions per persistent cluster UUID.
+            var sums: [UUID: CGPoint] = [:]
+            var counts: [UUID: Int] = [:]
+            for (nodeID, pid) in nodeIDToPersistentClusterID {
+                guard let sprite = nodeSprites[nodeID] else { continue }
+                let p = sprite.position
+                let prior = sums[pid] ?? .zero
+                sums[pid] = CGPoint(x: prior.x + p.x, y: prior.y + p.y)
+                counts[pid, default: 0] += 1
+            }
+
+            var centroidsScreen: [UUID: CGPoint] = [:]
+            centroidsScreen.reserveCapacity(sums.count)
+            for (pid, sum) in sums {
+                let count = CGFloat(counts[pid] ?? 1)
+                let centroidScene = CGPoint(x: sum.x / count, y: sum.y / count)
+                centroidsScreen[pid] = view.convert(centroidScene, from: self)
+            }
+
+            canvasState?.clusterCentroidScreenPositions = centroidsScreen
+        }
+    }
+
+    /// Rebuilds the nodeID → persistent-cluster-UUID lookup from the
+    /// substrate service's current fitted model + persistent ID array.
+    /// Empties the lookup when no model is loaded, when clustering hasn't
+    /// run, or when the two arrays are unaligned (defensive — the service
+    /// guarantees alignment but we're index-matching so a mismatch should
+    /// degrade to "no labels" rather than crash).
+    ///
+    /// Caller responsibility: invoke only from a MainActor-isolated
+    /// context — `service`'s fittedModel / persistentClusterIDs reads
+    /// require it.
+    private func rebuildNodeIDToPersistentClusterIDMap(from service: SubstrateLayoutService) {
+        guard let model = service.fittedModel,
+              let pids = service.persistentClusterIDs,
+              model.trainingPoints.count == pids.count else {
+            nodeIDToPersistentClusterID = [:]
+            return
+        }
+        var out: [String: UUID] = [:]
+        out.reserveCapacity(pids.count)
+        for (i, point) in model.trainingPoints.enumerated() {
+            if let pid = pids[i] {
+                out[point.nodeID] = pid
+            }
+        }
+        nodeIDToPersistentClusterID = out
     }
 
     /// Sigmoid scale falloff: focal large, smooth taper, asymptotic to baseline.

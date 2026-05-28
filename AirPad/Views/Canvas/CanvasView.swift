@@ -41,6 +41,7 @@ struct CanvasView: View {
             syncScene(nodes: store.visibleNodes(in: scope))
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
+            kickOffClusterLabelingIfNeeded()
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Observe the broad signal (raw nodes) so collection scopes still
@@ -60,6 +61,13 @@ struct CanvasView: View {
             // `generation`. Re-sync so substrate-derived positions replace
             // legacy ones (or vice versa on clear).
             syncScene(nodes: store.visibleNodes(in: scope))
+            // SB139 Stage 4c2 commit D — kick off FM label generation for any
+            // persistent clusters whose registry identity has no label yet.
+            // Gated by `labelMissingClusters` on identity.label == nil so a
+            // re-fit on the same membership is a no-op. Summary closure
+            // resolves through the live store so a node summary updated
+            // between fits is reflected in the prompt.
+            kickOffClusterLabelingIfNeeded()
         }
         .onChange(of: store.filteredNodes) { old, filtered in
             // Re-sync when filter state changes (tag filter, type filter, etc.)
@@ -155,6 +163,7 @@ struct CanvasView: View {
                     .transition(.opacity)
             }
 
+            clusterLabelOverlay
             focalEngagementOverlay
             nodeSummaryLayer
             drillDownBackButton
@@ -237,6 +246,59 @@ struct CanvasView: View {
                 store.pendingTagSuggestions = nil
                 localTagSuggestions = nil
             }
+    }
+
+    /// SB139 Stage 4c2 commit D — persistent-cluster label badges anchored
+    /// at the 2D centroid of each cluster's members. Centroids are kept in
+    /// screen space by `CorpusPhysicsScene` (`syncClusterCentroidsToCanvasState`)
+    /// every frame so the badges track pan, zoom, and PBD relaxation.
+    ///
+    /// Visibility: always-on per Consultation #2 (T 2026-05-28) — at the
+    /// 2-cluster ceiling on this corpus, centroids sit far apart and there's
+    /// no overlap risk; the zoom-tier visibility design is over-engineering
+    /// for the current state. Hidden during focal engagement / zoomed /
+    /// drilled-in / dismissing so the overlays don't compete with the
+    /// focal gradient and summary layer.
+    ///
+    /// Labels read from `SubstrateClusterRegistry.shared.label(for:)`;
+    /// unlabeled clusters render nothing (waiting for FM via
+    /// `SubstrateClusterLabelService`). `.allowsHitTesting(false)` here —
+    /// Commit E adds rename/clear via a long-press menu on a separate
+    /// hit-testing affordance.
+    @ViewBuilder
+    private var clusterLabelOverlay: some View {
+        let visible = !canvasState.isZoomed
+            && !isDismissing
+            && canvasState.currentFocalNodeID == nil
+            && canvasState.disengagingFocalNodeID == nil
+            && canvasState.drilledInto == nil
+
+        if visible {
+            let centroids = canvasState.clusterCentroidScreenPositions
+            let registry = SubstrateClusterRegistry.shared
+            ZStack {
+                ForEach(Array(centroids.keys), id: \.self) { pid in
+                    if let label = registry.label(for: pid),
+                       let pos = centroids[pid] {
+                        Text(label)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.95))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(
+                                Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5)
+                            )
+                            .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+                            .position(pos)
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .allowsHitTesting(false)
+            .ignoresSafeArea()
+            .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
+        }
     }
 
     /// Tag-colored gradient that tracks the focal node during honeycomb engagement.
@@ -476,6 +538,48 @@ struct CanvasView: View {
         )
         scene.refreshSelectionOutlines()
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
+    }
+
+    /// SB139 Stage 4c2 commit D — FM cluster-label generation trigger.
+    /// Builds the persistent-ID-by-node-ID lookup from the substrate
+    /// service and a `summaryProvider` closure that resolves through the
+    /// live `store.nodes` (substrate summary preferred, falls back to the
+    /// pipeline summary, then title). Bails when no fit is loaded or
+    /// clustering hasn't run.
+    ///
+    /// `labelMissingClusters` is itself idempotent (gates on
+    /// identity.label == nil) so calling on every generation change is
+    /// safe — a re-fit on the same membership produces a no-op pass.
+    private func kickOffClusterLabelingIfNeeded() {
+        guard FeatureFlags.substrateLayout else { return }
+        let service = SubstrateLayoutService.shared
+        guard let model = service.fittedModel,
+              let pids = service.persistentClusterIDs,
+              model.trainingPoints.count == pids.count else { return }
+
+        var persistentIDByNodeID: [String: UUID] = [:]
+        persistentIDByNodeID.reserveCapacity(pids.count)
+        for (i, point) in model.trainingPoints.enumerated() {
+            if let pid = pids[i] {
+                persistentIDByNodeID[point.nodeID] = pid
+            }
+        }
+        guard !persistentIDByNodeID.isEmpty else { return }
+
+        // Capture a snapshot map so the async task doesn't reach into
+        // the live store off-MainActor.
+        let nodesByID = Dictionary(uniqueKeysWithValues: store.nodes.map { ($0.id, $0) })
+        Task { @MainActor in
+            await SubstrateClusterLabelService.shared.labelMissingClusters(
+                persistentIDByNodeID: persistentIDByNodeID,
+                summaryProvider: { nodeID in
+                    guard let node = nodesByID[nodeID] else { return nil }
+                    if let s = node.substrateSummary, !s.isEmpty { return s }
+                    if !node.summary.isEmpty { return node.summary }
+                    return node.title.isEmpty ? nil : node.title
+                }
+            )
+        }
     }
 
     /// SB139 Stage 4c1 — substrate-as-baseline auto-fit trigger. Cheap to

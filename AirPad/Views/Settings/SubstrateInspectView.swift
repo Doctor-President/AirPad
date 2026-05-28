@@ -97,6 +97,12 @@ struct SubstrateInspectView: View {
     // the action ran without diving into logs.
     @State private var clearFMLabelsFeedback: String? = nil
 
+    // SB139 Stage 4c2 — confirmation gate for the destructive "Reset
+    // registry" action. Sits in the same vertical strip as the safer
+    // Clear/Refit actions; T flagged mis-tap risk after a refit-induced
+    // 2-cluster collapse, so any tap now goes through an alert.
+    @State private var confirmingRegistryReset: Bool = false
+
     struct CosineDistResult: Equatable {
         let pairCount: Int
         let vectorCount: Int
@@ -1820,44 +1826,13 @@ struct SubstrateInspectView: View {
                 .tint(.white.opacity(0.6))
             }
 
-            HStack(spacing: 8) {
-                Button {
-                    Task { await runSimulateRefit() }
-                } label: {
-                    Text(simulateRefitInProgress ? "Refitting…" : "Simulate refit (re-cluster + match)")
-                        .font(.caption2)
-                        .foregroundStyle(.purple.opacity((simulateRefitInProgress || !modelLoaded) ? 0.4 : 0.7))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(simulateRefitInProgress || !modelLoaded)
+            // SB139 Stage 4c2 — action stack split into safe-actions
+            // (clear FM labels + simulate refit) and the destructive
+            // Reset, separated by a divider so mis-taps are physically
+            // implausible. 2026-05-28: T hit Reset accidentally during
+            // the whitening A/B because it was adjacent to the new
+            // Clear-FM-labels button.
 
-                Button {
-                    do {
-                        try registry.clear()
-                    } catch {
-                        simulateRefitError = "reset failed: \(error)"
-                    }
-                } label: {
-                    Text("Reset registry")
-                        .font(.caption2)
-                        .foregroundStyle(.red.opacity(0.7))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-
-            // SB139 Stage 4c2 — bulk clear of FM-sourced labels +
-            // regeneration kickoff. Per-identity Clear ships in the row
-            // below, but when the sanitizer or system prompt changes the
-            // existing pile of labels needs to refresh in one motion.
-            // `.user` renames stay untouched (registry filters on source).
             HStack(spacing: 8) {
                 Button {
                     clearAndRelabelFMClusters()
@@ -1878,6 +1853,57 @@ struct SubstrateInspectView: View {
                         .font(.caption2)
                         .foregroundStyle(.white.opacity(0.55))
                 }
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    Task { await runSimulateRefit() }
+                } label: {
+                    Text(simulateRefitInProgress ? "Refitting…" : "Simulate refit (re-cluster + match)")
+                        .font(.caption2)
+                        .foregroundStyle(.purple.opacity((simulateRefitInProgress || !modelLoaded) ? 0.4 : 0.7))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(simulateRefitInProgress || !modelLoaded)
+            }
+
+            Divider()
+                .background(Color.white.opacity(0.1))
+                .padding(.vertical, 6)
+
+            HStack(spacing: 8) {
+                Text("Destructive")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.red.opacity(0.55))
+                Spacer()
+                Button {
+                    confirmingRegistryReset = true
+                } label: {
+                    Text("Reset registry")
+                        .font(.caption2)
+                        .foregroundStyle(.red.opacity(0.7))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .alert("Reset cluster registry?", isPresented: $confirmingRegistryReset) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset", role: .destructive) {
+                    do {
+                        try registry.clear()
+                    } catch {
+                        simulateRefitError = "reset failed: \(error)"
+                    }
+                }
+            } message: {
+                Text("Wipes all cluster identities (including .user renames). Cannot be undone. Use \"Clear all FM labels\" instead if you only want to regenerate labels.")
             }
 
             if let err = simulateRefitError {

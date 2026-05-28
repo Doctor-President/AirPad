@@ -61,10 +61,16 @@ enum FeatureFlags {
 
     /// Strands — when true, engaged-state entry snaps the focal's top
     /// substrate neighbors onto a concentric ring around it (and snaps them
-    /// back on disengage). Default off until on-device validation; flip from
-    /// the inspect view.
+    /// back on disengage). Defaults TRUE post-4c2 validation so strands ride
+    /// along with the substrate canvas without a manual toggle (a reinstall
+    /// during 4c2 debugging dropped the previously-flipped UserDefault and
+    /// silently disabled strands — the default change closes that hole).
+    /// Toggle from the inspect view to backout.
     static var strandSnap: Bool {
-        get { UserDefaults.standard.bool(forKey: strandSnapKey) }
+        get {
+            if UserDefaults.standard.object(forKey: strandSnapKey) == nil { return true }
+            return UserDefaults.standard.bool(forKey: strandSnapKey)
+        }
         set { UserDefaults.standard.set(newValue, forKey: strandSnapKey) }
     }
 }

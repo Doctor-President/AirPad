@@ -23,14 +23,14 @@ import CoreGraphics
 enum SubstrateCanvasLayoutAdapter {
 
     /// Target span of the longer axis after mapping (canvas points).
-    /// Initial 1200 pt seed (sized to `LayoutService.floaterRadius: 900`'s
-    /// visual regime) produced a density floor at T's 171-node corpus:
-    /// ~50% disk-area packing in the densest cluster, so 4c1.3 relaxation
-    /// hit `maxStretch` cap at 41–51% of nodes with no visible
-    /// improvement. Raised to 2000 pt: gives nodes ~67% more breathing
-    /// room at the substrate level so relaxation has somewhere to put
-    /// them. Tunable downward (1600–1800) if 2000 feels too spread.
-    static let targetSpan: CGFloat = 2000
+    /// History: 1200 → 2000 because min/max scaling let outliers compress
+    /// the dense mass, forcing extra span just to give it room. The P5/P95
+    /// span fix eliminated that compression — the dense mass now actually
+    /// fills `targetSpan` — so 2000 left it overspread relative to the
+    /// viewport. Dropped to 1600: dense cluster occupies the screen area
+    /// more tightly while outliers still sit ~88% past the dense edge
+    /// (clamped at ±1400 from the ±800 dense half-extent).
+    static let targetSpan: CGFloat = 1600
 
     struct Mapped {
         /// SwiftUI-convention positions (y-down from center), keyed by node ID.

@@ -421,14 +421,15 @@ final class CorpusStore {
         )
     }
 
-    /// SB139 Stage 4c2 diagnostic-only — load the block-embedding sidecar
-    /// for a node so the substrate inspect view can compare per-node
-    /// substrate-summary cosines against block-pooled alternatives. Lives
-    /// here (rather than exposing the storage actor) so the read path
-    /// stays funneled through one entry point. Returns nil for nodes
-    /// without a sidecar; suppresses read errors as nil (diagnostic surface
-    /// is non-load-bearing).
-    func diagnosticBlockIndex(forNodeID nodeID: String) async -> NodeBlockIndex? {
+    /// SB139 Stage 4c2 — load the block-embedding sidecar for a node so
+    /// the substrate layout pipeline (and the dev inspect view) can pool
+    /// block embeddings into a node-level vector. Lives here (rather than
+    /// exposing the storage actor) so the read path stays funneled through
+    /// one entry point. Returns nil for nodes without a sidecar;
+    /// suppresses read errors as nil — callers (UMAP preload, diagnostic
+    /// histograms) treat absent/corrupt sidecars as "no block-pooled
+    /// vector" and fall through to the legacy summary/folksonomy path.
+    func blockIndex(forNodeID nodeID: String) async -> NodeBlockIndex? {
         try? await service.loadBlockIndex(forNodeID: nodeID)
     }
 

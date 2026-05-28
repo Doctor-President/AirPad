@@ -71,6 +71,19 @@ final class SubstrateLayoutService {
     /// labels. Refreshed in lockstep with `clusterLabels` (same generation).
     private(set) var colorHSB: [String: SubstrateColoringPass.HSB]?
 
+    /// SB139 Stage 4c2 — pre-resolved block-pooled substrate vectors,
+    /// keyed by node ID. Populated by `preloadBlockPooledVectors`; consulted
+    /// by `substrateVector(for:)` ahead of the legacy summary/folksonomy
+    /// path. The diagnostic that motivated this swap showed block-pooled
+    /// vectors widen the inter-node cosine distribution from p10–p90 = 0.095
+    /// to 0.153, which is the geometric headroom HDBSCAN needs to break
+    /// past the 2-cluster ceiling on NLContextualEmbedding's compressed
+    /// summary embeddings. Cached because block sidecars are actor-loaded
+    /// (async) but `substrateVector(for:)` is sync; caller pre-loads once
+    /// per fit. Nil ⇒ legacy summary path for every node (preserves
+    /// pre-4c2 behavior when nothing has been preloaded).
+    private(set) var blockPooledVectors: [String: [Float]]?
+
     /// SB139 Stage 4c1.3 — display-space canvas positions produced by the
     /// tethered relaxation pass. Spans ALL canvas-displayed nodes (substrate
     /// fit + non-substrate stragglers), not just substrate placements:
@@ -125,6 +138,18 @@ final class SubstrateLayoutService {
     /// - neither → fall back to `contextualContentEmbedding`
     /// - none of the three → nil (caller skips the node)
     func substrateVector(for node: Node) -> [Float]? {
+        // SB139 Stage 4c2 — block-pooled vector takes precedence when
+        // pre-resolved. Replaces (not augments) summary/folksonomy because
+        // the diagnostic showed mean-pooling at the node level inherits
+        // NLContextualEmbedding's compression; widening only emerges when
+        // block embeddings *replace* the summary anchor entirely. Fallthrough
+        // to the legacy path preserves coverage for nodes without a block
+        // sidecar (e.g., pre-backfill ingests, refused-content nodes).
+        if let cache = blockPooledVectors,
+           let pooled = cache[node.id],
+           !pooled.isEmpty {
+            return pooled
+        }
         let s = node.summaryEmbedding?.isEmpty == false ? node.summaryEmbedding : nil
         let f = node.folksonomyEmbedding?.isEmpty == false ? node.folksonomyEmbedding : nil
         switch (s, f) {
@@ -141,6 +166,38 @@ final class SubstrateLayoutService {
             let c = node.contextualContentEmbedding
             return (c?.isEmpty == false) ? c : nil
         }
+    }
+
+    /// Pre-resolve block-pooled vectors for the given nodes and cache them
+    /// for subsequent `substrateVector(for:)` calls. Sequential awaits
+    /// across the storage actor — ~50–200 ms at corpus scale (n=123),
+    /// dominated by sidecar I/O. Idempotent; overwrites any prior cache.
+    /// Nodes without a sidecar are absent from the cache (caller's
+    /// `substrateVector` falls through to summary/folksonomy).
+    ///
+    /// Mean pool is element-wise across all blocks per node. Blocks whose
+    /// embedding dim disagrees with the first observed dim are dropped
+    /// (defensive — shouldn't happen given one embedder version per sidecar).
+    func preloadBlockPooledVectors(allNodes: [Node], store: CorpusStore) async {
+        var cache: [String: [Float]] = [:]
+        for node in allNodes {
+            guard SubstrateService.shared.isRankable(node), !node.isMeta else { continue }
+            guard let index = await store.blockIndex(forNodeID: node.id),
+                  !index.blocks.isEmpty else { continue }
+            let dim = index.blocks[0].embedding.count
+            guard dim > 0 else { continue }
+            var acc = [Float](repeating: 0, count: dim)
+            var n = 0
+            for block in index.blocks where block.embedding.count == dim {
+                for k in 0..<dim { acc[k] += block.embedding[k] }
+                n += 1
+            }
+            guard n > 0 else { continue }
+            let inv = Float(1) / Float(n)
+            for k in 0..<dim { acc[k] *= inv }
+            cache[node.id] = acc
+        }
+        blockPooledVectors = cache
     }
 
     // MARK: - Fit
@@ -274,6 +331,11 @@ final class SubstrateLayoutService {
         self.colorHSB = nil
         self.displayCanvasPositions = nil
         self.relaxationInputHash = nil
+        // SB139 Stage 4c2 — invalidate the block-pooled cache too. The next
+        // fit's caller must re-preload; stale block-pooled vectors carried
+        // across a clear would otherwise feed a fresh fit with the wrong
+        // geometry. (Refused-content nodes preserve summary-path fallback.)
+        self.blockPooledVectors = nil
         let url = Self.fittedModelURL()
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
@@ -446,9 +508,15 @@ final class SubstrateLayoutService {
     /// persistence failure). Caller decides whether to surface or log.
     func ensureFittedIfPossible(
         allNodes: [Node],
+        store: CorpusStore,
         threshold: Int = SubstrateLayoutService.autoFitMinNodeCount
     ) async throws {
         if fittedModel != nil { return }
+        // SB139 Stage 4c2 — preload before the eligibility check so block-
+        // only nodes (no summary/folksonomy) count toward threshold the
+        // same way they'll count toward fit input. Without this the
+        // threshold gate undercounts in the block-pooled regime.
+        await preloadBlockPooledVectors(allNodes: allNodes, store: store)
         let rankableCount = allNodes.reduce(into: 0) { acc, node in
             if SubstrateService.shared.isRankable(node), !node.isMeta,
                substrateVector(for: node) != nil {

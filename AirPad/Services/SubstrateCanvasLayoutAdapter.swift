@@ -77,6 +77,11 @@ enum SubstrateCanvasLayoutAdapter {
         let cx = (p5x + p95x) * 0.5
         let cy = (p5y + p95y) * 0.5
 
+        // DIAG (transient) — confirms the P5/P95 path is live and shows
+        // the actual dense-mass span the adapter is feeding the canvas.
+        // Remove once layout regression is closed.
+        print("[Adapter DIAG] n=\(placements.count) p5=(\(p5x),\(p5y)) p95=(\(p95x),\(p95y)) span=(\(spanX),\(spanY)) scale=\(scale) targetSpan=\(Self.targetSpan)")
+
         var positions: [String: CanvasPosition] = [:]
         positions.reserveCapacity(placements.count)
         for p in placements {

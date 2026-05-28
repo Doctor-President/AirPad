@@ -169,13 +169,6 @@ struct CanvasView: View {
                 navigationPath.append(node)
                 router.pendingNodeNavigationID = nil
             }
-            // DIAG (transient) — fires on every transition of the cluster
-            // label visibility predicate so we can see which CanvasState
-            // field is tripping the hide. Remove once labels are stable
-            // under normal pan.
-            .onChange(of: clusterLabelVisible) { _, newValue in
-                print("[ClusterLabelGate] visible=\(newValue) isZoomed=\(canvasState.isZoomed) isDismissing=\(isDismissing) focal=\(canvasState.currentFocalNodeID ?? "nil") disengaging=\(canvasState.disengagingFocalNodeID ?? "nil") drilled=\(canvasState.drilledInto ?? "nil")")
-            }
     }
 
     private var canvasZStack: some View {
@@ -299,54 +292,45 @@ struct CanvasView: View {
     /// the outer `ZStack` doesn't block input, and each badge's frame
     /// matches the visible pill, so long-press lands only inside a pill
     /// and sprite gestures elsewhere on the overlay pass through.
-    /// SB139 Stage 4c2 fix — hide ONLY on true focal engagement, full
-    /// zoom, or drill-in. The earlier `disengagingFocalNodeID == nil`
-    /// gate kept labels hidden through the shrink-back transition, and
-    /// a stale `lingerFocalNodeID` from a prior engagement could leave
-    /// `disengagingFocalNodeID` set into the next free pan — making it
-    /// look like normal pan hides labels. Dropping the check restores
-    /// labels the instant true engagement ends.
-    private var clusterLabelVisible: Bool {
-        !canvasState.isZoomed
-            && !isDismissing
-            && canvasState.currentFocalNodeID == nil
-            && canvasState.drilledInto == nil
-    }
-
+    /// SB139 Stage 4c2 fix — always render. No visibility gate. The
+    /// focal node and its strands render on top and naturally occlude
+    /// any label they cross, so engagement/zoom/drill-in don't need to
+    /// hide labels explicitly. Earlier gating tied to
+    /// `currentFocalNodeID` / `disengagingFocalNodeID` made labels
+    /// flicker on normal pan because of stale linger state — dropping
+    /// the gate removes that whole class of bug.
     @ViewBuilder
     private var clusterLabelOverlay: some View {
-        if clusterLabelVisible {
-            // SB139 Stage 4c2 fix — clamp badge centers to the safe area
-            // minus each badge's half-extent so labels at near-edge
-            // centroids stay fully visible. ZStack uses topLeading
-            // alignment and each badge positions itself via `.offset`
-            // (intrinsic frame) rather than `.position` (flexible frame
-            // that hit-tests across the full layer and would block
-            // SpriteKit gestures like strand engagement — the strand
-            // regression we hit after cE removed
-            // `.allowsHitTesting(false)` to enable contextMenu).
-            GeometryReader { geo in
-                let centroids = canvasState.clusterCentroidScreenPositions
-                let registry = SubstrateClusterRegistry.shared
-                ZStack(alignment: .topLeading) {
-                    ForEach(Array(centroids.keys), id: \.self) { pid in
-                        if let label = registry.label(for: pid),
-                           let pos = centroids[pid] {
-                            ClusterLabelBadge(
-                                label: label,
-                                screenPosition: pos,
-                                containerSize: geo.size,
-                                safeInsets: geo.safeAreaInsets,
-                                onRename: { beginRenamingCluster(pid) },
-                                onClear: { registry.clearLabel(persistentID: pid) }
-                            )
-                        }
+        // SB139 Stage 4c2 fix — clamp badge centers to the safe area
+        // minus each badge's half-extent so labels at near-edge
+        // centroids stay fully visible. ZStack uses topLeading
+        // alignment and each badge positions itself via `.offset`
+        // (intrinsic frame) rather than `.position` (flexible frame
+        // that hit-tests across the full layer and would block
+        // SpriteKit gestures like strand engagement — the strand
+        // regression we hit after cE removed
+        // `.allowsHitTesting(false)` to enable contextMenu).
+        GeometryReader { geo in
+            let centroids = canvasState.clusterCentroidScreenPositions
+            let registry = SubstrateClusterRegistry.shared
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(centroids.keys), id: \.self) { pid in
+                    if let label = registry.label(for: pid),
+                       let pos = centroids[pid] {
+                        ClusterLabelBadge(
+                            label: label,
+                            screenPosition: pos,
+                            containerSize: geo.size,
+                            safeInsets: geo.safeAreaInsets,
+                            onRename: { beginRenamingCluster(pid) },
+                            onClear: { registry.clearLabel(persistentID: pid) }
+                        )
                     }
                 }
-                .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
             }
-            .ignoresSafeArea()
+            .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
         }
+        .ignoresSafeArea()
     }
 
     /// Open the rename alert for `pid`, seeding the draft from the

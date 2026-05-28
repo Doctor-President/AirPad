@@ -285,6 +285,33 @@ final class SubstrateClusterRegistry {
         }
     }
 
+    /// Null every `.fm`-sourced label across the registry, leaving
+    /// `.user` renames untouched. Returns the count of identities that
+    /// were cleared so the caller can decide whether a regeneration
+    /// pass is worth kicking off. Persists once at the end (single
+    /// write, not per-identity).
+    @discardableResult
+    func clearAllFMLabels() -> Int {
+        ensureLoaded()
+        var cleared = 0
+        for (id, identity) in identities where identity.labelSource == .fm {
+            var copy = identity
+            copy.label = nil
+            copy.labelSource = nil
+            copy.labelGeneratedAt = nil
+            identities[id] = copy
+            cleared += 1
+        }
+        if cleared > 0 {
+            do {
+                try persist()
+            } catch {
+                print("[SubstrateClusterRegistry] clearAllFMLabels persist failed: \(error)")
+            }
+        }
+        return cleared
+    }
+
     /// Clear the label on an identity, re-opening it to a future `.fm`
     /// regeneration. No-op if the identity is unknown.
     func clearLabel(persistentID: UUID) {

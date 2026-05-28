@@ -125,6 +125,24 @@ struct UMAPFittedModel: Codable {
     /// this array correspond to indices in the internal k-NN graph.
     var trainingPoints: [TrainingPoint]
 
+    /// SB139 Stage 4c2 — PCA whitening mean. D-dim vector subtracted from
+    /// every raw input (at fit time and at newcomer transform time)
+    /// before the whitening matrix multiply. Nil for pre-v3 fits that
+    /// pre-date whitening; callers treat nil as "no whitening" and feed
+    /// raw vectors straight through. See `SubstrateWhitening`.
+    /// Default-nil on the memberwise init so existing call sites (UMAP.fit's
+    /// constructor, UMAPSelfTest's T10 literal) don't have to pass it.
+    var whiteningMean: [Float]? = nil
+
+    /// SB139 Stage 4c2 — PCA whitening matrix `V · diag(1/s)` in
+    /// row-major layout `[D rows][K cols]`. Multiplied as `(x - μ) · W`
+    /// to produce K-dim whitened vectors that UMAP fit/transform consume
+    /// in place of raw 512-dim. Nil for pre-v3 fits; the
+    /// `whiteningMean == nil ⇔ whiteningMatrix == nil` invariant is
+    /// preserved by `SubstrateLayoutService.fit` (sets both together or
+    /// neither). See `SubstrateWhitening`.
+    var whiteningMatrix: [[Float]]? = nil
+
     /// Per-node fit record: the 512-dim vector that went in, the projected
     /// coord that came out, and the canonical node ID this point represents.
     ///
@@ -189,7 +207,11 @@ struct UMAPFittedModel: Codable {
     /// lockstep with shape changes; older values trigger migration at
     /// load time. v2 — TrainingPoint emits `coordND: [Float]` instead of
     /// `coord2D: SubstrateCoord2D`; v1 decode is migrated transparently.
-    static let currentSchemaVersion: Int = 2
+    /// v3 — adds optional `whiteningMean` / `whiteningMatrix` at top-
+    /// level for SB139 Stage 4c2 PCA whitening; absent fields decode as
+    /// nil (Codable auto-synthesis on Optional), so pre-v3 files load
+    /// without migration and run the raw-input UMAP path unchanged.
+    static let currentSchemaVersion: Int = 3
 }
 
 // MARK: - Errors

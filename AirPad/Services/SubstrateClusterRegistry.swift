@@ -120,9 +120,14 @@ final class SubstrateClusterRegistry {
 
     /// Recall-on-prior threshold for the bipartite max-overlap match.
     /// `overlap(P, C) = |P ∩ C| / |P|` — fraction of prior members that
-    /// reappear in the candidate current cluster. 0.70 per Consultation #3.
-    /// Persisted so the dev inspect view's stepper survives relaunch.
-    var matchThreshold: Double = 0.70
+    /// reappear in the candidate current cluster. Loosened 0.70 → 0.50
+    /// on 2026-05-28 after a whitening + minDist tuning pass produced
+    /// 2 fresh-UUID clusters because no prior identity could clear
+    /// 0.70 recall through the new geometry. 0.50 = "majority of prior
+    /// members reappear together" survives hyperparameter shifts while
+    /// still rejecting random reshuffles. Persisted so the dev inspect
+    /// view's stepper survives relaunch.
+    var matchThreshold: Double = 0.50
 
     // MARK: - Resolve
 

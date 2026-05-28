@@ -421,6 +421,17 @@ final class CorpusStore {
         )
     }
 
+    /// SB139 Stage 4c2 diagnostic-only — load the block-embedding sidecar
+    /// for a node so the substrate inspect view can compare per-node
+    /// substrate-summary cosines against block-pooled alternatives. Lives
+    /// here (rather than exposing the storage actor) so the read path
+    /// stays funneled through one entry point. Returns nil for nodes
+    /// without a sidecar; suppresses read errors as nil (diagnostic surface
+    /// is non-load-bearing).
+    func diagnosticBlockIndex(forNodeID nodeID: String) async -> NodeBlockIndex? {
+        try? await service.loadBlockIndex(forNodeID: nodeID)
+    }
+
     /// Suggestions surfaced by the Ghost Query Field. Built from the corpus summary if present,
     /// with a fixed fallback list so the field is never empty (e.g., on a fresh install).
     var ghostQuerySuggestions: [String] {

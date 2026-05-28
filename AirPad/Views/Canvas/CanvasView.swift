@@ -169,6 +169,13 @@ struct CanvasView: View {
                 navigationPath.append(node)
                 router.pendingNodeNavigationID = nil
             }
+            // DIAG (transient) — fires on every transition of the cluster
+            // label visibility predicate so we can see which CanvasState
+            // field is tripping the hide. Remove once labels are stable
+            // under normal pan.
+            .onChange(of: clusterLabelVisible) { _, newValue in
+                print("[ClusterLabelGate] visible=\(newValue) isZoomed=\(canvasState.isZoomed) isDismissing=\(isDismissing) focal=\(canvasState.currentFocalNodeID ?? "nil") disengaging=\(canvasState.disengagingFocalNodeID ?? "nil") drilled=\(canvasState.drilledInto ?? "nil")")
+            }
     }
 
     private var canvasZStack: some View {
@@ -292,21 +299,23 @@ struct CanvasView: View {
     /// the outer `ZStack` doesn't block input, and each badge's frame
     /// matches the visible pill, so long-press lands only inside a pill
     /// and sprite gestures elsewhere on the overlay pass through.
-    @ViewBuilder
-    private var clusterLabelOverlay: some View {
-        // SB139 Stage 4c2 fix — hide ONLY on true focal engagement, full
-        // zoom, or drill-in. The earlier `disengagingFocalNodeID == nil`
-        // gate kept labels hidden through the shrink-back transition, and
-        // a stale `lingerFocalNodeID` from a prior engagement could leave
-        // `disengagingFocalNodeID` set into the next free pan — making it
-        // look like normal pan hides labels. Dropping the check restores
-        // labels the instant true engagement ends.
-        let visible = !canvasState.isZoomed
+    /// SB139 Stage 4c2 fix — hide ONLY on true focal engagement, full
+    /// zoom, or drill-in. The earlier `disengagingFocalNodeID == nil`
+    /// gate kept labels hidden through the shrink-back transition, and
+    /// a stale `lingerFocalNodeID` from a prior engagement could leave
+    /// `disengagingFocalNodeID` set into the next free pan — making it
+    /// look like normal pan hides labels. Dropping the check restores
+    /// labels the instant true engagement ends.
+    private var clusterLabelVisible: Bool {
+        !canvasState.isZoomed
             && !isDismissing
             && canvasState.currentFocalNodeID == nil
             && canvasState.drilledInto == nil
+    }
 
-        if visible {
+    @ViewBuilder
+    private var clusterLabelOverlay: some View {
+        if clusterLabelVisible {
             // SB139 Stage 4c2 fix — clamp badge centers to the safe area
             // minus each badge's half-extent so labels at near-edge
             // centroids stay fully visible. ZStack uses topLeading

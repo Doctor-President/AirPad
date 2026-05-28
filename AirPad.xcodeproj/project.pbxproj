@@ -83,6 +83,7 @@
 		6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729D9028EBF447A0241ABFD /* KeychainHelper.swift */; };
 		6DA9E5E14E071618E0AEB602 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EAE9B78BB325C211A14551B /* PhotosUI.framework */; };
 		6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F135F708282671E607C7C84B /* RichTextEditor.swift */; };
+		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
 		729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F103085E0B3E0A4D0FAF79EC /* TagPickerMenu.swift */; };
 		734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */; };
 		75AF7C8AD43A3FE74F44F97D /* MediaFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4E63F786821E7025A5C3A0 /* MediaFullscreenViewer.swift */; };
@@ -273,6 +274,7 @@
 		613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryTile.swift; sourceTree = "<group>"; };
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCAN.swift; sourceTree = "<group>"; };
+		657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterLabelService.swift; sourceTree = "<group>"; };
 		66610DC5B90AC2729F2B6F1D /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
 		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
@@ -460,6 +462,7 @@
 				92F8312336CC2A7C1C2763EF /* SelectionService.swift */,
 				780B6A68830590DBDA5189D1 /* StrandService.swift */,
 				6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */,
+				657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */,
 				9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */,
 				25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */,
 				7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */,
@@ -1013,6 +1016,7 @@
 				7701571E5153DEFA1B4F4D82 /* SpriteKitView.swift in Sources */,
 				9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */,
 				35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */,
+				709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */,
 				B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */,
 				AE9C0E76D1F909B7C3197976 /* SubstrateColoringPass.swift in Sources */,
 				0A1E663CC31AC33AC01C329C /* SubstrateCoord2D.swift in Sources */,

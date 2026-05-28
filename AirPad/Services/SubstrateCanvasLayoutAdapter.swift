@@ -23,14 +23,14 @@ import CoreGraphics
 enum SubstrateCanvasLayoutAdapter {
 
     /// Target span of the longer axis after mapping (canvas points).
-    /// History: 1200 → 2000 because min/max scaling let outliers compress
-    /// the dense mass, forcing extra span just to give it room. The P5/P95
-    /// span fix eliminated that compression — the dense mass now actually
-    /// fills `targetSpan` — so 2000 left it overspread relative to the
-    /// viewport. Dropped to 1600: dense cluster occupies the screen area
-    /// more tightly while outliers still sit ~88% past the dense edge
-    /// (clamped at ±1400 from the ±800 dense half-extent).
-    static let targetSpan: CGFloat = 1600
+    /// Initial 1200 pt seed (sized to `LayoutService.floaterRadius: 900`'s
+    /// visual regime) produced a density floor at T's 171-node corpus:
+    /// ~50% disk-area packing in the densest cluster, so 4c1.3 relaxation
+    /// hit `maxStretch` cap at 41–51% of nodes with no visible
+    /// improvement. Raised to 2000 pt: gives nodes ~67% more breathing
+    /// room at the substrate level so relaxation has somewhere to put
+    /// them. Tunable downward (1600–1800) if 2000 feels too spread.
+    static let targetSpan: CGFloat = 2000
 
     struct Mapped {
         /// SwiftUI-convention positions (y-down from center), keyed by node ID.
@@ -41,71 +41,35 @@ enum SubstrateCanvasLayoutAdapter {
         var unitsToPoints: CGFloat
     }
 
-    /// Outer half-extent (canvas points) past which outliers are clamped.
-    /// Sits 100 pt clear of the physics edge loop at ±1500 so outliers
-    /// rest at the boundary without the engine continuously pushing them
-    /// inward. ~40% past the dense-mass edge (targetSpan/2 = 1000) gives
-    /// outliers a visibly separate band from the central cluster.
-    static let outlierClamp: CGFloat = 1400
-
     static func map(_ placements: [SubstrateLayoutService.CanvasPlacement]) -> Mapped {
         guard !placements.isEmpty else {
             return Mapped(positions: [:], unitsToPoints: 1.0)
         }
 
-        // Percentile-based span instead of min/max. UMAP routinely leaves a
-        // handful of points far from the dense mass; min/max scaling lets
-        // those outliers dominate the bounding box, compressing the dense
-        // cluster into a small region. Asymmetric outliers also shift the
-        // (min+max)/2 centroid off the dense mass, producing the "stuck in
-        // a corner with empty space" symptom. P5–P95 anchors centering and
-        // scale to the body of the distribution; outliers are clamped to
-        // `outlierClamp` so they sit at the edge rather than escaping
-        // past the physics boundary.
-        let xs = placements.map { CGFloat($0.coord.x) }.sorted()
-        let ys = placements.map { CGFloat($0.coord.y) }.sorted()
-        let p5x = percentile(xs, 0.05)
-        let p95x = percentile(xs, 0.95)
-        let p5y = percentile(ys, 0.05)
-        let p95y = percentile(ys, 0.95)
+        var minX: Float = .infinity, maxX: Float = -.infinity
+        var minY: Float = .infinity, maxY: Float = -.infinity
+        for p in placements {
+            minX = min(minX, p.coord.x); maxX = max(maxX, p.coord.x)
+            minY = min(minY, p.coord.y); maxY = max(maxY, p.coord.y)
+        }
 
-        let spanX = p95x - p5x
-        let spanY = p95y - p5y
+        let spanX = CGFloat(maxX - minX)
+        let spanY = CGFloat(maxY - minY)
         let longerSpan = max(spanX, spanY)
         let scale: CGFloat = longerSpan > 0 ? (targetSpan / longerSpan) : 1.0
 
-        let cx = (p5x + p95x) * 0.5
-        let cy = (p5y + p95y) * 0.5
-
-        // DIAG (transient) — confirms the P5/P95 path is live and shows
-        // the actual dense-mass span the adapter is feeding the canvas.
-        // Remove once layout regression is closed.
-        print("[Adapter DIAG] n=\(placements.count) p5=(\(p5x),\(p5y)) p95=(\(p95x),\(p95y)) span=(\(spanX),\(spanY)) scale=\(scale) targetSpan=\(Self.targetSpan)")
+        let cx = CGFloat(minX + maxX) * 0.5
+        let cy = CGFloat(minY + maxY) * 0.5
 
         var positions: [String: CanvasPosition] = [:]
         positions.reserveCapacity(placements.count)
         for p in placements {
-            let rx = (CGFloat(p.coord.x) - cx) * scale
+            let x = (CGFloat(p.coord.x) - cx) * scale
             // UMAP y → SwiftUI y-down convention (matches CanvasLayout.positions).
-            let ry = (CGFloat(p.coord.y) - cy) * scale
-            let x = max(-outlierClamp, min(outlierClamp, rx))
-            let y = max(-outlierClamp, min(outlierClamp, ry))
+            let y = (CGFloat(p.coord.y) - cy) * scale
             positions[p.nodeID] = CanvasPosition(x: Double(x), y: Double(y))
         }
 
         return Mapped(positions: positions, unitsToPoints: scale)
-    }
-
-    /// Linear-interpolated percentile from a sorted array. Robust to
-    /// short arrays — single-element falls through to that element.
-    private static func percentile(_ sorted: [CGFloat], _ p: Double) -> CGFloat {
-        guard !sorted.isEmpty else { return 0 }
-        if sorted.count == 1 { return sorted[0] }
-        let rank = Double(sorted.count - 1) * p
-        let lo = Int(rank.rounded(.down))
-        let hi = Int(rank.rounded(.up))
-        if lo == hi { return sorted[lo] }
-        let frac = CGFloat(rank - Double(lo))
-        return sorted[lo] * (1 - frac) + sorted[hi] * frac
     }
 }

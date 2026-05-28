@@ -163,7 +163,20 @@ final class SubstrateClusterLabelService {
     /// produced" tooltip (Commit E adjacent), and for ad-hoc verification
     /// on device until a XCTest target exists.
     static func sanitize(_ raw: String) -> String {
-        var line = raw
+        // Comma-list amputation FIRST, on the raw FM bytes — before any
+        // newline-pick, prefix-strip, or quote-trim. FM has been
+        // returning comma-separated tag lists even after the system
+        // prompt was tightened; truncating at the first comma the moment
+        // bytes arrive guarantees downstream steps only ever see the
+        // leading phrase. (2026-05-28: T-reported "labels still contain
+        // commas" after the post-prefix variant — moving this to the top
+        // of the pipeline is the harder fix.)
+        var working = raw
+        if let commaIdx = working.firstIndex(of: ",") {
+            working = String(working[..<commaIdx])
+        }
+
+        var line = working
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .first(where: { !$0.isEmpty }) ?? ""
@@ -191,17 +204,38 @@ final class SubstrateClusterLabelService {
             line = String(line.dropLast())
         }
 
-        // Comma-list rejection. FM occasionally returns a tag list
-        // ("DataHandlingImpacts, PrivacyRights, OnDevicePrinciples, …")
-        // even when the system prompt asks for one label. Truncate at the
-        // first comma so the word cap operates on the leading phrase
-        // only — preserves a usable label without echoing the violation.
-        if let commaIdx = line.firstIndex(of: ",") {
-            line = String(line[..<commaIdx]).trimmingCharacters(in: .whitespaces)
-        }
+        // CamelCase split. FM frequently returns CamelCase tokens
+        // ("InformationOrganization", "IdeasExploration") that pass the
+        // word cap because split-on-whitespace counts them as one word.
+        // Insert a space at every lower→upper boundary so the cap can
+        // see them as the multi-word phrases they are. Done before the
+        // cap so the truncation operates on human-readable words.
+        line = splitCamelCase(line)
 
         let words = line.split(whereSeparator: { $0.isWhitespace })
         let capped = words.prefix(maxLabelWords).joined(separator: " ")
         return capped.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Insert a space at every lowercase→uppercase character boundary,
+    /// turning "DataHandlingImpacts" → "Data Handling Impacts" and
+    /// "IdeasExploration" → "Ideas Exploration". Leaves runs of
+    /// consecutive capitals intact ("URLPath" stays "URLPath" rather
+    /// than "U R L Path") — FM rarely emits acronym-CamelCase mixes,
+    /// and the simple lower→upper rule avoids mangling legitimate
+    /// initialisms when it does. Internal so the inspect view can
+    /// surface the rule alongside other sanitization steps.
+    static func splitCamelCase(_ s: String) -> String {
+        var out = ""
+        out.reserveCapacity(s.count + 4)
+        var prevWasLower = false
+        for ch in s {
+            if prevWasLower && ch.isUppercase {
+                out.append(" ")
+            }
+            out.append(ch)
+            prevWasLower = ch.isLowercase
+        }
+        return out
     }
 }

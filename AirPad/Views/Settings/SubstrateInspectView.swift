@@ -81,6 +81,10 @@ struct SubstrateInspectView: View {
     @State private var cosineDistInProgress: Bool = false
     @State private var cosineDistResult: CosineDistResult? = nil
     @State private var cosineDistError: String? = nil
+    @State private var blockCosineDistInProgress: Bool = false
+    @State private var blockCosineDistResult: CosineDistResult? = nil
+    @State private var blockCosineDistError: String? = nil
+    @State private var blockCosineDistCoverage: (withBlocks: Int, withoutBlocks: Int)? = nil
 
     struct CosineDistResult: Equatable {
         let pairCount: Int
@@ -1925,10 +1929,73 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.red.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            Divider()
+                .background(Color.white.opacity(0.08))
+                .padding(.vertical, 4)
+
+            Text("Block-pooled — replace per-node summary vector with mean of that node's block embeddings. Tests whether richer aggregation widens the distribution.")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await runBlockPooledCosineDistribution() }
+            } label: {
+                Text(blockCosineDistInProgress ? "Computing…" : "Compute pairwise cosines (block-pooled)")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(blockCosineDistInProgress ? 0.4 : 0.75))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(blockCosineDistInProgress)
+
+            if let cov = blockCosineDistCoverage {
+                statRow("Nodes with blocks", "\(cov.withBlocks)")
+                statRow("Nodes without blocks", "\(cov.withoutBlocks)")
+            }
+
+            if let r = blockCosineDistResult {
+                statRow("Vectors", "\(r.vectorCount)")
+                statRow("Pairs", "\(r.pairCount)")
+                statRow("Negative pairs", "\(r.negativeCount)")
+                statRow("Min", String(format: "%.4f", r.minValue))
+                statRow("p10", String(format: "%.4f", r.p10))
+                statRow("p25", String(format: "%.4f", r.p25))
+                statRow("Median", String(format: "%.4f", r.median))
+                statRow("Mean", String(format: "%.4f", r.mean))
+                statRow("p75", String(format: "%.4f", r.p75))
+                statRow("p90", String(format: "%.4f", r.p90))
+                statRow("Max", String(format: "%.4f", r.maxValue))
+                statRow("Elapsed", String(format: "%.2fs", r.elapsed))
+
+                Text("Histogram (bucket · count)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.top, 4)
+                ForEach(0..<r.bins.count, id: \.self) { i in
+                    cosineBinRow(
+                        index: i,
+                        count: r.bins[i],
+                        maxCount: r.maxBinCount,
+                        tint: .orange
+                    )
+                }
+            }
+
+            if let err = blockCosineDistError {
+                Text(err)
+                    .font(.caption2)
+                    .foregroundStyle(.red.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
-    private func cosineBinRow(index i: Int, count: Int, maxCount: Int) -> some View {
+    private func cosineBinRow(index i: Int, count: Int, maxCount: Int, tint: Color = .purple) -> some View {
         let lo = Double(i) * 0.05
         let hi = lo + 0.05
         let fill: CGFloat = maxCount > 0
@@ -1944,7 +2011,7 @@ struct SubstrateInspectView: View {
                     Rectangle()
                         .fill(Color.white.opacity(0.05))
                     Rectangle()
-                        .fill(Color.purple.opacity(0.55))
+                        .fill(tint.opacity(0.55))
                         .frame(width: geo.size.width * fill)
                 }
             }
@@ -2048,6 +2115,142 @@ struct SubstrateInspectView: View {
         }.value
 
         cosineDistResult = result
+    }
+
+    @MainActor
+    private func runBlockPooledCosineDistribution() async {
+        blockCosineDistInProgress = true
+        blockCosineDistError = nil
+        blockCosineDistCoverage = nil
+        defer { blockCosineDistInProgress = false }
+
+        // Same node filter UMAP uses. For each surviving node, attempt to
+        // load its block sidecar; mean-pool blocks into a 512-d vector. A
+        // node with no blocks (sidecar absent or empty) is dropped from
+        // this distribution — its absence is reported separately so we know
+        // whether the result generalizes to the whole corpus or only the
+        // block-backfilled subset.
+        let service = SubstrateService.shared
+        let candidateNodes: [Node] = store.nodes.filter { node in
+            service.isRankable(node) && !node.isMeta
+        }
+
+        var vectors: [[Float]] = []
+        var withBlocks = 0
+        var withoutBlocks = 0
+        var dim: Int? = nil
+
+        for node in candidateNodes {
+            guard let index = await store.diagnosticBlockIndex(forNodeID: node.id),
+                  !index.blocks.isEmpty else {
+                withoutBlocks += 1
+                continue
+            }
+            // Pool block embeddings via element-wise mean. Skip blocks whose
+            // dim disagrees with the first observed dim (defensive — shouldn't
+            // happen given a single embedder version per sidecar).
+            let blockEmbeddings = index.blocks.map(\.embedding)
+            guard let first = blockEmbeddings.first else {
+                withoutBlocks += 1
+                continue
+            }
+            let d = first.count
+            if let existing = dim, d != existing {
+                withoutBlocks += 1
+                continue
+            } else if dim == nil {
+                dim = d
+            }
+            var acc = [Float](repeating: 0, count: d)
+            var n = 0
+            for emb in blockEmbeddings where emb.count == d {
+                for k in 0..<d { acc[k] += emb[k] }
+                n += 1
+            }
+            guard n > 0 else {
+                withoutBlocks += 1
+                continue
+            }
+            let inv = Float(1) / Float(n)
+            for k in 0..<d { acc[k] *= inv }
+            vectors.append(acc)
+            withBlocks += 1
+        }
+
+        blockCosineDistCoverage = (withBlocks: withBlocks, withoutBlocks: withoutBlocks)
+
+        guard vectors.count >= 2 else {
+            blockCosineDistError = "need ≥ 2 block-pooled vectors (have \(vectors.count); \(withoutBlocks) nodes lacked blocks)"
+            return
+        }
+        guard let vDim = dim else {
+            blockCosineDistError = "no block vectors loaded"
+            return
+        }
+
+        let result: CosineDistResult = await Task.detached(priority: .userInitiated) {
+            let start = Date()
+            var values: [Double] = []
+            values.reserveCapacity(vectors.count * (vectors.count - 1) / 2)
+            var norms = [Double](repeating: 0, count: vectors.count)
+            for (i, v) in vectors.enumerated() {
+                var s: Double = 0
+                for x in v { s += Double(x) * Double(x) }
+                norms[i] = s.squareRoot()
+            }
+            for i in 0..<vectors.count {
+                let na = norms[i]
+                guard na > 0 else { continue }
+                let va = vectors[i]
+                for j in (i + 1)..<vectors.count {
+                    let nb = norms[j]
+                    guard nb > 0 else { continue }
+                    let vb = vectors[j]
+                    var dot: Double = 0
+                    for k in 0..<vDim {
+                        dot += Double(va[k]) * Double(vb[k])
+                    }
+                    values.append(dot / (na * nb))
+                }
+            }
+            values.sort()
+            var bins = [Int](repeating: 0, count: 20)
+            var negativeCount = 0
+            for v in values {
+                if v < 0 {
+                    negativeCount += 1
+                    continue
+                }
+                let raw = Int(v / 0.05)
+                let idx = Swift.min(19, Swift.max(0, raw))
+                bins[idx] += 1
+            }
+            let count = values.count
+            let mean = values.reduce(0, +) / Double(count)
+            func q(_ q: Double) -> Double {
+                guard count > 0 else { return 0 }
+                let idx = Swift.min(count - 1, Swift.max(0, Int(Double(count - 1) * q)))
+                return values[idx]
+            }
+            return CosineDistResult(
+                pairCount: count,
+                vectorCount: vectors.count,
+                minValue: values.first ?? 0,
+                maxValue: values.last ?? 0,
+                mean: mean,
+                median: q(0.5),
+                p10: q(0.10),
+                p25: q(0.25),
+                p75: q(0.75),
+                p90: q(0.90),
+                negativeCount: negativeCount,
+                bins: bins,
+                maxBinCount: bins.max() ?? 0,
+                elapsed: Date().timeIntervalSince(start)
+            )
+        }.value
+
+        blockCosineDistResult = result
     }
 
     // MARK: - Reusable bits

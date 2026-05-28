@@ -489,7 +489,7 @@ struct CanvasView: View {
         let snapshot = store.nodes
         Task { @MainActor in
             do {
-                try await SubstrateLayoutService.shared.ensureFittedIfPossible(allNodes: snapshot)
+                try await SubstrateLayoutService.shared.ensureFittedIfPossible(allNodes: snapshot, store: store)
             } catch {
                 print("[Canvas] Substrate auto-fit error: \(error)")
             }

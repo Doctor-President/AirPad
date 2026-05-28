@@ -1462,6 +1462,13 @@ struct SubstrateInspectView: View {
         let substrate = SubstrateService.shared
         let layout = SubstrateLayoutService.shared
 
+        // SB139 Stage 4c2 — preload block-pooled vectors so the bucket
+        // tally and the subsequent `fit()` agree on what counts as
+        // "has substrate vector". Without preload, block-only nodes would
+        // be misbucketed as `excludedNoSubstrate` here yet still feed the
+        // fit downstream (or vice-versa, if defaults shift).
+        await layout.preloadBlockPooledVectors(allNodes: nodes, store: store)
+
         var excludedThinContent: [ExcludedNodeEntry] = []
         var excludedMeta: [ExcludedNodeEntry] = []
         var excludedNoSubstrate: [ExcludedNodeEntry] = []
@@ -2141,7 +2148,7 @@ struct SubstrateInspectView: View {
         var dim: Int? = nil
 
         for node in candidateNodes {
-            guard let index = await store.diagnosticBlockIndex(forNodeID: node.id),
+            guard let index = await store.blockIndex(forNodeID: node.id),
                   !index.blocks.isEmpty else {
                 withoutBlocks += 1
                 continue

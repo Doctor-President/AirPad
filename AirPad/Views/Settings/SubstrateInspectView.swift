@@ -78,6 +78,28 @@ struct SubstrateInspectView: View {
     @State private var clusterExportError: String? = nil
     @State private var simulateRefitInProgress: Bool = false
     @State private var simulateRefitError: String? = nil
+    @State private var cosineDistInProgress: Bool = false
+    @State private var cosineDistResult: CosineDistResult? = nil
+    @State private var cosineDistError: String? = nil
+
+    struct CosineDistResult: Equatable {
+        let pairCount: Int
+        let vectorCount: Int
+        let minValue: Double
+        let maxValue: Double
+        let mean: Double
+        let median: Double
+        let p10: Double
+        let p25: Double
+        let p75: Double
+        let p90: Double
+        let negativeCount: Int
+        /// 20 bins covering [0.0, 1.0] in 0.05-wide buckets. Bin i covers
+        /// `[i * 0.05, (i + 1) * 0.05)`; bin 19 is closed at 1.0.
+        let bins: [Int]
+        let maxBinCount: Int
+        let elapsed: TimeInterval
+    }
 
     struct ExportResult: Equatable {
         let url: URL
@@ -152,6 +174,8 @@ struct SubstrateInspectView: View {
                     substrateClusterSection
                     Divider().background(Color.white.opacity(0.1))
                     substrateClusterIdentitySection
+                    Divider().background(Color.white.opacity(0.1))
+                    substrateCosineDistributionSection
                     Divider().background(Color.white.opacity(0.1))
                     strandsSection
                     Divider().background(Color.white.opacity(0.1))
@@ -1835,6 +1859,195 @@ struct SubstrateInspectView: View {
             minClusterSize: mcs,
             minSamples: ms
         )
+    }
+
+    // MARK: - Stage 4c2 — substrate cosine distribution diagnostic
+    //
+    // Answers "does this corpus have geometric separation in substrate
+    // space?" before we re-tune UMAP or pivot HDBSCAN to higher D. A tight
+    // unimodal hump in [0.7, 0.95] indicates NLContextualEmbedding has
+    // already compressed semantic distinctions away — no clustering algo
+    // can recover what isn't there. A spread or bimodal distribution
+    // indicates dimensionality is the bottleneck, not embedding quality.
+
+    private var substrateCosineDistributionSection: some View {
+        return VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Stage 4c2 — substrate cosine distribution")
+            Text("Pairwise cosine over substrate vectors. Diagnostic only — no state mutation.")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await runCosineDistribution() }
+            } label: {
+                Text(cosineDistInProgress ? "Computing…" : "Compute pairwise cosines")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(cosineDistInProgress ? 0.4 : 0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(cosineDistInProgress)
+
+            if let r = cosineDistResult {
+                statRow("Vectors", "\(r.vectorCount)")
+                statRow("Pairs", "\(r.pairCount)")
+                statRow("Negative pairs", "\(r.negativeCount)")
+                statRow("Min", String(format: "%.4f", r.minValue))
+                statRow("p10", String(format: "%.4f", r.p10))
+                statRow("p25", String(format: "%.4f", r.p25))
+                statRow("Median", String(format: "%.4f", r.median))
+                statRow("Mean", String(format: "%.4f", r.mean))
+                statRow("p75", String(format: "%.4f", r.p75))
+                statRow("p90", String(format: "%.4f", r.p90))
+                statRow("Max", String(format: "%.4f", r.maxValue))
+                statRow("Elapsed", String(format: "%.2fs", r.elapsed))
+
+                Text("Histogram (bucket · count)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.top, 4)
+                ForEach(0..<r.bins.count, id: \.self) { i in
+                    cosineBinRow(
+                        index: i,
+                        count: r.bins[i],
+                        maxCount: r.maxBinCount
+                    )
+                }
+            }
+
+            if let err = cosineDistError {
+                Text(err)
+                    .font(.caption2)
+                    .foregroundStyle(.red.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func cosineBinRow(index i: Int, count: Int, maxCount: Int) -> some View {
+        let lo = Double(i) * 0.05
+        let hi = lo + 0.05
+        let fill: CGFloat = maxCount > 0
+            ? CGFloat(count) / CGFloat(maxCount)
+            : 0
+        return HStack(spacing: 6) {
+            Text(String(format: "%.2f–%.2f", lo, hi))
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.55))
+                .frame(width: 80, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                    Rectangle()
+                        .fill(Color.purple.opacity(0.55))
+                        .frame(width: geo.size.width * fill)
+                }
+            }
+            .frame(height: 8)
+            Text("\(count)")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 50, alignment: .trailing)
+        }
+    }
+
+    @MainActor
+    private func runCosineDistribution() async {
+        cosineDistInProgress = true
+        cosineDistError = nil
+        defer { cosineDistInProgress = false }
+
+        // Snapshot vectors on main, then dispatch the O(n²) cosine sweep
+        // off-main so the inspect view stays responsive. Mirrors the
+        // substrate-fit filter (rankable, non-meta, has-vector) so the
+        // distribution reflects what UMAP actually sees.
+        let layout = SubstrateLayoutService.shared
+        let service = SubstrateService.shared
+        let vectors: [[Float]] = store.nodes.compactMap { node in
+            guard service.isRankable(node) else { return nil }
+            guard !node.isMeta else { return nil }
+            return layout.substrateVector(for: node)
+        }
+        guard vectors.count >= 2 else {
+            cosineDistError = "need ≥ 2 substrate vectors (have \(vectors.count))"
+            return
+        }
+        let dim = vectors[0].count
+        for v in vectors where v.count != dim {
+            cosineDistError = "vector dim mismatch (expected \(dim))"
+            return
+        }
+
+        let result: CosineDistResult = await Task.detached(priority: .userInitiated) {
+            let start = Date()
+            var values: [Double] = []
+            values.reserveCapacity(vectors.count * (vectors.count - 1) / 2)
+            // Precompute norms once per vector.
+            var norms = [Double](repeating: 0, count: vectors.count)
+            for (i, v) in vectors.enumerated() {
+                var s: Double = 0
+                for x in v { s += Double(x) * Double(x) }
+                norms[i] = s.squareRoot()
+            }
+            for i in 0..<vectors.count {
+                let na = norms[i]
+                guard na > 0 else { continue }
+                let va = vectors[i]
+                for j in (i + 1)..<vectors.count {
+                    let nb = norms[j]
+                    guard nb > 0 else { continue }
+                    let vb = vectors[j]
+                    var dot: Double = 0
+                    for k in 0..<dim {
+                        dot += Double(va[k]) * Double(vb[k])
+                    }
+                    values.append(dot / (na * nb))
+                }
+            }
+            values.sort()
+            var bins = [Int](repeating: 0, count: 20)
+            var negativeCount = 0
+            for v in values {
+                if v < 0 {
+                    negativeCount += 1
+                    continue
+                }
+                // Clamp 1.0 into the last bin (closed at 1.0).
+                let raw = Int(v / 0.05)
+                let idx = Swift.min(19, Swift.max(0, raw))
+                bins[idx] += 1
+            }
+            let count = values.count
+            let mean = values.reduce(0, +) / Double(count)
+            func q(_ q: Double) -> Double {
+                guard count > 0 else { return 0 }
+                let idx = Swift.min(count - 1, Swift.max(0, Int(Double(count - 1) * q)))
+                return values[idx]
+            }
+            return CosineDistResult(
+                pairCount: count,
+                vectorCount: vectors.count,
+                minValue: values.first ?? 0,
+                maxValue: values.last ?? 0,
+                mean: mean,
+                median: q(0.5),
+                p10: q(0.10),
+                p25: q(0.25),
+                p75: q(0.75),
+                p90: q(0.90),
+                negativeCount: negativeCount,
+                bins: bins,
+                maxBinCount: bins.max() ?? 0,
+                elapsed: Date().timeIntervalSince(start)
+            )
+        }.value
+
+        cosineDistResult = result
     }
 
     // MARK: - Reusable bits

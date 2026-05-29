@@ -80,7 +80,21 @@ struct LibrarianSurface: View {
 
         ZStack {
             RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
-                .fill(Color(red: 0.04, green: 0.04, blue: 0.06))
+                .fill(.thinMaterial)
+
+            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
+                .fill(Color.black.opacity(0.35))
+
+            // Inner glow: thick inset stroke, blurred, masked to the
+            // surface so it can only bleed inward. Strokes the perimeter
+            // and decays toward the center.
+            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
+                .strokeBorder(Color(hexString: "1B59C2").opacity(0.4), lineWidth: 10)
+                .blur(radius: 6)
+                .mask(
+                    RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
+                )
+                .allowsHitTesting(false)
 
             RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
                 .strokeBorder(
@@ -106,7 +120,10 @@ struct LibrarianSurface: View {
             }
         }
         .frame(height: surfaceFrameHeight(for: librarian.surfaceMode))
-        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: librarian.surfaceMode)
+        .animation(.snappy(duration: 0.32, extraBounce: 0.12), value: librarian.surfaceMode)
+        .sensoryFeedback(.impact(weight: .medium), trigger: librarian.surfaceMode) { _, new in
+            new == .expanded
+        }
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
@@ -175,17 +192,12 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// Corner radius per surface mode. Collapsed reads as a true pill
-    /// (radius == half its 78pt height) so the corner arc is
-    /// concentric with the 38pt circular mode icon — same "roundness
-    /// language" as the icon ring. Expanded / fullScreen keep the
-    /// softer 28pt rectangle since at those heights a full pill would
-    /// look like a tall capsule, not a surface.
+    /// Corner radius. Unified at 39pt across all modes so the surface
+    /// keeps the same roundness language as it morphs — collapsed pill
+    /// arc reads as concentric with the 38pt mode icon ring, and
+    /// expanded / fullScreen carry that same arc rather than flattening.
     private func surfaceCornerRadius(for mode: LibrarianState.SurfaceMode) -> CGFloat {
-        switch mode {
-        case .collapsed: return 39
-        case .expanded, .fullScreen: return 28
-        }
+        return 39
     }
 
     /// Top-edge drag grabber. Vertical drag commits on release to the
@@ -239,12 +251,12 @@ struct LibrarianSurface: View {
                 .font(.system(size: 16, weight: .light))
                 .foregroundStyle(.white)
                 .opacity(textOpacity)
-                .padding(.horizontal, 56)
+                .padding(.horizontal, 80)
                 .frame(maxWidth: .infinity)
 
             HStack {
                 modeIconWithRing(librarian: librarian)
-                    .padding(.leading, 16)
+                    .padding(.leading, 10)
                 Spacer()
             }
         }
@@ -258,18 +270,18 @@ struct LibrarianSurface: View {
     /// Mode icon + context ring composed as one unit so both surface
     /// states (collapsed pill, expanded header) share the same hit
     /// target and ring placement. Ring sits one pixel of breathing room
-    /// outside the 32pt icon frame; tap inside the ring still triggers
+    /// outside the 48pt icon frame; tap inside the ring still triggers
     /// the parent action.
     @ViewBuilder
     private func modeIconWithRing(librarian: LibrarianState) -> some View {
         ZStack {
-            ContextRing(fraction: librarian.contextFillFraction)
+            ContextRing(fraction: librarian.contextFillFraction, diameter: 57)
             Image(systemName: librarian.activeMode.sfSymbol)
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 24, weight: .medium))
                 .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
+                .frame(width: 48, height: 48)
         }
-        .frame(width: 38, height: 38)
+        .frame(width: 57, height: 57)
     }
 
     // MARK: - Expanded
@@ -277,45 +289,50 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func expandedBody(librarian: LibrarianState) -> some View {
         VStack(spacing: 0) {
-            dragGrabber(librarian: librarian)
-                .padding(.top, 6)
+            // Header: grabber centered + mode icon top-leading + chevron
+            // top-trailing, composed in a ZStack so the icon can anchor
+            // to the surface corner with equidistant padding (14pt to
+            // top, left, and pill rail) regardless of grabber height.
+            ZStack(alignment: .top) {
+                dragGrabber(librarian: librarian)
+                    .padding(.top, 6)
 
-            // Header: mode icon (tap → dropdown) + chevron (tap → step down)
-            HStack {
-                Button {
-                    showModeDropdown = true
-                } label: {
-                    modeIconWithRing(librarian: librarian)
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showModeDropdown, arrowEdge: .top) {
-                    modeDropdown(librarian: librarian)
-                        .presentationCompactAdaptation(.popover)
-                }
+                HStack(alignment: .top) {
+                    Button {
+                        showModeDropdown = true
+                    } label: {
+                        modeIconWithRing(librarian: librarian)
+                    }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showModeDropdown, arrowEdge: .top) {
+                        modeDropdown(librarian: librarian)
+                            .presentationCompactAdaptation(.popover)
+                    }
 
-                Spacer()
+                    Spacer()
 
-                if hasPersonalVoice {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.35))
-                        .frame(width: 22, height: 32)
-                        .accessibilityLabel("Personal voice active")
-                }
+                    if hasPersonalVoice {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.35))
+                            .frame(width: 22, height: 32)
+                            .accessibilityLabel("Personal voice active")
+                    }
 
-                Button {
-                    advanceSurface(librarian: librarian, direction: .down)
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .frame(width: 32, height: 32)
+                    Button {
+                        advanceSurface(librarian: librarian, direction: .down)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .frame(width: 32, height: 32)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 2)
-            .padding(.bottom, 6)
+            .padding(.bottom, 14)
 
             scopeChipRow(librarian: librarian)
                 .padding(.bottom, 8)

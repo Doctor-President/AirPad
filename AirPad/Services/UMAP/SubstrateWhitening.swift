@@ -49,11 +49,53 @@ enum SubstrateWhitening {
         var outputDim: Int { matrix.first?.count ?? 0 }
     }
 
-    /// Singular-value floor relative to the largest singular value.
-    /// Components below this are effectively zero variance — keeping
-    /// them would multiply by 1/(tiny σ) and amplify numerical noise.
-    /// Matches numpy.linalg.pinv's default rcond.
-    private static let singularValueRelativeFloor: Double = 1e-6
+    /// Cumulative explained-variance threshold for component retention.
+    /// Keep the smallest `k` such that Σᵢ<k σᵢ² / Σⱼ σⱼ² ≥ threshold.
+    ///
+    /// **Why this replaced the prior 1e-6 relative singular-value floor.**
+    /// 1e-6 was the wrong rule at AirPad's (N ≤ D) regime. With N=120
+    /// rankable nodes and D=512, the centered matrix has rank N−1=119;
+    /// every σ cleared 1e-6 · σ_max; the rule kept all 119 components.
+    /// That produces `whitened = U[:, :keep]` with keep = N−1, where
+    /// every pairwise cosine = −1/N = −0.0083 exactly and every
+    /// pairwise Euclidean distance is constant. UMAP's k-NN graph
+    /// cannot bind on isotropic input; HDBSCAN clusters RNG. The
+    /// 2026-05-29 clustering-dim diagnostic measured this end-to-end —
+    /// see `umap-reference-harness/diagnostics/clustering-dim/results/`.
+    ///
+    /// **Why cumulative explained variance over noise-floor/MP fitting.**
+    /// AirPad's centered spectrum has no clean elbow: σ decays smoothly
+    /// from 4.26 (S[0]) → 0.13 (S[115]) → 0 (S[119]). Marchenko-Pastur /
+    /// iid-noise-floor fitting is degenerate on this spectrum — for any
+    /// assumed signal-count k the predicted noise upper bound lands at
+    /// σ[k] (a trivial fixed point), because BERT-family embeddings have
+    /// correlated structure all the way down rather than an iid-Gaussian
+    /// noise tail to cut against. Cumulative variance is spectrum-aware,
+    /// monotone in k, and scale-invariant; it's the principled robust
+    /// choice when no elbow exists.
+    ///
+    /// **Why 0.90 specifically.** Measured post-whitening pairwise cosine
+    /// spread (off-diagonal p10–p90) at AirPad's N=120, D=512 corpus:
+    ///   keep=30 (84.6% var)  → spread 0.42
+    ///   keep=41 (90.1% var)  → spread 0.33   ← shipped
+    ///   keep=58 (95.1% var)  → spread 0.24
+    ///   keep=90 (99.0% var)  → spread 0.12
+    ///   keep=119 (100% var, prior shipped) → spread 0.000 (degenerate)
+    /// 0.90 yields spread ≈ 0.33 — comfortably above HDBSCAN's ~0.30
+    /// separation floor while preserving the embedder's dominant signal
+    /// directions. σ amplification ratio σ_max/σ_keep ≈ 6.9× is sane
+    /// (the prior 1e-6 floor amplified by ~9e+14×). Roughly doubles
+    /// the raw-embedder spread (0.150) without amplifying the noise tail.
+    ///
+    /// **Scaling.** At N=500/2000/10000+, the centered matrix can have
+    /// rank up to min(N−1, D=512); the rule selects whatever k captures
+    /// 90% of the embedder's signal mass (typically 50–100 components,
+    /// determined by the embedder's intrinsic geometry, not the corpus
+    /// size). The threshold never approaches keep = N−1 at sensible
+    /// variance targets — at AirPad's spectrum it would take > 0.9999
+    /// before keep climbed near rank-saturation — so corpus growth
+    /// cannot silently re-introduce the prior degeneracy.
+    private static let cumulativeVarianceThreshold: Double = 0.90
 
     /// Fit PCA whitening to a training set of N D-dim vectors. Returns
     /// nil for degenerate inputs (N<2, D==0, dim mismatch, or all-zero
@@ -91,8 +133,26 @@ enum SubstrateWhitening {
         }
         let maxSV = singulars.first ?? 0
         guard maxSV > 0 else { return nil }
-        let cutoff = maxSV * singularValueRelativeFloor
-        let keep = singulars.firstIndex(where: { $0 <= cutoff }) ?? singulars.count
+        let totalVariance = singulars.reduce(0.0) { $0 + $1 * $1 }
+        guard totalVariance > 0 else { return nil }
+        var cumVariance: Double = 0
+        var keep = 0
+        for sv in singulars {
+            cumVariance += sv * sv
+            keep += 1
+            if cumVariance / totalVariance >= cumulativeVarianceThreshold {
+                break
+            }
+        }
+        // Defensive rank-saturation cap. Real embedder spectra are top-heavy and
+        // hit the variance threshold well below this bound at any sensible value
+        // (at AirPad's spectrum 90% lands at keep=41 of 119 available). The cap
+        // exists for pathological inputs — e.g. a corpus of N approximately-
+        // orthogonal directions where every σ contributes ~1/N of variance and
+        // 90% would otherwise climb to ~0.9·N. n−2 keeps us one step clear of
+        // the rank-saturation point (keep = n−1, where every pairwise distance
+        // collapses to a constant).
+        keep = min(keep, max(1, n - 2))
         guard keep > 0 else { return nil }
 
         // 3. W = V[:, :keep] · diag(1/s[:keep]). V comes back column-

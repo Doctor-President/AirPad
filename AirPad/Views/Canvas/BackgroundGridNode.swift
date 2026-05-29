@@ -1,25 +1,25 @@
 import SpriteKit
 import simd
 
-/// Procedural adaptive square grid. Fully GPU-rendered: lines computed
-/// per-fragment in world space, with three levels of adaptive subdivision
-/// that fade in/out by screen-space density. World-space animated noise
-/// (luma matte + UV displacement) modulates the lines.
+/// Procedural adaptive dot-matrix grid. GPU-rendered: per-fragment SDF
+/// against three explicit frequency layers (no shader loops — each layer
+/// unrolled to dodge the iOS 26 SpriteKit GLSL→Metal landmine on
+/// uniform-gated loops). Dot centers sit at cell centers of a square
+/// lattice; layers nest at ratio 5 so finer dots appear *between* coarser
+/// dots without coarser ones drifting.
 ///
-/// AT18.1.10 — May 2, 2026. Replaces the chunked-tile approach (AT18.1.3-1.9)
-/// which couldn't satisfy correct pan AND zoom anchor with a single scaled
-/// parent. The shape is parented to cameraNode so its screen position is
-/// fixed; the shader reconstructs world coordinates from v_tex_coord plus
-/// camera position + scale uniforms. No transform gymnastics.
+/// A 2D translating noise field flows across the lattice — sample
+/// coordinates offset by `velocity * time` (no z-axis time evolution).
+/// Each dot samples the field once at its screen-space center, and the
+/// returned noise value modulates *both* that dot's radius (breathing)
+/// and its luma (shimmer). Slow diagonal drift reads as ripples passing
+/// through, not a pulsing shimmer.
 ///
-/// Locked design values (preserved from AT18.1.4-1.5):
-///   stroke 0.50pt screen-space, base opacity 0.30, white,
-///   luma noise scale 0.008 / intensity 0.74 / speed 0.5,
-///   displacement noise scale 0.006 / amplitude 6.0 / speed 0.5,
-///   z-offsets +1000 / +2000 to decorrelate displacement from luma.
-///
-/// Adaptive subdivision: three levels at periods 100 / 500 / 2500 world
-/// points (ratio 5), peak opacity at ~60px screen-space spacing.
+/// Replaces the line-grid implementation (AT18.1.10): same camera-
+/// reconstruction approach (camera position + scale uniforms, world-space
+/// position rebuilt from v_tex_coord), same screen-space stroke convention,
+/// same `levelOpacity` LOD curve. UV displacement is gone (dots don't need
+/// the organic wiggle that lines did).
 enum BackgroundGridNode {
 
     /// Per-frame: push camera position and scale into the shader uniforms.
@@ -100,24 +100,11 @@ enum BackgroundGridNode {
             return mix(y0, y1, w);
         }
 
-        // World-space distance to nearest line of a square grid at given period.
-        // d <= 0 means the fragment is within halfStrokeWorld of a line (on-line);
-        // d > 0 means off-line. min over axes because a fragment is on a line if
-        // EITHER axis distance puts it inside the stroke band.
-        float lineDistance(vec2 worldPos, float period, float halfStrokeWorld) {
-            vec2 m = mod(worldPos, period);
-            // distance from nearest cell edge, range [0, period/2]
-            vec2 distFromEdge = (period * 0.5) - abs(m - period * 0.5);
-            // negative when within halfStrokeWorld of the edge
-            vec2 d = distFromEdge - halfStrokeWorld;
-            return min(d.x, d.y);
-        }
-
         // Adaptive opacity for one grid level, by screen-space period.
         // Steepness 0.3: each level visible for ~6.67 octaves (vs 4 at 0.5).
         // Adjacent ratio-5 levels overlap ~4.35 octaves so 2-3 levels are
-        // typically active at once -- finer grids fade in earlier as you
-        // zoom out, coarser ones linger as you zoom in.
+        // typically active at once -- finer dots fade in earlier as you
+        // zoom in, coarser ones linger as you zoom out.
         float levelOpacity(float screenPeriod, float targetPx) {
             float t = log2(screenPeriod / targetPx);
             return clamp(1.0 - abs(t) * 0.3, 0.0, 1.0);
@@ -133,76 +120,79 @@ enum BackgroundGridNode {
             vec2 screenOffset = (v_tex_coord - vec2(0.5)) * u_viewport_size;
             vec2 worldPos = u_camera_position + screenOffset * u_camera_scale;
 
-            // --- Displacement (samples in screen space) ---
-            // Noise sampled at screenOffset so the pattern is welded to the
-            // screen during zoom/pan. Amplitude expressed in screen pixels and
-            // converted to world units via u_camera_scale so the wiggle
-            // magnitude is constant regardless of zoom.
-            const float displaceScale     = 0.006;
-            const float displaceSpeed     = 0.5;
-            const float displaceAmpScreen = 6.0;  // screen pixels
-            float displaceAmpWorld = displaceAmpScreen * u_camera_scale;
-            float dx_n = valueNoise3(vec3(screenOffset * displaceScale, u_time * displaceSpeed + 1000.0));
-            float dy_n = valueNoise3(vec3(screenOffset * displaceScale, u_time * displaceSpeed + 2000.0));
-            vec2 displacement = vec2(dx_n - 0.5, dy_n - 0.5) * 2.0 * displaceAmpWorld;
-            vec2 displacedWorld = worldPos + displacement;
+            // --- Translating noise (the key visual change) ---
+            // Sample coordinates are offset by velocity * time, so the noise
+            // field FLOWS across the lattice (ripples in water) rather than
+            // evolving in place (a pulsing shimmer). Sampled in screen space
+            // so the flow feels welded to the viewport during pan/zoom; flow
+            // speed is in screen pixels per second.
+            const float flowScale  = 0.008;
+            const float flowSpeedX = 56.0;
+            const float flowSpeedY = 20.0;
+            vec2 flow = vec2(flowSpeedX, flowSpeedY) * u_time;
 
-            // --- Adaptive subdivision: five grid levels ---
-            // Ratio 5: each coarse cell subdivides into 5x5 finer cells.
-            // Periods 2, 10, 50, 250, 1250 -- p2=50 sits near the 60px
-            // visibility peak at xScale=1, so the default look is dominated
-            // by the 50-world-point level with crossfade emerging on either
-            // side as the user zooms. Adjacent levels overlap ~1.68 octaves;
-            // if crossfade pops, lower steepness in levelOpacity from 0.5.
-            const float targetPx = 60.0;
-            const float strokePx = 0.5;     // screen-space stroke width
+            // --- LOD constants ---
+            // Three layers, ratio 5: p1=50 sits near the 60px visibility peak
+            // at xScale=1, so default look is dominated by the 50-world-point
+            // layer with p0=10 fading in on zoom in and p2=250 on zoom out.
+            const float targetPx   = 60.0;
+            const float dotBasePx  = 1.5;   // peak dot radius, screen pixels
+            const float dotModPx   = 0.8;   // breathing amplitude, screen pixels
+            const float lumaInten  = 0.74;  // luma shimmer depth
+            const float baseOpac   = 0.25;  // peak dot alpha at xScale=1
 
-            // Convert screen-space stroke into world space at this zoom.
-            // 1 screen point = u_camera_scale world points (zoom-out convention).
-            float halfStrokeWorld = (strokePx * 0.5) * u_camera_scale;
-            float feather = halfStrokeWorld * 0.5;
+            float baseR    = dotBasePx * u_camera_scale;  // world units
+            float modR     = dotModPx  * u_camera_scale;
+            float feather  = 0.75 * u_camera_scale;       // edge softness in world units
 
-            float p0 = 2.0;
-            float p1 = 10.0;
-            float p2 = 50.0;
-            float p3 = 250.0;
-            float p4 = 1250.0;
+            float p0 = 10.0;
+            float p1 = 50.0;
+            float p2 = 250.0;
 
-            // Screen period = world period / world-per-screen ratio.
             float a0 = levelOpacity(p0 / u_camera_scale, targetPx);
             float a1 = levelOpacity(p1 / u_camera_scale, targetPx);
             float a2 = levelOpacity(p2 / u_camera_scale, targetPx);
-            float a3 = levelOpacity(p3 / u_camera_scale, targetPx);
-            float a4 = levelOpacity(p4 / u_camera_scale, targetPx);
 
-            float d0 = lineDistance(displacedWorld, p0, halfStrokeWorld);
-            float d1 = lineDistance(displacedWorld, p1, halfStrokeWorld);
-            float d2 = lineDistance(displacedWorld, p2, halfStrokeWorld);
-            float d3 = lineDistance(displacedWorld, p3, halfStrokeWorld);
-            float d4 = lineDistance(displacedWorld, p4, halfStrokeWorld);
+            // --- Layer 0 (finest) ---
+            // Center of containing cell. cell index = floor(worldPos / period),
+            // center = (cell + 0.5) * period. SDF distance is then
+            // length(worldPos - center) - radius -- negative inside the dot.
+            // Noise sample is taken once at the dot's SCREEN-space center, so
+            // every fragment inside a given dot resolves to the same radius
+            // and luma (no within-dot wobble).
+            vec2  cell0     = floor(worldPos / p0);
+            vec2  center0   = (cell0 + 0.5) * p0;
+            vec2  dotScrn0  = (center0 - u_camera_position) / u_camera_scale;
+            float n0        = valueNoise3(vec3((dotScrn0 - flow) * flowScale, 0.0));
+            float r0        = max(0.0, baseR + (n0 - 0.5) * 2.0 * modR);
+            float d0        = length(worldPos - center0) - r0;
+            float luma0     = 1.0 + (n0 - 0.5) * 2.0 * lumaInten;
+            float c0        = (1.0 - smoothstep(0.0, feather, d0)) * a0 * luma0;
 
-            float c0 = (1.0 - smoothstep(0.0, feather, d0)) * a0;
-            float c1 = (1.0 - smoothstep(0.0, feather, d1)) * a1;
-            float c2 = (1.0 - smoothstep(0.0, feather, d2)) * a2;
-            float c3 = (1.0 - smoothstep(0.0, feather, d3)) * a3;
-            float c4 = (1.0 - smoothstep(0.0, feather, d4)) * a4;
-            float lineCoverage = max(max(c0, c1), max(c2, max(c3, c4)));
+            // --- Layer 1 (default-visible) ---
+            vec2  cell1     = floor(worldPos / p1);
+            vec2  center1   = (cell1 + 0.5) * p1;
+            vec2  dotScrn1  = (center1 - u_camera_position) / u_camera_scale;
+            float n1        = valueNoise3(vec3((dotScrn1 - flow) * flowScale, 0.0));
+            float r1        = max(0.0, baseR + (n1 - 0.5) * 2.0 * modR);
+            float d1        = length(worldPos - center1) - r1;
+            float luma1     = 1.0 + (n1 - 0.5) * 2.0 * lumaInten;
+            float c1        = (1.0 - smoothstep(0.0, feather, d1)) * a1 * luma1;
 
-            // --- Luma matte (samples in screen space, decorrelated z) ---
-            // Pattern stays welded to the screen during zoom/pan, like a veil
-            // over the camera rather than a texture on the world.
-            const float lumaScale     = 0.008;
-            const float lumaIntensity = 0.74;
-            const float lumaSpeed     = 0.5;
-            float n = valueNoise3(vec3(screenOffset * lumaScale, u_time * lumaSpeed));
-            float matte = 1.0 + (n - 0.5) * 2.0 * lumaIntensity;
+            // --- Layer 2 (coarsest) ---
+            vec2  cell2     = floor(worldPos / p2);
+            vec2  center2   = (cell2 + 0.5) * p2;
+            vec2  dotScrn2  = (center2 - u_camera_position) / u_camera_scale;
+            float n2        = valueNoise3(vec3((dotScrn2 - flow) * flowScale, 0.0));
+            float r2        = max(0.0, baseR + (n2 - 0.5) * 2.0 * modR);
+            float d2        = length(worldPos - center2) - r2;
+            float luma2     = 1.0 + (n2 - 0.5) * 2.0 * lumaInten;
+            float c2        = (1.0 - smoothstep(0.0, feather, d2)) * a2 * luma2;
 
-            // --- Composite ---
-            // baseOpacity 0.25 = peak line opacity; matte modulates around it.
-            const float baseOpacity = 0.25;
-            float alpha = clamp(lineCoverage * baseOpacity * matte, 0.0, 1.0);
+            float coverage = max(c0, max(c1, c2));
+            float alpha    = clamp(coverage * baseOpac, 0.0, 1.0);
 
-            // Premultiplied output (white lines).
+            // Premultiplied output (white dots).
             gl_FragColor = vec4(alpha, alpha, alpha, alpha);
         }
         """

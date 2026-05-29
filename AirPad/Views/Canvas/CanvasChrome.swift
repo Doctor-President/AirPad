@@ -242,7 +242,7 @@ private struct DashboardBackButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
-                .background(Color(white: 0.18))
+                .background(.thinMaterial, in: Circle())
                 .clipShape(Circle())
         }
         .buttonStyle(.plain)
@@ -258,11 +258,11 @@ private struct MenuButton: View {
     var body: some View {
         Button(action: action) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: "ellipsis")
+                Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 48, height: 48)
-                    .background(Color(white: 0.18))
+                    .background(.thinMaterial, in: Circle())
                     .clipShape(Circle())
 
                 if hasAttention {
@@ -466,7 +466,7 @@ private struct SelectButton: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
-                .background(Color(white: 0.18))
+                .background(.thinMaterial, in: Circle())
                 .clipShape(Circle())
         }
         .buttonStyle(.plain)

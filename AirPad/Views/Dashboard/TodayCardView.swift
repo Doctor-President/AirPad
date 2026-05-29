@@ -15,11 +15,20 @@ import SwiftUI
 struct TodayCardView: View {
 
     let now: Date
+    let recentNodes: [Node]
     let onJournalPromptTap: () -> Void
+    let onRecentTap: (Node) -> Void
 
-    init(now: Date = Date(), onJournalPromptTap: @escaping () -> Void = {}) {
+    init(
+        now: Date = Date(),
+        recentNodes: [Node] = [],
+        onJournalPromptTap: @escaping () -> Void = {},
+        onRecentTap: @escaping (Node) -> Void = { _ in }
+    ) {
         self.now = now
+        self.recentNodes = recentNodes
         self.onJournalPromptTap = onJournalPromptTap
+        self.onRecentTap = onRecentTap
     }
 
     var body: some View {
@@ -102,22 +111,35 @@ struct TodayCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             sectionLabel("Activity")
             VStack(alignment: .leading, spacing: 8) {
-                activityRow(icon: "link", text: "Captured 3 links into Reading")
-                activityRow(icon: "doc.text", text: "Added a note to Field Notes")
-                activityRow(icon: "photo.on.rectangle", text: "Pasted 4 images into Studio")
+                if recentNodes.isEmpty {
+                    Text("No recent activity")
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.4))
+                } else {
+                    ForEach(recentNodes.prefix(3)) { node in
+                        Button { onRecentTap(node) } label: {
+                            activityRow(node: node)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
             }
         }
     }
 
-    private func activityRow(icon: String, text: String) -> some View {
+    private func activityRow(node: Node) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.55))
-                .frame(width: 18)
-            Text(text)
+            Text(node.title)
                 .font(.system(size: 14, weight: .regular))
                 .foregroundStyle(.white.opacity(0.78))
+                .lineLimit(1)
+            Text("·")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.white.opacity(0.4))
+            Text(node.updatedAt, style: .relative)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(.white.opacity(0.4))
+                .lineLimit(1)
             Spacer(minLength: 0)
         }
     }

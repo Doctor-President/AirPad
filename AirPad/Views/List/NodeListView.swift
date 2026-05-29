@@ -120,6 +120,7 @@ struct NodeListView: View {
     /// `navigationPath`.
     private var captureTriggerButton: some View {
         Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             router.captureOverlay = CaptureOverlayContext(scope: scope)
         } label: {
             Image(systemName: "plus")

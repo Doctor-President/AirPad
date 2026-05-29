@@ -10,6 +10,7 @@
 		019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A621BCC5001A67C9B05A19 /* TextEntryBody.swift */; };
 		01CDE8575E3C3B0DC3E80C5A /* BlockEmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */; };
 		0284EB1329A9A5B1C0DF85D6 /* NeighborhoodService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */; };
+		02A14D3596D8C515D5585893 /* DashboardLavaLamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658362A7268EAA76A6AAF92 /* DashboardLavaLamp.swift */; };
 		0322D64C0EE47E45F43BB07A /* CanvasScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592EF17AD51166EAA3E577F2 /* CanvasScope.swift */; };
 		0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		05B10604308289E3B1B57BC2 /* EntryMigrationSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */; };
@@ -277,6 +278,7 @@
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCAN.swift; sourceTree = "<group>"; };
 		657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterLabelService.swift; sourceTree = "<group>"; };
+		6658362A7268EAA76A6AAF92 /* DashboardLavaLamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardLavaLamp.swift; sourceTree = "<group>"; };
 		66610DC5B90AC2729F2B6F1D /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
 		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
@@ -663,6 +665,7 @@
 			isa = PBXGroup;
 			children = (
 				688537782A3AA4A7F0B436F9 /* CollectionView.swift */,
+				6658362A7268EAA76A6AAF92 /* DashboardLavaLamp.swift */,
 				88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */,
 				EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */,
 				9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */,
@@ -946,6 +949,7 @@
 				92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */,
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
+				02A14D3596D8C515D5585893 /* DashboardLavaLamp.swift in Sources */,
 				52D3D753240395AD3A873749 /* DashboardView.swift in Sources */,
 				D920C62968AB09FDDB9124A4 /* DocumentEntryBody.swift in Sources */,
 				CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */,

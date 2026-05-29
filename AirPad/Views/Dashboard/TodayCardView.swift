@@ -42,7 +42,11 @@ struct TodayCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Color(white: 0.08))
+                .fill(.thinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                )
         )
     }
 
@@ -99,6 +103,10 @@ struct TodayCardView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(Color(white: 0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        )
                 )
             }
             .buttonStyle(.plain)

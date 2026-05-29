@@ -61,6 +61,7 @@ struct DashboardView: View {
         NavigationStack(path: $path) {
             ZStack {
                 Color.black.ignoresSafeArea()
+                DashboardLavaLamp()
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
@@ -352,7 +353,11 @@ private struct CollectionRow: View {
         .padding(.vertical, verticalPadding)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(white: collection.isCorpus ? 0.10 : 0.07))
+                .fill(.thinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                )
         )
     }
 
@@ -401,7 +406,7 @@ private struct NewCollectionButton: View {
             .padding(.vertical, 14)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color(white: 0.05))
+                    .fill(.thinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)

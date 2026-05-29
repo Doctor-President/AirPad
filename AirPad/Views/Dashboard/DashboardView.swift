@@ -274,6 +274,7 @@ struct DashboardView: View {
             HStack {
                 Spacer()
                 Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     router.captureOverlay = CaptureOverlayContext(scope: .corpus)
                 } label: {
                     Image(systemName: "plus")

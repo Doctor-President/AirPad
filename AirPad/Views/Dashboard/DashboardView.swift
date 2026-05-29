@@ -86,7 +86,7 @@ struct DashboardView: View {
                 CollectionCreationSheet { _ in }
             }
             .sheet(isPresented: $showRecents) {
-                NodePickerSheet(onSelect: { node in path.append(node) })
+                HistoryPanel(onSelect: { node in path.append(node) })
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -189,7 +189,18 @@ struct DashboardView: View {
     // MARK: - Today
 
     private var todaySection: some View {
-        TodayCardView(onJournalPromptTap: openTodayJournal)
+        TodayCardView(
+            recentNodes: recentNodes,
+            onJournalPromptTap: openTodayJournal,
+            onRecentTap: { node in path.append(node) }
+        )
+    }
+
+    private var recentNodes: [Node] {
+        store.nodes
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .prefix(3)
+            .map { $0 }
     }
 
     private func openTodayJournal() {

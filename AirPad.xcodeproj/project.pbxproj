@@ -129,6 +129,7 @@
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
 		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
+		AB1987E40736EECE7D0FDD13 /* HistoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */; };
 		ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */; };
 		AC00CAAEA3AB86F2D4455FD1 /* UMAPFindAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */; };
 		ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7814673E5A10B9F5E391DA4 /* SettingsView.swift */; };
@@ -361,6 +362,7 @@
 		E97A01D2E6A3CE344C7B732E /* ContextRing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContextRing.swift; sourceTree = "<group>"; };
 		EB1C4F8AC8EFA42414AB9073 /* VoiceEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntryBody.swift; sourceTree = "<group>"; };
 		EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasSlideOutMenu.swift; sourceTree = "<group>"; };
+		EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryPanel.swift; sourceTree = "<group>"; };
 		ECACE148A0B50511A83212FE /* EntryVisualDevPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryVisualDevPanel.swift; sourceTree = "<group>"; };
 		ED287727ED25FF9291551213 /* HDBSCANReachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANReachability.swift; sourceTree = "<group>"; };
 		ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouterDiagnostic.swift; sourceTree = "<group>"; };
@@ -662,6 +664,7 @@
 			children = (
 				688537782A3AA4A7F0B436F9 /* CollectionView.swift */,
 				88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */,
+				EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */,
 				9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */,
 			);
 			path = Dashboard;
@@ -970,6 +973,7 @@
 				CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */,
 				60D696FF61EBB144201B1E88 /* HDBSCANSelfTest.swift in Sources */,
 				F39A0B2613577ADDA29F4230 /* HDBSCANTree.swift in Sources */,
+				AB1987E40736EECE7D0FDD13 /* HistoryPanel.swift in Sources */,
 				299AECA5A73FE92E7FB0378B /* ImageEntryBody.swift in Sources */,
 				9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */,
 				5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */,

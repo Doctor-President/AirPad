@@ -31,6 +31,7 @@ struct CanvasChrome: View {
     @State private var showSlideOutMenu = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
+    @State private var showHistory = false
 
     private var filterState: FilterState {
         store.filterState(for: scope)
@@ -101,6 +102,7 @@ struct CanvasChrome: View {
                                 }
                                 Spacer()
                                 HStack(spacing: 10) {
+                                    HistoryButton { showHistory = true }
                                     SelectButton { selection.enter(scope: scope) }
                                     MenuButton(
                                         hasAttention: menuHasAttention
@@ -201,6 +203,11 @@ struct CanvasChrome: View {
         .sheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
         }
+        .sheet(isPresented: $showHistory) {
+            HistoryPanel(onSelect: { node in
+                router.pendingNodeNavigationID = node.id
+            })
+        }
         .sheet(isPresented: $showBatchAddTagSheet) {
             TagEditorSheet(existing: nil) { createdName in
                 let ids = selection.selected
@@ -239,6 +246,24 @@ private struct DashboardBackButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "chevron.left")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 48, height: 48)
+                .background(.thinMaterial, in: Circle())
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - History button
+
+private struct HistoryButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)

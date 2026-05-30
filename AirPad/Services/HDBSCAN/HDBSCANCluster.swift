@@ -8,18 +8,24 @@ import Foundation
 // + get_clusters). The condensed tree from 4b.3 feeds in; this stage
 // emits flat-clustering labels and per-point membership probabilities.
 //
-// **Pinned-config scope (4b.4 minimal port):**
-//   - cluster_selection_method = .eom (the .leaf branch is deferred)
-//   - allow_single_cluster = false
+// **Supported config (4b.4 + leaf-on-8d extension):**
+//   - cluster_selection_method = .eom OR .leaf
+//   - cluster_selection_epsilon = 0.0 OR positive (epsilon-merge of
+//     EOM-selected or leaf-selected clusters; mirrors upstream
+//     `_epsilon_search_fast`)
+//   - allow_single_cluster = false (forward-compat hook only)
 //   - match_reference_implementation = false
-//   - cluster_selection_epsilon = 0.0
 //   - max_cluster_size = 0 (unbounded)
 //   - cluster_selection_epsilon_max = +inf
 //
-// Forward-compat hooks (matching the 4a `targetConstraints` precedent)
-// stay on the public API surface but the implementation throws on
-// deferred branches — no dead code is ported. T's scope-discipline call
-// 2026-05-12.
+// Leaf + epsilon land together because the substrate diagnostic
+// (2026-05-29 cluster-cut-sweep) proved the post-whitening-fix
+// 112-node residual is a cut-policy artifact, not a density-gap
+// ceiling: EOM on the same vectors picks 2 clusters, leaf surfaces
+// 7–12 title-coherent regions. See
+// `feedback_nlcontextual_embedding_cluster_ceiling`.
+//
+// `allow_single_cluster` stays gated — no caller needs it yet.
 //
 // **FMA discipline:** stability accumulator
 // `result_arr[i] += (λ - births[parent]) * child_size` (line 235 upstream)
@@ -50,9 +56,12 @@ extension HDBSCAN {
 
     // MARK: - Public result envelope
 
-    /// Cluster-selection methods supported. Only `.eom` is implemented in
-    /// 4b.4; `.leaf` is reserved as a forward-compat hook (precedent: 4a's
-    /// `targetConstraints`).
+    /// Cluster-selection methods. EOM keeps the largest stable ancestor
+    /// when a parent's stability exceeds the sum of its children's. LEAF
+    /// keeps every leaf node of the cluster tree (rows with `childSize >
+    /// 1`), surfacing finer structure where EOM would collapse it into
+    /// the ancestor. See `feedback_nlcontextual_embedding_cluster_ceiling`
+    /// for why AirPad's substrate needs leaf.
     enum ClusterSelectionMethod: String, Codable {
         case eom
         case leaf
@@ -305,6 +314,211 @@ extension HDBSCAN {
         return (selected, stab)
     }
 
+    // MARK: - Leaf selection
+
+    /// Build `{parent: [children]}` from the cluster_tree rows. Mirrors
+    /// `_build_parent_to_children` from `_hdbscan_tree.pyx` lines 643-655.
+    private static func buildParentToChildren(_ clusterTree: [CondensedTreeRow]) -> [Int: [Int]] {
+        var result: [Int: [Int]] = [:]
+        for r in clusterTree {
+            result[r.parent, default: []].append(r.child)
+        }
+        return result
+    }
+
+    /// Build `{child: (parent, lambda_val)}` from the cluster_tree rows.
+    /// Mirrors `_build_child_lookup` from `_hdbscan_tree.pyx` lines 658-666.
+    /// Lambda is the row's death lambda (where the child detached from
+    /// its parent); 1/lambda is its ε.
+    private static func buildChildLookup(
+        _ clusterTree: [CondensedTreeRow]
+    ) -> [Int: (parent: Int, lambda: Double)] {
+        var result: [Int: (parent: Int, lambda: Double)] = [:]
+        for r in clusterTree {
+            let lam = r.isInfiniteLambda ? Double.infinity : r.lambdaVal
+            result[r.child] = (r.parent, lam)
+        }
+        return result
+    }
+
+    /// BFS over a parent→children dict. Mirrors `_bfs_from_dict` from
+    /// `_hdbscan_tree.pyx` lines 669-681. Used by `epsilonSearchFast` to
+    /// mark sub-nodes as processed when a leaf climbs to an ancestor.
+    private static func bfsFromDict(_ parentToChildren: [Int: [Int]], root: Int) -> [Int] {
+        var result: [Int] = []
+        var toProcess = [root]
+        while !toProcess.isEmpty {
+            result.append(contentsOf: toProcess)
+            var nextLayer: [Int] = []
+            for node in toProcess {
+                if let children = parentToChildren[node] {
+                    nextLayer.append(contentsOf: children)
+                }
+            }
+            toProcess = nextLayer
+        }
+        return result
+    }
+
+    /// DFS finding leaves of the cluster_tree (internal cluster nodes
+    /// with no further-subdivided children). Mirrors
+    /// `_get_leaves_from_dict` from `_hdbscan_tree.pyx` lines 684-694.
+    private static func getLeavesFromDict(_ parentToChildren: [Int: [Int]], root: Int) -> [Int] {
+        var leaves: [Int] = []
+        var stack = [root]
+        while let node = stack.popLast() {
+            if let children = parentToChildren[node] {
+                stack.append(contentsOf: children)
+            } else {
+                leaves.append(node)
+            }
+        }
+        return leaves
+    }
+
+    /// Climb up from `leaf`, returning the first ancestor whose birth-ε
+    /// exceeds `clusterSelectionEpsilon`. Stops if we reach the
+    /// cluster_tree root (no ancestor crosses the threshold) — under
+    /// `allowSingleCluster=false` we return the most-recent below-ε node
+    /// rather than collapsing to the root. Iterative to avoid the
+    /// recursion in upstream's `_traverse_upwards_fast`
+    /// (`_hdbscan_tree.pyx` lines 697-716).
+    private static func traverseUpwardsFast(
+        childLookup: [Int: (parent: Int, lambda: Double)],
+        clusterSelectionEpsilon: Double,
+        leaf: Int,
+        allowSingleCluster: Bool,
+        root: Int
+    ) -> Int {
+        var current = leaf
+        while true {
+            guard let info = childLookup[current] else { return current }
+            let parent = info.parent
+            if parent == root {
+                return allowSingleCluster ? parent : current
+            }
+            guard let parentInfo = childLookup[parent] else { return current }
+            let parentEps = 1.0 / parentInfo.lambda
+            if parentEps > clusterSelectionEpsilon {
+                return parent
+            }
+            current = parent
+        }
+    }
+
+    /// Epsilon-merge a candidate set of clusters: any cluster whose own
+    /// birth-ε is below the threshold climbs to its first above-threshold
+    /// ancestor and substitutes; sub-nodes of that ancestor are marked
+    /// processed so they're not re-emitted as siblings. Mirrors
+    /// `_epsilon_search_fast` from `_hdbscan_tree.pyx` lines 719-745.
+    /// Applies symmetrically to EOM-selected and leaf-selected sets.
+    private static func epsilonSearchFast(
+        leaves: Set<Int>,
+        childLookup: [Int: (parent: Int, lambda: Double)],
+        parentToChildren: [Int: [Int]],
+        clusterSelectionEpsilon: Double,
+        allowSingleCluster: Bool,
+        root: Int
+    ) -> Set<Int> {
+        var selectedClusters: [Int] = []
+        var processed: Set<Int> = []
+        for leaf in leaves {
+            guard let info = childLookup[leaf] else { continue }
+            let eps = 1.0 / info.lambda
+            if eps < clusterSelectionEpsilon {
+                if !processed.contains(leaf) {
+                    let epsilonChild = traverseUpwardsFast(
+                        childLookup: childLookup,
+                        clusterSelectionEpsilon: clusterSelectionEpsilon,
+                        leaf: leaf,
+                        allowSingleCluster: allowSingleCluster,
+                        root: root
+                    )
+                    selectedClusters.append(epsilonChild)
+                    for subNode in bfsFromDict(parentToChildren, root: epsilonChild) where subNode != epsilonChild {
+                        processed.insert(subNode)
+                    }
+                }
+            } else {
+                selectedClusters.append(leaf)
+            }
+        }
+        return Set(selectedClusters)
+    }
+
+    /// Leaf cluster selection. Mirrors the `leaf` branch of `get_clusters`
+    /// at `_hdbscan_tree.pyx` lines 1013-1034.
+    ///
+    /// Unlike EOM, leaf selection does NOT mutate the stability dict —
+    /// no parent's stability is reassigned to its subtree sum, because
+    /// leaf selects the bottom of every tree branch by construction.
+    /// Returns the sorted-ascending internal cluster IDs. The empty-tree
+    /// fallback is degenerate (returns empty); under `allowSingleCluster
+    /// = false` upstream collapses to no selection in that case too.
+    static func leafSelect(
+        condensed: [CondensedTreeRow],
+        clusterSelectionEpsilon: Double = 0.0
+    ) -> [Int] {
+        let clusterTree = condensed.filter { $0.childSize > 1 }
+        if clusterTree.isEmpty { return [] }
+
+        let parentToChildren = buildParentToChildren(clusterTree)
+        let childLookup = buildChildLookup(clusterTree)
+        guard let ctRoot = clusterTree.map(\.parent).min() else { return [] }
+
+        let leaves = Set(getLeavesFromDict(parentToChildren, root: ctRoot))
+        if leaves.isEmpty { return [] }
+
+        let selected: Set<Int>
+        if clusterSelectionEpsilon != 0.0 {
+            selected = epsilonSearchFast(
+                leaves: leaves,
+                childLookup: childLookup,
+                parentToChildren: parentToChildren,
+                clusterSelectionEpsilon: clusterSelectionEpsilon,
+                allowSingleCluster: false,
+                root: ctRoot
+            )
+        } else {
+            selected = leaves
+        }
+        return selected.sorted()
+    }
+
+    /// Apply an epsilon-merge pass over the EOM-selected set. Used only
+    /// when both `cluster_selection_method == .eom` and
+    /// `clusterSelectionEpsilon > 0`. Mirrors the EOM-post-process block
+    /// at `_hdbscan_tree.pyx` lines 996-1011.
+    static func epsilonMergeEOMSelection(
+        eomSelected: [Int],
+        condensed: [CondensedTreeRow],
+        clusterSelectionEpsilon: Double
+    ) -> [Int] {
+        let clusterTree = condensed.filter { $0.childSize > 1 }
+        if clusterTree.isEmpty || eomSelected.isEmpty { return eomSelected }
+
+        let parentToChildren = buildParentToChildren(clusterTree)
+        let childLookup = buildChildLookup(clusterTree)
+        guard let ctRoot = clusterTree.map(\.parent).min() else { return eomSelected }
+
+        // Upstream: if EOM selected only the cluster_tree root, skip
+        // epsilon entirely (allowSingleCluster=false → keep EOM selection
+        // as-is so we don't accidentally promote anything).
+        if eomSelected.count == 1 && eomSelected[0] == ctRoot {
+            return eomSelected
+        }
+
+        let merged = epsilonSearchFast(
+            leaves: Set(eomSelected),
+            childLookup: childLookup,
+            parentToChildren: parentToChildren,
+            clusterSelectionEpsilon: clusterSelectionEpsilon,
+            allowSingleCluster: false,
+            root: ctRoot
+        )
+        return merged.sorted()
+    }
+
     // MARK: - do_labelling
 
     /// Assign each leaf point to a renumbered cluster ID (or -1 for noise).
@@ -438,18 +652,23 @@ extension HDBSCAN {
 
     // MARK: - Orchestrator
 
-    /// End-to-end HDBSCAN fit on a 2D point cloud. Composes 4b.1 (mutual
+    /// End-to-end HDBSCAN fit on an N-D point cloud. Composes 4b.1 (mutual
     /// reachability) → 4b.2 (MST + SLT) → 4b.3 (condense) → 4b.4 (stability
-    /// + EOM + labels + probabilities).
+    /// + EOM/leaf selection + labels + probabilities). Dimension-agnostic
+    /// via `pairwiseEuclideanDistance`.
     ///
     /// **Hyperparameters:**
     /// - `minClusterSize`: minimum cluster size to admit a branch.
     /// - `minSamples`: defaults to `minClusterSize` per upstream's
     ///   `hdbscan_.py:714-715` (`None → min_cluster_size`). Clamped to
     ///   `min(n - 1, raw)`, floored at 1.
-    /// - `clusterSelectionMethod`: only `.eom` supported in 4b.4.
-    /// - `allowSingleCluster`, `clusterSelectionEpsilon`: forward-compat
-    ///   hooks; the only supported values are the defaults.
+    /// - `clusterSelectionMethod`: `.eom` (default) or `.leaf`. See the
+    ///   enum doc — leaf is the AirPad substrate path post-2026-05-29.
+    /// - `clusterSelectionEpsilon`: ε threshold below which adjacent
+    ///   selected clusters merge to their first above-ε ancestor.
+    ///   Default 0 = no merge.
+    /// - `allowSingleCluster`: not yet supported. Precondition-asserted
+    ///   false; the slot exists for forward-compat parity with upstream.
     static func fit(
         coords: [[Double]],
         minClusterSize: Int,
@@ -458,12 +677,10 @@ extension HDBSCAN {
         allowSingleCluster: Bool = false,
         clusterSelectionEpsilon: Double = 0.0
     ) -> FitResult {
-        precondition(clusterSelectionMethod == .eom,
-                     "HDBSCAN.fit: cluster_selection_method=.leaf not supported in 4b.4")
         precondition(!allowSingleCluster,
-                     "HDBSCAN.fit: allow_single_cluster=true not supported in 4b.4")
-        precondition(clusterSelectionEpsilon == 0.0,
-                     "HDBSCAN.fit: cluster_selection_epsilon != 0 not supported in 4b.4")
+                     "HDBSCAN.fit: allow_single_cluster=true not yet supported")
+        precondition(clusterSelectionEpsilon >= 0.0,
+                     "HDBSCAN.fit: cluster_selection_epsilon must be >= 0")
         let n = coords.count
         precondition(n >= 2, "HDBSCAN.fit: need at least 2 points")
 
@@ -478,9 +695,37 @@ extension HDBSCAN {
         let condensed = condenseTree(slt, minClusterSize: minClusterSize)
 
         let stability = computeStability(condensed)
-        let (selectedInternalIDs, stabilityPostEOM) = eomSelect(
-            condensed: condensed, stability: stability
-        )
+
+        // Branch on selection method. EOM optionally post-merges with
+        // epsilon; LEAF takes leaves of the cluster_tree and (if eps > 0)
+        // merges below-ε leaves up to their first above-ε ancestor.
+        // Stability dict is mutated only by EOM (parents whose subtree
+        // outscores them get reassigned to subtree-sum) — leaf reads
+        // stability unchanged for the per-cluster score pass below.
+        let selectedInternalIDs: [Int]
+        let stabilityForScoring: [Int: Double]
+        switch clusterSelectionMethod {
+        case .eom:
+            let (eomSelected, stabilityPostEOM) = eomSelect(
+                condensed: condensed, stability: stability
+            )
+            if clusterSelectionEpsilon > 0 {
+                selectedInternalIDs = epsilonMergeEOMSelection(
+                    eomSelected: eomSelected,
+                    condensed: condensed,
+                    clusterSelectionEpsilon: clusterSelectionEpsilon
+                )
+            } else {
+                selectedInternalIDs = eomSelected
+            }
+            stabilityForScoring = stabilityPostEOM
+        case .leaf:
+            selectedInternalIDs = leafSelect(
+                condensed: condensed,
+                clusterSelectionEpsilon: clusterSelectionEpsilon
+            )
+            stabilityForScoring = stability
+        }
 
         var clusterMap = [Int: Int]()
         var reverseClusterMap = [Int: Int]()
@@ -507,7 +752,7 @@ extension HDBSCAN {
         let stabilityScores = getStabilityScores(
             labels: labels,
             selectedInternalIDs: selectedInternalIDs,
-            stability: stabilityPostEOM,
+            stability: stabilityForScoring,
             maxLambda: maxLam,
             maxLambdaIsInfinite: maxLamIsInf
         )

@@ -130,7 +130,7 @@ enum SubstrateBagLayout {
         ) else { return nil }
 
         // Classical MDS on the K centroids → K anchors in 2D.
-        guard let anchors = classicalMDS2D(centroids: centroids) else { return nil }
+        guard var anchors = classicalMDS2D(centroids: centroids) else { return nil }
         precondition(anchors.count == nonNoiseLabels.count,
                      "SubstrateBagLayout: MDS anchor count mismatch")
 
@@ -142,6 +142,30 @@ enum SubstrateBagLayout {
         let anchorSpacing = meanNearestNeighborDistance(points: anchors)
         let maxMembers = nonNoiseLabels.map { byLabel[$0]!.count }.max() ?? 1
         let radiusBase: Float = Float(anchorSpacing * 0.35) / safeSqrt(Float(maxMembers))
+        let radii: [Float] = nonNoiseLabels.map { label in
+            radiusBase * safeSqrt(Float(byLabel[label]!.count))
+        }
+
+        // SB139 Stage 4c2 ws-canvas-visual-model — bag separation pass.
+        // MDS lands anchors at the embedder's compressed scale: 35%-of-NN
+        // radii intersect for adjacent bags, so the canvas reads as one
+        // central pile. Push overlapping pairs apart along their connecting
+        // line until disjoint. Jacobi-style + iterate to fixpoint =
+        // deterministic, order-independent, no RNG. Padding adds a small
+        // visible gap so adjacent bags read as distinct regions rather
+        // than touching membranes.
+        let separationPadding: Float = radiusBase * 0.5
+        separateOverlappingBags(
+            anchors: &anchors,
+            radii: radii,
+            padding: separationPadding
+        )
+        // Re-center anchors at origin so the bounding box is symmetric
+        // and the canvas adapter's bounding-box normalization treats this
+        // output the same across re-fits. Separation can drift the
+        // centroid arbitrarily — without re-center, the canvas could
+        // jump on re-fit even when relative layout is identical.
+        recenterAtOrigin(&anchors)
 
         var bags: [BagAnchor] = []
         bags.reserveCapacity(nonNoiseLabels.count)
@@ -151,7 +175,7 @@ enum SubstrateBagLayout {
         for (k, label) in nonNoiseLabels.enumerated() {
             let center = anchors[k]
             let memberIndices = byLabel[label]!
-            let radius = radiusBase * safeSqrt(Float(memberIndices.count))
+            let radius = radii[k]
 
             // Vote for cluster UUID: take the first non-nil persistent
             // ID among members. All members of a cluster should resolve
@@ -375,6 +399,98 @@ enum SubstrateBagLayout {
         let dx = r * Foundation.cos(theta)
         let dy = r * Foundation.sin(theta)
         return SubstrateCoord2D(x: center.x + dx, y: center.y + dy)
+    }
+
+    // MARK: - Separation
+
+    /// Iterative non-overlap pass on bag anchors. Treats each bag as a
+    /// circle of `radius + padding/2`; for each overlapping pair, splits
+    /// the overlap and pushes both anchors apart along the connecting
+    /// line. Jacobi-style (all displacements computed before any applied)
+    /// so convergence is order-independent — same input → same output
+    /// regardless of pair iteration order.
+    ///
+    /// Coincident-anchor case (`distance < colinearEpsilon`) resolves to
+    /// a fixed x-axis split by index parity. No RNG anywhere; layout is
+    /// stable across re-fits.
+    ///
+    /// Preserves relative arrangement: every push runs along the existing
+    /// connecting line, so similar bags stay neighbors. Topology only
+    /// shifts when a globally-implausible packing forces it.
+    ///
+    /// Cheap at AirPad's scale — 15 bags = 105 pairs/iter; converges in
+    /// tens of iterations. `maxIterations` cap is defensive.
+    private static func separateOverlappingBags(
+        anchors: inout [SubstrateCoord2D],
+        radii: [Float],
+        padding: Float,
+        maxIterations: Int = 200
+    ) {
+        let n = anchors.count
+        guard n >= 2 else { return }
+        precondition(radii.count == n,
+                     "SubstrateBagLayout.separateOverlappingBags: anchors/radii count mismatch")
+        let colinearEpsilon: Float = 1e-6
+
+        for _ in 0..<maxIterations {
+            var displacements = [SubstrateCoord2D](
+                repeating: SubstrateCoord2D(x: 0, y: 0),
+                count: n
+            )
+            var anyOverlap = false
+            for i in 0..<n {
+                for j in (i + 1)..<n {
+                    let dx = anchors[j].x - anchors[i].x
+                    let dy = anchors[j].y - anchors[i].y
+                    let dist = (dx * dx + dy * dy).squareRoot()
+                    let needed = radii[i] + radii[j] + padding
+                    guard dist < needed else { continue }
+                    anyOverlap = true
+                    let overlap = needed - dist
+                    let half = overlap * 0.5
+                    let nx: Float
+                    let ny: Float
+                    if dist < colinearEpsilon {
+                        // Coincident — split along x with index-parity sign.
+                        nx = (i % 2 == 0) ? 1 : -1
+                        ny = 0
+                    } else {
+                        nx = dx / dist
+                        ny = dy / dist
+                    }
+                    displacements[i] = SubstrateCoord2D(
+                        x: displacements[i].x - nx * half,
+                        y: displacements[i].y - ny * half
+                    )
+                    displacements[j] = SubstrateCoord2D(
+                        x: displacements[j].x + nx * half,
+                        y: displacements[j].y + ny * half
+                    )
+                }
+            }
+            if !anyOverlap { return }
+            for i in 0..<n {
+                anchors[i] = SubstrateCoord2D(
+                    x: anchors[i].x + displacements[i].x,
+                    y: anchors[i].y + displacements[i].y
+                )
+            }
+        }
+    }
+
+    private static func recenterAtOrigin(_ coords: inout [SubstrateCoord2D]) {
+        guard !coords.isEmpty else { return }
+        var sx: Float = 0
+        var sy: Float = 0
+        for c in coords {
+            sx += c.x
+            sy += c.y
+        }
+        let cx = sx / Float(coords.count)
+        let cy = sy / Float(coords.count)
+        for i in 0..<coords.count {
+            coords[i] = SubstrateCoord2D(x: coords[i].x - cx, y: coords[i].y - cy)
+        }
     }
 
     // MARK: - Geometry helpers

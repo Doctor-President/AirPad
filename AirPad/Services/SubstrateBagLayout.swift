@@ -10,10 +10,12 @@ import Accelerate
 // without re-deriving a lossy flat projection inside each bag.
 //
 // **Stage 1 scope (this file):** centroid-per-cluster, classical MDS to 2D
-// anchors, bag radius scaled by member count, golden-angle ring packing
-// inside each bag. Members of clustered groups get bag homes; noise nodes
-// fall through to the legacy display-UMAP path until Stage 4 lands proper
-// noise placement.
+// anchors, bag-separation pass to remove overlaps, bag radius scaled by
+// member count, golden-angle ring packing inside each bag, and a
+// deterministic margin-ring placeholder for noise nodes (Stage 4 will
+// replace with proper centroid-pull interstitial placement). Noise lives
+// in the same MDS coord system as bags so the canvas adapter's single
+// bbox rescale operates on consistent units.
 //
 // **Determinism contract:** same inputs → same output. No RNG. MDS sign
 // canonicalized so re-fits with stable membership produce identical
@@ -32,10 +34,11 @@ struct BagLayout: Codable {
     var schemaVersion: Int
     var fitVersion: Int
     var bags: [BagAnchor]
-    /// Per-node home positions, keyed by node ID. Stage 1 omits noise
-    /// (HDBSCAN label -1) — those nodes fall through to the display-UMAP
-    /// coord at the consumer (`SubstrateLayoutService.canvasPlacements`).
-    /// Stage 4 will populate noise entries with interstitial homes.
+    /// Per-node home positions, keyed by node ID. Includes both
+    /// bag-clustered nodes and noise nodes — noise sits on a deterministic
+    /// margin ring at the bag scale so the canvas adapter's bbox rescale
+    /// sees one consistent coord system. Stage 4 will replace the noise
+    /// ring with proper interstitial placement.
     var nodes: [String: NodeLayout]
 
     static let currentSchemaVersion = 1
@@ -88,9 +91,10 @@ struct NodeLayout: Codable {
 /// `canvasPlacements` to override the display-UMAP coord per node.
 enum SubstrateBagLayout {
 
-    /// Sentinel HDBSCAN noise label. Stage 1 excludes noise from the
-    /// output `BagLayout.nodes`; Stage 4 replaces this with interstitial
-    /// placement.
+    /// Sentinel HDBSCAN noise label. Noise nodes are placed on a margin
+    /// ring outside the bag layout (this file, post-bag loop) so they
+    /// share the bag coord system; Stage 4 will replace the ring with
+    /// proper interstitial placement.
     static let noiseLabel: Int = -1
 
     /// Build a bag layout from a fitted model + HDBSCAN labels +
@@ -134,6 +138,17 @@ enum SubstrateBagLayout {
         precondition(anchors.count == nonNoiseLabels.count,
                      "SubstrateBagLayout: MDS anchor count mismatch")
 
+        // DIAG: pre-separation bbox.
+        do {
+            var mnX: Float = .infinity, mxX: Float = -.infinity
+            var mnY: Float = .infinity, mxY: Float = -.infinity
+            for a in anchors {
+                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
+                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
+            }
+            print("[BagDiag] anchors PRE-sep:  x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
+        }
+
         // Bag radius scaling: base picked so the largest bag's radius
         // is ~35% of the mean nearest-neighbor anchor spacing → bags
         // don't overlap initially even at the biggest cluster. 35%
@@ -155,17 +170,41 @@ enum SubstrateBagLayout {
         // visible gap so adjacent bags read as distinct regions rather
         // than touching membranes.
         let separationPadding: Float = radiusBase * 0.5
+        print("[BagDiag] sep params: radiusBase=\(radiusBase) padding=\(separationPadding) maxMembers=\(maxMembers) anchorSpacing=\(anchorSpacing)")
         separateOverlappingBags(
             anchors: &anchors,
             radii: radii,
             padding: separationPadding
         )
+
+        // DIAG: post-separation bbox (pre-recenter).
+        do {
+            var mnX: Float = .infinity, mxX: Float = -.infinity
+            var mnY: Float = .infinity, mxY: Float = -.infinity
+            for a in anchors {
+                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
+                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
+            }
+            print("[BagDiag] anchors POST-sep: x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
+        }
+
         // Re-center anchors at origin so the bounding box is symmetric
         // and the canvas adapter's bounding-box normalization treats this
         // output the same across re-fits. Separation can drift the
         // centroid arbitrarily — without re-center, the canvas could
         // jump on re-fit even when relative layout is identical.
         recenterAtOrigin(&anchors)
+
+        // DIAG: post-recenter bbox — these are the anchors packing will read.
+        do {
+            var mnX: Float = .infinity, mxX: Float = -.infinity
+            var mnY: Float = .infinity, mxY: Float = -.infinity
+            for a in anchors {
+                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
+                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
+            }
+            print("[BagDiag] anchors POST-rec: x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY) (used by packing)")
+        }
 
         var bags: [BagAnchor] = []
         bags.reserveCapacity(nonNoiseLabels.count)
@@ -199,6 +238,7 @@ enum SubstrateBagLayout {
             // Golden-angle ring packing inside the bag. Index 0 sits at
             // center; subsequent members spiral outward by the golden
             // angle so packing has no axis-aligned bias and is dense.
+            var maxPackedR: Float = 0
             for (memberOrder, ptIdx) in memberIndices.enumerated() {
                 let home = goldenAngleOffset(
                     index: memberOrder,
@@ -206,6 +246,10 @@ enum SubstrateBagLayout {
                     center: center,
                     maxRadius: radius
                 )
+                let dxh = home.x - center.x
+                let dyh = home.y - center.y
+                let rh = (dxh * dxh + dyh * dyh).squareRoot()
+                if rh > maxPackedR { maxPackedR = rh }
                 let tp = trainingPoints[ptIdx]
                 nodes[tp.nodeID] = NodeLayout(
                     home: home,
@@ -213,6 +257,52 @@ enum SubstrateBagLayout {
                     hdbscanLabel: label
                 )
             }
+            print("[BagDiag] bag k=\(k) label=\(label) members=\(memberIndices.count) center=(\(center.x),\(center.y)) collisionR=\(radius) packedMaxR=\(maxPackedR)")
+        }
+
+        // SB139 Stage 4c2 ws-canvas-visual-model — noise placement (margin ring).
+        //
+        // The first bag-separation pass shipped 15f86bc revealed that letting
+        // noise fall through to `point.coord2D` (display-UMAP coord) mixed two
+        // incompatible scales at the canvas adapter: bag layout in MDS units
+        // (span ~3) vs display-UMAP (span ~8) → adapter's single bbox rescale
+        // crushed bags into ~23% of the canvas. Fix: place noise nodes in
+        // bag-layout MDS units on a ring just outside the farthest bag edge,
+        // so the adapter sees a consistent coord system and bags fill ~85% of
+        // the canvas (the 15% reserve being the noise-ring margin).
+        //
+        // Stage 4 will replace the ring with proper centroid-pull interstitial
+        // placement; this is the simplest deterministic margin-fill that keeps
+        // noise visible without distorting the bag scale.
+        let noiseIndices = (byLabel[noiseLabel] ?? [])
+            .sorted { trainingPoints[$0].nodeID < trainingPoints[$1].nodeID }
+        if !noiseIndices.isEmpty {
+            // Furthest reach of any bag from origin (post-recenter anchors).
+            var maxBagExtent: Float = 0
+            for bag in bags {
+                let centerDist = (bag.center.x * bag.center.x + bag.center.y * bag.center.y).squareRoot()
+                let ext = centerDist + bag.radius
+                if ext > maxBagExtent { maxBagExtent = ext }
+            }
+            // 1.15× = 15% gap between farthest bag edge and the noise ring.
+            // Small enough that bags still fill the eye; large enough that
+            // noise visibly sits "outside" the bag region.
+            let noiseRingR: Float = max(maxBagExtent, 1) * 1.15
+            let n = noiseIndices.count
+            for (i, ptIdx) in noiseIndices.enumerated() {
+                let angle = Float(i) * (2.0 * .pi) / Float(n)
+                let nx = noiseRingR * Foundation.cos(angle)
+                let ny = noiseRingR * Foundation.sin(angle)
+                let tp = trainingPoints[ptIdx]
+                nodes[tp.nodeID] = NodeLayout(
+                    home: SubstrateCoord2D(x: nx, y: ny),
+                    persistentClusterID: nil,
+                    hdbscanLabel: noiseLabel
+                )
+            }
+            print("[BagDiag] noise ring: count=\(n) maxBagExtent=\(maxBagExtent) ringR=\(noiseRingR)")
+        } else {
+            print("[BagDiag] noise ring: count=0 (no noise this fit)")
         }
 
         return BagLayout(

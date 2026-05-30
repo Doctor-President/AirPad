@@ -55,9 +55,9 @@ struct UMAPHyperparameters: Codable, Hashable {
         nEpochs: nil
     )
 
-    /// SB139 Stage 4c2 — substrate-canvas variant. Whitening widens the
-    /// per-axis variance vs. raw NLContextualEmbedding inputs; the
-    /// umap-learn-parity `minDist=0.1` then over-spreads against the
+    /// SB139 Stage 4c2 — substrate-canvas **display** variant. Whitening
+    /// widens the per-axis variance vs. raw NLContextualEmbedding inputs;
+    /// the umap-learn-parity `minDist=0.1` then over-spreads against the
     /// whitened geometry and collapses the 2D fit toward a diagonal
     /// line. Tightening to 0.05 lets clusters separate without the
     /// dimension collapse. Other params unchanged.
@@ -65,6 +65,27 @@ struct UMAPHyperparameters: Codable, Hashable {
         nComponents: 2,
         nNeighbors: 15,
         minDist: 0.05,
+        spread: 1.0,
+        learningRate: 1.0,
+        negativeSampleRate: 5,
+        nEpochs: nil
+    )
+
+    /// SB139 Stage 4c2 — substrate **clustering** variant. Independent
+    /// UMAP fit on the same whitened inputs as `substrateWhitened`, but
+    /// targeted at HDBSCAN cut quality rather than canvas readability.
+    /// `nComponents=8` so density structure has room to separate without
+    /// the 2D-collapse penalty (the cluster-cut-sweep diagnostic 2026-05-29
+    /// showed the residual 112-node blob is cut-policy-limited, not
+    /// continuous — sub-cluster geometry exists, the 2D projection just
+    /// can't preserve it). `minDist=0.0` because HDBSCAN's density
+    /// estimate prefers tightly-packed local manifolds over the
+    /// readability spacing the display fit needs. Other params match
+    /// `substrateWhitened` so the two fits stay comparable.
+    static let substrateClustering = UMAPHyperparameters(
+        nComponents: 8,
+        nNeighbors: 15,
+        minDist: 0.0,
         spread: 1.0,
         learningRate: 1.0,
         negativeSampleRate: 5,

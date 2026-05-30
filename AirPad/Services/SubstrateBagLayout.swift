@@ -162,20 +162,51 @@ enum SubstrateBagLayout {
         }
 
         // SB139 Stage 4c2 ws-canvas-visual-model — bag separation pass.
-        // MDS lands anchors at the embedder's compressed scale: 35%-of-NN
-        // radii intersect for adjacent bags, so the canvas reads as one
-        // central pile. Push overlapping pairs apart along their connecting
-        // line until disjoint. Jacobi-style + iterate to fixpoint =
-        // deterministic, order-independent, no RNG. Padding adds a small
-        // visible gap so adjacent bags read as distinct regions rather
-        // than touching membranes.
-        let separationPadding: Float = radiusBase * 0.5
-        print("[BagDiag] sep params: radiusBase=\(radiusBase) padding=\(separationPadding) maxMembers=\(maxMembers) anchorSpacing=\(anchorSpacing)")
-        separateOverlappingBags(
+        //
+        // Collision radius isn't the packing radius alone — sprites and
+        // labels are drawn around each packed member, so a bag's real
+        // visual footprint is packedMaxR + spriteRadius + label margin.
+        // First separation shipped 15f86bc used `radii[k]` alone (==
+        // packedMaxR); diag showed the collision test never fired
+        // because two bags whose packing radii touched were already
+        // visually overlapping but distance-passed the check.
+        //
+        // Sprite radius is in canvas points (24pt mirrors
+        // `SubstrateRelaxationPass.defaultRadius`); we work in MDS units.
+        // The conversion factor is `targetSpan / finalLongerSpan` — but
+        // finalLongerSpan depends on the separation we're about to run.
+        // Bootstrap: estimate from pre-sep span × an expansion factor
+        // (separation typically grows the bbox 2–4× on AirPad fits).
+        // Overshooting the estimate is harmless (bags spread more,
+        // easier to read); undershooting starves the collision test and
+        // we're back to the original bug.
+        let preSepLonger: Float = {
+            var mnX: Float = .infinity, mxX: Float = -.infinity
+            var mnY: Float = .infinity, mxY: Float = -.infinity
+            for a in anchors {
+                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
+                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
+            }
+            return max(mxX - mnX, mxY - mnY)
+        }()
+        let estimatedExpansion: Float = 3.0
+        let estimatedUnitsToPoints: Float =
+            Float(SubstrateCanvasLayoutAdapter.targetSpan) /
+            max(preSepLonger * estimatedExpansion, 1e-3)
+        let spriteRadiusMDS: Float =
+            Float(SubstrateRelaxationPass.defaultRadius) / estimatedUnitsToPoints
+        let collisionRadii: [Float] = radii.map { $0 + spriteRadiusMDS }
+        // Padding handles label space + breathing room between adjacent
+        // bags. Set to 2× sprite radius so labels (~half label width per
+        // side) and a small margin all fit between bag edges.
+        let separationPadding: Float = spriteRadiusMDS * 2.0
+        print("[BagDiag] sep params: radiusBase=\(radiusBase) padding=\(separationPadding) spriteRadiusMDS=\(spriteRadiusMDS) preSepLonger=\(preSepLonger) estUnitsToPoints=\(estimatedUnitsToPoints) maxMembers=\(maxMembers) anchorSpacing=\(anchorSpacing)")
+        let convergedIterations = separateOverlappingBags(
             anchors: &anchors,
-            radii: radii,
+            radii: collisionRadii,
             padding: separationPadding
         )
+        print("[BagDiag] sep converged: iterations=\(convergedIterations) (cap=200, < cap means fixpoint)")
 
         // DIAG: post-separation bbox (pre-recenter).
         do {
@@ -257,7 +288,7 @@ enum SubstrateBagLayout {
                     hdbscanLabel: label
                 )
             }
-            print("[BagDiag] bag k=\(k) label=\(label) members=\(memberIndices.count) center=(\(center.x),\(center.y)) collisionR=\(radius) packedMaxR=\(maxPackedR)")
+            print("[BagDiag] bag k=\(k) label=\(label) members=\(memberIndices.count) center=(\(center.x),\(center.y)) packingR=\(radius) collisionR=\(collisionRadii[k]) packedMaxR=\(maxPackedR)")
         }
 
         // SB139 Stage 4c2 ws-canvas-visual-model — noise placement (margin ring).
@@ -510,19 +541,20 @@ enum SubstrateBagLayout {
     ///
     /// Cheap at AirPad's scale — 15 bags = 105 pairs/iter; converges in
     /// tens of iterations. `maxIterations` cap is defensive.
+    @discardableResult
     private static func separateOverlappingBags(
         anchors: inout [SubstrateCoord2D],
         radii: [Float],
         padding: Float,
         maxIterations: Int = 200
-    ) {
+    ) -> Int {
         let n = anchors.count
-        guard n >= 2 else { return }
+        guard n >= 2 else { return 0 }
         precondition(radii.count == n,
                      "SubstrateBagLayout.separateOverlappingBags: anchors/radii count mismatch")
         let colinearEpsilon: Float = 1e-6
 
-        for _ in 0..<maxIterations {
+        for iter in 0..<maxIterations {
             var displacements = [SubstrateCoord2D](
                 repeating: SubstrateCoord2D(x: 0, y: 0),
                 count: n
@@ -558,7 +590,7 @@ enum SubstrateBagLayout {
                     )
                 }
             }
-            if !anyOverlap { return }
+            if !anyOverlap { return iter + 1 }
             for i in 0..<n {
                 anchors[i] = SubstrateCoord2D(
                     x: anchors[i].x + displacements[i].x,
@@ -566,6 +598,7 @@ enum SubstrateBagLayout {
                 )
             }
         }
+        return maxIterations
     }
 
     private static func recenterAtOrigin(_ coords: inout [SubstrateCoord2D]) {

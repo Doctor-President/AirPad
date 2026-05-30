@@ -115,6 +115,7 @@
 		9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
+		9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */; };
 		97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
 		980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */; };
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
@@ -230,6 +231,7 @@
 		187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryReorderController.swift; sourceTree = "<group>"; };
 		18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorSheet.swift; sourceTree = "<group>"; };
 		194292F01A21193B880F16FA /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateBagLayout.swift; sourceTree = "<group>"; };
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -467,6 +469,7 @@
 				988F66299DD79745A824B3A0 /* RelatednessService.swift */,
 				92F8312336CC2A7C1C2763EF /* SelectionService.swift */,
 				780B6A68830590DBDA5189D1 /* StrandService.swift */,
+				1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */,
 				6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */,
 				657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */,
 				9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */,
@@ -1026,6 +1029,7 @@
 				B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */,
 				7701571E5153DEFA1B4F4D82 /* SpriteKitView.swift in Sources */,
 				9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */,
+				9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */,
 				35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */,
 				709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */,
 				B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */,

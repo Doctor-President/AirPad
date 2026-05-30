@@ -260,17 +260,57 @@ final class SubstrateLayoutService {
             umapInputs = inputs
         }
 
-        // Detached so UMAP math doesn't block main. State mutation
-        // happens after we hop back.
-        var model = try await Task.detached(priority: .userInitiated) {
-            try UMAP.fit(
+        // SB139 Stage 4c2 c3 — dual UMAP fit. Display fit gives the 2D
+        // canvas coords; clustering fit gives the 8D coords HDBSCAN reads.
+        // Both run on the same whitened inputs in the same order, so the
+        // returned `trainingPoints` arrays are index-aligned by
+        // construction and we can graft the 8D coord onto the 2D model's
+        // training points without an extra ID-keyed merge.
+        //
+        // The two fits share the same RNG seed because UMAP's per-fit RNG
+        // is internally re-seeded from `seed` plus an `nComponents`-dependent
+        // path — outputs are deterministic per-fit, but the two fits don't
+        // produce trivially-correlated optimization trajectories.
+        //
+        // Sequential inside one detached task: AirPad's fits run on
+        // deliberate triggers (corpus genesis, Inbox refresh), not in a
+        // latency-sensitive path. Sequential keeps the diagnostics
+        // straightforward (one task, one duration line).
+        let clusteringHyperparameters = UMAPHyperparameters.substrateClustering
+        let fitPair = try await Task.detached(priority: .userInitiated) {
+            let display = try UMAP.fit(
                 trainingInputs: umapInputs,
                 hyperparameters: hyperparameters,
                 rngSeed: seed,
                 targetConstraints: targetConstraints,
                 fitVersion: fitVersion
             )
+            let clustering = try UMAP.fit(
+                trainingInputs: umapInputs,
+                hyperparameters: clusteringHyperparameters,
+                rngSeed: seed,
+                targetConstraints: targetConstraints,
+                fitVersion: fitVersion
+            )
+            return (display: display, clustering: clustering)
         }.value
+        var model = fitPair.display
+        // Graft per-point 8D clustering coord onto the display model. Both
+        // fits saw the same `umapInputs` in the same order, so indices
+        // align; assert defensively because a silent off-by-one here
+        // would scramble the cluster→node mapping in `runClustering`.
+        precondition(
+            model.trainingPoints.count == fitPair.clustering.trainingPoints.count,
+            "SubstrateLayoutService.fit: dual-fit training-point counts diverged (\(model.trainingPoints.count) vs \(fitPair.clustering.trainingPoints.count))"
+        )
+        for i in 0..<model.trainingPoints.count {
+            precondition(
+                model.trainingPoints[i].nodeID == fitPair.clustering.trainingPoints[i].nodeID,
+                "SubstrateLayoutService.fit: dual-fit training-point order diverged at index \(i)"
+            )
+            model.trainingPoints[i].coordClustering = fitPair.clustering.trainingPoints[i].coordND
+        }
+        model.clusteringHyperparameters = clusteringHyperparameters
         // Inject whitening params onto the returned model so `project(...)`
         // can re-apply them at newcomer transform time. `UMAP.fit` doesn't
         // know about whitening — it just stores the K-dim vectors it
@@ -464,12 +504,41 @@ final class SubstrateLayoutService {
         var paletteSlot: Int?
     }
 
-    /// Run HDBSCAN on the currently-loaded fitted model's 2D coords. Pinned
-    /// to `algorithm='generic'` (the only path implemented in 4b). Cheap
-    /// at AirPad's corpus scale — milliseconds on 200 points. Called from
-    /// `fit()` and `load()`; idempotent. No-op when no model is loaded or
-    /// the model has fewer than 2 training points (HDBSCAN precondition).
-    func runClustering(minClusterSize: Int = 5, minSamples: Int = 2) {
+    /// Run HDBSCAN on the currently-loaded fitted model's clustering
+    /// coords. Pinned to `algorithm='generic'` (the only path implemented
+    /// in 4b). Cheap at AirPad's corpus scale — milliseconds on 200
+    /// points. Called from `fit()` and `load()`; idempotent. No-op when
+    /// no model is loaded or the model has fewer than 2 training points
+    /// (HDBSCAN precondition).
+    ///
+    /// **SB139 Stage 4c2 c3 — leaf on 8D.** Reads the dedicated 8D
+    /// clustering projection (`coordClustering`) and selects leaf
+    /// clusters from the condensed tree, replacing the pre-c3 path of
+    /// EOM on the 2D display coords. The cluster-cut-sweep diagnostic
+    /// 2026-05-29 proved EOM was choosing 2 clusters because the
+    /// largest-stable-ancestor bias outscored individual sub-cluster
+    /// nodes, not because density structure was absent. Leaf surfaces
+    /// the 7–12 coherent sub-clusters HDBSCAN's condensed tree already
+    /// contains. 8D headroom (vs. 2D) gives that structure room to
+    /// separate without the projection-collapse penalty.
+    ///
+    /// **Legacy-fit fallback.** If `coordClustering` is missing (a v4
+    /// model written between commit 2 and commit 3 — schema bumped but
+    /// dual-fit not yet wired), we degrade to the pre-c3 path: 2D
+    /// `coord2D` + EOM. Avoids a crash on the first launch after a
+    /// staged rollout; the next deliberate fit repopulates the
+    /// clustering coords and the leaf-on-8D path takes over.
+    ///
+    /// **Default cut params (mcs=4, ms=1).** The cluster-cleanup param
+    /// sweep 2026-05-30 (`results/cluster_cleanup_param_sweep_verdict.md`)
+    /// landed at this knee: mcs=4 keeps every crisp baseline cluster
+    /// intact, splits baseline's worst grab-bag into 3 coherent groups
+    /// (media-criticism / knowledge-architecture / router-stress), and
+    /// reclaims 9 nodes from noise vs the prior mcs=5 ms=2 default.
+    /// Drop to mcs=3 and recipes fragment + weak 3-tuples appear; raise
+    /// to mcs=5 and the useful splits go silent. ms=1 (not ms=2) is the
+    /// noise-reclaim work — ms=2 trades reclaim for noise.
+    func runClustering(minClusterSize: Int = 4, minSamples: Int = 1) {
         guard let model = fittedModel else {
             clusterLabels = nil
             persistentClusterIDs = nil
@@ -483,11 +552,21 @@ final class SubstrateLayoutService {
             colorHSB = nil
             return
         }
-        let coords: [[Double]] = pts.map { [Double($0.coord2D.x), Double($0.coord2D.y)] }
+        let hasClusteringCoords = pts.allSatisfy { $0.coordClustering != nil }
+        let coords: [[Double]]
+        let selectionMethod: HDBSCAN.ClusterSelectionMethod
+        if hasClusteringCoords {
+            coords = pts.map { $0.coordClustering!.map(Double.init) }
+            selectionMethod = .leaf
+        } else {
+            coords = pts.map { [Double($0.coord2D.x), Double($0.coord2D.y)] }
+            selectionMethod = .eom
+        }
         let result = HDBSCAN.fit(
             coords: coords,
             minClusterSize: minClusterSize,
-            minSamples: minSamples
+            minSamples: minSamples,
+            clusterSelectionMethod: selectionMethod
         )
         clusterLabels = result.labels
 

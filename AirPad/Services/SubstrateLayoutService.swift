@@ -71,6 +71,17 @@ final class SubstrateLayoutService {
     /// labels. Refreshed in lockstep with `clusterLabels` (same generation).
     private(set) var colorHSB: [String: SubstrateColoringPass.HSB]?
 
+    /// SB139 Stage 4c2 ws-canvas-visual-model Stage 1 — precomputed bag
+    /// layout. Anchor positions (one per cluster) and per-node home
+    /// positions packed inside their bag. Recomputed at the end of
+    /// `runClustering()`; nil when the legacy-fallback clustering path
+    /// (no 8D `coordClustering`) ran, when no non-noise clusters exist,
+    /// or before a fit has happened. `canvasPlacements()` consults this
+    /// per-node and falls back to `point.coord2D` when a node has no bag
+    /// home (noise nodes — Stage 1 omits them deliberately, Stage 4 will
+    /// place them).
+    private(set) var bagLayout: BagLayout?
+
     /// SB139 Stage 4c2 — pre-resolved block-pooled substrate vectors,
     /// keyed by node ID. Populated by `preloadBlockPooledVectors`; consulted
     /// by `substrateVector(for:)` ahead of the legacy summary/folksonomy
@@ -429,6 +440,7 @@ final class SubstrateLayoutService {
         self.clusterLabels = nil
         self.persistentClusterIDs = nil
         self.colorHSB = nil
+        self.bagLayout = nil
         self.displayCanvasPositions = nil
         self.relaxationInputHash = nil
         // SB139 Stage 4c2 — invalidate the block-pooled cache too. The next
@@ -543,6 +555,7 @@ final class SubstrateLayoutService {
             clusterLabels = nil
             persistentClusterIDs = nil
             colorHSB = nil
+            bagLayout = nil
             return
         }
         let pts = model.trainingPoints
@@ -550,6 +563,7 @@ final class SubstrateLayoutService {
             clusterLabels = nil
             persistentClusterIDs = nil
             colorHSB = nil
+            bagLayout = nil
             return
         }
         let hasClusteringCoords = pts.allSatisfy { $0.coordClustering != nil }
@@ -599,6 +613,20 @@ final class SubstrateLayoutService {
             )
         }
         colorHSB = SubstrateColoringPass.map(placements)
+
+        // SB139 Stage 4c2 ws-canvas-visual-model Stage 1 — derive the bag
+        // layout from the just-computed labels + persistent IDs. Compute
+        // returns nil when the legacy-fallback clustering path ran (no 8D
+        // `coordClustering`) or when no non-noise clusters exist; in
+        // either case canvasPlacements() falls through to `point.coord2D`
+        // and the canvas reads exactly as it did pre-bag-layout.
+        bagLayout = SubstrateBagLayout.compute(
+            trainingPoints: pts,
+            clusterLabels: result.labels,
+            persistentClusterIDs: persistentIDs,
+            fitVersion: model.fitVersion
+        )
+
         lastActivityAt = Date()
     }
 
@@ -613,6 +641,12 @@ final class SubstrateLayoutService {
         guard pts.count == labels.count else { return nil }
         let pids = persistentClusterIDs
         let registry = SubstrateClusterRegistry.shared
+        // SB139 Stage 4c2 ws-canvas-visual-model Stage 1 — when a bag
+        // layout exists, route the per-node coord through its computed
+        // bag home so the canvas reads cluster regions as spatial regions.
+        // Nodes not in bagLayout.nodes (noise in Stage 1) fall back to
+        // the display-UMAP `coord2D` — same as pre-bag-layout behavior.
+        let bagNodes = bagLayout?.nodes
         return zip(pts, labels).enumerated().map { idx, pair in
             let (point, label) = pair
             // Persistent IDs may legitimately lag clusterLabels by one
@@ -620,9 +654,10 @@ final class SubstrateLayoutService {
             // preserves the prior session-local behavior at the seam.
             let pid = (pids != nil && pids!.count == labels.count) ? pids![idx] : nil
             let slot = pid.flatMap { registry.paletteSlot(for: $0) }
+            let coord = bagNodes?[point.nodeID]?.home ?? point.coord2D
             return CanvasPlacement(
                 nodeID: point.nodeID,
-                coord: point.coord2D,
+                coord: coord,
                 clusterID: label,
                 persistentClusterID: pid,
                 paletteSlot: slot

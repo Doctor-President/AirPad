@@ -336,14 +336,38 @@ final class SubstrateLayoutService {
     }
 
     /// Load the fitted model from disk into `fittedModel`. Returns true
-    /// if a model was loaded, false if no file existed. Throws if a file
-    /// exists but is corrupt.
+    /// if a model was loaded, false if no file existed (or if a pre-v4
+    /// file existed and was dropped for re-fit). Throws if a file exists
+    /// at the current schema but is corrupt.
+    ///
+    /// **Pre-v4 cleanup:** v3 and earlier fits don't carry the 8D
+    /// clustering projection that `runClustering` now consumes; we peek
+    /// the schemaVersion off the file and, if it's stale, delete the
+    /// file + clear any FM-generated cluster labels in the registry so
+    /// the bipartite max-recall match doesn't reattach the legacy
+    /// megalabel ("Interactive Journaling") to whatever post-v4 cluster
+    /// wins the overlap. Caller's `ensureFittedIfPossible` then refits.
     @discardableResult
     func load() throws -> Bool {
         let url = Self.fittedModelURL()
         guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        let data: Data
         do {
-            let data = try Data(contentsOf: url)
+            data = try Data(contentsOf: url)
+        } catch {
+            throw UMAPError.loadFailed(underlying: error)
+        }
+
+        if let peek = try? JSONDecoder().decode(SchemaVersionPeek.self, from: data),
+           peek.schemaVersion < UMAPFittedModel.currentSchemaVersion {
+            try? FileManager.default.removeItem(at: url)
+            SubstrateClusterRegistry.shared.clearAllFMLabels()
+            lastActivityAt = Date()
+            generation &+= 1
+            return false
+        }
+
+        do {
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
             let model = try decoder.decode(UMAPFittedModel.self, from: data)
@@ -621,4 +645,14 @@ final class SubstrateLayoutService {
         }
         return hasher.finalize()
     }
+}
+
+/// Minimal decoder used by `SubstrateLayoutService.load()` to read the
+/// `schemaVersion` field off a fitted-model file without committing to
+/// the full `UMAPFittedModel` shape. Lets us detect pre-v4 fits (which
+/// lack the 8D clustering projection) and drop them for re-fit, instead
+/// of either crashing the decode or silently loading a model that
+/// `runClustering` can't consume.
+private struct SchemaVersionPeek: Decodable {
+    let schemaVersion: Int
 }

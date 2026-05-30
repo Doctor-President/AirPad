@@ -113,9 +113,22 @@ struct UMAPFittedModel: Codable {
     var fitVersion: Int
     /// Wall-clock at fit time. Diagnostic; not load-bearing.
     var fittedAt: Date
-    /// Hyperparameters this model was fit with. Future re-fits should
-    /// either match or explicitly invalidate.
+    /// Hyperparameters for the **display** projection (2D canvas coords).
+    /// Naming kept for back-compat with consumers; semantics narrowed in
+    /// v4 to "display fit." See `clusteringHyperparameters` for the
+    /// independent clustering fit added in v4.
     var hyperparameters: UMAPHyperparameters
+
+    /// SB139 Stage 4c2 v4 — hyperparameters for the dedicated clustering
+    /// projection (typically 8D, `minDist=0.0`). Independent UMAP fit on
+    /// the same whitened input vectors as `hyperparameters` but optimized
+    /// for HDBSCAN cut quality instead of canvas readability. Optional
+    /// because: (a) v3 files re-load as v4 with this nil (the load path
+    /// then deletes them and refits); (b) within-commit-2 migration
+    /// window has the schema present but `SubstrateLayoutService.fit`
+    /// not yet populating it. Once commit 3 wires the dual-fit, all
+    /// freshly-persisted models carry it.
+    var clusteringHyperparameters: UMAPHyperparameters? = nil
     /// Seeded RNG state at fit-start. Saved so the same input produces
     /// the same coords on re-fit. Persisted as `[UInt64]` of length 4 to
     /// reserve room for a future xoshiro256**-shaped state without a
@@ -160,42 +173,59 @@ struct UMAPFittedModel: Codable {
     var whiteningMatrix: [[Float]]? = nil
 
     /// Per-node fit record: the 512-dim vector that went in, the projected
-    /// coord that came out, and the canonical node ID this point represents.
+    /// coord(s) that came out, and the canonical node ID this point
+    /// represents.
     ///
-    /// **SB139 Stage 4c2 c3 — N-D generalization.** `coordND` replaces the
-    /// 4a/4b `coord2D` field so the model can carry projections at any
-    /// `hyperparameters.nComponents`. Today every fit still runs at 2D
-    /// (canvas display); consumers read `coord2D` via the computed
-    /// accessor. The relaxation is architectural insurance for a future
-    /// mid-D clustering pass or embedder swap (a 10D mid-D pivot was
-    /// implemented + reverted same day after the diagnostic confirmed
-    /// `NLContextualEmbedding`'s variance — not the projection dim — is
-    /// the cluster-count ceiling). Custom `Codable` migrates v1 records
-    /// (which serialized a `coord2D` object) to v2 (`coordND` array) at
-    /// decode time so on-disk fits from before this change continue to
-    /// load.
+    /// **SB139 Stage 4c2 c3 — N-D generalization.** `coordND` replaced the
+    /// 4a/4b `coord2D` field so the model could carry projections at any
+    /// `hyperparameters.nComponents`. In v4, `coordND` is the **display**
+    /// projection (2D, canvas readability). The name is kept for
+    /// back-compat with existing consumers (UMAP.fit writes it,
+    /// UMAPTransform reads it, the `coord2D` accessor wraps the first
+    /// two elements).
+    ///
+    /// **v4 — dual projection.** `coordClustering` carries an independent
+    /// projection optimized for HDBSCAN cut quality (typically 8D,
+    /// `minDist=0.0`). Optional because the schema landed before the
+    /// dual-fit population landed; old v4 files (and the v3-was-deleted-
+    /// and-not-yet-refit window) leave it nil. Once commit 3 wires
+    /// `SubstrateLayoutService.fit` to dual-project, every freshly-
+    /// persisted point carries both.
+    ///
+    /// Custom `Codable` previously migrated v1 records (which serialized
+    /// a `coord2D` object) to v2 (`coordND` array); that path stays so
+    /// pre-v3 files still load.
     struct TrainingPoint: Codable {
         var nodeID: String
         var inputVector: [Float]
         var coordND: [Float]
+        /// v4 — independent clustering projection. See struct doc.
+        var coordClustering: [Float]? = nil
 
         /// 2D shorthand for canvas-display consumers. Reads the first two
-        /// elements of `coordND`; precondition fails if the projection is
-        /// 1D (which UMAP.fit doesn't produce — `nNeighbors` lower bound
-        /// keeps the minimum useful `nComponents` at 2).
+        /// elements of `coordND` (the display projection); precondition
+        /// fails if the projection is 1D (which UMAP.fit doesn't produce —
+        /// `nNeighbors` lower bound keeps the minimum useful
+        /// `nComponents` at 2).
         var coord2D: SubstrateCoord2D {
             precondition(coordND.count >= 2, "TrainingPoint.coord2D requires coordND.count >= 2")
             return SubstrateCoord2D(x: coordND[0], y: coordND[1])
         }
 
-        init(nodeID: String, inputVector: [Float], coordND: [Float]) {
+        init(
+            nodeID: String,
+            inputVector: [Float],
+            coordND: [Float],
+            coordClustering: [Float]? = nil
+        ) {
             self.nodeID = nodeID
             self.inputVector = inputVector
             self.coordND = coordND
+            self.coordClustering = coordClustering
         }
 
         private enum CodingKeys: String, CodingKey {
-            case nodeID, inputVector, coordND, coord2D
+            case nodeID, inputVector, coordND, coordClustering, coord2D
         }
 
         init(from decoder: Decoder) throws {
@@ -209,6 +239,7 @@ struct UMAPFittedModel: Codable {
                 let xy = try c.decode(SubstrateCoord2D.self, forKey: .coord2D)
                 self.coordND = [xy.x, xy.y]
             }
+            self.coordClustering = try c.decodeIfPresent([Float].self, forKey: .coordClustering)
         }
 
         func encode(to encoder: Encoder) throws {
@@ -216,6 +247,7 @@ struct UMAPFittedModel: Codable {
             try c.encode(nodeID, forKey: .nodeID)
             try c.encode(inputVector, forKey: .inputVector)
             try c.encode(coordND, forKey: .coordND)
+            try c.encodeIfPresent(coordClustering, forKey: .coordClustering)
         }
     }
 
@@ -227,7 +259,13 @@ struct UMAPFittedModel: Codable {
     /// level for SB139 Stage 4c2 PCA whitening; absent fields decode as
     /// nil (Codable auto-synthesis on Optional), so pre-v3 files load
     /// without migration and run the raw-input UMAP path unchanged.
-    static let currentSchemaVersion: Int = 3
+    /// v4 — adds optional `clusteringHyperparameters` at top level and
+    /// `coordClustering` per training point for the dedicated 8D
+    /// clustering projection that runs alongside the 2D display fit.
+    /// Pre-v4 files (which lack the 8D coord runClustering now needs)
+    /// are dropped on load and re-fit; the v4 schema itself is fully
+    /// backward-decoding-compatible (both new fields are Optional).
+    static let currentSchemaVersion: Int = 4
 }
 
 // MARK: - Errors

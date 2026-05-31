@@ -176,12 +176,6 @@ struct CanvasView: View {
             Color(red: 0.027, green: 0.027, blue: 0.039)
                 .ignoresSafeArea()
 
-            // Cluster labels now live as SpriteKit child sprites inside
-            // CorpusPhysicsScene (zPosition 100 — middle band between
-            // corpus dots at 1 and strands/focal at 500/1000). They ride
-            // the camera transform in the same frame as the dots they
-            // label, so pan/zoom is desync-free. See `updateClusterLabels`
-            // in CorpusPhysicsScene.
             SpriteKitView(scene: scene)
                 .ignoresSafeArea()
                 .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
@@ -192,6 +186,7 @@ struct CanvasView: View {
                     .transition(.opacity)
             }
 
+            clusterLabelOverlay
             focalEngagementOverlay
             nodeSummaryLayer
             drillDownBackButton
@@ -383,6 +378,50 @@ struct CanvasView: View {
             .ignoresSafeArea()
             .transition(.opacity)
         }
+    }
+
+    /// Per-cluster "background context" labels — frosted `.ultraThinMaterial`
+    /// pills with serif type, positioned at each bag's screen-space
+    /// centroid (bridged from CorpusPhysicsScene via
+    /// `canvasState.clusterCentroidScreenPositions`).
+    ///
+    /// Why SwiftUI instead of SK: `.ultraThinMaterial` is not raw-SK
+    /// reproducible without a custom render pass, and that's the visual
+    /// the user wants. Tradeoffs (flagged in `syncClusterCentroidsToCanvasState`):
+    /// labels render above strands too (SwiftUI overlay can't sit
+    /// between SK z-bands) and read centroids 1 frame stale on fast pan.
+    ///
+    /// Declutter: greedy, largest-bag-first; ties broken by uuidString
+    /// for determinism. A candidate is skipped if its bbox intersects
+    /// an already-placed candidate's bbox (+ small halo). Off-screen
+    /// candidates are dropped so they don't suppress on-screen
+    /// neighbors.
+    ///
+    /// `TimelineView(.animation)` forces a SwiftUI re-render every
+    /// frame so the overlay reads the latest centroid write from the
+    /// SK update tick instead of waiting on an @Observable propagation
+    /// scheduled for next runloop hop.
+    @ViewBuilder
+    private var clusterLabelOverlay: some View {
+        TimelineView(.animation) { _ in
+            ClusterLabelLayer(
+                positions: canvasState.clusterCentroidScreenPositions,
+                memberCounts: bagMemberCounts()
+            )
+        }
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
+    }
+
+    /// Pulls per-persistent-cluster member counts off the live bag
+    /// layout for declutter prioritization. Empty when no fit is
+    /// loaded; the overlay handles that as "no labels to draw".
+    private func bagMemberCounts() -> [UUID: Int] {
+        guard let bags = SubstrateLayoutService.shared.bagLayout?.bags else { return [:] }
+        var out: [UUID: Int] = [:]
+        out.reserveCapacity(bags.count)
+        for bag in bags { out[bag.persistentClusterID] = bag.memberCount }
+        return out
     }
 
     private func rearrangeForSortOrder(_ order: SortOrder, nodes: [Node]) {
@@ -815,6 +854,109 @@ private struct ItemCountsRow: View {
         Label("\(count)", systemImage: icon)
             .font(.caption)
             .foregroundStyle(.white.opacity(0.55))
+    }
+}
+
+// MARK: - Cluster label layer
+
+/// Per-cluster frosted pill labels rendered on top of the SpriteKitView.
+///
+/// Reads positions written by `CorpusPhysicsScene.syncClusterCentroidsToCanvasState`
+/// and label text from `SubstrateClusterRegistry.shared` (re-reads
+/// reactively because the registry is `@Observable`). Pills use
+/// `.ultraThinMaterial` for the frosted backdrop blur, serif type at
+/// fixed pixel size — they do not scale with canvas zoom because they
+/// live in SwiftUI, not in the SK scene transform.
+///
+/// Declutter uses approximate pill widths computed from the rendered
+/// string. Exact rendering still happens in `LabelPill` so on-screen
+/// fidelity is preserved; the approximation only affects which
+/// overlapping pair gets suppressed.
+private struct ClusterLabelLayer: View {
+    let positions: [UUID: CGPoint]
+    let memberCounts: [UUID: Int]
+
+    private static let fontSize: CGFloat = 13
+    private static let hPad: CGFloat = 12
+    private static let vPad: CGFloat = 6
+    private static let minHeight: CGFloat = 26
+    private static let approxGlyphWidth: CGFloat = 6.5  // serif 13pt empirical
+    private static let halo: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { geo in
+            let bounds = CGRect(origin: .zero, size: geo.size)
+            let visibleIDs = declutter(in: bounds)
+            ZStack(alignment: .topLeading) {
+                ForEach(visibleIDs, id: \.self) { pid in
+                    if let pt = positions[pid],
+                       let label = SubstrateClusterRegistry.shared.label(for: pid),
+                       !label.isEmpty {
+                        LabelPill(text: label)
+                            .position(pt)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Greedy member-count-first placement with bbox intersection check.
+    /// Off-screen candidates are dropped so they can't suppress
+    /// on-screen neighbors. Ties broken by uuidString for determinism.
+    private func declutter(in bounds: CGRect) -> [UUID] {
+        struct Candidate {
+            let pid: UUID
+            let box: CGRect
+            let priority: Int
+        }
+        var candidates: [Candidate] = []
+        candidates.reserveCapacity(positions.count)
+        for (pid, pt) in positions {
+            guard let label = SubstrateClusterRegistry.shared.label(for: pid),
+                  !label.isEmpty else { continue }
+            let textW = CGFloat(label.count) * Self.approxGlyphWidth
+            let w = textW + Self.hPad * 2
+            let h = max(Self.fontSize + Self.vPad * 2, Self.minHeight)
+            let box = CGRect(x: pt.x - w / 2, y: pt.y - h / 2, width: w, height: h)
+                .insetBy(dx: -Self.halo, dy: -Self.halo)
+            if !box.intersects(bounds) { continue }
+            candidates.append(Candidate(
+                pid: pid,
+                box: box,
+                priority: memberCounts[pid] ?? 0
+            ))
+        }
+        candidates.sort { a, b in
+            if a.priority != b.priority { return a.priority > b.priority }
+            return a.pid.uuidString < b.pid.uuidString
+        }
+        var placed: [CGRect] = []
+        placed.reserveCapacity(candidates.count)
+        var visible: [UUID] = []
+        visible.reserveCapacity(candidates.count)
+        for c in candidates {
+            if placed.contains(where: { $0.intersects(c.box) }) { continue }
+            placed.append(c.box)
+            visible.append(c.pid)
+        }
+        return visible
+    }
+}
+
+private struct LabelPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 13, weight: .medium, design: .serif))
+            .foregroundStyle(.white.opacity(0.95))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(minHeight: 26)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule().stroke(.white.opacity(0.10), lineWidth: 0.5)
+            )
     }
 }
 

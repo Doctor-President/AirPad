@@ -334,10 +334,21 @@ struct LibrarianSurface: View {
             }
             .padding(.bottom, 14)
 
+            searchField(librarian: librarian)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
+
             scopeChipRow(librarian: librarian)
                 .padding(.bottom, 8)
 
-            if librarian.activeMode == .research {
+            if !librarian.searchText.isEmpty {
+                // Search takes over the main pane while the field has
+                // content — instant MATCHES (C1) and RELATED (C2)
+                // render in place of the mode pipeline's transcript.
+                // Clearing the field restores the pipeline UI.
+                searchResultsView(librarian: librarian)
+                    .frame(maxHeight: .infinity)
+            } else if librarian.activeMode == .research {
                 researchPanel(librarian: librarian)
             } else {
                 // Conversation transcript (flexes), input row beneath
@@ -353,6 +364,9 @@ struct LibrarianSurface: View {
             }
 
             endSessionFooter(librarian: librarian)
+        }
+        .onChange(of: librarian.searchText) { _, _ in
+            librarian.updateSearchMatches(store: store)
         }
         .confirmationDialog(
             "End session?",
@@ -426,6 +440,78 @@ struct LibrarianSurface: View {
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {
         !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !librarian.isLoading
+    }
+
+    // MARK: - Instant search (ws-instant-search C1)
+
+    /// Persistent search field at the top of the Librarian. Independent
+    /// of the mode pipeline's `inputText`; typing here drives the
+    /// MATCHES + RELATED sections that take over the transcript pane
+    /// while non-empty. Available regardless of `activeMode`.
+    @ViewBuilder
+    private func searchField(librarian: LibrarianState) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+            TextField("Search", text: Binding(
+                get: { librarian.searchText },
+                set: { librarian.searchText = $0 }
+            ))
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(.white)
+                .tint(.white)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !librarian.searchText.isEmpty {
+                Button {
+                    librarian.searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(Color.white.opacity(0.06))
+        .clipShape(Capsule())
+    }
+
+    /// MATCHES (text) and RELATED (semantic — C2) sections rendered
+    /// when the search field is non-empty. Resolves node IDs against
+    /// the live store at render time so renames/deletes between
+    /// keystroke and frame don't surface stale rows.
+    @ViewBuilder
+    private func searchResultsView(librarian: LibrarianState) -> some View {
+        let matchNodes: [Node] = librarian.searchMatches.compactMap { id in
+            store.nodes.first(where: { $0.id == id })
+        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                if matchNodes.isEmpty {
+                    Text("No matches")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.top, 12)
+                } else {
+                    Text("MATCHES")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.top, 4)
+                    ForEach(matchNodes, id: \.id) { node in
+                        SearchMatchRow(node: node)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 12)
+        }
     }
 
     // MARK: - Chat layout (c14)
@@ -2047,5 +2133,36 @@ struct LibrarianSurface: View {
                 textOpacity = 0.55
             }
         }
+    }
+}
+
+// MARK: - Search result rows
+
+/// MATCHES row — node title prominently, scope/tag hint underneath.
+/// Tap-through wiring lands in C3; visual stub today renders title +
+/// summary preview without navigation.
+private struct SearchMatchRow: View {
+    let node: Node
+
+    private var snippet: String {
+        if let s = node.substrateSummary, !s.isEmpty { return s }
+        return node.summary
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(node.title.isEmpty ? "Untitled" : node.title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.95))
+                .lineLimit(1)
+            if !snippet.isEmpty {
+                Text(snippet)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
     }
 }

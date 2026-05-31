@@ -158,6 +158,20 @@ final class LibrarianState {
     /// host view re-renders.
     var inputText: String = ""
 
+    /// Instant-search query — independent of the mode pipeline's
+    /// `inputText`. Drives the MATCHES section (and, in C2, RELATED)
+    /// that takes over the transcript area while non-empty. Lives on
+    /// state so a half-typed query survives surface remount.
+    var searchText: String = ""
+
+    /// Text-search matches in rank order. Stored as node IDs so a
+    /// node renamed or deleted between query and render resolves
+    /// against the live store (matches the `LibrarianExchange`
+    /// pattern). Recomputed synchronously on every `searchText`
+    /// change — text filter is O(nodes) and stays well under a
+    /// frame for typical corpus sizes.
+    var searchMatches: [String] = []
+
     /// Last query response. Stays visible while the user types a new
     /// query; cleared at the start of the next `executeQuery` run.
     var response: QueryResponse? = nil
@@ -481,6 +495,43 @@ final class LibrarianState {
     private struct ImportCandidateDTO: Decodable {
         let title: String
         let content: String
+    }
+
+    // MARK: - Instant search
+
+    /// Recomputes `searchMatches` from the current `searchText` against
+    /// node titles, summaries (substrate summary if present, else
+    /// legacy summary), and tags. Empty query → empty matches.
+    /// Match order: title hits before body hits, ties broken by the
+    /// store's natural order (recency-favored). Case-insensitive
+    /// substring; trims whitespace so trailing-space typing doesn't
+    /// drop matches.
+    func updateSearchMatches(store: CorpusStore) {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searchMatches = []
+            return
+        }
+        let q = query.lowercased()
+        var titleHits: [String] = []
+        var bodyHits: [String] = []
+        titleHits.reserveCapacity(8)
+        bodyHits.reserveCapacity(16)
+        for node in store.nodes {
+            if node.title.lowercased().contains(q) {
+                titleHits.append(node.id)
+                continue
+            }
+            let summary = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
+            if summary.lowercased().contains(q) {
+                bodyHits.append(node.id)
+                continue
+            }
+            if node.tags.contains(where: { $0.lowercased().contains(q) }) {
+                bodyHits.append(node.id)
+            }
+        }
+        searchMatches = titleHits + bodyHits
     }
 
     /// Dispatches to the per-mode pipeline. Navigate uses block-level

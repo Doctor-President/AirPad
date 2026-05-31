@@ -367,6 +367,7 @@ struct LibrarianSurface: View {
         }
         .onChange(of: librarian.searchText) { _, _ in
             librarian.updateSearchMatches(store: store)
+            librarian.kickOffSemanticSearch(store: store)
         }
         .confirmationDialog(
             "End session?",
@@ -481,23 +482,26 @@ struct LibrarianSurface: View {
         .clipShape(Capsule())
     }
 
-    /// MATCHES (text) and RELATED (semantic — C2) sections rendered
-    /// when the search field is non-empty. Resolves node IDs against
-    /// the live store at render time so renames/deletes between
+    /// MATCHES (text) and RELATED (semantic) sections rendered when
+    /// the search field is non-empty. Resolves node IDs against the
+    /// live store at render time so renames/deletes between
     /// keystroke and frame don't surface stale rows.
     @ViewBuilder
     private func searchResultsView(librarian: LibrarianState) -> some View {
         let matchNodes: [Node] = librarian.searchMatches.compactMap { id in
             store.nodes.first(where: { $0.id == id })
         }
+        let related = librarian.searchRelated
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if matchNodes.isEmpty {
+                if matchNodes.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
                     Text("No matches")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white.opacity(0.45))
                         .padding(.top, 12)
-                } else {
+                }
+
+                if !matchNodes.isEmpty {
                     Text("MATCHES")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.8)
@@ -505,6 +509,25 @@ struct LibrarianSurface: View {
                         .padding(.top, 4)
                     ForEach(matchNodes, id: \.id) { node in
                         SearchMatchRow(node: node)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Text("RELATED")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.45))
+                    if librarian.searchSemanticInFlight {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .tint(.white.opacity(0.45))
+                    }
+                }
+                .padding(.top, !matchNodes.isEmpty ? 8 : 4)
+
+                ForEach(related) { rel in
+                    if let node = store.nodes.first(where: { $0.id == rel.nodeID }) {
+                        SearchRelatedRow(node: node, snippet: rel.snippet)
                     }
                 }
             }
@@ -2160,6 +2183,32 @@ private struct SearchMatchRow: View {
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(.white.opacity(0.55))
                     .lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
+}
+
+/// RELATED row — node title above, NLTokenizer-extracted pull quote
+/// from the matched block below. Pull quote is pre-trimmed and
+/// length-capped at compute time so the row stays bounded.
+private struct SearchRelatedRow: View {
+    let node: Node
+    let snippet: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(node.title.isEmpty ? "Untitled" : node.title)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.95))
+                .lineLimit(1)
+            if !snippet.isEmpty {
+                Text(snippet)
+                    .font(.system(size: 13, weight: .regular, design: .serif))
+                    .italic()
+                    .foregroundStyle(.white.opacity(0.7))
+                    .lineLimit(3)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

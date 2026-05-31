@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 import Observation
 import FoundationModels
 
@@ -171,6 +172,30 @@ final class LibrarianState {
     /// change — text filter is O(nodes) and stays well under a
     /// frame for typical corpus sizes.
     var searchMatches: [String] = []
+
+    /// Semantic-search results (RELATED). Block-level granularity:
+    /// multiple blocks from the same node each get their own row with
+    /// a distinct pull quote. Repopulated by `kickOffSemanticSearch`
+    /// after a short debounce on each `searchText` change.
+    struct SearchRelated: Identifiable, Sendable {
+        let id: String        // blockID
+        let nodeID: String
+        let snippet: String
+        let score: Float
+    }
+    var searchRelated: [SearchRelated] = []
+
+    /// True from search kickoff until the semantic results land.
+    /// Drives a subtle spinner next to the RELATED header so the user
+    /// knows results are still arriving (typically resolves in
+    /// 100-300ms after MATCHES).
+    var searchSemanticInFlight: Bool = false
+
+    /// In-flight debounce + embedding task. Cancelled on every new
+    /// keystroke so only the latest query reaches `findRelevantBlocks`.
+    /// `@ObservationIgnored` because the Observable macro otherwise
+    /// emits init accessors that fight with the lazy-cancel pattern.
+    @ObservationIgnored private var semanticSearchTask: Task<Void, Never>? = nil
 
     /// Last query response. Stays visible while the user types a new
     /// query; cleared at the start of the next `executeQuery` run.
@@ -532,6 +557,88 @@ final class LibrarianState {
             }
         }
         searchMatches = titleHits + bodyHits
+    }
+
+    /// Kicks off the semantic RELATED pass for the current `searchText`.
+    /// Cancels any in-flight task first so only the latest query
+    /// reaches the embedder. Debounces ~150ms before embedding so a
+    /// fast typist doesn't trigger N embedding calls per second; the
+    /// total budget (debounce + embed + rank) targets the 100-300ms
+    /// fast-follow window after MATCHES.
+    ///
+    /// Block-level: multiple blocks from the same node each get a row
+    /// with a distinct pull quote. No dedup against `searchMatches` —
+    /// "this note's title matches" and "this passage is semantically
+    /// related" are distinct signals worth showing separately.
+    func kickOffSemanticSearch(store: CorpusStore) {
+        semanticSearchTask?.cancel()
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searchRelated = []
+            searchSemanticInFlight = false
+            return
+        }
+        searchSemanticInFlight = true
+        semanticSearchTask = Task { @MainActor [weak self, store] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            if Task.isCancelled { return }
+            let matches = await store.findRelevantBlocks(query: query, topK: 10)
+            if Task.isCancelled { return }
+            guard let self else { return }
+            self.searchRelated = matches.map { match in
+                SearchRelated(
+                    id: match.block.blockID,
+                    nodeID: match.nodeID,
+                    snippet: Self.pullQuote(from: match.block.text, query: query),
+                    score: match.score
+                )
+            }
+            self.searchSemanticInFlight = false
+        }
+    }
+
+    /// Extracts a 1-2 sentence pull quote from `text` using
+    /// `NLTokenizer(.sentence)`. Sentence with the most query-word
+    /// hits wins; ties go to the earliest sentence so context order
+    /// is preserved when nothing distinguishes them. Falls back to
+    /// the first sentence when no overlap is found, and truncates at
+    /// ~240 chars so row height stays bounded for very long sentences.
+    static func pullQuote(from text: String, query: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        let tokenizer = NLTokenizer(unit: .sentence)
+        tokenizer.string = trimmed
+        var sentences: [String] = []
+        tokenizer.enumerateTokens(in: trimmed.startIndex..<trimmed.endIndex) { range, _ in
+            let s = String(trimmed[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !s.isEmpty { sentences.append(s) }
+            return true
+        }
+        guard !sentences.isEmpty else { return Self.cap(trimmed) }
+
+        let queryWords = query.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+            .filter { $0.count > 2 }
+
+        func score(_ s: String) -> Int {
+            let lower = s.lowercased()
+            return queryWords.reduce(0) { acc, w in acc + (lower.contains(w) ? 1 : 0) }
+        }
+
+        let bestIdx = sentences.indices.max { a, b in
+            let sa = score(sentences[a])
+            let sb = score(sentences[b])
+            if sa != sb { return sa < sb }
+            return a > b   // earlier sentence wins on tie
+        } ?? 0
+        return Self.cap(sentences[bestIdx])
+    }
+
+    private static func cap(_ s: String) -> String {
+        if s.count <= 240 { return s }
+        return String(s.prefix(240)) + "…"
     }
 
     /// Dispatches to the per-mode pipeline. Navigate uses block-level

@@ -437,9 +437,20 @@ struct LibrarianSurface: View {
 
             endSessionFooter(librarian: librarian)
         }
-        .onChange(of: librarian.searchText) { _, _ in
+        .onChange(of: librarian.searchText) { oldValue, newValue in
             librarian.updateSearchMatches(store: store)
             librarian.kickOffSemanticSearch(store: store)
+            // First non-empty character → spring to fullScreen so the
+            // results pane has the most room. Triggers on every
+            // empty→non-empty transition (e.g. clear + retype) — a
+            // user intentionally re-searching wants the same focused
+            // posture as the first time.
+            if oldValue.isEmpty && !newValue.isEmpty
+                && librarian.surfaceMode != .fullScreen {
+                withAnimation(.snappy(duration: 0.32, extraBounce: 0.12)) {
+                    librarian.surfaceMode = .fullScreen
+                }
+            }
         }
         .confirmationDialog(
             "End session?",

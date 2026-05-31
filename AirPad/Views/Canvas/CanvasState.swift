@@ -45,4 +45,20 @@ final class CanvasState {
 
     /// Node ID to push to detail view via navigationPath (set by grace tap).
     var pendingNavigationNodeID: String? = nil
+
+    /// Per-persistent-cluster bag centroid in **screen-space points**,
+    /// written each scene tick by `CorpusPhysicsScene.syncClusterCentroidsToCanvasState`.
+    /// The SwiftUI `clusterLabelOverlay` reads this to position the
+    /// frosted-pill labels. Screen-space because SwiftUI does not know
+    /// about the SK camera transform; centroids written here have already
+    /// been converted via `view.convert(_:from: scene)`.
+    ///
+    /// We keep this as the bridge (rather than rendering labels in SK)
+    /// because `.ultraThinMaterial` blur is not reproducible in raw
+    /// SpriteKit without a full custom render pass. Tradeoffs: the
+    /// SwiftUI overlay sits above strands (SK z=500) too — partial
+    /// z-order regression vs the all-SK approach — and SwiftUI's render
+    /// pass typically runs before the embedded SKView's pass, so during
+    /// fast pan/zoom the overlay reads a 1-frame-stale centroid.
+    var clusterCentroidScreenPositions: [UUID: CGPoint] = [:]
 }

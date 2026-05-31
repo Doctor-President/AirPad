@@ -277,46 +277,41 @@ struct CanvasView: View {
     /// screen space by `CorpusPhysicsScene` (`syncClusterCentroidsToCanvasState`)
     /// every frame so the badges track pan, zoom, and PBD relaxation.
     ///
-    /// Visibility: always-on per Consultation #2 (T 2026-05-28) — at the
-    /// 2-cluster ceiling on this corpus, centroids sit far apart and there's
-    /// no overlap risk; the zoom-tier visibility design is over-engineering
-    /// for the current state. Hidden during focal engagement / zoomed /
-    /// drilled-in / dismissing so the overlays don't compete with the
-    /// focal gradient and summary layer.
-    ///
     /// Labels read from `SubstrateClusterRegistry.shared.label(for:)`;
     /// unlabeled clusters render nothing (waiting for FM via
-    /// `SubstrateClusterLabelService`).
+    /// `SubstrateClusterLabelService`). Each badge carries a `.contextMenu`
+    /// with Rename + Clear; hit-testing is intentionally narrow (badge's
+    /// intrinsic frame, not the full overlay layer) so sprite gestures
+    /// elsewhere pass through.
     ///
-    /// SB139 Stage 4c2 commit E — each badge carries a `.contextMenu`
-    /// with Rename + Clear label. Hit-testing is intentionally narrow:
-    /// the outer `ZStack` doesn't block input, and each badge's frame
-    /// matches the visible pill, so long-press lands only inside a pill
-    /// and sprite gestures elsewhere on the overlay pass through.
-    /// SB139 Stage 4c2 fix — always render. No visibility gate. The
-    /// focal node and its strands render on top and naturally occlude
-    /// any label they cross, so engagement/zoom/drill-in don't need to
-    /// hide labels explicitly. Earlier gating tied to
-    /// `currentFocalNodeID` / `disengagingFocalNodeID` made labels
-    /// flicker on normal pan because of stale linger state — dropping
-    /// the gate removes that whole class of bug.
+    /// **SB139 ws-canvas-visual-model — focal-gated visibility.** Once
+    /// the bag-layout cut hit a non-trivial cluster count (~15 on
+    /// AirPad's corpus, post mcs=4 ms=1 ε=0), always-on labels stacked
+    /// 13-deep with ~400pt-wide pills — the readability bug wasn't the
+    /// dots, it was the label cloud. Gate: show only the bag whose
+    /// member is currently focal (`canvasState.currentFocalNodeID`, or
+    /// the disengaging ID during the ease-out). At rest, colored dots
+    /// carry cluster identity; the label is a focal-engagement
+    /// affordance, not an always-on map.
+    ///
+    /// **Legacy-fallback parity.** When `SubstrateLayoutService.bagLayout`
+    /// is nil (pre-c3 fit with no `coordClustering`, no non-noise
+    /// clusters, or no fit yet) we have no membership map from focal node
+    /// → cluster, so we fall back to the prior always-on behavior to
+    /// preserve label visibility on legacy paths.
     @ViewBuilder
     private var clusterLabelOverlay: some View {
-        // SB139 Stage 4c2 fix — clamp badge centers to the safe area
-        // minus each badge's half-extent so labels at near-edge
-        // centroids stay fully visible. ZStack uses topLeading
-        // alignment and each badge positions itself via `.offset`
-        // (intrinsic frame) rather than `.position` (flexible frame
-        // that hit-tests across the full layer and would block
-        // SpriteKit gestures like strand engagement — the strand
-        // regression we hit after cE removed
-        // `.allowsHitTesting(false)` to enable contextMenu).
         GeometryReader { geo in
             let centroids = canvasState.clusterCentroidScreenPositions
             let registry = SubstrateClusterRegistry.shared
+            let bagNodes = SubstrateLayoutService.shared.bagLayout?.nodes
+            let focalID = canvasState.currentFocalNodeID ?? canvasState.disengagingFocalNodeID
+            let focalPID: UUID? = focalID.flatMap { bagNodes?[$0]?.persistentClusterID }
+            let gateActive = bagNodes != nil
             ZStack(alignment: .topLeading) {
                 ForEach(Array(centroids.keys), id: \.self) { pid in
-                    if let label = registry.label(for: pid),
+                    if (!gateActive || pid == focalPID),
+                       let label = registry.label(for: pid),
                        let pos = centroids[pid] {
                         ClusterLabelBadge(
                             label: label,
@@ -329,7 +324,7 @@ struct CanvasView: View {
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: centroids.keys.map(\.uuidString).sorted())
+            .animation(.easeInOut(duration: 0.25), value: focalPID)
         }
         .ignoresSafeArea()
     }

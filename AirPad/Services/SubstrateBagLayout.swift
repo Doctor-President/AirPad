@@ -10,16 +10,18 @@ import Accelerate
 // without re-deriving a lossy flat projection inside each bag.
 //
 // **Stage 1 scope (this file):** centroid-per-cluster, classical MDS to 2D
-// anchors, bag-separation pass to remove overlaps, bag radius scaled by
-// member count, golden-angle ring packing inside each bag, and a
-// deterministic margin-ring placeholder for noise nodes (Stage 4 will
+// anchors, force-directed canvas-filling pass on the anchors, bag radius
+// scaled by member count, golden-angle ring packing inside each bag, and
+// a deterministic margin-ring placeholder for noise nodes (Stage 4 will
 // replace with proper centroid-pull interstitial placement). Noise lives
 // in the same MDS coord system as bags so the canvas adapter's single
 // bbox rescale operates on consistent units.
 //
 // **Determinism contract:** same inputs → same output. No RNG. MDS sign
 // canonicalized so re-fits with stable membership produce identical
-// anchors (modulo membership changes themselves).
+// anchors (modulo membership changes themselves). Force-layout is
+// deterministic by construction — fixed iteration count, fixed cooling
+// schedule, no stochastic terms.
 
 // MARK: - Persisted shape (schema-versioned forward-compat)
 
@@ -161,26 +163,32 @@ enum SubstrateBagLayout {
             radiusBase * safeSqrt(Float(byLabel[label]!.count))
         }
 
-        // SB139 Stage 4c2 ws-canvas-visual-model — bag separation pass.
+        // SB139 Stage 4c2 ws-canvas-visual-model — canvas-filling force
+        // layout. Replaces the prior Jacobi pair-separation pass (commits
+        // 15f86bc → 01c3c9e); separation only fixed overlap and left the
+        // 14 non-recipe bags in their compressed MDS pile because MDS
+        // preserves the genuine 8D similarity of those centroids. Force
+        // layout adds two terms that separation lacked: long-range
+        // pairwise repulsion (Coulomb) so bags spread to fill the
+        // available frame, and a weak Hooke spring back to the MDS seed
+        // so semantic outliers (recipes at MDS x≈2) stay outliers instead
+        // of being homogenized into the spread.
         //
-        // Collision radius isn't the packing radius alone — sprites and
-        // labels are drawn around each packed member, so a bag's real
-        // visual footprint is packedMaxR + spriteRadius + label margin.
-        // First separation shipped 15f86bc used `radii[k]` alone (==
-        // packedMaxR); diag showed the collision test never fired
-        // because two bags whose packing radii touched were already
-        // visually overlapping but distance-passed the check.
+        // Labels are gated to the focal bag downstream (CanvasView's
+        // clusterLabelOverlay), so a bag's visual footprint is only the
+        // packed-member disk + sprite halo, not the ~400pt label width
+        // the prior padding budget was sized for. Padding shrinks to
+        // 0.5× sprite radius accordingly.
         //
         // Sprite radius is in canvas points (24pt mirrors
         // `SubstrateRelaxationPass.defaultRadius`); we work in MDS units.
         // The conversion factor is `targetSpan / finalLongerSpan` — but
-        // finalLongerSpan depends on the separation we're about to run.
-        // Bootstrap: estimate from pre-sep span × an expansion factor
-        // (separation typically grows the bbox 2–4× on AirPad fits).
-        // Overshooting the estimate is harmless (bags spread more,
-        // easier to read); undershooting starves the collision test and
-        // we're back to the original bug.
-        let preSepLonger: Float = {
+        // finalLongerSpan depends on the layout we're about to run.
+        // Bootstrap: estimate from pre-layout span × an expansion factor.
+        // Force layout typically grows the bbox 2–4× on AirPad fits;
+        // overshooting the estimate is harmless (bags spread more, easier
+        // to read), undershooting starves the overlap term.
+        let preLayoutLonger: Float = {
             var mnX: Float = .infinity, mxX: Float = -.infinity
             var mnY: Float = .infinity, mxY: Float = -.infinity
             for a in anchors {
@@ -192,23 +200,23 @@ enum SubstrateBagLayout {
         let estimatedExpansion: Float = 3.0
         let estimatedUnitsToPoints: Float =
             Float(SubstrateCanvasLayoutAdapter.targetSpan) /
-            max(preSepLonger * estimatedExpansion, 1e-3)
+            max(preLayoutLonger * estimatedExpansion, 1e-3)
         let spriteRadiusMDS: Float =
             Float(SubstrateRelaxationPass.defaultRadius) / estimatedUnitsToPoints
         let collisionRadii: [Float] = radii.map { $0 + spriteRadiusMDS }
-        // Padding handles label space + breathing room between adjacent
-        // bags. Set to 2× sprite radius so labels (~half label width per
-        // side) and a small margin all fit between bag edges.
-        let separationPadding: Float = spriteRadiusMDS * 2.0
-        print("[BagDiag] sep params: radiusBase=\(radiusBase) padding=\(separationPadding) spriteRadiusMDS=\(spriteRadiusMDS) preSepLonger=\(preSepLonger) estUnitsToPoints=\(estimatedUnitsToPoints) maxMembers=\(maxMembers) anchorSpacing=\(anchorSpacing)")
-        let convergedIterations = separateOverlappingBags(
+        // Padding = half sprite-radius gap between dot footprints. Labels
+        // gated → no label-margin budget needed; this is just breathing
+        // room so adjacent bags read as distinct disks.
+        let layoutPadding: Float = spriteRadiusMDS * 0.5
+        print("[BagDiag] layout params: radiusBase=\(radiusBase) padding=\(layoutPadding) spriteRadiusMDS=\(spriteRadiusMDS) preLayoutLonger=\(preLayoutLonger) estUnitsToPoints=\(estimatedUnitsToPoints) maxMembers=\(maxMembers) anchorSpacing=\(anchorSpacing)")
+        let convergedIterations = spreadAnchorsByForceLayout(
             anchors: &anchors,
             radii: collisionRadii,
-            padding: separationPadding
+            padding: layoutPadding
         )
-        print("[BagDiag] sep converged: iterations=\(convergedIterations) (cap=200, < cap means fixpoint)")
+        print("[BagDiag] layout converged: iterations=\(convergedIterations) (cap=400, < cap means converged below epsilon)")
 
-        // DIAG: post-separation bbox (pre-recenter).
+        // DIAG: post-layout bbox (pre-recenter).
         do {
             var mnX: Float = .infinity, mxX: Float = -.infinity
             var mnY: Float = .infinity, mxY: Float = -.infinity
@@ -216,14 +224,15 @@ enum SubstrateBagLayout {
                 mnX = min(mnX, a.x); mxX = max(mxX, a.x)
                 mnY = min(mnY, a.y); mxY = max(mxY, a.y)
             }
-            print("[BagDiag] anchors POST-sep: x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
+            print("[BagDiag] anchors POST-layout: x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
         }
 
-        // Re-center anchors at origin so the bounding box is symmetric
-        // and the canvas adapter's bounding-box normalization treats this
-        // output the same across re-fits. Separation can drift the
-        // centroid arbitrarily — without re-center, the canvas could
-        // jump on re-fit even when relative layout is identical.
+        // Re-center anchors at centroid so the bounding box is balanced
+        // around origin and the canvas adapter's bbox-midpoint
+        // normalization sits on the centroid. Force layout produces a
+        // roughly-centered output (Coulomb is symmetric), but a strict
+        // recenter is cheap and guarantees re-fits with identical
+        // membership produce identical canvas placement.
         recenterAtOrigin(&anchors)
 
         // DIAG: post-recenter bbox — these are the anchors packing will read.
@@ -522,80 +531,137 @@ enum SubstrateBagLayout {
         return SubstrateCoord2D(x: center.x + dx, y: center.y + dy)
     }
 
-    // MARK: - Separation
+    // MARK: - Force-directed canvas-filling layout
 
-    /// Iterative non-overlap pass on bag anchors. Treats each bag as a
-    /// circle of `radius + padding/2`; for each overlapping pair, splits
-    /// the overlap and pushes both anchors apart along the connecting
-    /// line. Jacobi-style (all displacements computed before any applied)
-    /// so convergence is order-independent — same input → same output
-    /// regardless of pair iteration order.
+    /// Deterministic force-directed layout on the K bag anchors. Three
+    /// force terms per iteration, computed Jacobi-style (all forces
+    /// summed before any anchor moves) so the result is order-independent:
     ///
-    /// Coincident-anchor case (`distance < colinearEpsilon`) resolves to
-    /// a fixed x-axis split by index parity. No RNG anywhere; layout is
-    /// stable across re-fits.
+    /// 1. **Pairwise Coulomb repulsion** (`k_rep / dist²`, all pairs).
+    ///    Calibrated `k_rep = meanSeedSpacing²` so the repulsive force is
+    ///    unit-magnitude at the MDS-seeded mean spacing. This is the
+    ///    canvas-filling term — without it, MDS leaves semantically-similar
+    ///    bags compressed into a central pile because their 8D centroids
+    ///    are genuinely close, even though the 2D canvas has room to
+    ///    spread them.
     ///
-    /// Preserves relative arrangement: every push runs along the existing
-    /// connecting line, so similar bags stay neighbors. Topology only
-    /// shifts when a globally-implausible packing forces it.
+    /// 2. **Short-range overlap correction** (full split when
+    ///    `dist < radii[i] + radii[j] + padding`). Guarantees min spacing
+    ///    is respected by the end-state — Coulomb alone is a soft
+    ///    constraint and could leave residual overlap at convergence.
     ///
-    /// Cheap at AirPad's scale — 15 bags = 105 pairs/iter; converges in
-    /// tens of iterations. `maxIterations` cap is defensive.
+    /// 3. **Weak Hooke spring to the MDS seed** (`k_seed × (seed - pos)`,
+    ///    `k_seed = 0.04`). Preserves the MDS topology so genuine
+    ///    semantic outliers (e.g. recipes at MDS x≈2 on AirPad's corpus)
+    ///    stay outside the spread cluster instead of being homogenized
+    ///    into uniform repulsion-equilibrium. Weak enough that the 14
+    ///    near-equidistant non-recipe centroids can freely spread, strong
+    ///    enough that the recipes anchor's pre-layout offset is preserved
+    ///    in the final layout.
+    ///
+    /// Cooling schedule: linear from `stepInit` to `stepFinal` across the
+    /// iteration budget — large early steps converge from MDS-seed
+    /// initial conditions, small late steps polish into a stable
+    /// equilibrium.
+    ///
+    /// Convergence check: returns early when the maximum per-iteration
+    /// position update falls below `meanSeedSpacing × 1e-4`. Cheap at
+    /// AirPad's scale (K=15 → 105 pairs/iter) and typically converges
+    /// well before the cap.
+    ///
+    /// Coincident-anchor case (`dist < colinearEpsilon`) resolves to a
+    /// fixed x-axis split by index parity. No RNG anywhere; output is
+    /// byte-identical for identical inputs.
     @discardableResult
-    private static func separateOverlappingBags(
+    private static func spreadAnchorsByForceLayout(
         anchors: inout [SubstrateCoord2D],
         radii: [Float],
         padding: Float,
-        maxIterations: Int = 200
+        maxIterations: Int = 400
     ) -> Int {
         let n = anchors.count
         guard n >= 2 else { return 0 }
         precondition(radii.count == n,
-                     "SubstrateBagLayout.separateOverlappingBags: anchors/radii count mismatch")
+                     "SubstrateBagLayout.spreadAnchorsByForceLayout: anchors/radii count mismatch")
+
+        // Snapshot MDS positions for the Hooke spring (immutable through
+        // the loop). Anchors mutate; seeds don't.
+        let seeds = anchors
+        let meanSpacing = Float(meanNearestNeighborDistance(points: seeds))
+        let kRepel: Float = meanSpacing * meanSpacing   // unit force at mean spacing
+        let kSeed: Float = 0.04                          // weak topology-preserving spring
+        let stepInit: Float = 0.6
+        let stepFinal: Float = 0.02
+        let convergenceEpsilon: Float = meanSpacing * 1e-4
         let colinearEpsilon: Float = 1e-6
 
         for iter in 0..<maxIterations {
-            var displacements = [SubstrateCoord2D](
+            let t = Float(iter) / Float(max(maxIterations - 1, 1))
+            let step = stepInit * (1 - t) + stepFinal * t
+
+            var forces = [SubstrateCoord2D](
                 repeating: SubstrateCoord2D(x: 0, y: 0),
                 count: n
             )
-            var anyOverlap = false
+
+            // Pairwise: Coulomb repulsion + overlap correction.
             for i in 0..<n {
                 for j in (i + 1)..<n {
                     let dx = anchors[j].x - anchors[i].x
                     let dy = anchors[j].y - anchors[i].y
                     let dist = (dx * dx + dy * dy).squareRoot()
-                    let needed = radii[i] + radii[j] + padding
-                    guard dist < needed else { continue }
-                    anyOverlap = true
-                    let overlap = needed - dist
-                    let half = overlap * 0.5
+                    let required = radii[i] + radii[j] + padding
                     let nx: Float
                     let ny: Float
                     if dist < colinearEpsilon {
-                        // Coincident — split along x with index-parity sign.
                         nx = (i % 2 == 0) ? 1 : -1
                         ny = 0
                     } else {
                         nx = dx / dist
                         ny = dy / dist
                     }
-                    displacements[i] = SubstrateCoord2D(
-                        x: displacements[i].x - nx * half,
-                        y: displacements[i].y - ny * half
-                    )
-                    displacements[j] = SubstrateCoord2D(
-                        x: displacements[j].x + nx * half,
-                        y: displacements[j].y + ny * half
-                    )
+
+                    // Long-range Coulomb (always active). Clamp denominator
+                    // to half the required spacing so the force doesn't
+                    // explode at near-coincidence — overlap correction
+                    // below handles the truly-close regime.
+                    let safeDist = max(dist, required * 0.5)
+                    let mag = kRepel / (safeDist * safeDist)
+                    forces[i].x -= nx * mag
+                    forces[i].y -= ny * mag
+                    forces[j].x += nx * mag
+                    forces[j].y += ny * mag
+
+                    // Hard overlap correction (only when too close).
+                    if dist < required {
+                        let overlap = required - dist
+                        let half = overlap * 0.5
+                        forces[i].x -= nx * half
+                        forces[i].y -= ny * half
+                        forces[j].x += nx * half
+                        forces[j].y += ny * half
+                    }
                 }
             }
-            if !anyOverlap { return iter + 1 }
+
+            // Hooke spring to MDS seed (per-anchor).
             for i in 0..<n {
-                anchors[i] = SubstrateCoord2D(
-                    x: anchors[i].x + displacements[i].x,
-                    y: anchors[i].y + displacements[i].y
-                )
+                forces[i].x += (seeds[i].x - anchors[i].x) * kSeed
+                forces[i].y += (seeds[i].y - anchors[i].y) * kSeed
+            }
+
+            // Apply with cooling; track max update for convergence check.
+            var maxUpdate2: Float = 0
+            for i in 0..<n {
+                let dxApply = forces[i].x * step
+                let dyApply = forces[i].y * step
+                let m2 = dxApply * dxApply + dyApply * dyApply
+                if m2 > maxUpdate2 { maxUpdate2 = m2 }
+                anchors[i].x += dxApply
+                anchors[i].y += dyApply
+            }
+            if maxUpdate2.squareRoot() < convergenceEpsilon {
+                return iter + 1
             }
         }
         return maxIterations

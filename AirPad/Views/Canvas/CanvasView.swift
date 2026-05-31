@@ -176,6 +176,17 @@ struct CanvasView: View {
             Color(red: 0.027, green: 0.027, blue: 0.039)
                 .ignoresSafeArea()
 
+            // Cluster labels render BENEATH the SpriteKit scene so the
+            // focal halo (SwiftUI `focalEngagementOverlay`) and strand
+            // sprites (SK zPosition=500) both sit visually above them.
+            // T 2026-05-31 label-zorder-and-anchor brief: labels are
+            // background map context, not foreground UI. Tradeoff: the
+            // badge's contextMenu (Rename/Clear) is unreachable from
+            // behind SpriteKitView — SK intercepts touches first. That
+            // surface needs to migrate elsewhere if rename/clear is
+            // still wanted.
+            clusterLabelOverlay
+
             SpriteKitView(scene: scene)
                 .ignoresSafeArea()
                 .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
@@ -186,16 +197,7 @@ struct CanvasView: View {
                     .transition(.opacity)
             }
 
-            // Order matters — later siblings render on top in ZStack.
-            // Cluster labels sit above the focal engagement overlay so
-            // the SwiftUI focal halo + title don't occlude the persistent
-            // label layer (T 2026-05-31 ws-canvas-visual-model brief:
-            // labels are the colorblind-primary map affordance and must
-            // stay readable through engagement). nodeSummaryLayer +
-            // drillDownBackButton stay on top — zoom-summary takes the
-            // whole screen anyway, and the back-button is nav chrome.
             focalEngagementOverlay
-            clusterLabelOverlay
             nodeSummaryLayer
             drillDownBackButton
 
@@ -305,6 +307,13 @@ struct CanvasView: View {
     /// `clusterCentroidScreenPositions` so zoom-in reveals previously-
     /// hidden labels as space opens.
     ///
+    /// **Anchor = raw bag centroid, hard stop.** T 2026-05-31 label-
+    /// zorder-and-anchor brief: no edge clamping, no trailing. The label
+    /// pins to its bag and goes off-screen with it. Off-screen labels
+    /// are skipped from both rendering and from the declutter reservation
+    /// pass — they don't visually occlude on-screen neighbors and don't
+    /// reserve placement priority over an on-screen smaller bag.
+    ///
     /// Box estimation: 13pt system-medium font averages ~7.5pt per
     /// character; +24pt horizontal padding from the badge's capsule
     /// (12pt each side); +4pt declutter halo. Height = 26pt (13pt font
@@ -339,8 +348,6 @@ struct CanvasView: View {
                         ClusterLabelBadge(
                             label: label,
                             screenPosition: pos,
-                            containerSize: geo.size,
-                            safeInsets: geo.safeAreaInsets,
                             onRename: { beginRenamingCluster(pid) },
                             onClear: { registry.clearLabel(persistentID: pid) }
                         )
@@ -401,27 +408,30 @@ struct CanvasView: View {
         var candidates: [Candidate] = []
         candidates.reserveCapacity(centroids.count)
 
+        // Bounds the candidate box must intersect to count as on-screen.
+        // Off-screen labels are skipped entirely — they don't render and
+        // they don't reserve placement priority over on-screen neighbors.
+        let screenRect = CGRect(
+            x: safeInsets.leading - edgeMargin,
+            y: safeInsets.top - edgeMargin,
+            width: container.width - safeInsets.leading - safeInsets.trailing + edgeMargin * 2,
+            height: container.height - safeInsets.top - safeInsets.bottom + edgeMargin * 2
+        )
+
         for (pid, pos) in centroids {
             guard let label = registry.label(for: pid), !label.isEmpty else { continue }
             let estW = CGFloat(label.count) * charWidth + 24
             let halfW = estW / 2
             let halfH = badgeHeight / 2
-            // Mirror ClusterLabelBadge.clampedPosition: keep the box
-            // inside the safe area so on-screen declutter operates on
-            // the actual rendered positions, not the unclamped raw
-            // centroids (which can be near-coincident at canvas edges).
-            let minX = safeInsets.leading + halfW + edgeMargin
-            let maxX = container.width - safeInsets.trailing - halfW - edgeMargin
-            let minY = safeInsets.top + halfH + edgeMargin
-            let maxY = container.height - safeInsets.bottom - halfH - edgeMargin
-            let clampedX = min(max(pos.x, minX), max(minX, maxX))
-            let clampedY = min(max(pos.y, minY), max(minY, maxY))
+            // Anchor at raw centroid — no edge clamp. Label moves with
+            // its bag; off-screen bag → off-screen label.
             let box = CGRect(
-                x: clampedX - halfW - declutterHalo,
-                y: clampedY - halfH - declutterHalo,
+                x: pos.x - halfW - declutterHalo,
+                y: pos.y - halfH - declutterHalo,
                 width: estW + declutterHalo * 2,
                 height: badgeHeight + declutterHalo * 2
             )
+            if !box.intersects(screenRect) { continue }
             candidates.append(Candidate(
                 pid: pid,
                 box: box,
@@ -949,50 +959,27 @@ private struct NodeDetailOverlay: View {
 
 // MARK: - Cluster label badge
 
-/// One cluster-label pill, anchored at the cluster centroid in screen
-/// space. Measures its own rendered size with a `BadgeSizeKey` preference
-/// and clamps the centered position to keep the full capsule inside the
-/// safe area regardless of how close the centroid sits to a screen edge.
+/// One cluster-label pill, hard-anchored at the cluster centroid in
+/// screen space. Measures its own rendered size with `BadgeSizeKey` and
+/// centers itself via `.offset(...)`. No edge clamp — when the centroid
+/// goes off-screen the badge goes with it (T 2026-05-31 label-zorder-
+/// and-anchor brief: no trailing, no drift, hard stop).
 ///
-/// **Why `.offset(...)` instead of `.position(...)`:** the `.position`
-/// modifier wraps the view in a flexible frame that fills the parent and
-/// draws the content centered at the given point. That flexible frame
-/// hit-tests across the *entire* layer, which would block SpriteKit
-/// gestures like strand engagement and camera pan that need to reach the
-/// canvas underneath. `.offset(...)` preserves the badge's intrinsic
-/// frame, so only the visible pill area intercepts touches — the
-/// contextMenu still works on the badge, and touches outside it pass
-/// through to the scene.
+/// **Why `.offset(...)` instead of `.position(...)`:** `.position` wraps
+/// the view in a flexible frame that fills the parent, hit-testing
+/// across the entire layer; `.offset` preserves the intrinsic frame so
+/// only the visible pill rect would intercept touches. Note: this
+/// badge currently renders BENEATH `SpriteKitView` in the canvas ZStack,
+/// so the contextMenu is unreachable in practice — SK intercepts touches
+/// first. The contextMenu wiring is kept for the day rename/clear gets
+/// a real surface.
 private struct ClusterLabelBadge: View {
     let label: String
     let screenPosition: CGPoint
-    let containerSize: CGSize
-    let safeInsets: EdgeInsets
     let onRename: () -> Void
     let onClear: () -> Void
 
     @State private var badgeSize: CGSize = .zero
-
-    private static let edgeMargin: CGFloat = 8
-
-    /// `screenPosition` is the badge *center*. Clamp it so the badge's
-    /// half-extent stays inside the safe-area rect on every side. If the
-    /// safe-area rect is narrower than the badge itself (degenerate), we
-    /// pin to the leading/top edge so the badge is at least anchored
-    /// rather than oscillating.
-    private var clampedPosition: CGPoint {
-        guard badgeSize.width > 0, badgeSize.height > 0 else { return screenPosition }
-        let halfW = badgeSize.width / 2
-        let halfH = badgeSize.height / 2
-        let minX = safeInsets.leading + halfW + Self.edgeMargin
-        let maxX = containerSize.width - safeInsets.trailing - halfW - Self.edgeMargin
-        let minY = safeInsets.top + halfH + Self.edgeMargin
-        let maxY = containerSize.height - safeInsets.bottom - halfH - Self.edgeMargin
-        return CGPoint(
-            x: min(max(screenPosition.x, minX), max(minX, maxX)),
-            y: min(max(screenPosition.y, minY), max(minY, maxY))
-        )
-    }
 
     var body: some View {
         Text(label)
@@ -1019,8 +1006,8 @@ private struct ClusterLabelBadge: View {
                 }
             }
             .offset(
-                x: clampedPosition.x - badgeSize.width / 2,
-                y: clampedPosition.y - badgeSize.height / 2
+                x: screenPosition.x - badgeSize.width / 2,
+                y: screenPosition.y - badgeSize.height / 2
             )
             .transition(.opacity)
     }

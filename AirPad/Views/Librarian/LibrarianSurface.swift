@@ -47,6 +47,19 @@ struct LibrarianSurface: View {
     /// short enough that the natural keyboard push works fine.
     @State private var keyboardHeight: CGFloat = 0
 
+    /// Live drag translation on the grabber. Positive = drag down,
+    /// negative = drag up. Combined with the current discrete posture's
+    /// base height to produce the real-time surface height during a
+    /// drag; reset to 0 (animated) on release once the new posture is
+    /// committed. Stays 0 outside of drags.
+    @State private var dragLiveOffset: CGFloat = 0
+
+    /// Nearest discrete posture given the current effective height
+    /// during a drag. Updated continuously inside the drag handler so
+    /// the haptic detent fires at each posture boundary the finger
+    /// crosses, not only on release.
+    @State private var dragNearestDetent: LibrarianState.SurfaceMode = .collapsed
+
     /// Bound to the same key Settings writes (c7). Drives the personal-voice
     /// indicator in the expanded header so toggling the prompt in Settings
     /// reflects here without dismount.
@@ -119,11 +132,12 @@ struct LibrarianSurface: View {
                 expandedBody(librarian: librarian)
             }
         }
-        .frame(height: surfaceFrameHeight(for: librarian.surfaceMode))
+        .frame(height: effectiveFrameHeight(librarian: librarian))
         .animation(.snappy(duration: 0.32, extraBounce: 0.12), value: librarian.surfaceMode)
         .sensoryFeedback(.impact(weight: .medium), trigger: librarian.surfaceMode) { _, new in
             new == .expanded
         }
+        .sensoryFeedback(.impact(weight: .light), trigger: dragNearestDetent)
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
@@ -200,11 +214,11 @@ struct LibrarianSurface: View {
         return 39
     }
 
-    /// Top-edge drag grabber. Vertical drag commits on release to the
-    /// next/previous surface mode (collapsed ↔ expanded ↔ fullScreen).
-    /// Threshold-based rather than live-tracked so the spring
-    /// animation owns the transition — a partial drag snaps back
-    /// rather than leaving the surface at a half-state height.
+    /// Top-edge drag grabber. Live-tracks vertical drag: the surface
+    /// height follows the finger between detents, with a light haptic
+    /// pulse at each posture boundary crossed. On release the surface
+    /// snaps to the nearest detent and the live offset is animated
+    /// back to zero in the same spring as the mode change.
     @ViewBuilder
     private func dragGrabber(librarian: LibrarianState) -> some View {
         Capsule()
@@ -212,26 +226,57 @@ struct LibrarianSurface: View {
             .frame(width: 38, height: 5)
             .frame(height: 22)
             .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 6)
-                    .onEnded { value in
-                        let dy = value.translation.height
-                        if dy < -40 {
-                            advanceSurface(librarian: librarian, direction: .up)
-                        } else if dy > 40 {
-                            advanceSurface(librarian: librarian, direction: .down)
-                        }
-                    }
-            )
-            .accessibilityLabel("Drag to resize Librarian")
+            .accessibilityHidden(true)
+    }
+
+    /// Header-wide drag gesture. Attached to the entire expanded-header
+    /// strip (grabber + mode icon row) rather than the small capsule so
+    /// the drag zone is forgiving. `minimumDistance: 6` is the resolution
+    /// trick that makes both the drag and the chevron reliable: any
+    /// movement ≥6pt activates drag, while a stationary tap stays under
+    /// the threshold and falls through to the chevron / mode-icon
+    /// buttons inside the header. No `simultaneousGesture` needed.
+    ///
+    /// Snap target on release uses `predictedEndTranslation` — SwiftUI's
+    /// velocity-projected end position — rather than the raw translation,
+    /// matching Apple's sheet pattern. From .expanded (452pt) the midpoint
+    /// to fullScreen is ~124pt and to collapsed ~187pt; without velocity
+    /// projection a flick that didn't physically cross the midpoint would
+    /// snap back. With projection, a short flick at moderate speed adds
+    /// hundreds of points of predicted translation and lands on the
+    /// intended detent.
+    private func headerDragGesture(librarian: LibrarianState) -> some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                dragLiveOffset = value.translation.height
+                let h = effectiveFrameHeight(librarian: librarian)
+                let near = nearestDetent(toHeight: h, librarian: librarian)
+                if near != dragNearestDetent {
+                    dragNearestDetent = near
+                }
+            }
+            .onEnded { value in
+                let base = surfaceFrameHeight(for: librarian.surfaceMode)
+                let projectedH = base - value.predictedEndTranslation.height
+                let clamped = min(
+                    max(projectedH, surfaceFrameHeight(for: .collapsed)),
+                    surfaceFrameHeight(for: .fullScreen)
+                )
+                let target = nearestDetent(toHeight: clamped, librarian: librarian)
+                withAnimation(.snappy(duration: 0.32, extraBounce: 0.12)) {
+                    librarian.surfaceMode = target
+                    dragLiveOffset = 0
+                }
+            }
     }
 
     private enum SurfaceDragDirection { case up, down }
 
-    /// State machine for drag transitions. Up grows the surface
-    /// (collapsed→expanded→fullScreen, fullScreen stays); down
-    /// shrinks (fullScreen→expanded→collapsed, collapsed stays).
+    /// State machine for tap/button-driven transitions (chevron, pill
+    /// tap, etc.). Up grows the surface (collapsed→expanded→fullScreen,
+    /// fullScreen stays); down shrinks (fullScreen→expanded→collapsed,
+    /// collapsed stays). Real-time drag has its own snap logic inside
+    /// `dragGrabber` — it goes straight to the nearest detent.
     private func advanceSurface(librarian: LibrarianState, direction: SurfaceDragDirection) {
         switch (librarian.surfaceMode, direction) {
         case (.collapsed, .up):    librarian.surfaceMode = .expanded
@@ -240,6 +285,30 @@ struct LibrarianSurface: View {
         case (.expanded, .down):   librarian.surfaceMode = .collapsed
         default: break
         }
+    }
+
+    /// Current effective frame height — the discrete posture's base
+    /// height shifted by the live drag (drag up = negative dy = larger
+    /// frame). Clamped between collapsed and fullScreen so overshooting
+    /// the grabber doesn't grow the surface past its bounds.
+    private func effectiveFrameHeight(librarian: LibrarianState) -> CGFloat {
+        let base = surfaceFrameHeight(for: librarian.surfaceMode)
+        let raw = base - dragLiveOffset
+        let minH = surfaceFrameHeight(for: .collapsed)
+        let maxH = surfaceFrameHeight(for: .fullScreen)
+        return min(max(raw, minH), maxH)
+    }
+
+    /// Nearest discrete posture to the given height, used to pick the
+    /// snap target on release and to drive the detent haptic during
+    /// drag. Minimum-distance match against each posture's base height.
+    private func nearestDetent(toHeight h: CGFloat, librarian: LibrarianState) -> LibrarianState.SurfaceMode {
+        let candidates: [(LibrarianState.SurfaceMode, CGFloat)] = [
+            (.collapsed, surfaceFrameHeight(for: .collapsed)),
+            (.expanded, surfaceFrameHeight(for: .expanded)),
+            (.fullScreen, surfaceFrameHeight(for: .fullScreen))
+        ]
+        return candidates.min(by: { abs($0.1 - h) < abs($1.1 - h) })?.0 ?? librarian.surfaceMode
     }
 
     // MARK: - Collapsed
@@ -333,6 +402,9 @@ struct LibrarianSurface: View {
                 .padding(.top, 14)
             }
             .padding(.bottom, 14)
+            .contentShape(Rectangle())
+            .gesture(headerDragGesture(librarian: librarian))
+            .accessibilityLabel("Drag to resize Librarian")
 
             searchField(librarian: librarian)
                 .padding(.horizontal, 14)

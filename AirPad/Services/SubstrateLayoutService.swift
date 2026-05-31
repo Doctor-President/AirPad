@@ -627,53 +627,6 @@ final class SubstrateLayoutService {
             fitVersion: model.fitVersion
         )
 
-        // DIAG (bag-separation-pass): confirm wiring + scale.
-        if let bl = bagLayout {
-            print("[ServiceDiag] bagLayout: nonNil bags=\(bl.bags.count) nodes=\(bl.nodes.count)")
-            if let sampleID = bl.nodes.keys.sorted().first,
-               let sampleHome = bl.nodes[sampleID]?.home {
-                print("[ServiceDiag] sample bag-home: node=\(sampleID) home=(\(sampleHome.x),\(sampleHome.y))")
-            }
-        } else {
-            print("[ServiceDiag] bagLayout: NIL (legacy fallback or no clusters)")
-        }
-        if let placements = canvasPlacements() {
-            var mnX: Float = .infinity, mxX: Float = -.infinity
-            var mnY: Float = .infinity, mxY: Float = -.infinity
-            var bMnX: Float = .infinity, bMxX: Float = -.infinity
-            var bMnY: Float = .infinity, bMxY: Float = -.infinity
-            var nMnX: Float = .infinity, nMxX: Float = -.infinity
-            var nMnY: Float = .infinity, nMxY: Float = -.infinity
-            var bagN = 0, noiseN = 0
-            let bagIDSet: Set<String> = bagLayout.map { Set($0.nodes.keys) } ?? []
-            for p in placements {
-                mnX = min(mnX, p.coord.x); mxX = max(mxX, p.coord.x)
-                mnY = min(mnY, p.coord.y); mxY = max(mxY, p.coord.y)
-                if bagIDSet.contains(p.nodeID) {
-                    bagN += 1
-                    bMnX = min(bMnX, p.coord.x); bMxX = max(bMxX, p.coord.x)
-                    bMnY = min(bMnY, p.coord.y); bMxY = max(bMxY, p.coord.y)
-                } else {
-                    noiseN += 1
-                    nMnX = min(nMnX, p.coord.x); nMxX = max(nMxX, p.coord.x)
-                    nMnY = min(nMnY, p.coord.y); nMxY = max(nMxY, p.coord.y)
-                }
-            }
-            print("[ServiceDiag] placements ALL n=\(placements.count): x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
-            if bagN > 0 {
-                print("[ServiceDiag] placements BAG-LAYOUT n=\(bagN): x=[\(bMnX)..\(bMxX)] y=[\(bMnY)..\(bMxY)] span=\(bMxX - bMnX)x\(bMxY - bMnY)")
-            }
-            if noiseN > 0 {
-                print("[ServiceDiag] placements NOT-IN-BAGLAYOUT (should be 0 post-fix) n=\(noiseN): x=[\(nMnX)..\(nMxX)] y=[\(nMnY)..\(nMxY)] span=\(nMxX - nMnX)x\(nMxY - nMnY)")
-            }
-            let spanX = CGFloat(mxX - mnX)
-            let spanY = CGFloat(mxY - mnY)
-            let longer = max(spanX, spanY)
-            let target: CGFloat = 2000
-            let scale: CGFloat = longer > 0 ? target / longer : 1
-            print("[ServiceDiag] adapter will rescale: longerSpan=\(longer) → unitsToPoints=\(scale) (targetSpan=\(target))")
-        }
-
         lastActivityAt = Date()
     }
 

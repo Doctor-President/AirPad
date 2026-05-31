@@ -140,17 +140,6 @@ enum SubstrateBagLayout {
         precondition(anchors.count == nonNoiseLabels.count,
                      "SubstrateBagLayout: MDS anchor count mismatch")
 
-        // DIAG: pre-separation bbox.
-        do {
-            var mnX: Float = .infinity, mxX: Float = -.infinity
-            var mnY: Float = .infinity, mxY: Float = -.infinity
-            for a in anchors {
-                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
-                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
-            }
-            print("[BagDiag] anchors PRE-sep:  x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
-        }
-
         // Bag radius scaling: base picked so the largest bag's radius
         // is ~35% of the mean nearest-neighbor anchor spacing → bags
         // don't overlap initially even at the biggest cluster. 35%
@@ -209,24 +198,11 @@ enum SubstrateBagLayout {
         // gated → no label-margin budget needed; this is just breathing
         // room so adjacent bags read as distinct disks.
         let layoutPadding: Float = spriteRadiusMDS * 0.5
-        print("[BagDiag] layout params: radiusBase=\(radiusBase) padding=\(layoutPadding) spriteRadiusMDS=\(spriteRadiusMDS) preLayoutLonger=\(preLayoutLonger) estUnitsToPoints=\(estimatedUnitsToPoints) maxMembers=\(maxMembers) anchorSpacing=\(anchorSpacing)")
-        let convergedIterations = spreadAnchorsByForceLayout(
+        _ = spreadAnchorsByForceLayout(
             anchors: &anchors,
             radii: collisionRadii,
             padding: layoutPadding
         )
-        print("[BagDiag] layout converged: iterations=\(convergedIterations) (cap=400, < cap means converged below epsilon)")
-
-        // DIAG: post-layout bbox (pre-recenter).
-        do {
-            var mnX: Float = .infinity, mxX: Float = -.infinity
-            var mnY: Float = .infinity, mxY: Float = -.infinity
-            for a in anchors {
-                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
-                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
-            }
-            print("[BagDiag] anchors POST-layout: x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY)")
-        }
 
         // Re-center anchors at centroid so the bounding box is balanced
         // around origin and the canvas adapter's bbox-midpoint
@@ -235,17 +211,6 @@ enum SubstrateBagLayout {
         // recenter is cheap and guarantees re-fits with identical
         // membership produce identical canvas placement.
         recenterAtOrigin(&anchors)
-
-        // DIAG: post-recenter bbox — these are the anchors packing will read.
-        do {
-            var mnX: Float = .infinity, mxX: Float = -.infinity
-            var mnY: Float = .infinity, mxY: Float = -.infinity
-            for a in anchors {
-                mnX = min(mnX, a.x); mxX = max(mxX, a.x)
-                mnY = min(mnY, a.y); mxY = max(mxY, a.y)
-            }
-            print("[BagDiag] anchors POST-rec: x=[\(mnX)..\(mxX)] y=[\(mnY)..\(mxY)] span=\(mxX - mnX)x\(mxY - mnY) (used by packing)")
-        }
 
         var bags: [BagAnchor] = []
         bags.reserveCapacity(nonNoiseLabels.count)
@@ -279,7 +244,6 @@ enum SubstrateBagLayout {
             // Golden-angle ring packing inside the bag. Index 0 sits at
             // center; subsequent members spiral outward by the golden
             // angle so packing has no axis-aligned bias and is dense.
-            var maxPackedR: Float = 0
             for (memberOrder, ptIdx) in memberIndices.enumerated() {
                 let home = goldenAngleOffset(
                     index: memberOrder,
@@ -287,10 +251,6 @@ enum SubstrateBagLayout {
                     center: center,
                     maxRadius: radius
                 )
-                let dxh = home.x - center.x
-                let dyh = home.y - center.y
-                let rh = (dxh * dxh + dyh * dyh).squareRoot()
-                if rh > maxPackedR { maxPackedR = rh }
                 let tp = trainingPoints[ptIdx]
                 nodes[tp.nodeID] = NodeLayout(
                     home: home,
@@ -298,7 +258,6 @@ enum SubstrateBagLayout {
                     hdbscanLabel: label
                 )
             }
-            print("[BagDiag] bag k=\(k) label=\(label) members=\(memberIndices.count) center=(\(center.x),\(center.y)) packingR=\(radius) collisionR=\(collisionRadii[k]) packedMaxR=\(maxPackedR)")
         }
 
         // SB139 Stage 4c2 ws-canvas-visual-model — noise placement (margin ring).
@@ -341,9 +300,6 @@ enum SubstrateBagLayout {
                     hdbscanLabel: noiseLabel
                 )
             }
-            print("[BagDiag] noise ring: count=\(n) maxBagExtent=\(maxBagExtent) ringR=\(noiseRingR)")
-        } else {
-            print("[BagDiag] noise ring: count=0 (no noise this fit)")
         }
 
         return BagLayout(

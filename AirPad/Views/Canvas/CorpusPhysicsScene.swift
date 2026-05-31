@@ -513,6 +513,13 @@ final class CorpusPhysicsScene: SKScene {
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
+    /// zPosition for cluster-label sprites — middle band between corpus
+    /// (1) and strand (500). Labels read as background context above
+    /// ordinary node bags, below focal + strand sprites which always
+    /// occlude. T 2026-05-31 label-zorder-and-anchor brief: three-band
+    /// layering, not below-everything.
+    private static let clusterLabelZPosition: CGFloat = 100
+
     // SB83c: Momentum scrolling on pan release.
     // Samples are screen-space touch positions; velocity is screen px/frame.
     // Coast applies the same `* panMultiplier * cameraNode.xScale` math as touchesMoved (SB83a).
@@ -1175,7 +1182,7 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         syncFocalToCanvasState()
-        syncClusterCentroidsToCanvasState()
+        updateClusterLabels()
 
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
@@ -1195,6 +1202,13 @@ final class CorpusPhysicsScene: SKScene {
     /// Generation snapshot for `nodeIDToPersistentClusterID`. Sentinel
     /// `-1` forces the first build on first frame.
     private var lastSeenSubstrateGeneration: Int = -1
+
+    /// Per-persistent-cluster label sprites, parented to the scene root
+    /// in world coords so the camera transform moves them in the same
+    /// frame as the corpus dots — no separate tracking tick, no grazing
+    /// desync. Inverse-scaled each frame so they stay constant pixel
+    /// size across zoom.
+    private var clusterLabelSprites: [UUID: ClusterLabelSprite] = [:]
 
     /// Bridges the engaged focal node's screen-space center and diameter to
     /// CanvasState every frame so the SwiftUI gradient overlay can track it as the
@@ -1239,25 +1253,39 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// SB139 Stage 4c2 commit D — recompute per-persistent-cluster screen
-    /// centroids and bridge them to CanvasState for the SwiftUI label
-    /// overlay. Runs every frame so labels track pan, zoom, and PBD
-    /// relaxation without lag — averaging ~200 sprite positions and
-    /// converting two centroids is sub-millisecond.
+    /// SB139 ws-canvas-visual-model — per-persistent-cluster label
+    /// sprites managed directly inside the SK scene. Replaces the prior
+    /// SwiftUI overlay path (which suffered from grazing-pan desync
+    /// because labels were tracking on a separate update tick).
     ///
-    /// The nodeID → persistent-cluster-UUID lookup is cached and rebuilt
-    /// only when `SubstrateLayoutService.shared.generation` advances
-    /// (fit/load/clear/runClustering), so the per-frame cost is just the
-    /// sprite scan + averaging + the view-coord conversion.
-    private func syncClusterCentroidsToCanvasState() {
-        guard let view = self.view else { return }
-
+    /// Pipeline each frame:
+    /// 1. Refresh `nodeIDToPersistentClusterID` if the substrate service
+    ///    generation has advanced (cheap cached lookup otherwise).
+    /// 2. Walk member sprites to accumulate per-cluster centroids in
+    ///    world coords.
+    /// 3. Lazily create/reuse a `ClusterLabelSprite` per persistent
+    ///    cluster UUID; reposition at the world centroid; update text
+    ///    from `SubstrateClusterRegistry`; remove sprites whose cluster
+    ///    has dropped out.
+    /// 4. Apply inverse camera scale so labels stay constant pixel size
+    ///    as the user zooms.
+    /// 5. Run the greedy cartographic declutter pass (largest bag first,
+    ///    skip candidates whose box intersects an already-placed box;
+    ///    off-screen candidates are skipped entirely).
+    ///
+    /// Labels live as direct children of the scene root at zPosition
+    /// 100 — above corpus (1), below strands (500) and focal (1000) —
+    /// so the camera transform moves them in the same frame as the
+    /// dots they label. No tracking lag.
+    ///
+    /// Centroid scan is sub-ms even at ~200 sprites; declutter is
+    /// O(n²) bbox checks with n ≈ cluster count (~15), trivially cheap.
+    private func updateClusterLabels() {
         // SpriteKit invokes update(_:) on the main thread, so the
-        // @MainActor singletons + canvasState are safe to touch under
-        // assumeIsolated. The closure batches all isolated work so we
-        // pay a single isolation assertion per frame.
+        // @MainActor singletons are safe to touch under assumeIsolated.
         MainActor.assumeIsolated {
             let service = SubstrateLayoutService.shared
+            let registry = SubstrateClusterRegistry.shared
             let currentGeneration = service.generation
             if currentGeneration != lastSeenSubstrateGeneration {
                 lastSeenSubstrateGeneration = currentGeneration
@@ -1265,8 +1293,9 @@ final class CorpusPhysicsScene: SKScene {
             }
 
             guard !nodeIDToPersistentClusterID.isEmpty else {
-                if canvasState?.clusterCentroidScreenPositions.isEmpty == false {
-                    canvasState?.clusterCentroidScreenPositions = [:]
+                if !clusterLabelSprites.isEmpty {
+                    for (_, sprite) in clusterLabelSprites { sprite.removeFromParent() }
+                    clusterLabelSprites.removeAll()
                 }
                 return
             }
@@ -1282,15 +1311,101 @@ final class CorpusPhysicsScene: SKScene {
                 counts[pid, default: 0] += 1
             }
 
-            var centroidsScreen: [UUID: CGPoint] = [:]
-            centroidsScreen.reserveCapacity(sums.count)
-            for (pid, sum) in sums {
-                let count = CGFloat(counts[pid] ?? 1)
-                let centroidScene = CGPoint(x: sum.x / count, y: sum.y / count)
-                centroidsScreen[pid] = view.convert(centroidScene, from: self)
+            // Member counts (from bag layout) drive declutter priority.
+            var memberCounts: [UUID: Int] = [:]
+            if let bags = service.bagLayout?.bags {
+                memberCounts.reserveCapacity(bags.count)
+                for bag in bags { memberCounts[bag.persistentClusterID] = bag.memberCount }
             }
 
-            canvasState?.clusterCentroidScreenPositions = centroidsScreen
+            let cameraScale = cameraNode.xScale
+            let invScale: CGFloat = 1.0 / max(cameraScale, 0.001)
+
+            // Sync sprites: create/update/place; track which pids are
+            // active this frame so dropouts can be removed at the end.
+            var activePids = Set<UUID>()
+            activePids.reserveCapacity(sums.count)
+            for (pid, sum) in sums {
+                guard let labelText = registry.label(for: pid), !labelText.isEmpty else { continue }
+                let count = CGFloat(counts[pid] ?? 1)
+                let centroid = CGPoint(x: sum.x / count, y: sum.y / count)
+
+                let sprite: ClusterLabelSprite
+                if let existing = clusterLabelSprites[pid] {
+                    sprite = existing
+                } else {
+                    sprite = ClusterLabelSprite(pid: pid)
+                    sprite.zPosition = Self.clusterLabelZPosition
+                    addChild(sprite)
+                    clusterLabelSprites[pid] = sprite
+                }
+                sprite.setText(labelText)
+                sprite.position = centroid
+                sprite.setUniformScale(invScale)
+                sprite.isHidden = false
+                activePids.insert(pid)
+            }
+
+            // Drop sprites for clusters no longer present.
+            for (pid, sprite) in clusterLabelSprites where !activePids.contains(pid) {
+                sprite.removeFromParent()
+                clusterLabelSprites.removeValue(forKey: pid)
+            }
+
+            // Camera-visible scene rect — used to skip off-screen
+            // candidates from the declutter reservation (they don't
+            // render and shouldn't deprioritize on-screen neighbors).
+            let visibleSize = CGSize(
+                width: size.width * invScale,
+                height: size.height * invScale
+            )
+            let visibleRect = CGRect(
+                x: cameraNode.position.x - visibleSize.width / 2,
+                y: cameraNode.position.y - visibleSize.height / 2,
+                width: visibleSize.width,
+                height: visibleSize.height
+            )
+
+            // Greedy cartographic declutter, largest member count first.
+            // calculateAccumulatedFrame already respects sprite.xScale,
+            // so the frame is in scene units at the current zoom — same
+            // unit system as visibleRect, so bbox checks are direct.
+            struct DeclutterCandidate {
+                let pid: UUID
+                let box: CGRect
+                let priority: Int
+            }
+            var candidates: [DeclutterCandidate] = []
+            candidates.reserveCapacity(activePids.count)
+            let haloScene: CGFloat = 4 * invScale
+            for pid in activePids {
+                guard let sprite = clusterLabelSprites[pid] else { continue }
+                let frame = sprite.calculateAccumulatedFrame()
+                    .insetBy(dx: -haloScene, dy: -haloScene)
+                if !frame.intersects(visibleRect) { continue }
+                candidates.append(DeclutterCandidate(
+                    pid: pid,
+                    box: frame,
+                    priority: memberCounts[pid] ?? 0
+                ))
+            }
+            candidates.sort { a, b in
+                if a.priority != b.priority { return a.priority > b.priority }
+                return a.pid.uuidString < b.pid.uuidString
+            }
+
+            var placed: [CGRect] = []
+            placed.reserveCapacity(candidates.count)
+            var visibleSet = Set<UUID>()
+            visibleSet.reserveCapacity(candidates.count)
+            for c in candidates {
+                if placed.contains(where: { $0.intersects(c.box) }) { continue }
+                placed.append(c.box)
+                visibleSet.insert(c.pid)
+            }
+            for pid in activePids where !visibleSet.contains(pid) {
+                clusterLabelSprites[pid]?.isHidden = true
+            }
         }
     }
 
@@ -3146,5 +3261,66 @@ final class CorpusPhysicsScene: SKScene {
 private extension Comparable {
     func clamped(to range: ClosedRange<Self>) -> Self {
         min(max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+// MARK: - Cluster label sprite
+
+/// One per-cluster label, rendered as a translucent dark capsule with
+/// centered white text. Parented to the scene root by `CorpusPhysicsScene`
+/// at world-coord centroid; inverse-camera-scaled each frame so the
+/// pill stays a constant pixel size as the user zooms.
+///
+/// Visual fidelity tradeoff: SwiftUI's `.ultraThinMaterial` is not
+/// reproducible in SK without a render pass, so the pill uses a flat
+/// dark fill (alpha 0.78) with a faint white stroke — close enough to
+/// the prior look for "background context" labels.
+final class ClusterLabelSprite: SKNode {
+    let pid: UUID
+    private let textNode: SKLabelNode
+    private let pillNode: SKShapeNode
+    private var renderedText: String = ""
+
+    private static let fontSize: CGFloat = 13
+    private static let hPad: CGFloat = 12
+    private static let vPad: CGFloat = 6
+    private static let minHeight: CGFloat = 26
+
+    init(pid: UUID) {
+        self.pid = pid
+        textNode = SKLabelNode(fontNamed: UIFont.systemFont(ofSize: Self.fontSize, weight: .medium).fontName)
+        textNode.fontSize = Self.fontSize
+        textNode.fontColor = UIColor.white.withAlphaComponent(0.95)
+        textNode.verticalAlignmentMode = .center
+        textNode.horizontalAlignmentMode = .center
+        textNode.zPosition = 1
+
+        pillNode = SKShapeNode()
+        pillNode.fillColor = UIColor(white: 0.08, alpha: 0.78)
+        pillNode.strokeColor = UIColor.white.withAlphaComponent(0.10)
+        pillNode.lineWidth = 0.5
+        pillNode.zPosition = 0
+
+        super.init()
+        addChild(pillNode)
+        addChild(textNode)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    func setText(_ text: String) {
+        guard text != renderedText else { return }
+        renderedText = text
+        textNode.text = text
+        let textFrame = textNode.calculateAccumulatedFrame()
+        let w = textFrame.width + Self.hPad * 2
+        let h = max(textFrame.height + Self.vPad * 2, Self.minHeight)
+        let rect = CGRect(x: -w / 2, y: -h / 2, width: w, height: h)
+        pillNode.path = CGPath(roundedRect: rect, cornerWidth: h / 2, cornerHeight: h / 2, transform: nil)
+    }
+
+    func setUniformScale(_ s: CGFloat) {
+        xScale = s
+        yScale = s
     }
 }

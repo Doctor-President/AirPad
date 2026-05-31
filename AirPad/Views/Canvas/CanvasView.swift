@@ -176,17 +176,12 @@ struct CanvasView: View {
             Color(red: 0.027, green: 0.027, blue: 0.039)
                 .ignoresSafeArea()
 
-            // Cluster labels render BENEATH the SpriteKit scene so the
-            // focal halo (SwiftUI `focalEngagementOverlay`) and strand
-            // sprites (SK zPosition=500) both sit visually above them.
-            // T 2026-05-31 label-zorder-and-anchor brief: labels are
-            // background map context, not foreground UI. Tradeoff: the
-            // badge's contextMenu (Rename/Clear) is unreachable from
-            // behind SpriteKitView — SK intercepts touches first. That
-            // surface needs to migrate elsewhere if rename/clear is
-            // still wanted.
-            clusterLabelOverlay
-
+            // Cluster labels now live as SpriteKit child sprites inside
+            // CorpusPhysicsScene (zPosition 100 — middle band between
+            // corpus dots at 1 and strands/focal at 500/1000). They ride
+            // the camera transform in the same frame as the dots they
+            // label, so pan/zoom is desync-free. See `updateClusterLabels`
+            // in CorpusPhysicsScene.
             SpriteKitView(scene: scene)
                 .ignoresSafeArea()
                 .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
@@ -282,184 +277,11 @@ struct CanvasView: View {
             }
     }
 
-    /// SB139 Stage 4c2 commit D — persistent-cluster label badges anchored
-    /// at the 2D centroid of each cluster's members. Centroids are kept in
-    /// screen space by `CorpusPhysicsScene` (`syncClusterCentroidsToCanvasState`)
-    /// every frame so the badges track pan, zoom, and PBD relaxation.
-    ///
-    /// Labels read from `SubstrateClusterRegistry.shared.label(for:)`;
-    /// unlabeled clusters render nothing (waiting for FM via
-    /// `SubstrateClusterLabelService`). Each badge carries a `.contextMenu`
-    /// with Rename + Clear; hit-testing is intentionally narrow (badge's
-    /// intrinsic frame, not the full overlay layer) so sprite gestures
-    /// elsewhere pass through.
-    ///
-    /// **SB139 ws-canvas-visual-model — labels-at-rest with cartographic
-    /// declutter.** T 2026-05-31 brief: this is the colorblind-primary
-    /// map affordance, must be persistent and glanceable at rest.
-    /// Post-spread bag layout (bbox 7.10×6.27 in MDS units) does most of
-    /// the de-piling work on its own; the remaining concern is residual
-    /// pairwise overlap between adjacent labels. Greedy member-count-
-    /// priority hide: iterate bags largest→smallest, place each label's
-    /// estimated rendered box, skip a candidate if it would intersect
-    /// any already-placed box. Standard cartographic label-priority —
-    /// no stacking, ever. Recomputes every frame off
-    /// `clusterCentroidScreenPositions` so zoom-in reveals previously-
-    /// hidden labels as space opens.
-    ///
-    /// **Anchor = raw bag centroid, hard stop.** T 2026-05-31 label-
-    /// zorder-and-anchor brief: no edge clamping, no trailing. The label
-    /// pins to its bag and goes off-screen with it. Off-screen labels
-    /// are skipped from both rendering and from the declutter reservation
-    /// pass — they don't visually occlude on-screen neighbors and don't
-    /// reserve placement priority over an on-screen smaller bag.
-    ///
-    /// Box estimation: 13pt system-medium font averages ~7.5pt per
-    /// character; +24pt horizontal padding from the badge's capsule
-    /// (12pt each side); +4pt declutter halo. Height = 26pt (13pt font
-    /// + 6pt vpad × 2). Underestimating width hides too few collisions;
-    /// overestimating hides too many. 7.5pt/ch is conservative-narrow
-    /// since most labels are 1-3 short words; we accept slight overlap
-    /// risk on rare long labels rather than over-hiding the typical case.
-    ///
-    /// **Legacy-fallback parity.** When `SubstrateLayoutService.bagLayout`
-    /// is nil (pre-c3 fit, no clusters, no fit yet) member counts are
-    /// unavailable, so priority degenerates to insertion order — still
-    /// no-stack, just non-deterministic which label of an overlap pair
-    /// wins. Acceptable for legacy paths that exit on next fit.
-    @ViewBuilder
-    private var clusterLabelOverlay: some View {
-        GeometryReader { geo in
-            let centroids = canvasState.clusterCentroidScreenPositions
-            let registry = SubstrateClusterRegistry.shared
-            let memberCounts = Self.bagMemberCounts()
-            let visible = Self.declutteredVisibleLabels(
-                centroids: centroids,
-                memberCounts: memberCounts,
-                registry: registry,
-                container: geo.size,
-                safeInsets: geo.safeAreaInsets
-            )
-            ZStack(alignment: .topLeading) {
-                ForEach(Array(centroids.keys), id: \.self) { pid in
-                    if visible.contains(pid),
-                       let label = registry.label(for: pid),
-                       let pos = centroids[pid] {
-                        ClusterLabelBadge(
-                            label: label,
-                            screenPosition: pos,
-                            onRename: { beginRenamingCluster(pid) },
-                            onClear: { registry.clearLabel(persistentID: pid) }
-                        )
-                    }
-                }
-            }
-            .animation(.easeInOut(duration: 0.25), value: visible)
-        }
-        .ignoresSafeArea()
-    }
-
-    /// Member count per persistent cluster ID, sourced from the current
-    /// bag layout. Empty when no bag layout exists; declutter then falls
-    /// back to insertion-order priority.
-    private static func bagMemberCounts() -> [UUID: Int] {
-        guard let bags = SubstrateLayoutService.shared.bagLayout?.bags else {
-            return [:]
-        }
-        var out: [UUID: Int] = [:]
-        out.reserveCapacity(bags.count)
-        for bag in bags {
-            out[bag.persistentClusterID] = bag.memberCount
-        }
-        return out
-    }
-
-    /// Cartographic declutter pass. Greedy largest-bag-first placement;
-    /// candidate label is hidden if its estimated bbox would intersect
-    /// any already-placed bbox. Returns the set of pids whose label
-    /// should render this frame.
-    ///
-    /// Pure function of inputs (no shared state, no mutation) — output
-    /// is deterministic for identical (centroids, memberCounts,
-    /// container) tuples. SwiftUI re-runs this when any of those change
-    /// (centroids update each frame from SpriteKit, member counts on
-    /// re-fit, container on rotation/resize).
-    private static func declutteredVisibleLabels(
-        centroids: [UUID: CGPoint],
-        memberCounts: [UUID: Int],
-        registry: SubstrateClusterRegistry,
-        container: CGSize,
-        safeInsets: EdgeInsets
-    ) -> Set<UUID> {
-        // 13pt system-medium ≈ 7.5pt per char (typical mixed case); the
-        // badge adds 12pt capsule padding each side and 6pt vertical
-        // each side; +4pt halo so adjacent labels read as separated
-        // rather than visually-kissing.
-        let charWidth: CGFloat = 7.5
-        let badgeHeight: CGFloat = 26
-        let edgeMargin: CGFloat = 8
-        let declutterHalo: CGFloat = 4
-
-        struct Candidate {
-            let pid: UUID
-            let box: CGRect
-            let priority: Int
-        }
-        var candidates: [Candidate] = []
-        candidates.reserveCapacity(centroids.count)
-
-        // Bounds the candidate box must intersect to count as on-screen.
-        // Off-screen labels are skipped entirely — they don't render and
-        // they don't reserve placement priority over on-screen neighbors.
-        let screenRect = CGRect(
-            x: safeInsets.leading - edgeMargin,
-            y: safeInsets.top - edgeMargin,
-            width: container.width - safeInsets.leading - safeInsets.trailing + edgeMargin * 2,
-            height: container.height - safeInsets.top - safeInsets.bottom + edgeMargin * 2
-        )
-
-        for (pid, pos) in centroids {
-            guard let label = registry.label(for: pid), !label.isEmpty else { continue }
-            let estW = CGFloat(label.count) * charWidth + 24
-            let halfW = estW / 2
-            let halfH = badgeHeight / 2
-            // Anchor at raw centroid — no edge clamp. Label moves with
-            // its bag; off-screen bag → off-screen label.
-            let box = CGRect(
-                x: pos.x - halfW - declutterHalo,
-                y: pos.y - halfH - declutterHalo,
-                width: estW + declutterHalo * 2,
-                height: badgeHeight + declutterHalo * 2
-            )
-            if !box.intersects(screenRect) { continue }
-            candidates.append(Candidate(
-                pid: pid,
-                box: box,
-                priority: memberCounts[pid] ?? 0
-            ))
-        }
-
-        // Sort: largest member count first; ties broken by pid for
-        // determinism so frame-to-frame visibility doesn't flicker
-        // between equal-priority neighbors.
-        candidates.sort { a, b in
-            if a.priority != b.priority { return a.priority > b.priority }
-            return a.pid.uuidString < b.pid.uuidString
-        }
-
-        var visible: Set<UUID> = []
-        var placed: [CGRect] = []
-        placed.reserveCapacity(candidates.count)
-        for c in candidates {
-            if placed.contains(where: { $0.intersects(c.box) }) { continue }
-            visible.insert(c.pid)
-            placed.append(c.box)
-        }
-        return visible
-    }
-
     /// Open the rename alert for `pid`, seeding the draft from the
-    /// current label so the user can edit in place.
+    /// current label so the user can edit in place. Kept available for
+    /// when rename gets a real surface (long-press on cluster dot,
+    /// settings list); not currently called now that the SwiftUI label
+    /// overlay has been migrated into the SpriteKit scene.
     private func beginRenamingCluster(_ pid: UUID) {
         clusterRenameDraft = SubstrateClusterRegistry.shared.label(for: pid) ?? ""
         clusterBeingRenamedID = pid
@@ -954,69 +776,6 @@ private struct NodeDetailOverlay: View {
             isExpanded = false
             showText = false
         }
-    }
-}
-
-// MARK: - Cluster label badge
-
-/// One cluster-label pill, hard-anchored at the cluster centroid in
-/// screen space. Measures its own rendered size with `BadgeSizeKey` and
-/// centers itself via `.offset(...)`. No edge clamp — when the centroid
-/// goes off-screen the badge goes with it (T 2026-05-31 label-zorder-
-/// and-anchor brief: no trailing, no drift, hard stop).
-///
-/// **Why `.offset(...)` instead of `.position(...)`:** `.position` wraps
-/// the view in a flexible frame that fills the parent, hit-testing
-/// across the entire layer; `.offset` preserves the intrinsic frame so
-/// only the visible pill rect would intercept touches. Note: this
-/// badge currently renders BENEATH `SpriteKitView` in the canvas ZStack,
-/// so the contextMenu is unreachable in practice — SK intercepts touches
-/// first. The contextMenu wiring is kept for the day rename/clear gets
-/// a real surface.
-private struct ClusterLabelBadge: View {
-    let label: String
-    let screenPosition: CGPoint
-    let onRename: () -> Void
-    let onClear: () -> Void
-
-    @State private var badgeSize: CGSize = .zero
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.white.opacity(0.95))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.white.opacity(0.08), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear.preference(key: BadgeSizeKey.self, value: proxy.size)
-                }
-            )
-            .onPreferenceChange(BadgeSizeKey.self) { badgeSize = $0 }
-            .contentShape(Capsule())
-            .contextMenu {
-                Button { onRename() } label: {
-                    Label("Rename", systemImage: "pencil")
-                }
-                Button(role: .destructive) { onClear() } label: {
-                    Label("Clear label", systemImage: "arrow.counterclockwise")
-                }
-            }
-            .offset(
-                x: screenPosition.x - badgeSize.width / 2,
-                y: screenPosition.y - badgeSize.height / 2
-            )
-            .transition(.opacity)
-    }
-}
-
-private struct BadgeSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
     }
 }
 

@@ -67,6 +67,16 @@ struct NodeListView: View {
                     .ignoresSafeArea()
 
                     if !store.isInDetailView {
+                        if router.librarian.surfaceMode != .collapsed && !router.librarian.hasActiveSession {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .ignoresSafeArea()
+                                .onTapGesture {
+                                    withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                                        router.librarian.surfaceMode = .collapsed
+                                    }
+                                }
+                        }
                         VStack(spacing: 12) {
                             Spacer()
                             if !selection.isActive {

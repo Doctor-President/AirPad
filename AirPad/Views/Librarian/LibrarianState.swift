@@ -221,6 +221,16 @@ final class LibrarianState {
     /// threshold, so this list represents the *uncompacted* tail.
     var sessionHistory: [LibrarianExchange] = []
 
+    /// True whenever the user has an in-progress conversation worth
+    /// preserving — uncompacted turns and/or a compacted summary
+    /// from this session. Drives the session-aware posture rule: the
+    /// surface refuses to collapse to the pill while a session is
+    /// live, so a transcript can't be hidden behind the pill by an
+    /// accidental tap or drag. Mirrors `endSessionFooter`'s gating.
+    var hasActiveSession: Bool {
+        !sessionHistory.isEmpty || compactedSummary != nil
+    }
+
     /// Timestamp the current session began — set when the first
     /// exchange lands, cleared on `clearSession()`. Drives the session
     /// node's `createdAt` on save so the saved node anchors to when

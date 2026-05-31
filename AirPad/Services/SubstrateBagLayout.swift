@@ -174,8 +174,9 @@ enum SubstrateBagLayout {
         // so semantic outliers (recipes at MDS x≈2) stay outliers instead
         // of being homogenized into the spread.
         //
-        // Labels are gated to the focal bag downstream (CanvasView's
-        // clusterLabelOverlay), so a bag's visual footprint is only the
+        // Labels render inside SpriteKit at the bag centroid and are
+        // decluttered by the scene (see `updateClusterLabels` in
+        // CorpusPhysicsScene), so a bag's visual footprint is only the
         // packed-member disk + sprite halo, not the ~400pt label width
         // the prior padding budget was sized for. Padding shrinks to
         // 0.5× sprite radius accordingly.

@@ -601,14 +601,21 @@ struct CanvasView: View {
 
         var persistentIDByNodeID: [String: UUID] = [:]
         persistentIDByNodeID.reserveCapacity(pids.count)
+        // Build the embedding snapshot in the same pass — the labeler's
+        // coherence gate reads it to decide whether to ask FM at all.
+        // Same vectors HDBSCAN cut on, so coherence aligns with the
+        // boundary that defined the cluster.
+        var embeddingByNodeID: [String: [Float]] = [:]
+        embeddingByNodeID.reserveCapacity(pids.count)
         for (i, point) in model.trainingPoints.enumerated() {
             if let pid = pids[i] {
                 persistentIDByNodeID[point.nodeID] = pid
+                embeddingByNodeID[point.nodeID] = point.inputVector
             }
         }
         guard !persistentIDByNodeID.isEmpty else { return }
 
-        // Capture a snapshot map so the async task doesn't reach into
+        // Capture snapshot maps so the async task doesn't reach into
         // the live store off-MainActor.
         let nodesByID = Dictionary(uniqueKeysWithValues: store.nodes.map { ($0.id, $0) })
         Task { @MainActor in
@@ -619,6 +626,12 @@ struct CanvasView: View {
                     if let s = node.substrateSummary, !s.isEmpty { return s }
                     if !node.summary.isEmpty { return node.summary }
                     return node.title.isEmpty ? nil : node.title
+                },
+                embeddingProvider: { nodeID in
+                    embeddingByNodeID[nodeID]
+                },
+                tagsProvider: { nodeID in
+                    nodesByID[nodeID]?.tags ?? []
                 }
             )
         }

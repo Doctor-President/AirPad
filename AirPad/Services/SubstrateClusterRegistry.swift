@@ -61,15 +61,33 @@ struct SubstrateClusterIdentity: Codable, Hashable, Identifiable {
     /// Wall-clock at label assignment. Diagnostic — not consulted for
     /// staleness; carries forward across refits with the label itself.
     var labelGeneratedAt: Date?
+    /// Number of FM-naming attempts that have been spent on this
+    /// identity (across refits) without producing a `.fm` label. Capped
+    /// by `SubstrateClusterLabelService` — once the cap is hit, the
+    /// labeler stamps an `.honest` fallback instead of re-burning FM
+    /// cycles on a cluster the model can't name without confabulating.
+    /// Optional for forward compat with files written before this field.
+    /// Reset to 0 on `clearLabel`/`clearAllFMLabels` so a manual clear
+    /// re-opens the identity to fresh attempts.
+    var fmAttempts: Int?
+}
+
+extension SubstrateClusterIdentity {
+    /// Decoded `fmAttempts`, defaulting to 0 for legacy files.
+    var resolvedFMAttempts: Int { fmAttempts ?? 0 }
 }
 
 /// Origin of an identity's label. `.fm` is the Foundation-Models-generated
 /// default; `.user` indicates a manual rename via the inspect surface and
 /// is treated as authoritative — the label service must not overwrite it.
+/// `.honest` is the coherence-gate fallback: applied when the cluster is
+/// too incoherent for FM to name without inventing a theme (typically
+/// "Mixed (N notes)" or top-tag concatenation).
 @available(iOS 17.0, *)
 enum LabelSource: String, Codable, Hashable {
     case fm
     case user
+    case honest
 }
 
 @available(iOS 17.0, *)
@@ -260,6 +278,29 @@ final class SubstrateClusterRegistry {
         identities[id]?.label
     }
 
+    /// Cumulative FM-naming attempt count for an identity. Returns 0
+    /// for unknown identities (callers should also check
+    /// `identity(for:) != nil` before relying on this).
+    func fmAttempts(for id: UUID) -> Int {
+        identities[id]?.resolvedFMAttempts ?? 0
+    }
+
+    /// Increment the FM-attempts counter for an identity. Persists
+    /// synchronously so a crash after an FM failure doesn't lose the
+    /// attempt accounting (which would let the labeler keep retrying
+    /// past the cap). No-op for unknown identities.
+    func incrementFMAttempts(persistentID: UUID) {
+        ensureLoaded()
+        guard var identity = identities[persistentID] else { return }
+        identity.fmAttempts = identity.resolvedFMAttempts + 1
+        identities[persistentID] = identity
+        do {
+            try persist()
+        } catch {
+            print("[SubstrateClusterRegistry] incrementFMAttempts persist failed: \(error)")
+        }
+    }
+
     // MARK: - Label mutation
     //
     // Two write paths exist: `setLabel` is called by the label service
@@ -290,20 +331,26 @@ final class SubstrateClusterRegistry {
         }
     }
 
-    /// Null every `.fm`-sourced label across the registry, leaving
-    /// `.user` renames untouched. Returns the count of identities that
-    /// were cleared so the caller can decide whether a regeneration
+    /// Null every `.fm`- or `.honest`-sourced label across the registry,
+    /// leaving `.user` renames untouched. Returns the count of identities
+    /// that were cleared so the caller can decide whether a regeneration
     /// pass is worth kicking off. Persists once at the end (single
     /// write, not per-identity).
+    ///
+    /// `.honest` labels are cleared too because they're machine-produced
+    /// (coherence-gate fallbacks) — a user explicitly hitting "clear FM
+    /// labels" should re-open them to a fresh naming pass that might
+    /// now succeed against an updated embedding/summary mix.
     @discardableResult
     func clearAllFMLabels() -> Int {
         ensureLoaded()
         var cleared = 0
-        for (id, identity) in identities where identity.labelSource == .fm {
+        for (id, identity) in identities where identity.labelSource == .fm || identity.labelSource == .honest {
             var copy = identity
             copy.label = nil
             copy.labelSource = nil
             copy.labelGeneratedAt = nil
+            copy.fmAttempts = nil
             identities[id] = copy
             cleared += 1
         }
@@ -318,13 +365,17 @@ final class SubstrateClusterRegistry {
     }
 
     /// Clear the label on an identity, re-opening it to a future `.fm`
-    /// regeneration. No-op if the identity is unknown.
+    /// regeneration. No-op if the identity is unknown. Also resets the
+    /// FM-attempts counter so the labeler will retry FM naming instead
+    /// of jumping straight to the honest fallback (the user clearing
+    /// the label is the strongest possible "try again" signal).
     func clearLabel(persistentID: UUID) {
         ensureLoaded()
         guard var identity = identities[persistentID] else { return }
         identity.label = nil
         identity.labelSource = nil
         identity.labelGeneratedAt = nil
+        identity.fmAttempts = nil
         identities[persistentID] = identity
         do {
             try persist()

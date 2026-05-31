@@ -61,8 +61,53 @@ final class SubstrateClusterLabelService {
     /// defense; this cap is the backstop.
     private static let maxLabelWords = 3
 
-    /// Generate `.fm` labels for any persistent clusters in
+    /// Mean intra-cluster cosine threshold. Above → cluster is coherent
+    /// enough for FM to name without confabulating; below → skip FM and
+    /// stamp an honest fallback. 0.50 is a starting point — log every
+    /// cluster's value so we can tune from device runs. Crisp recipes/
+    /// canvas-arch clusters typically sit ≥ 0.55 on NLContextualEmbedding;
+    /// grab-bags ≤ 0.40. The dead zone in the middle is exactly what we
+    /// want the threshold to bisect.
+    static let coherenceThreshold: Float = 0.50
+
+    /// Cap on FM-naming attempts spent on a single cluster across all
+    /// passes (incremented in the registry, persists across launches).
+    /// On the (N+1)-th failure path, the labeler stamps an `.honest`
+    /// label instead of looping forever on a cluster FM can't name.
+    /// 2 = "FM gets a second chance after the first refit, then we
+    /// stop." Matches T's "low cap" guidance in the brief.
+    static let maxFMAttempts = 2
+
+    /// Honest fallback formatting cap — number of top tags concatenated
+    /// when a cluster has dominant tag coverage. Matches the spirit of
+    /// the FM word cap (3) without exceeding the pill's comfortable
+    /// width at serif 13pt.
+    private static let maxHonestTopTags = 2
+
+    /// Minimum number of members a tag must appear in to qualify as
+    /// "dominant" for the honest-tag fallback. A tag carried by a
+    /// single member is not a cluster theme — drop it and fall back to
+    /// "Mixed (N notes)".
+    private static let minMembersPerTagForHonest = 2
+
+    /// Generate labels for any persistent clusters in
     /// `persistentIDByNodeID` whose registry identity has `label == nil`.
+    ///
+    /// **Honesty pipeline (2026-05-31).** Each unlabeled cluster runs
+    /// through the coherence gate before FM ever sees it:
+    /// 1. Compute mean intra-cluster cosine of L2-normalized member
+    ///    embeddings (substrate input vectors — same the HDBSCAN cut
+    ///    ran on).
+    /// 2. If coherence < `coherenceThreshold` → stamp an `.honest`
+    ///    fallback ("top tags · top tag" or "Mixed (N notes)") and
+    ///    skip FM entirely. The model can't name an incoherent cluster
+    ///    without inventing a theme, so don't ask it to.
+    /// 3. If coherence ≥ threshold AND attempts < `maxFMAttempts` →
+    ///    call FM. Success: stamp `.fm`. Nil/wiped: increment attempts
+    ///    counter on the identity; the cluster stays unlabeled and
+    ///    will retry on the next pass.
+    /// 4. If attempts ≥ `maxFMAttempts` → stamp `.honest` fallback and
+    ///    stop. FM has had its chances.
     ///
     /// - Parameters:
     ///   - persistentIDByNodeID: a mapping from node ID to the persistent
@@ -74,14 +119,23 @@ final class SubstrateClusterLabelService {
     ///     labeling. The caller picks the field — typically
     ///     `node.summary` with fallback to `node.title`. Decoupling the
     ///     service from `CorpusStore` keeps it pure and testable.
+    ///   - embeddingProvider: closure returning a node's cluster-input
+    ///     embedding (the substrate vector HDBSCAN saw — see
+    ///     `SubstrateLayoutService.fittedModel.trainingPoints`). Nil for
+    ///     a node means it can't contribute to coherence; if every
+    ///     member's embedding is nil, the cluster falls through to the
+    ///     honest fallback path (no FM attempt).
+    ///   - tagsProvider: closure returning the tag names attached to a
+    ///     node, drives the dominant-tags honest fallback. Empty array
+    ///     when the node has no tags.
     ///
     /// Best-effort: per-cluster failures are caught + logged so one bad
-    /// FM call doesn't strand the others. Clusters with empty member
-    /// content (all summaries nil/blank) are skipped silently — they'll
-    /// retry on the next fit when summaries are populated.
+    /// FM call doesn't strand the others.
     func labelMissingClusters(
         persistentIDByNodeID: [String: UUID],
-        summaryProvider: (String) -> String?
+        summaryProvider: (String) -> String?,
+        embeddingProvider: (String) -> [Float]?,
+        tagsProvider: (String) -> [String]
     ) async {
         guard !persistentIDByNodeID.isEmpty else { return }
 
@@ -105,26 +159,147 @@ final class SubstrateClusterLabelService {
         print("[SubstrateClusterLabelService] starting pass: \(orderedPIDs.count) unlabeled clusters")
         for pid in orderedPIDs {
             let nodeIDs = unlabeled[pid] ?? []
-            do {
-                guard let label = try await generateLabel(
-                    persistentID: pid,
-                    nodeIDs: nodeIDs,
-                    summaryProvider: summaryProvider
-                ) else {
-                    // Silent skip path before today: members empty OR
-                    // sanitize wiped FM output to nothing. Both now log
-                    // inside generateLabel; this catch-all just notes the
-                    // loop kept going past the skipped cluster.
-                    print("[SubstrateClusterLabelService] skipped cluster \(pid) (see generateLabel log above)")
-                    continue
-                }
-                registry.setLabel(persistentID: pid, label: label, source: .fm)
-                print("[SubstrateClusterLabelService] labeled cluster \(pid) → \(label)")
-            } catch {
-                print("[SubstrateClusterLabelService] label failed for \(pid): \(error)")
-            }
+            await processCluster(
+                pid: pid,
+                nodeIDs: nodeIDs,
+                summaryProvider: summaryProvider,
+                embeddingProvider: embeddingProvider,
+                tagsProvider: tagsProvider,
+                registry: registry
+            )
         }
         print("[SubstrateClusterLabelService] pass complete")
+    }
+
+    /// Per-cluster decision logic — coherence gate → FM-or-honest →
+    /// stamp. Carved out of `labelMissingClusters` to keep the outer
+    /// loop legible. All side effects (registry writes, attempt
+    /// counter increments, logging) happen here.
+    private func processCluster(
+        pid: UUID,
+        nodeIDs: [String],
+        summaryProvider: (String) -> String?,
+        embeddingProvider: (String) -> [Float]?,
+        tagsProvider: (String) -> [String],
+        registry: SubstrateClusterRegistry
+    ) async {
+        let memberCount = nodeIDs.count
+        let attemptsSoFar = registry.fmAttempts(for: pid)
+        let coherence = Self.meanIntraClusterCosine(
+            embeddings: nodeIDs.compactMap(embeddingProvider)
+        )
+
+        // Below-threshold path: skip FM entirely, stamp honest.
+        // `coherence == nil` (couldn't compute — no embeddings) also
+        // takes the honest path; we have no signal that FM would be
+        // any better than a guess.
+        let belowThreshold = (coherence ?? 0) < Self.coherenceThreshold
+        let attemptsExhausted = attemptsSoFar >= Self.maxFMAttempts
+
+        if belowThreshold || attemptsExhausted {
+            let honest = Self.honestFallback(
+                nodeIDs: nodeIDs,
+                tagsProvider: tagsProvider
+            )
+            registry.setLabel(persistentID: pid, label: honest, source: .honest)
+            let reason: String
+            if belowThreshold && attemptsExhausted {
+                reason = "below-threshold + attempts exhausted"
+            } else if belowThreshold {
+                reason = String(format: "coherence %.2f < %.2f", coherence ?? -1, Self.coherenceThreshold)
+            } else {
+                reason = "attempts exhausted (\(attemptsSoFar)/\(Self.maxFMAttempts))"
+            }
+            print("[SubstrateClusterLabelService] cluster \(pid) → \(honest) [.honest, \(reason), n=\(memberCount)]")
+            return
+        }
+
+        // Above-threshold path: try FM.
+        do {
+            guard let label = try await generateLabel(
+                persistentID: pid,
+                nodeIDs: nodeIDs,
+                summaryProvider: summaryProvider
+            ) else {
+                registry.incrementFMAttempts(persistentID: pid)
+                let next = attemptsSoFar + 1
+                print("[SubstrateClusterLabelService] cluster \(pid) FM returned nil [coherence \(coherence.map { String(format: "%.2f", $0) } ?? "n/a"), attempts \(next)/\(Self.maxFMAttempts)] — will retry next pass" + (next >= Self.maxFMAttempts ? " (cap reached; next pass will go honest)" : ""))
+                return
+            }
+            registry.setLabel(persistentID: pid, label: label, source: .fm)
+            print("[SubstrateClusterLabelService] cluster \(pid) → \(label) [.fm, coherence \(coherence.map { String(format: "%.2f", $0) } ?? "n/a"), n=\(memberCount)]")
+        } catch {
+            print("[SubstrateClusterLabelService] cluster \(pid) FM threw: \(error)")
+        }
+    }
+
+    /// Mean pairwise cosine similarity over L2-normalized embeddings.
+    /// Returns nil when fewer than 2 vectors are available (no pairs
+    /// → no signal); 1 input or 0 inputs both fall through to the
+    /// honest path with "n/a" logged for coherence.
+    ///
+    /// L2-normalizes a copy of each vector — we never mutate the input
+    /// (caller may be holding onto the substrate training array for
+    /// other reads). Zero-norm vectors are dropped so a corrupt
+    /// embedding doesn't poison the average with NaN.
+    static func meanIntraClusterCosine(embeddings: [[Float]]) -> Float? {
+        let normalized: [[Float]] = embeddings.compactMap { v in
+            var norm: Float = 0
+            for x in v { norm += x * x }
+            norm = norm.squareRoot()
+            guard norm > 0 else { return nil }
+            return v.map { $0 / norm }
+        }
+        guard normalized.count >= 2 else { return nil }
+        var sum: Float = 0
+        var pairs: Int = 0
+        for i in 0..<normalized.count {
+            let a = normalized[i]
+            for j in (i + 1)..<normalized.count {
+                let b = normalized[j]
+                var dot: Float = 0
+                for k in 0..<a.count {
+                    dot += a[k] * b[k]
+                }
+                sum += dot
+                pairs += 1
+            }
+        }
+        return sum / Float(pairs)
+    }
+
+    /// Compose an honest fallback label from member tags.
+    ///
+    /// Counts tag frequency across all members; keeps tags that appear
+    /// in ≥ `minMembersPerTagForHonest` members; takes the top
+    /// `maxHonestTopTags` by frequency (ties broken alphabetically
+    /// for determinism); joins with " · ".
+    ///
+    /// When no tag qualifies as dominant, falls through to
+    /// "Mixed (N notes)" — explicit about being a fallback rather
+    /// than miming a confident label.
+    static func honestFallback(
+        nodeIDs: [String],
+        tagsProvider: (String) -> [String]
+    ) -> String {
+        var freq: [String: Int] = [:]
+        for nodeID in nodeIDs {
+            for tag in tagsProvider(nodeID) {
+                freq[tag, default: 0] += 1
+            }
+        }
+        let dominant = freq
+            .filter { $0.value >= minMembersPerTagForHonest }
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value > rhs.value }
+                return lhs.key < rhs.key
+            }
+            .prefix(maxHonestTopTags)
+            .map { $0.key }
+        if dominant.isEmpty {
+            return "Mixed (\(nodeIDs.count) notes)"
+        }
+        return dominant.joined(separator: " · ")
     }
 
     /// Produce a single label for one cluster. Returns nil when the

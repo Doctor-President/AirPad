@@ -3043,6 +3043,24 @@ final class CorpusStore {
         invalidateNeighborhoods()
     }
 
+    // MARK: - Block-level retrieval
+
+    /// Stage-2 block retrieval proxy. Exposes the privately-owned
+    /// `BlockEmbeddingService` to call sites (e.g., Librarian instant
+    /// search) without leaking the service itself — same pattern as
+    /// `saveAndEnqueue` funneling all writes through the store. Passes
+    /// the full node-ID set as candidates; tighter Stage-1 narrowing
+    /// can layer on later without changing this signature.
+    @available(iOS 17.0, *)
+    func findRelevantBlocks(query: String, topK: Int = 10) async -> [BlockMatch] {
+        let candidateIDs = nodes.map { $0.id }
+        return await blockEmbedding.findRelevantBlocks(
+            query: query,
+            candidateNodeIDs: candidateIDs,
+            topK: topK
+        )
+    }
+
     // MARK: - Block embedding backfill (C5)
 
     /// Walks every node and (re)builds its `blocks.json` sidecar via

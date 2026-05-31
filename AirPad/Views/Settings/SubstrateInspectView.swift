@@ -1953,11 +1953,16 @@ struct SubstrateInspectView: View {
                         : .white.opacity(0.9))
                     .lineLimit(1)
                 if let source = identity.labelSource {
-                    Text(source == .user ? "user" : "fm")
+                    let (sourceLabel, sourceColor): (String, Color) = {
+                        switch source {
+                        case .user:   return ("user",   .yellow.opacity(0.8))
+                        case .fm:     return ("fm",     .white.opacity(0.45))
+                        case .honest: return ("honest", .orange.opacity(0.7))
+                        }
+                    }()
+                    Text(sourceLabel)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(source == .user
-                            ? .yellow.opacity(0.8)
-                            : .white.opacity(0.45))
+                        .foregroundStyle(sourceColor)
                 }
                 Spacer()
                 Button {
@@ -2014,9 +2019,12 @@ struct SubstrateInspectView: View {
 
         var persistentIDByNodeID: [String: UUID] = [:]
         persistentIDByNodeID.reserveCapacity(pids.count)
+        var embeddingByNodeID: [String: [Float]] = [:]
+        embeddingByNodeID.reserveCapacity(pids.count)
         for (i, point) in model.trainingPoints.enumerated() {
             if let pid = pids[i] {
                 persistentIDByNodeID[point.nodeID] = pid
+                embeddingByNodeID[point.nodeID] = point.inputVector
             }
         }
         guard !persistentIDByNodeID.isEmpty else {
@@ -2034,6 +2042,12 @@ struct SubstrateInspectView: View {
                     if let s = node.substrateSummary, !s.isEmpty { return s }
                     if !node.summary.isEmpty { return node.summary }
                     return node.title.isEmpty ? nil : node.title
+                },
+                embeddingProvider: { nodeID in
+                    embeddingByNodeID[nodeID]
+                },
+                tagsProvider: { nodeID in
+                    nodesByID[nodeID]?.tags ?? []
                 }
             )
             clearFMLabelsFeedback = "cleared \(cleared) · regen complete"

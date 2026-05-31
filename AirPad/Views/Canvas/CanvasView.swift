@@ -186,8 +186,16 @@ struct CanvasView: View {
                     .transition(.opacity)
             }
 
-            clusterLabelOverlay
+            // Order matters — later siblings render on top in ZStack.
+            // Cluster labels sit above the focal engagement overlay so
+            // the SwiftUI focal halo + title don't occlude the persistent
+            // label layer (T 2026-05-31 ws-canvas-visual-model brief:
+            // labels are the colorblind-primary map affordance and must
+            // stay readable through engagement). nodeSummaryLayer +
+            // drillDownBackButton stay on top — zoom-summary takes the
+            // whole screen anyway, and the back-button is nav chrome.
             focalEngagementOverlay
+            clusterLabelOverlay
             nodeSummaryLayer
             drillDownBackButton
 
@@ -284,33 +292,48 @@ struct CanvasView: View {
     /// intrinsic frame, not the full overlay layer) so sprite gestures
     /// elsewhere pass through.
     ///
-    /// **SB139 ws-canvas-visual-model — focal-gated visibility.** Once
-    /// the bag-layout cut hit a non-trivial cluster count (~15 on
-    /// AirPad's corpus, post mcs=4 ms=1 ε=0), always-on labels stacked
-    /// 13-deep with ~400pt-wide pills — the readability bug wasn't the
-    /// dots, it was the label cloud. Gate: show only the bag whose
-    /// member is currently focal (`canvasState.currentFocalNodeID`, or
-    /// the disengaging ID during the ease-out). At rest, colored dots
-    /// carry cluster identity; the label is a focal-engagement
-    /// affordance, not an always-on map.
+    /// **SB139 ws-canvas-visual-model — labels-at-rest with cartographic
+    /// declutter.** T 2026-05-31 brief: this is the colorblind-primary
+    /// map affordance, must be persistent and glanceable at rest.
+    /// Post-spread bag layout (bbox 7.10×6.27 in MDS units) does most of
+    /// the de-piling work on its own; the remaining concern is residual
+    /// pairwise overlap between adjacent labels. Greedy member-count-
+    /// priority hide: iterate bags largest→smallest, place each label's
+    /// estimated rendered box, skip a candidate if it would intersect
+    /// any already-placed box. Standard cartographic label-priority —
+    /// no stacking, ever. Recomputes every frame off
+    /// `clusterCentroidScreenPositions` so zoom-in reveals previously-
+    /// hidden labels as space opens.
+    ///
+    /// Box estimation: 13pt system-medium font averages ~7.5pt per
+    /// character; +24pt horizontal padding from the badge's capsule
+    /// (12pt each side); +4pt declutter halo. Height = 26pt (13pt font
+    /// + 6pt vpad × 2). Underestimating width hides too few collisions;
+    /// overestimating hides too many. 7.5pt/ch is conservative-narrow
+    /// since most labels are 1-3 short words; we accept slight overlap
+    /// risk on rare long labels rather than over-hiding the typical case.
     ///
     /// **Legacy-fallback parity.** When `SubstrateLayoutService.bagLayout`
-    /// is nil (pre-c3 fit with no `coordClustering`, no non-noise
-    /// clusters, or no fit yet) we have no membership map from focal node
-    /// → cluster, so we fall back to the prior always-on behavior to
-    /// preserve label visibility on legacy paths.
+    /// is nil (pre-c3 fit, no clusters, no fit yet) member counts are
+    /// unavailable, so priority degenerates to insertion order — still
+    /// no-stack, just non-deterministic which label of an overlap pair
+    /// wins. Acceptable for legacy paths that exit on next fit.
     @ViewBuilder
     private var clusterLabelOverlay: some View {
         GeometryReader { geo in
             let centroids = canvasState.clusterCentroidScreenPositions
             let registry = SubstrateClusterRegistry.shared
-            let bagNodes = SubstrateLayoutService.shared.bagLayout?.nodes
-            let focalID = canvasState.currentFocalNodeID ?? canvasState.disengagingFocalNodeID
-            let focalPID: UUID? = focalID.flatMap { bagNodes?[$0]?.persistentClusterID }
-            let gateActive = bagNodes != nil
+            let memberCounts = Self.bagMemberCounts()
+            let visible = Self.declutteredVisibleLabels(
+                centroids: centroids,
+                memberCounts: memberCounts,
+                registry: registry,
+                container: geo.size,
+                safeInsets: geo.safeAreaInsets
+            )
             ZStack(alignment: .topLeading) {
                 ForEach(Array(centroids.keys), id: \.self) { pid in
-                    if (!gateActive || pid == focalPID),
+                    if visible.contains(pid),
                        let label = registry.label(for: pid),
                        let pos = centroids[pid] {
                         ClusterLabelBadge(
@@ -324,9 +347,105 @@ struct CanvasView: View {
                     }
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: focalPID)
+            .animation(.easeInOut(duration: 0.25), value: visible)
         }
         .ignoresSafeArea()
+    }
+
+    /// Member count per persistent cluster ID, sourced from the current
+    /// bag layout. Empty when no bag layout exists; declutter then falls
+    /// back to insertion-order priority.
+    private static func bagMemberCounts() -> [UUID: Int] {
+        guard let bags = SubstrateLayoutService.shared.bagLayout?.bags else {
+            return [:]
+        }
+        var out: [UUID: Int] = [:]
+        out.reserveCapacity(bags.count)
+        for bag in bags {
+            out[bag.persistentClusterID] = bag.memberCount
+        }
+        return out
+    }
+
+    /// Cartographic declutter pass. Greedy largest-bag-first placement;
+    /// candidate label is hidden if its estimated bbox would intersect
+    /// any already-placed bbox. Returns the set of pids whose label
+    /// should render this frame.
+    ///
+    /// Pure function of inputs (no shared state, no mutation) — output
+    /// is deterministic for identical (centroids, memberCounts,
+    /// container) tuples. SwiftUI re-runs this when any of those change
+    /// (centroids update each frame from SpriteKit, member counts on
+    /// re-fit, container on rotation/resize).
+    private static func declutteredVisibleLabels(
+        centroids: [UUID: CGPoint],
+        memberCounts: [UUID: Int],
+        registry: SubstrateClusterRegistry,
+        container: CGSize,
+        safeInsets: EdgeInsets
+    ) -> Set<UUID> {
+        // 13pt system-medium ≈ 7.5pt per char (typical mixed case); the
+        // badge adds 12pt capsule padding each side and 6pt vertical
+        // each side; +4pt halo so adjacent labels read as separated
+        // rather than visually-kissing.
+        let charWidth: CGFloat = 7.5
+        let badgeHeight: CGFloat = 26
+        let edgeMargin: CGFloat = 8
+        let declutterHalo: CGFloat = 4
+
+        struct Candidate {
+            let pid: UUID
+            let box: CGRect
+            let priority: Int
+        }
+        var candidates: [Candidate] = []
+        candidates.reserveCapacity(centroids.count)
+
+        for (pid, pos) in centroids {
+            guard let label = registry.label(for: pid), !label.isEmpty else { continue }
+            let estW = CGFloat(label.count) * charWidth + 24
+            let halfW = estW / 2
+            let halfH = badgeHeight / 2
+            // Mirror ClusterLabelBadge.clampedPosition: keep the box
+            // inside the safe area so on-screen declutter operates on
+            // the actual rendered positions, not the unclamped raw
+            // centroids (which can be near-coincident at canvas edges).
+            let minX = safeInsets.leading + halfW + edgeMargin
+            let maxX = container.width - safeInsets.trailing - halfW - edgeMargin
+            let minY = safeInsets.top + halfH + edgeMargin
+            let maxY = container.height - safeInsets.bottom - halfH - edgeMargin
+            let clampedX = min(max(pos.x, minX), max(minX, maxX))
+            let clampedY = min(max(pos.y, minY), max(minY, maxY))
+            let box = CGRect(
+                x: clampedX - halfW - declutterHalo,
+                y: clampedY - halfH - declutterHalo,
+                width: estW + declutterHalo * 2,
+                height: badgeHeight + declutterHalo * 2
+            )
+            candidates.append(Candidate(
+                pid: pid,
+                box: box,
+                priority: memberCounts[pid] ?? 0
+            ))
+        }
+
+        // Sort: largest member count first; ties broken by pid for
+        // determinism so frame-to-frame visibility doesn't flicker
+        // between equal-priority neighbors.
+        candidates.sort { a, b in
+            if a.priority != b.priority { return a.priority > b.priority }
+            return a.pid.uuidString < b.pid.uuidString
+        }
+
+        var visible: Set<UUID> = []
+        var placed: [CGRect] = []
+        placed.reserveCapacity(candidates.count)
+        for c in candidates {
+            if placed.contains(where: { $0.intersects(c.box) }) { continue }
+            visible.insert(c.pid)
+            placed.append(c.box)
+        }
+        return visible
     }
 
     /// Open the rename alert for `pid`, seeding the draft from the

@@ -508,7 +508,12 @@ struct LibrarianSurface: View {
                         .foregroundStyle(.white.opacity(0.45))
                         .padding(.top, 4)
                     ForEach(matchNodes, id: \.id) { node in
-                        SearchMatchRow(node: node)
+                        Button {
+                            openNode(node.id)
+                        } label: {
+                            SearchMatchRow(node: node)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
@@ -527,7 +532,12 @@ struct LibrarianSurface: View {
 
                 ForEach(related) { rel in
                     if let node = store.nodes.first(where: { $0.id == rel.nodeID }) {
-                        SearchRelatedRow(node: node, snippet: rel.snippet)
+                        Button {
+                            openNode(rel.nodeID)
+                        } label: {
+                            SearchRelatedRow(node: node, snippet: rel.snippet)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -535,6 +545,15 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
+    }
+
+    /// Hand a search-result tap to the host NavigationStack via the
+    /// router. Mirrors the `CitationSheet.onOpenNote` pattern so the
+    /// detail-view push is owned by `CanvasView` / `NodeListView`,
+    /// not the Librarian surface. v1 navigates to top of the detail;
+    /// scroll-to-block + highlight is its own follow-on brief.
+    private func openNode(_ nodeID: String) {
+        router.pendingNodeNavigationID = nodeID
     }
 
     // MARK: - Chat layout (c14)

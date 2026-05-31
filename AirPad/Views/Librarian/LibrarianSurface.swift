@@ -277,12 +277,20 @@ struct LibrarianSurface: View {
     /// fullScreen stays); down shrinks (fullScreen→expanded→collapsed,
     /// collapsed stays). Real-time drag has its own snap logic inside
     /// `dragGrabber` — it goes straight to the nearest detent.
+    ///
+    /// Session-active hold: while `librarian.hasActiveSession` is true,
+    /// `.expanded → .collapsed` is blocked so the chevron / drag-down
+    /// can't hide an in-progress transcript behind the pill. The user
+    /// must explicitly End Session (footer) to collapse.
     private func advanceSurface(librarian: LibrarianState, direction: SurfaceDragDirection) {
         switch (librarian.surfaceMode, direction) {
         case (.collapsed, .up):    librarian.surfaceMode = .expanded
         case (.expanded, .up):     librarian.surfaceMode = .fullScreen
         case (.fullScreen, .down): librarian.surfaceMode = .expanded
-        case (.expanded, .down):   librarian.surfaceMode = .collapsed
+        case (.expanded, .down):
+            if !librarian.hasActiveSession {
+                librarian.surfaceMode = .collapsed
+            }
         default: break
         }
     }
@@ -302,12 +310,20 @@ struct LibrarianSurface: View {
     /// Nearest discrete posture to the given height, used to pick the
     /// snap target on release and to drive the detent haptic during
     /// drag. Minimum-distance match against each posture's base height.
+    ///
+    /// Session-active hold: while `librarian.hasActiveSession` is true,
+    /// `.collapsed` is dropped from the candidates so a drag-down past
+    /// expanded snaps back to expanded rather than burying the
+    /// transcript behind the pill.
     private func nearestDetent(toHeight h: CGFloat, librarian: LibrarianState) -> LibrarianState.SurfaceMode {
-        let candidates: [(LibrarianState.SurfaceMode, CGFloat)] = [
+        var candidates: [(LibrarianState.SurfaceMode, CGFloat)] = [
             (.collapsed, surfaceFrameHeight(for: .collapsed)),
             (.expanded, surfaceFrameHeight(for: .expanded)),
             (.fullScreen, surfaceFrameHeight(for: .fullScreen))
         ]
+        if librarian.hasActiveSession {
+            candidates.removeAll { $0.0 == .collapsed }
+        }
         return candidates.min(by: { abs($0.1 - h) < abs($1.1 - h) })?.0 ?? librarian.surfaceMode
     }
 

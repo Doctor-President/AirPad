@@ -517,6 +517,12 @@ final class CorpusPhysicsScene: SKScene {
     // (screen px/sec), the lift was a graze-through, not a settle — skip grace
     // and disengage immediately. Tunable from device without a rebuild.
     private let decisiveGrazeVelocity: CGFloat = 600.0
+    // honeycomb-grazing-friction: during gracePeriod, if a fresh touch-down
+    // translates this far (screen pt) before settling into honeycomb, the user
+    // is moving toward a different node — switch focal to the touch's nearest
+    // node instead of resuming the lingering one. Below threshold = small
+    // recovery move; resume old focal as before. Tunable from device.
+    private let decisiveGrazeTranslation: CGFloat = 60.0
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
@@ -2952,9 +2958,51 @@ final class CorpusPhysicsScene: SKScene {
                     //
                     // Otherwise (idle), engage the nearest node as the new focal.
                     if case .gracePeriod(let graceFocal, _) = engagementState {
-                        engagementState = .engaged(focal: graceFocal)
-                        focalChangeHaptic.prepare()  // SB96
-                        print("[Honeycomb] State: gracePeriod → engaged (drag resume)")
+                        // honeycomb-grazing-friction: a fresh touch + decisive
+                        // drag during grace means the user is moving toward a
+                        // different node, not recovering the same engagement.
+                        // Switch focal to the touch-point's nearest node so the
+                        // lingering focal releases as the new one engages.
+                        var resumeFocalID = graceFocal
+                        if distance > decisiveGrazeTranslation {
+                            let scenePoint = self.convertPoint(fromView: current)
+                            var bestID: String? = nil
+                            var bestDistSq: CGFloat = .infinity
+                            for (id, sprite) in nodeSprites {
+                                let ndx = sprite.position.x - scenePoint.x
+                                let ndy = sprite.position.y - scenePoint.y
+                                let dSq = ndx * ndx + ndy * ndy
+                                if dSq < bestDistSq {
+                                    bestDistSq = dSq
+                                    bestID = id
+                                }
+                            }
+                            if let candidate = bestID { resumeFocalID = candidate }
+                        }
+
+                        if resumeFocalID != graceFocal,
+                           let newSprite = nodeSprites[resumeFocalID] {
+                            if let oldSprite = nodeSprites[graceFocal],
+                               let savedZ = savedFocalZPositions[graceFocal] {
+                                oldSprite.zPosition = savedZ
+                                savedFocalZPositions.removeValue(forKey: graceFocal)
+                            }
+                            swapToNonFocalTexture(nodeID: graceFocal)
+
+                            savedFocalZPositions[resumeFocalID] = newSprite.zPosition
+                            newSprite.zPosition = focalZPosition
+                            currentFocalNodeID = resumeFocalID
+                            setFocalShader(to: resumeFocalID)
+                            swapToFocalTexture(nodeID: resumeFocalID)
+                            focalSwitchTimestamp = CACurrentMediaTime()
+                            focalChangeHaptic.selectionChanged()
+                            focalChangeHaptic.prepare()
+                            print("[Honeycomb] Decisive grace move (dist=\(Int(distance))pt) — focal: \(graceFocal) → \(resumeFocalID)")
+                        } else {
+                            focalChangeHaptic.prepare()  // SB96
+                            print("[Honeycomb] State: gracePeriod → engaged (drag resume)")
+                        }
+                        engagementState = .engaged(focal: resumeFocalID)
                     } else {
                         let focalID = findNearestNodeToCamera() ?? ""
                         engagementState = .engaging(focal: focalID)

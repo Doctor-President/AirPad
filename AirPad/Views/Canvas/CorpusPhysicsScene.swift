@@ -509,7 +509,14 @@ final class CorpusPhysicsScene: SKScene {
 
     private var gestureState: GestureState = .idle
     private let dragThreshold: CGFloat = 10.0
-    private let gracePeriodDuration: TimeInterval = 1.0  // SB94: halved — was 2.0
+    // honeycomb-grazing-friction: shortened 1.0 → 0.5. Long enough to absorb
+    // an accidental micro-lift, short enough that a deliberate release no
+    // longer feels like quicksand.
+    private let gracePeriodDuration: TimeInterval = 0.5
+    // honeycomb-grazing-friction: if windowed finger speed at lift meets this
+    // (screen px/sec), the lift was a graze-through, not a settle — skip grace
+    // and disengage immediately. Tunable from device without a rebuild.
+    private let decisiveGrazeVelocity: CGFloat = 600.0
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
@@ -3027,22 +3034,30 @@ final class CorpusPhysicsScene: SKScene {
         if case .honeycomb(_, _) = gestureState {
             // SB83d: Launch coast from windowed velocity. Eligibility is set at the
             // tapCandidate→honeycomb transition (always true for pan gestures).
-            if momentumEligible, let first = panSamples.first, let last = panSamples.last {
+            // honeycomb-grazing-friction: also compute lift speed (independent of
+            // momentumEligible) to decide whether this lift was a decisive graze.
+            var liftSpeedPerSec: CGFloat = 0
+            if let first = panSamples.first, let last = panSamples.last {
                 let dt = last.time - first.time
                 if dt > 0 {
                     let vxPerSec = (last.position.x - first.position.x) / CGFloat(dt)
                     let vyPerSec = (last.position.y - first.position.y) / CGFloat(dt)
-                    let vxPerFrame = vxPerSec / 60.0
-                    let vyPerFrame = vyPerSec / 60.0
-                    if hypot(vxPerFrame, vyPerFrame) >= coastLaunchThreshold {
-                        coastVelocity = CGPoint(x: vxPerFrame, y: vyPerFrame)
+                    liftSpeedPerSec = hypot(vxPerSec, vyPerSec)
+                    if momentumEligible {
+                        let vxPerFrame = vxPerSec / 60.0
+                        let vyPerFrame = vyPerSec / 60.0
+                        if hypot(vxPerFrame, vyPerFrame) >= coastLaunchThreshold {
+                            coastVelocity = CGPoint(x: vxPerFrame, y: vyPerFrame)
+                        }
                     }
                 }
             }
             panSamples.removeAll()
             momentumEligible = false
 
-            if let focalID = currentFocalNodeID {
+            let liftIsDecisiveGraze = liftSpeedPerSec >= decisiveGrazeVelocity
+
+            if let focalID = currentFocalNodeID, !liftIsDecisiveGraze {
                 print("[Honeycomb] Grace period entered for \(focalID)")
 
                 // Enter grace period — owned by engagementState only. gestureState returns
@@ -3051,8 +3066,14 @@ final class CorpusPhysicsScene: SKScene {
                 engagementState = .gracePeriod(focal: focalID, expiresAt: expiresAt)
                 gestureState = .idle
             } else {
-                // No focal tracked - return to idle
-                print("[Honeycomb] State: engaged → disengaging")
+                // honeycomb-grazing-friction: decisive-graze lift OR no focal —
+                // disengage immediately. Movement at lift = unambiguous graze
+                // signal; grace would only feel like the surface "holding on."
+                if liftIsDecisiveGraze, let focalID = currentFocalNodeID {
+                    print("[Honeycomb] Decisive graze lift (v=\(Int(liftSpeedPerSec)) px/s, focal=\(focalID)) → disengaging")
+                } else {
+                    print("[Honeycomb] State: engaged → disengaging")
+                }
                 engagementState = .disengaging
                 gestureState = .idle
                 currentFocalNodeID = nil

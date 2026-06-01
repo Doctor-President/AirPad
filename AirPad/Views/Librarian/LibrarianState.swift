@@ -44,7 +44,11 @@ final class LibrarianState {
             switch self {
             case .navigate: return "Navigate"
             case .ask: return "Ask"
-            case .research: return "Research"
+            // Internal case stays `.research` so the existing
+            // researchPanel / researchStage wiring keeps building;
+            // user-facing label is the export-to-AI-and-import-back
+            // round trip, which reads more naturally as "Exchange."
+            case .research: return "Exchange"
             case .provoke: return "Provoke"
             }
         }
@@ -53,7 +57,7 @@ final class LibrarianState {
             switch self {
             case .navigate: return "location.magnifyingglass"
             case .ask: return "sparkles"
-            case .research: return "graduationcap.fill"
+            case .research: return "arrow.triangle.2.circlepath"
             case .provoke: return "bolt.fill"
             }
         }

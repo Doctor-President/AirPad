@@ -1119,6 +1119,31 @@ struct LibrarianSurface: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            // Disabled affordance for a future "Research" mode — kept in
+            // the dropdown so the concept stays visible to the user but
+            // not yet selectable. No backing enum case: when it ships,
+            // promote to a real Mode.
+            HStack(spacing: 12) {
+                Image(systemName: "graduationcap.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.3))
+                    .frame(width: 22)
+
+                Text("Research")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.3))
+
+                Spacer(minLength: 16)
+
+                Text("Coming soon")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.35))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .accessibilityLabel("Research mode, coming soon")
         }
         .frame(minWidth: 180)
         .background(Color(red: 0.04, green: 0.04, blue: 0.06))

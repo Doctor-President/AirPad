@@ -88,7 +88,6 @@
 		729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F103085E0B3E0A4D0FAF79EC /* TagPickerMenu.swift */; };
 		734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */; };
 		75AF7C8AD43A3FE74F44F97D /* MediaFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4E63F786821E7025A5C3A0 /* MediaFullscreenViewer.swift */; };
-		7701571E5153DEFA1B4F4D82 /* SpriteKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */; };
 		774AD9C545FED85D651CA8D7 /* VideoEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		7F1400E0F8FC4DC57AFA78B0 /* Fraunces_72pt-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */; };
@@ -242,7 +241,6 @@
 		26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Regular.ttf"; sourceTree = "<group>"; };
 		2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSuggestionCard.swift; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
-		323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpriteKitView.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
 		338373B19F63427D62FB1D74 /* UMAPSGD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSGD.swift; sourceTree = "<group>"; };
 		34AC513418FD53025E45C9B6 /* BlockChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChunker.swift; sourceTree = "<group>"; };
@@ -432,7 +430,6 @@
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
 				03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */,
-				323936C16D8B5CEB958D9E32 /* SpriteKitView.swift */,
 			);
 			path = Canvas;
 			sourceTree = "<group>";
@@ -1027,7 +1024,6 @@
 				84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */,
 				ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */,
 				B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */,
-				7701571E5153DEFA1B4F4D82 /* SpriteKitView.swift in Sources */,
 				9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */,
 				9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */,
 				35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */,

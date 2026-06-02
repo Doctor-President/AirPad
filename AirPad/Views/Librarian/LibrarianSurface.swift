@@ -60,6 +60,20 @@ struct LibrarianSurface: View {
     /// crosses, not only on release.
     @State private var dragNearestDetent: LibrarianState.SurfaceMode = .collapsed
 
+    /// Live vertical content offset of whichever inner ScrollView is
+    /// mounted (transcript / suggestions / search results / research
+    /// import). 0 means scrolled to top. Read by `sheetDragGesture` to
+    /// decide whether a new drag belongs to the sheet (offset ~0) or
+    /// to the ScrollView (offset > 0). Written via
+    /// `.onScrollGeometryChange`.
+    @State private var scrollOffsetY: CGFloat = 0
+
+    /// True for the duration of a drag the sheet has claimed. While
+    /// true, inner ScrollViews are `.scrollDisabled` so the sheet and
+    /// the scroll content don't both move under the same finger.
+    /// Latched on first claim inside a drag and cleared on release.
+    @State private var dragClaimedBySheet = false
+
     /// Bound to the same key Settings writes (c7). Drives the personal-voice
     /// indicator in the expanded header so toggling the prompt in Settings
     /// reflects here without dismount.
@@ -229,13 +243,21 @@ struct LibrarianSurface: View {
             .accessibilityHidden(true)
     }
 
-    /// Header-wide drag gesture. Attached to the entire expanded-header
-    /// strip (grabber + mode icon row) rather than the small capsule so
-    /// the drag zone is forgiving. `minimumDistance: 6` is the resolution
-    /// trick that makes both the drag and the chevron reliable: any
-    /// movement ≥6pt activates drag, while a stationary tap stays under
-    /// the threshold and falls through to the chevron / mode-icon
-    /// buttons inside the header. No `simultaneousGesture` needed.
+    /// Sheet-wide drag gesture. Attached as a `simultaneousGesture` to
+    /// the whole expanded-body VStack so the user can drag the surface
+    /// from anywhere — header, transcript, suggestions — not only the
+    /// grabber strip. Coordinates with the inner ScrollView via a
+    /// scroll-offset gate: a new drag is only "claimed" by the sheet
+    /// when the active ScrollView is at top (offset ≤ 1pt) — otherwise
+    /// the gesture passes through to scroll. Once claimed, the
+    /// ScrollView is `.scrollDisabled` for the duration so the same
+    /// finger doesn't move two things at once. This mirrors how the
+    /// system sheet hands off between scroll and drag.
+    ///
+    /// `minimumDistance: 6` is the resolution trick that keeps the
+    /// chevron / mode-icon / footer buttons tappable: a stationary tap
+    /// stays under threshold and falls through to the button, while a
+    /// real drag (≥6pt) enters this handler.
     ///
     /// Snap target on release uses `predictedEndTranslation` — SwiftUI's
     /// velocity-projected end position — rather than the raw translation,
@@ -245,9 +267,19 @@ struct LibrarianSurface: View {
     /// snap back. With projection, a short flick at moderate speed adds
     /// hundreds of points of predicted translation and lands on the
     /// intended detent.
-    private func headerDragGesture(librarian: LibrarianState) -> some Gesture {
+    private func sheetDragGesture(librarian: LibrarianState) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { value in
+                if !dragClaimedBySheet {
+                    let goingDown = value.translation.height > 0
+                    let atTopOfScroll = scrollOffsetY <= 1
+                    let canGrow = librarian.surfaceMode != .fullScreen
+                    let claim = goingDown
+                        ? atTopOfScroll
+                        : (canGrow && atTopOfScroll)
+                    guard claim else { return }
+                    dragClaimedBySheet = true
+                }
                 dragLiveOffset = value.translation.height
                 let h = effectiveFrameHeight(librarian: librarian)
                 let near = nearestDetent(toHeight: h, librarian: librarian)
@@ -256,6 +288,8 @@ struct LibrarianSurface: View {
                 }
             }
             .onEnded { value in
+                defer { dragClaimedBySheet = false }
+                guard dragClaimedBySheet else { return }
                 let base = surfaceFrameHeight(for: librarian.surfaceMode)
                 let projectedH = base - value.predictedEndTranslation.height
                 let clamped = min(
@@ -419,8 +453,6 @@ struct LibrarianSurface: View {
             }
             .padding(.bottom, 14)
             .contentShape(Rectangle())
-            .gesture(headerDragGesture(librarian: librarian))
-            .accessibilityLabel("Drag to resize Librarian")
 
             searchField(librarian: librarian)
                 .padding(.horizontal, 14)
@@ -453,6 +485,7 @@ struct LibrarianSurface: View {
 
             endSessionFooter(librarian: librarian)
         }
+        .simultaneousGesture(sheetDragGesture(librarian: librarian))
         .onChange(of: librarian.searchText) { oldValue, newValue in
             librarian.updateSearchMatches(store: store)
             librarian.kickOffSemanticSearch(store: store)
@@ -644,6 +677,7 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
+        .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
     }
 
     /// Hand a search-result tap to the host NavigationStack via the
@@ -792,6 +826,7 @@ struct LibrarianSurface: View {
                 .onAppear {
                     proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
                 }
+                .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
             }
         } else {
             ScrollView {
@@ -800,6 +835,7 @@ struct LibrarianSurface: View {
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
         }
     }
 
@@ -1284,6 +1320,7 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
             }
             .frame(maxHeight: .infinity)
+            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
 
             researchImportFooter(librarian: librarian)
         }
@@ -1535,6 +1572,7 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
             }
             .frame(maxHeight: .infinity)
+            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
 
             researchExportFooter(librarian: librarian)
         }
@@ -1804,6 +1842,7 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
             }
             .frame(maxHeight: .infinity)
+            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
 
             researchFrameFooter(librarian: librarian)
         }
@@ -1956,6 +1995,7 @@ struct LibrarianSurface: View {
                     .padding(.vertical, 8)
                 }
                 .frame(maxHeight: .infinity)
+                .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
 
                 researchSelectFooter(librarian: librarian)
             }
@@ -2356,5 +2396,26 @@ private struct SearchRelatedRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
+    }
+}
+
+/// Couples an inner ScrollView to the sheet-wide drag gesture: writes
+/// the current vertical content offset out to a binding (so the drag
+/// handler can tell whether the scroll is at top) and freezes the
+/// ScrollView while the sheet has claimed the drag (so the same finger
+/// doesn't translate two things at once). Used by every ScrollView
+/// inside `LibrarianSurface.expandedBody`.
+fileprivate extension View {
+    func sheetScrollCoordination(
+        disabled: Bool,
+        onOffsetChange: @escaping (CGFloat) -> Void
+    ) -> some View {
+        self
+            .scrollDisabled(disabled)
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.contentOffset.y + geo.contentInsets.top
+            } action: { _, newValue in
+                onOffsetChange(newValue)
+            }
     }
 }

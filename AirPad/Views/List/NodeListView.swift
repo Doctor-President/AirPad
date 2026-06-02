@@ -16,6 +16,7 @@ struct NodeListView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
+    @Environment(QuarantineStore.self) private var quarantineStore
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
     @State private var displayItems: [ListItem] = []
@@ -40,6 +41,15 @@ struct NodeListView: View {
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
                     Color.black.ignoresSafeArea()
+                        .background {
+                            LibrarianSheetPresenter(
+                                store: store,
+                                router: router,
+                                selection: selection,
+                                quarantineStore: quarantineStore,
+                                hostScope: scope
+                            )
+                        }
                     BackgroundGridView()
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
@@ -66,30 +76,16 @@ struct NodeListView: View {
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
 
-                    if !store.isInDetailView {
-                        if router.librarian.surfaceMode != .collapsed && !router.librarian.hasActiveSession {
-                            Color.clear
-                                .contentShape(Rectangle())
-                                .ignoresSafeArea()
-                                .onTapGesture {
-                                    withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
-                                        router.librarian.surfaceMode = .collapsed
-                                    }
-                                }
-                        }
-                        VStack(spacing: 12) {
+                    if !store.isInDetailView && !selection.isActive {
+                        VStack {
                             Spacer()
-                            if !selection.isActive {
-                                HStack {
-                                    Spacer()
-                                    captureTriggerButton
-                                }
+                            HStack {
+                                Spacer()
+                                captureTriggerButton
                             }
-                            LibrarianSurface(hostScope: scope)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                        .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
+                        .padding(.bottom, 119)
                     }
                 }
                 .navigationDestination(for: Node.self) { node in
@@ -109,6 +105,17 @@ struct NodeListView: View {
             haptic.prepare()
             navHaptic.prepare()
             buildItems()
+            router.librarian.sheetInitialDetent = .peek
+            router.librarian.sheetPresented = true
+        }
+        .onDisappear {
+            router.librarian.sheetPresented = false
+        }
+        .onChange(of: router.captureOverlay) { old, new in
+            if old != nil && new == nil {
+                router.librarian.sheetInitialDetent = .medium
+                router.librarian.sheetPresented = true
+            }
         }
         // Observe the broad filteredNodes signal — for collection scopes this
         // still fires whenever any filter input changes; `buildItems` reads
@@ -131,6 +138,7 @@ struct NodeListView: View {
     private var captureTriggerButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            router.librarian.sheetPresented = false
             router.captureOverlay = CaptureOverlayContext(scope: scope)
         } label: {
             Image(systemName: "plus")

@@ -7,6 +7,7 @@ struct CanvasView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
+    @Environment(QuarantineStore.self) private var quarantineStore
     @State private var canvasState = CanvasState()
     /// What slice of the corpus this canvas renders. Defaults to `.corpus`
     /// so the existing ContentView call site (the only one in A1) keeps its
@@ -48,6 +49,17 @@ struct CanvasView: View {
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
             kickOffClusterLabelingIfNeeded()
+            router.librarian.sheetInitialDetent = .peek
+            router.librarian.sheetPresented = true
+        }
+        .onDisappear {
+            router.librarian.sheetPresented = false
+        }
+        .onChange(of: router.captureOverlay) { old, new in
+            if old != nil && new == nil {
+                router.librarian.sheetInitialDetent = .medium
+                router.librarian.sheetPresented = true
+            }
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Observe the broad signal (raw nodes) so collection scopes still
@@ -184,6 +196,15 @@ struct CanvasView: View {
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
             .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+            .background {
+                LibrarianSheetPresenter(
+                    store: store,
+                    router: router,
+                    selection: selection,
+                    quarantineStore: quarantineStore,
+                    hostScope: scope
+                )
+            }
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()
@@ -195,30 +216,16 @@ struct CanvasView: View {
             nodeSummaryLayer
             drillDownBackButton
 
-            if !store.isInDetailView {
-                if router.librarian.surfaceMode != .collapsed && !router.librarian.hasActiveSession {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
-                                router.librarian.surfaceMode = .collapsed
-                            }
-                        }
-                }
-                VStack(spacing: 12) {
+            if !store.isInDetailView && !selection.isActive {
+                VStack {
                     Spacer()
-                    if !selection.isActive {
-                        HStack {
-                            Spacer()
-                            captureTriggerButton
-                        }
+                    HStack {
+                        Spacer()
+                        captureTriggerButton
                     }
-                    LibrarianSurface(hostScope: scope)
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 24)
-                .animation(.spring(response: 0.42, dampingFraction: 0.86), value: router.librarian.surfaceMode)
+                .padding(.bottom, 119)
             }
         }
     }
@@ -232,6 +239,7 @@ struct CanvasView: View {
     private var captureTriggerButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            router.librarian.sheetPresented = false
             router.captureOverlay = CaptureOverlayContext(scope: scope)
         } label: {
             Image(systemName: "plus")

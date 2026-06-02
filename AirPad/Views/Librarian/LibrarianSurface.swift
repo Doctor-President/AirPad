@@ -401,7 +401,7 @@ struct LibrarianSurface: View {
     private func collapsedBody(librarian: LibrarianState) -> some View {
         ZStack {
             Text(displayText)
-                .font(.system(size: 16, weight: .light))
+                .font(.system(size: 16, weight: .regular, design: .serif))
                 .foregroundStyle(.white)
                 .opacity(textOpacity)
                 .padding(.horizontal, 80)

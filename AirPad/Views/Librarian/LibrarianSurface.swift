@@ -254,10 +254,13 @@ struct LibrarianSurface: View {
     /// finger doesn't move two things at once. This mirrors how the
     /// system sheet hands off between scroll and drag.
     ///
-    /// `minimumDistance: 6` is the resolution trick that keeps the
-    /// chevron / mode-icon / footer buttons tappable: a stationary tap
-    /// stays under threshold and falls through to the button, while a
-    /// real drag (≥6pt) enters this handler.
+    /// `minimumDistance: 2` keeps stationary taps on the chevron /
+    /// mode-icon / footer buttons working (they stay well under the
+    /// threshold) while letting the smallest deliberate swipe enter
+    /// this handler — the previous 6pt threshold left a hesitation
+    /// window where the ScrollView could win a quick upward flick from
+    /// medium. Paired with the fast-flick early-claim below, a real
+    /// drag now claims the sheet within the first frame of motion.
     ///
     /// Snap target on release uses `predictedEndTranslation` — SwiftUI's
     /// velocity-projected end position — rather than the raw translation,
@@ -268,15 +271,20 @@ struct LibrarianSurface: View {
     /// hundreds of points of predicted translation and lands on the
     /// intended detent.
     private func sheetDragGesture(librarian: LibrarianState) -> some Gesture {
-        DragGesture(minimumDistance: 6)
+        DragGesture(minimumDistance: 2)
             .onChanged { value in
                 if !dragClaimedBySheet {
                     let goingDown = value.translation.height > 0
                     let atTopOfScroll = scrollOffsetY <= 1
                     let canGrow = librarian.surfaceMode != .fullScreen
-                    let claim = goingDown
-                        ? atTopOfScroll
-                        : (canGrow && atTopOfScroll)
+                    // Fast flick at top of scroll → claim immediately,
+                    // regardless of which direction or how far the
+                    // finger has moved. Removes the hesitation window
+                    // where the ScrollView was still fighting for the
+                    // gesture on a quick upward swipe from medium.
+                    let fastFlick = abs(value.velocity.height) > 200 && atTopOfScroll
+                    let claim = fastFlick
+                        || (goingDown ? atTopOfScroll : (canGrow && atTopOfScroll))
                     guard claim else { return }
                     dragClaimedBySheet = true
                 }
@@ -296,7 +304,17 @@ struct LibrarianSurface: View {
                     max(projectedH, surfaceFrameHeight(for: .collapsed)),
                     surfaceFrameHeight(for: .fullScreen)
                 )
-                let target = nearestDetent(toHeight: clamped, librarian: librarian)
+                var target = nearestDetent(toHeight: clamped, librarian: librarian)
+                // Direction guard: an unmistakably upward flick must
+                // never resolve to .collapsed, even if the position
+                // math projects there (can happen when the flick is
+                // fast enough that predictedEndTranslation overshoots
+                // wildly in the wrong direction during a frame jitter).
+                // Floor the target at the current posture on upward
+                // intent so the sheet only ever grows or stays.
+                if value.velocity.height < -200 && target == .collapsed {
+                    target = librarian.surfaceMode == .collapsed ? .expanded : librarian.surfaceMode
+                }
                 withAnimation(.snappy(duration: 0.32, extraBounce: 0.12)) {
                     librarian.surfaceMode = target
                     dragLiveOffset = 0

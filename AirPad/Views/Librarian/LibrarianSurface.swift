@@ -1228,11 +1228,7 @@ struct LibrarianSurface: View {
                 .textCase(.uppercase)
                 .padding(.bottom, 2)
 
-            ForEach([
-                "What have I been thinking about most lately?",
-                "What ideas keep coming back that I haven't acted on?",
-                "What patterns show up in my work?"
-            ], id: \.self) { whisper in
+            ForEach(Array(store.ghostQuerySuggestions.prefix(3)), id: \.self) { whisper in
                 Button {
                     librarian.inputText = whisper
                     isInputFocused = true

@@ -21,8 +21,40 @@ struct LibrarianSurface: View {
     /// thread a scope through yet.
     let hostScope: CanvasScope
 
-    init(hostScope: CanvasScope = .corpus) {
+    /// True when this surface is rendered inside a
+    /// `UISheetPresentationController` (via `LibrarianSheetPresenter`).
+    /// When set, body content branches on the live `detentState` (peek
+    /// → collapsedBody, medium/large → expandedBody) instead of the
+    /// morphing-pill `surfaceMode`, and the outer chrome (rounded-rect
+    /// backgrounds, fixed frame, drag gesture) is suppressed because
+    /// the system sheet owns presentation chrome via
+    /// `presentationBackground` and its own pan/scroll coordination.
+    let isSystemSheet: Bool
+
+    /// Live detent mirror written by
+    /// `LibrarianSheetPresenter.Coordinator` from the
+    /// `UISheetPresentationController` delegate callback. Read here
+    /// to pick collapsedBody vs expandedBody when `isSystemSheet`.
+    /// `nil` outside sheet contexts.
+    let detentState: LibrarianSheetDetentState?
+
+    /// Invoked by the expanded-body chevron when `isSystemSheet`. The
+    /// presenter wires this to a direct `selectedDetent = .peek` +
+    /// `sheet.animateChanges` write in the coordinator, so the sheet
+    /// collapses without any indirection through observable
+    /// closures. `nil` outside sheet contexts.
+    let onChevronTap: (() -> Void)?
+
+    init(
+        hostScope: CanvasScope = .corpus,
+        isSystemSheet: Bool = false,
+        detentState: LibrarianSheetDetentState? = nil,
+        onChevronTap: (() -> Void)? = nil
+    ) {
         self.hostScope = hostScope
+        self.isSystemSheet = isSystemSheet
+        self.detentState = detentState
+        self.onChevronTap = onChevronTap
     }
 
     @Environment(CorpusStore.self) private var store
@@ -105,6 +137,57 @@ struct LibrarianSurface: View {
     var body: some View {
         @Bindable var librarian = router.librarian
 
+        if isSystemSheet {
+            sheetBody(librarian: librarian)
+        } else {
+            morphingPillBody(librarian: librarian)
+        }
+    }
+
+    /// Body branch when the surface is rendered inside a
+    /// `UISheetPresentationController` (via `LibrarianSheetPresenter`).
+    /// No outer chrome — the sheet supplies background + rainbow
+    /// perimeter via `presentationBackground { LibrarianSheetBackground() }`,
+    /// no fixed frame — the sheet's detents drive height, no drag
+    /// gesture — UIKit owns it. Content branches on the live detent
+    /// instead of the morphing-pill `surfaceMode`.
+    @ViewBuilder
+    private func sheetBody(librarian: LibrarianState) -> some View {
+        let atPeek = detentState?.isAtPeek ?? true
+        Group {
+            if atPeek {
+                collapsedBody(librarian: librarian)
+            } else {
+                expandedBody(librarian: librarian)
+            }
+        }
+        .onAppear {
+            startGradientAnimation()
+            startWhisperCycle()
+            seedScopeFromHostIfNeeded(librarian: librarian)
+        }
+        .onChange(of: detentState?.isAtPeek ?? true) { _, isPeek in
+            // Mirror the morphing-pill behavior: collapsing the
+            // surface defocuses the input so the keyboard goes
+            // away when the user pulls the sheet down to peek.
+            if isPeek { isInputFocused = false }
+        }
+        .sheet(item: $presentedCitation) { context in
+            CitationSheet(
+                nodeID: context.nodeID,
+                allCitations: context.citations,
+                onOpenNote: { router.pendingNodeNavigationID = context.nodeID }
+            )
+            .environment(store)
+        }
+    }
+
+    /// Body branch when the surface is rendered as the bottom-anchored
+    /// morphing pill (legacy / non-sheet contexts). Owns its own
+    /// chrome, frame, and drag gesture; switches content on
+    /// `librarian.surfaceMode` (collapsed / expanded / fullScreen).
+    @ViewBuilder
+    private func morphingPillBody(librarian: LibrarianState) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
                 .fill(.thinMaterial)
@@ -473,7 +556,17 @@ struct LibrarianSurface: View {
                     }
 
                     Button {
-                        advanceSurface(librarian: librarian, direction: .down)
+                        if isSystemSheet {
+                            // Sheet mode — the presenter wires this
+                            // to a direct `selectedDetent = .peek`
+                            // write + `sheet.animateChanges` in the
+                            // coordinator, collapsing the sheet
+                            // back to peek without going through
+                            // any observable closure indirection.
+                            onChevronTap?()
+                        } else {
+                            advanceSurface(librarian: librarian, direction: .down)
+                        }
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 14, weight: .semibold))

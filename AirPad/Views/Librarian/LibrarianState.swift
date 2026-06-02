@@ -138,6 +138,28 @@ final class LibrarianState {
 
     var surfaceMode: SurfaceMode = .collapsed
 
+    /// Live detent state for the system-sheet presentation
+    /// (`LibrarianSheetPresenter`). Mirrors `selectedDetentIdentifier`
+    /// from `UISheetPresentationController` so SwiftUI bodies can
+    /// branch their content per detent without reaching across the
+    /// UIKit boundary. `@ObservationIgnored` because the reference
+    /// itself never changes — only its inner properties mutate, and
+    /// those have their own `@Observable` tracking.
+    @ObservationIgnored let sheetDetentState = LibrarianSheetDetentState()
+
+    /// Drives `LibrarianSheetPresenter` to dismiss or (re-)present the
+    /// system sheet. Set to `false` to dismiss (capture-button tap,
+    /// CanvasView.onDisappear); flip back to `true` to re-present —
+    /// the presenter reads `sheetInitialDetent` to pick the starting
+    /// detent on re-present.
+    var sheetPresented: Bool = true
+
+    /// Detent the system sheet should open at on the next present /
+    /// re-present pass. Defaults to `.peek` for first mount; the
+    /// capture-dismiss-then-re-present flow flips this to `.medium`
+    /// before flipping `sheetPresented` back on.
+    var sheetInitialDetent: LibrarianSheetDetentState.SelectedDetent = .peek
+
     /// Active mode — drives the mode-icon symbol in the expanded header
     /// and (in later commits) which pipeline runs on send. Defaults to
     /// `.ask`, matching the pre-c3 single-pipeline behavior.

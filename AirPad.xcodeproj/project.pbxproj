@@ -49,6 +49,8 @@
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
+		3117161A17F8A72D3782F898 /* LibrarianSheetPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C450A56EC9A9CED2F38C509E /* LibrarianSheetPresenter.swift */; };
+		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
 		348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */; };
 		35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */; };
 		35F092469148D4C98C2C1F7D /* UMAPSGD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 338373B19F63427D62FB1D74 /* UMAPSGD.swift */; };
@@ -266,6 +268,7 @@
 		4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkEntryBody.swift; sourceTree = "<group>"; };
 		4EAC56542567C77B0E89E836 /* UMAPRandom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPRandom.swift; sourceTree = "<group>"; };
 		4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationSheet.swift; sourceTree = "<group>"; };
+		51379886273900EA232831C5 /* LibrarianSheetBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSheetBackground.swift; sourceTree = "<group>"; };
 		579FF08E333E57A78D8A5C84 /* GalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryBody.swift; sourceTree = "<group>"; };
 		586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPillRail.swift; sourceTree = "<group>"; };
 		592EF17AD51166EAA3E577F2 /* CanvasScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasScope.swift; sourceTree = "<group>"; };
@@ -334,6 +337,7 @@
 		BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGPreviewView.swift; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		C450A56EC9A9CED2F38C509E /* LibrarianSheetPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSheetPresenter.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPillRail.swift; sourceTree = "<group>"; };
@@ -690,6 +694,8 @@
 			children = (
 				4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */,
 				E97A01D2E6A3CE344C7B732E /* ContextRing.swift */,
+				51379886273900EA232831C5 /* LibrarianSheetBackground.swift */,
+				C450A56EC9A9CED2F38C509E /* LibrarianSheetPresenter.swift */,
 				B05B92C729C4833EC93C3A4A /* LibrarianState.swift */,
 				6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */,
 			);
@@ -983,6 +989,8 @@
 				5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */,
+				3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */,
+				3117161A17F8A72D3782F898 /* LibrarianSheetPresenter.swift in Sources */,
 				07BB3A967E5BCDC6E3CB2B52 /* LibrarianState.swift in Sources */,
 				5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */,
 				2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */,

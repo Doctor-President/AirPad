@@ -112,11 +112,27 @@ struct LibrarianSurface: View {
             RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
                 .fill(Color.black.opacity(0.35))
 
-            // Inner glow: thick inset stroke, blurred, masked to the
-            // surface so it can only bleed inward. Strokes the perimeter
-            // and decays toward the center.
+            // Inner glow: thick inset stroke painted with the same
+            // rotating angular gradient as the crisp 1.5pt edge,
+            // blurred and masked so the colors bleed inward as a soft
+            // aurora that breathes in step with the perimeter. The
+            // crisp stroke above defines the edge; this layer gives it
+            // a moving chromatic halo.
             RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
-                .strokeBorder(Color(hexString: "1B59C2").opacity(0.4), lineWidth: 10)
+                .strokeBorder(
+                    AngularGradient(
+                        colors: [
+                            Color(hexString: "E36B4E"),
+                            Color(hexString: "7A52FF"),
+                            Color(hexString: "B857D4"),
+                            Color(hexString: "E36B4E")
+                        ],
+                        center: .center,
+                        startAngle: .degrees(gradientRotation),
+                        endAngle: .degrees(gradientRotation + 360)
+                    ).opacity(0.45),
+                    lineWidth: 10
+                )
                 .blur(radius: 6)
                 .mask(
                     RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))

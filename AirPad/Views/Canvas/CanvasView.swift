@@ -176,10 +176,14 @@ struct CanvasView: View {
             Color(red: 0.027, green: 0.027, blue: 0.039)
                 .ignoresSafeArea()
 
-            SpriteKitView(scene: scene)
-                .ignoresSafeArea()
-                .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
-                .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+            SpriteView(
+                scene: scene,
+                preferredFramesPerSecond: 120,
+                options: [.allowsTransparency, .ignoresSiblingOrder]
+            )
+            .ignoresSafeArea()
+            .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
+            .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()

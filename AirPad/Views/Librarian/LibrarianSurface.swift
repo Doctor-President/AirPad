@@ -186,6 +186,12 @@ struct LibrarianSurface: View {
                 expandedBody(librarian: librarian)
             }
         }
+        // Force the hosting controller's root view to claim the full
+        // sheet area. Without this, the Group inherits the inner ZStack's
+        // intrinsic height (~57pt) and pins to the top of the 95pt peek
+        // sheet — the inner `maxHeight: .infinity` never gets a parent
+        // proposal to expand into, so visual centering fails.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
@@ -523,19 +529,34 @@ struct LibrarianSurface: View {
     private func collapsedBody(librarian: LibrarianState) -> some View {
         ZStack {
             Text(displayText)
-                .font(.system(size: 16, weight: .regular, design: .serif))
+                .font(.system(size: 17, weight: .regular, design: .serif))
                 .foregroundStyle(.white)
                 .opacity(textOpacity)
-                .padding(.horizontal, 80)
+                // Asymmetric horizontal inset: leading > trailing so the
+                // text's center shifts right of the pill center, clearing
+                // breathing room from the icon ring (ring right edge sits
+                // at x≈76; 100pt leading puts the text start ~24pt past it).
+                .padding(.leading, 100)
+                .padding(.trailing, 60)
                 .frame(maxWidth: .infinity)
 
             HStack {
                 modeIconWithRing(librarian: librarian)
-                    .padding(.leading, 10)
+                    // 19pt leading = (95pt pill height − 57pt ring diameter) / 2,
+                    // matching the vertical inset so the ring sits concentric
+                    // with the capsule's left curve (equidistant top/bottom/left).
+                    .padding(.leading, 19)
                 Spacer()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The sheet inherits a ~27pt bottom safe-area inset for the home
+        // indicator zone, so without this the layout area is only 68pt of
+        // the visible 95pt peek pill. Centering then lands ~13pt above the
+        // visual pill center and the content reads high. Ignoring the
+        // bottom container edge here reclaims the full 95pt so the icon +
+        // whisper sit equidistant from top and bottom of the pill.
+        .ignoresSafeArea(.container, edges: .bottom)
         .contentShape(Rectangle())
         .onTapGesture {
             if isSystemSheet {

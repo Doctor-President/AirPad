@@ -270,12 +270,29 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
         .environment(router)
         .environment(selection)
         .environment(quarantineStore)
-        // Sheet-perimeter chrome lives here, not inside the surface,
-        // so the rainbow stroke traces the sheet's real edges instead
-        // of an inner RoundedRectangle fighting the system clip.
-        .presentationBackground {
+        // Background lives INSIDE the rootView (via `.background`) rather
+        // than in `.presentationBackground { ... }`. On iOS 26 the sheet's
+        // Liquid Glass composites over presentationBackground content,
+        // washing out (or fully suppressing) our dark material + rainbow
+        // glow. Putting the chrome inside the rootView puts it in the
+        // normal SwiftUI render path; clearing presentationBackground
+        // tells the sheet to skip its own glass treatment so only ours
+        // renders.
+        //
+        // `.ignoresSafeArea(.all)` is scoped to the background view only
+        // so the chrome fills the sheet's true bounds at every detent —
+        // without it, the background inherits the foreground's safe-area
+        // insets (top grabber zone + bottom home indicator) and our 44pt
+        // rounded rect draws *inside* the sheet's 44pt clip, leaving the
+        // stroke as a horizontal line across the pill with the true
+        // corners cut off. The foreground (LibrarianSurface) continues
+        // respecting safe area normally; `collapsedBody`'s own
+        // `.ignoresSafeArea` handles peek centering.
+        .background {
             LibrarianSheetBackground()
+                .ignoresSafeArea(.all)
         }
+        .presentationBackground(.clear)
     }
 
     /// Inherits NSObject so it can satisfy the `@objc`-bridged

@@ -166,6 +166,14 @@ struct LibrarianSurface: View {
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
+        // Single-owner sheet (Phase 1) keeps the surface mounted across
+        // canvas → collectionCanvas transitions, so `.onAppear` doesn't
+        // re-fire and the seed-on-appear path misses the host swap. The
+        // `lastSeededHostKey` guard inside the seed protects an explicit
+        // user chip selection within the same host.
+        .onChange(of: hostScope) { _, _ in
+            seedScopeFromHostIfNeeded(librarian: librarian)
+        }
         .onChange(of: detentState?.isAtPeek ?? true) { _, isPeek in
             // Mirror the morphing-pill behavior: collapsing the
             // surface defocuses the input so the keyboard goes
@@ -254,6 +262,12 @@ struct LibrarianSurface: View {
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
+            seedScopeFromHostIfNeeded(librarian: librarian)
+        }
+        // See collapsedBody for context — host swap without a remount
+        // (canvas → collectionCanvas) doesn't re-fire `.onAppear`, so
+        // mirror the seed call here on hostScope change.
+        .onChange(of: hostScope) { _, _ in
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
         .onChange(of: librarian.surfaceMode) { _, newMode in

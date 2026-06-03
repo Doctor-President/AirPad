@@ -4,7 +4,7 @@ import Observation
 @MainActor
 @Observable
 final class AppRouter {
-    enum EntryMode: Sendable {
+    enum EntryMode: Sendable, Equatable {
         case dashboard
         case canvas
         /// QuikCapture surface. `forcedCollectionID` pins the capture to a
@@ -27,7 +27,7 @@ final class AppRouter {
     /// behavior: dashboard origin returns to the dashboard; urlScheme
     /// origin suspends the app so the user lands back where they came from
     /// (the home screen or whichever app triggered the URL).
-    enum QuikCaptureOrigin: Sendable {
+    enum QuikCaptureOrigin: Sendable, Equatable {
         case dashboard
         case urlScheme
     }

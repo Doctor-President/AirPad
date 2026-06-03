@@ -7,7 +7,6 @@ struct CanvasView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
-    @Environment(QuarantineStore.self) private var quarantineStore
     @State private var canvasState = CanvasState()
     /// What slice of the corpus this canvas renders. Defaults to `.corpus`
     /// so the existing ContentView call site (the only one in A1) keeps its
@@ -49,17 +48,6 @@ struct CanvasView: View {
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
             kickOffClusterLabelingIfNeeded()
-            router.librarian.sheetInitialDetent = .peek
-            router.librarian.sheetPresented = true
-        }
-        .onDisappear {
-            router.librarian.sheetPresented = false
-        }
-        .onChange(of: router.captureOverlay) { old, new in
-            if old != nil && new == nil {
-                router.librarian.sheetInitialDetent = .medium
-                router.librarian.sheetPresented = true
-            }
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Observe the broad signal (raw nodes) so collection scopes still
@@ -196,15 +184,6 @@ struct CanvasView: View {
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
             .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
-            .background {
-                LibrarianSheetPresenter(
-                    store: store,
-                    router: router,
-                    selection: selection,
-                    quarantineStore: quarantineStore,
-                    hostScope: scope
-                )
-            }
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()

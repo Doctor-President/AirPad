@@ -152,7 +152,13 @@ final class LibrarianState {
     /// CanvasView.onDisappear); flip back to `true` to re-present —
     /// the presenter reads `sheetInitialDetent` to pick the starting
     /// detent on re-present.
-    var sheetPresented: Bool = true
+    ///
+    /// Defaults to `false` because the app launches at `.dashboard`,
+    /// where the Librarian should be absent. ContentView's
+    /// `.onChange(of: router.entryMode)` flips it true on entering
+    /// `.canvas` / `.collectionCanvas` and false on returning to
+    /// `.dashboard` / `.quikCapture`.
+    var sheetPresented: Bool = false
 
     /// Detent the system sheet should open at on the next present /
     /// re-present pass. Defaults to `.peek` for first mount; the

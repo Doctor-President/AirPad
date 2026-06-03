@@ -32,7 +32,7 @@ struct LibrarianSheetBackground: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.55)
-                .background(.ultraThinMaterial)
+                .background(.thinMaterial)
 
             RoundedRectangle(cornerRadius: 44)
                 .strokeBorder(
@@ -42,10 +42,10 @@ struct LibrarianSheetBackground: View {
                         startAngle: .degrees(gradientRotation),
                         endAngle: .degrees(gradientRotation + 360)
                     ),
-                    lineWidth: 10
+                    lineWidth: 9
                 )
-                .opacity(0.45)
-                .blur(radius: 6)
+                .opacity(0.35)
+                .blur(radius: 9)
                 .allowsHitTesting(false)
 
             RoundedRectangle(cornerRadius: 44)

@@ -253,6 +253,17 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
                 sheet.animateChanges {
                     sheet.selectedDetentIdentifier = .large
                 }
+            },
+            onNavigateCollapse: { [weak coordinator] in
+                guard let sheet = coordinator?.presentedHostingVC?.sheetPresentationController else { return }
+                // Match-tap → push detail: drop sheet to .medium so
+                // the destination view is visible above the sheet.
+                // No-op if already at medium or smaller (animateChanges
+                // tolerates same-detent assignment).
+                coordinator?.detentState?.selectedDetent = .medium
+                sheet.animateChanges {
+                    sheet.selectedDetentIdentifier = .medium
+                }
             }
         )
         .environment(store)

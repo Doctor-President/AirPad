@@ -97,7 +97,10 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
         if !librarian.sheetPresented {
             if let presented = context.coordinator.presentedHostingVC,
                presented.presentingViewController != nil {
+                print("[LibrarianSheet] \(context.coordinator.id) dismiss (sheetPresented=false)")
                 presented.dismiss(animated: true)
+            } else {
+                print("[LibrarianSheet] \(context.coordinator.id) dismiss no-op (no presented VC)")
             }
             context.coordinator.presentedHostingVC = nil
             return
@@ -112,6 +115,8 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
             presented.rootView = freshRoot
             return
         }
+
+        print("[LibrarianSheet] \(context.coordinator.id) present (firstMount=\(!context.coordinator.hasMountedSheetBefore), detent=\(librarian.sheetInitialDetent))")
 
         // First mount or re-present (after an F1 capture round-trip).
         // Build a fresh hosting controller and present it at the
@@ -254,6 +259,20 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
     ///    into `detentState.selectedDetent` so the surface can render
     ///    collapsedBody at peek and expandedBody at medium/large.
     final class Coordinator: NSObject, UISheetPresentationControllerDelegate {
+        /// Short ID for log correlation — lets us tell whether two
+        /// coordinators are alive simultaneously during a view-mode
+        /// toggle (graph↔list) or scope switch. Diagnostic only.
+        let id = String(UUID().uuidString.prefix(6))
+
+        override init() {
+            super.init()
+            print("[LibrarianSheet] Coordinator.init \(id)")
+        }
+
+        deinit {
+            print("[LibrarianSheet] Coordinator.deinit \(id)")
+        }
+
         /// Strong reference. The hostingVC is created locally inside
         /// `updateUIViewController` and presented 0.3s later; without a
         /// strong owner here, ARC deallocates it the moment update returns

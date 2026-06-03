@@ -530,8 +530,13 @@ struct LibrarianSurface: View {
             // to the surface corner with equidistant padding (14pt to
             // top, left, and pill rail) regardless of grabber height.
             ZStack(alignment: .top) {
-                dragGrabber(librarian: librarian)
-                    .padding(.top, 6)
+                // UIKit owns the grabber in sheet mode
+                // (`prefersGrabberVisible = true` in the presenter);
+                // skip our own Capsule so the two don't stack.
+                if !isSystemSheet {
+                    dragGrabber(librarian: librarian)
+                        .padding(.top, 6)
+                }
 
                 HStack(alignment: .top) {
                     Button {
@@ -612,7 +617,16 @@ struct LibrarianSurface: View {
 
             endSessionFooter(librarian: librarian)
         }
-        .simultaneousGesture(sheetDragGesture(librarian: librarian))
+        // DIAGNOSTIC: in system-sheet mode, disable the morphing-pill
+        // drag gesture so UIKit's native sheet-resize pan can claim
+        // drags on the body content. `including: .none` keeps the
+        // modifier in the tree but tells SwiftUI not to recognize the
+        // gesture — leaving subview gestures (Buttons, ScrollViews)
+        // intact.
+        .simultaneousGesture(
+            sheetDragGesture(librarian: librarian),
+            including: isSystemSheet ? .none : .all
+        )
         .onChange(of: librarian.searchText) { oldValue, newValue in
             librarian.updateSearchMatches(store: store)
             librarian.kickOffSemanticSearch(store: store)

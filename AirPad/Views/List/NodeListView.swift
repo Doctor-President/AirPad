@@ -16,7 +16,6 @@ struct NodeListView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
-    @Environment(QuarantineStore.self) private var quarantineStore
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
     @State private var displayItems: [ListItem] = []
@@ -41,15 +40,6 @@ struct NodeListView: View {
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
                     Color.black.ignoresSafeArea()
-                        .background {
-                            LibrarianSheetPresenter(
-                                store: store,
-                                router: router,
-                                selection: selection,
-                                quarantineStore: quarantineStore,
-                                hostScope: scope
-                            )
-                        }
                     BackgroundGridView()
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
@@ -105,17 +95,6 @@ struct NodeListView: View {
             haptic.prepare()
             navHaptic.prepare()
             buildItems()
-            router.librarian.sheetInitialDetent = .peek
-            router.librarian.sheetPresented = true
-        }
-        .onDisappear {
-            router.librarian.sheetPresented = false
-        }
-        .onChange(of: router.captureOverlay) { old, new in
-            if old != nil && new == nil {
-                router.librarian.sheetInitialDetent = .medium
-                router.librarian.sheetPresented = true
-            }
         }
         // Observe the broad filteredNodes signal — for collection scopes this
         // still fires whenever any filter input changes; `buildItems` reads

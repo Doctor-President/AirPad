@@ -18,6 +18,11 @@ struct NodeListView: View {
     @Environment(AppRouter.self) private var router
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
+    /// Node ID currently sitting at the top of the navigation stack
+    /// after a router-driven push. Dedupes rapid multi-taps on the
+    /// same Librarian match (which otherwise stack identical detail
+    /// views). Cleared when the path returns to root.
+    @State private var currentDetailNodeID: String? = nil
     @State private var displayItems: [ListItem] = []
     @State private var scrolledID: String? = nil
     @State private var isJumping = false
@@ -86,8 +91,20 @@ struct NodeListView: View {
                     guard let id = newValue,
                           let node = store.nodes.first(where: { $0.id == id })
                     else { return }
-                    navigationPath.append(node)
+                    if id != currentDetailNodeID {
+                        // Atomic wholesale assignment — single state mutation, so
+                        // there's no transient depth-0 frame between removeLast and
+                        // append (which let chrome bleed and let rapid taps stack).
+                        // Rapid-fire taps converge to last-write-wins at depth=1.
+                        navigationPath = NavigationPath([node])
+                        currentDetailNodeID = id
+                    }
                     router.pendingNodeNavigationID = nil
+                }
+                .onChange(of: navigationPath.count) { _, newCount in
+                    // Back-out → root: clear so a subsequent tap on the
+                    // same node pushes a fresh detail view.
+                    if newCount == 0 { currentDetailNodeID = nil }
                 }
             }
         }

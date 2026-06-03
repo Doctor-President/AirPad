@@ -58,13 +58,20 @@ struct LibrarianSurface: View {
     /// brain. `nil` outside sheet contexts.
     let onSearchExpandTap: (() -> Void)?
 
+    /// Invoked by `openNode` when `isSystemSheet`. Drives the live
+    /// sheet to `.medium` so the pushed detail view is visible above
+    /// the sheet instead of being covered by it at `.large`. `nil`
+    /// outside sheet contexts.
+    let onNavigateCollapse: (() -> Void)?
+
     init(
         hostScope: CanvasScope = .corpus,
         isSystemSheet: Bool = false,
         detentState: LibrarianSheetDetentState? = nil,
         onChevronTap: (() -> Void)? = nil,
         onExpandTap: (() -> Void)? = nil,
-        onSearchExpandTap: (() -> Void)? = nil
+        onSearchExpandTap: (() -> Void)? = nil,
+        onNavigateCollapse: (() -> Void)? = nil
     ) {
         self.hostScope = hostScope
         self.isSystemSheet = isSystemSheet
@@ -72,6 +79,7 @@ struct LibrarianSurface: View {
         self.onChevronTap = onChevronTap
         self.onExpandTap = onExpandTap
         self.onSearchExpandTap = onSearchExpandTap
+        self.onNavigateCollapse = onNavigateCollapse
     }
 
     @Environment(CorpusStore.self) private var store
@@ -866,7 +874,23 @@ struct LibrarianSurface: View {
     /// detail-view push is owned by `CanvasView` / `NodeListView`,
     /// not the Librarian surface. v1 navigates to top of the detail;
     /// scroll-to-block + highlight is its own follow-on brief.
+    ///
+    /// In sheet mode, also collapses the sheet to `.medium` so the
+    /// pushed detail view is visible above the sheet rather than
+    /// covered by it at `.large`. The collapse + push happen in the
+    /// same tick; the host's pendingNodeNavigationID dedupe guards
+    /// against double-pushes if the user multi-taps the same row.
     private func openNode(_ nodeID: String) {
+        isInputFocused = false
+        // Blunt resign-first-responder: the search TextField lives across the
+        // UIHostingController/sheet boundary and its keyboard isn't reachable
+        // via @FocusState from this side. Send up the responder chain so
+        // whoever holds the keyboard releases it.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
+        if isSystemSheet {
+            onNavigateCollapse?()
+        }
         router.pendingNodeNavigationID = nodeID
     }
 

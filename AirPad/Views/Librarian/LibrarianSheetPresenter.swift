@@ -234,6 +234,25 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
                 sheet.animateChanges {
                     sheet.selectedDetentIdentifier = .init("peek")
                 }
+            },
+            onExpandTap: { [weak coordinator] in
+                guard let sheet = coordinator?.presentedHostingVC?.sheetPresentationController else { return }
+                // Pre-flip so expandedBody renders this frame;
+                // delegate callback fires post-animation, too late
+                // for the body branch to swap on tap.
+                coordinator?.detentState?.selectedDetent = .medium
+                sheet.animateChanges {
+                    sheet.selectedDetentIdentifier = .medium
+                }
+            },
+            onSearchExpandTap: { [weak coordinator] in
+                guard let sheet = coordinator?.presentedHostingVC?.sheetPresentationController else { return }
+                // First-keystroke grow: drive sheet to .large so the
+                // results pane gets the full window.
+                coordinator?.detentState?.selectedDetent = .large
+                sheet.animateChanges {
+                    sheet.selectedDetentIdentifier = .large
+                }
             }
         )
         .environment(store)

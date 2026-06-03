@@ -45,16 +45,33 @@ struct LibrarianSurface: View {
     /// closures. `nil` outside sheet contexts.
     let onChevronTap: (() -> Void)?
 
+    /// Invoked by the collapsedBody tap when `isSystemSheet`. Drives the
+    /// live sheet to `.medium` instead of writing the morphing-pill
+    /// `surfaceMode` (which the sheet doesn't observe — the two-brains
+    /// bug). `nil` outside sheet contexts.
+    let onExpandTap: (() -> Void)?
+
+    /// Invoked on the first non-empty searchText keystroke when
+    /// `isSystemSheet`. Drives the live sheet to `.large` so the
+    /// results pane has the most room — same intent as the pill
+    /// path's `surfaceMode = .fullScreen`, routed through the sheet
+    /// brain. `nil` outside sheet contexts.
+    let onSearchExpandTap: (() -> Void)?
+
     init(
         hostScope: CanvasScope = .corpus,
         isSystemSheet: Bool = false,
         detentState: LibrarianSheetDetentState? = nil,
-        onChevronTap: (() -> Void)? = nil
+        onChevronTap: (() -> Void)? = nil,
+        onExpandTap: (() -> Void)? = nil,
+        onSearchExpandTap: (() -> Void)? = nil
     ) {
         self.hostScope = hostScope
         self.isSystemSheet = isSystemSheet
         self.detentState = detentState
         self.onChevronTap = onChevronTap
+        self.onExpandTap = onExpandTap
+        self.onSearchExpandTap = onSearchExpandTap
     }
 
     @Environment(CorpusStore.self) private var store
@@ -513,7 +530,14 @@ struct LibrarianSurface: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contentShape(Rectangle())
         .onTapGesture {
-            librarian.surfaceMode = .expanded
+            if isSystemSheet {
+                // Sheet brain: drive the native sheet to medium; the
+                // morphing-pill `surfaceMode` write would land in the
+                // unused brain and the sheet wouldn't notice.
+                onExpandTap?()
+            } else {
+                librarian.surfaceMode = .expanded
+            }
         }
     }
 
@@ -631,12 +655,12 @@ struct LibrarianSurface: View {
 
             endSessionFooter(librarian: librarian)
         }
-        // DIAGNOSTIC: in system-sheet mode, disable the morphing-pill
-        // drag gesture so UIKit's native sheet-resize pan can claim
-        // drags on the body content. `including: .none` keeps the
-        // modifier in the tree but tells SwiftUI not to recognize the
-        // gesture — leaving subview gestures (Buttons, ScrollViews)
-        // intact.
+        // In sheet mode, suppress the morphing-pill drag gesture so
+        // UIKit's native sheet-resize pan owns drags on body content.
+        // `including: .none` keeps the modifier in the tree but tells
+        // SwiftUI not to recognize the gesture — subview gestures
+        // (Buttons, ScrollViews) stay intact. Permanent: the pill path
+        // (isSystemSheet == false) still needs its own drag handling.
         .simultaneousGesture(
             sheetDragGesture(librarian: librarian),
             including: isSystemSheet ? .none : .all
@@ -644,13 +668,15 @@ struct LibrarianSurface: View {
         .onChange(of: librarian.searchText) { oldValue, newValue in
             librarian.updateSearchMatches(store: store)
             librarian.kickOffSemanticSearch(store: store)
-            // First non-empty character → spring to fullScreen so the
+            // First non-empty character → grow the surface so the
             // results pane has the most room. Triggers on every
-            // empty→non-empty transition (e.g. clear + retype) — a
-            // user intentionally re-searching wants the same focused
-            // posture as the first time.
-            if oldValue.isEmpty && !newValue.isEmpty
-                && librarian.surfaceMode != .fullScreen {
+            // empty→non-empty transition (e.g. clear + retype). Sheet
+            // brain drives to `.large` via callback; pill brain writes
+            // `surfaceMode = .fullScreen`.
+            guard oldValue.isEmpty && !newValue.isEmpty else { return }
+            if isSystemSheet {
+                onSearchExpandTap?()
+            } else if librarian.surfaceMode != .fullScreen {
                 withAnimation(.snappy(duration: 0.32, extraBounce: 0.12)) {
                     librarian.surfaceMode = .fullScreen
                 }

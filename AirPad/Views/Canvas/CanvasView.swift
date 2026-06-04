@@ -225,7 +225,7 @@ struct CanvasView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 119)
+                .padding(.bottom, LibrarianSheetPresenter.peekOverlayClearance)
             }
         }
     }
@@ -239,7 +239,6 @@ struct CanvasView: View {
     private var captureTriggerButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            router.librarian.sheetPresented = false
             router.captureOverlay = CaptureOverlayContext(scope: scope)
         } label: {
             Image(systemName: "plus")

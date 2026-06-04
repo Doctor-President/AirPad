@@ -372,7 +372,12 @@ struct NodeDetailView: View {
             if !keyboardVisible && !reorderController.isReorderActive {
                 floatingAddButton
                     .padding(.trailing, 24)
-                    .padding(.bottom, 24)
+                    // Lift above the persistent Librarian peek pill so the
+                    // "+" isn't obscured at peek; same clearance the canvas
+                    // capture trigger uses (peek detent + 24pt breathing
+                    // room). At medium / large the sheet covers the button
+                    // — intentional, mirrors canvas behavior.
+                    .padding(.bottom, LibrarianSheetPresenter.peekOverlayClearance)
                     .transition(.opacity)
             }
         }

@@ -68,6 +68,20 @@ final class LibrarianSheetDetentState {
 /// boundary fix.
 struct LibrarianSheetPresenter: UIViewControllerRepresentable {
 
+    /// Height of the custom "peek" detent in points. Single source of
+    /// truth — the detent registration below and any overlay that needs
+    /// to ride above the peek pill (capture "+" buttons on canvas and
+    /// node detail) read from here so the value lives in one place.
+    static let peekDetentHeight: CGFloat = 95
+
+    /// Bottom padding for overlay chrome that must sit above the peek
+    /// Librarian sheet: peek height + 10pt breathing room — keeps the
+    /// "+" button visually anchored just above the pill instead of
+    /// floating away from it. Used by both
+    /// `CanvasView.captureTriggerButton` and `NodeDetailView.floatingAddButton`
+    /// so the two stay consistent.
+    static let peekOverlayClearance: CGFloat = peekDetentHeight + 10
+
     let store: CorpusStore
     let router: AppRouter
     let selection: SelectionService
@@ -127,7 +141,7 @@ struct LibrarianSheetPresenter: UIViewControllerRepresentable {
         let initialDetent = librarian.sheetInitialDetent
         if let sheet = hostingVC.sheetPresentationController {
             sheet.detents = [
-                .custom(identifier: .init("peek")) { _ in 95 },
+                .custom(identifier: .init("peek")) { _ in Self.peekDetentHeight },
                 .medium(),
                 .large()
             ]

@@ -134,7 +134,6 @@ struct NodeListView: View {
     private var captureTriggerButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            router.librarian.sheetPresented = false
             router.captureOverlay = CaptureOverlayContext(scope: scope)
         } label: {
             Image(systemName: "plus")

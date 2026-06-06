@@ -138,32 +138,13 @@ final class LibrarianState {
 
     var surfaceMode: SurfaceMode = .collapsed
 
-    /// Live detent state for the system-sheet presentation
-    /// (`LibrarianSheetPresenter`). Mirrors `selectedDetentIdentifier`
-    /// from `UISheetPresentationController` so SwiftUI bodies can
-    /// branch their content per detent without reaching across the
-    /// UIKit boundary. `@ObservationIgnored` because the reference
-    /// itself never changes — only its inner properties mutate, and
-    /// those have their own `@Observable` tracking.
+    // TODO(Move 2): remove — superseded by FloatingPanel-owned detent.
+    // `LibrarianSheetPresenter` was deleted in Move 1; these three fields
+    // are no longer read by any production code. Left in place this move
+    // so Move 1 stays minimal and compiling; Move 2 finalizes
+    // `LibrarianState`'s relationship to the panel.
     @ObservationIgnored let sheetDetentState = LibrarianSheetDetentState()
-
-    /// Drives `LibrarianSheetPresenter` to dismiss or (re-)present the
-    /// system sheet. Set to `false` to dismiss (capture-button tap,
-    /// CanvasView.onDisappear); flip back to `true` to re-present —
-    /// the presenter reads `sheetInitialDetent` to pick the starting
-    /// detent on re-present.
-    ///
-    /// Defaults to `false` because the app launches at `.dashboard`,
-    /// where the Librarian should be absent. ContentView's
-    /// `.onChange(of: router.entryMode)` flips it true on entering
-    /// `.canvas` / `.collectionCanvas` and false on returning to
-    /// `.dashboard` / `.quikCapture`.
     var sheetPresented: Bool = false
-
-    /// Detent the system sheet should open at on the next present /
-    /// re-present pass. Defaults to `.peek` for first mount; the
-    /// capture-dismiss-then-re-present flow flips this to `.medium`
-    /// before flipping `sheetPresented` back on.
     var sheetInitialDetent: LibrarianSheetDetentState.SelectedDetent = .peek
 
     /// Active mode — drives the mode-icon symbol in the expanded header

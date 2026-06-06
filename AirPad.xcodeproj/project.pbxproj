@@ -49,7 +49,6 @@
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
-		3117161A17F8A72D3782F898 /* LibrarianSheetPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C450A56EC9A9CED2F38C509E /* LibrarianSheetPresenter.swift */; };
 		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
 		348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */; };
 		35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */; };
@@ -79,6 +78,7 @@
 		60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */; };
 		60D696FF61EBB144201B1E88 /* HDBSCANSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14E0A70C721C874921860A43 /* HDBSCANSelfTest.swift */; };
 		61D32212DD37FB3544769B8A /* CanvasChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */; };
+		62343BA6D7974D3B5B7001CF /* LibrarianFloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */; };
 		629990192B6017CAA6D5DF1D /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
 		679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD659A40CE161F15D371C285 /* NodeCardView.swift */; };
 		69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */; };
@@ -89,6 +89,7 @@
 		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
 		729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F103085E0B3E0A4D0FAF79EC /* TagPickerMenu.swift */; };
 		734EB4A1701A2D305395A6E2 /* CanvasLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */; };
+		738349B24610F0BADC5B82A3 /* FloatingPanel in Frameworks */ = {isa = PBXBuildFile; productRef = F0F15B30974A69BF628C7BE6 /* FloatingPanel */; };
 		75AF7C8AD43A3FE74F44F97D /* MediaFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB4E63F786821E7025A5C3A0 /* MediaFullscreenViewer.swift */; };
 		774AD9C545FED85D651CA8D7 /* VideoEntryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */; };
 		79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
@@ -154,6 +155,7 @@
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
 		B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC513418FD53025E45C9B6 /* BlockChunker.swift */; };
 		B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */; };
+		BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */; };
 		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
 		C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1822A03D5407145464AB94 /* AppRouter.swift */; };
 		C3D20531250163A764EAB625 /* LinkGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */; };
@@ -241,6 +243,7 @@
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateColoringPass.swift; sourceTree = "<group>"; };
 		26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Regular.ttf"; sourceTree = "<group>"; };
+		296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianFloatingPanel.swift; sourceTree = "<group>"; };
 		2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSuggestionCard.swift; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
@@ -290,6 +293,7 @@
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
 		6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasLayout.swift; sourceTree = "<group>"; };
 		6F9B499A6DE0C5C10644FF16 /* EntryVisualSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryVisualSettings.swift; sourceTree = "<group>"; };
+		7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSheetDetentState.swift; sourceTree = "<group>"; };
 		770199F6D56D0EDB0BCA874A /* LinkViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkViewModeToggle.swift; sourceTree = "<group>"; };
 		780B6A68830590DBDA5189D1 /* StrandService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrandService.swift; sourceTree = "<group>"; };
 		7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateLayoutService.swift; sourceTree = "<group>"; };
@@ -337,7 +341,6 @@
 		BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGPreviewView.swift; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
-		C450A56EC9A9CED2F38C509E /* LibrarianSheetPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSheetPresenter.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPillRail.swift; sourceTree = "<group>"; };
@@ -392,6 +395,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				738349B24610F0BADC5B82A3 /* FloatingPanel in Frameworks */,
 				C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */,
 				B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */,
 				CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */,
@@ -694,8 +698,9 @@
 			children = (
 				4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */,
 				E97A01D2E6A3CE344C7B732E /* ContextRing.swift */,
+				296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */,
 				51379886273900EA232831C5 /* LibrarianSheetBackground.swift */,
-				C450A56EC9A9CED2F38C509E /* LibrarianSheetPresenter.swift */,
+				7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */,
 				B05B92C729C4833EC93C3A4A /* LibrarianState.swift */,
 				6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */,
 			);
@@ -839,6 +844,7 @@
 			);
 			name = AirPad;
 			packageProductDependencies = (
+				F0F15B30974A69BF628C7BE6 /* FloatingPanel */,
 			);
 			productName = AirPad;
 			productReference = 9D21AB3DEE91993C6F039833 /* AirPad.app */;
@@ -887,6 +893,9 @@
 			);
 			mainGroup = 772C30E361C97B9515651400;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				DAD267307789DCC10702A858 /* XCRemoteSwiftPackageReference "FloatingPanel" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 95C31440F925CC38D4918A3D /* Products */;
 			projectDirPath = "";
@@ -989,8 +998,9 @@
 				5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */,
+				62343BA6D7974D3B5B7001CF /* LibrarianFloatingPanel.swift in Sources */,
 				3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */,
-				3117161A17F8A72D3782F898 /* LibrarianSheetPresenter.swift in Sources */,
+				BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */,
 				07BB3A967E5BCDC6E3CB2B52 /* LibrarianState.swift in Sources */,
 				5E5D595A3C1F9CA4851D05A1 /* LibrarianSurface.swift in Sources */,
 				2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */,
@@ -1334,6 +1344,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		DAD267307789DCC10702A858 /* XCRemoteSwiftPackageReference "FloatingPanel" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scenee/FloatingPanel";
+			requirement = {
+				kind = exactVersion;
+				version = 3.2.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F0F15B30974A69BF628C7BE6 /* FloatingPanel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DAD267307789DCC10702A858 /* XCRemoteSwiftPackageReference "FloatingPanel" */;
+			productName = FloatingPanel;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 88710B490536A898E4AE3E9F /* Project object */;
 }

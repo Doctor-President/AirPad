@@ -225,7 +225,7 @@ struct CanvasView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, LibrarianSheetPresenter.peekOverlayClearance)
+                .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
             }
         }
     }

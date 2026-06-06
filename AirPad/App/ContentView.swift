@@ -1,4 +1,5 @@
 import SwiftUI
+import FloatingPanel
 
 struct ContentView: View {
 
@@ -7,18 +8,14 @@ struct ContentView: View {
     @Environment(SelectionService.self) private var selection
     @Environment(QuarantineStore.self) private var quarantineStore
 
-    /// Host scope passed into the Librarian presenter's
-    /// `LibrarianSurface(hostScope:)`. Mirrors the active entry mode so
-    /// a Librarian opened on a collection canvas seeds its scope chip
-    /// from that collection. Dashboard / QuikCapture both reduce to
-    /// `.corpus` — the sheet is dismissed there, so the value is only
-    /// read on the next `.canvas` / `.collectionCanvas` transition.
-    private var librarianHostScope: CanvasScope {
-        if case .collectionCanvas(let id) = router.entryMode {
-            return .collection(id)
-        }
-        return .corpus
-    }
+    /// Single persistent in-layout panel. Mounted at ContentView root via
+    /// the non-modal `.floatingPanel { proxy in … }` modifier on the outer
+    /// ZStack — added as a child VC by the modifier, never `present()`.
+    /// Entry-mode transitions raise it to `.tip` on canvas surfaces and
+    /// `.hidden` on dashboard / QuikCapture; user drag covers
+    /// `.tip` ↔ `.half` ↔ `.full`.
+    @StateObject private var panelState = LibrarianPanelStateModel()
+    private let panelLayout = LibrarianPanelLayout()
 
     var body: some View {
         ZStack {
@@ -62,36 +59,44 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.12), value: router.captureOverlay)
-        // Stable Librarian sheet owner. Mounted on the outer ZStack so the
-        // representable / UIHostingController / Coordinator persist for the
-        // whole app session — not torn down by `router.entryMode` switches
-        // (which only re-evaluate the inner `Group`) and not by graph↔list
-        // toggles (those live two levels down inside `CanvasChrome`).
-        // Presentation intent is reconciled in `updateUIViewController`
-        // against the live `presentedHostingVC`; existence is driven by the
-        // `.onChange(of: router.entryMode)` below.
-        .background {
-            LibrarianSheetPresenter(
-                store: store,
-                router: router,
-                selection: selection,
-                quarantineStore: quarantineStore,
-                hostScope: librarianHostScope
-            )
+        // In-layout FloatingPanel — the Librarian's structural home. Mounted
+        // once at ContentView root and never torn down across entry-mode
+        // switches. Step C below moves it to `.tip` / `.hidden` per mode.
+        // Move 1 ships dummy content; Move 2 swaps `LibrarianSurface` in.
+        .floatingPanel { proxy in
+            DummyLibrarianPanelContent(model: panelState, proxy: proxy)
+                .onAppear {
+                    panelState.controller = proxy.controller
+                    proxy.controller.delegate = panelState
+                    // First-render alignment with the current entry mode.
+                    // SwiftUI's `.onChange` doesn't fire for the initial
+                    // value reliably across the panel-mount boundary, so
+                    // align here once the controller is wired up.
+                    switch router.entryMode {
+                    case .canvas, .collectionCanvas:
+                        proxy.controller.move(to: .tip, animated: false)
+                    case .dashboard, .quikCapture:
+                        proxy.controller.hide(animated: false)
+                    }
+                }
         }
-        // Single existence rule: canvas / collectionCanvas present at peek;
-        // dashboard / quikCapture dismiss. Replaces the per-surface
-        // `.onAppear` / `.onDisappear` pair that used to fire from
-        // CanvasChrome — those tore down and re-presented on every chrome
-        // rebuild, which flooded "already presenting" errors and left
-        // orphan sheets with their own grabber.
+        .floatingPanelLayout(panelLayout)
+        // Single existence rule: canvas / collectionCanvas raise the panel
+        // to peek; dashboard / quikCapture duck it offscreen. Panel stays
+        // mounted across all modes — never torn down. `.hidden` is not in
+        // the layout's anchor set, so the duck goes through `hide()` (which
+        // routes to a library-default offscreen anchor) — keeping `.tip`
+        // as the hard user-facing floor for drag.
         .onChange(of: router.entryMode) { _, newMode in
             switch newMode {
             case .canvas, .collectionCanvas:
-                router.librarian.sheetInitialDetent = .peek
-                router.librarian.sheetPresented = true
+                panelState.raiseToPeek(animated: true)
             case .dashboard, .quikCapture:
-                router.librarian.sheetPresented = false
+                // Dashboard-persistence seam — Move 4 (or later) replaces
+                // this duck with Dashboard-appropriate panel content so
+                // the Librarian persists across dashboard too. Do NOT
+                // build that here; it belongs to a later move.
+                panelState.duck(animated: true)
             }
         }
     }

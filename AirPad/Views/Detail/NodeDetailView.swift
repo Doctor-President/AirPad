@@ -377,7 +377,7 @@ struct NodeDetailView: View {
                     // capture trigger uses (peek detent + 24pt breathing
                     // room). At medium / large the sheet covers the button
                     // — intentional, mirrors canvas behavior.
-                    .padding(.bottom, LibrarianSheetPresenter.peekOverlayClearance)
+                    .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
                     .transition(.opacity)
             }
         }

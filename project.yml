@@ -29,6 +29,11 @@ settings:
     DEVELOPMENT_TEAM: 8XM4B5F42Y
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
 
+packages:
+  FloatingPanel:
+    url: https://github.com/scenee/FloatingPanel
+    exactVersion: 3.2.2
+
 targets:
   AirPad:
     type: application
@@ -42,6 +47,7 @@ targets:
     dependencies:
       - target: AirPadShare
         embed: true
+      - package: FloatingPanel
       - sdk: SpriteKit.framework
       - sdk: AVFoundation.framework
       - sdk: Speech.framework

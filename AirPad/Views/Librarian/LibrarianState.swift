@@ -192,6 +192,20 @@ final class LibrarianState {
     /// True while a query is in flight against the language model.
     var isLoading: Bool = false
 
+    /// True from streaming-request start until stream completion. Drives
+    /// the shimmering "Thinking…" indicator and the per-token tail in
+    /// `LibrarianSurface`. Distinct from `isLoading` because legacy
+    /// non-streaming pipelines (Navigate, Research/Provoke classify) still
+    /// set `isLoading` without ever entering streaming mode.
+    var isStreaming: Bool = false
+
+    /// Running buffer of streamed deltas for the in-flight Ask turn.
+    /// Empty before the first token arrives and again after stream
+    /// completion (text moves into `response` and `sessionHistory`).
+    /// While non-empty during `isStreaming`, the surface renders the raw
+    /// content with a blinking cursor.
+    var streamingText: String = ""
+
     /// Snapshot of the user's query at the moment `executeQuery` fires.
     /// Lets the chat transcript render a pending bubble for the
     /// in-flight question while the model is still working — without
@@ -951,11 +965,19 @@ final class LibrarianState {
         let userPrompt = buildAskUserPrompt(query: query, context: context, hasCitations: !citations.isEmpty)
 
         let provider = ModelRouter.active.displayName
+        isStreaming = true
+        streamingText = ""
         do {
-            let text = try await ModelRouter.generate(
+            let stream = ModelRouter.generateStreaming(
                 systemPrompt: askSystemPrompt,
                 userPrompt: userPrompt
             )
+            for try await delta in stream {
+                streamingText += delta
+            }
+            let text = streamingText
+            streamingText = ""
+            isStreaming = false
             response = .ask(text: text, citations: citations, provider: provider)
             var seen = Set<String>()
             let citedNodeIDs = citations.compactMap { match -> String? in
@@ -969,8 +991,12 @@ final class LibrarianState {
                 citationNodeIDs: citedNodeIDs
             )
         } catch let error as ModelRouter.RouterError {
+            streamingText = ""
+            isStreaming = false
             response = .error(error.errorDescription ?? "Couldn't reach the model.")
         } catch {
+            streamingText = ""
+            isStreaming = false
             response = .error("Something went wrong. Try again.")
         }
         isLoading = false

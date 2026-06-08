@@ -71,7 +71,12 @@ struct NodeListView: View {
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
 
-                    if !store.isInDetailView && !selection.isActive {
+                    // Hide the "+" whenever the Librarian is raised above
+                    // peek (fix-pass v3 Item 2a) — same reason as
+                    // CanvasView: the peek-only bottom clearance lets
+                    // the chevron's hit region overlap the "+" at half /
+                    // full.
+                    if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
                         VStack {
                             Spacer()
                             HStack {

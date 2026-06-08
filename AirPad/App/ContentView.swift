@@ -64,10 +64,31 @@ struct ContentView: View {
         // switches. Step C below moves it to `.tip` / `.hidden` per mode.
         // Move 1 ships dummy content; Move 2 swaps `LibrarianSurface` in.
         .floatingPanel { proxy in
-            DummyLibrarianPanelContent(model: panelState, proxy: proxy)
+            // Env objects don't cross FloatingPanel's UIHostingController
+            // mount automatically, so we inject the four the surface
+            // needs explicitly. `hostScope` drives the Librarian's
+            // first-appear scope seed; we collapse the four entry modes
+            // to corpus/collection so the surface sees a clean slice.
+            LibrarianSurface(
+                hostScope: hostScope(for: router.entryMode),
+                panelModel: panelState,
+                proxy: proxy
+            )
+                .environment(store)
+                .environment(router)
+                .environment(selection)
+                .environment(quarantineStore)
                 .onAppear {
                     panelState.controller = proxy.controller
                     proxy.controller.delegate = panelState
+                    // FloatingPanel always draws its own grabber on the
+                    // surface (`SurfaceView.grabberHandle`); the
+                    // Librarian draws a styled SwiftUI Capsule in its
+                    // expanded header. Hide the library's so we ship a
+                    // single grabber owner (Step E carry-forward; the
+                    // probe's doubled-pill artifact was the two
+                    // stacking).
+                    proxy.controller.surfaceView.grabberHandle.isHidden = true
                     // First-render alignment with the current entry mode.
                     // SwiftUI's `.onChange` doesn't fire for the initial
                     // value reliably across the panel-mount boundary, so
@@ -98,6 +119,48 @@ struct ContentView: View {
                 // build that here; it belongs to a later move.
                 panelState.duck(animated: true)
             }
+        }
+        // Capture coexistence (fix-pass v3 Item 2b). When the in-app
+        // capture overlay activates, duck the Librarian so its panel
+        // doesn't render over the capture UI (Librarian is the topmost
+        // layout resident — same reason QuikCapture mode ducks above).
+        // On dismiss restore per current entry mode; if we're on
+        // dashboard / quikCapture the panel was already ducked so this
+        // is a no-op there.
+        .onChange(of: router.captureOverlay) { _, ctx in
+            if ctx != nil {
+                panelState.duck(animated: true)
+            } else {
+                switch router.entryMode {
+                case .canvas, .collectionCanvas:
+                    panelState.raiseToPeek(animated: true)
+                case .dashboard, .quikCapture:
+                    break
+                }
+            }
+        }
+        // Mirror the panel detent onto the router (fix-pass v3 Item 2a)
+        // so views without a direct handle on `panelState` can gate
+        // themselves on peek vs raised — the "+" capture trigger in
+        // CanvasView / NodeListView uses this.
+        .onChange(of: panelState.state) { _, newState in
+            router.librarianAtPeek = (newState == .tip)
+        }
+    }
+
+    /// Collapse the four entry modes to a Librarian scope.
+    /// `canvas` and the two ducked modes (dashboard/quikCapture) show
+    /// the whole-corpus slice; only an explicit collection canvas
+    /// scopes the Librarian to that collection. The Librarian reads
+    /// this on first appear in a new host and seeds
+    /// `LibrarianState.selectedScope` so search/Ask default to the
+    /// slice the user is already looking at.
+    private func hostScope(for mode: AppRouter.EntryMode) -> CanvasScope {
+        switch mode {
+        case .collectionCanvas(let id):
+            return .collection(id)
+        case .canvas, .dashboard, .quikCapture:
+            return .corpus
         }
     }
 }

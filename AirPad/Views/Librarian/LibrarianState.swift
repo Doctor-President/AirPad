@@ -16,20 +16,6 @@ import FoundationModels
 @MainActor
 final class LibrarianState {
 
-    /// Surface state — collapsed pill, default expanded chrome, or
-    /// fullScreen for the drag-up-to-fill mode (c13). All three
-    /// states share the same chrome; only the outer frame height
-    /// shifts. `.fullScreen` exists in every mode (not just
-    /// Research) so any pipeline that wants more vertical room —
-    /// long Ask transcripts, busy Research stages, future Provoke
-    /// observation threads — can claim it. Future commits add
-    /// `.iconOnly` for chevron-collapse-but-stay-present.
-    enum SurfaceMode: Sendable {
-        case collapsed
-        case expanded
-        case fullScreen
-    }
-
     /// Librarian mode — which pipeline runs on send. For c3 this is
     /// purely state + visual (the dropdown changes the active icon);
     /// per-mode pipelines land in c4+ (Navigate first). Today every
@@ -135,17 +121,6 @@ final class LibrarianState {
             self.timestamp = timestamp
         }
     }
-
-    var surfaceMode: SurfaceMode = .collapsed
-
-    // TODO(Move 2): remove — superseded by FloatingPanel-owned detent.
-    // `LibrarianSheetPresenter` was deleted in Move 1; these three fields
-    // are no longer read by any production code. Left in place this move
-    // so Move 1 stays minimal and compiling; Move 2 finalizes
-    // `LibrarianState`'s relationship to the panel.
-    @ObservationIgnored let sheetDetentState = LibrarianSheetDetentState()
-    var sheetPresented: Bool = false
-    var sheetInitialDetent: LibrarianSheetDetentState.SelectedDetent = .peek
 
     /// Active mode — drives the mode-icon symbol in the expanded header
     /// and (in later commits) which pipeline runs on send. Defaults to

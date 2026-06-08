@@ -1,12 +1,12 @@
 import SwiftUI
+import FloatingPanel
 
-/// Librarian morphing surface — pill collapsed, full chrome expanded.
-/// Tapping the collapsed pill springs the surface open in place; the
-/// chevron in the expanded header collapses it back. Replaces the
-/// pre-Librarian `CorpusQuerySheet` flow: the classify → respond
-/// pipeline (single-mode today; modes land in c3+) runs in-surface
-/// against `router.librarian`, so the input, the response, and the
-/// surface state all survive view remounts.
+/// Librarian surface — full Librarian chrome rendered inside the
+/// in-layout FloatingPanel mounted at `ContentView` root. Body content
+/// branches on the panel's live detent (peek → whisper / pill content,
+/// half/full → full chrome). The pre-Move-2 morphing-pill `surfaceMode`
+/// and `isSystemSheet` brains are gone — the panel detent is the single
+/// source of truth.
 ///
 /// Retrieval rows hand off navigation via `router.pendingNodeNavigationID`
 /// so the host NavigationStack (CanvasView / NodeListView) owns the
@@ -17,70 +17,17 @@ struct LibrarianSurface: View {
     /// canvas, Journal canvas, or a specific collection canvas/list).
     /// Used to seed `LibrarianState.selectedScope` on first appear in a
     /// new host so the Librarian defaults to the slice the user is
-    /// already looking at. Defaults to `.corpus` for hosts that don't
-    /// thread a scope through yet.
+    /// already looking at.
     let hostScope: CanvasScope
 
-    /// True when this surface is rendered inside a
-    /// `UISheetPresentationController` (via `LibrarianSheetPresenter`).
-    /// When set, body content branches on the live `detentState` (peek
-    /// → collapsedBody, medium/large → expandedBody) instead of the
-    /// morphing-pill `surfaceMode`, and the outer chrome (rounded-rect
-    /// backgrounds, fixed frame, drag gesture) is suppressed because
-    /// the system sheet owns presentation chrome via
-    /// `presentationBackground` and its own pan/scroll coordination.
-    let isSystemSheet: Bool
-
-    /// Live detent mirror written by
-    /// `LibrarianSheetPresenter.Coordinator` from the
-    /// `UISheetPresentationController` delegate callback. Read here
-    /// to pick collapsedBody vs expandedBody when `isSystemSheet`.
-    /// `nil` outside sheet contexts.
-    let detentState: LibrarianSheetDetentState?
-
-    /// Invoked by the expanded-body chevron when `isSystemSheet`. The
-    /// presenter wires this to a direct `selectedDetent = .peek` +
-    /// `sheet.animateChanges` write in the coordinator, so the sheet
-    /// collapses without any indirection through observable
-    /// closures. `nil` outside sheet contexts.
-    let onChevronTap: (() -> Void)?
-
-    /// Invoked by the collapsedBody tap when `isSystemSheet`. Drives the
-    /// live sheet to `.medium` instead of writing the morphing-pill
-    /// `surfaceMode` (which the sheet doesn't observe — the two-brains
-    /// bug). `nil` outside sheet contexts.
-    let onExpandTap: (() -> Void)?
-
-    /// Invoked on the first non-empty searchText keystroke when
-    /// `isSystemSheet`. Drives the live sheet to `.large` so the
-    /// results pane has the most room — same intent as the pill
-    /// path's `surfaceMode = .fullScreen`, routed through the sheet
-    /// brain. `nil` outside sheet contexts.
-    let onSearchExpandTap: (() -> Void)?
-
-    /// Invoked by `openNode` when `isSystemSheet`. Drives the live
-    /// sheet to `.medium` so the pushed detail view is visible above
-    /// the sheet instead of being covered by it at `.large`. `nil`
-    /// outside sheet contexts.
-    let onNavigateCollapse: (() -> Void)?
-
-    init(
-        hostScope: CanvasScope = .corpus,
-        isSystemSheet: Bool = false,
-        detentState: LibrarianSheetDetentState? = nil,
-        onChevronTap: (() -> Void)? = nil,
-        onExpandTap: (() -> Void)? = nil,
-        onSearchExpandTap: (() -> Void)? = nil,
-        onNavigateCollapse: (() -> Void)? = nil
-    ) {
-        self.hostScope = hostScope
-        self.isSystemSheet = isSystemSheet
-        self.detentState = detentState
-        self.onChevronTap = onChevronTap
-        self.onExpandTap = onExpandTap
-        self.onSearchExpandTap = onSearchExpandTap
-        self.onNavigateCollapse = onNavigateCollapse
-    }
+    /// FloatingPanel state observer and proxy, supplied by the panel
+    /// mount in `ContentView.floatingPanel { proxy in ... }`. The model
+    /// is the detent SSOT (body content reads `panelModel.state`);
+    /// the proxy is the channel for `.floatingPanelScrollTracking` on
+    /// inner scrollables so the panel's drag and the scroll content
+    /// don't move under the same finger.
+    @ObservedObject var panelModel: LibrarianPanelStateModel
+    let proxy: FloatingPanelProxy
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -94,47 +41,19 @@ struct LibrarianSurface: View {
     @State private var isSavingSession = false
     @State private var researchExportCopied = false
     @FocusState private var isInputFocused: Bool
+    /// Focus state for the persistent search field. Kept separate from
+    /// `isInputFocused` so each field's own promote-on-focus
+    /// `.onChange` fires from its own state, and the lifted Done
+    /// (Move 2 fix-pass B) can resign either without guessing which
+    /// is live.
+    @FocusState private var isSearchFocused: Bool
 
     /// Live keyboard height, observed via UIResponder notifications.
-    /// Drives fullScreen frame compression so the surface stays
-    /// anchored at the bottom and shrinks between screen top and
-    /// keyboard top, rather than letting the default safe-area
-    /// inset push the (taller-than-available) frame off the top.
-    /// Stays 0 in collapsed / expanded modes — those frames are
-    /// short enough that the natural keyboard push works fine.
+    /// Drives in-content layout (the input row rides above the keyboard,
+    /// the transcript stays readable, the dismiss-keyboard affordance
+    /// in `inputRow` shows). The panel's frame is owned by FloatingPanel
+    /// — this height never moves the panel detent.
     @State private var keyboardHeight: CGFloat = 0
-
-    /// Live drag translation on the grabber. Positive = drag down,
-    /// negative = drag up. Combined with the current discrete posture's
-    /// base height to produce the real-time surface height during a
-    /// drag; reset to 0 (animated) on release once the new posture is
-    /// committed. Stays 0 outside of drags.
-    @State private var dragLiveOffset: CGFloat = 0
-
-    /// Nearest discrete posture given the current effective height
-    /// during a drag. Updated continuously inside the drag handler so
-    /// the haptic detent fires at each posture boundary the finger
-    /// crosses, not only on release.
-    @State private var dragNearestDetent: LibrarianState.SurfaceMode = .collapsed
-
-    /// Live vertical content offset of whichever inner ScrollView is
-    /// mounted (transcript / suggestions / search results / research
-    /// import). 0 means scrolled to top. Read by `sheetDragGesture` to
-    /// decide whether a new drag belongs to the sheet (offset ~0) or
-    /// to the ScrollView (offset > 0). Written via
-    /// `.onScrollGeometryChange`.
-    @State private var scrollOffsetY: CGFloat = 0
-
-    /// True for the duration of a drag the sheet has claimed. While
-    /// true, inner ScrollViews are `.scrollDisabled` so the sheet and
-    /// the scroll content don't both move under the same finger.
-    /// Latched on first claim inside a drag and cleared on release.
-    @State private var dragClaimedBySheet = false
-
-    /// Bound to the same key Settings writes (c7). Drives the personal-voice
-    /// indicator in the expanded header so toggling the prompt in Settings
-    /// reflects here without dismount.
-    @AppStorage("librarianPersonalPrompt") private var librarianPersonalPrompt = ""
 
     /// Identifiable wrapper so `.sheet(item:)` re-presents when the user
     /// taps a different chip without dismissing first. Carries the
@@ -150,10 +69,6 @@ struct LibrarianSurface: View {
         store.ghostQuerySuggestions
     }
 
-    private var hasPersonalVoice: Bool {
-        !librarianPersonalPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
     private var displayText: String {
         guard !activeWhispers.isEmpty else { return "" }
         return activeWhispers[currentWhisperIndex % activeWhispers.count]
@@ -162,148 +77,110 @@ struct LibrarianSurface: View {
     var body: some View {
         @Bindable var librarian = router.librarian
 
-        if isSystemSheet {
-            sheetBody(librarian: librarian)
-        } else {
-            morphingPillBody(librarian: librarian)
-        }
-    }
-
-    /// Body branch when the surface is rendered inside a
-    /// `UISheetPresentationController` (via `LibrarianSheetPresenter`).
-    /// No outer chrome — the sheet supplies background + rainbow
-    /// perimeter via `presentationBackground { LibrarianSheetBackground() }`,
-    /// no fixed frame — the sheet's detents drive height, no drag
-    /// gesture — UIKit owns it. Content branches on the live detent
-    /// instead of the morphing-pill `surfaceMode`.
-    @ViewBuilder
-    private func sheetBody(librarian: LibrarianState) -> some View {
-        let atPeek = detentState?.isAtPeek ?? true
-        Group {
-            if atPeek {
-                collapsedBody(librarian: librarian)
-            } else {
-                expandedBody(librarian: librarian)
-            }
-        }
-        // Force the hosting controller's root view to claim the full
-        // sheet area. Without this, the Group inherits the inner ZStack's
-        // intrinsic height (~57pt) and pins to the top of the 95pt peek
-        // sheet — the inner `maxHeight: .infinity` never gets a parent
-        // proposal to expand into, so visual centering fails.
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            startGradientAnimation()
-            startWhisperCycle()
-            seedScopeFromHostIfNeeded(librarian: librarian)
-        }
-        // Single-owner sheet (Phase 1) keeps the surface mounted across
-        // canvas → collectionCanvas transitions, so `.onAppear` doesn't
-        // re-fire and the seed-on-appear path misses the host swap. The
-        // `lastSeededHostKey` guard inside the seed protects an explicit
-        // user chip selection within the same host.
-        .onChange(of: hostScope) { _, _ in
-            seedScopeFromHostIfNeeded(librarian: librarian)
-        }
-        .onChange(of: detentState?.isAtPeek ?? true) { _, isPeek in
-            // Mirror the morphing-pill behavior: collapsing the
-            // surface defocuses the input so the keyboard goes
-            // away when the user pulls the sheet down to peek.
-            if isPeek { isInputFocused = false }
-        }
-        .sheet(item: $presentedCitation) { context in
-            CitationSheet(
-                nodeID: context.nodeID,
-                allCitations: context.citations,
-                onOpenNote: { router.pendingNodeNavigationID = context.nodeID }
-            )
-            .environment(store)
-        }
-    }
-
-    /// Body branch when the surface is rendered as the bottom-anchored
-    /// morphing pill (legacy / non-sheet contexts). Owns its own
-    /// chrome, frame, and drag gesture; switches content on
-    /// `librarian.surfaceMode` (collapsed / expanded / fullScreen).
-    @ViewBuilder
-    private func morphingPillBody(librarian: LibrarianState) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
+            RoundedRectangle(cornerRadius: surfaceCornerRadius)
                 .fill(.thinMaterial)
 
-            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
+            RoundedRectangle(cornerRadius: surfaceCornerRadius)
                 .fill(Color.black.opacity(0.35))
 
-            // Inner glow: thick inset stroke painted with the same
-            // rotating angular gradient as the crisp 1.5pt edge,
-            // blurred and masked so the colors bleed inward as a soft
-            // aurora that breathes in step with the perimeter. The
-            // crisp stroke above defines the edge; this layer gives it
-            // a moving chromatic halo.
-            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
-                .strokeBorder(
-                    AngularGradient(
-                        colors: [
-                            Color(hexString: "E36B4E"),
-                            Color(hexString: "7A52FF"),
-                            Color(hexString: "B857D4"),
-                            Color(hexString: "E36B4E")
-                        ],
-                        center: .center,
-                        startAngle: .degrees(gradientRotation),
-                        endAngle: .degrees(gradientRotation + 360)
-                    ).opacity(0.45),
-                    lineWidth: 10
-                )
-                .blur(radius: 6)
-                .mask(
-                    RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
-                )
-                .allowsHitTesting(false)
+            // Drag-aware chrome (Move 2 fix-pass A): the blurred-glow
+            // inner stroke + crisp angular-gradient edge re-render
+            // every frame because `gradientRotation` is continuously
+            // animated. During panel drag/attraction the surface is
+            // also being CoreAnimation-transformed by FloatingPanel,
+            // which compounds into visible stutter. While the panel
+            // is in motion, swap in a static low-cost border (no
+            // blurred glow, no angular gradient). The full aurora
+            // chrome restores at rest.
+            if panelModel.isDragging {
+                RoundedRectangle(cornerRadius: surfaceCornerRadius)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1.5)
+            } else {
+                // Inner glow: thick inset stroke painted with the
+                // same rotating angular gradient as the crisp 1.5pt
+                // edge, blurred and masked so the colors bleed inward
+                // as a soft aurora that breathes in step with the
+                // perimeter.
+                RoundedRectangle(cornerRadius: surfaceCornerRadius)
+                    .strokeBorder(
+                        AngularGradient(
+                            colors: [
+                                Color(hexString: "E36B4E"),
+                                Color(hexString: "7A52FF"),
+                                Color(hexString: "B857D4"),
+                                Color(hexString: "E36B4E")
+                            ],
+                            center: .center,
+                            startAngle: .degrees(gradientRotation),
+                            endAngle: .degrees(gradientRotation + 360)
+                        ).opacity(0.45),
+                        lineWidth: 10
+                    )
+                    .blur(radius: 6)
+                    .mask(RoundedRectangle(cornerRadius: surfaceCornerRadius))
+                    .allowsHitTesting(false)
 
-            RoundedRectangle(cornerRadius: surfaceCornerRadius(for: librarian.surfaceMode))
-                .strokeBorder(
-                    AngularGradient(
-                        colors: [
-                            Color(hexString: "E36B4E"),
-                            Color(hexString: "7A52FF"),
-                            Color(hexString: "B857D4"),
-                            Color(hexString: "E36B4E")
-                        ],
-                        center: .center,
-                        startAngle: .degrees(gradientRotation),
-                        endAngle: .degrees(gradientRotation + 360)
-                    ),
-                    lineWidth: 1.5
-                )
+                RoundedRectangle(cornerRadius: surfaceCornerRadius)
+                    .strokeBorder(
+                        AngularGradient(
+                            colors: [
+                                Color(hexString: "E36B4E"),
+                                Color(hexString: "7A52FF"),
+                                Color(hexString: "B857D4"),
+                                Color(hexString: "E36B4E")
+                            ],
+                            center: .center,
+                            startAngle: .degrees(gradientRotation),
+                            endAngle: .degrees(gradientRotation + 360)
+                        ),
+                        lineWidth: 1.5
+                    )
+            }
 
-            switch librarian.surfaceMode {
-            case .collapsed:
+            // Detent SSOT: peek shows the whisper pill content; half
+            // and full both show the expanded chrome. FloatingPanel's
+            // frame between detents drives height — the surface has no
+            // `.frame(height:)` of its own.
+            switch panelModel.state {
+            case .tip:
                 collapsedBody(librarian: librarian)
-            case .expanded, .fullScreen:
+            default:
                 expandedBody(librarian: librarian)
             }
+
         }
-        .frame(height: effectiveFrameHeight(librarian: librarian))
-        .animation(.snappy(duration: 0.32, extraBounce: 0.12), value: librarian.surfaceMode)
-        .sensoryFeedback(.impact(weight: .medium), trigger: librarian.surfaceMode) { _, new in
-            new == .expanded
-        }
-        .sensoryFeedback(.impact(weight: .light), trigger: dragNearestDetent)
         .onAppear {
             startGradientAnimation()
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
-        // See collapsedBody for context — host swap without a remount
-        // (canvas → collectionCanvas) doesn't re-fire `.onAppear`, so
-        // mirror the seed call here on hostScope change.
         .onChange(of: hostScope) { _, _ in
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
-        .onChange(of: librarian.surfaceMode) { _, newMode in
-            if newMode == .collapsed {
-                isInputFocused = false
+        .onChange(of: panelModel.state) { _, newState in
+            // Mirror the pre-Move-2 collapse-defocuses behavior: when
+            // the panel collapses to peek, drop input focus so the
+            // keyboard goes away with the surface.
+            if newState == .tip { isInputFocused = false }
+        }
+        .onChange(of: isInputFocused) { _, focused in
+            // Promote-on-focus: never type at a detent shorter than
+            // full. Apple sheet pattern, also resolves the keyboard
+            // probe's half-panel keyboard-composition defect (Round 2)
+            // — at full there is no short-gap conflict to break the
+            // keyboard's presentation.
+            if focused {
+                panelModel.expandToFull(animated: true)
+            }
+        }
+        .onChange(of: isSearchFocused) { _, focused in
+            // Mirror the chat input's promote-on-focus for the search
+            // field. Move 2 fix-pass B: the search TextField was
+            // previously unbound, so focusing it left the panel at
+            // `.half` and the keyboard buried the field.
+            if focused {
+                panelModel.expandToFull(animated: true)
             }
         }
         .sheet(item: $presentedCitation) { context in
@@ -317,19 +194,9 @@ struct LibrarianSurface: View {
         .onReceive(
             NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
         ) { note in
-            // willShow can fire repeatedly (frame change on language
-            // switch, autofill bar appear, etc.) — always take the
-            // latest end-frame height so the surface follows.
             guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
-            // Adjust for the host VStack's bottom padding (24pt in
-            // NodeListView / CanvasView): the keyboard overlaps that
-            // padding, so the *effective* lift on the surface is
-            // keyboard height minus the host's bottom inset. Without
-            // this, we'd over-compress and leave a visible gap below
-            // the surface.
-            let lift = max(0, frame.height - 24)
             withAnimation(.easeOut(duration: 0.25)) {
-                keyboardHeight = lift
+                keyboardHeight = frame.height
             }
         }
         .onReceive(
@@ -341,36 +208,10 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// Frame height per surface mode. `.fullScreen` claims most of
-    /// the device's vertical space — the parent VStack absorbs the
-    /// rest via its `Spacer`, and the host's bottom padding keeps
-    /// the surface off the home indicator. Capped at the visible
-    /// screen height so a giant simulator size doesn't blow past
-    /// the safe area; floored generously so the drag actually feels
-    /// like it claimed the screen even on a compact device.
-    private func surfaceFrameHeight(for mode: LibrarianState.SurfaceMode) -> CGFloat {
-        switch mode {
-        case .collapsed: return 78
-        case .expanded:  return 452
-        case .fullScreen:
-            let screenH = UIScreen.main.bounds.height
-            // Subtract observed keyboard height so the surface
-            // compresses between the screen top and the keyboard top
-            // when the input is focused. The floor stays generous
-            // enough that the transcript pane still has usable space
-            // even with the keyboard up on a compact device.
-            let raw = screenH - 160 - keyboardHeight
-            return max(keyboardHeight > 0 ? 280 : 560, raw)
-        }
-    }
-
-    /// Corner radius. Unified at 39pt across all modes so the surface
-    /// keeps the same roundness language as it morphs — collapsed pill
-    /// arc reads as concentric with the 38pt mode icon ring, and
-    /// expanded / fullScreen carry that same arc rather than flattening.
-    private func surfaceCornerRadius(for mode: LibrarianState.SurfaceMode) -> CGFloat {
-        return 39
-    }
+    /// Surface corner radius — unified at 39pt so the peek pill arc
+    /// reads as concentric with the 38pt mode icon ring and the half /
+    /// full chrome carries the same arc rather than flattening.
+    private var surfaceCornerRadius: CGFloat { 39 }
 
     /// Top-edge drag grabber. Live-tracks vertical drag: the surface
     /// height follows the finger between detents, with a light haptic
@@ -385,142 +226,6 @@ struct LibrarianSurface: View {
             .frame(height: 22)
             .frame(maxWidth: .infinity)
             .accessibilityHidden(true)
-    }
-
-    /// Sheet-wide drag gesture. Attached as a `simultaneousGesture` to
-    /// the whole expanded-body VStack so the user can drag the surface
-    /// from anywhere — header, transcript, suggestions — not only the
-    /// grabber strip. Coordinates with the inner ScrollView via a
-    /// scroll-offset gate: a new drag is only "claimed" by the sheet
-    /// when the active ScrollView is at top (offset ≤ 1pt) — otherwise
-    /// the gesture passes through to scroll. Once claimed, the
-    /// ScrollView is `.scrollDisabled` for the duration so the same
-    /// finger doesn't move two things at once. This mirrors how the
-    /// system sheet hands off between scroll and drag.
-    ///
-    /// `minimumDistance: 2` keeps stationary taps on the chevron /
-    /// mode-icon / footer buttons working (they stay well under the
-    /// threshold) while letting the smallest deliberate swipe enter
-    /// this handler — the previous 6pt threshold left a hesitation
-    /// window where the ScrollView could win a quick upward flick from
-    /// medium. Paired with the fast-flick early-claim below, a real
-    /// drag now claims the sheet within the first frame of motion.
-    ///
-    /// Snap target on release uses `predictedEndTranslation` — SwiftUI's
-    /// velocity-projected end position — rather than the raw translation,
-    /// matching Apple's sheet pattern. From .expanded (452pt) the midpoint
-    /// to fullScreen is ~124pt and to collapsed ~187pt; without velocity
-    /// projection a flick that didn't physically cross the midpoint would
-    /// snap back. With projection, a short flick at moderate speed adds
-    /// hundreds of points of predicted translation and lands on the
-    /// intended detent.
-    private func sheetDragGesture(librarian: LibrarianState) -> some Gesture {
-        DragGesture(minimumDistance: 2)
-            .onChanged { value in
-                if !dragClaimedBySheet {
-                    let goingDown = value.translation.height > 0
-                    let atTopOfScroll = scrollOffsetY <= 1
-                    let canGrow = librarian.surfaceMode != .fullScreen
-                    // Fast flick at top of scroll → claim immediately,
-                    // regardless of which direction or how far the
-                    // finger has moved. Removes the hesitation window
-                    // where the ScrollView was still fighting for the
-                    // gesture on a quick upward swipe from medium.
-                    let fastFlick = abs(value.velocity.height) > 200 && atTopOfScroll
-                    let claim = fastFlick
-                        || (goingDown ? atTopOfScroll : (canGrow && atTopOfScroll))
-                    guard claim else { return }
-                    dragClaimedBySheet = true
-                }
-                dragLiveOffset = value.translation.height
-                let h = effectiveFrameHeight(librarian: librarian)
-                let near = nearestDetent(toHeight: h, librarian: librarian)
-                if near != dragNearestDetent {
-                    dragNearestDetent = near
-                }
-            }
-            .onEnded { value in
-                defer { dragClaimedBySheet = false }
-                guard dragClaimedBySheet else { return }
-                let base = surfaceFrameHeight(for: librarian.surfaceMode)
-                let projectedH = base - value.predictedEndTranslation.height
-                let clamped = min(
-                    max(projectedH, surfaceFrameHeight(for: .collapsed)),
-                    surfaceFrameHeight(for: .fullScreen)
-                )
-                var target = nearestDetent(toHeight: clamped, librarian: librarian)
-                // Direction guard: an unmistakably upward flick must
-                // never resolve to .collapsed, even if the position
-                // math projects there (can happen when the flick is
-                // fast enough that predictedEndTranslation overshoots
-                // wildly in the wrong direction during a frame jitter).
-                // Floor the target at the current posture on upward
-                // intent so the sheet only ever grows or stays.
-                if value.velocity.height < -200 && target == .collapsed {
-                    target = librarian.surfaceMode == .collapsed ? .expanded : librarian.surfaceMode
-                }
-                withAnimation(.snappy(duration: 0.32, extraBounce: 0.12)) {
-                    librarian.surfaceMode = target
-                    dragLiveOffset = 0
-                }
-            }
-    }
-
-    private enum SurfaceDragDirection { case up, down }
-
-    /// State machine for tap/button-driven transitions (chevron, pill
-    /// tap, etc.). Up grows the surface (collapsed→expanded→fullScreen,
-    /// fullScreen stays); down shrinks (fullScreen→expanded→collapsed,
-    /// collapsed stays). Real-time drag has its own snap logic inside
-    /// `dragGrabber` — it goes straight to the nearest detent.
-    ///
-    /// Session-active hold: while `librarian.hasActiveSession` is true,
-    /// `.expanded → .collapsed` is blocked so the chevron / drag-down
-    /// can't hide an in-progress transcript behind the pill. The user
-    /// must explicitly End Session (footer) to collapse.
-    private func advanceSurface(librarian: LibrarianState, direction: SurfaceDragDirection) {
-        switch (librarian.surfaceMode, direction) {
-        case (.collapsed, .up):    librarian.surfaceMode = .expanded
-        case (.expanded, .up):     librarian.surfaceMode = .fullScreen
-        case (.fullScreen, .down): librarian.surfaceMode = .expanded
-        case (.expanded, .down):
-            if !librarian.hasActiveSession {
-                librarian.surfaceMode = .collapsed
-            }
-        default: break
-        }
-    }
-
-    /// Current effective frame height — the discrete posture's base
-    /// height shifted by the live drag (drag up = negative dy = larger
-    /// frame). Clamped between collapsed and fullScreen so overshooting
-    /// the grabber doesn't grow the surface past its bounds.
-    private func effectiveFrameHeight(librarian: LibrarianState) -> CGFloat {
-        let base = surfaceFrameHeight(for: librarian.surfaceMode)
-        let raw = base - dragLiveOffset
-        let minH = surfaceFrameHeight(for: .collapsed)
-        let maxH = surfaceFrameHeight(for: .fullScreen)
-        return min(max(raw, minH), maxH)
-    }
-
-    /// Nearest discrete posture to the given height, used to pick the
-    /// snap target on release and to drive the detent haptic during
-    /// drag. Minimum-distance match against each posture's base height.
-    ///
-    /// Session-active hold: while `librarian.hasActiveSession` is true,
-    /// `.collapsed` is dropped from the candidates so a drag-down past
-    /// expanded snaps back to expanded rather than burying the
-    /// transcript behind the pill.
-    private func nearestDetent(toHeight h: CGFloat, librarian: LibrarianState) -> LibrarianState.SurfaceMode {
-        var candidates: [(LibrarianState.SurfaceMode, CGFloat)] = [
-            (.collapsed, surfaceFrameHeight(for: .collapsed)),
-            (.expanded, surfaceFrameHeight(for: .expanded)),
-            (.fullScreen, surfaceFrameHeight(for: .fullScreen))
-        ]
-        if librarian.hasActiveSession {
-            candidates.removeAll { $0.0 == .collapsed }
-        }
-        return candidates.min(by: { abs($0.1 - h) < abs($1.1 - h) })?.0 ?? librarian.surfaceMode
     }
 
     // MARK: - Collapsed
@@ -559,14 +264,7 @@ struct LibrarianSurface: View {
         .ignoresSafeArea(.container, edges: .bottom)
         .contentShape(Rectangle())
         .onTapGesture {
-            if isSystemSheet {
-                // Sheet brain: drive the native sheet to medium; the
-                // morphing-pill `surfaceMode` write would land in the
-                // unused brain and the sheet wouldn't notice.
-                onExpandTap?()
-            } else {
-                librarian.surfaceMode = .expanded
-            }
+            panelModel.expandToHalf(animated: true)
         }
     }
 
@@ -597,13 +295,12 @@ struct LibrarianSurface: View {
             // to the surface corner with equidistant padding (14pt to
             // top, left, and pill rail) regardless of grabber height.
             ZStack(alignment: .top) {
-                // UIKit owns the grabber in sheet mode
-                // (`prefersGrabberVisible = true` in the presenter);
-                // skip our own Capsule so the two don't stack.
-                if !isSystemSheet {
-                    dragGrabber(librarian: librarian)
-                        .padding(.top, 6)
-                }
+                // FloatingPanel draws its own grabber on the surface;
+                // we hide it in ContentView's panel mount so this
+                // SwiftUI Capsule remains the single grabber owner —
+                // sized/styled to match the Librarian's visual language.
+                dragGrabber(librarian: librarian)
+                    .padding(.top, 6)
 
                 HStack(alignment: .top) {
                     Button {
@@ -619,26 +316,8 @@ struct LibrarianSurface: View {
 
                     Spacer()
 
-                    if hasPersonalVoice {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.system(size: 13, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.35))
-                            .frame(width: 22, height: 32)
-                            .accessibilityLabel("Personal voice active")
-                    }
-
                     Button {
-                        if isSystemSheet {
-                            // Sheet mode — the presenter wires this
-                            // to a direct `selectedDetent = .peek`
-                            // write + `sheet.animateChanges` in the
-                            // coordinator, collapsing the sheet
-                            // back to peek without going through
-                            // any observable closure indirection.
-                            onChevronTap?()
-                        } else {
-                            advanceSurface(librarian: librarian, direction: .down)
-                        }
+                        panelModel.raiseToPeek(animated: true)
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 14, weight: .semibold))
@@ -684,32 +363,43 @@ struct LibrarianSurface: View {
 
             endSessionFooter(librarian: librarian)
         }
-        // In sheet mode, suppress the morphing-pill drag gesture so
-        // UIKit's native sheet-resize pan owns drags on body content.
-        // `including: .none` keeps the modifier in the tree but tells
-        // SwiftUI not to recognize the gesture — subview gestures
-        // (Buttons, ScrollViews) stay intact. Permanent: the pill path
-        // (isSystemSheet == false) still needs its own drag handling.
-        .simultaneousGesture(
-            sheetDragGesture(librarian: librarian),
-            including: isSystemSheet ? .none : .all
-        )
+        // Lifted field-agnostic Done (Move 2 fix-pass v3 / Item 1).
+        // Mounted as a bottom safeAreaInset so SwiftUI's automatic
+        // keyboard avoidance — the same mechanism that already lifts
+        // the chat input row above the keyboard — also lifts this
+        // band. No manual `keyboardHeight` offset and no
+        // `.ignoresSafeArea(.keyboard)`; both led to double-counting
+        // and the mid-frame float seen in v2 / v3a. Visible only when
+        // a field is up; reachable from both the search-results pane
+        // and the transcript/input pane.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if keyboardHeight > 0 {
+                VStack(spacing: 0) {
+                    // Hairline rule so the band reads as a toolbar
+                    // rather than a floating word above the keyboard.
+                    Color.white.opacity(0.1)
+                        .frame(height: 0.5)
+                    HStack {
+                        Spacer()
+                        liftedDoneButton
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.vertical, 12)
+                }
+                .transition(.opacity)
+            }
+        }
         .onChange(of: librarian.searchText) { oldValue, newValue in
             librarian.updateSearchMatches(store: store)
             librarian.kickOffSemanticSearch(store: store)
-            // First non-empty character → grow the surface so the
-            // results pane has the most room. Triggers on every
-            // empty→non-empty transition (e.g. clear + retype). Sheet
-            // brain drives to `.large` via callback; pill brain writes
-            // `surfaceMode = .fullScreen`.
+            // First non-empty character → promote to full so the
+            // results pane has the most room. The focus-driven promote
+            // in `.onChange(of: isInputFocused)` usually fires earlier
+            // (on focus, before the first keystroke), but this stays
+            // as a safety net for paste / programmatic write paths
+            // that bypass focus.
             guard oldValue.isEmpty && !newValue.isEmpty else { return }
-            if isSystemSheet {
-                onSearchExpandTap?()
-            } else if librarian.surfaceMode != .fullScreen {
-                withAnimation(.snappy(duration: 0.32, extraBounce: 0.12)) {
-                    librarian.surfaceMode = .fullScreen
-                }
-            }
+            panelModel.expandToFull(animated: true)
         }
         .confirmationDialog(
             "End session?",
@@ -726,6 +416,28 @@ struct LibrarianSurface: View {
         } message: {
             Text("Save this session as a note, or clear it without saving.")
         }
+    }
+
+    /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out
+    /// of `inputRow` so it's reachable from the search-results pane
+    /// too — search has no input row to host its own dismiss. Resigns
+    /// both focus states so a single tap clears whichever field is
+    /// live without the surface having to know which one. Never moves
+    /// the panel (probe Round 2: dismiss leaves the panel at full).
+    private var liftedDoneButton: some View {
+        Button {
+            isInputFocused = false
+            isSearchFocused = false
+        } label: {
+            Text("Done")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.95))
+                .contentShape(Rectangle())
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dismiss keyboard")
     }
 
     /// Footer row holding the End button. Visible whenever the session
@@ -801,6 +513,7 @@ struct LibrarianSurface: View {
                 get: { librarian.searchText },
                 set: { librarian.searchText = $0 }
             ))
+                .focused($isSearchFocused)
                 .font(.system(size: 15, weight: .regular))
                 .foregroundStyle(.white)
                 .tint(.white)
@@ -887,7 +600,7 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
-        .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+        .floatingPanelScrollTracking(proxy: proxy)
     }
 
     /// Hand a search-result tap to the host NavigationStack via the
@@ -896,22 +609,21 @@ struct LibrarianSurface: View {
     /// not the Librarian surface. v1 navigates to top of the detail;
     /// scroll-to-block + highlight is its own follow-on brief.
     ///
-    /// In sheet mode, also collapses the sheet to `.medium` so the
-    /// pushed detail view is visible above the sheet rather than
-    /// covered by it at `.large`. The collapse + push happen in the
-    /// same tick; the host's pendingNodeNavigationID dedupe guards
-    /// against double-pushes if the user multi-taps the same row.
+    /// Also drops the panel to `.half` so the pushed detail view is
+    /// visible above the Librarian rather than covered by it at full.
+    /// The drop + push happen in the same tick; the host's
+    /// `pendingNodeNavigationID` dedupe guards against double-pushes
+    /// if the user multi-taps the same row.
     private func openNode(_ nodeID: String) {
         isInputFocused = false
-        // Blunt resign-first-responder: the search TextField lives across the
-        // UIHostingController/sheet boundary and its keyboard isn't reachable
-        // via @FocusState from this side. Send up the responder chain so
-        // whoever holds the keyboard releases it.
+        // Blunt resign-first-responder kept defensively: the search
+        // TextField lives across the UIHostingController/FloatingPanel
+        // boundary, so unfocusing via @FocusState alone has missed in
+        // the past. Sending up the responder chain ensures whoever
+        // holds the keyboard releases it.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
-        if isSystemSheet {
-            onNavigateCollapse?()
-        }
+        panelModel.dropToHalf(animated: true)
         router.pendingNodeNavigationID = nodeID
     }
 
@@ -936,43 +648,22 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
                 .lineLimit(1...4)
 
-            // Keyboard is up + field is empty → swap send for a
-            // dismiss-keyboard affordance. Sending is a no-op while
-            // empty (button is disabled) so the slot doubles as the
-            // most useful action available right now: get the
-            // keyboard out of the way and let the surface go back
-            // to full height. With text in the field, send wins —
-            // sending naturally unfocuses and dismisses the
-            // keyboard, so a separate dismiss is redundant.
-            let showDismissButton = keyboardHeight > 0
-                && librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-
-            if showDismissButton {
-                Button {
-                    isInputFocused = false
-                } label: {
-                    Image(systemName: "keyboard.chevron.compact.down")
-                        .font(.system(size: 22, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .padding(.trailing, 10)
-                .accessibilityLabel("Dismiss keyboard")
-                .transition(.opacity)
-            } else {
-                Button {
-                    Task { await librarian.executeQuery(store: store) }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
-                }
-                .buttonStyle(.plain)
-                .disabled(!sendIsEnabled(librarian: librarian))
-                .padding(.trailing, 10)
-                .transition(.opacity)
+            // Send-only slot (Move 2 fix-pass B): the previous
+            // dismiss-when-empty swap is replaced by a lifted
+            // field-agnostic Done in `expandedBody` so the dismiss is
+            // reachable for the search-results pane too — not just
+            // when the chat input is mounted and empty. Sending still
+            // unfocuses and dismisses the keyboard naturally.
+            Button {
+                Task { await librarian.executeQuery(store: store) }
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
             }
+            .buttonStyle(.plain)
+            .disabled(!sendIsEnabled(librarian: librarian))
+            .padding(.trailing, 10)
         }
         .frame(minHeight: 48)
         .background(Color.white.opacity(0.04))
@@ -1006,7 +697,10 @@ struct LibrarianSurface: View {
             || isResponseError
 
         if hasAny {
-            ScrollViewReader { proxy in
+            // Rename to `scrollProxy` so the outer `proxy:
+            // FloatingPanelProxy` (used by `.floatingPanelScrollTracking`
+            // below) isn't shadowed by SwiftUI's `ScrollViewProxy`.
+            ScrollViewReader { scrollProxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         if let summary = librarian.compactedSummary, !summary.isEmpty {
@@ -1041,18 +735,18 @@ struct LibrarianSurface: View {
                 }
                 .onChange(of: librarian.sessionHistory.count) { _, _ in
                     withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                        scrollProxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
                     }
                 }
                 .onChange(of: librarian.isLoading) { _, _ in
                     withAnimation(.easeOut(duration: 0.25)) {
-                        proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                        scrollProxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
                     }
                 }
                 .onAppear {
-                    proxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                    scrollProxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
                 }
-                .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+                .floatingPanelScrollTracking(proxy: proxy)
             }
         } else {
             ScrollView {
@@ -1061,7 +755,7 @@ struct LibrarianSurface: View {
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+            .floatingPanelScrollTracking(proxy: proxy)
         }
     }
 
@@ -1542,7 +1236,7 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
             }
             .frame(maxHeight: .infinity)
-            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+            .floatingPanelScrollTracking(proxy: proxy)
 
             researchImportFooter(librarian: librarian)
         }
@@ -1794,7 +1488,7 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
             }
             .frame(maxHeight: .infinity)
-            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+            .floatingPanelScrollTracking(proxy: proxy)
 
             researchExportFooter(librarian: librarian)
         }
@@ -2064,7 +1758,7 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 12)
             }
             .frame(maxHeight: .infinity)
-            .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+            .floatingPanelScrollTracking(proxy: proxy)
 
             researchFrameFooter(librarian: librarian)
         }
@@ -2217,7 +1911,7 @@ struct LibrarianSurface: View {
                     .padding(.vertical, 8)
                 }
                 .frame(maxHeight: .infinity)
-                .sheetScrollCoordination(disabled: dragClaimedBySheet) { scrollOffsetY = $0 }
+                .floatingPanelScrollTracking(proxy: proxy)
 
                 researchSelectFooter(librarian: librarian)
             }
@@ -2621,23 +2315,3 @@ private struct SearchRelatedRow: View {
     }
 }
 
-/// Couples an inner ScrollView to the sheet-wide drag gesture: writes
-/// the current vertical content offset out to a binding (so the drag
-/// handler can tell whether the scroll is at top) and freezes the
-/// ScrollView while the sheet has claimed the drag (so the same finger
-/// doesn't translate two things at once). Used by every ScrollView
-/// inside `LibrarianSurface.expandedBody`.
-fileprivate extension View {
-    func sheetScrollCoordination(
-        disabled: Bool,
-        onOffsetChange: @escaping (CGFloat) -> Void
-    ) -> some View {
-        self
-            .scrollDisabled(disabled)
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentOffset.y + geo.contentInsets.top
-            } action: { _, newValue in
-                onOffsetChange(newValue)
-            }
-    }
-}

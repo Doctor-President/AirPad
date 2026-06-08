@@ -56,6 +56,43 @@ enum ModelRouter {
         }
     }
 
+    /// Streaming text generation. Yields incremental string deltas as they
+    /// arrive. For Ollama this is real SSE streaming via `URLSession.bytes`
+    /// — the per-chunk clock dissolves the silent 60s timeout that plagues
+    /// the one-shot `generate(...)` path. For Foundation Model, which is
+    /// on-device and fast, the full response is yielded as a single chunk
+    /// so call sites can use one code path for both providers.
+    static func generateStreaming(
+        systemPrompt: String,
+        userPrompt: String
+    ) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    switch active {
+                    case .foundationModel:
+                        let result = try await generateFoundationModel(
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt
+                        )
+                        continuation.yield(result)
+                        continuation.finish()
+                    case .ollama(let endpoint):
+                        try await streamOllama(
+                            endpoint: endpoint,
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt,
+                            continuation: continuation
+                        )
+                        continuation.finish()
+                    }
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
     enum RouterError: LocalizedError {
         case foundationModelUnavailable
         case ollamaNoModels
@@ -158,6 +195,72 @@ enum ModelRouter {
             throw RouterError.ollamaBadResponse(path: path, body: bodyString)
         }
         return content
+    }
+
+    /// Streaming sibling of `generateOllama`. Body construction, model
+    /// selection, and error semantics match the one-shot variant exactly
+    /// — only `stream: true` and `URLSession.bytes` differ. SSE lines are
+    /// parsed in the OpenAI chat-completions delta shape and yielded as
+    /// they arrive; `URLSession.bytes` resets its inactivity clock on each
+    /// chunk, so the silent-60s timeout that affects `.data(for:)` does
+    /// not apply here.
+    private static func streamOllama(
+        endpoint: String,
+        systemPrompt: String,
+        userPrompt: String,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws {
+        guard let base = URL(string: endpoint) else {
+            throw RouterError.ollamaBadEndpoint(endpoint)
+        }
+        let modelName = try await firstOllamaModel(base: base)
+
+        let path = "v1/chat/completions"
+        var request = URLRequest(url: base.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let foldedUserContent = systemPrompt.isEmpty
+            ? userPrompt
+            : "\(systemPrompt)\n\n\(userPrompt)"
+        let body: [String: Any] = [
+            "model": modelName,
+            "stream": true,
+            "messages": [
+                ["role": "user", "content": foldedUserContent]
+            ]
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do {
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
+        } catch {
+            print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
+            throw RouterError.ollamaTransport(error.localizedDescription)
+        }
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var bodyData = Data()
+            for try await byte in bytes { bodyData.append(byte) }
+            let bodyString = String(data: bodyData, encoding: .utf8) ?? ""
+            print("[ModelRouter] \(path) HTTP \(http.statusCode): \(bodyString)")
+            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: bodyString)
+        }
+
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            guard payload != "[DONE]" else { break }
+
+            if let data = payload.data(using: .utf8),
+               let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let choices = parsed["choices"] as? [[String: Any]],
+               let delta = choices.first?["delta"] as? [String: Any],
+               let content = delta["content"] as? String {
+                continuation.yield(content)
+            }
+        }
     }
 
     private static func firstOllamaModel(base: URL) async throws -> String {

@@ -717,6 +717,13 @@ struct LibrarianSurface: View {
                         scrollProxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
                     }
                 }
+                .onChange(of: librarian.streamingText) { _, _ in
+                    // Stream-follow: each delta lands new content at the
+                    // tail, so the scroll view chases it the way a chat
+                    // app rides typing. No animation — token cadence is
+                    // already smooth, and animating per-delta stutters.
+                    scrollProxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
+                }
                 .onAppear {
                     scrollProxy.scrollTo(Self.transcriptBottomAnchor, anchor: .bottom)
                 }
@@ -880,33 +887,20 @@ struct LibrarianSurface: View {
         .buttonStyle(.plain)
     }
 
-    /// In-flight tail: the user's just-sent query as a bubble +
-    /// thinking spinner, OR an error pill when the latest pipeline
-    /// failed (errors aren't appended to history, so they only show
-    /// here). Returns an empty view when neither is active.
+    /// In-flight tail: the user's just-sent query as a bubble + either
+    /// the silent shimmer (pre-token) or the streamed token tail with a
+    /// blinking cursor (mid-stream), OR an error pill when the latest
+    /// pipeline failed (errors aren't appended to history, so they only
+    /// show here). Returns an empty view when nothing is in flight.
     @ViewBuilder
     private func transcriptInflightTail(librarian: LibrarianState) -> some View {
         if let pending = librarian.pendingQuery, librarian.isLoading {
             VStack(alignment: .leading, spacing: 10) {
                 transcriptQueryBubble(text: pending)
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white.opacity(0.6))
-                    Text("Thinking…")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.55))
-                }
+                inflightAnswerTail(librarian: librarian)
             }
         } else if librarian.isLoading {
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(.white.opacity(0.6))
-                Text("Thinking…")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.55))
-            }
+            inflightAnswerTail(librarian: librarian)
         } else if case let .error(message)? = librarian.response {
             Text(message)
                 .font(.system(size: 14))
@@ -915,6 +909,29 @@ struct LibrarianSurface: View {
                 .padding(.vertical, 8)
                 .background(Color(hexString: "E8820A").opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+    }
+
+    /// Two-phase in-flight answer body. Once tokens are flowing, renders
+    /// the raw streamed text with a trailing blinking cursor — same font
+    /// and color as the final response so the transition into the
+    /// committed exchange is invisible. Before tokens arrive (or for the
+    /// Foundation Model path, which yields one chunk at the end), shows
+    /// the pulsing shimmer.
+    @ViewBuilder
+    private func inflightAnswerTail(librarian: LibrarianState) -> some View {
+        if librarian.isStreaming && !librarian.streamingText.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(librarian.streamingText)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .lineSpacing(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                StreamingCursorView()
+            }
+        } else {
+            ThinkingShimmerView()
         }
     }
 
@@ -2280,6 +2297,45 @@ private struct SearchRelatedRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
+    }
+}
+
+/// Silent pre-token indicator. Shown from request-fired until the
+/// first streamed delta arrives. Pulses opacity so the user has
+/// continuous feedback that work is happening — distinct from the
+/// blinking cursor that takes over once tokens flow.
+private struct ThinkingShimmerView: View {
+    @State private var opacity: Double = 1.0
+
+    var body: some View {
+        Text("Thinking…")
+            .font(.system(size: 13))
+            .foregroundStyle(.white.opacity(0.55))
+            .opacity(opacity)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    opacity = 0.25
+                }
+            }
+    }
+}
+
+/// Streaming cursor — quiet blinking caret rendered at the tail of
+/// the streamed text. Mounted only while `isStreaming && !streamingText.isEmpty`
+/// so it disappears the moment the stream completes.
+private struct StreamingCursorView: View {
+    @State private var visible: Bool = true
+
+    var body: some View {
+        Text("▋")
+            .font(.system(size: 13))
+            .foregroundStyle(.white.opacity(0.55))
+            .opacity(visible ? 1.0 : 0.0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    visible = false
+                }
+            }
     }
 }
 

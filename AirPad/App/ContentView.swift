@@ -89,6 +89,13 @@ struct ContentView: View {
                     // probe's doubled-pill artifact was the two
                     // stacking).
                     proxy.controller.surfaceView.grabberHandle.isHidden = true
+                    // Clear FloatingPanel's default opaque SurfaceView fill
+                    // so the Librarian's `.regularMaterial` rectangle has
+                    // the canvas behind it to blur. Both layers need to go
+                    // clear: `appearance.backgroundColor` paints the
+                    // containerView, `backgroundColor` is the UIView itself.
+                    proxy.controller.surfaceView.appearance.backgroundColor = .clear
+                    proxy.controller.surfaceView.backgroundColor = .clear
                     // First-render alignment with the current entry mode.
                     // SwiftUI's `.onChange` doesn't fire for the initial
                     // value reliably across the panel-mount boundary, so

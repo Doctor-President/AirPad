@@ -16,11 +16,15 @@ import FloatingPanel
 /// `backdropAlpha = 0` for every state so `FloatingPanelPassThroughView`
 /// lets touches reach the SpriteKit canvas behind the panel.
 final class LibrarianPanelLayout: FloatingPanelLayout {
-    /// Height of the peek (`.tip`) detent in points. Single source of
-    /// truth — the anchor below and any overlay that must ride above the
-    /// peek pill (capture "+" buttons on canvas and node detail) read
-    /// from here so the value lives in one place.
-    static let peekDetentHeight: CGFloat = 95
+    /// Height of the peek (`.tip`) detent band in points. Single source
+    /// of truth — the anchor below and any overlay that must ride above
+    /// the peek pill (capture "+" buttons on canvas and node detail)
+    /// read from here so the value lives in one place.
+    ///
+    /// The band is 100pt = 86pt visible capsule + 14pt float gap to the
+    /// safe-area bottom. The capsule's side insets (also 14pt) come from
+    /// `LibrarianSurface`'s peek material branch.
+    static let peekDetentHeight: CGFloat = 100
 
     /// Bottom padding for overlay chrome that must sit above the peek
     /// panel: peek height + 10pt breathing room. Used by
@@ -133,7 +137,15 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// Duck the panel offscreen. Uses the library's `hide(animated:)`
     /// which `move(to: .hidden)`s to the default `hiddenAnchor`. `.hidden`
     /// is not in `LibrarianPanelLayout.anchors` so it isn't a drag target.
+    ///
+    /// Blunt resignFirstResponder fires first so every duck path
+    /// (Dashboard, QuikCapture, capture overlay) dismisses the keyboard
+    /// regardless of state-change timing — `@FocusState` alone has
+    /// missed when the navigation races the detent change. Harmless
+    /// no-op when nothing is first responder.
     func duck(animated: Bool) {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
         controller?.hide(animated: animated)
     }
 }

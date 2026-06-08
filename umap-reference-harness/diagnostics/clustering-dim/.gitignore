@@ -1,0 +1,5 @@
+.venv/
+results/
+fixtures/corpus_snapshot.json
+*.pyc
+__pycache__/

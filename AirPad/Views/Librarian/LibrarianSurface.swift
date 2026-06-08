@@ -34,7 +34,6 @@ struct LibrarianSurface: View {
 
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
-    @State private var gradientRotation: Double = 0
     @State private var showModeDropdown = false
     @State private var presentedCitation: PresentedCitation? = nil
     @State private var showEndDialog = false
@@ -78,80 +77,34 @@ struct LibrarianSurface: View {
         @Bindable var librarian = router.librarian
 
         ZStack {
-            RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                .fill(.thinMaterial)
-
-            RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                .fill(Color.black.opacity(0.35))
-
-            // Drag-aware chrome (Move 2 fix-pass A): the blurred-glow
-            // inner stroke + crisp angular-gradient edge re-render
-            // every frame because `gradientRotation` is continuously
-            // animated. During panel drag/attraction the surface is
-            // also being CoreAnimation-transformed by FloatingPanel,
-            // which compounds into visible stutter. While the panel
-            // is in motion, swap in a static low-cost border (no
-            // blurred glow, no angular gradient). The full aurora
-            // chrome restores at rest.
-            if panelModel.isDragging {
-                RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1.5)
-            } else {
-                // Inner glow: thick inset stroke painted with the
-                // same rotating angular gradient as the crisp 1.5pt
-                // edge, blurred and masked so the colors bleed inward
-                // as a soft aurora that breathes in step with the
-                // perimeter.
-                RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                    .strokeBorder(
-                        AngularGradient(
-                            colors: [
-                                Color(hexString: "E36B4E"),
-                                Color(hexString: "7A52FF"),
-                                Color(hexString: "B857D4"),
-                                Color(hexString: "E36B4E")
-                            ],
-                            center: .center,
-                            startAngle: .degrees(gradientRotation),
-                            endAngle: .degrees(gradientRotation + 360)
-                        ).opacity(0.45),
-                        lineWidth: 10
-                    )
-                    .blur(radius: 6)
-                    .mask(RoundedRectangle(cornerRadius: surfaceCornerRadius))
-                    .allowsHitTesting(false)
-
-                RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                    .strokeBorder(
-                        AngularGradient(
-                            colors: [
-                                Color(hexString: "E36B4E"),
-                                Color(hexString: "7A52FF"),
-                                Color(hexString: "B857D4"),
-                                Color(hexString: "E36B4E")
-                            ],
-                            center: .center,
-                            startAngle: .degrees(gradientRotation),
-                            endAngle: .degrees(gradientRotation + 360)
-                        ),
-                        lineWidth: 1.5
-                    )
-            }
-
-            // Detent SSOT: peek shows the whisper pill content; half
-            // and full both show the expanded chrome. FloatingPanel's
-            // frame between detents drives height — the surface has no
-            // `.frame(height:)` of its own.
+            // Detent SSOT — material + content together per state.
+            // Peek collapses into a single `collapsedPill` so the
+            // capsule and its content can't drift apart (the bug:
+            // FloatingPanel's surface extends well below the screen, so
+            // any view that fills the surface bleeds the material into
+            // a dome and pushes content off-screen). Half/full keep the
+            // two-layer pattern — the bottom-extending sheet material
+            // followed by the expanded chrome.
             switch panelModel.state {
             case .tip:
-                collapsedBody(librarian: librarian)
+                collapsedPill(librarian: librarian)
             default:
+                RoundedRectangle(cornerRadius: surfaceCornerRadius)
+                    .fill(.regularMaterial)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    // Bottom overflow buffer — keeps the material's
+                    // bottom edge below the screen during the expand
+                    // spring's top overshoot (FloatingPanel translates
+                    // the whole surface up; without the buffer, the
+                    // material lifts off the screen bottom and flashes
+                    // canvas there). Mirrors the library's surface
+                    // bottomOverflow; invisible at rest. Bump if a
+                    // sliver still flashes.
+                    .padding(.bottom, -150)
                 expandedBody(librarian: librarian)
             }
-
         }
         .onAppear {
-            startGradientAnimation()
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
@@ -159,10 +112,17 @@ struct LibrarianSurface: View {
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
         .onChange(of: panelModel.state) { _, newState in
-            // Mirror the pre-Move-2 collapse-defocuses behavior: when
-            // the panel collapses to peek, drop input focus so the
-            // keyboard goes away with the surface.
-            if newState == .tip { isInputFocused = false }
+            // The keyboard belongs only at .full (promote-on-focus).
+            // Any exit — flick to half, drop to peek, duck to hidden —
+            // tears it down. Both @FocusState bindings get cleared, and
+            // the blunt resignFirstResponder catches cross-boundary
+            // cases where @FocusState alone has missed.
+            if newState != .full {
+                isInputFocused = false
+                isSearchFocused = false
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                to: nil, from: nil, for: nil)
+            }
         }
         .onChange(of: isInputFocused) { _, focused in
             // Promote-on-focus: never type at a detent shorter than
@@ -230,41 +190,55 @@ struct LibrarianSurface: View {
 
     // MARK: - Collapsed
 
+    /// Peek pill: a single unit that owns its own material so the
+    /// capsule shape and the ring + whisper content can't drift apart.
+    /// Fixed-height (86pt) and **top-pinned** within the peek band.
+    ///
+    /// The FloatingPanel surface extends well past the screen bottom, so
+    /// any layout that references the box's bottom positions content
+    /// off-screen. The diagnostic spike confirmed the .tip content
+    /// box's top sits at the peek line (visible). Pinning to the top
+    /// edge — Spacer *after* the pill, `.padding(.top)` as the float
+    /// gap — keeps everything in the on-screen rect; the box's
+    /// off-screen overflow falls beneath the trailing Spacer.
     @ViewBuilder
-    private func collapsedBody(librarian: LibrarianState) -> some View {
-        ZStack {
-            Text(displayText)
-                .font(.system(size: 17, weight: .regular, design: .serif))
-                .foregroundStyle(.white)
-                .opacity(textOpacity)
-                // Asymmetric horizontal inset: leading > trailing so the
-                // text's center shifts right of the pill center, clearing
-                // breathing room from the icon ring (ring right edge sits
-                // at x≈76; 100pt leading puts the text start ~24pt past it).
-                .padding(.leading, 100)
-                .padding(.trailing, 60)
-                .frame(maxWidth: .infinity)
+    private func collapsedPill(librarian: LibrarianState) -> some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Capsule().fill(.regularMaterial)
 
-            HStack {
-                modeIconWithRing(librarian: librarian)
-                    // 19pt leading = (95pt pill height − 57pt ring diameter) / 2,
-                    // matching the vertical inset so the ring sits concentric
-                    // with the capsule's left curve (equidistant top/bottom/left).
-                    .padding(.leading, 19)
-                Spacer()
+                Text(displayText)
+                    .font(.system(size: 17, weight: .regular, design: .serif))
+                    .foregroundStyle(.white)
+                    .opacity(textOpacity)
+                    // Asymmetric horizontal inset: leading > trailing so
+                    // the text's center shifts right of the pill center,
+                    // clearing breathing room from the icon ring.
+                    .padding(.leading, 100)
+                    .padding(.trailing, 60)
+                    .frame(maxWidth: .infinity)
+
+                HStack {
+                    modeIconWithRing(librarian: librarian)
+                        // 14pt leading = (86pt pill height − 57pt ring
+                        // diameter) / 2, matching the vertical inset so
+                        // the ring sits concentric with the capsule's
+                        // left curve (equidistant top/bottom/left).
+                        .padding(.leading, 14)
+                    Spacer()
+                }
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // The sheet inherits a ~27pt bottom safe-area inset for the home
-        // indicator zone, so without this the layout area is only 68pt of
-        // the visible 95pt peek pill. Centering then lands ~13pt above the
-        // visual pill center and the content reads high. Ignoring the
-        // bottom container edge here reclaims the full 95pt so the icon +
-        // whisper sit equidistant from top and bottom of the pill.
-        .ignoresSafeArea(.container, edges: .bottom)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            panelModel.expandToHalf(animated: true)
+            .frame(height: 86)
+            .contentShape(Capsule())
+            .onTapGesture {
+                panelModel.expandToHalf(animated: true)
+            }
+            .padding(.top, 8)
+            .padding(.horizontal, 14)
+
+            // Pushes the pill UP to the visible top edge; the box's
+            // off-screen overflow falls below this Spacer.
+            Spacer(minLength: 0)
         }
     }
 
@@ -2228,12 +2202,6 @@ struct LibrarianSurface: View {
     }
 
     // MARK: - Animations
-
-    private func startGradientAnimation() {
-        withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
-            gradientRotation = 360
-        }
-    }
 
     private func startWhisperCycle() {
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { _ in

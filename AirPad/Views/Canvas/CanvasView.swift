@@ -216,7 +216,13 @@ struct CanvasView: View {
             nodeSummaryLayer
             drillDownBackButton
 
-            if !store.isInDetailView && !selection.isActive {
+            // Hide the "+" whenever the Librarian is raised above peek
+            // (fix-pass v3 Item 2a). The button's bottom padding only
+            // clears the peek pill — at half / full the chevron region
+            // overlaps the "+" hit target and a chevron tap was tripping
+            // capture. The button reappears when the panel returns to
+            // peek (or ducks for capture / dashboard).
+            if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
                 VStack {
                     Spacer()
                     HStack {

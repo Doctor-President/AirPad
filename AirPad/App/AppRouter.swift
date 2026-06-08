@@ -36,6 +36,18 @@ final class AppRouter {
 
     var entryMode: EntryMode = .dashboard
 
+    /// Mirror of the in-layout Librarian panel's detent — `true` when
+    /// the panel is at peek (`.tip`), `false` at half / full / hidden.
+    /// Owned by `LibrarianPanelStateModel`; mirrored here from
+    /// `ContentView` via `.onChange(of: panelState.state)` so views
+    /// without direct access to the panel model can gate themselves
+    /// on the detent. Capture "+" buttons in `CanvasView` and
+    /// `NodeListView` use it to hide themselves while the Librarian is
+    /// raised (peek-pill clearance only covers the peek detent, so at
+    /// half / full the chevron region overlaps the "+" hit target —
+    /// fix-pass v3 Item 2a).
+    var librarianAtPeek: Bool = false
+
     /// In-app capture overlay state. Non-nil presents the blur overlay above
     /// the active entry mode (dashboard / canvas / collectionCanvas) without
     /// changing entry mode itself — the user stays in their current context

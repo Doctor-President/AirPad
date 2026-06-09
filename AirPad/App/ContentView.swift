@@ -146,6 +146,16 @@ struct ContentView: View {
                 }
             }
         }
+        // Selection coexistence. When batch selection activates in
+        // Map / List view, retract the panel to peek so the bottom
+        // BatchActionBar (shifted up by peekDetentHeight + 12 in
+        // CanvasChrome) reads as the dominant action. No restore on
+        // exit — peek is the correct resting state after a batch action.
+        .onChange(of: selection.isActive) { _, isActive in
+            if isActive {
+                panelState.raiseToPeek(animated: true)
+            }
+        }
         // Mirror the panel detent onto the router (fix-pass v3 Item 2a)
         // so views without a direct handle on `panelState` can gate
         // themselves on peek vs raised — the "+" capture trigger in

@@ -160,7 +160,7 @@ struct CanvasChrome: View {
                             }
                         )
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
+                        .padding(.bottom, LibrarianPanelLayout.peekDetentHeight + 12)
                     }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }

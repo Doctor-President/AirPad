@@ -562,8 +562,8 @@ private struct BatchActionBar: View {
                 HStack(spacing: 6) {
                     Image(systemName: "tag")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Tag (\(count))")
-                        .font(.system(size: 15, weight: .semibold))
+                    Text("Tag")
+                        .font(.system(size: 13, weight: .semibold))
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 18)
@@ -611,35 +611,27 @@ private struct BatchActionBar: View {
                     )
                 }
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Collections (\(count))")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .background(Color(white: 0.18))
-                .clipShape(Capsule())
+                Text("Organize")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(white: 0.18))
+                    .clipShape(Capsule())
             }
             .disabled(count == 0)
             .opacity(count == 0 ? 0.5 : 1.0)
 
             Button(action: onDelete) {
-                HStack(spacing: 6) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Delete (\(count))")
-                        .font(.system(size: 15, weight: .semibold))
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity)
-                .background(Color.red.opacity(0.85))
-                .clipShape(Capsule())
+                Text("Delete")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background(Color.red.opacity(0.85))
+                    .clipShape(Capsule())
             }
             .buttonStyle(.plain)
             .disabled(count == 0)

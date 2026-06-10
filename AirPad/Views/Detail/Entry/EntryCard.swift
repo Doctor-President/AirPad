@@ -81,6 +81,7 @@ struct EntryCard: View {
                 titleFont: visualSettings.sectionTitle.resolvedFont(),
                 timestampFont: visualSettings.sectionTimestamp.resolvedFont(),
                 onToggle: toggleExpansion,
+                onPromote: {},
                 onRename: beginRename,
                 onDuplicate: duplicate,
                 onCopy: copyContent,
@@ -155,20 +156,6 @@ struct EntryCard: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
-        .overlay {
-            // Stage 4.4 addendum 1a-iii — outline stroke. Sits above the
-            // body fill, orthogonal to it. `.strokeBorder` keeps the line
-            // entirely inside the rounded-rect bounds so it never gets
-            // half-clipped against the `.clipShape` above. Width defaults
-            // to 0 (invisible) until T dials it up in the dev panel.
-            let s = visualSettings.stroke
-            RoundedRectangle(cornerRadius: visualSettings.cornerRadius)
-                .strokeBorder(
-                    Color(hexString: s.colorHex).opacity(s.opacity),
-                    lineWidth: s.width
-                )
-                .allowsHitTesting(false)
-        }
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),
@@ -371,6 +358,10 @@ private struct EntryTitleRow: View {
     let titleFont: Font
     let timestampFont: Font
     let onToggle: () -> Void
+    /// Stub seat — wired live in `entry-system-and-fold.md`. Present as
+    /// a disabled menu item today so the architectural placement is
+    /// reserved.
+    let onPromote: () -> Void
     let onRename: () -> Void
     let onDuplicate: () -> Void
     let onCopy: () -> Void
@@ -413,6 +404,9 @@ private struct EntryTitleRow: View {
 
             if !reorderActive {
                 Menu {
+                    Button("Promote to Card View", action: onPromote)
+                        .disabled(true)
+                    Divider()
                     Button("Rename", action: onRename)
                     Button("Duplicate", action: onDuplicate)
                     Button("Copy", action: onCopy)

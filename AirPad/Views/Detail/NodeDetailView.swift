@@ -271,7 +271,42 @@ struct NodeDetailView: View {
                 let itemIDSnapshot = node.items.map(\.id)
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
                     ForEach(Array(node.items.enumerated()), id: \.element.id) { offset, item in
+                        // Fold zone treatment — cards at indices `0..<foldIndex`
+                        // are the promoted "card view" region. Decorative only:
+                        // a faint hex-literal tint + thin stroke behind each
+                        // above-fold card (visible through the card's material
+                        // background), plus a single "CARD VIEW" pill on the
+                        // first card. Zero frame impact — reorder math and
+                        // `slotPitch` (92) are unchanged. `foldIndex == 0`
+                        // renders nothing.
+                        let isAboveFold = offset < node.foldIndex
                         EntryCard(item: item, nodeID: nodeID, index: offset, snapshotIDs: itemIDSnapshot)
+                            .background {
+                                if isAboveFold {
+                                    RoundedRectangle(cornerRadius: visualSettings.cornerRadius, style: .continuous)
+                                        .fill(Color(hexString: "FFFFFF").opacity(0.04))
+                                        .overlay {
+                                            RoundedRectangle(cornerRadius: visualSettings.cornerRadius, style: .continuous)
+                                                .strokeBorder(Color(hexString: "FFFFFF").opacity(0.18), lineWidth: 0.5)
+                                        }
+                                }
+                            }
+                            .overlay(alignment: .topLeading) {
+                                if offset == 0 && node.foldIndex > 0 {
+                                    Text("CARD VIEW")
+                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                        .tracking(0.8)
+                                        .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.75))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            Capsule().fill(Color(hexString: "FFFFFF").opacity(0.15))
+                                        )
+                                        .padding(.top, 8)
+                                        .padding(.leading, 10)
+                                        .allowsHitTesting(false)
+                                }
+                            }
                     }
                 }
 

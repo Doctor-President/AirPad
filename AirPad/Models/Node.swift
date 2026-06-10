@@ -171,6 +171,15 @@ struct Node: Codable, Identifiable, Hashable {
     /// migration; the corpus is never bulk-walked at launch.
     var entrySchemaVersion: Int
 
+    /// Stored boundary within `items` separating promoted "card view"
+    /// entries (indices `0..<foldIndex`) from below-fold entries
+    /// (`foldIndex..<count`). 0 means nothing promoted — every entry sits
+    /// below the fold. Additive; legacy nodes decode as 0, same pattern
+    /// as `collectionIDs`. No schema-version bump — `?? 0` IS the
+    /// migration. Store-side invariants (clamp-on-delete,
+    /// new-captures-below-fold, `setFoldIndex`) land in a later commit.
+    var foldIndex: Int
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -195,6 +204,7 @@ struct Node: Codable, Identifiable, Hashable {
         case substrateCoord2D = "substrate_coord_2d"
         case substrateLayoutVersion = "substrate_layout_version"
         case entrySchemaVersion = "entry_schema_version"
+        case foldIndex = "fold_index"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -235,7 +245,8 @@ struct Node: Codable, Identifiable, Hashable {
         fmErrorDetail: FMErrorDetail? = nil,
         substrateCoord2D: SubstrateCoord2D? = nil,
         substrateLayoutVersion: Int = 0,
-        entrySchemaVersion: Int = 0
+        entrySchemaVersion: Int = 0,
+        foldIndex: Int = 0
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -270,6 +281,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.substrateCoord2D            = substrateCoord2D
         self.substrateLayoutVersion      = substrateLayoutVersion
         self.entrySchemaVersion          = entrySchemaVersion
+        self.foldIndex                   = foldIndex
     }
 }
 
@@ -311,6 +323,7 @@ extension Node {
         substrateCoord2D           = try c.decodeIfPresent(SubstrateCoord2D.self, forKey: .substrateCoord2D)
         substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
         entrySchemaVersion         = try c.decodeIfPresent(Int.self,      forKey: .entrySchemaVersion) ?? 0
+        foldIndex                  = try c.decodeIfPresent(Int.self,      forKey: .foldIndex) ?? 0
     }
 }
 

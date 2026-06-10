@@ -42,8 +42,6 @@ struct NodeDetailView: View {
     @State private var pendingDocumentURLs: [URL] = []
     @State private var showDocumentAppendModal = false
 
-    @State private var bgPhase: Double = 0
-
     /// Stage 3.1b — owns the entire transient drag-to-reorder UI state.
     /// Injected into entry cards via Environment so each card can read its
     /// own offset/lifted/parting treatment without prop-drilling through
@@ -55,51 +53,6 @@ struct NodeDetailView: View {
     /// spacing slider drives the nested entry-stack's `spacing:`. Removed
     /// in commit 3 when the dev panel is deleted.
     @State private var visualSettings = EntryVisualSettings.shared
-
-    private let circleColors: [(String, String, String)] = [
-        ("9B6FE8", "F5C5A3", "E36B4E"),
-        ("5B8FFF", "A78BFA", "F472B6"),
-        ("34D399", "60A5FA", "A78BFA"),
-        ("FB923C", "FBBF24", "E36B4E"),
-        ("F472B6", "FB7185", "C084FC"),
-        ("22D3EE", "34D399", "60A5FA"),
-        ("A78BFA", "818CF8", "E36B4E"),
-    ]
-
-    private var paletteIndex: Int {
-        guard let tagName = node?.primaryTag else { return 0 }
-        return abs(tagName.hashValue) % 7
-    }
-
-    @ViewBuilder
-    private var animatedBackground: some View {
-        let colors = circleColors[paletteIndex % circleColors.count]
-        TimelineView(.animation) { timeline in
-            ZStack {
-                Color(red: 0.027, green: 0.027, blue: 0.039)
-                let time = timeline.date.timeIntervalSinceReferenceDate
-                Circle()
-                    .fill(Color(hexString: colors.0))
-                    .frame(width: 320, height: 320)
-                    .blur(radius: 80)
-                    .offset(x: -80 + sin(time * 0.2 + bgPhase * 1.3) * 40,
-                            y: -200 + cos(time * 0.15 + bgPhase * 0.9) * 40)
-                Circle()
-                    .fill(Color(hexString: colors.1))
-                    .frame(width: 280, height: 280)
-                    .blur(radius: 80)
-                    .offset(x: 60 + sin(time * 0.25 + bgPhase * 1.7) * 40,
-                            y: 100 + cos(time * 0.2 + bgPhase * 1.1) * 40)
-                Circle()
-                    .fill(Color(hexString: colors.2))
-                    .frame(width: 240, height: 240)
-                    .blur(radius: 80)
-                    .offset(x: sin(time * 0.3 + bgPhase * 2.1) * 40,
-                            y: 350 + cos(time * 0.25 + bgPhase * 0.7) * 40)
-            }
-        }
-        .ignoresSafeArea()
-    }
 
     /// In-node capture surfaces. `.text` is intentionally absent: the "+"
     /// menu's Text action now appends an empty entry card inline (see
@@ -134,7 +87,6 @@ struct NodeDetailView: View {
                 editedSummary = node.summary
                 editedTags    = node.tags
             }
-            bgPhase = Double.random(in: 0...100)
             // Stage 3.1a — first-open lazy migration to the entry-primitive
             // schema. No-op once the node's entrySchemaVersion is current.
             Task { await store.ensureEntrySchema(forNodeID: nodeID) }
@@ -265,8 +217,19 @@ struct NodeDetailView: View {
     // MARK: - Main content
 
     private func content(node: Node) -> some View {
+        // GeometryReader reads the top safe-area inset so the hero slot
+        // can be sized to `210 + topInset` — that's what keeps the title
+        // anchored at its original safe-area-relative position while the
+        // gradient bleeds all the way up to y=0 of the screen.
+        // `.ignoresSafeArea(.container, edges: .top)` on the GR is what
+        // lets the proxy report a non-zero `safeAreaInsets.top`, and is
+        // what lets the ScrollView's first child actually start at y=0.
+        GeometryReader { proxy in
+        let topInset = proxy.safeAreaInsets.top
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(spacing: 0) {
+                heroZone(node: node, topInset: topInset)
+                VStack(alignment: .leading, spacing: 24) {
                 // Title — Stage 4.4 addendum 1a-i: font sourced from the
                 // Node Title role in the dev-panel type scale. Default
                 // mirrors the prior `.title2.weight(.bold)` exactly.
@@ -361,6 +324,7 @@ struct NodeDetailView: View {
             }
             .padding(20)
             .dismissKeyboardOnTapOutside()
+            }
         }
         .overlay(alignment: .bottomTrailing) {
             // Stage 3.1a commit (c) — floating "+" replaces the inline
@@ -381,7 +345,9 @@ struct NodeDetailView: View {
                     .transition(.opacity)
             }
         }
-        .background { animatedBackground }
+        .background { Color(red: 0.027, green: 0.027, blue: 0.039).ignoresSafeArea() }
+        }
+        .ignoresSafeArea(.container, edges: .top)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -406,16 +372,67 @@ struct NodeDetailView: View {
                     .foregroundStyle(.white)
                     .fontWeight(.semibold)
                 } else {
-                    Button {
-                        showDeleteConfirmation = true
+                    Menu {
+                        Button {} label: {
+                            Label("Move to Collection", systemImage: "arrow.right.square")
+                        }
+                        .disabled(true)
+                        Button {} label: {
+                            Label("Add to Another Collection", systemImage: "folder.badge.plus")
+                        }
+                        .disabled(true)
+                        Button {} label: {
+                            Label("Share / Export", systemImage: "square.and.arrow.up")
+                        }
+                        .disabled(true)
+
+                        // STUB — needs `store.duplicateNode(id:)` (not yet
+                        // implemented). Wire once the store method lands.
+                        Button {} label: {
+                            Label("Duplicate", systemImage: "doc.on.doc")
+                        }
+                        .disabled(true)
+                        Divider()
+                        Button(role: .destructive) {
+                            showDeleteConfirmation = true
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     } label: {
-                        Image(systemName: "trash")
+                        Image(systemName: "ellipsis")
                             .foregroundStyle(.white.opacity(0.85))
                     }
                 }
             }
         }
         .environment(reorderController)
+    }
+
+    // MARK: - Hero zone
+
+    private func heroZone(node: Node, topInset: CGFloat) -> some View {
+        // Compact gradient banner — top full-bleeds under the status bar
+        // (y=0), bottom is a defined edge via rounded corners that match
+        // the ~30pt card-family radius. No fade and no mask: the rounded
+        // clip reads as an intentional banner instead of a dissolving
+        // seam. Band height = 200pt visible + the top safe-area inset,
+        // so the title below it lands at its original safe-area-relative
+        // position (the parent ScrollView ignores the top safe area).
+        //
+        // Section 2 of the brief will flex this height to fit a hero
+        // image's natural aspect (clamped to min/max), replacing the
+        // gradient fill with the image. Requires `coverImageItemId` on
+        // Node — not in this commit.
+        let totalHeight: CGFloat = 200 + topInset
+        return NodeGradientLayer(node: node, circleScale: 1.5)
+            .frame(height: totalHeight)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    bottomLeadingRadius: 30,
+                    bottomTrailingRadius: 30,
+                    style: .continuous
+                )
+            )
     }
 
     // MARK: - Tags row

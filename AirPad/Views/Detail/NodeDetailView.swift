@@ -271,24 +271,23 @@ struct NodeDetailView: View {
                 let itemIDSnapshot = node.items.map(\.id)
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
                     ForEach(Array(node.items.enumerated()), id: \.element.id) { offset, item in
-                        // Fold zone treatment — cards at indices `0..<foldIndex`
-                        // are the promoted "card view" region. Decorative only:
-                        // a faint hex-literal tint + thin stroke behind each
-                        // above-fold card (visible through the card's material
-                        // background), plus a single "CARD VIEW" pill on the
-                        // first card. Zero frame impact — reorder math and
-                        // `slotPitch` (92) are unchanged. `foldIndex == 0`
-                        // renders nothing.
-                        let isAboveFold = offset < node.foldIndex
+                        // Stage 4.8 — minimal entry chrome. Container fill /
+                        // border / clip all stripped on EntryCard itself.
+                        // Above-fold rows are marked only by the "CARD VIEW"
+                        // pill on the first card; the prior tint+stroke
+                        // treatment is gone (refined fold marker is a
+                        // follow-on). A 1pt hairline rides as a bottom
+                        // overlay on every row except the last so the gap
+                        // between entries reads as a divider without adding
+                        // any layout height — `slotPitch` (92) and the
+                        // reorder-collapsed uniform row stay exactly as-is.
                         EntryCard(item: item, nodeID: nodeID, index: offset, snapshotIDs: itemIDSnapshot)
-                            .background {
-                                if isAboveFold {
-                                    RoundedRectangle(cornerRadius: visualSettings.cornerRadius, style: .continuous)
-                                        .fill(Color(hexString: "FFFFFF").opacity(0.04))
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: visualSettings.cornerRadius, style: .continuous)
-                                                .strokeBorder(Color(hexString: "FFFFFF").opacity(0.18), lineWidth: 0.5)
-                                        }
+                            .overlay(alignment: .bottom) {
+                                if offset < node.items.count - 1 {
+                                    Rectangle()
+                                        .fill(Color(hexString: "FFFFFF").opacity(0.08))
+                                        .frame(height: 1)
+                                        .allowsHitTesting(false)
                                 }
                             }
                             .overlay(alignment: .topLeading) {

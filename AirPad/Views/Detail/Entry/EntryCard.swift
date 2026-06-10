@@ -108,16 +108,16 @@ struct EntryCard: View {
         }
         .padding(12)
         .background {
-            // Color fill at the back, long-press recognizer in front of
-            // it but behind the foreground card content. Foreground
+            // Long-press recognizer lives in the background slot so foreground
             // interactive widgets (chevron, menu, text editors, waveform
-            // scrub) claim their own hits via separate UIViews. Touches
-            // that fall outside those widgets reach the recognizer, which
-            // races with the parent ScrollView's pan: hold still 0.5s →
-            // recognizer wins (lift); move → scroll wins.
+            // scrub) claim their own hits via separate UIViews while touches
+            // that fall outside those widgets reach the recognizer. It races
+            // with the parent ScrollView's pan: hold still 0.5s → recognizer
+            // wins (lift); move → scroll wins. No fill behind it any more —
+            // Stage 4.8 stripped the card container; the recognizer's bounds
+            // are still the full row because `.background` sizes to its
+            // parent.
             ZStack {
-                EntryCardBackground(treatment: visualSettings.bodyTreatment)
-                    .allowsHitTesting(false)
                 LongPressDragRecognizer(
                     onLift: { touchY in
                         reorder.lift(itemID: item.id, snapshotIDs: snapshotIDs)
@@ -166,7 +166,6 @@ struct EntryCard: View {
                 )
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: visualSettings.cornerRadius))
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),

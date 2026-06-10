@@ -969,7 +969,14 @@ final class CorpusStore {
                 await deleteDocumentItemSidecars(docItem, nodeID: nodeID, logContext: "deleteEntry")
             }
         }
+        // Removing an above-fold item shrinks the card-view region by one;
+        // the boundary must follow so items at higher indices don't slip
+        // into the zone. Clamped at 0 so the field can never go negative.
+        let wasAboveFold = itemIdx < updated.foldIndex
         updated.items.remove(at: itemIdx)
+        if wasAboveFold {
+            updated.foldIndex = max(0, updated.foldIndex - 1)
+        }
         updated.updatedAt = Date()
         await updateNode(updated)
     }
@@ -1658,6 +1665,21 @@ final class CorpusStore {
         guard from >= 0, from < count, to >= 0, to < count, from != to else { return nil }
         let item = updated.items.remove(at: from)
         updated.items.insert(item, at: to)
+        updated.updatedAt = Date()
+        nodes[nodeIdx] = updated
+        return updated
+    }
+
+    /// Synchronous in-memory mutator for the fold boundary. Returned so a
+    /// UI flow can batch a fold change with a preceding `applyMoveEntry`
+    /// inside one SwiftUI render tick (the promote/demote flow), then
+    /// persist via `persistNode(_:)`. Clamps to `[0, items.count]` so the
+    /// invariant is enforced at the single point of mutation.
+    @discardableResult
+    func setFoldIndex(_ newValue: Int, nodeID: String) -> Node? {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return nil }
+        var updated = nodes[nodeIdx]
+        updated.foldIndex = max(0, min(updated.items.count, newValue))
         updated.updatedAt = Date()
         nodes[nodeIdx] = updated
         return updated

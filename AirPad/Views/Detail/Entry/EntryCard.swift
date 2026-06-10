@@ -70,6 +70,16 @@ struct EntryCard: View {
         reorder.isReorderActive ? false : isExpanded
     }
 
+    /// True when this card sits inside the promoted "card view" region
+    /// (`index < node.foldIndex`). Drives the `onPromote` menu label flip
+    /// in `EntryTitleRow` and the toggle direction in `togglePromote()`.
+    /// Read from the live store so the label re-evaluates on each render
+    /// after a promote/demote mutation.
+    private var isAboveFold: Bool {
+        guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return false }
+        return index < node.foldIndex
+    }
+
     var body: some View {
         let presentation = reorder.presentation(forItemID: item.id, atIndex: index)
         VStack(alignment: .leading, spacing: 0) {
@@ -78,10 +88,11 @@ struct EntryCard: View {
                 timestamp: item.updatedAt ?? item.createdAt,
                 isExpanded: effectiveExpansion,
                 reorderActive: presentation.reorderActive,
+                isAboveFold: isAboveFold,
                 titleFont: visualSettings.sectionTitle.resolvedFont(),
                 timestampFont: visualSettings.sectionTimestamp.resolvedFont(),
                 onToggle: toggleExpansion,
-                onPromote: {},
+                onPromote: togglePromote,
                 onRename: beginRename,
                 onDuplicate: duplicate,
                 onCopy: copyContent,
@@ -291,6 +302,31 @@ struct EntryCard: View {
         Task { await store.duplicateEntry(itemID: item.id, nodeID: nodeID) }
     }
 
+    /// Below-fold → "Show on card": move to `foldIndex`, increment fold.
+    /// Above-fold → "Remove from card": move to `foldIndex - 1`, decrement.
+    /// Mirrors the reorder `onEnd` atomicity — `applyMoveEntry` (sync) and
+    /// `setFoldIndex` (sync) both mutate `store.nodes[i]` inside the same
+    /// @MainActor tick so SwiftUI batches them into a single render, then
+    /// `persistNode` writes to disk asynchronously. Without that batching
+    /// the user would see the array reflow one frame before the fold
+    /// boundary updates, flashing the card briefly in the wrong zone.
+    private func togglePromote() {
+        guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return }
+        let currentFold = node.foldIndex
+        let above = index < currentFold
+        let target = above ? currentFold - 1 : currentFold
+        let newFold = above ? currentFold - 1 : currentFold + 1
+        // Move only when the target index actually differs — `applyMoveEntry`
+        // bails on `from == to` (returns nil) which is the no-op case where
+        // the card is already adjacent to the fold; we still need to flip
+        // the boundary.
+        if target != index {
+            _ = store.applyMoveEntry(nodeID: nodeID, from: index, to: target)
+        }
+        guard let updated = store.setFoldIndex(newFold, nodeID: nodeID) else { return }
+        Task { await store.persistNode(updated) }
+    }
+
     private func performDelete() {
         Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
     }
@@ -350,6 +386,10 @@ private struct EntryTitleRow: View {
     /// Title row stays clean so the user can still read what they're
     /// dragging.
     let reorderActive: Bool
+    /// Whether this row currently sits above the fold (in the card-view
+    /// zone). Flips the promotion menu label between "Show on card" and
+    /// "Remove from card" so the action reads as its inverse.
+    let isAboveFold: Bool
     /// Stage 4.4 — fonts for the display-name (Section Title role) and the
     /// muted relative timestamp (Section Timestamp role). Both are derived
     /// from the dev-panel type scale; removed in commit 3 when the panel
@@ -358,9 +398,9 @@ private struct EntryTitleRow: View {
     let titleFont: Font
     let timestampFont: Font
     let onToggle: () -> Void
-    /// Stub seat — wired live in `entry-system-and-fold.md`. Present as
-    /// a disabled menu item today so the architectural placement is
-    /// reserved.
+    /// Toggles whether this entry sits above the fold (in the card-view
+    /// zone). The card owns the move + foldIndex bump; this row just
+    /// fires the callback with the label flipped by `isAboveFold`.
     let onPromote: () -> Void
     let onRename: () -> Void
     let onDuplicate: () -> Void
@@ -404,8 +444,7 @@ private struct EntryTitleRow: View {
 
             if !reorderActive {
                 Menu {
-                    Button("Promote to Card View", action: onPromote)
-                        .disabled(true)
+                    Button(isAboveFold ? "Remove from card" : "Show on card", action: onPromote)
                     Divider()
                     Button("Rename", action: onRename)
                     Button("Duplicate", action: onDuplicate)

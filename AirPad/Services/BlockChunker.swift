@@ -96,6 +96,10 @@ enum BlockChunker {
                 guard let text = doc.extractedText, !text.isEmpty else { return [] }
                 return chunkText(text, itemID: doc.id, minChars: minChars)
             }
+
+        case .rating:
+            // Stage 4.8 — atomic numeric value, no text contribution.
+            return []
         }
     }
 

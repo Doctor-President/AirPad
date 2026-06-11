@@ -220,6 +220,9 @@ final class LayoutService {
                 // No aggregate text — gallery entries contribute via item
                 // count (below), not text length.
                 text = nil
+            case .rating:
+                // Stage 4.8 — atomic numeric value, no text contribution.
+                text = nil
             }
             if let t = text {
                 wordCount += t.split(separator: " ").count

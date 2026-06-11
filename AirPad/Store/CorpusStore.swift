@@ -481,7 +481,17 @@ final class CorpusStore {
             let loaded = try await service.loadAllNodes()
             let layout = try await service.loadCanvasLayout()
             let loadedTags = try await service.loadTags()
-            nodes = loaded.sorted { $0.createdAt > $1.createdAt }
+            // Stage 4.8 — enforce the atomic-prefix invariant on every
+            // loaded node before it enters the live store. Nodes saved
+            // before the split (Commit 5's inline-rating shape) may have
+            // a rating sitting in the payload region; normalization
+            // re-partitions in place and rewrites `foldIndex` so the
+            // payload-fold semantic is preserved.
+            var normalized = loaded
+            for i in normalized.indices {
+                Self.normalizeAtomicsToFront(&normalized[i])
+            }
+            nodes = normalized.sorted { $0.createdAt > $1.createdAt }
             canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
             let minimumViableTagCount = 8
             if loadedTags.count < minimumViableTagCount {
@@ -1733,6 +1743,103 @@ final class CorpusStore {
         return item.id
     }
 
+    /// Stage 4.8 — atomic singleton Rating entry. Created with
+    /// `value: 0` so the resting row renders five empty stars; the
+    /// user commits a value via the edit sheet, which routes through
+    /// `setRatingValue`. Singleton-enforced here as a belt-and-braces
+    /// guard alongside the capture-menu gate (the "+" → More… → Rating
+    /// item is disabled when one already exists). The store-side check
+    /// catches the race where the menu was opened on stale node state.
+    ///
+    /// Atomic types live at the front of `node.items` as a presentation
+    /// invariant (the pinned Attributes section is the suffix-free
+    /// prefix; the payload list and fold operate over the suffix). The
+    /// insert at position 0 maintains that invariant, and `foldIndex`
+    /// bumps by one so the raw boundary still points at the same
+    /// payload entry — atomic insertion has no semantic effect on the
+    /// fold; the user's existing card-vs-deep split is preserved.
+    func appendRatingItem(nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        guard !nodes[nodeIdx].items.contains(where: { $0.type == .rating }) else { return }
+        let now = Date()
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .rating,
+            createdAt: now,
+            displayName: nil,
+            isExpanded: false,
+            updatedAt: now,
+            rating: Rating(value: 0)
+        )
+        var updated = nodes[nodeIdx]
+        updated.items.insert(item, at: 0)
+        updated.foldIndex = min(updated.items.count, updated.foldIndex + 1)
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    /// Stage 4.8 — enforces the atomic-prefix invariant on a node:
+    /// every item with `type.isAtomic` ends up at the front of
+    /// `node.items` (preserving relative order within each group), and
+    /// `foldIndex` is rewritten so the same set of payload entries
+    /// remains above the fold. Called on load so nodes saved before
+    /// the split (or saved by older clients in a future-sync world)
+    /// migrate quietly into the new layout. No-op when the node is
+    /// already normalized.
+    private static func normalizeAtomicsToFront(_ node: inout Node) {
+        let alreadyOrdered: Bool = {
+            var seenPayload = false
+            for item in node.items {
+                if item.type.isAtomic {
+                    if seenPayload { return false }
+                } else {
+                    seenPayload = true
+                }
+            }
+            return true
+        }()
+        let atomicCount = node.items.lazy.filter { $0.type.isAtomic }.count
+
+        if alreadyOrdered {
+            // Already partitioned correctly; just clamp `foldIndex` so
+            // it never sits inside the atomic prefix (atomics are
+            // always card-visible — out of the fold scheme).
+            node.foldIndex = max(atomicCount, min(node.items.count, node.foldIndex))
+            return
+        }
+
+        // Map raw → new: atomics first, payload after, each group in
+        // original order. Then translate `foldIndex` by counting how
+        // many payload items were originally above the fold.
+        let aboveFoldPayload = node.items.prefix(node.foldIndex).filter { !$0.type.isAtomic }.count
+        let atomics = node.items.filter { $0.type.isAtomic }
+        let payload = node.items.filter { !$0.type.isAtomic }
+        node.items = atomics + payload
+        node.foldIndex = atomics.count + aboveFoldPayload
+    }
+
+    /// Stage 4.8 — updates the value of a `.rating` entry in place,
+    /// preserving `scale` so future scale variants survive value
+    /// changes. Clamped to `[0, scale]` so the invariant is enforced
+    /// at the single point of mutation. No-op if the node/item is
+    /// missing, not a rating, or the value is unchanged. Bumps both
+    /// the entry's and the node's `updatedAt`.
+    func setRatingValue(itemID: String, nodeID: String, value: Int) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+              updated.items[itemIdx].type == .rating,
+              var rating = updated.items[itemIdx].rating else { return }
+        let clamped = max(0, min(rating.scale, value))
+        guard rating.value != clamped else { return }
+        rating.value = clamped
+        let now = Date()
+        updated.items[itemIdx].rating = rating
+        updated.items[itemIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
     /// Appends a `.link` entry to a node. URL is stored verbatim; title,
     /// preview, and `displayName` are all left nil for AT19.3c web-
     /// clipping / the Stage 4.5 `defaultDisplayName` fallback ("Link")
@@ -2858,7 +2965,7 @@ final class CorpusStore {
                     case .text:          return item.content
                     case .audio, .video: return item.transcript
                     case .link:          return item.title ?? item.url
-                    case .image, .document, .imageVideo: return nil
+                    case .image, .document, .imageVideo, .rating: return nil
                     }
                 }.first(where: { !$0.isEmpty })
                 if let fallback, n.title.isEmpty || n.title == "Photo" || n.title == "Voice note" {
@@ -3508,7 +3615,7 @@ final class CorpusStore {
             case .link:
                 if let title = item.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
                 if let url = item.url, !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-            case .image, .video, .document, .imageVideo:
+            case .image, .video, .document, .imageVideo, .rating:
                 continue
             }
         }
@@ -3568,6 +3675,9 @@ final class CorpusStore {
                             // is empty (the per-item descriptions land in a
                             // later workstream).
                             case .imageVideo: return nil
+                            // Stage 4.8 — Rating is an atomic numeric value,
+                            // no text contribution to FM coherence.
+                            case .rating: return nil
                             }
                         }.filter { !$0.isEmpty }.joined(separator: "\n")
 
@@ -4805,6 +4915,7 @@ final class CorpusStore {
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             case .imageVideo:        return nil
+            case .rating:            return nil
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
     }

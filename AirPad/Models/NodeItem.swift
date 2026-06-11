@@ -156,6 +156,17 @@ struct NodeItem: Codable, Identifiable, Equatable {
     // the count-based fallback covers them).
     var documentViewMode: DocumentViewMode?
 
+    // Stage 4.8 — typed value for a `.rating` entry. Atomic singleton:
+    // exactly one `.rating` item per node, enforced at the create path
+    // (`appendRatingItem`) and at the capture-menu seat. Nil on every
+    // non-rating entry and on legacy JSON; populated at create time
+    // with `Rating(value: 0)` and mutated in place by the edit sheet
+    // through `setRatingValue`. `scale` rides alongside `value` so
+    // future X/10 or X/100 variants are a different scale, not a
+    // different schema. Additive optional — `decodeIfPresent` handles
+    // legacy `node.json` files cleanly, no entrySchemaVersion bump.
+    var rating: Rating?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -175,6 +186,22 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case linkViewMode = "link_view_mode"
         case documentItems = "document_items"
         case documentViewMode = "document_view_mode"
+        case rating
+    }
+}
+
+/// Stage 4.8 — value schema for a `.rating` `NodeItem`. `value` is the
+/// current rating (0 means "no rating set" / cleared); `scale` is the
+/// upper bound (5 today, rendered as 5 stars). Foresighted on `scale`
+/// so X/10 or X/100 variants slot in without a migration — only the
+/// renderer flexes. Encoded as a nested JSON object on `NodeItem.rating`.
+struct Rating: Codable, Equatable {
+    var value: Int
+    var scale: Int
+
+    init(value: Int, scale: Int = 5) {
+        self.value = value
+        self.scale = scale
     }
 }
 

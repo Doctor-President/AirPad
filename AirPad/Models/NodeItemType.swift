@@ -14,6 +14,11 @@ enum NodeItemType: String, Codable, Equatable {
     /// to decode pre-migration JSON. Raw value is snake_case for JSON parity
     /// with the existing CodingKey conventions on `NodeItem` and `Node`.
     case imageVideo = "image_video"
+    /// Stage 4.8 — atomic singleton typed entry. The body IS the value
+    /// (a number; rendered as stars at scale=5). No expandable body, no
+    /// multi-item gallery — one per node. See `Rating` for the value
+    /// schema and `appendRatingItem` for the singleton-enforced add path.
+    case rating
 }
 
 extension NodeItemType {
@@ -36,6 +41,26 @@ extension NodeItemType {
         case .link:       return "Link"
         case .document:   return "Document"
         case .imageVideo: return "Image/Video"
+        case .rating:     return "Rating"
+        }
+    }
+
+    /// Stage 4.8 — partitions entry types into *atomic* (singleton-typed
+    /// attribute values that render in the pinned Attributes section —
+    /// rating today; cook time / serving size later) and *payload*
+    /// (content entries that render in the scrolling list with the fold
+    /// machinery — everything else). The split governs presentation
+    /// only: both groups live in `node.items` and persist identically.
+    /// Atomic items are normalized to the front of `node.items` so the
+    /// payload suffix has contiguous raw indices and `foldIndex` math
+    /// stays intact. Single source of truth for the classifier — every
+    /// caller routes through this.
+    var isAtomic: Bool {
+        switch self {
+        case .rating:
+            return true
+        case .text, .image, .audio, .video, .link, .document, .imageVideo:
+            return false
         }
     }
 }

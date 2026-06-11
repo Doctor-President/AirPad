@@ -1203,6 +1203,9 @@ struct SubstrateInspectView: View {
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             case .imageVideo:        return nil
+            // Stage 4.8 — Rating is an atomic numeric value, not text;
+            // contributes nothing to the substrate's text extraction.
+            case .rating:            return nil
             }
         }
         .filter { !$0.isEmpty }

@@ -268,46 +268,61 @@ struct NodeDetailView: View {
                 // VStack (not LazyVStack) so every card stays mounted —
                 // the reorder controller's lift/drag/release depends on
                 // all cards being present in the view tree.
-                let itemIDSnapshot = node.items.map(\.id)
+                // Stage 4.8 — atomic types (rating; cook time / serving
+                // size later) are presented in a pinned Attributes
+                // section above the payload list (Commit B). For now
+                // we split the rendering: payload entries flow through
+                // this VStack; atomics live at the front of
+                // `node.items` (normalized on load + insert) and are
+                // omitted from this iteration entirely. The raw-index
+                // pair `(rawIndex, item)` is preserved so EntryCard's
+                // existing fold / promote / reorder math (which works
+                // in raw `node.items` index space) keeps functioning
+                // without translation at the card layer. The reorder
+                // controller's snapshot is payload IDs only so
+                // `slotPitch` (92) snap math operates over the payload
+                // suffix; the card converts payload-relative
+                // `(from, to)` back to raw indices via `atomicCount`
+                // in its `onEnd` handler.
+                let payloadEntries = Array(node.items.enumerated()).filter { !$1.type.isAtomic }
+                let payloadSnapshot = payloadEntries.map { $0.element.id }
+                let atomicCount = node.items.count - payloadEntries.count
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
-                    ForEach(Array(node.items.enumerated()), id: \.element.id) { offset, item in
-                        // Stage 4.8 — minimal entry chrome. Container fill /
-                        // border / clip all stripped on EntryCard itself.
-                        // Above-fold rows are marked only by the "CARD VIEW"
-                        // pill on the first card; the prior tint+stroke
-                        // treatment is gone (refined fold marker is a
-                        // follow-on). A 1pt hairline rides as a bottom
-                        // overlay on every row except the last so the gap
-                        // between entries reads as a divider without adding
-                        // any layout height — `slotPitch` (92) and the
-                        // reorder-collapsed uniform row stay exactly as-is.
-                        EntryCard(item: item, nodeID: nodeID, index: offset, snapshotIDs: itemIDSnapshot)
+                    ForEach(payloadEntries, id: \.element.id) { pair in
+                        let rawIndex = pair.offset
+                        let item = pair.element
+                        // 1pt hairline as a bottom overlay on every row
+                        // except the last so the gap between entries
+                        // reads as a divider without adding layout
+                        // height. The fold boundary is marked by an
+                        // in-flow labeled divider rendered conditionally
+                        // after the last above-fold payload entry (see
+                        // `FoldDivider` below). The divider is
+                        // suppressed during reorder so the list stays
+                        // uniform; its appear/disappear is animated so
+                        // the reflow doesn't snap. Single ForEach is
+                        // preserved — the divider is a conditional
+                        // adornment at the boundary, not a split.
+                        EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot)
                             .overlay(alignment: .bottom) {
-                                if offset < node.items.count - 1 {
+                                if rawIndex < node.items.count - 1 {
                                     Rectangle()
                                         .fill(Color(hexString: "FFFFFF").opacity(0.08))
                                         .frame(height: 1)
                                         .allowsHitTesting(false)
                                 }
                             }
-                            .overlay(alignment: .topLeading) {
-                                if offset == 0 && node.foldIndex > 0 {
-                                    Text("CARD VIEW")
-                                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                                        .tracking(0.8)
-                                        .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.75))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            Capsule().fill(Color(hexString: "FFFFFF").opacity(0.15))
-                                        )
-                                        .padding(.top, 8)
-                                        .padding(.leading, 10)
-                                        .allowsHitTesting(false)
-                                }
-                            }
+
+                        if !reorderController.isReorderActive
+                            && node.foldIndex > atomicCount
+                            && rawIndex == node.foldIndex - 1 {
+                            FoldDivider()
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                     }
                 }
+                .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
+                .animation(.easeInOut(duration: 0.22), value: node.foldIndex)
 
                 // Domain suggestion card
                 if let domain = node.domain, !node.domainConfirmed {
@@ -542,10 +557,20 @@ struct NodeDetailView: View {
                 Label("Document", systemImage: "doc.fill")
             }
             Divider()
-            // Stage 3.1a stub — closure is intentionally empty. The menu
-            // seat is reserved for a future full-screen entry-type picker
-            // that ships when there are types beyond the basic six.
-            Button {} label: {
+            // Stage 4.8 — More… is now a submenu housing the typed-entry
+            // catalog (Rating is the first). Earlier this was an empty-
+            // closure stub seat; the submenu grows as new typed entries
+            // land. Rating is gated by `hasRating` so the singleton
+            // contract is enforced at the call site (the store also
+            // bails on duplicate as a belt-and-braces guard).
+            Menu {
+                Button {
+                    Task { await store.appendRatingItem(nodeID: nodeID) }
+                } label: {
+                    Label("Rating", systemImage: "star.fill")
+                }
+                .disabled(hasRating)
+            } label: {
                 Label("More…", systemImage: "ellipsis")
             }
         } label: {
@@ -557,6 +582,17 @@ struct NodeDetailView: View {
                 .clipShape(Circle())
                 .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
         }
+    }
+
+    // MARK: - Rating singleton gate
+
+    /// Stage 4.8 — true when the node already has a `.rating` entry. The
+    /// "+" → More… → Rating menu item is `.disabled(hasRating)` so the
+    /// user can't stack a second one. The store's `appendRatingItem`
+    /// also bails on duplicate for the race where the menu was opened
+    /// on stale state.
+    private var hasRating: Bool {
+        node?.items.contains { $0.type == .rating } ?? false
     }
 
     // MARK: - Document capture helpers
@@ -1490,6 +1526,40 @@ private struct MetaNodeBanner: View {
                 .foregroundStyle(Color.purple.opacity(0.4))
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Fold divider (Stage 4.8)
+
+/// In-flow labeled rule rendered after the last above-fold entry. Replaces
+/// the earlier "CARD VIEW" pill: a horizontal hairline broken in the
+/// middle by a quiet caption ("↑ card-visible entries ↑") that points
+/// upward at the entries promoted to the canvas card view. Quiet,
+/// de-emphasized — its job is to read as a soft boundary marker, not a
+/// header. Hex literals throughout.
+///
+/// This view appears only when `foldIndex > 0` and is suppressed during
+/// reorder (handled by the call site so entry list stays uniform and
+/// `slotPitch` (92) holds). The call site wraps the transition in
+/// `.animation(:value: isReorderActive)` so the reflow when the divider
+/// pops in/out animates smoothly instead of snapping.
+private struct FoldDivider: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle()
+                .fill(Color(hexString: "FFFFFF").opacity(0.14))
+                .frame(height: 1)
+            Text("↑ card-visible entries ↑")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.45))
+                .fixedSize()
+            Rectangle()
+                .fill(Color(hexString: "FFFFFF").opacity(0.14))
+                .frame(height: 1)
+        }
+        .padding(.vertical, 4)
+        .allowsHitTesting(false)
     }
 }
 

@@ -80,9 +80,29 @@ struct EntryCard: View {
         return index < node.foldIndex
     }
 
+    /// Stage 4.8 — count of atomic items at the front of `node.items`.
+    /// The reorder controller's snapshot is payload IDs only, so its
+    /// `(from, to)` are in payload-relative space; converting back to
+    /// raw `node.items` indices for `applyMoveEntry` is `+ atomicCount`.
+    /// Derived from the live store on each access so it tracks
+    /// rating adds/removes without needing the parent to pass it down.
+    private var atomicCount: Int {
+        guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return 0 }
+        return node.items.prefix(while: { $0.type.isAtomic }).count
+    }
+
     var body: some View {
         let presentation = reorder.presentation(forItemID: item.id, atIndex: index)
         VStack(alignment: .leading, spacing: 0) {
+            // Stage 4.8 — atomic types (rating; cook time / serving
+            // size later) are filtered out of the payload list at the
+            // `NodeDetailView` ForEach layer and render in a separate
+            // pinned Attributes section (Commit B), so this card never
+            // receives an atomic item in practice. The `EntryTitleRow`
+            // / `bodyView` path is the only shape EntryCard renders.
+            // The hairline below (added by `NodeDetailView`) and the
+            // fold-boundary divider (also added by `NodeDetailView`)
+            // both sit at the outer view layer, not the row body.
             EntryTitleRow(
                 displayName: displayName,
                 timestamp: item.updatedAt ?? item.createdAt,
@@ -147,7 +167,19 @@ struct EntryCard: View {
                         // which is why Apple's Notes/Reminders are
                         // jolt-free: the reorder and the offset adjustment
                         // are atomic to the view system.
-                        guard let updated = store.applyMoveEntry(nodeID: nodeID, from: from, to: to) else {
+                        //
+                        // Stage 4.8 — the reorder controller's snapshot
+                        // is payload IDs only, so `from` / `to` arrive in
+                        // payload-relative index space. `applyMoveEntry`
+                        // operates on raw `node.items` indices, so we
+                        // shift by `atomicCount` (the size of the atomic
+                        // prefix at the front of `node.items`).
+                        let prefix = atomicCount
+                        guard let updated = store.applyMoveEntry(
+                            nodeID: nodeID,
+                            from: from + prefix,
+                            to: to + prefix
+                        ) else {
                             reorder.exit()
                             return
                         }
@@ -265,6 +297,13 @@ struct EntryCard: View {
             } else {
                 EmptyMediaPlaceholder()
             }
+        case .rating:
+            // Atomic — rating renders in the pinned Attributes section
+            // (Commit B), not in the payload list. `NodeDetailView`
+            // filters atomics out of the payload ForEach so this
+            // branch is unreachable; present only to satisfy switch
+            // exhaustiveness.
+            EmptyView()
         }
     }
 
@@ -361,6 +400,13 @@ struct EntryCard: View {
             return item.mediaItems?.first?.file.components(separatedBy: "/").last
                 ?? item.file?.components(separatedBy: "/").last
                 ?? displayName
+        case .rating:
+            // Copyable form is "value/scale" (e.g. "4/5"). The atomic
+            // value is the entry's content — there's no transcript,
+            // file, or URL alternative.
+            let value = item.rating?.value ?? 0
+            let scale = item.rating?.scale ?? 5
+            return "\(value)/\(scale)"
         }
     }
 }
@@ -506,3 +552,4 @@ private struct EmptyMediaPlaceholder: View {
             }
     }
 }
+

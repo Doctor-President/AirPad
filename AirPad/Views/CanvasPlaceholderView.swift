@@ -166,6 +166,9 @@ private struct ItemCounts {
             case .link:     link += 1
             case .document: document += 1
             case .imageVideo: image += 1
+            // Stage 4.8 — Rating doesn't surface in the placeholder
+            // chip row; skipped (no dedicated rating chip yet).
+            case .rating:   break
             }
         }
     }

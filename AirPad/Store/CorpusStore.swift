@@ -2980,7 +2980,20 @@ final class CorpusStore {
         guard var updated = nodes.first(where: { $0.id == nodeID }) else { return }
 
         updated.title   = result.title
-        updated.summary = result.summary
+        // entry-system-and-fold Commit 6 — FM-respect gate on summary.
+        // The FM may only rewrite the summary when the user hasn't
+        // taken ownership of it (`summarySource == nil` for legacy /
+        // never-processed, or `.model` for an FM-owned summary the
+        // user hasn't touched). When the user has edited or
+        // deliberately cleared the summary (`.user`), the FM write is
+        // skipped entirely — including over an empty string, since
+        // emptying is a deliberate state. Mirrors `primaryTag`'s
+        // user-beats-model logic. Scope is summary only; `title` and
+        // `mood` keep their existing write semantics.
+        if updated.summarySource == nil || updated.summarySource == .model {
+            updated.summary = result.summary
+            updated.summarySource = .model
+        }
         updated.mood    = result.mood
         if let domain = result.domain {
             updated.domain          = domain

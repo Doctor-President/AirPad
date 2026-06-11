@@ -180,6 +180,28 @@ struct Node: Codable, Identifiable, Hashable {
     /// new-captures-below-fold, `setFoldIndex`) land in a later commit.
     var foldIndex: Int
 
+    /// entry-system-and-fold Commit 6 — visibility flag for whether the
+    /// node's `summary` renders on the card-view surface. Pure
+    /// presentation: the FM pipeline never reads or writes it; only the
+    /// user toggles via the detail-view `•••` menu. Default `true` so
+    /// legacy nodes (and freshly captured ones) show the description on
+    /// the card. The card-view surface (queue #10) is the consumer; the
+    /// detail view always renders the summary regardless of this flag.
+    /// Additive; legacy nodes decode as `true` via `?? true`, no
+    /// schema-version bump — same precedent as `foldIndex ?? 0`.
+    var descriptionOnCard: Bool
+
+    /// entry-system-and-fold Commit 6 — authorship provenance for
+    /// `summary`. Mirrors `primaryTag`'s user-beats-model logic: when
+    /// `.user`, the FM pipeline must leave `summary` alone (including a
+    /// deliberately empty value); when `nil` or `.model`, the FM may
+    /// rewrite and stamp `.model`. User-driven edits in
+    /// `NodeDetailView.saveIfChanged` stamp `.user`. Orthogonal to
+    /// `descriptionOnCard` — text ownership and visibility are
+    /// independent concerns. Legacy nodes decode as `nil` (FM eligible
+    /// on next run); the first FM write stamps `.model`.
+    var summarySource: TagSource?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -205,6 +227,8 @@ struct Node: Codable, Identifiable, Hashable {
         case substrateLayoutVersion = "substrate_layout_version"
         case entrySchemaVersion = "entry_schema_version"
         case foldIndex = "fold_index"
+        case descriptionOnCard = "description_on_card"
+        case summarySource = "summary_source"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -246,7 +270,9 @@ struct Node: Codable, Identifiable, Hashable {
         substrateCoord2D: SubstrateCoord2D? = nil,
         substrateLayoutVersion: Int = 0,
         entrySchemaVersion: Int = 0,
-        foldIndex: Int = 0
+        foldIndex: Int = 0,
+        descriptionOnCard: Bool = true,
+        summarySource: TagSource? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -282,6 +308,8 @@ struct Node: Codable, Identifiable, Hashable {
         self.substrateLayoutVersion      = substrateLayoutVersion
         self.entrySchemaVersion          = entrySchemaVersion
         self.foldIndex                   = foldIndex
+        self.descriptionOnCard           = descriptionOnCard
+        self.summarySource               = summarySource
     }
 }
 
@@ -324,6 +352,8 @@ extension Node {
         substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
         entrySchemaVersion         = try c.decodeIfPresent(Int.self,      forKey: .entrySchemaVersion) ?? 0
         foldIndex                  = try c.decodeIfPresent(Int.self,      forKey: .foldIndex) ?? 0
+        descriptionOnCard          = try c.decodeIfPresent(Bool.self,     forKey: .descriptionOnCard) ?? true
+        summarySource              = try c.decodeIfPresent(TagSource.self, forKey: .summarySource)
     }
 }
 

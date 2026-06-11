@@ -455,6 +455,22 @@ struct NodeDetailView: View {
                         }
                         .disabled(true)
                         Divider()
+                        // entry-system-and-fold Commit 6 — visibility flag for
+                        // the description on the card-view surface (queue #10).
+                        // Orthogonal to summarySource: toggling visibility does
+                        // not freeze the text. Checkmark when on.
+                        Button {
+                            var updated = node
+                            updated.descriptionOnCard.toggle()
+                            updated.updatedAt = Date()
+                            Task { await store.updateNode(updated) }
+                        } label: {
+                            Label(
+                                "Show description on card",
+                                systemImage: node.descriptionOnCard ? "checkmark" : ""
+                            )
+                        }
+                        Divider()
                         Button(role: .destructive) {
                             showDeleteConfirmation = true
                         } label: {
@@ -950,7 +966,17 @@ struct NodeDetailView: View {
         var updated = node
         var changed = false
         if updated.title != editedTitle { updated.title = editedTitle; changed = true }
-        if updated.summary != editedSummary { updated.summary = editedSummary; changed = true }
+        if updated.summary != editedSummary {
+            updated.summary = editedSummary
+            // entry-system-and-fold Commit 6 — user-stamp the summary
+            // so the FM-respect gate in `processNodeWithAI` leaves it
+            // alone on subsequent runs. Covers clearing too: emptying
+            // is a deliberate state, so an empty `editedSummary`
+            // arriving here also stamps `.user` (the outer `guard
+            // changed` already short-circuits the no-op case).
+            updated.summarySource = .user
+            changed = true
+        }
         if updated.tags != editedTags {
             updated.tags = editedTags
             // User-edited tags carry .user provenance; drop sources for removed tags.

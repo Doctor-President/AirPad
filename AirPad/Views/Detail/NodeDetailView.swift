@@ -287,6 +287,19 @@ struct NodeDetailView: View {
                 let payloadEntries = Array(node.items.enumerated()).filter { !$1.type.isAtomic }
                 let payloadSnapshot = payloadEntries.map { $0.element.id }
                 let atomicCount = node.items.count - payloadEntries.count
+
+                // Stage 4.8 Commit B — pinned Attributes section.
+                // Renders only when the node has ≥1 atomic entry; zero
+                // atomics → section absent entirely. Sits between the
+                // tags hairline and the payload list (the "dead zone"
+                // called out in the Commit A handoff §3 — the section
+                // filling it is that fix). One hairline above (the
+                // existing tags Divider) is enough; no extra rule
+                // inside the section.
+                if atomicCount > 0 {
+                    AttributesSection(nodeID: nodeID)
+                }
+
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
                     ForEach(payloadEntries, id: \.element.id) { pair in
                         let rawIndex = pair.offset
@@ -1526,6 +1539,275 @@ private struct MetaNodeBanner: View {
                 .foregroundStyle(Color.purple.opacity(0.4))
         )
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - Attributes section (Stage 4.8 Commit B)
+
+/// Pinned block presenting atomic-typed entries (currently: Rating). Not
+/// part of the fold scheme, not reorderable, no chevrons. Renders only
+/// when at least one atomic item is present — zero atomics is absence,
+/// not an empty header. Atomics are guaranteed to occupy a contiguous
+/// prefix of `node.items` by `CorpusStore.normalizeAtomicsToFront`, so
+/// iteration uses `node.items.prefix(atomicCount)` directly (cheaper
+/// than re-filtering; invariant-guaranteed).
+///
+/// Per-type singleton: at most one row per atomic type. Add path for
+/// the *first* atomic of any type stays on `floatingAddButton` →
+/// More… (per T 2026-06-10, option 2 in the brief's open-decision
+/// resolution). The section-local "+" handles *additional* atomic
+/// types only — today the atomic catalog is just Rating, so the
+/// section-local "+" has nothing to offer and is suppressed. The
+/// floating-+'s More… → Rating seat therefore still owns Rating's
+/// first-add today; **flag**: this is the duplication the brief asks
+/// to surface — T to decide whether to remove the More… seat in a
+/// follow-up or leave it as the canonical first-add path forever.
+private struct AttributesSection: View {
+
+    let nodeID: String
+
+    @Environment(CorpusStore.self) private var store
+    @State private var editingItem: NodeItem? = nil
+
+    /// Reads the live node off the store inside body so the view
+    /// registers a dependency on `store.nodes` and re-renders the
+    /// moment `setRatingValue` lands a write. Passing `node` as an
+    /// init parameter (as Commit B originally did) made the parent
+    /// re-evaluate but didn't reliably propagate to this child's
+    /// rows after a sheet-driven edit — direct store access is the
+    /// pattern used by `EntryCard` for the same reason.
+    private var node: Node? {
+        store.nodes.first { $0.id == nodeID }
+    }
+
+    /// Normalized prefix slice. Equivalent to
+    /// `node.items.filter { $0.type.isAtomic }` thanks to
+    /// `normalizeAtomicsToFront`; using the prefix avoids a second
+    /// pass and signals reliance on the invariant.
+    private var atomicItems: [NodeItem] {
+        guard let node else { return [] }
+        let atomicCount = node.items.lazy.filter { $0.type.isAtomic }.count
+        return Array(node.items.prefix(atomicCount))
+    }
+
+    /// Atomic types not yet present on this node. Drives the section-
+    /// local "+" menu; empty → trigger hidden. Today the catalog is
+    /// `[.rating]` only, so when the section is visible (which means
+    /// rating is present) this is always empty.
+    private var addable: [NodeItemType] {
+        let present = Set(atomicItems.map { $0.type })
+        return [NodeItemType.rating].filter { !present.contains($0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(atomicItems) { item in
+                    rowFor(item)
+                }
+            }
+        }
+        .sheet(item: $editingItem) { item in
+            if item.type == .rating, let rating = item.rating {
+                RatingEditSheet(
+                    itemID: item.id,
+                    nodeID: nodeID,
+                    initialValue: rating.value,
+                    scale: rating.scale
+                )
+                .presentationDetents([.height(260)])
+                .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    private var sectionHeader: some View {
+        HStack(spacing: 8) {
+            Text("ATTRIBUTES")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.45))
+            Spacer(minLength: 0)
+            if !addable.isEmpty {
+                Menu {
+                    ForEach(addable, id: \.self) { type in
+                        // Future per-type append routes here. With
+                        // only Rating in the catalog today (and Rating
+                        // owned by the floating-+'s first-add path),
+                        // this loop body is never reached at runtime
+                        // — the `if !addable.isEmpty` gate above hides
+                        // the trigger. Wired so the next atomic type
+                        // (cook time / servings) only needs to add a
+                        // case below.
+                        Button {} label: {
+                            Label(type.defaultDisplayName, systemImage: "plus")
+                        }
+                        .disabled(true)
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.55))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rowFor(_ item: NodeItem) -> some View {
+        switch item.type {
+        case .rating:
+            RatingAttributeRow(
+                item: item,
+                onTap: { editingItem = item },
+                onDelete: {
+                    Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
+                }
+            )
+        default:
+            // No other atomic types yet. When cook time / servings
+            // land, add their renderer cases here.
+            EmptyView()
+        }
+    }
+}
+
+/// Compact, borderless row — no card background, no stroke, no clip.
+/// Leading "Rating" label, trailing stars, then the same `•••`
+/// affordance grammar as entry cards (Delete only — no reorder, no
+/// promote, no fold actions). Tap anywhere on the row → edit sheet;
+/// the Menu sits above the tap gesture in the view tree so taps on
+/// the ellipsis open the menu and don't bleed through.
+///
+/// Meaning is carried by fill (`star.fill` vs `star`), never by hue
+/// (T is colorblind) — color tints are polish. Hex literals via the
+/// `Color(hexString:)` helper used elsewhere in the file.
+private struct RatingAttributeRow: View {
+
+    let item: NodeItem
+    let onTap: () -> Void
+    let onDelete: () -> Void
+
+    private var rating: Rating { item.rating ?? Rating(value: 0) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(item.type.defaultDisplayName)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+
+            stars
+                .accessibilityElement()
+                .accessibilityLabel("Rating")
+                .accessibilityValue("\(rating.value) of \(rating.scale) stars")
+
+            Spacer(minLength: 12)
+
+            Menu {
+                Button("Delete", role: .destructive, action: onDelete)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+    }
+
+    private var stars: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<rating.scale, id: \.self) { idx in
+                let filled = idx < rating.value
+                Image(systemName: filled ? "star.fill" : "star")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(
+                        filled
+                            ? Color(hexString: "FACC15")
+                            : Color(hexString: "FFFFFF").opacity(0.25)
+                    )
+            }
+        }
+    }
+}
+
+/// Minimal rating editor. Five tappable stars (general: `scale`
+/// stars). Tap star n → value = n; re-tap the active star → clear to
+/// 0. Explicit "Clear" affordance for discoverability of the cleared
+/// state. Persists via `store.setRatingValue` on every tap (no
+/// stage / commit on dismiss — the store call is the edit-commit
+/// path and clamps to `[0, scale]`). Sheet stays open for re-taps;
+/// user dismisses via the drag indicator.
+private struct RatingEditSheet: View {
+
+    let itemID: String
+    let nodeID: String
+    let initialValue: Int
+    let scale: Int
+
+    @Environment(CorpusStore.self) private var store
+    @State private var value: Int
+
+    init(itemID: String, nodeID: String, initialValue: Int, scale: Int) {
+        self.itemID = itemID
+        self.nodeID = nodeID
+        self.initialValue = initialValue
+        self.scale = scale
+        self._value = State(initialValue: initialValue)
+    }
+
+    var body: some View {
+        VStack(spacing: 24) {
+            Text("Rating")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.top, 28)
+
+            HStack(spacing: 12) {
+                ForEach(1...scale, id: \.self) { star in
+                    Button {
+                        let next = (value == star) ? 0 : star
+                        value = next
+                        Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: next) }
+                    } label: {
+                        Image(systemName: star <= value ? "star.fill" : "star")
+                            .font(.system(size: 36, weight: .medium))
+                            .foregroundStyle(
+                                star <= value
+                                    ? Color(hexString: "FACC15")
+                                    : Color(hexString: "FFFFFF").opacity(0.25)
+                            )
+                            .frame(width: 48, height: 48)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            Button {
+                value = 0
+                Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: 0) }
+            } label: {
+                Text("Clear")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .disabled(value == 0)
+            .opacity(value == 0 ? 0.4 : 1)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 0.027, green: 0.027, blue: 0.039))
     }
 }
 

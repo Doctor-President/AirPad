@@ -174,8 +174,36 @@ struct EntryCard: View {
                         // operates on raw `node.items` indices, so we
                         // shift by `atomicCount` (the size of the atomic
                         // prefix at the front of `node.items`).
+                        //
+                        // Stage 4.8 Commit C — fold-aware release. Snap
+                        // the fold boundary in payload-relative space
+                        // *before* any mutation so the membership check
+                        // uses the same coordinates as `from` / `to`.
+                        // `normalizeAtomicsToFront` guarantees
+                        // `foldIndex ≥ atomicCount`, so `payloadFold ≥
+                        // 0`. A drag that crosses the line shifts the
+                        // boundary by ±1; same-zone drags leave it
+                        // alone (pure reorder). `togglePromote` is the
+                        // menu-path counterpart of this logic — same
+                        // applyMoveEntry + setFoldIndex same-tick
+                        // pattern, just driven by a tap instead of a
+                        // release.
+                        guard let preNode = store.nodes.first(where: { $0.id == nodeID }) else {
+                            reorder.exit()
+                            return
+                        }
                         let prefix = atomicCount
-                        guard let updated = store.applyMoveEntry(
+                        let payloadFold = preNode.foldIndex - prefix
+                        let foldDelta: Int
+                        if from >= payloadFold && to < payloadFold {
+                            foldDelta = 1   // below → above (promote)
+                        } else if from < payloadFold && to >= payloadFold {
+                            foldDelta = -1  // above → below (demote)
+                        } else {
+                            foldDelta = 0   // same-zone reorder
+                        }
+
+                        guard let moved = store.applyMoveEntry(
                             nodeID: nodeID,
                             from: from + prefix,
                             to: to + prefix
@@ -183,13 +211,35 @@ struct EntryCard: View {
                             reorder.exit()
                             return
                         }
+
+                        // Same @MainActor tick as the move so SwiftUI
+                        // batches the array reflow and the fold change
+                        // into one render — no one-frame flash of the
+                        // card in the wrong zone. `setFoldIndex`
+                        // clamps the upper bound to `items.count`; we
+                        // clamp the lower bound to `prefix` here so
+                        // the fold never enters the atomic prefix
+                        // (the ±1 rule already keeps it in range, but
+                        // this is the single enforcement point).
+                        // `slotDelta` / `compensateForReorder` are
+                        // visual offset compensation only — not
+                        // entangled with the fold.
+                        let latest: Node
+                        if foldDelta != 0 {
+                            let rawFold = preNode.foldIndex + foldDelta
+                            let clamped = max(prefix, rawFold)
+                            latest = store.setFoldIndex(clamped, nodeID: nodeID) ?? moved
+                        } else {
+                            latest = moved
+                        }
+
                         reorder.compensateForReorder(slotDelta: slotDelta)
                         Task {
                             // Persist asynchronously; yield one render so
                             // the compensated frame commits before exit()
                             // triggers the landing animation from the
                             // compensated value to 0.
-                            await store.persistNode(updated)
+                            await store.persistNode(latest)
                             await Task.yield()
                             reorder.exit()
                         }

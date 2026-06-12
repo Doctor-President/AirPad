@@ -563,7 +563,7 @@ struct NodeDetailView: View {
         // gradient fill with the image. Requires `coverImageItemId` on
         // Node — not in this commit.
         let totalHeight: CGFloat = 200 + topInset
-        return NodeGradientLayer(node: node, circleScale: 1.3)
+        return NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
             .frame(height: totalHeight)
             .clipShape(
                 UnevenRoundedRectangle(

@@ -202,6 +202,15 @@ struct Node: Codable, Identifiable, Hashable {
     /// on next run); the first FM write stamps `.model`.
     var summarySource: TagSource?
 
+    /// hero-image v1 — relative path (`items/<id>.<ext>`) of the image
+    /// the user picked as this node's hero banner, or `nil` when the
+    /// hero falls back to the morphing gradient. Same handle the rest
+    /// of the storage layer uses; resolved through
+    /// `service.resolveItemPath(nodeID:, relativePath:)`. Additive;
+    /// legacy nodes decode as `nil` via `?? nil`, same precedent as
+    /// `summarySource` — no schema-version bump.
+    var coverImageRelativePath: String?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -229,6 +238,7 @@ struct Node: Codable, Identifiable, Hashable {
         case foldIndex = "fold_index"
         case descriptionOnCard = "description_on_card"
         case summarySource = "summary_source"
+        case coverImageRelativePath = "cover_image_relative_path"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -272,7 +282,8 @@ struct Node: Codable, Identifiable, Hashable {
         entrySchemaVersion: Int = 0,
         foldIndex: Int = 0,
         descriptionOnCard: Bool = true,
-        summarySource: TagSource? = nil
+        summarySource: TagSource? = nil,
+        coverImageRelativePath: String? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -310,6 +321,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.foldIndex                   = foldIndex
         self.descriptionOnCard           = descriptionOnCard
         self.summarySource               = summarySource
+        self.coverImageRelativePath      = coverImageRelativePath
     }
 }
 
@@ -354,6 +366,7 @@ extension Node {
         foldIndex                  = try c.decodeIfPresent(Int.self,      forKey: .foldIndex) ?? 0
         descriptionOnCard          = try c.decodeIfPresent(Bool.self,     forKey: .descriptionOnCard) ?? true
         summarySource              = try c.decodeIfPresent(TagSource.self, forKey: .summarySource)
+        coverImageRelativePath     = try c.decodeIfPresent(String.self,   forKey: .coverImageRelativePath) ?? nil
     }
 }
 

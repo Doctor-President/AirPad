@@ -218,14 +218,21 @@ struct NodeDetailView: View {
 
     private func content(node: Node) -> some View {
         // GeometryReader reads the top safe-area inset so the hero slot
-        // can be sized to `210 + topInset` — that's what keeps the title
+        // can be sized to `200 + topInset` — that's what keeps the title
         // anchored at its original safe-area-relative position while the
         // gradient bleeds all the way up to y=0 of the screen.
-        // `.ignoresSafeArea(.container, edges: .top)` on the GR is what
-        // lets the proxy report a non-zero `safeAreaInsets.top`, and is
-        // what lets the ScrollView's first child actually start at y=0.
+        //
+        // hero-custom-toolbar-overlay — restructured to a ZStack so the
+        // custom top-bar overlay sits in the parent's safe-area zone
+        // (lands naturally below the status bar with no manual padding),
+        // while the gradient/ScrollView keeps its `.ignoresSafeArea(.top)`
+        // independently and the GeometryReader's proxy still reports the
+        // real top inset. Previously `.ignoresSafeArea` was applied to
+        // the GR itself, which in iOS 26 collapsed `proxy.safeAreaInsets.top`
+        // to ~0 — leaving the overlay flush with the status bar.
         GeometryReader { proxy in
         let topInset = proxy.safeAreaInsets.top
+        ZStack(alignment: .top) {
         ScrollView {
             VStack(spacing: 0) {
                 heroZone(node: node, topInset: topInset)
@@ -408,12 +415,126 @@ struct NodeDetailView: View {
             }
         }
         .background { Color(red: 0.027, green: 0.027, blue: 0.039).ignoresSafeArea() }
-        }
         .ignoresSafeArea(.container, edges: .top)
+
+        // hero-custom-toolbar-overlay — sibling of the ScrollView inside
+        // the ZStack, not an overlay on it. The ZStack respects the top
+        // safe area; only the ScrollView ignores it. So this HStack lands
+        // naturally below the status bar via `ZStack(alignment: .top)` —
+        // no manual `.padding(.top, topInset)` needed (which collapsed
+        // to ~0 inside the previously-ignored GR proxy on iOS 26).
+        // Glass styling uses the brief's named `.ultraThinMaterial`
+        // fallback rather than the iOS-26 `.glassEffect(in: .circle)`
+        // API (compile-availability not verifiable at edit time; flagged
+        // for follow-up upgrade).
+        // GlassEffectContainer groups multiple glass surfaces so they
+        // share lensing — glass-sampling-glass otherwise compounds and
+        // looks muddy. Buttons inside opt in via `.glassEffect(...)`.
+        // iOS 26 beta wrinkle: `.glassEffect(..., in: .circle)` may
+        // mis-render as a capsule or show edge artifacts on some
+        // builds; documented fallback is `.buttonStyle(.glass)` with
+        // `.buttonBorderShape(.circle).clipShape(Circle())`. Swap if
+        // eval shows artifacts.
+        GlassRowContainer {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 56, height: 56)
+                    .modifier(InteractiveGlassCircle())
+            }
+            Spacer()
+            if reorderController.isReorderActive {
+                // Stage 3.1b — Done swaps in while reorder mode is
+                // active. Exits the controller cleanly with no
+                // commit; the long-press path's release-to-commit
+                // path is unchanged.
+                Button {
+                    reorderController.exit()
+                } label: {
+                    Text("Done")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 20)
+                        .frame(height: 56)
+                        .modifier(InteractiveGlassCapsule())
+                }
+            } else {
+                Menu {
+                    Button {} label: {
+                        Label("Move to Collection", systemImage: "arrow.right.square")
+                    }
+                    .disabled(true)
+                    Button {} label: {
+                        Label("Add to Another Collection", systemImage: "folder.badge.plus")
+                    }
+                    .disabled(true)
+                    Button {} label: {
+                        Label("Share / Export", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(true)
+
+                    // STUB — needs `store.duplicateNode(id:)` (not yet
+                    // implemented). Wire once the store method lands.
+                    Button {} label: {
+                        Label("Duplicate", systemImage: "doc.on.doc")
+                    }
+                    .disabled(true)
+                    Divider()
+                    // entry-system-and-fold Commit 6 — visibility flag for
+                    // the description on the card-view surface (queue #10).
+                    // Orthogonal to summarySource: toggling visibility does
+                    // not freeze the text. Checkmark when on.
+                    Button {
+                        var updated = node
+                        updated.descriptionOnCard.toggle()
+                        updated.updatedAt = Date()
+                        Task { await store.updateNode(updated) }
+                    } label: {
+                        Label(
+                            "Show description on card",
+                            systemImage: node.descriptionOnCard ? "checkmark" : ""
+                        )
+                    }
+                    Divider()
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 56, height: 56)
+                        .modifier(InteractiveGlassCircle())
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        } // close GlassRowContainer
+        } // close ZStack
+        } // close GeometryReader
+        .background {
+            // Restores interactive edge-swipe-to-pop killed by
+            // `.toolbar(.hidden, for: .navigationBar)`. See SwipeBackProxy.
+            SwipeBackProxy()
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        // hero-custom-toolbar-overlay — iOS 26 Liquid Glass nav-bar
+        // background is unremovable via API (`.toolbarBackground(.hidden)`
+        // / `.toolbarBackgroundVisibility(.hidden)` / dropping
+        // `.toolbarColorScheme(.dark)` all failed; only hiding the whole
+        // bar killed the veil). Route A: hide the system bar entirely and
+        // render back + `•••` ourselves as a fixed top overlay (see
+        // `.overlay(alignment: .top)` on the ScrollView in `content`).
+        .toolbar(.hidden, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -421,66 +542,6 @@ struct NodeDetailView: View {
                     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
                 .fontWeight(.semibold)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                if reorderController.isReorderActive {
-                    // Stage 3.1b — Done swaps in while reorder mode is
-                    // active. Exits the controller cleanly with no
-                    // commit; the long-press path's release-to-commit
-                    // path is unchanged.
-                    Button("Done") {
-                        reorderController.exit()
-                    }
-                    .foregroundStyle(.white)
-                    .fontWeight(.semibold)
-                } else {
-                    Menu {
-                        Button {} label: {
-                            Label("Move to Collection", systemImage: "arrow.right.square")
-                        }
-                        .disabled(true)
-                        Button {} label: {
-                            Label("Add to Another Collection", systemImage: "folder.badge.plus")
-                        }
-                        .disabled(true)
-                        Button {} label: {
-                            Label("Share / Export", systemImage: "square.and.arrow.up")
-                        }
-                        .disabled(true)
-
-                        // STUB — needs `store.duplicateNode(id:)` (not yet
-                        // implemented). Wire once the store method lands.
-                        Button {} label: {
-                            Label("Duplicate", systemImage: "doc.on.doc")
-                        }
-                        .disabled(true)
-                        Divider()
-                        // entry-system-and-fold Commit 6 — visibility flag for
-                        // the description on the card-view surface (queue #10).
-                        // Orthogonal to summarySource: toggling visibility does
-                        // not freeze the text. Checkmark when on.
-                        Button {
-                            var updated = node
-                            updated.descriptionOnCard.toggle()
-                            updated.updatedAt = Date()
-                            Task { await store.updateNode(updated) }
-                        } label: {
-                            Label(
-                                "Show description on card",
-                                systemImage: node.descriptionOnCard ? "checkmark" : ""
-                            )
-                        }
-                        Divider()
-                        Button(role: .destructive) {
-                            showDeleteConfirmation = true
-                        } label: {
-                            Label("Delete", systemImage: "trash")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .foregroundStyle(.white.opacity(0.85))
-                    }
-                }
             }
         }
         .environment(reorderController)
@@ -1868,6 +1929,118 @@ private struct FoldDivider: View {
         }
         .padding(.vertical, 4)
         .allowsHitTesting(false)
+    }
+}
+
+/// Restores the interactive edge-swipe-to-pop gesture that iOS strips
+/// when `.toolbar(.hidden, for: .navigationBar)` removes the system
+/// back button. On iOS 26 NavigationStack, the SwiftUI host view's
+/// `next` responder often does NOT expose the underlying
+/// `UINavigationController` directly — so we walk the responder chain
+/// AND the parent VC chain, and log which (if either) resolved it.
+/// The delegate gates the gesture on `viewControllers.count > 1` so it
+/// no-ops at the root.
+private struct SwipeBackProxy: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> ProbeView {
+        let v = ProbeView()
+        v.coordinator = context.coordinator
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ uiView: ProbeView, context: Context) {}
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        weak var navController: UINavigationController?
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navController?.viewControllers.count ?? 0) > 1
+        }
+    }
+
+    final class ProbeView: UIView {
+        var coordinator: Coordinator?
+        private var didAttach = false
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil, !didAttach, let coordinator = coordinator else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.attach(coordinator: coordinator)
+            }
+        }
+
+        private func attach(coordinator: Coordinator) {
+            let directVC = next as? UIViewController
+            let directNav = directVC?.navigationController
+            let walkedNav = findNavigationController()
+            print("[SwipeBackProxy] direct viewController.navigationController = \(directNav == nil ? "nil" : "non-nil"); walked-chain navigationController = \(walkedNav == nil ? "nil" : "non-nil")")
+            guard let nav = directNav ?? walkedNav else {
+                print("[SwipeBackProxy] could not resolve UINavigationController — swipe-back not restored.")
+                return
+            }
+            coordinator.navController = nav
+            nav.interactivePopGestureRecognizer?.delegate = coordinator
+            nav.interactivePopGestureRecognizer?.isEnabled = true
+            didAttach = true
+        }
+
+        private func findNavigationController() -> UINavigationController? {
+            var responder: UIResponder? = self.next
+            while let r = responder {
+                if let nav = r as? UINavigationController { return nav }
+                if let vc = r as? UIViewController, let nav = vc.navigationController { return nav }
+                responder = r.next
+            }
+            var vc = window?.rootViewController
+            while let current = vc {
+                if let nav = current as? UINavigationController { return nav }
+                if let nav = current.navigationController { return nav }
+                vc = current.presentedViewController ?? current.children.first
+            }
+            return nil
+        }
+    }
+}
+
+/// Glass-or-material background helpers. Deployment target is iOS 18 but
+/// `GlassEffectContainer` / `.glassEffect(_:in:)` are iOS 26+ APIs, so
+/// they need availability gates. On iOS 18 we fall back to the prior
+/// `.ultraThinMaterial` fill so the buttons still read as frosted
+/// circles/capsules (just without the gradient-refracting lensing).
+private struct InteractiveGlassCircle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content.background(Circle().fill(.ultraThinMaterial))
+        }
+    }
+}
+
+private struct InteractiveGlassCapsule: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: .capsule)
+        } else {
+            content.background(Capsule().fill(.ultraThinMaterial))
+        }
+    }
+}
+
+private struct GlassRowContainer<Content: View>: View {
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer { content() }
+        } else {
+            content()
+        }
     }
 }
 

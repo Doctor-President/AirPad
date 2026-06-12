@@ -235,7 +235,7 @@ struct NodeDetailView: View {
         ZStack(alignment: .top) {
         ScrollView {
             VStack(spacing: 0) {
-                heroZone(node: node, topInset: topInset)
+                heroZone(node: node, topInset: topInset, width: proxy.size.width)
                 VStack(alignment: .leading, spacing: 24) {
                 // Title — Stage 4.4 addendum 1a-i: font sourced from the
                 // Node Title role in the dev-panel type scale. Default
@@ -499,6 +499,18 @@ struct NodeDetailView: View {
                             systemImage: node.descriptionOnCard ? "checkmark" : ""
                         )
                     }
+                    // hero-image v1 — "Remove Hero Image" surfaces only
+                    // when one is actually set, so the menu shape is
+                    // unchanged for the (default) gradient case. Action
+                    // clears the path; the heroZone branch falls back to
+                    // the morphing gradient on the next render.
+                    if node.coverImageRelativePath != nil {
+                        Button {
+                            Task { await store.clearCoverImage(nodeID: nodeID) }
+                        } label: {
+                            Label("Remove Hero Image", systemImage: "photo.badge.exclamationmark")
+                        }
+                    }
                     Divider()
                     Button(role: .destructive) {
                         showDeleteConfirmation = true
@@ -549,29 +561,42 @@ struct NodeDetailView: View {
 
     // MARK: - Hero zone
 
-    private func heroZone(node: Node, topInset: CGFloat) -> some View {
-        // Compact gradient banner — top full-bleeds under the status bar
-        // (y=0), bottom is a defined edge via rounded corners that match
-        // the ~30pt card-family radius. No fade and no mask: the rounded
+    @ViewBuilder
+    private func heroZone(node: Node, topInset: CGFloat, width: CGFloat) -> some View {
+        // Compact banner — top full-bleeds under the status bar (y=0),
+        // bottom is a defined edge via rounded corners that match the
+        // ~30pt card-family radius. No fade and no mask: the rounded
         // clip reads as an intentional banner instead of a dissolving
-        // seam. Band height = 200pt visible + the top safe-area inset,
-        // so the title below it lands at its original safe-area-relative
-        // position (the parent ScrollView ignores the top safe area).
+        // seam.
         //
-        // Section 2 of the brief will flex this height to fit a hero
-        // image's natural aspect (clamped to min/max), replacing the
-        // gradient fill with the image. Requires `coverImageItemId` on
-        // Node — not in this commit.
-        let totalHeight: CGFloat = 200 + topInset
-        return NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
-            .frame(height: totalHeight)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    bottomLeadingRadius: 30,
-                    bottomTrailingRadius: 30,
-                    style: .continuous
+        // hero-image v1 — when the node has a chosen cover image,
+        // render `HeroImageBanner` (cover-cropped, adaptive height
+        // clamped 200…420 + topInset). Otherwise fall back to the
+        // morphing gradient at its fixed 200pt visible + topInset
+        // height — the title below it lands at its original
+        // safe-area-relative position (the parent ScrollView ignores
+        // the top safe area).
+        if node.coverImageRelativePath == nil {
+            let totalHeight: CGFloat = 200 + topInset
+            NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
+                .frame(height: totalHeight)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        bottomLeadingRadius: 30,
+                        bottomTrailingRadius: 30,
+                        style: .continuous
+                    )
                 )
-            )
+        } else {
+            HeroImageBanner(node: node, topInset: topInset, width: width)
+                // Force a fresh view identity whenever the source path
+                // flips so the `.task(id:)` inside actually re-fires.
+                // Without this the banner's identity is reused across
+                // hero changes and the keyed task — though re-keyed —
+                // never restarts (Case A: heroZone re-evals with the
+                // new path, but `task fired` never logs).
+                .id(node.coverImageRelativePath)
+        }
     }
 
     // MARK: - Tags row
@@ -2040,6 +2065,93 @@ private struct GlassRowContainer<Content: View>: View {
             GlassEffectContainer { content() }
         } else {
             content()
+        }
+    }
+}
+
+// MARK: - HeroImageBanner (hero-image v1)
+
+/// Renders the chosen cover image as the node's hero banner. Replaces
+/// the morphing gradient when `node.coverImageRelativePath != nil`.
+///
+/// **Height:** the visible image height is `clamp(width / aspect, 200, 420)`;
+/// the rendered frame adds `topInset` on top so the image full-bleeds
+/// under the status bar at y=0, exactly like the gradient banner. Width
+/// comes from the parent `GeometryReader` proxy — NOT `UIScreen` — so
+/// the math stays correct under split-screen or other reflows.
+///
+/// **Resolution / decode:** the URL resolve and `Data → UIImage` decode
+/// both run off-main (same pattern as `ImageEntryBody` /
+/// `GalleryFullscreenPage`); only the final assignment to `@State image`
+/// + `@State aspect` hops back to main. Keyed on
+/// `node.coverImageRelativePath` so changing the hero mid-view triggers
+/// a re-resolve without leaving stale image bytes on screen.
+///
+/// **Fallback:** while loading OR if the resolve / decode comes back
+/// empty (dangling ref after the source image was deleted), we render
+/// the `NodeGradientLayer` gradient banner in this view's place — so a
+/// stale path degrades gracefully and the user never sees a broken /
+/// empty banner. (A cross-fade on image-ready would be a nice-to-have.)
+private struct HeroImageBanner: View {
+
+    let node: Node
+    let topInset: CGFloat
+    let width: CGFloat
+
+    @Environment(CorpusStore.self) private var store
+
+    @State private var image: UIImage? = nil
+    @State private var aspect: CGFloat? = nil
+
+    var body: some View {
+        Group {
+            if let image, let aspect {
+                let visibleHeight = max(200, min(420, width / max(aspect, 0.01)))
+                let totalHeight = visibleHeight + topInset
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: totalHeight)
+                    .clipped()
+                    .clipShape(
+                        UnevenRoundedRectangle(
+                            bottomLeadingRadius: 30,
+                            bottomTrailingRadius: 30,
+                            style: .continuous
+                        )
+                    )
+            } else {
+                // Loading / resolve-or-decode failure: fall back to the
+                // gradient banner at its natural 200 + topInset height.
+                let totalHeight: CGFloat = 200 + topInset
+                NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
+                    .frame(height: totalHeight)
+                    .clipShape(
+                        UnevenRoundedRectangle(
+                            bottomLeadingRadius: 30,
+                            bottomTrailingRadius: 30,
+                            style: .continuous
+                        )
+                    )
+            }
+        }
+        .task(id: node.coverImageRelativePath) {
+            // Drop stale bytes the moment the source path changes so the
+            // fallback gradient bridges the gap instead of the previous
+            // image lingering during the new resolve.
+            image = nil
+            aspect = nil
+            guard node.coverImageRelativePath != nil,
+                  let url = await store.coverImageURL(for: node) else { return }
+            let decoded: (UIImage, CGFloat)? = await Task.detached(priority: .userInitiated) {
+                guard let data = try? Data(contentsOf: url),
+                      let img = UIImage(data: data),
+                      img.size.height > 0 else { return nil }
+                return (img, img.size.width / img.size.height)
+            }.value
+            guard let decoded else { return }
+            image = decoded.0
+            aspect = decoded.1
         }
     }
 }

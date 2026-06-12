@@ -118,7 +118,18 @@ struct EntryCard: View {
                 onCopy: copyContent,
                 onChangeType: {},
                 onReorder: enterReorderModeViaMenu,
-                onDelete: { showDeleteConfirmation = true }
+                onDelete: { showDeleteConfirmation = true },
+                // hero-image v1 — surface "Set as Hero Image" only on
+                // standalone `.image` entries that actually have a
+                // resolvable file. Gallery (multi-item) `.imageVideo`
+                // entries reach the hero through `GalleryFullscreenViewer`'s
+                // bottom bar; single-media `.imageVideo` is the known v1
+                // gap (fast-follow on `MediaFullscreenViewer`).
+                onSetAsHero: (item.type == .image && item.file != nil)
+                    ? { [file = item.file!, nodeID] in
+                        Task { await store.setCoverImage(relativePath: file, nodeID: nodeID) }
+                    }
+                    : nil
             )
 
             if effectiveExpansion {
@@ -506,6 +517,12 @@ private struct EntryTitleRow: View {
     let onChangeType: () -> Void
     let onReorder: () -> Void
     let onDelete: () -> Void
+    /// hero-image v1 — optional "Set as Hero Image" hook. When non-nil
+    /// the row renders the menu item just above the divider before
+    /// Rename, sitting alongside `Promote` as a primary action. `nil`
+    /// for every entry type the hero set-point doesn't apply to so the
+    /// menu shape is unchanged outside `.image` entries.
+    var onSetAsHero: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -540,6 +557,9 @@ private struct EntryTitleRow: View {
             if !reorderActive {
                 Menu {
                     Button(isAboveFold ? "Remove from card" : "Show on card", action: onPromote)
+                    if let onSetAsHero {
+                        Button("Set as Hero Image", action: onSetAsHero)
+                    }
                     Divider()
                     Button("Rename", action: onRename)
                     Button("Duplicate", action: onDuplicate)

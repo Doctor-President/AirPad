@@ -162,6 +162,16 @@ struct GalleryFullscreenViewer: View {
             }
             .disabled(item.mediaType == .video)
             .opacity(item.mediaType == .video ? 0.35 : 1.0)
+            // hero-image v1 — image-only (mirrors Copy's video gate).
+            // `item.file` IS the relative path so we skip the URL
+            // resolve and hand it directly to the store. Sets without
+            // dismissing — viewer-dismiss is reserved for Delete (see
+            // top-of-file delete-timing section).
+            actionButton(systemImage: "photo.badge.checkmark", label: "Set as Hero") {
+                Task { await store.setCoverImage(relativePath: item.file, nodeID: nodeID) }
+            }
+            .disabled(item.mediaType == .video)
+            .opacity(item.mediaType == .video ? 0.35 : 1.0)
             actionButton(systemImage: "trash", label: "Delete", tint: .red) {
                 pendingDelete = item
             }

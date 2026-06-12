@@ -1718,6 +1718,45 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    // MARK: - Hero image (hero-image v1)
+    //
+    // Reference model B: the node stores the image's relative file path
+    // (`items/<id>.<ext>`) — the same handle standalone `.image` entries
+    // and gallery tiles already expose. Resolution flows through the
+    // existing `service.resolveItemPath(nodeID:, relativePath:)` against
+    // the hero's own node folder, since the hero always lives on its
+    // own node. No asset layer, no migration.
+
+    /// Pins a node's hero banner to the image at `relativePath`. No-op
+    /// when the path is already set.
+    func setCoverImage(relativePath: String, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard updated.coverImageRelativePath != relativePath else { return }
+        updated.coverImageRelativePath = relativePath
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Clears a node's hero banner; banner falls back to the morphing
+    /// gradient. No-op when nothing was set.
+    func clearCoverImage(nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard updated.coverImageRelativePath != nil else { return }
+        updated.coverImageRelativePath = nil
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Resolves the on-disk URL of a node's hero image, or `nil` when
+    /// none is set. The hero always lives on its own node, so the node's
+    /// own id is the resolution context.
+    func coverImageURL(for node: Node) async -> URL? {
+        guard let path = node.coverImageRelativePath else { return nil }
+        return await service.resolveItemPath(nodeID: node.id, relativePath: path)
+    }
+
     // MARK: - Entry creation (Stage 3.1a commit (c))
 
     /// Appends an empty `.text` entry to a node and flags it for autofocus

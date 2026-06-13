@@ -1729,24 +1729,41 @@ final class CorpusStore {
 
     /// Pins a node's hero banner to the image at `relativePath`. No-op
     /// when the path is already set.
+    ///
+    /// hero-empty-picker (H1, revised) — also runs `cleanupOwnedCover`
+    /// against the *outgoing* path so a swap from a Photos-library cover
+    /// (a `cover-` prefixed file we own) to anything else deletes the
+    /// orphaned bytes. Cleanup is a no-op for paths that don't carry the
+    /// `cover-` itemID prefix (i.e., gallery-item files), so the
+    /// node-image and gallery-viewer callers stay unaffected.
     func setCoverImage(relativePath: String, nodeID: String) async {
         guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[nodeIdx]
         guard updated.coverImageRelativePath != relativePath else { return }
+        let old = updated.coverImageRelativePath
         updated.coverImageRelativePath = relativePath
         updated.updatedAt = Date()
         await updateNode(updated)
+        await cleanupOwnedCover(old, nodeID: nodeID)
     }
 
     /// Clears a node's hero banner; banner falls back to the morphing
     /// gradient. No-op when nothing was set.
+    ///
+    /// hero-empty-picker (H1, revised) — when the outgoing path is a
+    /// `cover-` prefixed file we own, delete it from disk too. Without
+    /// this, library-sourced heroes would orphan their bytes in `items/`
+    /// after a remove. Gallery-item paths are guarded out by the
+    /// prefix check in `cleanupOwnedCover`.
     func clearCoverImage(nodeID: String) async {
         guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[nodeIdx]
         guard updated.coverImageRelativePath != nil else { return }
+        let old = updated.coverImageRelativePath
         updated.coverImageRelativePath = nil
         updated.updatedAt = Date()
         await updateNode(updated)
+        await cleanupOwnedCover(old, nodeID: nodeID)
     }
 
     /// Resolves the on-disk URL of a node's hero image, or `nil` when
@@ -1755,6 +1772,83 @@ final class CorpusStore {
     func coverImageURL(for node: Node) async -> URL? {
         guard let path = node.coverImageRelativePath else { return nil }
         return await service.resolveItemPath(nodeID: node.id, relativePath: path)
+    }
+
+    /// hero-empty-picker (H1, revised) — copies a Photos-library pick
+    /// (already exported to a temp file by the picker handler) into the
+    /// node's `items/` directory as a **cover-only** asset: a file with
+    /// no matching `NodeItem`, owned exclusively by `coverImageRelativePath`.
+    ///
+    /// The itemID is `"cover-<UUID>"` — the `cover-` prefix is the
+    /// load-bearing safety invariant for `cleanupOwnedCover`, which uses
+    /// it to distinguish files we own (and may delete on replace/clear)
+    /// from gallery-item files (bare UUIDs, never to be touched here).
+    /// Gallery enumeration is driven by `node.items`, so this file is
+    /// invisible to galleries; it's referenced only by the hero field.
+    ///
+    /// Durability: the source URL is a temp file we exported from the
+    /// PHPicker pipeline — the bytes now live in the node's iCloud
+    /// folder, so deleting the original from the user's Photos library
+    /// does not affect the hero.
+    func setCoverImageFromTempFile(sourceURL: URL, fileExtension: String, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        let itemID = "cover-\(UUID().uuidString)"
+        do {
+            try await service.saveItemFile(
+                nodeID: nodeID,
+                itemID: itemID,
+                sourceURL: sourceURL,
+                fileExtension: fileExtension
+            )
+        } catch {
+            print("[CorpusStore] setCoverImageFromTempFile: save failed: \(error)")
+            try? FileManager.default.removeItem(at: sourceURL)
+            return
+        }
+        let relativePath = "items/\(itemID).\(fileExtension)"
+        var updated = nodes[nodeIdx]
+        let old = updated.coverImageRelativePath
+        updated.coverImageRelativePath = relativePath
+        updated.updatedAt = Date()
+        await updateNode(updated)
+        await cleanupOwnedCover(old, nodeID: nodeID)
+        // Mirror `persistMediaFiles`: the temp file is ours to clean up
+        // once the save succeeded.
+        try? FileManager.default.removeItem(at: sourceURL)
+    }
+
+    /// hero-empty-picker (H1, revised) — deletes a previously-set hero
+    /// file from disk **only when we own it**. Ownership is established
+    /// by the `cover-` itemID prefix written by `setCoverImageFromTempFile`.
+    ///
+    /// **Safety invariant:** gallery `GalleryItem` files use bare UUIDs
+    /// (see `addMediaItems` at the `"items/\(itemID).\(ext)"` composition
+    /// — `itemID = UUID().uuidString`, no prefix). The `cover-` prefix
+    /// check therefore guarantees we will never delete a user's gallery
+    /// photo here, even if it happens to currently be the hero (the
+    /// node-image hero path is a direct reference, so its `relativePath`
+    /// does NOT carry the prefix and this helper no-ops).
+    ///
+    /// Filename parsing: `items/<itemID>.<ext>` → split the last path
+    /// component on the final `.`. If anything looks malformed, bail
+    /// rather than guessing.
+    private func cleanupOwnedCover(_ relativePath: String?, nodeID: String) async {
+        guard let relativePath else { return }
+        let filename = (relativePath as NSString).lastPathComponent
+        guard filename.hasPrefix("cover-") else { return }
+        guard let dotIdx = filename.lastIndex(of: ".") else { return }
+        let itemID = String(filename[..<dotIdx])
+        let ext = String(filename[filename.index(after: dotIdx)...])
+        guard !itemID.isEmpty, !ext.isEmpty else { return }
+        do {
+            _ = try await service.deleteItemFile(
+                nodeID: nodeID,
+                itemID: itemID,
+                fileExtension: ext
+            )
+        } catch {
+            print("[CorpusStore] cleanupOwnedCover: delete failed for \(filename): \(error)")
+        }
     }
 
     // MARK: - Entry creation (Stage 3.1a commit (c))

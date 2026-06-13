@@ -1,6 +1,7 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import PhotosUI
 import UIKit
 
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
@@ -30,6 +31,12 @@ struct NodeDetailView: View {
     @State private var showLinkAddAlert = false
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
+
+    /// hero-empty-picker (H1, revised) — drives the file-local
+    /// `HeroImagePickerSheet`. Triggered from the `•••` menu's
+    /// "Set / Change Hero Image…" item. Always enabled (a node with
+    /// zero own-images can still pick from Photos).
+    @State private var showHeroPicker = false
 
     /// Stage 4.6 commit 3 — capture-time modal for the canvas-level
     /// "+ Document" path. When the user picks documents in a node that
@@ -499,12 +506,28 @@ struct NodeDetailView: View {
                             systemImage: node.descriptionOnCard ? "checkmark" : ""
                         )
                     }
-                    // hero-image v1 — "Remove Hero Image" surfaces only
-                    // when one is actually set, so the menu shape is
-                    // unchanged for the (default) gradient case. Action
-                    // clears the path; the heroZone branch falls back to
-                    // the morphing gradient on the next render.
-                    if node.coverImageRelativePath != nil {
+                    // hero-empty-picker (H1, revised) — menu surface for
+                    // hero set / change / remove. Always enabled (even a
+                    // node with zero own-images can pick from Photos).
+                    // Both Set and Change route to the same picker sheet;
+                    // it decides which sources to show based on what
+                    // exists (Photos always; node images when present).
+                    // Remove still clears directly — the store's
+                    // `clearCoverImage` now also cleans up library-
+                    // sourced cover files (gallery files are guarded
+                    // out by the `cover-` prefix rule).
+                    if node.coverImageRelativePath == nil {
+                        Button {
+                            showHeroPicker = true
+                        } label: {
+                            Label("Set Hero Image…", systemImage: "photo.badge.plus")
+                        }
+                    } else {
+                        Button {
+                            showHeroPicker = true
+                        } label: {
+                            Label("Change Hero Image…", systemImage: "photo.badge.plus")
+                        }
                         Button {
                             Task { await store.clearCoverImage(nodeID: nodeID) }
                         } label: {
@@ -557,6 +580,13 @@ struct NodeDetailView: View {
             }
         }
         .environment(reorderController)
+        // hero-empty-picker (H1, revised) — Photos + node-images picker.
+        // Lives on `content`'s chain (not body) because it needs `node`
+        // in scope; the body-level sheets operate on state that doesn't
+        // depend on a resolved node.
+        .sheet(isPresented: $showHeroPicker) {
+            HeroImagePickerSheet(node: node, nodeID: nodeID)
+        }
     }
 
     // MARK: - Hero zone
@@ -1920,6 +1950,229 @@ private struct RatingEditSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(red: 0.027, green: 0.027, blue: 0.039))
+    }
+}
+
+/// hero-empty-picker (H1, revised) — sheet for setting the node's
+/// hero from either the user's Photos library (durable: bytes are
+/// copied into the corpus as a `cover-`-prefixed standalone asset)
+/// or from the node's own image items (direct reference, same path
+/// as the gallery viewer's "Set as Hero").
+///
+/// Photos picks route through `store.setCoverImageFromTempFile`
+/// (which also cleans up the *outgoing* hero when it was a
+/// previously-imported library asset). Node-image picks route
+/// through `store.setCoverImage(relativePath:nodeID:)`, which now
+/// also runs the same outgoing-cleanup so a library→node swap
+/// doesn't orphan the old library file.
+///
+/// We deliberately don't reuse `GalleryItemTile` — that tile is
+/// built to be sized externally by its parent (carousel/bento) and
+/// it self-fits at intrinsic aspect ratio, which makes it overlap
+/// inside a `LazyVGrid`. The picker uses a private square-aspect
+/// cell with its own decode pipeline instead.
+private struct HeroImagePickerSheet: View {
+
+    let node: Node
+    let nodeID: String
+
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    /// Drives the nested system Photos picker. Single-select,
+    /// images-only — the hero is image-only, matching the gallery
+    /// viewer's Set-as-Hero video gate.
+    @State private var showPhotosPicker = false
+
+    /// Identifiable pairing so SwiftUI's `ForEach` can iterate the
+    /// node's image items by stable id while keeping each item's
+    /// parent `NodeItem` available for `resolveGalleryItemURL`'s
+    /// migration-fallback path (where `GalleryItem.id == parent.id`
+    /// after the v1 → 4.2 single-image migration).
+    private struct ImagePair: Identifiable {
+        let item: GalleryItem
+        let parent: NodeItem
+        var id: String { item.id }
+    }
+
+    private var pairs: [ImagePair] {
+        node.items
+            .filter { $0.type == .imageVideo }
+            .flatMap { entry in
+                (entry.mediaItems ?? []).map { ImagePair(item: $0, parent: entry) }
+            }
+            .filter { $0.item.mediaType == .image }
+    }
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+        GridItem(.flexible(), spacing: 8),
+    ]
+
+    private var title: String {
+        node.coverImageRelativePath == nil ? "Set Hero Image" : "Change Hero Image"
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 8) {
+                    photosCell
+                    ForEach(pairs) { pair in
+                        nodeImageCell(pair)
+                    }
+                }
+                .padding(16)
+            }
+            .background(Color(red: 0.027, green: 0.027, blue: 0.039).ignoresSafeArea())
+            .scrollContentBackground(.hidden)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(.white)
+                }
+            }
+            .sheet(isPresented: $showPhotosPicker) {
+                MediaPickerWrapper(
+                    onPick: { results in
+                        Task { await handlePhotosPick(results) }
+                    },
+                    selectionLimit: 1,
+                    filter: .images
+                )
+            }
+        }
+    }
+
+    private var photosCell: some View {
+        Button {
+            showPhotosPicker = true
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+                VStack(spacing: 6) {
+                    Image(systemName: "photo.on.rectangle.angled")
+                        .font(.system(size: 24, weight: .medium))
+                    Text("Photos")
+                        .font(.caption.weight(.medium))
+                }
+                .foregroundStyle(.white.opacity(0.85))
+            }
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func nodeImageCell(_ pair: ImagePair) -> some View {
+        let isCurrent = node.coverImageRelativePath == pair.item.file
+        HeroPickerCell(galleryItem: pair.item, nodeID: nodeID, parentItem: pair.parent)
+            .overlay {
+                if isCurrent {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(Color.white, lineWidth: 3)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                Task {
+                    await store.setCoverImage(relativePath: pair.item.file, nodeID: nodeID)
+                }
+                dismiss()
+            }
+    }
+
+    /// Mirrors `GalleryBody.handlePickedMedia` for the image branch:
+    /// load `UIImage` from the provider, JPEG-encode at 0.85 to a
+    /// temp file (preserving the existing import-quality default),
+    /// hand the temp URL to the store, dismiss. The store copies
+    /// the bytes into the corpus and removes the temp file.
+    private func handlePhotosPick(_ results: [PHPickerResult]) async {
+        guard let provider = results.first?.itemProvider,
+              provider.canLoadObject(ofClass: UIImage.self),
+              let image = await MediaPickerWrapper.loadImage(from: provider),
+              let data = image.jpegData(compressionQuality: 0.85) else { return }
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).jpg")
+        do {
+            try data.write(to: tmpURL)
+        } catch {
+            print("[HeroImagePickerSheet] temp write error: \(error)")
+            return
+        }
+        await store.setCoverImageFromTempFile(
+            sourceURL: tmpURL,
+            fileExtension: "jpg",
+            nodeID: nodeID
+        )
+        await MainActor.run { dismiss() }
+    }
+}
+
+/// hero-empty-picker (H1, revised) — uniform square cell for the
+/// picker grid. Does NOT reuse `GalleryItemTile` because that tile
+/// self-fits at intrinsic aspect ratio (it's framed externally by
+/// its parent in the carousel/bento layouts); inside a `LazyVGrid`
+/// it overlaps with neighbors. This cell forces a 1:1 frame with
+/// `scaledToFill().clipped()` so every cell is the same square no
+/// matter the source aspect.
+///
+/// Resolution + decode mirror `GalleryFullscreenPage` /
+/// `HeroImageBanner`: URL resolve through the store's
+/// `resolveGalleryItemURL` (which handles the v1 → 4.2 migration
+/// fallback) and a detached-task `Data → UIImage` decode so the
+/// main thread doesn't stall on a grid with many items.
+private struct HeroPickerCell: View {
+
+    let galleryItem: GalleryItem
+    let nodeID: String
+    let parentItem: NodeItem
+
+    @Environment(CorpusStore.self) private var store
+
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.08))
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: "photo")
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .task(id: galleryItem.id) {
+            await resolveAndLoad()
+        }
+    }
+
+    private func resolveAndLoad() async {
+        guard let url = await store.resolveGalleryItemURL(
+            galleryItem,
+            nodeID: nodeID,
+            fallbackParentItem: parentItem
+        ) else { return }
+        let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return UIImage(data: data)
+        }.value
+        guard let decoded else { return }
+        image = decoded
     }
 }
 

@@ -14,11 +14,19 @@ import UniformTypeIdentifiers
 /// `appendMediaItems` for adding to an existing entry).
 struct MediaPickerWrapper: UIViewControllerRepresentable {
     let onPick: ([PHPickerResult]) -> Void
+    /// Defaulted so existing callers (`CameraCaptureView`, `GalleryBody`,
+    /// `SingleMediaBody`) keep their multi-select images-or-videos
+    /// behavior unchanged. Hero picker passes `selectionLimit: 1`.
+    var selectionLimit: Int = 0
+    /// Defaulted to images-or-videos to preserve existing call sites.
+    /// Hero picker passes `filter: .images` since the hero is image-only
+    /// (mirrors the gallery viewer's Set-as-Hero video gate).
+    var filter: PHPickerFilter = .any(of: [.images, .videos])
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var config = PHPickerConfiguration()
-        config.selectionLimit = 0
-        config.filter = .any(of: [.images, .videos])
+        config.selectionLimit = selectionLimit
+        config.filter = filter
         let picker = PHPickerViewController(configuration: config)
         picker.delegate = context.coordinator
         return picker

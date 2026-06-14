@@ -263,6 +263,11 @@ struct NodeDetailView: View {
                         .focused($focusedField)
                 }
 
+                // Collections (membership chips above tags, mirrors
+                // tags-row layout but uses rounded-rect chips to read
+                // distinct from the capsule tag pills).
+                collectionsRow(node: node)
+
                 // Tags
                 tagsRow
 
@@ -472,14 +477,6 @@ struct NodeDetailView: View {
             } else {
                 Menu {
                     Button {} label: {
-                        Label("Move to Collection", systemImage: "arrow.right.square")
-                    }
-                    .disabled(true)
-                    Button {} label: {
-                        Label("Add to Another Collection", systemImage: "folder.badge.plus")
-                    }
-                    .disabled(true)
-                    Button {} label: {
                         Label("Share / Export", systemImage: "square.and.arrow.up")
                     }
                     .disabled(true)
@@ -626,6 +623,91 @@ struct NodeDetailView: View {
                 // never restarts (Case A: heroZone re-evals with the
                 // new path, but `task fired` never logs).
                 .id(node.coverImageRelativePath)
+        }
+    }
+
+    // MARK: - Collections row
+
+    /// Editable membership chips for the node. User collections come from
+    /// `node.collectionIDs` (resolved to display names via `store.collections`);
+    /// Journal is virtual — present when `node.journalDate != nil`. Corpus
+    /// is always-on and not surfaced here. Actions mutate the store
+    /// immediately (no `editedTags`-style buffer); the `@Observable` store
+    /// re-renders the chips after each call.
+    @ViewBuilder
+    private func collectionsRow(node: Node) -> some View {
+        let membershipIDs = collectionMembershipIDs(node: node)
+        let excludeIDs: Set<String> = Set(membershipIDs).union([NodeCollection.corpusID])
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(membershipIDs, id: \.self) { id in
+                    CollectionChip(name: collectionDisplayName(for: id)) {
+                        removeMembership(id: id)
+                    }
+                }
+                Menu {
+                    CollectionPickerMenuContent(
+                        collections: store.collections.filter { !$0.isCorpus },
+                        collectionLastUsedAt: store.collectionLastUsedAt,
+                        excludeIDs: excludeIDs,
+                        onPick: { addMembership(collectionID: $0) }
+                    )
+                } label: {
+                    Label("Add to collection", systemImage: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                }
+            }
+        }
+    }
+
+    /// Membership IDs surfaced as chips, ordered by `collectionLastUsedAt`
+    /// desc (matches the picker's ordering so the visible set and the
+    /// add-menu stay in the same mental model). Skips `_corpus` (virtual,
+    /// every node).
+    private func collectionMembershipIDs(node: Node) -> [String] {
+        var ids: [String] = node.collectionIDs.filter { $0 != NodeCollection.corpusID }
+        if node.journalDate != nil {
+            ids.append(NodeCollection.journalID)
+        }
+        return ids.sorted { a, b in
+            let aDate = store.collectionLastUsedAt[a] ?? .distantPast
+            let bDate = store.collectionLastUsedAt[b] ?? .distantPast
+            return aDate > bDate
+        }
+    }
+
+    private func collectionDisplayName(for id: String) -> String {
+        if id == NodeCollection.journalID { return "Journal" }
+        return store.collections.first { $0.id == id }?.name ?? id
+    }
+
+    private func addMembership(collectionID: String) {
+        if collectionID == NodeCollection.journalID {
+            guard let current = node else { return }
+            var updated = current
+            updated.journalDate = Calendar.current.startOfDay(for: Date())
+            updated.updatedAt = Date()
+            Task { await store.updateNode(updated) }
+        } else {
+            Task { await store.addNodes(ids: [nodeID], toCollection: collectionID) }
+        }
+        store.markCollectionUsed(collectionID)
+    }
+
+    private func removeMembership(id: String) {
+        if id == NodeCollection.journalID {
+            guard let current = node else { return }
+            var updated = current
+            updated.journalDate = nil
+            updated.updatedAt = Date()
+            Task { await store.updateNode(updated) }
+        } else {
+            Task { await store.removeNodes(ids: [nodeID], fromCollection: id) }
         }
     }
 
@@ -1106,6 +1188,43 @@ struct NodeDetailView: View {
         guard changed else { return }
         updated.updatedAt = Date()
         Task { await store.updateNode(updated) }
+    }
+}
+
+// MARK: - Collection chip
+
+/// Membership chip for the Collections row in `NodeDetailView`. Mirrors
+/// `TagChip`'s sizing/padding so the two rows read as siblings, but uses
+/// a `RoundedRectangle` shape and a neutral fill — collections have no
+/// per-item color in the model, and the shape change is what tells the
+/// user the chips below the title are *memberships* (rounded rects) and
+/// the row beneath is *tags* (capsules).
+private struct CollectionChip: View {
+    let name: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "folder")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+            Text(name)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.white.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(Color.white.opacity(0.25), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 7))
     }
 }
 

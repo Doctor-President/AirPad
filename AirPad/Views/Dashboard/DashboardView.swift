@@ -25,7 +25,6 @@ struct DashboardView: View {
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
     @State private var showCreateCollectionSheet = false
-    @State private var showRecents = false
     @State private var showSettings = false
 
     /// Dashboard Stage 3 — rows are derived at render time from
@@ -68,6 +67,7 @@ struct DashboardView: View {
                         header
                             .padding(.top, 6)
                         todaySection
+                        recentsRow
                         collectionsSection
                     }
                     .padding(.horizontal, 20)
@@ -85,9 +85,6 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showCreateCollectionSheet) {
                 CollectionCreationSheet { _ in }
-            }
-            .sheet(isPresented: $showRecents) {
-                HistoryPanel(onSelect: { node in path.append(node) })
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -142,7 +139,6 @@ struct DashboardView: View {
             HStack(spacing: 10) {
                 Spacer()
                 inboxButton
-                headerIconButton(systemName: "clock.arrow.circlepath") { showRecents = true }
                 headerIconButton(systemName: "gearshape.fill") { showSettings = true }
             }
         }
@@ -210,6 +206,36 @@ struct DashboardView: View {
                 path.append(node)
             }
         }
+    }
+
+    // MARK: - Recents row
+
+    /// Sits between Today and the Collections eyebrow. Distinct treatment
+    /// from `CollectionRow` (no `.thinMaterial` card, no subtitle) so it
+    /// reads as a sibling navigation row to the Collections list, not as
+    /// one of the collections.
+    private var recentsRow: some View {
+        Button {
+            router.entryMode = .recents
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28)
+                Text("Recents")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.3))
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Collections

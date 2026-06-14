@@ -23,6 +23,8 @@ struct ContentView: View {
                 switch router.entryMode {
                 case .dashboard:
                     DashboardView()
+                case .recents:
+                    RecentsView()
                 case .quikCapture(let forcedCollectionID, let origin):
                     QuikCaptureView(forcedCollectionID: forcedCollectionID, origin: origin)
                 case .canvas:
@@ -103,7 +105,7 @@ struct ContentView: View {
                     switch router.entryMode {
                     case .canvas, .collectionCanvas:
                         proxy.controller.move(to: .tip, animated: false)
-                    case .dashboard, .quikCapture:
+                    case .dashboard, .quikCapture, .recents:
                         proxy.controller.hide(animated: false)
                     }
                 }
@@ -119,7 +121,7 @@ struct ContentView: View {
             switch newMode {
             case .canvas, .collectionCanvas:
                 panelState.raiseToPeek(animated: true)
-            case .dashboard, .quikCapture:
+            case .dashboard, .quikCapture, .recents:
                 // Dashboard-persistence seam — Move 4 (or later) replaces
                 // this duck with Dashboard-appropriate panel content so
                 // the Librarian persists across dashboard too. Do NOT
@@ -141,7 +143,7 @@ struct ContentView: View {
                 switch router.entryMode {
                 case .canvas, .collectionCanvas:
                     panelState.raiseToPeek(animated: true)
-                case .dashboard, .quikCapture:
+                case .dashboard, .quikCapture, .recents:
                     break
                 }
             }
@@ -176,7 +178,7 @@ struct ContentView: View {
         switch mode {
         case .collectionCanvas(let id):
             return .collection(id)
-        case .canvas, .dashboard, .quikCapture:
+        case .canvas, .dashboard, .quikCapture, .recents:
             return .corpus
         }
     }

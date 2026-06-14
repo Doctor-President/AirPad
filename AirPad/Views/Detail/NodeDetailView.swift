@@ -26,6 +26,7 @@ struct NodeDetailView: View {
     @State private var captureMode: CaptureMode? = nil
     @State private var showPromoteConfirmation = false
     @State private var showingNewTagSheet = false
+    @State private var showingNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
     @State private var keyboardVisible = false
     @State private var showLinkAddAlert = false
@@ -150,6 +151,12 @@ struct NodeDetailView: View {
                     editedTags.append(createdName)
                 }
             }
+        }
+        .sheet(isPresented: $showingNewCollectionSheet) {
+            CollectionCreationSheet(onCreate: { newCol in
+                Task { await store.addNodes(ids: [nodeID], toCollection: newCol.id) }
+                store.markCollectionUsed(newCol.id)
+            })
         }
         .sheet(isPresented: $showDocumentPicker) {
             DocumentPickerView { urls in
@@ -650,7 +657,8 @@ struct NodeDetailView: View {
                         collections: store.collections.filter { !$0.isCorpus },
                         collectionLastUsedAt: store.collectionLastUsedAt,
                         excludeIDs: excludeIDs,
-                        onPick: { addMembership(collectionID: $0) }
+                        onPick: { addMembership(collectionID: $0) },
+                        onCreateNew: { showingNewCollectionSheet = true }
                     )
                 } label: {
                     Label("Add to collection", systemImage: "plus")

@@ -21,9 +21,22 @@ struct CollectionPickerMenuContent: View {
     let collectionLastUsedAt: [String: Date]
     let excludeIDs: Set<String>
     let onPick: (String) -> Void
+    /// Optional "New Collection…" affordance rendered above the rail.
+    /// Detail view passes a closure that opens `CollectionCreationSheet`;
+    /// batch action sites pass nil (canvas chrome doesn't create collections
+    /// inline).
+    var onCreateNew: (() -> Void)? = nil
 
     var body: some View {
         let available = orderedRail.filter { !excludeIDs.contains($0.id) }
+        if let onCreateNew {
+            Button {
+                onCreateNew()
+            } label: {
+                Label("New Collection…", systemImage: "folder.badge.plus")
+            }
+            Divider()
+        }
         ForEach(available) { collection in
             Button(collection.name) { onPick(collection.id) }
         }

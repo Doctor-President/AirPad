@@ -21,24 +21,7 @@ struct HistoryPanel: View {
                         onSelect(node)
                         dismiss()
                     } label: {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(nodeColor(node))
-                                .frame(width: 10, height: 10)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(node.title)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                Text(node.updatedAt, style: .relative)
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.4))
-                                + Text(" ago")
-                                    .font(.caption)
-                                    .foregroundStyle(.white.opacity(0.4))
-                            }
-                            Spacer()
-                        }
+                        RecentNodeRow(node: node, timestamp: node.updatedAt)
                     }
                     .listRowBackground(Color.white.opacity(0.05))
                 }
@@ -60,12 +43,5 @@ struct HistoryPanel: View {
         }
         .presentationDetents([.medium, .large])
         .presentationBackground(.black)
-    }
-
-    private func nodeColor(_ node: Node) -> Color {
-        guard let tag = node.tags.first,
-              let storeTag = store.tags.first(where: { $0.name == tag })
-        else { return .gray }
-        return Color(hex: storeTag.colorHex) ?? .gray
     }
 }

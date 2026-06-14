@@ -6,6 +6,11 @@ import Observation
 final class AppRouter {
     enum EntryMode: Sendable, Equatable {
         case dashboard
+        /// Recents-first landing surface (Notes model). Cold-launch default;
+        /// Dashboard sits one level up as the hub. Promotes the recency list
+        /// from a dashboard sheet into a top-level surface — see
+        /// `RecentsView`.
+        case recents
         case canvas
         /// QuikCapture surface. `forcedCollectionID` pins the capture to a
         /// specific collection (CollectionView "+" path in c4.7); nil leaves
@@ -34,7 +39,7 @@ final class AppRouter {
 
     static var shared: AppRouter?
 
-    var entryMode: EntryMode = .dashboard
+    var entryMode: EntryMode = .recents
 
     /// Mirror of the in-layout Librarian panel's detent — `true` when
     /// the panel is at peek (`.tip`), `false` at half / full / hidden.

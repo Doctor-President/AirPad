@@ -9,19 +9,21 @@ import SwiftUI
 /// then user collections sorted by `collectionLastUsedAt` descending so
 /// recently-used targets surface near the top.
 ///
-/// `excludeID` removes one entry from the list — pass the current scope's
+/// `excludeIDs` removes entries from the list — pass the current scope's
 /// collection ID at a `.collection(id)` canvas so the user can't "Add to"
-/// or "Move to" the collection they're already in. Pass `nil` at the
-/// corpus scope to show every collection.
+/// or "Move to" the collection they're already in, or pass the full set of
+/// a node's current memberships so the detail view's "+ Add to collection"
+/// menu can't offer duplicates. Pass an empty set at the corpus scope to
+/// show every collection.
 struct CollectionPickerMenuContent: View {
 
     let collections: [NodeCollection]
     let collectionLastUsedAt: [String: Date]
-    let excludeID: String?
+    let excludeIDs: Set<String>
     let onPick: (String) -> Void
 
     var body: some View {
-        let available = orderedRail.filter { $0.id != excludeID }
+        let available = orderedRail.filter { !excludeIDs.contains($0.id) }
         ForEach(available) { collection in
             Button(collection.name) { onPick(collection.id) }
         }

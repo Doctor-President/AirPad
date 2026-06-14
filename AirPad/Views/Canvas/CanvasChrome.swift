@@ -581,7 +581,7 @@ private struct BatchActionBar: View {
                         CollectionPickerMenuContent(
                             collections: collections,
                             collectionLastUsedAt: collectionLastUsedAt,
-                            excludeID: currentCollectionID,
+                            excludeIDs: currentCollectionID.map { Set([$0]) } ?? [],
                             onPick: onAddToCollection
                         )
                     } label: {
@@ -596,7 +596,7 @@ private struct BatchActionBar: View {
                         CollectionPickerMenuContent(
                             collections: collections,
                             collectionLastUsedAt: collectionLastUsedAt,
-                            excludeID: currentCollectionID,
+                            excludeIDs: currentCollectionID.map { Set([$0]) } ?? [],
                             onPick: onMoveToCollection
                         )
                     } label: {
@@ -606,7 +606,7 @@ private struct BatchActionBar: View {
                     CollectionPickerMenuContent(
                         collections: collections,
                         collectionLastUsedAt: collectionLastUsedAt,
-                        excludeID: nil,
+                        excludeIDs: [],
                         onPick: onAddToCollection
                     )
                 }

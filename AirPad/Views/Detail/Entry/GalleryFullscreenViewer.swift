@@ -9,11 +9,17 @@ import UIKit
 /// is gallery-only and assumes `galleryItems.count >= 1`.
 ///
 /// ## Features
-///   • Swipeable paging across all items via `TabView(.page)`.
-///   • Per-item chrome at the bottom: Share / Copy / Delete.
+///   • Swipeable paging across all items via a horizontal paging
+///     `ScrollView` (`.scrollTargetBehavior(.paging)`); paging is gated
+///     off whenever the current page is pinch-zoomed past 1× so the
+///     inner pan gesture wins over page-turns. See
+///     `briefs/unified-media-viewer.md` and the validating spike at
+///     `briefs/spike-zoom-paging.md`.
+///   • Per-item chrome at the bottom: Share / Copy / Set Hero / Delete.
 ///   • Top-of-view close button + index indicator (`3 / 7`).
-///   • Image renders fit-to-screen with black letterbox; video renders
-///     via `AVKit.VideoPlayer` (inline controls — scrub, play/pause).
+///   • Image renders via `ZoomableImageView` (pinch + double-tap zoom);
+///     video renders via inline `AVKit.VideoPlayer` (commit 3 of the
+///     brief swaps this for true-fullscreen).
 ///
 /// ## Delete timing (Stage 4.2 commit 7 directive)
 ///
@@ -62,6 +68,12 @@ struct GalleryFullscreenViewer: View {
     @State private var currentIndex: Int
     @State private var pendingDelete: GalleryItem? = nil
     @State private var shareIdentity: ShareIdentity? = nil
+    /// Per-page zoom flag, parallel to `galleryItems` by index. The current
+    /// page's flag gates `.scrollDisabled` on the pager so paging only
+    /// fires at zoom == 1 — when a page is zoomed in, horizontal drag
+    /// pans the image instead of turning the page. Off-screen pages are
+    /// reset to `false` defensively when `currentIndex` changes.
+    @State private var pageZoomed: [Bool]
 
     init(
         galleryItems: [GalleryItem],
@@ -78,9 +90,10 @@ struct GalleryFullscreenViewer: View {
         // Clamp the start index defensively in case the gallery shrank
         // between the tap-emit and the sheet present (e.g., a concurrent
         // delete from elsewhere). Without this clamp, an out-of-range
-        // currentIndex would render an empty TabView with no recovery.
+        // currentIndex would render an empty pager with no recovery.
         let clamped = min(max(0, startIndex), max(0, galleryItems.count - 1))
         _currentIndex = State(initialValue: clamped)
+        _pageZoomed = State(initialValue: Array(repeating: false, count: galleryItems.count))
     }
 
     private var currentItem: GalleryItem? {
@@ -88,21 +101,74 @@ struct GalleryFullscreenViewer: View {
         return galleryItems[currentIndex]
     }
 
+    private var isCurrentPageZoomed: Bool {
+        guard pageZoomed.indices.contains(currentIndex) else { return false }
+        return pageZoomed[currentIndex]
+    }
+
+    /// Bridges the `Int` `currentIndex` to the `Binding<Int?>` shape that
+    /// `.scrollPosition(id:)` requires. Nil writes (which the modifier
+    /// can emit mid-scroll) are dropped — we never want to lose the
+    /// active page index.
+    private var scrollPositionBinding: Binding<Int?> {
+        Binding(
+            get: { currentIndex },
+            set: { newValue in
+                if let newValue { currentIndex = newValue }
+            }
+        )
+    }
+
+    private func pageZoomBinding(for index: Int) -> Binding<Bool> {
+        Binding(
+            get: { pageZoomed.indices.contains(index) ? pageZoomed[index] : false },
+            set: { newValue in
+                guard pageZoomed.indices.contains(index) else { return }
+                pageZoomed[index] = newValue
+            }
+        )
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            TabView(selection: $currentIndex) {
-                ForEach(Array(galleryItems.enumerated()), id: \.element.id) { idx, gItem in
-                    GalleryFullscreenPage(
-                        galleryItem: gItem,
-                        nodeID: nodeID,
-                        parentItem: parentItem
-                    )
-                    .tag(idx)
+            GeometryReader { proxy in
+                ScrollView(.horizontal) {
+                    LazyHStack(spacing: 0) {
+                        ForEach(Array(galleryItems.enumerated()), id: \.element.id) { idx, gItem in
+                            GalleryFullscreenPage(
+                                galleryItem: gItem,
+                                nodeID: nodeID,
+                                parentItem: parentItem,
+                                isZoomed: pageZoomBinding(for: idx)
+                            )
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .id(idx)
+                        }
+                    }
+                    .scrollTargetLayout()
+                }
+                .scrollIndicators(.hidden)
+                .scrollTargetBehavior(.paging)
+                .scrollPosition(id: scrollPositionBinding)
+                // Paging-only-at-zoom==1: when the visible page is zoomed,
+                // its inner UIScrollView swallows horizontal drag to pan
+                // the image rather than the outer ScrollView paging.
+                // (Validated in `briefs/spike-zoom-paging.md`.)
+                .scrollDisabled(isCurrentPageZoomed)
+            }
+            .ignoresSafeArea()
+            // Off-screen pages: clear any stale zoom flag so they don't
+            // un-gate paging if the user lands back on them. The actual
+            // UIScrollView zoom state on a recycled LazyHStack page will
+            // re-fire `scrollViewDidZoom` and rewrite the flag if it's
+            // still zoomed in when it scrolls back on.
+            .onChange(of: currentIndex) { _, newIndex in
+                for i in pageZoomed.indices where i != newIndex {
+                    pageZoomed[i] = false
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
 
             VStack {
                 topBar
@@ -240,14 +306,20 @@ struct GalleryFullscreenViewer: View {
     }
 }
 
-/// One page inside the swipeable TabView. Resolves its own sidecar URL
+/// One page inside the swipeable pager. Resolves its own sidecar URL
 /// lazily on appear — keeps the viewer's open-time work bounded to the
 /// initial page (others resolve as the user swipes through).
+///
+/// Image branch hosts a `ZoomableImageView`, which reports its own zoom
+/// state up via the `isZoomed` binding so the outer pager can gate its
+/// `.scrollDisabled`. Video branch stays inline (true-fullscreen lives
+/// in commit 3 of `briefs/unified-media-viewer.md`).
 private struct GalleryFullscreenPage: View {
 
     let galleryItem: GalleryItem
     let nodeID: String
     let parentItem: NodeItem
+    @Binding var isZoomed: Bool
 
     @Environment(CorpusStore.self) private var store
     @State private var url: URL? = nil
@@ -260,9 +332,7 @@ private struct GalleryFullscreenPage: View {
                 switch galleryItem.mediaType {
                 case .image:
                     if let image {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
+                        ZoomableImageView(image: image, isZoomed: $isZoomed)
                     } else {
                         ProgressView().tint(.white)
                     }

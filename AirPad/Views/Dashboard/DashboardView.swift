@@ -248,7 +248,7 @@ struct DashboardView: View {
                 .textCase(.uppercase)
                 .tracking(0.8)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
                 ForEach(displayedCollections) { collection in
                     CollectionRow(
                         collection: collection,
@@ -256,10 +256,24 @@ struct DashboardView: View {
                         onRename: canManage(collection) ? { renameTarget = collection } : nil,
                         onDelete: canDelete(collection) ? { deleteTarget = collection } : nil
                     )
+                    // Hairline after every collection row. The final
+                    // collection row sits above NewCollectionButton (not
+                    // the section end), so a divider here is correct;
+                    // NewCollectionButton itself is the last element and
+                    // gets no trailing line.
+                    collectionsHairline
                 }
                 NewCollectionButton { showCreateCollectionSheet = true }
             }
         }
+    }
+
+    /// Hairline used between rows in `collectionsSection` since the cards
+    /// were stripped in commit 2 of the recents-landing brief.
+    private var collectionsHairline: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.08))
+            .frame(height: 0.5)
     }
 
     // MARK: - Row taps
@@ -378,14 +392,6 @@ private struct CollectionRow: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, verticalPadding)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                )
-        )
     }
 
     private var nameFont: Font {
@@ -414,9 +420,8 @@ private struct CollectionRow: View {
 // MARK: - New Collection button
 
 /// Bottom-of-list affordance to create a new user collection. Quieter than
-/// a `CollectionRow` so it reads as auxiliary — a thin stroke instead of a
-/// solid fill, centered "+ New Collection" label. Same outer shape and
-/// vertical rhythm as user-collection rows so the section stays aligned.
+/// a `CollectionRow` (lower-opacity label) so it reads as auxiliary. Flat
+/// to match the hairline-divided collection rows above it.
 private struct NewCollectionButton: View {
     let onTap: () -> Void
 
@@ -431,14 +436,7 @@ private struct NewCollectionButton: View {
             .foregroundStyle(.white.opacity(0.7))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(.thinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                    )
-            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

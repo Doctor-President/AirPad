@@ -12,6 +12,33 @@ import PhotosUI
 /// pressing "+" here) render the first item only — the data is intact, only
 /// the rendering is single-view-limited. The TODO breadcrumb in
 /// `CorpusStore.addMediaItems` documents this transitional state.
+///
+/// ## Tap-to-fullscreen (unified-media-viewer commit 2)
+///
+/// Both the image preview and the video preview open `GalleryFullscreenViewer`
+/// — the same viewer the gallery (≥2 items) presentation uses. Single-media
+/// entries pass a one-element `galleryItems` array; the viewer clamps the
+/// start index defensively. This retires the previous QuickLook-backed
+/// `MediaFullscreenViewer`, which couldn't host the viewer's action chrome
+/// (Share / Copy / Set Hero / Delete). Video preview gets a corner "expand"
+/// button rather than a full-area tap so it doesn't fight the inline
+/// `VideoPlayer`'s transport-controls touch handling — commit 3 of the
+/// brief replaces the inline player with `AVPlayerViewController` and its
+/// own native fullscreen button.
+///
+/// ## Deferred-delete (sole-item case)
+///
+/// Mirrors `GalleryBody`'s pattern: the viewer's Delete dismisses the sheet
+/// and stashes the `GalleryItem` in `pendingDeletion`; the real store work
+/// runs in the `onDismiss` callback so the card behind the sheet doesn't
+/// mutate while the viewer is still visible. The single-media wrinkle is
+/// that removing the sole item would leave the entry with zero media —
+/// which is meaningless and would render via the defensive empty-state
+/// below. Instead we delete the whole entry. Because `deleteEntry`'s
+/// legacy file-cleanup path uses `item.id` (not the gallery item's id)
+/// as the file basename, the gallery item's file would otherwise be
+/// orphaned; we chain `deleteGalleryItem` first to clean the file via
+/// its correct itemID, then `deleteEntry` to remove the now-empty entry.
 struct SingleMediaBody: View {
 
     let item: NodeItem
@@ -21,7 +48,14 @@ struct SingleMediaBody: View {
 
     @State private var mediaURL: URL? = nil
     @State private var showingPicker = false
-    @State private var previewing: MediaPreviewIdentity? = nil
+    /// Drives the tap-to-fullscreen unified viewer. Single-media entries
+    /// always open at index 0 (their `mediaItems` array is length 1).
+    @State private var viewerStart: GalleryViewerStart? = nil
+    /// Deferred-deletion buffer for the viewer's Delete action. The real
+    /// store delete runs in the sheet's `onDismiss` callback so the
+    /// transition to the empty-entry state (and the subsequent entry
+    /// removal) lands after the viewer has fully faded out.
+    @State private var pendingDeletion: GalleryItem? = nil
 
     private var primaryItem: GalleryItem? { item.mediaItems?.first }
 
@@ -57,8 +91,20 @@ struct SingleMediaBody: View {
                 Task { await handlePickedMedia(results) }
             }
         }
-        .sheet(item: $previewing) { identity in
-            MediaFullscreenViewer(url: identity.url)
+        .fullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
+            GalleryFullscreenViewer(
+                galleryItems: item.mediaItems ?? [],
+                nodeID: nodeID,
+                parentItem: item,
+                startIndex: start.index,
+                onRequestDelete: { gItem in
+                    // Stash and let the viewer dismiss; `flushPendingDeletion`
+                    // runs after the sheet is gone, applying the file-cleanup
+                    // + entry-removal sequence described in the header doc.
+                    pendingDeletion = gItem
+                }
+            )
+            .environment(store)
         }
     }
 
@@ -89,7 +135,7 @@ struct SingleMediaBody: View {
         if let url = mediaURL {
             AsyncImageFromURL(url: url)
                 .contentShape(Rectangle())
-                .onTapGesture { previewing = MediaPreviewIdentity(url: url) }
+                .onTapGesture { viewerStart = GalleryViewerStart(index: 0) }
         } else {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.white.opacity(0.08))
@@ -102,13 +148,28 @@ struct SingleMediaBody: View {
     @ViewBuilder
     private var videoPreview: some View {
         if let url = mediaURL {
-            // Inline AVKit player. Tap-to-fullscreen is deferred to commit 7
-            // for videos — inline player already handles play/pause/scrub, and
-            // adding a separate tap gesture would fight the player's own
-            // touch handling.
+            // Inline AVKit player. A full-area tap gesture would fight the
+            // player's own touch handling (play/pause/scrub on tap), so the
+            // tap-to-fullscreen affordance is a corner button instead.
+            // Commit 3 of `briefs/unified-media-viewer.md` swaps the inline
+            // player for `AVPlayerViewController`, which has a built-in
+            // fullscreen button and retires this corner overlay.
             VideoPlayer(player: AVPlayer(url: url))
                 .frame(height: 220)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(alignment: .topTrailing) {
+                    Button {
+                        viewerStart = GalleryViewerStart(index: 0)
+                    } label: {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .padding(8)
+                    .accessibilityLabel("Open fullscreen")
+                }
         } else {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color.white.opacity(0.08))
@@ -127,6 +188,32 @@ struct SingleMediaBody: View {
                 fallbackParentItem: item
             )
             await MainActor.run { mediaURL = resolved }
+        }
+    }
+
+    // MARK: - Deferred delete
+
+    /// Runs after `fullScreenCover` fully dismisses. Sole-item case
+    /// (always, for `SingleMediaBody`): chain `deleteGalleryItem` →
+    /// `deleteEntry` so the gallery item's file is cleaned up via its
+    /// own itemID before the entry is removed. `deleteEntry`'s own
+    /// file-cleanup is entry-id-based and would miss the gallery file
+    /// if called alone — see the file-header doc for the full rationale.
+    /// Falls back to a single `deleteGalleryItem` call if a background
+    /// sync somehow grew the entry past 1 item while the viewer was up.
+    private func flushPendingDeletion() {
+        guard let gItem = pendingDeletion else { return }
+        pendingDeletion = nil
+        let remainingCount = item.mediaItems?.count ?? 0
+        Task {
+            await store.deleteGalleryItem(
+                entryID: item.id,
+                nodeID: nodeID,
+                galleryItemID: gItem.id
+            )
+            if remainingCount <= 1 {
+                await store.deleteEntry(itemID: item.id, nodeID: nodeID)
+            }
         }
     }
 

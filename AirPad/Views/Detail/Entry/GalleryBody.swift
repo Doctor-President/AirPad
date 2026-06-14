@@ -242,10 +242,8 @@ struct GalleryBody: View {
 ///     state is impossible — matches Apple Photos' carousel feel.
 ///   - **Lazy.** `LazyHStack` means a 50-tile gallery doesn't decode 50
 ///     UIImages on first render. Tiles materialize as they scroll into view.
-///   - **Tap → fullscreen.** Per-tile tap routes to `MediaFullscreenViewer`
-///     (QuickLook). Commit 7 replaces with a swipeable multi-item viewer;
-///     this commit keeps the same trigger surface so that swap is
-///     content-only.
+///   - **Tap → fullscreen.** Per-tile tap routes to `GalleryFullscreenViewer`
+///     (the swipeable multi-item viewer added in commit 7).
 ///
 /// Out of scope (deferred):
 ///   - Scroll-position memory across navigation / view-mode toggles. Polish

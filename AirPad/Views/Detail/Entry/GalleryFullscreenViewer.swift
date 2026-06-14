@@ -2,11 +2,13 @@ import SwiftUI
 import AVKit
 import UIKit
 
-/// Stage 4.2 commit 7 — fullscreen viewer for `.imageVideo` entries in
-/// gallery (multi-item) presentation. Replaces the commit-3 single-URL
-/// QuickLook sheet for the gallery path. Single-item entries still go
-/// through `MediaFullscreenViewer` from `SingleMediaBody` — this viewer
-/// is gallery-only and assumes `galleryItems.count >= 1`.
+/// Stage 4.2 commit 7 — fullscreen viewer for `.imageVideo` entries.
+/// Unified-media-viewer commit 2 (briefs/unified-media-viewer.md)
+/// extended this from gallery-only to BOTH presentations: single-media
+/// entries (`SingleMediaBody`) now present the same viewer with a
+/// one-element `galleryItems` array, retiring the QuickLook-backed
+/// `MediaFullscreenViewer`. The viewer assumes `galleryItems.count >= 1`
+/// and clamps `startIndex` defensively (see `init`).
 ///
 /// ## Features
 ///   • Swipeable paging across all items via a horizontal paging
@@ -141,7 +143,8 @@ struct GalleryFullscreenViewer: View {
                                 galleryItem: gItem,
                                 nodeID: nodeID,
                                 parentItem: parentItem,
-                                isZoomed: pageZoomBinding(for: idx)
+                                isZoomed: pageZoomBinding(for: idx),
+                                isActive: idx == currentIndex
                             )
                             .frame(width: proxy.size.width, height: proxy.size.height)
                             .id(idx)
@@ -196,6 +199,13 @@ struct GalleryFullscreenViewer: View {
         .sheet(item: $shareIdentity) { identity in
             ShareSheet(items: [identity.url])
         }
+        // Release the playback audio session when the viewer is torn down.
+        // Per-page pauses already happen on scroll-off / disappear, but the
+        // shared `.playback` category lingers active until something
+        // deactivates it; doing it here frees other apps' audio routing
+        // back up the moment the viewer is gone. See
+        // `PlaybackAudioSession` for the why-it's-shared rationale.
+        .onDisappear { PlaybackAudioSession.deactivate() }
     }
 
     // MARK: - Chrome
@@ -312,18 +322,28 @@ struct GalleryFullscreenViewer: View {
 ///
 /// Image branch hosts a `ZoomableImageView`, which reports its own zoom
 /// state up via the `isZoomed` binding so the outer pager can gate its
-/// `.scrollDisabled`. Video branch stays inline (true-fullscreen lives
-/// in commit 3 of `briefs/unified-media-viewer.md`).
+/// `.scrollDisabled`.
+///
+/// Video branch hosts `VideoPlayerRepresentable` (an
+/// `AVPlayerViewController` wrapper) so video gets native transport
+/// controls, true-fullscreen, and PiP — see `briefs/unified-media-viewer.md`
+/// commit 3. The page itself owns the `AVPlayer` reference so it can
+/// pause playback when it scrolls off-screen (`isActive` flips false)
+/// or when the page is torn down (`.onDisappear`).
 private struct GalleryFullscreenPage: View {
 
     let galleryItem: GalleryItem
     let nodeID: String
     let parentItem: NodeItem
     @Binding var isZoomed: Bool
+    /// `true` when this page is the visible one in the pager. Drives
+    /// pause-on-scroll-off for the video branch; image pages ignore it.
+    let isActive: Bool
 
     @Environment(CorpusStore.self) private var store
     @State private var url: URL? = nil
     @State private var image: UIImage? = nil
+    @State private var player: AVPlayer? = nil
 
     var body: some View {
         ZStack {
@@ -337,7 +357,11 @@ private struct GalleryFullscreenPage: View {
                         ProgressView().tint(.white)
                     }
                 case .video:
-                    VideoPlayer(player: AVPlayer(url: url))
+                    if let player {
+                        VideoPlayerRepresentable(player: player)
+                    } else {
+                        ProgressView().tint(.white)
+                    }
                 }
             } else {
                 ProgressView().tint(.white)
@@ -349,14 +373,69 @@ private struct GalleryFullscreenPage: View {
                 nodeID: nodeID,
                 fallbackParentItem: parentItem
             )
-            // Image decode off-main, same pattern as the in-card tile.
-            if galleryItem.mediaType == .image, let url {
+            guard let url else { return }
+            switch galleryItem.mediaType {
+            case .image:
+                // Image decode off-main, same pattern as the in-card tile.
                 let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
                     guard let data = try? Data(contentsOf: url) else { return nil }
                     return UIImage(data: data)
                 }.value
                 image = decoded
+            case .video:
+                // `AVPlayer(url:)` doesn't auto-play — playback waits for
+                // the user to tap the native transport control. Brief
+                // commit 3: no auto-play.
+                player = AVPlayer(url: url)
             }
+        }
+        // Pause when the user pages away from this video. The AVPlayer
+        // would otherwise keep playing audio under the now-visible
+        // neighbor page; SwiftUI doesn't tear down LazyHStack-adjacent
+        // pages just for going off-screen.
+        .onChange(of: isActive) { _, nowActive in
+            if !nowActive { player?.pause() }
+        }
+        // Pause on page tear-down too (viewer dismiss, or LazyHStack
+        // actually recycling the page). Defensive — releasing the
+        // `AVPlayer` reference normally stops audio, but an explicit
+        // pause closes the window where the player has been handed off
+        // to AVPlayerViewController and outlives the @State briefly.
+        .onDisappear { player?.pause() }
+    }
+}
+
+/// `UIViewControllerRepresentable` wrapper around `AVPlayerViewController`
+/// — the native fullscreen + PiP-capable host for the gallery viewer's
+/// video pages (`briefs/unified-media-viewer.md` commit 3). Distinct
+/// from SwiftUI's `VideoPlayer`, which is also AVKit-backed but doesn't
+/// surface the fullscreen button.
+///
+/// Configures the shared playback audio session in `makeUIViewController`
+/// so a session left in `.record` by `VoiceCaptureSheet` can't silently
+/// mute video. `PlaybackAudioSession.configure` is idempotent — running
+/// it for a page the user never plays is a no-op cost-wise.
+///
+/// The player itself is owned by the parent `GalleryFullscreenPage` so
+/// the page can pause it on scroll-off / dismiss without reaching into
+/// the view controller.
+private struct VideoPlayerRepresentable: UIViewControllerRepresentable {
+
+    let player: AVPlayer
+
+    func makeUIViewController(context: Context) -> AVPlayerViewController {
+        _ = PlaybackAudioSession.configure()
+        let controller = AVPlayerViewController()
+        controller.player = player
+        controller.videoGravity = .resizeAspect
+        controller.allowsPictureInPicturePlayback = true
+        controller.showsPlaybackControls = true
+        return controller
+    }
+
+    func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+        if controller.player !== player {
+            controller.player = player
         }
     }
 }

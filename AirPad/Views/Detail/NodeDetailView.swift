@@ -1423,7 +1423,7 @@ private final class AudioPlaybackController: NSObject, AVAudioPlayerDelegate {
         isPlaying = false
         currentTime = 0
         stopPolling()
-        deactivateSession()
+        PlaybackAudioSession.deactivate()
     }
 
     /// Seek to a fractional position in [0, 1]. Lazily creates the player if needed
@@ -1431,7 +1431,7 @@ private final class AudioPlaybackController: NSObject, AVAudioPlayerDelegate {
     func seek(toProgress progress: Double) {
         guard let url else { return }
         if player == nil {
-            guard configureSessionForPlayback() else { return }
+            guard PlaybackAudioSession.configure() else { return }
             do {
                 let p = try AVAudioPlayer(contentsOf: url)
                 p.delegate = self
@@ -1451,7 +1451,7 @@ private final class AudioPlaybackController: NSObject, AVAudioPlayerDelegate {
     }
 
     private func play(url: URL) {
-        guard configureSessionForPlayback() else { return }
+        guard PlaybackAudioSession.configure() else { return }
 
         if player == nil {
             do {
@@ -1476,22 +1476,6 @@ private final class AudioPlaybackController: NSObject, AVAudioPlayerDelegate {
         player?.pause()
         isPlaying = false
         stopPolling()
-    }
-
-    private func configureSessionForPlayback() -> Bool {
-        do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .spokenAudio, options: [])
-            try session.setActive(true)
-            return true
-        } catch {
-            print("[VoicePlayback] Audio session configure failed: \(error)")
-            return false
-        }
-    }
-
-    private func deactivateSession() {
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func startPolling() {

@@ -121,10 +121,11 @@ struct EntryCard: View {
                 onDelete: { showDeleteConfirmation = true },
                 // hero-image v1 — surface "Set as Hero Image" only on
                 // standalone `.image` entries that actually have a
-                // resolvable file. Gallery (multi-item) `.imageVideo`
-                // entries reach the hero through `GalleryFullscreenViewer`'s
-                // bottom bar; single-media `.imageVideo` is the known v1
-                // gap (fast-follow on `MediaFullscreenViewer`).
+                // resolvable file. `.imageVideo` entries (both single
+                // and multi) reach the hero through
+                // `GalleryFullscreenViewer`'s bottom bar — single-media
+                // entries route there too as of unified-media-viewer
+                // commit 2.
                 onSetAsHero: (item.type == .image && item.file != nil)
                     ? { [file = item.file!, nodeID] in
                         Task { await store.setCoverImage(relativePath: file, nodeID: nodeID) }

@@ -38,6 +38,12 @@ struct ZoomableImageView: UIViewRepresentable {
 
     let image: UIImage
     @Binding var isZoomed: Bool
+    /// Fired on a single-tap that wasn't part of a double-tap-to-zoom.
+    /// The viewer wires this to its `chromeVisible` toggle (Photos-style
+    /// tap-to-hide chrome). Disambiguation lives in `makeUIView` via
+    /// `singleTap.require(toFail: doubleTap)` — without that, every
+    /// zoom double-tap would also flicker the chrome.
+    var onSingleTap: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(isZoomed: $isZoomed) }
 
@@ -84,10 +90,26 @@ struct ZoomableImageView: UIViewRepresentable {
         doubleTap.numberOfTapsRequired = 2
         scroll.addGestureRecognizer(doubleTap)
 
+        // Single-tap toggles the viewer's chrome (Photos pattern).
+        // `require(toFail: doubleTap)` is the load-bearing line: without
+        // it, every double-tap-to-zoom would fire singleTap first and
+        // toggle chrome on the way to the zoom, producing a chrome flicker.
+        let singleTap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleSingleTap(_:))
+        )
+        singleTap.numberOfTapsRequired = 1
+        singleTap.require(toFail: doubleTap)
+        scroll.addGestureRecognizer(singleTap)
+
         return scroll
     }
 
     func updateUIView(_ scrollView: UIScrollView, context: Context) {
+        // Refresh closure capture so the coordinator always calls the
+        // current view's onSingleTap (SwiftUI re-creates the View on each
+        // update; the Coordinator persists).
+        context.coordinator.onSingleTap = onSingleTap
         // Image identity change → swap image, reset zoom, and force a
         // re-fit. Cheap pointer equality is enough here: the image is
         // produced once per page by the parent's decode pipeline and
@@ -116,6 +138,7 @@ struct ZoomableImageView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIScrollViewDelegate {
         var isZoomed: Binding<Bool>
+        var onSingleTap: (() -> Void)?
         weak var imageView: UIImageView?
         weak var scrollView: UIScrollView?
         /// Last bounds we ran `applyFitLayout` against. The guard against
@@ -140,6 +163,10 @@ struct ZoomableImageView: UIViewRepresentable {
             DispatchQueue.main.async { [weak self] in
                 self?.isZoomed.wrappedValue = zoomed
             }
+        }
+
+        @objc func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+            onSingleTap?()
         }
 
         @objc func handleDoubleTap(_ gesture: UITapGestureRecognizer) {

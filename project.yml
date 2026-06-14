@@ -73,6 +73,15 @@ targets:
           - Lora-Regular.ttf
           - Lora-Bold.ttf
         UILaunchScreen: {}
+        # `audio` is required for `AVPlayerViewController` to surface its
+        # Picture-in-Picture button. `allowsPictureInPicturePlayback = true`
+        # on the controller is necessary but not sufficient — the PiP
+        # affordance is gated on this background-mode declaration even when
+        # the app never actually plays in the background. Used by the
+        # gallery video viewer (`GalleryFullscreenViewer` →
+        # `FullscreenVideoPlayer`).
+        UIBackgroundModes:
+          - audio
         CFBundleURLTypes:
           - CFBundleURLName: com.doctorpresident.airpad
             CFBundleURLSchemes:

@@ -107,6 +107,13 @@ struct NodeListView: View {
                     router.pendingNodeNavigationID = nil
                 }
                 .onChange(of: navigationPath.count) { _, newCount in
+                    // Authoritative depth signal. `navigationPath` only
+                    // ever contains Node values (the sole
+                    // `.navigationDestination(for: Node.self)`), so
+                    // `count` is the detail depth. ContentView's
+                    // `isInDetailView` handler reads this for first-
+                    // enter / last-exit panel choreography.
+                    store.detailViewDepth = newCount
                     // Back-out → root: clear so a subsequent tap on the
                     // same node pushes a fresh detail view.
                     if newCount == 0 { currentDetailNodeID = nil }
@@ -116,6 +123,7 @@ struct NodeListView: View {
         .onAppear {
             haptic.prepare()
             navHaptic.prepare()
+            store.detailViewDepth = navigationPath.count
             buildItems()
         }
         // Observe the broad filteredNodes signal — for collection scopes this

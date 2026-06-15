@@ -101,6 +101,15 @@ struct DashboardView: View {
                 path.append(node)
                 router.pendingNodeNavigationID = nil
             }
+            // Authoritative depth signal. `path` only ever contains Node
+            // values (the sole `.navigationDestination(for: Node.self)`),
+            // so `path.count` is the detail depth. ContentView's
+            // `isInDetailView` handler reads this for first-enter /
+            // last-exit panel choreography.
+            .onChange(of: path.count) { _, count in
+                store.detailViewDepth = count
+            }
+            .onAppear { store.detailViewDepth = path.count }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                 isPresented: deleteDialogBinding,

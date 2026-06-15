@@ -222,8 +222,21 @@ final class CorpusStore {
     /// Thread suggestions waiting to be shown to the user (one at a time in UI).
     var pendingThreads: [ThreadSuggestion] = []
 
-    /// True while NodeDetailView is on screen. ContentView reads this to hide the toggle pill.
-    var isInDetailView = false
+    /// Number of NodeDetailViews currently on screen. Stacked details
+    /// (search-result tap from inside a detail) push this to 2; a single
+    /// detail is 1; no detail is 0. Writers: each NavigationStack host
+    /// (CanvasView, NodeListView, RecentsView, DashboardView) asserts
+    /// `detailViewDepth = path.count` on every `path.count` change and
+    /// on its own `.onAppear`. `path` is the authoritative depth signal:
+    /// it commits at push/pop and can't drift, unlike the prior
+    /// `onAppear/onDisappear` pair which fired inconsistently across
+    /// stacked NavigationStack transitions.
+    var detailViewDepth: Int = 0
+
+    /// True while any NodeDetailView is on screen. Readers (CanvasChrome
+    /// toolbar gate, NodeListView fade, etc.) stay correct — only goes
+    /// false when the last detail closes (depth → 0).
+    var isInDetailView: Bool { detailViewDepth > 0 }
 
     /// Set by `appendEmptyTextItem` so the corresponding `TextEntryBody` can
     /// pull focus on its first render — that's how the in-node "+" → Text

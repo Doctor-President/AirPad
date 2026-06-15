@@ -113,7 +113,7 @@ final class NeighborhoodService {
 
     /// Run one pass of Louvain method. Returns community assignment for each node.
     private func louvainClustering(graph: [String: [String: Double]]) -> [String: String] {
-        let nodeIDs = Array(graph.keys)
+        let nodeIDs = Array(graph.keys).sorted()
         guard !nodeIDs.isEmpty else { return [:] }
 
         // Initialize: each node in its own community
@@ -139,10 +139,7 @@ final class NeighborhoodService {
             improved = false
             iteration += 1
 
-            // Shuffle node order for better convergence
-            let shuffledNodes = nodeIDs.shuffled()
-
-            for nodeID in shuffledNodes {
+            for nodeID in nodeIDs {
                 let currentCommunity = nodeToCommunity[nodeID]!
 
                 // Find neighboring communities
@@ -155,7 +152,7 @@ final class NeighborhoodService {
                 var bestCommunity = currentCommunity
                 var bestGain: Double = 0
 
-                for candidateCommunity in neighborCommunities {
+                for candidateCommunity in neighborCommunities.sorted() {
                     let gain = modularityGain(
                         nodeID: nodeID,
                         fromCommunity: currentCommunity,
@@ -451,9 +448,17 @@ final class NeighborhoodService {
         var freshToStableID: [String: String] = [:]
         var claimedPersistedIDs = Set<String>()
 
-        for (freshID, freshSet) in freshClusters {
+        // Iterate fresh clusters in a deterministic order so the greedy claim
+        // assigns the SAME persisted ID to the SAME fresh cluster across launches.
+        // Key on the cluster's smallest member ID — stable for identical input.
+        let orderedFreshClusters = freshClusters.sorted { lhs, rhs in
+            (lhs.value.min() ?? lhs.key) < (rhs.value.min() ?? rhs.key)
+        }
+        let orderedPreviousMembers = previousMembers.sorted { $0.key < $1.key }
+
+        for (freshID, freshSet) in orderedFreshClusters {
             var bestMatch: (id: String, score: Double)?
-            for (persistedID, persistedSet) in previousMembers where !claimedPersistedIDs.contains(persistedID) {
+            for (persistedID, persistedSet) in orderedPreviousMembers where !claimedPersistedIDs.contains(persistedID) {
                 guard !persistedSet.isEmpty else { continue }
                 let intersection = freshSet.intersection(persistedSet).count
                 let unionCount = freshSet.union(persistedSet).count

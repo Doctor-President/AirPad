@@ -194,6 +194,7 @@ struct CorpusIndex: Codable {
     /// persisted on the Node itself, so unattached status self-corrects when a
     /// node gains routable signal.
     var unattachedNodes: [String]
+    var neighborhoodFingerprint: String?
 
     enum CodingKeys: String, CodingKey {
         case version
@@ -202,6 +203,7 @@ struct CorpusIndex: Codable {
         case neighborhoods
         case summary
         case unattachedNodes = "unattached_nodes"
+        case neighborhoodFingerprint = "neighborhood_fingerprint"
     }
 
     init(
@@ -210,7 +212,8 @@ struct CorpusIndex: Codable {
         tags: [String: TagIndexEntry],
         neighborhoods: [String: NeighborhoodIndexEntry],
         summary: CorpusSummary? = nil,
-        unattachedNodes: [String] = []
+        unattachedNodes: [String] = [],
+        neighborhoodFingerprint: String? = nil
     ) {
         self.version = version
         self.updatedAt = updatedAt
@@ -218,6 +221,7 @@ struct CorpusIndex: Codable {
         self.neighborhoods = neighborhoods
         self.summary = summary
         self.unattachedNodes = unattachedNodes
+        self.neighborhoodFingerprint = neighborhoodFingerprint
     }
 
     init(from decoder: Decoder) throws {
@@ -228,6 +232,7 @@ struct CorpusIndex: Codable {
         neighborhoods = try c.decode([String: NeighborhoodIndexEntry].self, forKey: .neighborhoods)
         summary = try c.decodeIfPresent(CorpusSummary.self, forKey: .summary)
         unattachedNodes = try c.decodeIfPresent([String].self, forKey: .unattachedNodes) ?? []
+        neighborhoodFingerprint = try c.decodeIfPresent(String.self, forKey: .neighborhoodFingerprint)
     }
 
     static func empty() -> CorpusIndex {
@@ -237,7 +242,8 @@ struct CorpusIndex: Codable {
             tags: [:],
             neighborhoods: [:],
             summary: nil,
-            unattachedNodes: []
+            unattachedNodes: [],
+            neighborhoodFingerprint: nil
         )
     }
 }

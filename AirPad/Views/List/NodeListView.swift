@@ -204,7 +204,7 @@ struct NodeListView: View {
                                 .opacity(vignetteOpacity)
                                 .scaleEffect(scale, anchor: .center)
                         }
-                        .matchedTransitionSource(id: item.node.id, in: zoomNamespace)
+                        .matchedTransitionSource(id: item.isReal ? item.node.id : item.id, in: zoomNamespace)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }

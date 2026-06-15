@@ -146,13 +146,26 @@ struct ContentView: View {
         // Detail-view coexistence. ContentView's panel visibility is keyed
         // on entryMode, but a node detail is pushed inside the host
         // surface's NavigationStack without changing entryMode — so a
-        // detail reached from Recents would inherit the ducked panel and
-        // hide the Librarian. NodeDetailView already toggles
-        // `store.isInDetailView`; mirror that here to raise on enter and
-        // restore per current entryMode on exit.
+        // detail reached from a ducked host (Recents) would inherit the
+        // ducked panel and hide the Librarian. `store.isInDetailView` is
+        // a depth-derived computed bool driven by each host's
+        // `path.count` observer: it flips false→true only on first-
+        // detail-enter (depth 0→1) and true→false only on last-detail-
+        // exit (depth 1→0). Stacked transitions (1↔2) don't reach this
+        // handler — the Librarian's `openNode` half stays put.
+        //
+        // Enter-branch is rescue-only: raise only if the panel is
+        // actually hidden. Leaves the Librarian's own choreography
+        // (`openNode`'s `dropToHalf`) and any user-chosen detent alone.
+        // Exit-branch fires at pop-commit (path.count → 0 lands
+        // synchronously with `dismiss()` for chevron, at release for
+        // swipe), so the duck animates alongside the pop without a
+        // separate early-restore signal.
         .onChange(of: store.isInDetailView) { _, inDetail in
             if inDetail {
-                panelState.raiseToPeek(animated: true)
+                if panelState.state == .hidden {
+                    panelState.raiseToPeek(animated: true)
+                }
             } else {
                 restorePanelForEntryMode()
             }

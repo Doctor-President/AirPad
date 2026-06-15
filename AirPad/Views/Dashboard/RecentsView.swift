@@ -47,6 +47,7 @@ struct RecentsView: View {
                     }
                 }
             }
+            .onAppear { store.detailViewDepth = path.count }
             .toolbar(.hidden, for: .navigationBar) // own glass-chrome header
             .navigationDestination(for: Node.self) { node in
                 NodeDetailView(nodeID: node.id)
@@ -61,16 +62,15 @@ struct RecentsView: View {
                 path.append(node)
                 router.pendingNodeNavigationID = nil
             }
-            // Edge-swipe back duck. UIKit's interactive pop has no
-            // SwiftUI action hook, so NodeDetailView's chevron-action
-            // flag-flip doesn't fire on swipe — only `.onDisappear`
-            // does, and that lands at pop completion (lags the duck).
-            // SwiftUI updates `path` at swipe-COMMIT (release), so
-            // mirroring the flag here ducks the Librarian in sync with
-            // the pop. Cancelled swipes don't mutate `path`, so this
-            // won't false-fire. Idempotent with chevron + onDisappear.
+            // Authoritative depth signal. `path` only ever contains Node
+            // values (the sole `.navigationDestination(for: Node.self)`),
+            // so `path.count` is the detail depth. SwiftUI commits this
+            // at push/pop — synchronously on chevron `dismiss()`, at
+            // release on interactive swipe-back — driving
+            // `isInDetailView` in sync with the animation. Cancelled
+            // swipes don't mutate `path`, so they can't false-fire.
             .onChange(of: path.count) { _, count in
-                if count == 0 { store.isInDetailView = false }
+                store.detailViewDepth = count
             }
         }
     }

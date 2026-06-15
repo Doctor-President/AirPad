@@ -89,7 +89,6 @@ struct NodeDetailView: View {
             }
         }
         .onAppear {
-            store.isInDetailView = true
             if let node {
                 editedTitle   = node.title
                 editedSummary = node.summary
@@ -100,7 +99,6 @@ struct NodeDetailView: View {
             Task { await store.ensureEntrySchema(forNodeID: nodeID) }
         }
         .onDisappear {
-            store.isInDetailView = false
             saveIfChanged()
         }
         .onChange(of: node?.title) { old, new in
@@ -457,13 +455,6 @@ struct NodeDetailView: View {
         GlassRowContainer {
         HStack {
             Button {
-                // Flip the detail flag synchronously with the pop so the
-                // Librarian ducks alongside the back animation. Leaving
-                // this to `.onDisappear` lags the duck to the end of the
-                // pop (onDisappear fires after the transition completes).
-                // The onDisappear assignment is kept as an idempotent
-                // backstop for non-chevron exit paths.
-                store.isInDetailView = false
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")

@@ -61,6 +61,17 @@ struct RecentsView: View {
                 path.append(node)
                 router.pendingNodeNavigationID = nil
             }
+            // Edge-swipe back duck. UIKit's interactive pop has no
+            // SwiftUI action hook, so NodeDetailView's chevron-action
+            // flag-flip doesn't fire on swipe — only `.onDisappear`
+            // does, and that lands at pop completion (lags the duck).
+            // SwiftUI updates `path` at swipe-COMMIT (release), so
+            // mirroring the flag here ducks the Librarian in sync with
+            // the pop. Cancelled swipes don't mutate `path`, so this
+            // won't false-fire. Idempotent with chevron + onDisappear.
+            .onChange(of: path.count) { _, count in
+                if count == 0 { store.isInDetailView = false }
+            }
         }
     }
 

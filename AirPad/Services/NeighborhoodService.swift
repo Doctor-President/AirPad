@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Generates neighborhoods from tag co-occurrence graph using Louvain community detection.
 /// Phase A: math-only clustering before semantic placement. No model invocation.
@@ -485,7 +486,8 @@ final class NeighborhoodService {
         let sortedFingerprints = nodes.map { node in
             "\(node.id):\(node.tags.joined(separator: ","))"
         }.sorted().joined(separator: "|")
-        return String(sortedFingerprints.hashValue)
+        let digest = SHA256.hash(data: Data(sortedFingerprints.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 

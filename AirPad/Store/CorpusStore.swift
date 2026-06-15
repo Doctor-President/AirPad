@@ -4631,6 +4631,7 @@ final class CorpusStore {
         // Compute current fingerprint
         let service = NeighborhoodService()
         let currentFingerprint = service.corpusFingerprint(from: nodes)
+        let fmUpToDate = (corpusIndex.neighborhoodFingerprint == currentFingerprint)
 
         // Check if cache exists and is still valid
         if let cache = neighborhoodCache,
@@ -4700,15 +4701,20 @@ final class CorpusStore {
                     try? await self.service.saveRoutingDiagnostics(diagnostics)
                 }
             }
+            corpusIndex.neighborhoodFingerprint = currentFingerprint
             corpusIndex.updatedAt = Date()
             let indexSnapshot = corpusIndex
             Task {
                 try? await self.service.saveCorpusIndex(indexSnapshot)
             }
-            regenerateNeighborhoodMetaIfNeeded(priorSnapshot: priorNeighborhoodSnapshot)
-            Task {
-                if #available(iOS 26.0, *) {
-                    await refreshCorpusSummaryIfNeeded()
+            if fmUpToDate {
+                print("[Neighborhood][FM-gate] fingerprint unchanged — skipping FM naming + summary on launch")
+            } else {
+                regenerateNeighborhoodMetaIfNeeded(priorSnapshot: priorNeighborhoodSnapshot)
+                Task {
+                    if #available(iOS 26.0, *) {
+                        await refreshCorpusSummaryIfNeeded()
+                    }
                 }
             }
         } else {

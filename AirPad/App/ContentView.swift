@@ -140,12 +140,21 @@ struct ContentView: View {
             if ctx != nil {
                 panelState.duck(animated: true)
             } else {
-                switch router.entryMode {
-                case .canvas, .collectionCanvas:
-                    panelState.raiseToPeek(animated: true)
-                case .dashboard, .quikCapture, .recents:
-                    break
-                }
+                restorePanelForEntryMode()
+            }
+        }
+        // Detail-view coexistence. ContentView's panel visibility is keyed
+        // on entryMode, but a node detail is pushed inside the host
+        // surface's NavigationStack without changing entryMode — so a
+        // detail reached from Recents would inherit the ducked panel and
+        // hide the Librarian. NodeDetailView already toggles
+        // `store.isInDetailView`; mirror that here to raise on enter and
+        // restore per current entryMode on exit.
+        .onChange(of: store.isInDetailView) { _, inDetail in
+            if inDetail {
+                panelState.raiseToPeek(animated: true)
+            } else {
+                restorePanelForEntryMode()
             }
         }
         // Selection coexistence. When batch selection activates in
@@ -164,6 +173,18 @@ struct ContentView: View {
         // CanvasView / NodeListView uses this.
         .onChange(of: panelState.state) { _, newState in
             router.librarianAtPeek = (newState == .tip)
+        }
+    }
+
+    /// Apply the entryMode → panel visibility rule. Extracted so both
+    /// capture-overlay dismiss and detail-view exit can share it without
+    /// duplicating the switch.
+    private func restorePanelForEntryMode() {
+        switch router.entryMode {
+        case .canvas, .collectionCanvas:
+            panelState.raiseToPeek(animated: true)
+        case .dashboard, .quikCapture, .recents:
+            panelState.duck(animated: true)
         }
     }
 

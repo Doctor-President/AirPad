@@ -457,6 +457,13 @@ struct NodeDetailView: View {
         GlassRowContainer {
         HStack {
             Button {
+                // Flip the detail flag synchronously with the pop so the
+                // Librarian ducks alongside the back animation. Leaving
+                // this to `.onDisappear` lags the duck to the end of the
+                // pop (onDisappear fires after the transition completes).
+                // The onDisappear assignment is kept as an idempotent
+                // backstop for non-chevron exit paths.
+                store.isInDetailView = false
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")

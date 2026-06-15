@@ -20,10 +20,9 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - After any edit, re-read the file you changed to confirm it landed before moving on. "I edited it" is not evidence; the file on disk is.
 
 ## Commit / verify handshake
-- You manage commits yourself, via the git **CLI** (not Xcode's git UI), proactively — **but hold every commit until T has device-verified that change/phase.** Committing ahead of verification is the standing failure mode; don't.
-- Flow: implement → paste `git diff` → T builds via Xcode GUI and verifies on device → T confirms → **then** you commit via CLI. One commit per task/phase.
-- A landed commit is "committed, pending verification" — never "shipped" or "working" until T says so.
-- Pushing: leave the push to T unless he tells you to run it.
+- You manage git yourself, via the **CLI** (not Xcode's git UI), proactively — **but hold every commit until T has device-verified that change/phase.** Committing ahead of verification is the standing failure mode; don't.
+- Flow: implement → paste `git diff` → T builds via Xcode GUI and verifies on device → T confirms → **then** you commit via CLI, **then you push** (`git push`). One commit per task/phase.
+- A landed commit is "committed, pending verification" — never "shipped" or "working" until T says so. Push only follows a verified, committed change.
 
 ## Scope discipline
 - Smallest reversible change that satisfies the task. One commit per task/brief.

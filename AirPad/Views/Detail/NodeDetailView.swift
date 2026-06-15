@@ -3,6 +3,7 @@ import AVKit
 import AVFoundation
 import PhotosUI
 import UIKit
+import ObjectiveC.runtime
 
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
 /// All edits auto-save on disappear.
@@ -2319,59 +2320,60 @@ private struct FoldDivider: View {
     }
 }
 
-/// Restores the interactive edge-swipe-to-pop gesture that iOS strips
-/// when `.toolbar(.hidden, for: .navigationBar)` removes the system
-/// back button. On iOS 26 NavigationStack, the SwiftUI host view's
-/// `next` responder often does NOT expose the underlying
-/// `UINavigationController` directly — so we walk the responder chain
-/// AND the parent VC chain, and log which (if either) resolved it.
-/// The delegate gates the gesture on `viewControllers.count > 1` so it
-/// no-ops at the root.
+/// Restores interactive edge-swipe-to-pop stripped by
+/// `.toolbar(.hidden, for: .navigationBar)`. The delegate is installed
+/// ONCE per UINavigationController and retained by it (associated
+/// object), so it survives detail pops at any depth. The per-detail
+/// proxy is just the trigger that resolves the nav controller and keeps
+/// the gesture enabled across pushes. (Prior design set the gesture's
+/// weak delegate to each detail's own coordinator; the deepest detail
+/// won the single slot, and popping it nil'd the delegate — swipe died
+/// after one pop in a stack.)
 private struct SwipeBackProxy: UIViewRepresentable {
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> ProbeView {
-        let v = ProbeView()
-        v.coordinator = context.coordinator
-        v.isUserInteractionEnabled = false
-        return v
-    }
-
+    func makeUIView(context: Context) -> ProbeView { ProbeView() }
     func updateUIView(_ uiView: ProbeView, context: Context) {}
 
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
-        weak var navController: UINavigationController?
-
-        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-            (navController?.viewControllers.count ?? 0) > 1
+    final class SharedPopDelegate: NSObject, UIGestureRecognizerDelegate {
+        weak var nav: UINavigationController?
+        func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool {
+            (nav?.viewControllers.count ?? 0) > 1
         }
     }
 
     final class ProbeView: UIView {
-        var coordinator: Coordinator?
         private var didAttach = false
+        private static var delegateKey = 0
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+        }
+        required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            guard window != nil, !didAttach, let coordinator = coordinator else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.attach(coordinator: coordinator)
-            }
+            guard window != nil, !didAttach else { return }
+            DispatchQueue.main.async { [weak self] in self?.attach() }
         }
 
-        private func attach(coordinator: Coordinator) {
-            let directVC = next as? UIViewController
-            let directNav = directVC?.navigationController
-            let walkedNav = findNavigationController()
-            print("[SwipeBackProxy] direct viewController.navigationController = \(directNav == nil ? "nil" : "non-nil"); walked-chain navigationController = \(walkedNav == nil ? "nil" : "non-nil")")
-            guard let nav = directNav ?? walkedNav else {
+        private func attach() {
+            guard let nav = findNavigationController() else {
                 print("[SwipeBackProxy] could not resolve UINavigationController — swipe-back not restored.")
                 return
             }
-            coordinator.navController = nav
-            nav.interactivePopGestureRecognizer?.delegate = coordinator
-            nav.interactivePopGestureRecognizer?.isEnabled = true
+            installSharedDelegateIfNeeded(on: nav)
+            nav.interactivePopGestureRecognizer?.isEnabled = true   // re-enable on every push
             didAttach = true
+        }
+
+        /// Install exactly one delegate, retained by the nav controller,
+        /// and never overwrite it on subsequent detail mounts.
+        private func installSharedDelegateIfNeeded(on nav: UINavigationController) {
+            if objc_getAssociatedObject(nav, &Self.delegateKey) is SharedPopDelegate { return }
+            let delegate = SharedPopDelegate()
+            delegate.nav = nav
+            objc_setAssociatedObject(nav, &Self.delegateKey, delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+            nav.interactivePopGestureRecognizer?.delegate = delegate
         }
 
         private func findNavigationController() -> UINavigationController? {

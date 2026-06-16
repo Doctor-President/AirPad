@@ -322,7 +322,7 @@ struct NodeCardView: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case .imageVideo:
-            placeholderRow("Gallery", systemImage: "photo.stack")
+            galleryStrip(for: item)
         case .link:
             placeholderRow("Link", systemImage: "link")
         case .document:
@@ -360,6 +360,41 @@ struct NodeCardView: View {
             .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
     }
 
+    /// Horizontal scrollable thumbnail strip for a promoted `.imageVideo`
+    /// entry. Reuses `GalleryItemTile` chrome-free — no per-tile tap (the
+    /// whole card owns the tap), no aspect persistence (the card is a
+    /// read-only mirror; the detail view's gallery owns that write path).
+    /// Each tile is framed by its persisted aspect; tiles whose aspect
+    /// hasn't been measured yet fall back to square. Empty/nil
+    /// `mediaItems` collapses to nothing (the entry still occupies its
+    /// booked 80pt budget — visible-empty is rare and the alternative
+    /// would skew fold ordering).
+    @ViewBuilder
+    private func galleryStrip(for item: NodeItem) -> some View {
+        if let media = item.mediaItems, !media.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(media) { gItem in
+                        GalleryItemTile(
+                            galleryItem: gItem,
+                            nodeID: node.id,
+                            parentItem: item,
+                            showVideoBadge: true,
+                            onMeasuredAspect: nil
+                        )
+                        .frame(
+                            width: 80 * CGFloat(gItem.aspectRatio ?? 1.0),
+                            height: 80
+                        )
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+            }
+            .frame(height: 80)
+        }
+    }
+
     // MARK: - Footprints + greedy-fill engine
     // Tunable constants. Whole-or-skip: each card-form declares a fixed
     // bounded footprint; we sum in fold order; render while the running
@@ -379,7 +414,7 @@ struct NodeCardView: View {
     private static func payloadFootprint(for type: NodeItemType) -> CGFloat {
         switch type {
         case .text:        return 64
-        case .imageVideo:  return 28
+        case .imageVideo:  return 80
         case .link:        return 28
         case .document:    return 28
         case .audio:       return 28

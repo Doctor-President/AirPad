@@ -155,6 +155,18 @@ struct NodeCardView: View {
         // so it reads as its own zone (don't tuck content up into the fade).
         let topInset: CGFloat = hasHero ? (cardHeight * 0.42 + 18) : 22
 
+        // Entry-stream partition. Atomics are normalized to the contiguous
+        // front of `node.items`; foldIndex is guaranteed ≥ atomicCount.
+        // Clamped defensively for the case where a legacy node decoded
+        // with foldIndex=0 but has atomics — keeps slicing safe.
+        let atomics = Array(node.items.prefix(while: { $0.type.isAtomic }))
+        let atomicCount = atomics.count
+        let foldIdx = min(max(node.foldIndex, atomicCount), node.items.count)
+        let payloads = Array(node.items[atomicCount..<foldIdx])
+
+        let preBodyGap: CGFloat = 12     // gap the old `Spacer(minLength: 12)` carried
+        let postStatGap: CGFloat = atomicCount > 0 ? 8 : 0
+
         return VStack(alignment: .leading, spacing: 0) {
             // Dateline row
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -201,7 +213,34 @@ struct NodeCardView: View {
                     .padding(.top, 8)
             }
 
-            Spacer(minLength: 12)
+            // Entry stream — replaces the old `Spacer(minLength: 12)`.
+            // Order: stat line (atomic prefix) → greedy-filled payload
+            // stream against MEASURED leftover space → "+N more".
+            // The GeometryReader takes the flexible slot, anchoring tags
+            // to the bottom the same way the original spacer did.
+            Spacer().frame(height: preBodyGap)
+
+            if atomicCount > 0 {
+                statLineView(atomics)
+                    .padding(.bottom, postStatGap)
+            }
+
+            GeometryReader { proxy in
+                let fit = Self.fitPayloads(payloads, budget: proxy.size.height)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(fit.rendered) { item in
+                        payloadForm(for: item)
+                            .frame(maxWidth: .infinity,
+                                   maxHeight: Self.payloadFootprint(for: item.type),
+                                   alignment: .topLeading)
+                    }
+                    if fit.overflowCount > 0 {
+                        overflowLine(fit.overflowCount)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .clipped()
 
             // Tags row
             if !tagList.isEmpty {
@@ -221,6 +260,158 @@ struct NodeCardView: View {
         .padding(.top, topInset)
         .padding(.bottom, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: - Entry stream — stat line, payload card-forms, overflow
+
+    /// Atomic prefix flowed onto one middot-separated line. Today the only
+    /// atomic type is `.rating` (rendered as filled/empty stars to
+    /// `rating.value` / `rating.scale`, mirroring `RatingAttributeRow` in
+    /// NodeDetailView). Cook time / serves will slot in here as additional
+    /// `case` branches in `atomicGlyph(_:)` when they ship.
+    @ViewBuilder
+    private func statLineView(_ atomics: [NodeItem]) -> some View {
+        HStack(spacing: 8) {
+            ForEach(Array(atomics.enumerated()), id: \.element.id) { idx, item in
+                if idx > 0 {
+                    Text("·")
+                        .font(.system(size: 12, design: .serif))
+                        .foregroundColor(Self.inkMeta)
+                }
+                atomicGlyph(item)
+            }
+            Spacer(minLength: 0)
+        }
+        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+    }
+
+    @ViewBuilder
+    private func atomicGlyph(_ item: NodeItem) -> some View {
+        switch item.type {
+        case .rating:
+            let rating = item.rating ?? Rating(value: 0)
+            HStack(spacing: 2) {
+                ForEach(0..<rating.scale, id: \.self) { idx in
+                    let filled = idx < rating.value
+                    Image(systemName: filled ? "star.fill" : "star")
+                        .font(.system(size: 11))
+                        .foregroundColor(Self.inkMeta)
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    /// Compact card-form per payload type. Commit 1: `.text` renders the
+    /// real form (3-line cap with tail truncation); all other payload
+    /// types render a one-line typed placeholder so the engine and
+    /// budget math are verifiable end-to-end. Each later commit deletes
+    /// one placeholder branch as the real form lands.
+    @ViewBuilder
+    private func payloadForm(for item: NodeItem) -> some View {
+        switch item.type {
+        case .text:
+            Text(item.content ?? "")
+                .font(.system(size: 13, design: .serif))
+                .foregroundColor(Self.inkDeck)
+                .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+                .lineLimit(3)
+                .truncationMode(.tail)
+                .lineSpacing(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .imageVideo:
+            placeholderRow("Gallery", systemImage: "photo.stack")
+        case .link:
+            placeholderRow("Link", systemImage: "link")
+        case .document:
+            placeholderRow("Document", systemImage: "doc")
+        case .audio:
+            placeholderRow("Voice", systemImage: "waveform")
+        case .image:
+            placeholderRow("Image", systemImage: "photo")
+        case .video:
+            placeholderRow("Video", systemImage: "video")
+        case .rating:
+            EmptyView()
+        }
+    }
+
+    private func placeholderRow(_ label: String, systemImage: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11))
+            Text(label)
+                .font(.system(size: 11, weight: .medium, design: .serif))
+                .tracking(1.4)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .foregroundColor(Self.inkMeta)
+        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+    }
+
+    private func overflowLine(_ count: Int) -> some View {
+        Text("+\(count) more")
+            .font(.system(size: 11, design: .serif))
+            .italic()
+            .foregroundColor(Self.inkMeta.opacity(0.85))
+            .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+    }
+
+    // MARK: - Footprints + greedy-fill engine
+    // Tunable constants. Whole-or-skip: each card-form declares a fixed
+    // bounded footprint; we sum in fold order; render while the running
+    // sum + the next footprint ≤ budget. No live measurement.
+
+    fileprivate struct PayloadFit {
+        let rendered: [NodeItem]
+        let overflowCount: Int
+    }
+
+    /// Inter-item spacing inside the body VStack (matches the VStack's
+    /// own `spacing: 8` so the budget math is honest).
+    private static let payloadInterSpacing: CGFloat = 8
+    /// "+N more" line footprint (one short italic line).
+    private static let overflowFootprint: CGFloat = 18
+
+    private static func payloadFootprint(for type: NodeItemType) -> CGFloat {
+        switch type {
+        case .text:        return 64
+        case .imageVideo:  return 28
+        case .link:        return 28
+        case .document:    return 28
+        case .audio:       return 28
+        case .image:       return 28
+        case .video:       return 28
+        case .rating:      return 0
+        }
+    }
+
+    fileprivate static func fitPayloads(_ payloads: [NodeItem], budget: CGFloat) -> PayloadFit {
+        guard budget > 0, !payloads.isEmpty else {
+            return PayloadFit(rendered: [], overflowCount: payloads.count)
+        }
+        var used: CGFloat = 0
+        var rendered: [NodeItem] = []
+        for (idx, item) in payloads.enumerated() {
+            let footprint = payloadFootprint(for: item.type)
+            let spacing: CGFloat = rendered.isEmpty ? 0 : payloadInterSpacing
+            let leftAfter = payloads.count - idx - 1
+            // Reserve "+N more" only when including this item would still
+            // leave items behind. When this is the last fit, no reservation.
+            let overflowReservation: CGFloat = leftAfter > 0
+                ? (overflowFootprint + payloadInterSpacing)
+                : 0
+            if used + spacing + footprint + overflowReservation <= budget {
+                rendered.append(item)
+                used += spacing + footprint
+            } else {
+                break
+            }
+        }
+        return PayloadFit(rendered: rendered, overflowCount: payloads.count - rendered.count)
     }
 
     // MARK: - Feather watermark

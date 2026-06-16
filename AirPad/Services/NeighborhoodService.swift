@@ -309,6 +309,12 @@ final class NeighborhoodService {
                 routableTargets.append((communityID, centroid))
             }
         }
+        // Deterministic tie-break: combined with strict `>` in the match loop,
+        // sorting by communityID makes the lowest-ID target win every cosine
+        // tie identically across launches. Without this, randomized dict order
+        // sent tied isolates to different homes run-to-run, nudging small
+        // clusters across the Jaccard 0.5 line and minting fresh UUIDs.
+        routableTargets.sort { $0.communityID < $1.communityID }
 
         // Identify isolate node IDs.
         let isolateNodeIDs: [String] = membersByCommunity

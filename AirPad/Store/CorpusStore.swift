@@ -4750,8 +4750,13 @@ final class CorpusStore {
                     tagFrequency[tag, default: 0] += 1
                 }
             }
+            // Total order: frequency desc, then tag name asc as deterministic
+            // tie-break. Without this, value-only sort + Dictionary iteration
+            // order let frequency-tied tags rotate run-to-run, faking a
+            // dominantTags shift that drained descriptionAttempts and re-fired
+            // the regenerate chain on otherwise-frozen clusters.
             let dominantTags = tagFrequency
-                .sorted { $0.value > $1.value }
+                .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
                 .prefix(3)
                 .map { $0.key }
 
@@ -4979,15 +4984,21 @@ final class CorpusStore {
             return
         }
         entry.description = description
-        // SB126 Stage 2 — Call A succeeded; reset the backoff counter.
-        entry.descriptionAttempts = 0
 
+        // SB126 Stage 2 — only reset the backoff counter on FULL success
+        // (text + embedding). A text-only success with no embedding leaves the
+        // cluster with an empty descriptionEmbedding, which the trigger rule
+        // treats as "retry" — without counting that retry, the chain would
+        // re-fire forever. Embedder == nil is a device-wide NLEmbedding outage,
+        // transient, so leave attempts AND any prior embedding alone.
         if let embedder, let vector = embedder.vector(for: description) {
             entry.descriptionEmbedding = vector.map { Float($0) }
+            entry.descriptionAttempts = 0
         } else if embedder != nil {
-            print("[Neighborhood][SB126] Embedding produced no vector for \(neighborhoodID)")
+            let n = (corpusIndex.neighborhoods[neighborhoodID]?.descriptionAttempts ?? 0) + 1
+            print("[Neighborhood][SB126] Embedding produced no vector for \(neighborhoodID) — descriptionAttempts → \(n)")
+            entry.descriptionAttempts = n
         }
-        // If embedder == nil, leave any prior embedding in place rather than wipe it.
 
         // Sibling list = current peers (not self), excluding fallback names so the
         // model isn't anchored on dominant-tag stand-ins. Top 20 by memberCount.

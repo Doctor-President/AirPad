@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// Generates Über-node clusters from the corpus.
 /// Tier 1: tag-only clustering (no embeddings).
@@ -75,6 +76,7 @@ final class UberNodeService {
         let sortedFingerprints = nodes.map { node in
             "\(node.id):\(node.tags.joined(separator: ","))"
         }.sorted().joined(separator: "|")
-        return String(sortedFingerprints.hashValue)
+        let digest = SHA256.hash(data: Data(sortedFingerprints.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

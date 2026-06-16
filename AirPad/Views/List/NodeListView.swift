@@ -34,7 +34,10 @@ struct NodeListView: View {
     var scope: CanvasScope = .corpus
     @State private var centerIdx = 0
 
-    private let cardHeight: CGFloat = 168
+    // 5:7 editorial card face. Card width = screen × 0.9 (from the
+    // existing `.padding(.horizontal, width * 0.05)` below); height is
+    // the 7/5 of that. Tune width factor on-device, not here.
+    private let cardHeight: CGFloat = UIScreen.main.bounds.width * 0.9 * (7.0 / 5.0)
     private let cardSpacing: CGFloat = 12
     private let topBarHeight: CGFloat = 110  // Graph/List toggle bar + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)

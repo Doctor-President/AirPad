@@ -4670,14 +4670,6 @@ final class CorpusStore {
         // can Jaccard-match fresh clusters to old ones (AT21 Cat A1).
         let previousMembers: [String: Set<String>] = corpusIndex.neighborhoods.mapValues { Set($0.members) }
 
-        // SB137 Stage A — surface persisted description embeddings so the
-        // service's isolate routing step can cosine-match isolate nodes to
-        // substantive neighborhoods. Only entries with a non-empty embedding
-        // are usable (newly formed clusters get one on the next refresh via
-        // SB126 Stage 1's regenerate trigger).
-        let persistedDescriptionEmbeddings: [String: [Float]] = corpusIndex.neighborhoods
-            .compactMapValues { $0.descriptionEmbedding.isEmpty ? nil : $0.descriptionEmbedding }
-
         // SB126 Stage 1 — full pre-update snapshot. The trigger rule compares fresh
         // neighborhoods against this snapshot; the upsert step (carry-forward of
         // description/embedding/sampledMemberIDs) reads from the live state, which
@@ -4688,8 +4680,7 @@ final class CorpusStore {
         neighborhoodCache = service.generateNeighborhoods(
             from: nodes,
             layoutPositions: canvasLayout.positions,
-            previousMembers: previousMembers,
-            persistedDescriptionEmbeddings: persistedDescriptionEmbeddings
+            previousMembers: previousMembers
         )
 
         if let cache = neighborhoodCache {

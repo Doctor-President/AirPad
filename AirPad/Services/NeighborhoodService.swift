@@ -24,13 +24,10 @@ final class NeighborhoodService {
     /// Returns nil if corpus is too small or has no tagged nodes.
     /// `previousMembers` maps persisted neighborhood IDs to their member node IDs;
     /// used to keep cluster identity stable across runs via Jaccard matching.
-    /// `persistedDescriptionEmbeddings` (SB137 Stage A) supplies per-neighborhood
-    /// description vectors for the isolate routing step.
     func generateNeighborhoods(
         from nodes: [Node],
         layoutPositions: [String: CanvasPosition],
-        previousMembers: [String: Set<String>] = [:],
-        persistedDescriptionEmbeddings: [String: [Float]] = [:]
+        previousMembers: [String: Set<String>] = [:]
     ) -> NeighborhoodCache? {
         // Edge case: empty or trivial corpus
         guard nodes.count >= 2 else { return nil }
@@ -54,11 +51,10 @@ final class NeighborhoodService {
         // ID (when the fresh cluster's member set has Jaccard ≥ 0.5 with a
         // persisted cluster) or mint a fresh UUID.
         //
-        // Mutation order (SB137 #7): stabilize → route → persist members. Routing
-        // requires stable IDs to look up persisted description embeddings;
-        // running it post-stabilization avoids redoing Jaccard inside routing.
-        // Persistence still happens after routing so the next refresh's Jaccard
-        // input includes routing results (the actual concern in #7).
+        // Mutation order (SB137 #7): stabilize → route → persist members.
+        // Routing keys diagnostics off stable community IDs, and persistence
+        // happens after routing so the next refresh's Jaccard input includes
+        // routing results (the actual concern in #7).
         let stabilizedCommunities = stabilizeCommunityIDs(
             communities: louvainCommunities,
             previousMembers: previousMembers
@@ -68,7 +64,6 @@ final class NeighborhoodService {
         let routingResult = routeIsolatesViaContentEmbedding(
             communities: stabilizedCommunities,
             nodes: nodes,
-            persistedDescriptionEmbeddings: persistedDescriptionEmbeddings,
             totalNodeCount: nodes.count
         )
 
@@ -279,19 +274,19 @@ final class NeighborhoodService {
 
     /// Routes members of sub-threshold clusters into substantive neighborhoods
     /// using cosine similarity between the node's content embedding and the
-    /// persisted description embedding of each candidate neighborhood.
+    /// content-embedding centroid of each candidate neighborhood.
     ///
     /// - Sub-threshold cluster: member_count < `minClusterSize(forNodeCount:)`.
-    /// - Substantive neighborhood candidates: post-stabilization clusters whose
-    ///   stable ID maps to a persisted entry with a non-empty description
-    ///   embedding (clusters formed this refresh with no Jaccard match have no
-    ///   description yet — SB126 Stage 1 generates one on the next refresh).
+    /// - Substantive neighborhood candidates: post-stabilization clusters at or
+    ///   above the threshold size that have at least one member with a non-empty
+    ///   `contentEmbedding` (used to form the centroid). The previous design
+    ///   keyed off persisted FM-description embeddings, which fed FM output back
+    ///   into routing and prevented structure from reaching a fixed point.
     /// - Argmax cosine ≥ `cosineRouteThreshold` → reassign in-place.
     /// - Else (or when node has no `contentEmbedding`) → unattached.
     private func routeIsolatesViaContentEmbedding(
         communities: [String: String],
         nodes: [Node],
-        persistedDescriptionEmbeddings: [String: [Float]],
         totalNodeCount: Int
     ) -> (communities: [String: String], unattachedNodeIDs: [String], diagnostics: RoutingDiagnostics?) {
         let threshold = Self.minClusterSize(forNodeCount: totalNodeCount)
@@ -302,13 +297,16 @@ final class NeighborhoodService {
             membersByCommunity[communityID, default: []].append(nodeID)
         }
 
-        // Substantive clusters with a usable description embedding form the
-        // routing target pool. Clusters that hit threshold but lack a persisted
-        // description (newly formed) are skipped per brief edge case.
-        var routableTargets: [(communityID: String, embedding: [Float])] = []
+        let nodesByID: [String: Node] = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+
+        // Substantive clusters form the routing target pool. Each target's
+        // vector is the elementwise mean of its members' contentEmbedding
+        // values (members with nil/empty embeddings are skipped). A cluster is
+        // included only if at least one member contributed.
+        var routableTargets: [(communityID: String, centroid: [Float])] = []
         for (communityID, members) in membersByCommunity where members.count >= threshold {
-            if let embedding = persistedDescriptionEmbeddings[communityID], !embedding.isEmpty {
-                routableTargets.append((communityID, embedding))
+            if let centroid = meanContentEmbedding(memberIDs: members, nodesByID: nodesByID) {
+                routableTargets.append((communityID, centroid))
             }
         }
 
@@ -321,7 +319,6 @@ final class NeighborhoodService {
             return (communities, [], nil)
         }
 
-        let nodesByID: [String: Node] = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
         var updatedCommunities = communities
         var unattached: [String] = []
         var isolateBestSamples: [RoutingDiagnostics.IsolateCosineSample] = []
@@ -346,7 +343,7 @@ final class NeighborhoodService {
 
             var bestMatch: (communityID: String, score: Double)?
             for target in routableTargets {
-                let score = cosineSimilarity(nodeEmbedding, target.embedding)
+                let score = cosineSimilarity(nodeEmbedding, target.centroid)
                 if score > (bestMatch?.score ?? -.infinity) {
                     bestMatch = (target.communityID, score)
                 }
@@ -372,8 +369,8 @@ final class NeighborhoodService {
 
         // In-cluster sanity sample: for each routable target, pick up to 5
         // member nodes with content embeddings and record their cosine against
-        // their own cluster description. Distribution shows whether the chosen
-        // threshold sits above where same-cluster nodes actually fall.
+        // their own cluster's content centroid. Distribution shows whether the
+        // chosen threshold sits above where same-cluster nodes actually fall.
         var inClusterSamples: [RoutingDiagnostics.InClusterCosineSample] = []
         let inClusterSamplesPerCluster = 5
         for target in routableTargets {
@@ -384,7 +381,7 @@ final class NeighborhoodService {
             }
             for sampleNode in memberNodesWithEmbedding.prefix(inClusterSamplesPerCluster) {
                 let v = sampleNode.contentEmbedding ?? []
-                let score = cosineSimilarity(v, target.embedding)
+                let score = cosineSimilarity(v, target.centroid)
                 inClusterSamples.append(
                     RoutingDiagnostics.InClusterCosineSample(
                         communityID: target.communityID,
@@ -407,6 +404,28 @@ final class NeighborhoodService {
         )
 
         return (updatedCommunities, unattached, diagnostics)
+    }
+
+    /// Elementwise mean of member nodes' content embeddings. Members with nil,
+    /// empty, or dimension-mismatched embeddings are skipped. Returns nil when
+    /// no member contributed. Deterministic given identical input.
+    private func meanContentEmbedding(memberIDs: [String], nodesByID: [String: Node]) -> [Float]? {
+        var sum: [Float] = []
+        var count = 0
+        for id in memberIDs {
+            guard let v = nodesByID[id]?.contentEmbedding, !v.isEmpty else { continue }
+            if sum.isEmpty {
+                sum = v
+            } else {
+                guard sum.count == v.count else { continue }
+                for i in 0..<sum.count { sum[i] += v[i] }
+            }
+            count += 1
+        }
+        guard count > 0 else { return nil }
+        let scale = Float(count)
+        for i in 0..<sum.count { sum[i] /= scale }
+        return sum
     }
 
     /// Cosine similarity between two equal-length float vectors. Returns 0 if

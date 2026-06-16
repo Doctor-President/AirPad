@@ -271,6 +271,11 @@ final class CorpusStore {
     /// Debounced cluster refresh task (Task 3)
     private var clusterRefreshTask: Task<Void, Never>?
 
+    /// Debounced deferred corpus-intelligence task (neighborhood naming + summary).
+    /// Runs off the launch/commit path so the open stays cool; cancelled & coalesced
+    /// when refreshNeighborhoods fires again before it has run.
+    private var deferredIntelligenceTask: Task<Void, Never>?
+
     /// Nodes after applying the active corpus-scope filter and sort order.
     var filteredNodes: [Node] {
         applyActiveFilter(to: nodes, scope: .corpus)
@@ -4623,6 +4628,23 @@ final class CorpusStore {
         refreshNeighborhoods()
     }
 
+    /// Schedule the deferred corpus-intelligence batch (neighborhood naming +
+    /// corpus summary) off the launch/commit path. Debounced via cancel() so
+    /// rapid successive refreshes coalesce — last write wins, same pattern as
+    /// scheduleClusterRefresh. regenerateNeighborhoodMetaIfNeeded self-gates
+    /// per-cluster, so a steady-state corpus produces zero FM calls here.
+    private func scheduleDeferredCorpusIntelligence(priorSnapshot: [String: NeighborhoodIndexEntry]) {
+        deferredIntelligenceTask?.cancel()
+        deferredIntelligenceTask = Task(priority: .utility) { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            self.regenerateNeighborhoodMetaIfNeeded(priorSnapshot: priorSnapshot)
+            if #available(iOS 26.0, *) {
+                await self.refreshCorpusSummaryIfNeeded()
+            }
+        }
+    }
+
     // MARK: - Neighborhood detection
 
     /// Generate or refresh neighborhoods if needed.
@@ -4631,7 +4653,6 @@ final class CorpusStore {
         // Compute current fingerprint
         let service = NeighborhoodService()
         let currentFingerprint = service.corpusFingerprint(from: nodes)
-        let fmUpToDate = (corpusIndex.neighborhoodFingerprint == currentFingerprint)
 
         // Check if cache exists and is still valid
         if let cache = neighborhoodCache,
@@ -4707,16 +4728,12 @@ final class CorpusStore {
             Task {
                 try? await self.service.saveCorpusIndex(indexSnapshot)
             }
-            if fmUpToDate {
-                print("[Neighborhood][FM-gate] fingerprint unchanged — skipping FM naming + summary on launch")
-            } else {
-                regenerateNeighborhoodMetaIfNeeded(priorSnapshot: priorNeighborhoodSnapshot)
-                Task {
-                    if #available(iOS 26.0, *) {
-                        await refreshCorpusSummaryIfNeeded()
-                    }
-                }
-            }
+            // Layer 2: defer corpus-intelligence FM (neighborhood naming + summary)
+            // off the launch/commit path. regenerateNeighborhoodMetaIfNeeded
+            // self-gates per-cluster — with the deterministic partition, an
+            // unchanged corpus produces no candidates and zero FM calls.
+            let snapshotForDeferred = priorNeighborhoodSnapshot
+            scheduleDeferredCorpusIntelligence(priorSnapshot: snapshotForDeferred)
         } else {
             print("[Neighborhood] No viable neighborhoods (corpus too small or untagged)")
         }

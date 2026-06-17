@@ -174,9 +174,13 @@ struct NodeListView: View {
                 LazyVStack(spacing: cardSpacing) {
                     ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, item in
                         let dist = abs(index - centerIdx)
-
+                        // R2 — pass the ID + a snapshot fallback. The card
+                        // owns the live lookup (mirrors NodeDetailView), so
+                        // in-place fold/entry edits re-render the card in
+                        // place without waiting for the list to recycle.
                         NodeCardView(
-                            node: item.node,
+                            nodeID: item.realNodeID,
+                            fallbackNode: item.node,
                             selected: index == centerIdx,
                             dist: dist,
                             isSelecting: selection.isActive,

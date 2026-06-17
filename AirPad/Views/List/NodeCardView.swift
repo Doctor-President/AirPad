@@ -42,13 +42,24 @@ struct CardPalette {
 }
 
 struct NodeCardView: View {
-    let node: Node
+    // R2 — the card observes the store itself so in-place mutations to
+    // its node trigger a re-render without waiting for the list to
+    // recycle. Mirrors NodeDetailView's pattern: keep the ID, look up
+    // the live Node in `body`, fall back to the snapshot only if the
+    // node has been deleted.
+    let nodeID: String
+    let fallbackNode: Node
     let selected: Bool
     let dist: Int
     var isSelecting: Bool = false
     var isPicked: Bool = false
 
+    @Environment(CorpusStore.self) private var store
     @State private var appeared = false
+
+    private var node: Node {
+        store.nodes.first(where: { $0.id == nodeID }) ?? fallbackNode
+    }
 
     // Warm-cream ink palette — every text element draws from this.
     private static let inkTitle = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.98)

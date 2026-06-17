@@ -2329,7 +2329,7 @@ private struct FoldDivider: View {
 /// weak delegate to each detail's own coordinator; the deepest detail
 /// won the single slot, and popping it nil'd the delegate — swipe died
 /// after one pop in a stack.)
-private struct SwipeBackProxy: UIViewRepresentable {
+struct SwipeBackProxy: UIViewRepresentable {
     func makeUIView(context: Context) -> ProbeView { ProbeView() }
     func updateUIView(_ uiView: ProbeView, context: Context) {}
 

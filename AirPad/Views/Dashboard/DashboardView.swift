@@ -16,12 +16,31 @@ import SwiftUI
 ///   4. Persistent floating "+" bottom-right — routes to QuikCapture with
 ///      `.dashboard` origin so the exit pill returns here rather than
 ///      suspending the app (c4.6).
+/// Routes pushed onto the Dashboard's stack. Recents and node details are
+/// both children of the Dashboard hub: Recents → Dashboard is a native pop;
+/// Recents → Detail stacks deeper on the same path.
+enum DashboardRoute: Hashable {
+    case recents
+    case node(Node)
+}
+
 struct DashboardView: View {
+
+    /// Seeds the initial stack. `.recents` lands the app on Recents with the
+    /// hub one pop beneath (cold-launch landing); nil opens the hub directly
+    /// (returning from a canvas). Only read at creation — afterwards `path`
+    /// is the source of truth.
+    let initialRoute: DashboardRoute?
+
+    init(initialRoute: DashboardRoute? = nil) {
+        self.initialRoute = initialRoute
+        _path = State(initialValue: initialRoute.map { [$0] } ?? [])
+    }
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
 
-    @State private var path = NavigationPath()
+    @State private var path: [DashboardRoute]
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
     @State private var showCreateCollectionSheet = false
@@ -77,8 +96,13 @@ struct DashboardView: View {
                 floatingPlusButton
             }
             .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
-            .navigationDestination(for: Node.self) { node in
-                NodeDetailView(nodeID: node.id)
+            .navigationDestination(for: DashboardRoute.self) { route in
+                switch route {
+                case .recents:
+                    RecentsView(onOpenNode: { node in path.append(.node(node)) })
+                case .node(let node):
+                    NodeDetailView(nodeID: node.id)
+                }
             }
             .sheet(item: $renameTarget) { collection in
                 RenameCollectionSheet(collectionID: collection.id, currentName: collection.name)
@@ -98,18 +122,18 @@ struct DashboardView: View {
                 guard let id = newValue,
                       let node = store.nodes.first(where: { $0.id == id })
                 else { return }
-                path.append(node)
+                path.append(.node(node))
                 router.pendingNodeNavigationID = nil
             }
-            // Authoritative depth signal. `path` only ever contains Node
-            // values (the sole `.navigationDestination(for: Node.self)`),
-            // so `path.count` is the detail depth. ContentView's
-            // `isInDetailView` handler reads this for first-enter /
-            // last-exit panel choreography.
-            .onChange(of: path.count) { _, count in
-                store.detailViewDepth = count
+            // Authoritative depth signal. `path` is [DashboardRoute] mixing
+            // the pushed `.recents` landing with node details, so raw
+            // `path.count` would over-count — `detailDepth(in:)` counts only
+            // `.node` entries. ContentView's `isInDetailView` handler reads
+            // this for first-enter / last-exit panel choreography.
+            .onChange(of: path) { _, newPath in
+                store.detailViewDepth = detailDepth(in: newPath)
             }
-            .onAppear { store.detailViewDepth = path.count }
+            .onAppear { store.detailViewDepth = detailDepth(in: path) }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                 isPresented: deleteDialogBinding,
@@ -131,6 +155,13 @@ struct DashboardView: View {
             get: { deleteTarget != nil },
             set: { if !$0 { deleteTarget = nil } }
         )
+    }
+
+    /// Detail depth = node screens on the path. `.recents` also rides this
+    /// stack but isn't a detail, so it's excluded — keeps `isInDetailView`
+    /// (Librarian panel raise/duck) correct when Recents is on top.
+    private func detailDepth(in routes: [DashboardRoute]) -> Int {
+        routes.filter { if case .node = $0 { return true } else { return false } }.count
     }
 
     // MARK: - Header
@@ -198,7 +229,7 @@ struct DashboardView: View {
         TodayCardView(
             recentNodes: recentNodes,
             onJournalPromptTap: openTodayJournal,
-            onRecentTap: { node in path.append(node) }
+            onRecentTap: { node in path.append(.node(node)) }
         )
     }
 
@@ -212,7 +243,7 @@ struct DashboardView: View {
     private func openTodayJournal() {
         Task {
             if let node = await store.findOrCreateTodayJournalNode() {
-                path.append(node)
+                path.append(.node(node))
             }
         }
     }
@@ -225,7 +256,7 @@ struct DashboardView: View {
     /// one of the collections.
     private var recentsRow: some View {
         Button {
-            router.entryMode = .recents
+            path.append(.recents)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "clock.arrow.circlepath")

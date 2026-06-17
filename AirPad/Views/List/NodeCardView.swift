@@ -328,7 +328,7 @@ struct NodeCardView: View {
         case .document:
             documentStrip(for: item)
         case .audio:
-            placeholderRow("Voice", systemImage: "waveform")
+            audioRow(for: item)
         case .image:
             placeholderRow("Image", systemImage: "photo")
         case .video:
@@ -432,6 +432,50 @@ struct NodeCardView: View {
         }
     }
 
+    /// Compact row for a promoted `.audio` entry. Read-only mirror of
+    /// `VoiceEntryBody` — a static waveform glyph (no playback affordance:
+    /// you can't play from the card, so a play glyph would be misleading)
+    /// + duration (only when present and > 0) + one-line transcript
+    /// sliver if present. The whole card owns the tap.
+    @ViewBuilder
+    private func audioRow(for item: NodeItem) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "waveform")
+                .font(.system(size: 22))
+                .foregroundColor(Self.inkDeck)
+            VStack(alignment: .leading, spacing: 2) {
+                if let duration = Self.formattedDuration(item.durationSeconds) {
+                    Text(duration)
+                        .font(.system(size: 13, weight: .semibold, design: .serif))
+                        .foregroundColor(Self.inkTitle)
+                        .lineLimit(1)
+                }
+                if let transcript = item.transcript, !transcript.isEmpty {
+                    Text(transcript)
+                        .font(.system(size: 11, design: .serif))
+                        .italic()
+                        .foregroundColor(Self.inkMeta)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+    }
+
+    // Returns nil when there's no real duration to show. Zero or
+    // negative values are unknown/uninitialized states (entries created
+    // before the duration probe ran) — emit nothing rather than "0:00"
+    // or "--:--", which both lie about the audio.
+    private static func formattedDuration(_ seconds: Double?) -> String? {
+        guard let seconds, seconds.isFinite, seconds > 0 else { return nil }
+        let total = Int(seconds.rounded())
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%d:%02d", m, s)
+    }
+
     // MARK: - Footprints + greedy-fill engine
     // Tunable constants. Whole-or-skip: each card-form declares a fixed
     // bounded footprint; we sum in fold order; render while the running
@@ -454,7 +498,7 @@ struct NodeCardView: View {
         case .imageVideo:  return 80
         case .link:        return 64
         case .document:    return 64
-        case .audio:       return 28
+        case .audio:       return 52
         case .image:       return 28
         case .video:       return 28
         case .rating:      return 0

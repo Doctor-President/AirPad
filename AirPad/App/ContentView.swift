@@ -22,9 +22,9 @@ struct ContentView: View {
             Group {
                 switch router.entryMode {
                 case .dashboard:
-                    DashboardView()
+                    DashboardView(initialRoute: nil)
                 case .recents:
-                    RecentsView()
+                    DashboardView(initialRoute: .recents)
                 case .quikCapture(let forcedCollectionID, let origin):
                     QuikCaptureView(forcedCollectionID: forcedCollectionID, origin: origin)
                 case .canvas:

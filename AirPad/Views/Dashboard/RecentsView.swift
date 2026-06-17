@@ -1,26 +1,21 @@
 import SwiftUI
 
-/// Recents — cold-launch landing surface. The recency list previously
-/// lived inside `HistoryPanel` (a sheet summoned from the dashboard clock
-/// button); promoted to a top-level entry mode so launch lands on
-/// chronological nodes rather than collection chrome. Dashboard sits one
-/// level up via the leading hub button.
-///
-/// Mirrors `DashboardView`'s navigation shape: owns a `NavigationStack`
-/// + `.navigationDestination(for: Node.self)` so a row tap pushes the
-/// node's detail onto its own path (inner stack — Recents is a top-level
-/// surface, not a pushed child of dashboard).
-///
-/// Time-bucketed: Today / Previous 7 Days / Previous 30 Days / month
-/// labels (year appended for months older than the current year). Bucket
-/// + sort key are coupled — flipping the sort menu re-buckets on the
-/// same active date (updatedAt by default, createdAt as the alternate).
+/// Recents — the chronological landing list. A child of the Dashboard hub
+/// (pushed onto Dashboard's NavigationStack), so the back chevron is a
+/// native pop and node taps stack a detail on the host path. Time-bucketed:
+/// Today / Previous 7 Days / Previous 30 Days / month labels (year appended
+/// for months older than the current year). Bucket + sort key are coupled —
+/// flipping the sort menu re-buckets on the same active date (updatedAt by
+/// default, createdAt as the alternate).
 struct RecentsView: View {
 
-    @Environment(AppRouter.self) private var router
-    @Environment(CorpusStore.self) private var store
+    /// Pushes a node detail onto the host (Dashboard) stack. Recents no
+    /// longer owns a stack, so node taps hand the selection up to the host.
+    let onOpenNode: (Node) -> Void
 
-    @State private var path = NavigationPath()
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
     @State private var sortKey: SortKey = .modified
 
     enum SortKey: Hashable {
@@ -29,49 +24,32 @@ struct RecentsView: View {
     }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                DashboardLavaLamp()
+        ZStack {
+            Color.black.ignoresSafeArea()
+            DashboardLavaLamp()
 
-                VStack(spacing: 0) {
-                    header
-                        .padding(.horizontal, 20)
-                        .padding(.top, 6)
-                        .padding(.bottom, 12)
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 20)
+                    .padding(.top, 6)
+                    .padding(.bottom, 12)
 
-                    if store.nodes.isEmpty {
-                        emptyState
-                    } else {
-                        bucketList
-                    }
+                if store.nodes.isEmpty {
+                    emptyState
+                } else {
+                    bucketList
                 }
             }
-            .onAppear { store.detailViewDepth = path.count }
-            .toolbar(.hidden, for: .navigationBar) // own glass-chrome header
-            .navigationDestination(for: Node.self) { node in
-                NodeDetailView(nodeID: node.id)
-            }
-            // Honour the in-app capture overlay's navigation handoff while
-            // Recents is the active surface (parity with DashboardView /
-            // CanvasView / NodeListView).
-            .onChange(of: router.pendingNodeNavigationID) { _, newValue in
-                guard let id = newValue,
-                      let node = store.nodes.first(where: { $0.id == id })
-                else { return }
-                path.append(node)
-                router.pendingNodeNavigationID = nil
-            }
-            // Authoritative depth signal. `path` only ever contains Node
-            // values (the sole `.navigationDestination(for: Node.self)`),
-            // so `path.count` is the detail depth. SwiftUI commits this
-            // at push/pop — synchronously on chevron `dismiss()`, at
-            // release on interactive swipe-back — driving
-            // `isInDetailView` in sync with the animation. Cancelled
-            // swipes don't mutate `path`, so they can't false-fire.
-            .onChange(of: path.count) { _, count in
-                store.detailViewDepth = count
-            }
+        }
+        .toolbar(.hidden, for: .navigationBar) // own glass-chrome header
+        .background {
+            // Restores the interactive edge-swipe-to-pop that
+            // `.toolbar(.hidden, for: .navigationBar)` strips. Recents is a
+            // pushed child of Dashboard's nav controller, so the shared
+            // delegate's `viewControllers.count > 1` rule pops it to the hub.
+            SwipeBackProxy()
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
         }
     }
 
@@ -79,11 +57,10 @@ struct RecentsView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            // Hub control — goes UP to the Dashboard (browse layer).
-            // Grid glyph signals "browse collections", explicitly NOT a
-            // back chevron.
-            glassCircleButton(systemName: "square.grid.2x2") {
-                router.entryMode = .dashboard
+            // Back control — native pop to the Dashboard hub (free slide +
+            // edge-swipe-back, because Recents is a pushed child now).
+            glassCircleButton(systemName: "chevron.backward") {
+                dismiss()
             }
 
             Spacer()
@@ -136,7 +113,7 @@ struct RecentsView: View {
                 Section {
                     ForEach(bucket.nodes) { node in
                         Button {
-                            path.append(node)
+                            onOpenNode(node)
                         } label: {
                             RecentNodeRow(node: node, timestamp: date(for: node))
                         }
@@ -197,8 +174,6 @@ struct RecentsView: View {
         var today: [Node] = []
         var prev7: [Node] = []
         var prev30: [Node] = []
-        // Ordered groups by month — preserves the descending date order
-        // since `sorted` is already descending and we walk it linearly.
         var monthOrder: [String] = []
         var monthGroups: [String: [Node]] = [:]
 

@@ -225,20 +225,26 @@ struct NodeCardView: View {
                     .padding(.bottom, postStatGap)
             }
 
+            // Selection (fitPayloads) runs at minimum footprints — no
+            // feedback loop. After selection, elastic entries (.text,
+            // .audio's transcript) flex to fill leftover slack via
+            // `.frame(maxHeight: .infinity)`; rigid entries hold their
+            // declared footprint. Multiple elastic entries share the
+            // slack through SwiftUI's natural flex.
             GeometryReader { proxy in
                 let fit = Self.fitPayloads(payloads, budget: proxy.size.height)
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(fit.rendered) { item in
                         payloadForm(for: item)
                             .frame(maxWidth: .infinity,
-                                   maxHeight: Self.payloadFootprint(for: item.type),
+                                   maxHeight: Self.isElastic(item.type) ? .infinity : Self.payloadFootprint(for: item.type),
                                    alignment: .topLeading)
                     }
                     if fit.overflowCount > 0 {
                         overflowLine(fit.overflowCount)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .clipped()
 
@@ -303,24 +309,23 @@ struct NodeCardView: View {
         }
     }
 
-    /// Compact card-form per payload type. Commit 1: `.text` renders the
-    /// real form (3-line cap with tail truncation); all other payload
-    /// types render a one-line typed placeholder so the engine and
-    /// budget math are verifiable end-to-end. Each later commit deletes
-    /// one placeholder branch as the real form lands.
+    /// Compact card-form per payload type. Elastic forms (`.text`,
+    /// `.audio`) flex into the leftover card slack via the parent's
+    /// `.frame(maxHeight: .infinity)`; their internal text uses
+    /// `fitLinesText` so truncation happens at the last full line that
+    /// fits (no mid-line clip). Rigid forms (galleries, links, docs)
+    /// hold their declared footprint.
     @ViewBuilder
     private func payloadForm(for item: NodeItem) -> some View {
         switch item.type {
         case .text:
-            Text(item.content ?? "")
-                .font(.system(size: 13, design: .serif))
-                .foregroundColor(Self.inkDeck)
-                .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
-                .lineLimit(3)
-                .truncationMode(.tail)
-                .lineSpacing(2)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            fitLinesText(
+                item.content ?? "",
+                fontSize: 13,
+                lineSpacing: 2,
+                color: Self.inkDeck,
+                shadowOpacity: 0.35
+            )
         case .imageVideo:
             galleryStrip(for: item)
         case .link:
@@ -435,33 +440,41 @@ struct NodeCardView: View {
     /// Compact row for a promoted `.audio` entry. Read-only mirror of
     /// `VoiceEntryBody` — a static waveform glyph (no playback affordance:
     /// you can't play from the card, so a play glyph would be misleading)
-    /// + duration (only when present and > 0) + one-line transcript
-    /// sliver if present. The whole card owns the tap.
+    /// + duration (only when present and > 0) + transcript when present.
+    /// Two-zone layout for elasticity: a rigid control row on top (glyph +
+    /// duration, intrinsic height) and an elastic `fitLinesText` transcript
+    /// below that fills the leftover slack and tail-truncates at the last
+    /// full line.
     @ViewBuilder
     private func audioRow(for item: NodeItem) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "waveform")
-                .font(.system(size: 22))
-                .foregroundColor(Self.inkDeck)
-            VStack(alignment: .leading, spacing: 2) {
-                if let duration = Self.formattedDuration(item.durationSeconds) {
+        let duration = Self.formattedDuration(item.durationSeconds)
+        let transcript = (item.transcript?.isEmpty == false) ? item.transcript : nil
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 22))
+                    .foregroundColor(Self.inkDeck)
+                if let duration {
                     Text(duration)
                         .font(.system(size: 13, weight: .semibold, design: .serif))
                         .foregroundColor(Self.inkTitle)
                         .lineLimit(1)
                 }
-                if let transcript = item.transcript, !transcript.isEmpty {
-                    Text(transcript)
-                        .font(.system(size: 11, design: .serif))
-                        .italic()
-                        .foregroundColor(Self.inkMeta)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+            if let transcript {
+                fitLinesText(
+                    transcript,
+                    fontSize: 11,
+                    italic: true,
+                    lineSpacing: 2,
+                    color: Self.inkMeta,
+                    shadowOpacity: 0.4
+                )
+            }
         }
-        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     // Returns nil when there's no real duration to show. Zero or
@@ -502,6 +515,52 @@ struct NodeCardView: View {
         case .image:       return 28
         case .video:       return 28
         case .rating:      return 0
+        }
+    }
+
+    /// Elastic forms get `.frame(maxHeight: .infinity)` in the body
+    /// ForEach so they expand to fill leftover slack after `fitPayloads`
+    /// has selected at minimum footprints. Selection is unchanged —
+    /// keeping `isElastic` out of `fitPayloads` is what avoids a feedback
+    /// loop. Gallery growth is intentionally a separate later commit.
+    private static func isElastic(_ type: NodeItemType) -> Bool {
+        switch type {
+        case .text, .audio: return true
+        default:            return false
+        }
+    }
+
+    /// Reusable "fit text to height" view: measures the slot, divides by
+    /// `fontSize × 1.35 + lineSpacing`, and caps `lineLimit` so the tail
+    /// truncates at the last full line that fits — no mid-line clip.
+    /// Pulled out so both `.text` payload and the `.audio` transcript
+    /// share the same line-fit math.
+    @ViewBuilder
+    private func fitLinesText(
+        _ content: String,
+        fontSize: CGFloat,
+        weight: Font.Weight = .regular,
+        italic: Bool = false,
+        lineSpacing: CGFloat = 2,
+        color: Color,
+        shadowOpacity: Double = 0.35
+    ) -> some View {
+        GeometryReader { proxy in
+            let lineHeight = fontSize * 1.35 + lineSpacing
+            let maxLines = max(1, Int(proxy.size.height / lineHeight))
+            let styled: Text = {
+                var t = Text(content).font(.system(size: fontSize, weight: weight, design: .serif))
+                if italic { t = t.italic() }
+                return t
+            }()
+            styled
+                .foregroundColor(color)
+                .shadow(color: .black.opacity(shadowOpacity), radius: 2, x: 0, y: 1)
+                .lineLimit(maxLines)
+                .truncationMode(.tail)
+                .lineSpacing(lineSpacing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 

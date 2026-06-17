@@ -174,6 +174,7 @@ struct NodeCardView: View {
         let atomicCount = atomics.count
         let foldIdx = min(max(node.foldIndex, atomicCount), node.items.count)
         let payloads = Array(node.items[atomicCount..<foldIdx])
+        let hasFoldedPayload = !payloads.isEmpty
 
         let preBodyGap: CGFloat = 12     // gap the old `Spacer(minLength: 12)` carried
         let postStatGap: CGFloat = atomicCount > 0 ? 8 : 0
@@ -214,14 +215,34 @@ struct NodeCardView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if showDeck {
-                Text(node.summary)
-                    .font(.system(size: 14, design: .serif))
-                    .italic()
-                    .foregroundColor(Self.inkDeck)
-                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
-                    .lineSpacing(3)
-                    .lineLimit(3)
+                if hasFoldedPayload {
+                    // Folded entries own the flex slot below — keep the deck a
+                    // capped 3-line lede so the body has room.
+                    Text(node.summary)
+                        .font(.system(size: 14, design: .serif))
+                        .italic()
+                        .foregroundColor(Self.inkDeck)
+                        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                        .lineSpacing(3)
+                        .lineLimit(3)
+                        .padding(.top, 8)
+                } else {
+                    // R3: nothing folded → the deck fills the body via the same
+                    // line-fit math as the payload forms (fill to the last full
+                    // line that fits, tail-truncate). fitLinesText is a greedy
+                    // GeometryReader, so it claims the flex slot the empty body
+                    // GeometryReader used to hold — stat line + tags still pin
+                    // to the bottom.
+                    fitLinesText(
+                        node.summary,
+                        fontSize: 14,
+                        italic: true,
+                        lineSpacing: 3,
+                        color: Self.inkDeck,
+                        shadowOpacity: 0.4
+                    )
                     .padding(.top, 8)
+                }
             }
 
             // Entry stream — replaces the old `Spacer(minLength: 12)`.
@@ -236,28 +257,34 @@ struct NodeCardView: View {
                     .padding(.bottom, postStatGap)
             }
 
-            // Selection (fitPayloads) runs at minimum footprints — no
-            // feedback loop. After selection, elastic entries (.text,
-            // .audio's transcript) flex to fill leftover slack via
-            // `.frame(maxHeight: .infinity)`; rigid entries hold their
-            // declared footprint. Multiple elastic entries share the
-            // slack through SwiftUI's natural flex.
-            GeometryReader { proxy in
-                let fit = Self.fitPayloads(payloads, budget: proxy.size.height)
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(fit.rendered) { item in
-                        payloadForm(for: item)
-                            .frame(maxWidth: .infinity,
-                                   maxHeight: Self.isElastic(item.type) ? .infinity : Self.payloadFootprint(for: item.type),
-                                   alignment: .topLeading)
+            if hasFoldedPayload {
+                // Selection (fitPayloads) runs at minimum footprints — no
+                // feedback loop. After selection, elastic entries (.text,
+                // .audio's transcript) flex to fill leftover slack via
+                // `.frame(maxHeight: .infinity)`; rigid entries hold their
+                // declared footprint. Multiple elastic entries share the
+                // slack through SwiftUI's natural flex.
+                GeometryReader { proxy in
+                    let fit = Self.fitPayloads(payloads, budget: proxy.size.height)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(fit.rendered) { item in
+                            payloadForm(for: item)
+                                .frame(maxWidth: .infinity,
+                                       maxHeight: Self.isElastic(item.type) ? .infinity : Self.payloadFootprint(for: item.type),
+                                       alignment: .topLeading)
+                        }
+                        if fit.overflowCount > 0 {
+                            overflowLine(fit.overflowCount)
+                        }
                     }
-                    if fit.overflowCount > 0 {
-                        overflowLine(fit.overflowCount)
-                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
+            } else if !showDeck {
+                // No deck to fill and nothing folded: hold the flex slot so the
+                // tags still pin to the bottom (preserves the title-only layout).
+                Spacer(minLength: 0)
             }
-            .clipped()
 
             // Tags row
             if !tagList.isEmpty {

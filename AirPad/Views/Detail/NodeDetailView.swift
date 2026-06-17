@@ -362,11 +362,6 @@ struct NodeDetailView: View {
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
                 .animation(.easeInOut(duration: 0.22), value: node.foldIndex)
 
-                // Domain suggestion card
-                if let domain = node.domain, !node.domainConfirmed {
-                    DomainSuggestionCard(domain: domain, nodeID: nodeID)
-                }
-
                 // Meta-node provenance + promotion
                 if node.isMeta {
                     MetaNodeBanner(nodeID: nodeID, showPromoteConfirmation: $showPromoteConfirmation)
@@ -1670,51 +1665,6 @@ struct AsyncImageFromURL: View {
                     image = UIImage(data: data)
                 }
             }
-        }
-    }
-}
-
-// MARK: - Domain suggestion card
-
-private struct DomainSuggestionCard: View {
-    let domain: String
-    let nodeID: String
-
-    @Environment(CorpusStore.self) private var store
-    @State private var dismissed = false
-
-    var body: some View {
-        if !dismissed {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(.yellow)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("This looks like \(domain) content — want me to optimise how it's stored?")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                }
-                Spacer()
-                VStack(spacing: 6) {
-                    Button("Yes") {
-                        Task {
-                            guard var node = store.nodes.first(where: { $0.id == nodeID }) else { return }
-                            node.domainConfirmed = true
-                            await store.updateNode(node)
-                        }
-                        dismissed = true
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.yellow)
-
-                    Button("No") { dismissed = true }
-                        .font(.caption)
-                        .foregroundStyle(.white.opacity(0.4))
-                }
-            }
-            .padding(14)
-            .background(Color.yellow.opacity(0.1))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.2), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
         }
     }
 }

@@ -71,6 +71,12 @@ final class AppRouter {
     /// it fires exactly once.
     var pendingNodeNavigationID: String? = nil
 
+    /// Scroll-to-node seam for the grid. Set a node ID to scroll the grid
+    /// to that tile; NodeGridView observes and clears it. The access layer
+    /// (sort / A–Z jump) and the Librarian drive this later. No setter yet
+    /// — this is the seam so it doesn't need a retrofit.
+    var pendingGridScrollNodeID: String? = nil
+
     /// Librarian session state — the morphing query / synthesis surface.
     /// Travels across canvas, list, and (future) detail-view mounts so an
     /// in-flight session survives navigation between surfaces. Single

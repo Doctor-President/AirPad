@@ -55,7 +55,7 @@ struct CanvasChrome: View {
                 if filterState.viewMode == .systemGraph {
                     CanvasView(scope: scope)
                 } else {
-                    NodeListView(scope: scope)
+                    NodeGridView(scope: scope)
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)

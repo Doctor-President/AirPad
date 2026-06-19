@@ -91,57 +91,71 @@ struct NodeGridView: View {
     // MARK: - Grid content
 
     private var gridContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical) {
-                LazyVGrid(
-                    columns: Array(
-                        repeating: GridItem(.flexible(), spacing: tileSpacing),
-                        count: columnCount
-                    ),
-                    spacing: tileSpacing
-                ) {
-                    ForEach(nodes) { node in
-                        NodeTileView(
-                            node: node,
-                            isPicked: selection.isSelected(node.id)
-                        )
-                        .aspectRatio(5.0 / 7.0, contentMode: .fit)
-                        .matchedTransitionSource(id: node.id, in: zoomNamespace)
-                        .id(node.id)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if selection.isActive {
-                                haptic.impactOccurred()
-                                selection.toggle(node.id)
-                            } else {
-                                navHaptic.impactOccurred()
-                                navigationPath.append(node)
+        // Width is measured ONCE here, above the ScrollView. cellW/cellH are
+        // the single source of truth and get handed down to each tile.
+        // The cell wrapper owns the 5:7 shape via .frame + .clipShape; the
+        // tile content fills and is clipped — it never carries the ratio.
+        GeometryReader { geo in
+            let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1)
+            let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
+            let cellH = cellW * 7.0 / 5.0
+
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    LazyVGrid(
+                        columns: Array(
+                            repeating: GridItem(.fixed(cellW), spacing: tileSpacing),
+                            count: columnCount
+                        ),
+                        spacing: tileSpacing
+                    ) {
+                        ForEach(nodes) { node in
+                            NodeTileView(
+                                node: node,
+                                isPicked: selection.isSelected(node.id),
+                                cellWidth: cellW,
+                                cellHeight: cellH,
+                                isLive: columnCount <= 3
+                            )
+                            .frame(width: cellW, height: cellH)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .matchedTransitionSource(id: node.id, in: zoomNamespace)
+                            .id(node.id)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if selection.isActive {
+                                    haptic.impactOccurred()
+                                    selection.toggle(node.id)
+                                } else {
+                                    navHaptic.impactOccurred()
+                                    navigationPath.append(node)
+                                }
                             }
                         }
                     }
+                    .padding(.horizontal, tileSpacing)
+                    .padding(.top, topInset)
+                    .padding(.bottom, bottomInset)
                 }
-                .padding(.horizontal, tileSpacing)
-                .padding(.top, topInset)
-                .padding(.bottom, bottomInset)
-            }
-            .gesture(
-                MagnifyGesture().onEnded { value in
-                    guard let i = columnSteps.firstIndex(of: columnCount) else {
-                        columnCount = 2
-                        return
+                .gesture(
+                    MagnifyGesture().onEnded { value in
+                        guard let i = columnSteps.firstIndex(of: columnCount) else {
+                            columnCount = 2
+                            return
+                        }
+                        // Spread (>1) = fewer/bigger; pinch (<1) = more/smaller.
+                        if value.magnification > 1.2, i > 0 {
+                            columnCount = columnSteps[i - 1]
+                        } else if value.magnification < 0.8, i < columnSteps.count - 1 {
+                            columnCount = columnSteps[i + 1]
+                        }
                     }
-                    // Spread (>1) = fewer/bigger; pinch (<1) = more/smaller.
-                    if value.magnification > 1.2, i > 0 {
-                        columnCount = columnSteps[i - 1]
-                    } else if value.magnification < 0.8, i < columnSteps.count - 1 {
-                        columnCount = columnSteps[i + 1]
-                    }
+                )
+                .onChange(of: router.pendingGridScrollNodeID) { _, id in
+                    guard let id else { return }
+                    withAnimation { proxy.scrollTo(id, anchor: .center) }
+                    router.pendingGridScrollNodeID = nil
                 }
-            )
-            .onChange(of: router.pendingGridScrollNodeID) { _, id in
-                guard let id else { return }
-                withAnimation { proxy.scrollTo(id, anchor: .center) }
-                router.pendingGridScrollNodeID = nil
             }
         }
     }
@@ -170,8 +184,31 @@ struct NodeGridView: View {
 private struct NodeTileView: View {
     let node: Node
     let isPicked: Bool
+    let cellWidth: CGFloat
+    let cellHeight: CGFloat
+    let isLive: Bool
 
     var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if isLive {
+                cardFace
+                    .frame(width: cellWidth, height: cellHeight)
+            } else {
+                // SnapshotTile lands in checkpoint 2 — falls through to live
+                // cardFace so 4/6-col still verifies the ratio meanwhile.
+                cardFace
+                    .frame(width: cellWidth, height: cellHeight)
+            }
+            if isPicked {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(.white, lineWidth: 3)
+            }
+        }
+    }
+
+    // Card face — gradient + scrim + title. Extracted so the snapshot path
+    // (next checkpoint) can rasterize the exact same view.
+    private var cardFace: some View {
         ZStack(alignment: .bottomLeading) {
             NodeGradientLayer(node: node)
 
@@ -188,13 +225,6 @@ private struct NodeTileView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
                 .padding(8)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            if isPicked {
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(.white, lineWidth: 3)
-            }
         }
     }
 }

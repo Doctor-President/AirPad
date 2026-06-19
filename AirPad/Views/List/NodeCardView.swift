@@ -53,6 +53,9 @@ struct NodeCardView: View {
     let dist: Int
     var isSelecting: Bool = false
     var isPicked: Bool = false
+    /// Grid context disables this — many tiny cards bouncing on viewport
+    /// entry reads as noise. Default keeps carousel behavior unchanged.
+    var animateEntry: Bool = true
 
     @Environment(CorpusStore.self) private var store
     @State private var appeared = false
@@ -69,6 +72,17 @@ struct NodeCardView: View {
     private static let cornerRadius: CGFloat = 30
 
     var body: some View {
+        if animateEntry {
+            cardBody
+                .transition(.scale(scale: 0.85, anchor: .center).combined(with: .opacity))
+                .animation(.bouncy(duration: 0.4, extraBounce: 0.15), value: appeared)
+                .onAppear { appeared = true }
+        } else {
+            cardBody
+        }
+    }
+
+    private var cardBody: some View {
         HStack(spacing: 12) {
             if isSelecting {
                 ZStack {
@@ -107,9 +121,6 @@ struct NodeCardView: View {
                 .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
             }
         }
-        .transition(.scale(scale: 0.85, anchor: .center).combined(with: .opacity))
-        .animation(.bouncy(duration: 0.4, extraBounce: 0.15), value: appeared)
-        .onAppear { appeared = true }
     }
 
     // MARK: - Hero overlay

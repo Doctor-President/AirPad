@@ -114,8 +114,7 @@ struct NodeGridView: View {
                                 node: node,
                                 isPicked: selection.isSelected(node.id),
                                 cellWidth: cellW,
-                                cellHeight: cellH,
-                                isLive: columnCount <= 3
+                                cellHeight: cellH
                             )
                             .frame(width: cellW, height: cellH)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -186,45 +185,36 @@ private struct NodeTileView: View {
     let isPicked: Bool
     let cellWidth: CGFloat
     let cellHeight: CGFloat
-    let isLive: Bool
+
+    // Native design size NodeCardView is rendered at in the carousel:
+    // screenW * 0.9 × that * 7/5. Tracks the device so iPad/split-view
+    // doesn't break the card's absolute-pt constants (22pt padding,
+    // 30pt corner radius, 23pt title). The whole card renders at design
+    // size, then scaleEffect shrinks the rendered output to fit the cell —
+    // proportions can't drift because we scale pixels, not layout.
+    private var nativeW: CGFloat { UIScreen.main.bounds.width * 0.9 }
+    private var nativeH: CGFloat { nativeW * 7.0 / 5.0 }
+    private var scale: CGFloat { cellWidth / nativeW }
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            if isLive {
-                cardFace
-                    .frame(width: cellWidth, height: cellHeight)
-            } else {
-                // SnapshotTile lands in checkpoint 2 — falls through to live
-                // cardFace so 4/6-col still verifies the ratio meanwhile.
-                cardFace
-                    .frame(width: cellWidth, height: cellHeight)
-            }
+        NodeCardView(
+            nodeID: node.id,
+            fallbackNode: node,
+            selected: false,
+            dist: 0,
+            isSelecting: false,
+            isPicked: false,
+            animateEntry: false
+        )
+        .frame(width: nativeW, height: nativeH)
+        .scaleEffect(scale)
+        .frame(width: cellWidth, height: cellHeight)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay {
             if isPicked {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(.white, lineWidth: 3)
             }
-        }
-    }
-
-    // Card face — gradient + scrim + title. Extracted so the snapshot path
-    // (next checkpoint) can rasterize the exact same view.
-    private var cardFace: some View {
-        ZStack(alignment: .bottomLeading) {
-            NodeGradientLayer(node: node)
-
-            LinearGradient(
-                colors: [Color.clear, Color.black.opacity(0.55)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .allowsHitTesting(false)
-
-            Text(node.title.isEmpty ? "Untitled" : node.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .lineLimit(2)
-                .multilineTextAlignment(.leading)
-                .padding(8)
         }
     }
 }

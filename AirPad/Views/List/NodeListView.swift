@@ -181,8 +181,6 @@ struct NodeListView: View {
                         NodeCardView(
                             nodeID: item.realNodeID,
                             fallbackNode: item.node,
-                            selected: index == centerIdx,
-                            dist: dist,
                             isSelecting: selection.isActive,
                             isPicked: selection.isSelected(item.realNodeID)
                         )

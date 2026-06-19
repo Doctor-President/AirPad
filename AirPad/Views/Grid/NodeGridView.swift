@@ -200,8 +200,6 @@ private struct NodeTileView: View {
         NodeCardView(
             nodeID: node.id,
             fallbackNode: node,
-            selected: false,
-            dist: 0,
             isSelecting: false,
             isPicked: false,
             animateEntry: false

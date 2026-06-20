@@ -29,7 +29,9 @@ struct NodeGridView: View {
 
     @AppStorage("gridColumnCount") private var columnCount: Int = 2
 
-    private let columnSteps: [Int] = [2, 3, 4, 6]
+    // 6-col was unbrowseable — tiles too small to read without grazing,
+    // so it failed as a browse density. Ladder caps at 4.
+    private let columnSteps: [Int] = [2, 3, 4]
     private let tileSpacing: CGFloat = 10
     private let topInset: CGFloat = 110
     private let bottomInset: CGFloat = 120
@@ -114,7 +116,8 @@ struct NodeGridView: View {
                                 node: node,
                                 isPicked: selection.isSelected(node.id),
                                 cellWidth: cellW,
-                                cellHeight: cellH
+                                cellHeight: cellH,
+                                animateGradient: columnCount == 2
                             )
                             .frame(width: cellW, height: cellH)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -178,34 +181,25 @@ struct NodeGridView: View {
     }
 }
 
-// MARK: - NodeTileView (placeholder — snapshot cache replaces in next pass)
+// MARK: - NodeTileView
+// Thin cell wrapper around NodeGridTile — the lightweight browse primitive.
+// Renders the tile directly at cell size (no native-design / scaleEffect
+// trick the full card needed); the cell owns shape via `.frame` + `.clipShape`.
 
 private struct NodeTileView: View {
     let node: Node
     let isPicked: Bool
     let cellWidth: CGFloat
     let cellHeight: CGFloat
-
-    // Native design size NodeCardView is rendered at in the carousel:
-    // screenW * 0.9 × that * 7/5. Tracks the device so iPad/split-view
-    // doesn't break the card's absolute-pt constants (22pt padding,
-    // 30pt corner radius, 23pt title). The whole card renders at design
-    // size, then scaleEffect shrinks the rendered output to fit the cell —
-    // proportions can't drift because we scale pixels, not layout.
-    private var nativeW: CGFloat { UIScreen.main.bounds.width * 0.9 }
-    private var nativeH: CGFloat { nativeW * 7.0 / 5.0 }
-    private var scale: CGFloat { cellWidth / nativeW }
+    let animateGradient: Bool
 
     var body: some View {
-        NodeCardView(
-            nodeID: node.id,
-            fallbackNode: node,
-            isSelecting: false,
-            isPicked: false,
-            animateEntry: false
+        NodeGridTile(
+            node: node,
+            cellWidth: cellWidth,
+            cellHeight: cellHeight,
+            animateGradient: animateGradient
         )
-        .frame(width: nativeW, height: nativeH)
-        .scaleEffect(scale)
         .frame(width: cellWidth, height: cellHeight)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay {

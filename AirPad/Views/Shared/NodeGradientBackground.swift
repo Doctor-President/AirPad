@@ -46,6 +46,12 @@ struct NodeGradientLayer: View {
     /// activate `BlobShape` + extended drift + buoyancy + breathing
     /// (one instance, so the uncacheable blur is affordable).
     var undulation: CGFloat = 0
+    /// Drives `TimelineView(.animation)` when true. When false, the same
+    /// layers render with `time = 0` — a still frame of the live gradient,
+    /// not a different visual. Grid tiles at ≥3-col pass `false` so many
+    /// blurred Circles aren't all redrawing per frame during scroll.
+    /// Default true keeps cards / carousel / detail callsites unchanged.
+    var animated: Bool = true
 
     @State private var phase: Double = Double.random(in: 0...100)
 
@@ -83,15 +89,35 @@ struct NodeGradientLayer: View {
     private var gradientFill: some View {
         let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
         let size: CGFloat = 180 * circleScale
-        return TimelineView(.animation) { timeline in
-            ZStack {
-                Color(red: 0.027, green: 0.027, blue: 0.039)
-                let time = timeline.date.timeIntervalSinceReferenceDate
-                if undulation > 0 {
-                    morphingBlobs(colors: colors, baseSize: size, time: time)
-                } else {
-                    staticCircles(colors: colors, size: size, time: time)
+        return Group {
+            if animated {
+                // Animated path — NO drawingGroup: re-flattening every
+                // frame would defeat the TimelineView and hurt motion.
+                TimelineView(.animation) { timeline in
+                    gradientStack(colors: colors, size: size,
+                                  time: timeline.date.timeIntervalSinceReferenceDate)
                 }
+            } else {
+                // Frozen frame: same layers/colors/blur, time pinned to 0.
+                // Per-blob sin/cos still use `phase` (per-node seed), so
+                // tiles read as varied still frames, not identical snaps.
+                // .drawingGroup() rasterizes the blurred Circles once into
+                // a cached GPU texture — the expensive gaussian computes
+                // a single time, then scrolls as flat pixels.
+                gradientStack(colors: colors, size: size, time: 0)
+                    .drawingGroup()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func gradientStack(colors: (String, String, String), size: CGFloat, time: Double) -> some View {
+        ZStack {
+            Color(red: 0.027, green: 0.027, blue: 0.039)
+            if undulation > 0 {
+                morphingBlobs(colors: colors, baseSize: size, time: time)
+            } else {
+                staticCircles(colors: colors, size: size, time: time)
             }
         }
     }

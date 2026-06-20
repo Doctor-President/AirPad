@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// Scope-aware pieces:
 ///   - body switcher passes `scope` into `CanvasView` / `NodeListView`
-///   - `SelectButton` enters selection on this scope
+///   - `ChromeBar`'s select segment enters selection on this scope
 ///   - view-mode / filter reads + writes use `store.filterState(for: scope)`
 ///     and `setFilterState(_, for: scope)`; `FilterPanelView` mirrors
 /// Scope-fixed pieces (intentional — global tools):
@@ -104,13 +104,12 @@ struct CanvasChrome: View {
                                     router.entryMode = .dashboard
                                 }
                                 Spacer()
-                                HStack(spacing: 10) {
-                                    HistoryButton { showHistory = true }
-                                    SelectButton { selection.enter(scope: scope) }
-                                    MenuButton(
-                                        hasAttention: menuHasAttention
-                                    ) { showSlideOutMenu = true }
-                                }
+                                ChromeBar(
+                                    menuHasAttention: menuHasAttention,
+                                    onHistory: { showHistory = true },
+                                    onSelect: { selection.enter(scope: scope) },
+                                    onMenu: { showSlideOutMenu = true }
+                                )
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
@@ -259,48 +258,42 @@ private struct DashboardBackButton: View {
     }
 }
 
-// MARK: - History button
+// MARK: - Chrome bar (History / Select / Menu)
 
-private struct HistoryButton: View {
-    let action: () -> Void
+/// Three icon segments inside one Capsule with a shared `.thinMaterial`
+/// background. Replaces the prior three discrete circles. Height matches the
+/// standalone back-button circle (48) so the row aligns.
+private struct ChromeBar: View {
+    let menuHasAttention: Bool
+    let onHistory: () -> Void
+    let onSelect: () -> Void
+    let onMenu: () -> Void
 
     var body: some View {
+        HStack(spacing: 0) {
+            segment(icon: "clock.arrow.circlepath", weightSize: 17, action: onHistory)
+            segment(icon: "checkmark.circle", weightSize: 18, action: onSelect)
+            segment(icon: "line.3.horizontal.decrease", weightSize: 18, action: onMenu)
+                .overlay(alignment: .topTrailing) {
+                    if menuHasAttention {
+                        Circle()
+                            .fill(Color.orange)
+                            .frame(width: 10, height: 10)
+                            .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
+                            .offset(x: 2, y: -2)
+                    }
+                }
+        }
+        .background(.thinMaterial, in: Capsule())
+    }
+
+    private func segment(icon: String, weightSize: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 17, weight: .semibold))
+            Image(systemName: icon)
+                .font(.system(size: weightSize, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
-                .background(.thinMaterial, in: Circle())
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Menu (ellipsis) button
-
-private struct MenuButton: View {
-    let hasAttention: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(.thinMaterial, in: Circle())
-                    .clipShape(Circle())
-
-                if hasAttention {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 10, height: 10)
-                        .overlay(Circle().stroke(Color.black, lineWidth: 1.5))
-                        .offset(x: 2, y: -2)
-                }
-            }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -484,22 +477,6 @@ private struct iCloudUnavailableBanner: View {
 }
 
 // MARK: - Selection mode controls
-
-private struct SelectButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "checkmark.circle")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(.thinMaterial, in: Circle())
-                .clipShape(Circle())
-        }
-        .buttonStyle(.plain)
-    }
-}
 
 private struct SelectionHeader: View {
     let count: Int

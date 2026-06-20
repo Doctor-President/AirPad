@@ -52,9 +52,12 @@ struct CanvasChrome: View {
             // inside them so navigation handoff from the in-app capture
             // overlay can push onto the local path.
             Group {
-                if filterState.viewMode == .systemGraph {
+                switch filterState.viewMode {
+                case .systemGraph:
                     CanvasView(scope: scope)
-                } else {
+                case .list:
+                    NodeListView(scope: scope)
+                default:
                     NodeGridView(scope: scope)
                 }
             }

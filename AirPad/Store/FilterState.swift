@@ -51,8 +51,8 @@ extension ViewMode {
     /// coming-soon overlay; gates non-functional substrate ops).
     var isAvailable: Bool {
         switch self {
-        case .systemGraph, .list:          return true
-        case .userGraph, .grid, .timeline: return false
+        case .systemGraph, .list, .grid: return true
+        case .userGraph, .timeline:      return false
         }
     }
 }

@@ -117,7 +117,8 @@ struct NodeGridView: View {
                                 isPicked: selection.isSelected(node.id),
                                 cellWidth: cellW,
                                 cellHeight: cellH,
-                                animateGradient: columnCount == 2
+                                animateGradient: columnCount == 2,
+                                columnCount: columnCount
                             )
                             .frame(width: cellW, height: cellH)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -192,13 +193,15 @@ private struct NodeTileView: View {
     let cellWidth: CGFloat
     let cellHeight: CGFloat
     let animateGradient: Bool
+    let columnCount: Int
 
     var body: some View {
         NodeGridTile(
             node: node,
             cellWidth: cellWidth,
             cellHeight: cellHeight,
-            animateGradient: animateGradient
+            animateGradient: animateGradient,
+            columnCount: columnCount
         )
         .frame(width: cellWidth, height: cellHeight)
         .clipShape(RoundedRectangle(cornerRadius: 14))

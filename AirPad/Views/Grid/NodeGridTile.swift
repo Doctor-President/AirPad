@@ -22,8 +22,16 @@ struct NodeGridTile: View {
     /// 2-col; 3 and 4-col render the gradient as a still frame to keep
     /// scrolling smooth when many blurred Circles share the viewport.
     var animateGradient: Bool = true
+    /// Density driver. 2-col = editorial composition; 3-col+ = title-only.
+    let columnCount: Int
 
     @Environment(CorpusStore.self) private var store
+
+    private var isEditorial: Bool { columnCount <= 2 }
+    /// Reserved top zone for hero-or-gradient. Constant per density so
+    /// hero and gradient-only tiles share one silhouette: text always
+    /// starts below this height.
+    private var heroZoneHeight: CGFloat { cellHeight * (isEditorial ? 0.40 : 0.50) }
 
     // Warm-cream ink palette — copy of NodeCardView's. Self-contained this
     // pass; share later if a third caller turns up.
@@ -42,7 +50,9 @@ struct NodeGridTile: View {
             }
             travelingScrim
             identityContent
-            watermark
+            if isEditorial {
+                watermark
+            }
         }
     }
 
@@ -51,7 +61,7 @@ struct NodeGridTile: View {
     // card's treatment so the hero reads identically.
 
     private var heroOverlay: some View {
-        let heroHeight = cellHeight * 0.42
+        let heroHeight = heroZoneHeight
         return VStack(spacing: 0) {
             GridTileHeroImage(node: node)
                 .frame(width: cellWidth, height: heroHeight)
@@ -89,13 +99,27 @@ struct NodeGridTile: View {
 
     // MARK: - Identity content
 
+    @ViewBuilder
     private var identityContent: some View {
+        // Constant text-start — text always begins below the reserved hero
+        // zone whether or not a hero is present, so hero and gradient-only
+        // tiles share one silhouette.
+        let topInset: CGFloat = heroZoneHeight + (isEditorial ? 18 : 14)
+
+        if isEditorial {
+            editorialContent(topInset: topInset)
+        } else {
+            titleOnlyContent(topInset: topInset)
+        }
+    }
+
+    // MARK: 2-col editorial composition
+
+    private func editorialContent(topInset: CGFloat) -> some View {
         let category = node.primaryTag
         let titleText = displayTitle
         let showDeck = node.descriptionOnCard && !node.summary.isEmpty
         let tagList = Array(node.tags.prefix(3))
-        let topInset: CGFloat = hasHero ? (cellHeight * 0.42 + 18) : 22
-        let badges = badgeManifest
 
         return VStack(alignment: .leading, spacing: 0) {
             // Dateline
@@ -146,32 +170,14 @@ struct NodeGridTile: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Flex slot — pushes badges + tags to the bottom.
+            // Flex slot — pushes tags to the bottom.
             Spacer(minLength: 0)
-
-            // Badge manifest
-            if !badges.isEmpty {
-                HStack(spacing: 10) {
-                    ForEach(badges, id: \.glyph) { badge in
-                        HStack(spacing: 4) {
-                            Image(systemName: badge.glyph)
-                                .font(.system(size: 12))
-                            Text("\(badge.count)")
-                                .font(.system(size: 12, design: .serif))
-                        }
-                        .foregroundColor(Self.inkMeta)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
-            }
 
             // Tags
             if !tagList.isEmpty {
                 Rectangle()
                     .fill(Self.hairline)
                     .frame(height: 0.5)
-                    .padding(.top, badges.isEmpty ? 0 : 10)
                     .padding(.bottom, 10)
                 Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
                     .font(.system(size: 10, weight: .medium, design: .serif))
@@ -184,6 +190,27 @@ struct NodeGridTile: View {
         .padding(.horizontal, 22)
         .padding(.top, topInset)
         .padding(.bottom, 22)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    // MARK: 3-col+ title-only composition
+
+    private func titleOnlyContent(topInset: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(displayTitle)
+                .font(.system(size: 23, weight: .bold, design: .serif))
+                .tracking(-0.35)
+                .foregroundColor(Self.inkTitle)
+                .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+                .lineLimit(3)
+                .truncationMode(.tail)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, topInset)
+        .padding(.bottom, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

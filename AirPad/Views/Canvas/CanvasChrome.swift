@@ -124,23 +124,32 @@ struct CanvasChrome: View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
-
-                            // Density pill on its own row below the nav chrome.
-                            // Mounted only when the body switcher's default
-                            // branch is active (grid / cover flow).
-                            if filterState.viewMode != .systemGraph
-                                && filterState.viewMode != .list {
-                                HStack {
-                                    Spacer()
-                                    DensityPill()
-                                    Spacer()
-                                }
-                                .padding(.top, 8)
-                            }
                         }
                         Spacer()
                     }
                     .transition(.opacity.animation(.easeInOut(duration: 0.18)))
+                }
+
+                // Density pill as a bottom-centered floater. Rides the same
+                // visibility signal as NodeGridView's "+" capture trigger so
+                // the two share a lifecycle: both hide when the Librarian is
+                // raised above peek, neither appears in detail view or while
+                // selection is active. Body-switcher gate still applies — the
+                // pill only makes sense in the default branch (grid / cover flow).
+                if !store.isInDetailView
+                    && !selection.isActive
+                    && router.librarianAtPeek
+                    && filterState.viewMode != .systemGraph
+                    && filterState.viewMode != .list {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            DensityPill()
+                            Spacer()
+                        }
+                        .padding(.bottom, LibrarianPanelLayout.peekDetentHeight + 12)
+                    }
                 }
 
                 if selection.isActive && !selection.isEmpty && !store.isInDetailView {
@@ -327,12 +336,13 @@ private struct ChromeBar: View {
 
 // MARK: - Density pill
 
-/// Segmented density control sitting in its own row beneath the nav
-/// chrome. Three SF Symbol segments — tall card (Cover Flow), 2x2 grid,
-/// 3x3 grid — driving the same `@AppStorage("gridColumnCount")` the
-/// body switcher and NodeGridView read. Replaces the retired
-/// MagnifyGesture so a single canonical control runs the default arm.
-/// Visibility is gated by the caller (hidden in `.systemGraph` / `.list`).
+/// Bottom-anchored segmented density control. Three SF Symbol segments —
+/// tall card (Cover Flow), 2x2 grid, 3x3 grid — driving the same
+/// `@AppStorage("gridColumnCount")` the body switcher and NodeGridView
+/// read. Replaces the retired MagnifyGesture so a single canonical
+/// control runs the default arm. Visibility is gated by the caller
+/// (rides the "+" capture trigger's signal so it hides when the
+/// Librarian rises above peek). Segments are sized for thumb tapping.
 private struct DensityPill: View {
     @AppStorage("gridColumnCount") private var columnCount: Int = 2
 
@@ -357,7 +367,7 @@ private struct DensityPill: View {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(columnCount == value ? Color.white : Color.white.opacity(0.55))
-                .frame(width: 40, height: 40)
+                .frame(width: 52, height: 40)
                 .contentShape(Rectangle())
                 .background {
                     if columnCount == value {

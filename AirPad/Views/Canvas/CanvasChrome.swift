@@ -251,7 +251,7 @@ private struct DashboardBackButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
-                .background(.thinMaterial, in: Circle())
+                .chromeSurface(Circle())
                 .clipShape(Circle())
         }
         .buttonStyle(.plain)
@@ -260,9 +260,10 @@ private struct DashboardBackButton: View {
 
 // MARK: - Chrome bar (History / Select / Menu)
 
-/// Three icon segments inside one Capsule with a shared `.thinMaterial`
-/// background. Replaces the prior three discrete circles. Height matches the
-/// standalone back-button circle (48) so the row aligns.
+/// Three icon segments inside one Capsule with a shared chrome surface
+/// (Liquid Glass on iOS 26+, `.thinMaterial` fallback below). Replaces the
+/// prior three discrete circles. Height matches the standalone back-button
+/// circle (48) so the row aligns.
 private struct ChromeBar: View {
     let menuHasAttention: Bool
     let onHistory: () -> Void
@@ -284,7 +285,7 @@ private struct ChromeBar: View {
                     }
                 }
         }
-        .background(.thinMaterial, in: Capsule())
+        .chromeSurface(Capsule())
     }
 
     private func segment(icon: String, weightSize: CGFloat, action: @escaping () -> Void) -> some View {
@@ -616,6 +617,19 @@ private struct BatchActionBar: View {
             .buttonStyle(.plain)
             .disabled(count == 0)
             .opacity(count == 0 ? 0.5 : 1.0)
+        }
+    }
+}
+
+// MARK: - Chrome surface (Liquid Glass on 26+, .thinMaterial below)
+
+private extension View {
+    @ViewBuilder
+    func chromeSurface<S: Shape>(_ shape: S) -> some View {
+        if #available(iOS 26, *) {
+            glassEffect(.regular.interactive(), in: shape)
+        } else {
+            background(.thinMaterial, in: shape)
         }
     }
 }

@@ -99,17 +99,27 @@ struct CanvasChrome: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
                         } else {
-                            HStack(alignment: .center, spacing: 8) {
-                                DashboardBackButton {
-                                    router.entryMode = .dashboard
+                            ZStack {
+                                HStack(alignment: .center, spacing: 8) {
+                                    DashboardBackButton {
+                                        router.entryMode = .dashboard
+                                    }
+                                    Spacer()
+                                    ChromeBar(
+                                        menuHasAttention: menuHasAttention,
+                                        onHistory: { showHistory = true },
+                                        onSelect: { selection.enter(scope: scope) },
+                                        onMenu: { showSlideOutMenu = true }
+                                    )
                                 }
-                                Spacer()
-                                ChromeBar(
-                                    menuHasAttention: menuHasAttention,
-                                    onHistory: { showHistory = true },
-                                    onSelect: { selection.enter(scope: scope) },
-                                    onMenu: { showSlideOutMenu = true }
-                                )
+                                // Centered absolutely so asymmetric leading/
+                                // trailing widths can't drift the pill off-axis.
+                                // Mounted only when the body switcher's default
+                                // branch lands NodeGridView.
+                                if filterState.viewMode != .systemGraph
+                                    && filterState.viewMode != .list {
+                                    DensityPill()
+                                }
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
@@ -295,6 +305,47 @@ private struct ChromeBar: View {
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
                 .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Density pill
+
+/// Top-center segmented "2/3" control for grid column density. Replaces
+/// the prior MagnifyGesture in `NodeGridView` — single canonical control
+/// instead of two (pinch + pill) racing the same state. Visibility is
+/// gated by the caller to the body switcher's default branch (grid).
+/// Reads/writes the same `@AppStorage("gridColumnCount")` the grid uses.
+private struct DensityPill: View {
+    @AppStorage("gridColumnCount") private var columnCount: Int = 2
+
+    var body: some View {
+        HStack(spacing: 0) {
+            segment(value: 2)
+            segment(value: 3)
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
+        .chromeSurface(Capsule())
+    }
+
+    private func segment(value: Int) -> some View {
+        Button {
+            if columnCount != value {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                columnCount = value
+            }
+        } label: {
+            Text("\(value)")
+                .font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(columnCount == value ? Color.white : Color.white.opacity(0.55))
+                .frame(width: 36, height: 40)
+                .background {
+                    if columnCount == value {
+                        Capsule().fill(Color.white.opacity(0.15))
+                    }
+                }
         }
         .buttonStyle(.plain)
     }

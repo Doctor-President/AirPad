@@ -111,54 +111,68 @@ struct CoverFlowView: View {
         let cardHeight = cardWidth * 7.0 / 5.0
         let edgeMargin = (screenW - cardWidth) / 2.0
 
+        // Reserved bands above/below the carousel. Top matches
+        // NodeGridView.topInset so the back/chrome row clears; bottom
+        // covers the density-pill zone (Librarian peek + pill height +
+        // margins). Equal `Spacer`s between them center the card visually.
+        let topReserve: CGFloat = 110
+        let bottomReserve: CGFloat = LibrarianPanelLayout.peekDetentHeight + 56
+
         // Index of the currently-snapped card in the array; falls back to 0
         // before the first snap settles (initial paint). Drives a symmetric
         // zIndex ramp so the focal card sits on top.
         let snappedIndex: Int = snappedID
             .flatMap { id in nodes.firstIndex(where: { $0.id == id }) } ?? 0
 
-        return ScrollView(.horizontal, showsIndicators: false) {
-            LazyHStack(spacing: CGFloat(cardSpacing)) {
-                ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
-                    CoverFlowCell(
-                        node: node,
-                        cardWidth: cardWidth,
-                        cardHeight: cardHeight,
-                        rotationMaxDegrees: rotationMaxDegrees,
-                        sideScale: sideScale,
-                        perspective: perspective
-                    )
-                    .matchedTransitionSource(id: node.id, in: zoomNamespace)
-                    .id(node.id)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if selection.isActive {
-                            pickHaptic.impactOccurred()
-                            selection.toggle(node.id)
-                        } else {
-                            navHaptic.impactOccurred()
-                            navigationPath.append(node)
+        return VStack(spacing: 0) {
+            Color.clear.frame(height: topReserve)
+            Spacer(minLength: 0)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: CGFloat(cardSpacing)) {
+                    ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                        CoverFlowCell(
+                            node: node,
+                            cardWidth: cardWidth,
+                            cardHeight: cardHeight,
+                            rotationMaxDegrees: rotationMaxDegrees,
+                            sideScale: sideScale,
+                            perspective: perspective
+                        )
+                        .matchedTransitionSource(id: node.id, in: zoomNamespace)
+                        .id(node.id)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if selection.isActive {
+                                pickHaptic.impactOccurred()
+                                selection.toggle(node.id)
+                            } else {
+                                navHaptic.impactOccurred()
+                                navigationPath.append(node)
+                            }
                         }
+                        // Most-centered card = highest zIndex (`nodes.count`),
+                        // each step away subtracts 1. Must live on the direct
+                        // HStack child — preference-key feedback for this is a
+                        // dead end because reduce() collapses to one shared
+                        // value across siblings.
+                        .zIndex(Double(nodes.count - abs(index - snappedIndex)))
                     }
-                    // Most-centered card = highest zIndex (`nodes.count`),
-                    // each step away subtracts 1. Must live on the direct
-                    // HStack child — preference-key feedback for this is a
-                    // dead end because reduce() collapses to one shared
-                    // value across siblings.
-                    .zIndex(Double(nodes.count - abs(index - snappedIndex)))
+                }
+                .scrollTargetLayout()
+            }
+            .scrollClipDisabled()
+            .contentMargins(.horizontal, edgeMargin, for: .scrollContent)
+            .scrollTargetBehavior(.viewAligned)
+            .scrollPosition(id: $snappedID)
+            .frame(height: cardHeight)
+            .onChange(of: snappedID) { _, newID in
+                // One light tap per snap-to-new-card.
+                if newID != nil {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
             }
-            .scrollTargetLayout()
-        }
-        .scrollClipDisabled()
-        .contentMargins(.horizontal, edgeMargin, for: .scrollContent)
-        .scrollTargetBehavior(.viewAligned)
-        .scrollPosition(id: $snappedID)
-        .onChange(of: snappedID) { _, newID in
-            // One light tap per snap-to-new-card.
-            if newID != nil {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            }
+            Spacer(minLength: 0)
+            Color.clear.frame(height: bottomReserve)
         }
     }
 

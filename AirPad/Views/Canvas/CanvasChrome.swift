@@ -25,6 +25,10 @@ struct CanvasChrome: View {
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
     @Environment(SelectionService.self) private var selection
+    /// Body-switcher dispatch in the default branch: count == 1 → Cover Flow
+    /// primitive; 2 or 3 → NodeGridView. Same key the grid + density pill
+    /// read, so the pill swaps the body live.
+    @AppStorage("gridColumnCount") private var gridColumnCount: Int = 2
     @State private var showFilterPanel = false
     @State private var showSettings = false
     @State private var showQuarantineReview = false
@@ -58,7 +62,14 @@ struct CanvasChrome: View {
                 case .list:
                     NodeListView(scope: scope)
                 default:
-                    NodeGridView(scope: scope)
+                    // Density-pill drives the dispatch: Full (1) = Cover Flow
+                    // 3D carousel; 2/3 = uniform-tile grid. Both share the
+                    // `gridColumnCount` key so the pill swaps the body live.
+                    if gridColumnCount == 1 {
+                        CoverFlowView(scope: scope)
+                    } else {
+                        NodeGridView(scope: scope)
+                    }
                 }
             }
             .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
@@ -99,30 +110,33 @@ struct CanvasChrome: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
                         } else {
-                            ZStack {
-                                HStack(alignment: .center, spacing: 8) {
-                                    DashboardBackButton {
-                                        router.entryMode = .dashboard
-                                    }
-                                    Spacer()
-                                    ChromeBar(
-                                        menuHasAttention: menuHasAttention,
-                                        onHistory: { showHistory = true },
-                                        onSelect: { selection.enter(scope: scope) },
-                                        onMenu: { showSlideOutMenu = true }
-                                    )
+                            HStack(alignment: .center, spacing: 8) {
+                                DashboardBackButton {
+                                    router.entryMode = .dashboard
                                 }
-                                // Centered absolutely so asymmetric leading/
-                                // trailing widths can't drift the pill off-axis.
-                                // Mounted only when the body switcher's default
-                                // branch lands NodeGridView.
-                                if filterState.viewMode != .systemGraph
-                                    && filterState.viewMode != .list {
-                                    DensityPill()
-                                }
+                                Spacer()
+                                ChromeBar(
+                                    menuHasAttention: menuHasAttention,
+                                    onHistory: { showHistory = true },
+                                    onSelect: { selection.enter(scope: scope) },
+                                    onMenu: { showSlideOutMenu = true }
+                                )
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
+
+                            // Density pill on its own row below the nav chrome.
+                            // Mounted only when the body switcher's default
+                            // branch is active (grid / cover flow).
+                            if filterState.viewMode != .systemGraph
+                                && filterState.viewMode != .list {
+                                HStack {
+                                    Spacer()
+                                    DensityPill()
+                                    Spacer()
+                                }
+                                .padding(.top, 8)
+                            }
                         }
                         Spacer()
                     }
@@ -313,35 +327,37 @@ private struct ChromeBar: View {
 
 // MARK: - Density pill
 
-/// Top-center segmented "2/3" control for grid column density. Replaces
-/// the prior MagnifyGesture in `NodeGridView` — single canonical control
-/// instead of two (pinch + pill) racing the same state. Visibility is
-/// gated by the caller to the body switcher's default branch (grid).
-/// Reads/writes the same `@AppStorage("gridColumnCount")` the grid uses.
+/// Segmented density control sitting in its own row beneath the nav
+/// chrome. Three SF Symbol segments — tall card (Cover Flow), 2x2 grid,
+/// 3x3 grid — driving the same `@AppStorage("gridColumnCount")` the
+/// body switcher and NodeGridView read. Replaces the retired
+/// MagnifyGesture so a single canonical control runs the default arm.
+/// Visibility is gated by the caller (hidden in `.systemGraph` / `.list`).
 private struct DensityPill: View {
     @AppStorage("gridColumnCount") private var columnCount: Int = 2
 
     var body: some View {
         HStack(spacing: 0) {
-            segment(value: 2)
-            segment(value: 3)
+            segment(value: 1, symbol: "rectangle.portrait")
+            segment(value: 2, symbol: "square.grid.2x2")
+            segment(value: 3, symbol: "square.grid.3x3")
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 4)
         .chromeSurface(Capsule())
     }
 
-    private func segment(value: Int) -> some View {
+    private func segment(value: Int, symbol: String) -> some View {
         Button {
             if columnCount != value {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 columnCount = value
             }
         } label: {
-            Text("\(value)")
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(columnCount == value ? Color.white : Color.white.opacity(0.55))
-                .frame(width: 36, height: 40)
+                .frame(width: 40, height: 40)
                 .contentShape(Rectangle())
                 .background {
                     if columnCount == value {

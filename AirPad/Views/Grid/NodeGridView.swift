@@ -42,7 +42,7 @@ struct NodeGridView: View {
     #endif
 
     private let tileSpacing: CGFloat = 10
-    private let topInset: CGFloat = 110
+    private let topInset: CGFloat = 150
     private let bottomInset: CGFloat = 120
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
@@ -100,8 +100,14 @@ struct NodeGridView: View {
             }
         }
         .onAppear {
-            // Clamp any pre-retirement values (4-col) back into the live ladder.
-            if columnCount != 2 && columnCount != 3 { columnCount = 2 }
+            // Clamp any out-of-ladder values back into {1, 2, 3}. 1 routes
+            // to CoverFlowView at the CanvasChrome switch; this host only
+            // ever runs at 2 or 3, but the clamp leaves 1 alone so the
+            // density pill can swap to Cover Flow without first bouncing
+            // through a re-clamp here.
+            if columnCount != 1 && columnCount != 2 && columnCount != 3 {
+                columnCount = 2
+            }
             haptic.prepare()
             navHaptic.prepare()
             store.detailViewDepth = navigationPath.count

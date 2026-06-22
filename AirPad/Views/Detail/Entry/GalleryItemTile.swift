@@ -108,12 +108,12 @@ struct GalleryItemTile: View {
             return UIImage(data: data)
         }.value
         guard let decoded else { return }
-        await commitLoaded(decoded)
+        commitLoaded(decoded)
     }
 
     private func loadVideoThumbnail(from url: URL) async {
         guard let thumb = await MediaThumbnailLoader.shared.thumbnail(for: url) else { return }
-        await commitLoaded(thumb)
+        commitLoaded(thumb)
     }
 
     @MainActor

@@ -261,6 +261,7 @@ private struct DashboardBackButton: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
+                .contentShape(Circle())
                 .chromeSurface(Circle())
                 .clipShape(Circle())
         }
@@ -341,6 +342,7 @@ private struct DensityPill: View {
                 .font(.system(size: 15, weight: .semibold, design: .rounded))
                 .foregroundStyle(columnCount == value ? Color.white : Color.white.opacity(0.55))
                 .frame(width: 36, height: 40)
+                .contentShape(Rectangle())
                 .background {
                     if columnCount == value {
                         Capsule().fill(Color.white.opacity(0.15))

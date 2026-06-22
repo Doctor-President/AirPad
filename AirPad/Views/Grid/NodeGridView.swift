@@ -49,6 +49,13 @@ struct NodeGridView: View {
 
     private var nodes: [Node] { store.filteredNodes(in: scope) }
 
+    /// Spike-gate: rail only meaningful under Alphabetical sort, and skipped
+    /// on tiny corpora where letter buckets read as noise (>30 threshold —
+    /// implementer's judgment per brief).
+    private var showAlphabetScrubber: Bool {
+        store.filterState(for: scope).sortOrder == .alphabetical && nodes.count > 30
+    }
+
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottomTrailing) {
@@ -122,7 +129,12 @@ struct NodeGridView: View {
         // The cell wrapper owns the 5:7 shape via .frame + .clipShape; the
         // tile content fills and is clipped — it never carries the ratio.
         GeometryReader { geo in
-            let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1)
+            // Reserve a right-edge gutter for the scrubber rail when it's
+            // showing — folded into the cell-width math AND the trailing
+            // padding so the last column ends before the rail lane instead
+            // of sliding under it.
+            let railLane: CGFloat = showAlphabetScrubber ? 30 : 0
+            let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1) + railLane
             let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
             let cellH = cellW * 7.0 / 5.0
 
@@ -160,7 +172,8 @@ struct NodeGridView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, tileSpacing)
+                    .padding(.leading, tileSpacing)
+                    .padding(.trailing, tileSpacing + railLane)
                     .padding(.top, topInset)
                     .padding(.bottom, bottomInset)
                 }
@@ -168,6 +181,14 @@ struct NodeGridView: View {
                     guard let id else { return }
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
                     router.pendingGridScrollNodeID = nil
+                }
+                .overlay {
+                    if showAlphabetScrubber {
+                        AlphabetScrubberSpike(nodes: nodes) { id in
+                            withAnimation { proxy.scrollTo(id, anchor: .top) }
+                        }
+                        .allowsHitTesting(true)
+                    }
                 }
             }
         }

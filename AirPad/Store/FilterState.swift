@@ -57,8 +57,30 @@ extension ViewMode {
     }
 }
 
-enum SortOrder: String, Codable {
-    case recency, thematic
+enum SortOrder: String, Codable, CaseIterable {
+    case recency, thematic, alphabetical
+
+    /// Display order for the bottom-row sort menu. Not enum declaration
+    /// order — Alphabetical reads as more "neutral" than Thematic and
+    /// belongs between the two; declaration order has Alphabetical last
+    /// because it landed last historically.
+    static let menuOrder: [SortOrder] = [.recency, .alphabetical, .thematic]
+
+    var displayName: String {
+        switch self {
+        case .recency:      return "Recent"
+        case .alphabetical: return "Alphabetical"
+        case .thematic:     return "Thematic"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .recency:      return "clock"
+        case .alphabetical: return "textformat.abc"
+        case .thematic:     return "sparkles"
+        }
+    }
 }
 
 enum ItemTypeFilter: String, Codable, CaseIterable {

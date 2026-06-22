@@ -369,9 +369,23 @@ final class CorpusStore {
             result = result.sorted { $0.createdAt > $1.createdAt }
         case .thematic:
             result = result.sorted { ($0.tags.first ?? "zzz") < ($1.tags.first ?? "zzz") }
+        case .alphabetical:
+            result = result.sorted {
+                Self.sortTitle(for: $0)
+                    .localizedStandardCompare(Self.sortTitle(for: $1)) == .orderedAscending
+            }
         }
 
         return result
+    }
+
+    /// Mirrors the card's `displayTitle` fallback so untitled nodes still
+    /// sort sanely: explicit title, then the first item's content, then
+    /// "Untitled" so the alphabetical bucket has a stable last group.
+    private static func sortTitle(for node: Node) -> String {
+        if !node.title.isEmpty { return node.title }
+        if let firstText = node.items.first?.content, !firstText.isEmpty { return firstText }
+        return "Untitled"
     }
 
     private func applyActiveDrillDown(to source: [Node]) -> [Node] {

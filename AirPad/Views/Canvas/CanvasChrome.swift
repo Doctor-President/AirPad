@@ -143,11 +143,14 @@ struct CanvasChrome: View {
                     && filterState.viewMode != .list {
                     VStack {
                         Spacer()
-                        HStack {
-                            Spacer()
+                        ZStack {
+                            HStack {
+                                SortMenu(scope: scope)
+                                Spacer()
+                            }
                             DensityPill()
-                            Spacer()
                         }
+                        .padding(.horizontal, 16)
                         .padding(.bottom, LibrarianPanelLayout.peekDetentHeight + 12)
                     }
                 }
@@ -334,6 +337,55 @@ private struct ChromeBar: View {
     }
 }
 
+// MARK: - Sort menu
+
+/// Bottom-row sort control. Glassed circular trigger displays the active
+/// sort's icon; tapping opens an inline Picker (renders with checkmark
+/// on the current selection inside a Menu). Reads/writes the active
+/// scope's `FilterState.sortOrder` via the store, mirroring the pattern
+/// `FilterPanelView.mutate` uses so the side-panel sort and this menu
+/// stay in lockstep. Visibility is gated by the caller (same lifecycle
+/// as DensityPill — rides the "+" trigger / Librarian-peek signal).
+private struct SortMenu: View {
+    @Environment(CorpusStore.self) private var store
+    let scope: CanvasScope
+
+    private var state: FilterState { store.filterState(for: scope) }
+
+    private var sortBinding: Binding<SortOrder> {
+        Binding(
+            get: { state.sortOrder },
+            set: { newValue in
+                var s = state
+                s.sortOrder = newValue
+                store.setFilterState(s, for: scope)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        )
+    }
+
+    var body: some View {
+        Menu {
+            Picker("Sort", selection: sortBinding) {
+                ForEach(SortOrder.menuOrder, id: \.self) { order in
+                    Label(order.displayName, systemImage: order.icon).tag(order)
+                }
+            }
+        } label: {
+            Image(systemName: state.sortOrder.icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(height: 40)
+                .padding(.horizontal, 14)
+                .contentShape(Capsule())
+                .chromeSurface(Capsule())
+                .clipShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Density pill
 
 /// Bottom-anchored segmented density control. Three SF Symbol segments —
@@ -395,8 +447,9 @@ struct FilterPanelView: View {
                 VStack(alignment: .leading, spacing: 28) {
                     filterSection("Sort") {
                         HStack(spacing: 8) {
-                            filterPill("Recent",   isActive: state.sortOrder == .recency)  { mutate { $0.sortOrder = .recency } }
-                            filterPill("Thematic", isActive: state.sortOrder == .thematic) { mutate { $0.sortOrder = .thematic } }
+                            filterPill("Recent",       isActive: state.sortOrder == .recency)      { mutate { $0.sortOrder = .recency } }
+                            filterPill("Thematic",     isActive: state.sortOrder == .thematic)     { mutate { $0.sortOrder = .thematic } }
+                            filterPill("Alphabetical", isActive: state.sortOrder == .alphabetical) { mutate { $0.sortOrder = .alphabetical } }
                         }
                     }
 

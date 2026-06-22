@@ -154,9 +154,6 @@ struct CoverFlowView: View {
         .contentMargins(.horizontal, edgeMargin, for: .scrollContent)
         .scrollTargetBehavior(.viewAligned)
         .scrollPosition(id: $snappedID)
-        // Nudge the carousel down so the focal card clears the second
-        // chrome row (density pill). Tune on device alongside NodeGridView.topInset.
-        .padding(.top, 40)
         .onChange(of: snappedID) { _, newID in
             // One light tap per snap-to-new-card.
             if newID != nil {

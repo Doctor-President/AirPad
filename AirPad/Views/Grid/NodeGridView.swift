@@ -42,7 +42,7 @@ struct NodeGridView: View {
     #endif
 
     private let tileSpacing: CGFloat = 10
-    private let topInset: CGFloat = 150
+    private let topInset: CGFloat = 110
     private let bottomInset: CGFloat = 120
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)

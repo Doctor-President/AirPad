@@ -81,14 +81,24 @@ struct NodeCardView: View {
             }
 
             GeometryReader { geo in
+                let hasHero = node.coverImageRelativePath != nil
+                // Anchor the color blobs to the hero zone when no cover exists
+                // so a gradient-only card and a hero card share the same
+                // silhouette: color form on top, dark text band below. Mirrors
+                // NodeGridTile's resolver — same heroPercent (0.42) the
+                // editorial topInset uses, so the gradient and the title band
+                // stay in sync.
+                let heroZoneHeight = geo.size.height * 0.42
+                let gradientCenterY: CGFloat = hasHero
+                    ? 0
+                    : (heroZoneHeight - geo.size.height) / 2
                 ZStack {
-                    NodeGradientLayer(node: node)
-                    if node.coverImageRelativePath != nil {
+                    NodeGradientLayer(node: node, centerYOffset: gradientCenterY)
+                    if hasHero {
                         heroOverlay(width: geo.size.width, height: geo.size.height)
                     }
                     travelingScrim
-                    editorialContent(cardHeight: geo.size.height,
-                                     hasHero: node.coverImageRelativePath != nil)
+                    editorialContent(cardHeight: geo.size.height)
                     watermark
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
@@ -146,14 +156,15 @@ struct NodeCardView: View {
 
     // MARK: - Editorial content
 
-    private func editorialContent(cardHeight: CGFloat, hasHero: Bool) -> some View {
+    private func editorialContent(cardHeight: CGFloat) -> some View {
         let category = node.primaryTag
         let titleText = displayTitle
         let showDeck = node.descriptionOnCard && !node.summary.isEmpty
         let tagList = Array(node.tags.prefix(3))
-        // When a hero is present, push the editorial block below the fade
-        // so it reads as its own zone (don't tuck content up into the fade).
-        let topInset: CGFloat = hasHero ? (cardHeight * 0.42 + 18) : 22
+        // Reserve the SAME hero zone whether or not a hero exists, so the
+        // title always sits below the color band (gradientCenterY in the
+        // ZStack rides the same fraction). Parity with NodeGridTile.
+        let topInset: CGFloat = cardHeight * 0.42 + 18
 
         // Entry-stream partition. Atomics are normalized to the contiguous
         // front of `node.items`; foldIndex is guaranteed ≥ atomicCount.

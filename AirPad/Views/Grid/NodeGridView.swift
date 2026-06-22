@@ -4,7 +4,9 @@ import SwiftUI
 //
 // Static, scroll-the-whole-corpus uniform-tile grid (Apple Photos /
 // trading-card-binder model). Shell-only build 1 of the grid arc:
-// scroll + pinch density step + tap-to-open + scroll-to-node seam.
+// scroll + tap-to-open + scroll-to-node seam. Density (2 vs 3 cols)
+// is driven by the top-center DensityPill in CanvasChrome; the pinch
+// gesture was retired so there's a single canonical control.
 // No header, sort UI, search, graze, or snapshot cache here — those
 // land in later passes. The carousel (NodeListView) is parked, not
 // deleted; CanvasChrome's else-branch points here instead.
@@ -39,9 +41,6 @@ struct NodeGridView: View {
     @State private var tuningPanelOffset: CGSize = .zero
     #endif
 
-    // 6-col was unbrowseable — tiles too small to read without grazing,
-    // so it failed as a browse density. Ladder caps at 4.
-    private let columnSteps: [Int] = [2, 3, 4]
     private let tileSpacing: CGFloat = 10
     private let topInset: CGFloat = 110
     private let bottomInset: CGFloat = 120
@@ -101,6 +100,8 @@ struct NodeGridView: View {
             }
         }
         .onAppear {
+            // Clamp any pre-retirement values (4-col) back into the live ladder.
+            if columnCount != 2 && columnCount != 3 { columnCount = 2 }
             haptic.prepare()
             navHaptic.prepare()
             store.detailViewDepth = navigationPath.count
@@ -157,20 +158,6 @@ struct NodeGridView: View {
                     .padding(.top, topInset)
                     .padding(.bottom, bottomInset)
                 }
-                .gesture(
-                    MagnifyGesture().onEnded { value in
-                        guard let i = columnSteps.firstIndex(of: columnCount) else {
-                            columnCount = 2
-                            return
-                        }
-                        // Spread (>1) = fewer/bigger; pinch (<1) = more/smaller.
-                        if value.magnification > 1.2, i > 0 {
-                            columnCount = columnSteps[i - 1]
-                        } else if value.magnification < 0.8, i < columnSteps.count - 1 {
-                            columnCount = columnSteps[i + 1]
-                        }
-                    }
-                )
                 .onChange(of: router.pendingGridScrollNodeID) { _, id in
                     guard let id else { return }
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
@@ -178,6 +165,7 @@ struct NodeGridView: View {
                 }
             }
         }
+        .animation(.easeInOut(duration: 0.22), value: columnCount)
     }
 
     // MARK: - Tile tuning trigger (DEBUG)

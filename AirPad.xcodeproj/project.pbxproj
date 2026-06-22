@@ -128,6 +128,7 @@
 		97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
 		980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */; };
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
+		989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C49FE808E3476860F4E68D4F /* CoverFlowView.swift */; };
 		98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */; };
 		99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0642041A7F8A258DF0FF065C /* QuarantineStore.swift */; };
 		9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780B6A68830590DBDA5189D1 /* StrandService.swift */; };
@@ -352,6 +353,7 @@
 		BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGPreviewView.swift; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		C49FE808E3476860F4E68D4F /* CoverFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverFlowView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPillRail.swift; sourceTree = "<group>"; };
@@ -814,6 +816,7 @@
 				B65719255B960A7B6876EC2A /* CardBlurTest.swift */,
 				321F93F7630A107A8A1266EF /* CardDocumentTile.swift */,
 				0AD607D873DD5FF571DE6C5D /* CardLinkTile.swift */,
+				C49FE808E3476860F4E68D4F /* CoverFlowView.swift */,
 				FD659A40CE161F15D371C285 /* NodeCardView.swift */,
 				4D539DCAE9FDB57420DF7460 /* NodeListView.swift */,
 			);
@@ -995,6 +998,7 @@
 				92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */,
 				59D565CBEADBCAFF7FF2D755 /* CorpusPhysicsScene.swift in Sources */,
 				910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */,
+				989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */,
 				02A14D3596D8C515D5585893 /* DashboardLavaLamp.swift in Sources */,
 				52D3D753240395AD3A873749 /* DashboardView.swift in Sources */,
 				D920C62968AB09FDDB9124A4 /* DocumentEntryBody.swift in Sources */,

@@ -463,8 +463,12 @@ struct CanvasView: View {
         var positions: [String: CGPoint] = [:]
 
         switch order {
-        case .recency:
-            // Spiral outward from center — index 0 (most recent) near center.
+        case .recency, .alphabetical:
+            // Spiral outward from center — index 0 (most recent / first in
+            // sort order) near center. Alphabetical sort is a list/grid
+            // concern with no spatial meaning in the System Graph; route it
+            // through the same neutral spiral as `.recency` so the graph
+            // surfaces a default arrangement without lying about ordering.
             let goldenAngle = 2.399963229728653  // radians ≈ 137.5°
             for (index, node) in nodes.enumerated() {
                 let angle = Double(index) * goldenAngle

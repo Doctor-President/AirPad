@@ -38,6 +38,28 @@ struct NodeGradientLayer: View {
     /// Offsets are NOT scaled either — circles spread out more by
     /// virtue of being bigger.
     var circleScale: CGFloat = 1.0
+    /// Multiplier on circle BLUR radius. `1.0` (default) leaves the
+    /// 40pt base untouched — hero / card consumers render identically.
+    /// Tile callers pass <1 so the blur shrinks with the smaller circles;
+    /// the original "scaling blur washes pools into mud" reasoning is
+    /// true at hero scale but inverts at tile scale, where leaving 40pt
+    /// of blur on already-shrunken circles flattens chroma into wash.
+    var blurScale: CGFloat = 1.0
+    /// Multiplier on the ±80pt static offsets that spread the three
+    /// circles across the canvas. `1.0` (default) keeps the card/hero
+    /// composition unchanged; tiles pass <1 to pull the lobes inward so
+    /// they read as a contained form, not edge-to-edge wash.
+    var offsetScale: CGFloat = 1.0
+    /// Dark-rim vignette opacity. `0` (default) skips the layer entirely —
+    /// zero regression for hero / card. Tiles pass ~0.35–0.55 to darken
+    /// the corners and give the gradient a defined center.
+    var vignette: CGFloat = 0
+    /// Vertical shift (points) applied to the color blobs only — the
+    /// dark base, radial glow, and vignette stay centered. `0` (default)
+    /// renders byte-identical to today. Gradient-only tiles pass a
+    /// negative value so the color form rides up into the hero zone,
+    /// matching where a cover image would sit on a hero tile.
+    var centerYOffset: CGFloat = 0
     /// Hero-only morph amount. `0` (default) → byte-for-byte the
     /// original static-`Circle` path, including current drift offsets —
     /// guarantees zero regression on every existing card surface, which
@@ -83,6 +105,9 @@ struct NodeGradientLayer: View {
         ZStack {
             gradientFill
             radialGlow.blendMode(.overlay)
+            if vignette > 0 {
+                vignetteLayer
+            }
         }
     }
 
@@ -124,35 +149,38 @@ struct NodeGradientLayer: View {
 
     @ViewBuilder
     private func staticCircles(colors: (String, String, String), size: CGFloat, time: Double) -> some View {
+        let blur: CGFloat = 40 * blurScale
+        let spread: CGFloat = 80 * offsetScale
         Circle()
             .fill(Color(hexString: colors.0))
             .frame(width: size, height: size)
-            .blur(radius: 40)
-            .offset(x: -80 + sin(time * 0.3 + phase * 1.3) * 30,
-                    y: cos(time * 0.25 + phase * 0.9) * 30)
+            .blur(radius: blur)
+            .offset(x: -spread + sin(time * 0.3 + phase * 1.3) * 30,
+                    y: cos(time * 0.25 + phase * 0.9) * 30 + centerYOffset)
         Circle()
             .fill(Color(hexString: colors.1))
             .frame(width: size, height: size)
-            .blur(radius: 40)
+            .blur(radius: blur)
             .offset(x: sin(time * 0.35 + phase * 1.7) * 30,
-                    y: cos(time * 0.3 + phase * 1.1) * 30)
+                    y: cos(time * 0.3 + phase * 1.1) * 30 + centerYOffset)
         Circle()
             .fill(Color(hexString: colors.2))
             .frame(width: size, height: size)
-            .blur(radius: 40)
-            .offset(x: 80 + sin(time * 0.4 + phase * 2.1) * 30,
-                    y: cos(time * 0.35 + phase * 0.7) * 30)
+            .blur(radius: blur)
+            .offset(x: spread + sin(time * 0.4 + phase * 2.1) * 30,
+                    y: cos(time * 0.35 + phase * 0.7) * 30 + centerYOffset)
     }
 
     @ViewBuilder
     private func morphingBlobs(colors: (String, String, String), baseSize: CGFloat, time: Double) -> some View {
-        morphBlob(index: 0, baseX: -80, color: Color(hexString: colors.0), baseSize: baseSize, time: time)
+        let spread: CGFloat = 80 * offsetScale
+        morphBlob(index: 0, baseX: -spread, color: Color(hexString: colors.0), baseSize: baseSize, time: time)
         morphBlob(index: 1, baseX: 0, color: Color(hexString: colors.1), baseSize: baseSize, time: time)
-        morphBlob(index: 2, baseX: 80, color: Color(hexString: colors.2), baseSize: baseSize, time: time)
+        morphBlob(index: 2, baseX: spread, color: Color(hexString: colors.2), baseSize: baseSize, time: time)
         // 4th blob — density only. If the hero reads too busy, this is
         // the first thing to pull (delete or comment this single line).
         // Colour blends the outer two so it doesn't introduce a new hue.
-        morphBlob(index: 3, baseX: -30, color: blendHex(colors.0, colors.2), baseSize: baseSize, time: time)
+        morphBlob(index: 3, baseX: -30 * offsetScale, color: blendHex(colors.0, colors.2), baseSize: baseSize, time: time)
     }
 
     private func morphBlob(index: Int, baseX: CGFloat, color: Color, baseSize: CGFloat, time: Double) -> some View {
@@ -184,8 +212,8 @@ struct NodeGradientLayer: View {
         return BlobShape(time: time, undulation: undulation, harmonics: harmonics)
             .fill(color)
             .frame(width: breatheSize, height: breatheSize)
-            .blur(radius: 40)
-            .offset(x: driftX, y: driftY)
+            .blur(radius: 40 * blurScale)
+            .offset(x: driftX, y: driftY + centerYOffset)
     }
 
     private var radialGlow: some View {
@@ -197,6 +225,23 @@ struct NodeGradientLayer: View {
                 endRadius: geo.size.width * 0.72
             )
         }
+    }
+
+    /// Dark-rim vignette. Sits above `radialGlow` and is multiplied into
+    /// the composition so it darkens edges without paving over them — the
+    /// palette colours stay legible, just contained. Only mounted when
+    /// `vignette > 0`, so hero / card paths pay zero cost.
+    private var vignetteLayer: some View {
+        GeometryReader { geo in
+            RadialGradient(
+                colors: [.clear, .black.opacity(vignette)],
+                center: .center,
+                startRadius: geo.size.width * 0.20,
+                endRadius:   geo.size.width * 0.70
+            )
+        }
+        .blendMode(.multiply)
+        .allowsHitTesting(false)
     }
 }
 

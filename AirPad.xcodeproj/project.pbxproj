@@ -88,6 +88,7 @@
 		69FA0FE57299DB041E67B961 /* CanvasPlaceholderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */; };
 		6ABE3E503556A6148E29F602 /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729D9028EBF447A0241ABFD /* KeychainHelper.swift */; };
+		6BAF912AA3AF57ED9A6F600B /* NodeGridTileTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */; };
 		6DA9E5E14E071618E0AEB602 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EAE9B78BB325C211A14551B /* PhotosUI.framework */; };
 		6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F135F708282671E607C7C84B /* RichTextEditor.swift */; };
 		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
@@ -291,6 +292,7 @@
 		6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionCreationSheet.swift; sourceTree = "<group>"; };
 		613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryTile.swift; sourceTree = "<group>"; };
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridTileTuning.swift; sourceTree = "<group>"; };
 		64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCAN.swift; sourceTree = "<group>"; };
 		657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterLabelService.swift; sourceTree = "<group>"; };
 		6658362A7268EAA76A6AAF92 /* DashboardLavaLamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardLavaLamp.swift; sourceTree = "<group>"; };
@@ -470,6 +472,7 @@
 			isa = PBXGroup;
 			children = (
 				F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */,
+				62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */,
 				E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */,
 			);
 			path = Grid;
@@ -1051,6 +1054,7 @@
 				B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */,
 				9CC24D2F472D010E7128EB08 /* NodeGradientBackground.swift in Sources */,
 				56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */,
+				6BAF912AA3AF57ED9A6F600B /* NodeGridTileTuning.swift in Sources */,
 				8C733440249680712EED9AAE /* NodeGridView.swift in Sources */,
 				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,
 				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,

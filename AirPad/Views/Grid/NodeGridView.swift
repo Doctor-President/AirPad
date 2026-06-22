@@ -29,6 +29,16 @@ struct NodeGridView: View {
 
     @AppStorage("gridColumnCount") private var columnCount: Int = 2
 
+    #if DEBUG
+    /// DEBUG-only — toggled by the tiny ⚙ in the top-leading corner.
+    /// v3: floating overlay widget instead of a sheet, so the grid stays
+    /// scrollable behind it. Not compiled in release builds.
+    @State private var showTileTuningPanel = false
+    /// Drag offset for the floating widget. Owned by the parent so the
+    /// widget's position survives close/re-open within a session.
+    @State private var tuningPanelOffset: CGSize = .zero
+    #endif
+
     // 6-col was unbrowseable — tiles too small to read without grazing,
     // so it failed as a browse density. Ladder caps at 4.
     private let columnSteps: [Int] = [2, 3, 4]
@@ -63,6 +73,13 @@ struct NodeGridView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 119)
                 }
+
+                #if DEBUG
+                tileTuningTrigger
+                if showTileTuningPanel {
+                    floatingTuningPanel
+                }
+                #endif
             }
             .navigationDestination(for: Node.self) { node in
                 NodeDetailView(nodeID: node.id)
@@ -162,6 +179,50 @@ struct NodeGridView: View {
             }
         }
     }
+
+    // MARK: - Tile tuning trigger (DEBUG)
+
+    #if DEBUG
+    /// Tiny ⚙ in the top-leading corner. Faint and small so it doesn't
+    /// distract in normal use; tap shows/hides the floating tuning widget.
+    private var tileTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showTileTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 60)
+        .padding(.leading, 10)
+    }
+
+    /// Floating tuning widget: bottom-center default, ~80pt above the safe
+    /// area. The widget itself owns the drag offset (committed back into
+    /// `tuningPanelOffset` on .onEnded), so position persists across
+    /// close/re-open within a session.
+    private var floatingTuningPanel: some View {
+        VStack {
+            Spacer()
+            TileTuningPanel(
+                isPresented: $showTileTuningPanel,
+                position: $tuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+    #endif
 
     // MARK: - Capture trigger
 

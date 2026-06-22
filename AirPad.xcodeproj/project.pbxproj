@@ -158,6 +158,7 @@
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
 		B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */; };
+		B5CD7B271CCE42EB8336C61A /* AlphabetScrubberSpike.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0334ED7E2A6715FA41EFFA09 /* AlphabetScrubberSpike.swift */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
@@ -226,6 +227,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0334ED7E2A6715FA41EFFA09 /* AlphabetScrubberSpike.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubberSpike.swift; sourceTree = "<group>"; };
 		03D5CDD92B068C0BDB141317 /* DocumentGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryBody.swift; sourceTree = "<group>"; };
 		03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProcessingIndicator.swift; sourceTree = "<group>"; };
 		04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentExtractionService.swift; sourceTree = "<group>"; };
@@ -473,6 +475,7 @@
 		2BB717D4AE953E9CFCD7C90A /* Grid */ = {
 			isa = PBXGroup;
 			children = (
+				0334ED7E2A6715FA41EFFA09 /* AlphabetScrubberSpike.swift */,
 				F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */,
 				62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */,
 				E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */,
@@ -963,6 +966,7 @@
 			files = (
 				D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */,
 				2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */,
+				B5CD7B271CCE42EB8336C61A /* AlphabetScrubberSpike.swift in Sources */,
 				D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */,
 				C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */,
 				536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */,

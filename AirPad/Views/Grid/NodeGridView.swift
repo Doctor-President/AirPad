@@ -31,6 +31,10 @@ struct NodeGridView: View {
 
     @AppStorage("gridColumnCount") private var columnCount: Int = 2
 
+    /// Owned by the grid so the scrubber can interrupt any in-flight scroll
+    /// deceleration at scrub-start (see `StopperProbe` mounted below).
+    @State private var momentumStopper = ScrollMomentumStopper()
+
     #if DEBUG
     /// DEBUG-only — toggled by the tiny ⚙ in the top-leading corner.
     /// v3: floating overlay widget instead of a sheet, so the grid stays
@@ -49,11 +53,22 @@ struct NodeGridView: View {
 
     private var nodes: [Node] { store.filteredNodes(in: scope) }
 
-    /// Spike-gate: rail only meaningful under Alphabetical sort, and skipped
-    /// on tiny corpora where letter buckets read as noise (>30 threshold —
-    /// implementer's judgment per brief).
-    private var showAlphabetScrubber: Bool {
-        store.filterState(for: scope).sortOrder == .alphabetical && nodes.count > 30
+    /// Per-sort scrubber mode. >30 threshold skips the rail on tiny corpora
+    /// regardless of sort; thematic returns nil (empty lane — gutter still
+    /// reserved by `railLane`). Alphabetical builds discrete letter regions;
+    /// recency builds a continuous timeline for velocity-driven scrubbing.
+    private var scrubberMode: ScrubMode? {
+        guard nodes.count > 30 else { return nil }
+        switch store.filterState(for: scope).sortOrder {
+        case .alphabetical:
+            let regions = ScrubberSpike.alphabeticalRegions(for: nodes)
+            return regions.isEmpty ? nil : .discrete(regions)
+        case .recency:
+            guard let timeline = ScrubberSpike.recencyTimeline(for: nodes) else { return nil }
+            return .continuous(timeline)
+        case .thematic:
+            return nil
+        }
     }
 
     var body: some View {
@@ -129,11 +144,11 @@ struct NodeGridView: View {
         // The cell wrapper owns the 5:7 shape via .frame + .clipShape; the
         // tile content fills and is clipped — it never carries the ratio.
         GeometryReader { geo in
-            // Reserve a right-edge gutter for the scrubber rail when it's
-            // showing — folded into the cell-width math AND the trailing
-            // padding so the last column ends before the rail lane instead
-            // of sliding under it.
-            let railLane: CGFloat = showAlphabetScrubber ? 30 : 0
+            // Reserve a right-edge gutter for the scrubber rail at all
+            // times — folded into the cell-width math AND the trailing
+            // padding. Constant (not gated on sort or corpus size) so the
+            // grid never reflows when the user flips sort orders.
+            let railLane: CGFloat = 30
             let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1) + railLane
             let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
             let cellH = cellW * 7.0 / 5.0
@@ -176,23 +191,35 @@ struct NodeGridView: View {
                     .padding(.trailing, tileSpacing + railLane)
                     .padding(.top, topInset)
                     .padding(.bottom, bottomInset)
+
+                    // Plants a zero-size UIView inside the ScrollView so the
+                    // momentum stopper can walk up to the host UIScrollView
+                    // and cancel deceleration when a scrub begins.
+                    StopperProbe(stopper: momentumStopper)
+                        .frame(width: 0, height: 0)
                 }
                 .onChange(of: router.pendingGridScrollNodeID) { _, id in
                     guard let id else { return }
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
                     router.pendingGridScrollNodeID = nil
                 }
-                .overlay {
-                    if showAlphabetScrubber {
-                        AlphabetScrubberSpike(nodes: nodes) { id in
-                            withAnimation { proxy.scrollTo(id, anchor: .top) }
-                        }
-                        .allowsHitTesting(true)
-                    }
-                }
+                .overlay { scrubberOverlay(proxy: proxy) }
             }
         }
         .animation(.easeInOut(duration: 0.22), value: columnCount)
+    }
+
+    @ViewBuilder
+    private func scrubberOverlay(proxy: ScrollViewProxy) -> some View {
+        if let mode = scrubberMode {
+            ScrubberSpike(
+                mode: mode,
+                scrollTo: { id in
+                    withAnimation { proxy.scrollTo(id, anchor: .top) }
+                },
+                onScrubBegin: { momentumStopper.stop() }
+            )
+        }
     }
 
     // MARK: - Tile tuning trigger (DEBUG)

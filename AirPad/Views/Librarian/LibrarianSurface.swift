@@ -89,19 +89,19 @@ struct LibrarianSurface: View {
             case .tip:
                 collapsedPill(librarian: librarian)
             default:
-                RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                    .fill(.regularMaterial)
-                    .ignoresSafeArea(.container, edges: .bottom)
-                    // Bottom overflow buffer — keeps the material's
-                    // bottom edge below the screen during the expand
-                    // spring's top overshoot (FloatingPanel translates
-                    // the whole surface up; without the buffer, the
-                    // material lifts off the screen bottom and flashes
-                    // canvas there). Mirrors the library's surface
-                    // bottomOverflow; invisible at rest. Bump if a
-                    // sliver still flashes.
-                    .padding(.bottom, -150)
                 expandedBody(librarian: librarian)
+                    .background {
+                        RoundedRectangle(cornerRadius: surfaceCornerRadius)
+                            .fill(.regularMaterial)
+                            .ignoresSafeArea(.container, edges: .bottom)
+                            // Bottom overflow buffer (spring-overshoot anti-flash).
+                            // Lives inside the background so it draws behind the
+                            // content without inflating the content's layout — the
+                            // -150 overflow no longer stretches expandedBody into
+                            // the off-screen tail (which was burying the pinned
+                            // Ask input row + footer at the half detent).
+                            .padding(.bottom, -150)
+                    }
             }
         }
         .onAppear {

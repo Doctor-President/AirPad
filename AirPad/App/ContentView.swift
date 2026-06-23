@@ -111,6 +111,18 @@ struct ContentView: View {
                 }
         }
         .floatingPanelLayout(panelLayout)
+        // Content tracks each detent's bounds instead of being laid out once
+        // at full height and slid down (the .static default). Under .static,
+        // the surface stays full-detent-tall and translates for shorter
+        // detents, dragging the content's bottom — the Ask input row + end-
+        // session footer — off-screen at .half. With .fitToBounds the surface
+        // is re-fit per detent (top pinned by the state constraint, bottom
+        // pinned to vc.view.bottom), so the pinned bottom row stays visible
+        // at every posture. Applied here at configuration time, NOT inside
+        // .onAppear: setting `contentMode` after the panel mounts triggers
+        // a relayout against the controller's initial state one tick before
+        // our `move(to: .tip)` runs, producing a posture flash.
+        .floatingPanelContentMode(.fitToBounds)
         // Single existence rule: canvas / collectionCanvas raise the panel
         // to peek; dashboard / quikCapture duck it offscreen. Panel stays
         // mounted across all modes — never torn down. `.hidden` is not in

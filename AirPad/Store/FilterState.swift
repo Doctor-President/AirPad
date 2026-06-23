@@ -60,11 +60,13 @@ extension ViewMode {
 enum SortOrder: String, Codable, CaseIterable {
     case recency, thematic, alphabetical
 
-    /// Display order for the bottom-row sort menu. Not enum declaration
-    /// order — Alphabetical reads as more "neutral" than Thematic and
-    /// belongs between the two; declaration order has Alphabetical last
-    /// because it landed last historically.
-    static let menuOrder: [SortOrder] = [.recency, .alphabetical, .thematic]
+    /// Display order for sort UIs (bottom-row SortMenu, FilterPanel pills).
+    /// `.thematic` is retired from the UI as of 2026-06 — the enum case is
+    /// retained for Codable persistence safety (existing saved states
+    /// decode without breaks), but the store normalizes any persisted
+    /// `.thematic` back to `.recency` on read so this list is the full
+    /// set of sorts a user can ever land on.
+    static let menuOrder: [SortOrder] = [.recency, .alphabetical]
 
     var displayName: String {
         switch self {
@@ -165,14 +167,29 @@ enum FilterStates {
     static func load() -> [String: FilterState] {
         if let data = UserDefaults.standard.data(forKey: udKey),
            let dict = try? JSONDecoder().decode([String: FilterState].self, from: data) {
-            return dict
+            return normalize(dict)
         }
         // First launch after A2: migrate the legacy single-global value into
         // the corpus-scope slot so users keep their existing preferences. The
         // legacy key is left in UserDefaults — harmless and a safety net if
         // we ever need to roll back.
         let legacy = FilterState.load()
-        return [NodeCollection.corpusID: legacy]
+        return normalize([NodeCollection.corpusID: legacy])
+    }
+
+    /// Belt-and-suspenders to the `CorpusStore.filterState(for:)` normalizer:
+    /// rewrite any persisted `.thematic` sort to `.recency` at load time so
+    /// the next `save` round-trips the corrected value back to disk and the
+    /// retired case stops appearing in storage entirely. `.thematic` is kept
+    /// in the enum for Codable safety; only its surface area is retired.
+    private static func normalize(_ dict: [String: FilterState]) -> [String: FilterState] {
+        var out = dict
+        for (key, state) in dict where state.sortOrder == .thematic {
+            var s = state
+            s.sortOrder = .recency
+            out[key] = s
+        }
+        return out
     }
 
     static func save(_ states: [String: FilterState]) {

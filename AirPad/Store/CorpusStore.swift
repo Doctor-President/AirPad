@@ -210,8 +210,19 @@ final class CorpusStore {
     /// Per-scope getter. Returns a default `FilterState()` for scopes that
     /// haven't been touched yet — first read of a collection canvas inherits
     /// the type's defaults (graph view, recency sort, no filters).
+    ///
+    /// Normalizes any persisted `.thematic` sort back to `.recency` — the
+    /// `.thematic` case is retained in the enum for Codable safety (so old
+    /// saved states still decode), but the UI no longer surfaces it as of
+    /// 2026-06. Coalescing on read means a user who last used Thematic
+    /// lands on Recency the next time the canvas opens, instead of a
+    /// now-hidden sort order.
     func filterState(for scope: CanvasScope) -> FilterState {
-        filterStates[scope.key] ?? FilterState()
+        var state = filterStates[scope.key] ?? FilterState()
+        if state.sortOrder == .thematic {
+            state.sortOrder = .recency
+        }
+        return state
     }
 
     func setFilterState(_ state: FilterState, for scope: CanvasScope) {

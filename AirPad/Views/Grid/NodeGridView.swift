@@ -53,12 +53,14 @@ struct NodeGridView: View {
 
     private var nodes: [Node] { store.filteredNodes(in: scope) }
 
-    /// Per-sort scrubber mode. >30 threshold skips the rail on tiny corpora
-    /// regardless of sort; thematic returns nil (empty lane — gutter still
-    /// reserved by `railLane`). Alphabetical builds discrete letter regions;
-    /// recency builds a continuous timeline for velocity-driven scrubbing.
+    /// Per-sort scrubber mode. >15 threshold skips the rail on tiny corpora;
+    /// above it, both remaining sorts (recency, alphabetical) always vend a
+    /// rail, so sort-switching never reflows the grid. `.thematic` is retired
+    /// from the UI and normalized to `.recency` by `CorpusStore.filterState`
+    /// on read — the branch here just satisfies switch exhaustiveness and
+    /// is effectively unreachable.
     private var scrubberMode: ScrubMode? {
-        guard nodes.count > 30 else { return nil }
+        guard nodes.count > 15 else { return nil }
         switch store.filterState(for: scope).sortOrder {
         case .alphabetical:
             let regions = ScrubberSpike.alphabeticalRegions(for: nodes)
@@ -144,11 +146,13 @@ struct NodeGridView: View {
         // The cell wrapper owns the 5:7 shape via .frame + .clipShape; the
         // tile content fills and is clipped — it never carries the ratio.
         GeometryReader { geo in
-            // Reserve a right-edge gutter for the scrubber rail at all
-            // times — folded into the cell-width math AND the trailing
-            // padding. Constant (not gated on sort or corpus size) so the
-            // grid never reflows when the user flips sort orders.
-            let railLane: CGFloat = 30
+            // Reserve a right-edge gutter only when a rail is actually
+            // present. Now that thematic is retired (normalized to recency
+            // on read), the two remaining sorts both vend a rail above the
+            // >15 node threshold — so within a given view the lane is either
+            // always-on (large corpus) or always-off (small corpus), and
+            // sort-switching never reflows the grid. ≤15 reclaims the lane.
+            let railLane: CGFloat = scrubberMode != nil ? 30 : 0
             let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1) + railLane
             let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
             let cellH = cellW * 7.0 / 5.0

@@ -448,7 +448,6 @@ struct FilterPanelView: View {
                     filterSection("Sort") {
                         HStack(spacing: 8) {
                             filterPill("Recent",       isActive: state.sortOrder == .recency)      { mutate { $0.sortOrder = .recency } }
-                            filterPill("Thematic",     isActive: state.sortOrder == .thematic)     { mutate { $0.sortOrder = .thematic } }
                             filterPill("Alphabetical", isActive: state.sortOrder == .alphabetical) { mutate { $0.sortOrder = .alphabetical } }
                         }
                     }

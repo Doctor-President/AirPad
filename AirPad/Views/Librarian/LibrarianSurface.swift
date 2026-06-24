@@ -258,12 +258,14 @@ struct LibrarianSurface: View {
 
         // Y-position interpolation. Peek anchor: 21pt above the panel
         // bottom (so the field's bottom edge sits at geo.height − 21).
-        // Expanded anchor: 70pt of header (grabber 22pt + 14pt top
-        // padding + ~32pt mode-icon row + 14pt bottom padding ≈ 70)
-        // then the field's own half-height. Center-Y interpolates
-        // linearly between the two.
+        // Expanded anchor: anchors a few points inside the header's
+        // bottom-padding band so the Search field sits snug to the
+        // chevron (chevron bottom ≈ y=46; field top at y=54 with this
+        // anchor → ~8pt gap). The header ZStack itself runs ~60pt tall,
+        // but the bottom 14pt is empty padding the field can ride into
+        // without colliding with chevron/grabber visuals.
         let peekCenterY = geo.size.height - 21 - peekH / 2
-        let expandedCenterY: CGFloat = 70 + expandedH / 2
+        let expandedCenterY: CGFloat = 54 + expandedH / 2
         let centerY = lerp(peekCenterY, expandedCenterY, p)
 
         // Mango identity (#E8820A). Caret + icons + (later, gradient
@@ -364,18 +366,26 @@ struct LibrarianSurface: View {
     /// Mode icon + context ring composed as one unit so both surface
     /// states (collapsed pill, expanded header) share the same hit
     /// target and ring placement. Ring sits one pixel of breathing room
-    /// outside the 48pt icon frame; tap inside the ring still triggers
+    /// outside the icon frame; tap inside the ring still triggers
     /// the parent action.
+    ///
+    /// `compact` shrinks the unit for inline placement at the leading
+    /// edge of the Ask input row (44pt ring / 36pt icon) after the
+    /// header-reclaim pass relocated the glyph there. Default (false)
+    /// keeps the 57pt / 48pt scale used by other callers.
     @ViewBuilder
-    private func modeIconWithRing(librarian: LibrarianState) -> some View {
+    private func modeIconWithRing(librarian: LibrarianState, compact: Bool = false) -> some View {
+        let ringDiameter: CGFloat = compact ? 44 : 57
+        let iconFrame: CGFloat = compact ? 36 : 48
+        let iconSize: CGFloat = compact ? 18 : 24
         ZStack {
-            ContextRing(fraction: librarian.contextFillFraction, diameter: 57)
+            ContextRing(fraction: librarian.contextFillFraction, diameter: ringDiameter)
             Image(systemName: librarian.activeMode.sfSymbol)
-                .font(.system(size: 24, weight: .medium))
+                .font(.system(size: iconSize, weight: .medium))
                 .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
+                .frame(width: iconFrame, height: iconFrame)
         }
-        .frame(width: 57, height: 57)
+        .frame(width: ringDiameter, height: ringDiameter)
     }
 
     // MARK: - Expanded chrome (born-in)
@@ -396,10 +406,11 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func expandedChrome(librarian: LibrarianState, p: CGFloat) -> some View {
         VStack(spacing: 0) {
-            // Header: grabber centered + mode icon top-leading + chevron
-            // top-trailing, composed in a ZStack so the icon can anchor
-            // to the surface corner with equidistant padding (14pt to
-            // top, left, and pill rail) regardless of grabber height.
+            // Header: grabber centered + chevron top-trailing. The mode
+            // icon used to live top-leading here but was relocated to the
+            // Ask input row's leading edge (header-reclaim pass) — the
+            // freed vertical band tightens the chrome so the Search field
+            // can land closer to the top with less dead space.
             ZStack(alignment: .top) {
                 // FloatingPanel draws its own grabber on the surface;
                 // we hide it in ContentView's panel mount so this
@@ -409,17 +420,6 @@ struct LibrarianSurface: View {
                     .padding(.top, 6)
 
                 HStack(alignment: .top) {
-                    Button {
-                        showModeDropdown = true
-                    } label: {
-                        modeIconWithRing(librarian: librarian)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showModeDropdown, arrowEdge: .top) {
-                        modeDropdown(librarian: librarian)
-                            .presentationCompactAdaptation(.popover)
-                    }
-
                     Spacer()
 
                     Button {
@@ -439,11 +439,11 @@ struct LibrarianSurface: View {
             .contentShape(Rectangle())
 
             // Reserved slot for the morphing field at p=1. Height
-            // matches the field's expandedH (52) + 8pt bottom gap so
-            // the layout below it sits where the inline searchField
-            // used to push it. The field itself is drawn in the
+            // matches the field's expandedH (52) + 16pt bottom gap so
+            // the chip row beneath has breathing room (prior 8pt gap
+            // read as cramped). The field itself is drawn in the
             // `body` overlay; this just holds the pocket.
-            Color.clear.frame(height: 60)
+            Color.clear.frame(height: 68)
 
             scopeChipRow(librarian: librarian)
                 .padding(.bottom, 8)
@@ -766,6 +766,27 @@ struct LibrarianSurface: View {
         let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         HStack(spacing: 8) {
+            // Mode identity glyph (relocated from header in the
+            // header-reclaim pass). Tap opens the mode dropdown
+            // popover, which now anchors to this inline placement.
+            // `compact` renders the ring at 44pt / icon at 36pt so it
+            // sits comfortably inside the Ask field's 48pt min-height
+            // band without dwarfing the TextField.
+            Button {
+                showModeDropdown = true
+            } label: {
+                modeIconWithRing(librarian: librarian, compact: true)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showModeDropdown, arrowEdge: .top) {
+                modeDropdown(librarian: librarian)
+                    .presentationCompactAdaptation(.popover)
+            }
+            // 2pt leading nests the 44pt ring concentrically inside
+            // the capsule's left rounded end — the prior 6pt floated
+            // the glyph inboard of the curve.
+            .padding(.leading, 2)
+
             TextField("Ask", text: Binding(
                 get: { librarian.inputText },
                 set: { librarian.inputText = $0 }
@@ -774,7 +795,13 @@ struct LibrarianSurface: View {
                 .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(.white)
                 .tint(klein)
-                .padding(.horizontal, 16)
+                // Leading 14 (on top of the HStack's 8pt spacing) gives
+                // the "Ask" placeholder/text ~22pt of clearance from the
+                // glyph's ring — the prior `.horizontal, 8` had the text
+                // hugging the glyph. Trailing stays tight at 8 so the
+                // mic/send slot keeps its Messages-pattern compactness.
+                .padding(.leading, 14)
+                .padding(.trailing, 8)
                 .padding(.vertical, 12)
                 .lineLimit(1...4)
 
@@ -805,9 +832,16 @@ struct LibrarianSurface: View {
         }
         .frame(minHeight: 48)
         .background(Color.white.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        // Capsule (auto-rounds ends to half-height) so the terminating
+        // ends are true semicircles concentric with the 44pt glyph ring
+        // on the leading edge — the prior fixed cornerRadius: 22 read
+        // as rounded-rect, not capsule, especially when the TextField
+        // grew past one line (lineLimit 1...4) and corners stayed at
+        // 22 while the field got taller. Capsule keeps the curve =
+        // half-height at every line count.
+        .clipShape(Capsule())
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
+            Capsule()
                 .strokeBorder(klein.opacity(0.45), lineWidth: 1)
         )
     }

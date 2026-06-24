@@ -929,7 +929,7 @@ struct LibrarianSurface: View {
             }
         } else {
             ScrollView {
-                suggestionsList(librarian: librarian)
+                capabilityTileGrid(librarian: librarian)
                     .padding(.horizontal, 20)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1294,30 +1294,89 @@ struct LibrarianSurface: View {
         .background(Color(red: 0.04, green: 0.04, blue: 0.06))
     }
 
-    @ViewBuilder
-    private func suggestionsList(librarian: LibrarianState) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Try asking:")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
-                .textCase(.uppercase)
-                .padding(.bottom, 2)
+    // MARK: - Capability tile grid (landing launchpad)
 
-            ForEach(Array(store.ghostQuerySuggestions.prefix(3)), id: \.self) { whisper in
-                Button {
-                    librarian.inputText = whisper
-                    isInputFocused = true
-                } label: {
-                    Text(whisper)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
-                        .background(Color.white.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
+    /// 2×2 grid that occupies the landing pocket (no session, empty
+    /// search) in place of the retired "Try Asking" suggestions list.
+    /// Frames the Librarian as a launchpad into Insights / Inbox /
+    /// Capsule / Chats instead of a dead suggestion list.
+    ///
+    /// Tap destinations are stubbed this pass — the workstreams that
+    /// own each surface (corpus reflection, Inbox SB134, chat
+    /// primitive, capsule export) wire them up as they land. Capsule
+    /// renders dimmed + inert until its export format is locked.
+    @ViewBuilder
+    private func capabilityTileGrid(librarian: LibrarianState) -> some View {
+        let columns = [
+            GridItem(.flexible(), spacing: 12),
+            GridItem(.flexible(), spacing: 12)
+        ]
+        LazyVGrid(columns: columns, spacing: 12) {
+            capabilityTile(
+                label: "Insights",
+                systemImage: "sparkles",
+                isEnabled: true
+            ) {
+                // TODO: route to corpus-reflection workstream
             }
+            capabilityTile(
+                label: "Inbox",
+                systemImage: "tray",
+                isEnabled: true
+            ) {
+                // TODO: route to dashboard Inbox surface (SB134).
+                // Future badge count slot lives on this tile.
+            }
+            capabilityTile(
+                label: "Capsule",
+                systemImage: "shippingbox",
+                isEnabled: false
+            ) {
+                // Dimmed + inert until export format is locked.
+            }
+            capabilityTile(
+                label: "Chats",
+                systemImage: "bubble.left.and.bubble.right",
+                isEnabled: true
+            ) {
+                // TODO: route to chat primitive history
+            }
+        }
+    }
+
+    /// One tile in `capabilityTileGrid`. Icon-led card with a small
+    /// label beneath. Solar Flare rim-light treatment lands in a
+    /// later art-direction pass — this is the placeholder card style.
+    ///
+    /// `isEnabled == false` renders the tile dimmed and skips the
+    /// Button wrapper entirely so the tile reads as a "coming soon"
+    /// placeholder rather than a tappable affordance (Capsule tile).
+    @ViewBuilder
+    private func capabilityTile(
+        label: String,
+        systemImage: String,
+        isEnabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        let card = VStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.system(size: 22, weight: .regular))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(label)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .padding(.horizontal, 16)
+        .background(Color.white.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+
+        if isEnabled {
+            Button(action: action) { card }
+                .buttonStyle(.plain)
+        } else {
+            card.opacity(0.4)
         }
     }
 

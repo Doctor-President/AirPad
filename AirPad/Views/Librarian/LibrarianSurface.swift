@@ -439,14 +439,15 @@ struct LibrarianSurface: View {
             .contentShape(Rectangle())
 
             // Reserved slot for the morphing field at p=1. Height
-            // matches the field's expandedH (52) + 16pt bottom gap so
-            // the chip row beneath has breathing room (prior 8pt gap
-            // read as cramped). The field itself is drawn in the
-            // `body` overlay; this just holds the pocket.
-            Color.clear.frame(height: 68)
+            // matches the field's expandedH (52) + 10pt bottom gap.
+            // Trimmed 68→62 to pull the chips + tile grid upward so
+            // the bottom row (Capsule / Chats) clears the Ask field
+            // at half detent. The field itself is drawn in the `body`
+            // overlay; this just holds the pocket.
+            Color.clear.frame(height: 62)
 
             scopeChipRow(librarian: librarian)
-                .padding(.bottom, 8)
+                .padding(.bottom, 4)
 
             // Perf gate. Below p=0.4 the chrome is fully invisible
             // (chromeOpacity = 0 until p=0.5) and the morphing field
@@ -472,8 +473,14 @@ struct LibrarianSurface: View {
 
                     inputRow(librarian: librarian)
                         .padding(.horizontal, 12)
-                        .padding(.top, 6)
-                        .padding(.bottom, 14)
+                        // Top 6→14 adds breathing room above the Ask
+                        // field so the tile grid's bottom row no
+                        // longer collides with the glyph/capsule.
+                        // Bottom 14→10 drops the Ask field a few pts
+                        // closer to the panel bottom — frees more
+                        // vertical room above for the tiles.
+                        .padding(.top, 14)
+                        .padding(.bottom, 10)
                 }
             } else {
                 // Hold the vertical flex so the perf-gated swap doesn't

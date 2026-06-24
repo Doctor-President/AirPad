@@ -21,10 +21,11 @@ final class LibrarianPanelLayout: FloatingPanelLayout {
     /// the peek pill (capture "+" buttons on canvas and node detail)
     /// read from here so the value lives in one place.
     ///
-    /// The band is 100pt = 86pt visible capsule + 14pt float gap to the
-    /// safe-area bottom. The capsule's side insets (also 14pt) come from
-    /// `LibrarianSurface`'s peek material branch.
-    static let peekDetentHeight: CGFloat = 100
+    /// The band is 95pt = 64pt Apple-Maps-style capsule + 21pt float gap
+    /// to the safe-area bottom + ~10pt top breathing. The pill itself
+    /// owns its 340pt width directly in `LibrarianSurface`'s peek branch
+    /// (centered), so no side-inset value lives here.
+    static let peekDetentHeight: CGFloat = 95
 
     /// Bottom padding for overlay chrome that must sit above the peek
     /// panel: peek height + 10pt breathing room. Used by
@@ -71,12 +72,54 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// the drag itself and the attraction so the chrome restore lines
     /// up with the panel coming to rest, not the finger lifting.
     @Published var isDragging: Bool = false
+
+    /// Continuous 0…1 morph signal: 0 = panel sitting at `.tip`,
+    /// 1 = panel at `.half` (or above). Driven per-frame by
+    /// `floatingPanelDidMove` during finger-drag and during the
+    /// post-release attraction animator, and recomputed once on
+    /// every state-change so non-dragged moves (programmatic
+    /// `move(to:)`, hide) settle the value correctly. Surface
+    /// content crossfades against this to remove the dismiss-jump
+    /// the discrete `.tip` ↔ expanded switch caused.
+    @Published var peekProgress: CGFloat = 0
     weak var controller: FloatingPanelController?
 
     nonisolated func floatingPanelDidChangeState(_ fpc: FloatingPanelController) {
         MainActor.assumeIsolated {
             state = fpc.state
+            recomputeProgress(fpc)
         }
+    }
+
+    // Explicit @objc on the per-move callback. The protocol declares it
+    // `@objc optional` (Controller.swift:53-55), so dispatch happens via
+    // selector. NSObject subclasses normally get `@objc` inferred for
+    // methods that satisfy `@objc` protocol requirements, but pinning it
+    // here removes any doubt during the "no intermediate progress" diag —
+    // if the protocol's required selector ever drifts, the compiler will
+    // flag the mismatch instead of failing silently.
+    @objc nonisolated func floatingPanelDidMove(_ fpc: FloatingPanelController) {
+        MainActor.assumeIsolated {
+            // DIAG (peekProgress flat). Remove with the rest of the debug
+            // prints once the signal is confirmed to drive layout.
+            print("[morph] didMove tick — surfaceLocation.y=\(fpc.surfaceLocation.y)")
+            recomputeProgress(fpc)
+        }
+    }
+
+    private func recomputeProgress(_ fpc: FloatingPanelController) {
+        let tipY = fpc.surfaceLocation(for: .tip).y
+        let halfY = fpc.surfaceLocation(for: .half).y
+        let liveY = fpc.surfaceLocation.y
+        let span = tipY - halfY
+        guard span > 0 else {
+            peekProgress = 0
+            print("[morph] recompute — span<=0 (tipY=\(tipY) halfY=\(halfY) liveY=\(liveY)) → progress=0")
+            return
+        }
+        let raw = (tipY - liveY) / span
+        peekProgress = min(max(raw, 0), 1)
+        print("[morph] recompute — tipY=\(tipY) halfY=\(halfY) liveY=\(liveY) raw=\(raw) progress=\(peekProgress)")
     }
 
     nonisolated func floatingPanelWillBeginDragging(_ fpc: FloatingPanelController) {

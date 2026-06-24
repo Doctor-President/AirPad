@@ -75,33 +75,55 @@ struct LibrarianSurface: View {
 
     var body: some View {
         @Bindable var librarian = router.librarian
+        let p = panelModel.peekProgress
+        // Staged born-in chrome opacity. Stays at 0 until p=0.5 so the
+        // chrome never sits full-size behind the pill at peek; ramps
+        // 0→1 across p=0.5→1.0 — Maps cadence (field grows first,
+        // chrome populates second).
+        let chromeOpacity = max(0, (p - 0.5) / 0.5)
 
-        ZStack {
-            // Detent SSOT — material + content together per state.
-            // Peek collapses into a single `collapsedPill` so the
-            // capsule and its content can't drift apart (the bug:
-            // FloatingPanel's surface extends well below the screen, so
-            // any view that fills the surface bleeds the material into
-            // a dome and pushes content off-screen). Half/full keep the
-            // two-layer pattern — the bottom-extending sheet material
-            // followed by the expanded chrome.
-            switch panelModel.state {
-            case .tip:
-                collapsedPill(librarian: librarian)
-            default:
-                expandedBody(librarian: librarian)
-                    .background {
-                        RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                            .fill(.regularMaterial)
-                            .ignoresSafeArea(.container, edges: .bottom)
-                            // Bottom overflow buffer (spring-overshoot anti-flash).
-                            // Lives inside the background so it draws behind the
-                            // content without inflating the content's layout — the
-                            // -150 overflow no longer stretches expandedBody into
-                            // the off-screen tail (which was burying the pinned
-                            // Ask input row + footer at the half detent).
-                            .padding(.bottom, -150)
-                    }
+        // GeometryReader exposes the LIVE surface size, which under
+        // FloatingPanel's `.fitToBounds` re-fits per detent and grows
+        // continuously during drag. The morphing field positions itself
+        // against this live size so the field rides the panel's height
+        // change as p climbs from 0→1.
+        GeometryReader { geo in
+            ZStack {
+                // Panel material. Tied to `chromeOpacity` so the peek
+                // posture shows only the morphing field's Liquid Glass;
+                // the panel-wide `.regularMaterial` rises with the
+                // chrome. The -150pt bottom buffer is the spring-
+                // overshoot anti-flash carried over from the crossfade
+                // build (panel surface extends past the screen during
+                // attraction; the negative pad draws material into
+                // that tail without inflating chrome layout).
+                RoundedRectangle(cornerRadius: surfaceCornerRadius)
+                    .fill(.regularMaterial)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    .padding(.bottom, -150)
+                    .opacity(chromeOpacity)
+                    .allowsHitTesting(false)
+
+                // Born-in chrome. Header + chips + transcript/results
+                // + input row + footer. The search field is NOT in here
+                // — it's the morphing field overlaid on top, which lands
+                // in the chrome's reserved slot at p=1. Hidden at peek
+                // via `chromeOpacity`; heavy subtrees inside are perf-
+                // gated on p>0.4 so transcript/results don't render
+                // while the panel is still at peek.
+                expandedChrome(librarian: librarian, p: p)
+                    .opacity(chromeOpacity)
+                    .allowsHitTesting(chromeOpacity > 0.5)
+
+                // THE morphing field. Single view that is both the peek
+                // pill and the expanded search field; never swapped,
+                // only its frame / position / corner interpolate against
+                // p. Position uses `geo.size` so the field tracks the
+                // panel's live height. At p=0 it's the baked Maps pill
+                // (340 × 64, corner 45, 21pt above safe area). At p=1
+                // it's a full-width rounded field (~52pt tall, corner
+                // 16) just below the chrome's header.
+                morphingField(geo: geo, librarian: librarian, p: p)
             }
         }
         .onAppear {
@@ -188,57 +210,154 @@ struct LibrarianSurface: View {
             .accessibilityHidden(true)
     }
 
-    // MARK: - Collapsed
+    // MARK: - Morphing field (single-tree morph)
 
-    /// Peek pill: a single unit that owns its own material so the
-    /// capsule shape and the ring + whisper content can't drift apart.
-    /// Fixed-height (86pt) and **top-pinned** within the peek band.
+    /// THE search field — exists at all progress, never swapped. At p=0
+    /// it draws as the baked Maps pill (340 × 64, corner 45, two-layer
+    /// glass + darkened inset) sitting 21pt above the panel's bottom
+    /// edge. At p=1 it sits full-width (surface − 28pt margins) just
+    /// below the chrome header, corner relaxed to 16, inner inset
+    /// collapsed so the field reads as a single rounded rectangle. The
+    /// frame, position, and corner radius all interpolate continuously
+    /// against `p` — this is what gives the morph its "single object
+    /// growing" feel rather than two views crossfading.
     ///
-    /// The FloatingPanel surface extends well past the screen bottom, so
-    /// any layout that references the box's bottom positions content
-    /// off-screen. The diagnostic spike confirmed the .tip content
-    /// box's top sits at the peek line (visible). Pinning to the top
-    /// edge — Spacer *after* the pill, `.padding(.top)` as the float
-    /// gap — keeps everything in the on-screen rect; the box's
-    /// off-screen overflow falls beneath the trailing Spacer.
+    /// `geo` is the live surface geometry from `body`'s `GeometryReader`;
+    /// under `.fitToBounds` the surface height continuously tracks the
+    /// drag, so positioning against `geo.size.height` keeps the field
+    /// anchored to the bottom-edge gap at peek and to the top-edge
+    /// header gap at expanded.
     @ViewBuilder
-    private func collapsedPill(librarian: LibrarianState) -> some View {
-        VStack(spacing: 0) {
-            ZStack {
-                Capsule().fill(.regularMaterial)
+    private func morphingField(geo: GeometryProxy, librarian: LibrarianState, p: CGFloat) -> some View {
+        // Frame / corner interpolation. Values at p=0 are the baked
+        // peek pill (Maps anatomy); values at p=1 are the full-width
+        // expanded search field that the chrome's reserved slot expects.
+        let peekW: CGFloat = 340
+        let expandedW = max(0, geo.size.width - 28)
+        let fieldW = lerp(peekW, expandedW, p)
 
-                Text(displayText)
-                    .font(.system(size: 17, weight: .regular, design: .serif))
+        let peekH: CGFloat = 64
+        let expandedH: CGFloat = 52
+        let fieldH = lerp(peekH, expandedH, p)
+
+        // Outer corner tracks half the field height so the shape stays
+        // a full capsule at every interpolation step (32 → 26). Earlier
+        // pass relaxed toward 16 and read as a squarish box at p=1;
+        // half-height is the cleanest capsule across the morph.
+        let outerCorner = fieldH / 2
+        let outerShape = RoundedRectangle(cornerRadius: outerCorner, style: .continuous)
+
+        // Inner darkened inset: at p=0 it's the Maps anatomy (13pt
+        // inset, corner ≈ outer−4, black 0.40); at p=1 the inset
+        // collapses to 0 and the dark fill fades to a flat near-
+        // invisible plate so the field reads as a single panel field.
+        let innerInset = lerp(13, 0, p)
+        let innerCorner = max(outerCorner - 4, 0)
+        let innerShape = RoundedRectangle(cornerRadius: innerCorner, style: .continuous)
+        let innerBgOpacity = Double(lerp(0.40, 0.06, p))
+
+        // Y-position interpolation. Peek anchor: 21pt above the panel
+        // bottom (so the field's bottom edge sits at geo.height − 21).
+        // Expanded anchor: 70pt of header (grabber 22pt + 14pt top
+        // padding + ~32pt mode-icon row + 14pt bottom padding ≈ 70)
+        // then the field's own half-height. Center-Y interpolates
+        // linearly between the two.
+        let peekCenterY = geo.size.height - 21 - peekH / 2
+        let expandedCenterY: CGFloat = 70 + expandedH / 2
+        let centerY = lerp(peekCenterY, expandedCenterY, p)
+
+        // Mango identity (#E8820A). Caret + icons + (later, gradient
+        // peek text) all read against this hue. At p=0 icons are dim
+        // (0.66) so the field reads like the baked Maps pill; at p=1
+        // they hit full Mango so the field reads as Search clearly.
+        let mango = Color(hexString: "E8820A")
+        let iconOpacity = lerpD(0.66, 1.0, p)
+
+        ZStack {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 19, weight: .regular))
+                    .foregroundStyle(mango.opacity(iconOpacity))
+                // The real Search TextField — binds to the same
+                // `librarian.searchText` that drives instant MATCHES /
+                // RELATED. Gated on `p > 0.5` so at peek the whole pill
+                // takes the tap (to expand); once expanded the field
+                // owns its own taps and the keyboard comes up via
+                // `isSearchFocused`'s promote-on-focus.
+                TextField("Search", text: Binding(
+                    get: { librarian.searchText },
+                    set: { librarian.searchText = $0 }
+                ))
+                    .focused($isSearchFocused)
+                    .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(.white)
-                    .opacity(textOpacity)
-                    // Asymmetric horizontal inset: leading > trailing so
-                    // the text's center shifts right of the pill center,
-                    // clearing breathing room from the icon ring.
-                    .padding(.leading, 100)
-                    .padding(.trailing, 60)
-                    .frame(maxWidth: .infinity)
-
-                HStack {
-                    modeIconWithRing(librarian: librarian)
-                        // 14pt leading = (86pt pill height − 57pt ring
-                        // diameter) / 2, matching the vertical inset so
-                        // the ring sits concentric with the capsule's
-                        // left curve (equidistant top/bottom/left).
-                        .padding(.leading, 14)
-                    Spacer()
-                }
+                    .tint(mango)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .allowsHitTesting(p > 0.5)
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 19))
+                    .foregroundStyle(mango.opacity(iconOpacity))
             }
-            .frame(height: 86)
-            .contentShape(Capsule())
-            .onTapGesture {
-                panelModel.expandToHalf(animated: true)
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: max(0, fieldH - innerInset * 2))
+            .background(Color.black.opacity(innerBgOpacity), in: innerShape)
+            .padding(innerInset)
+        }
+        .frame(width: fieldW, height: fieldH)
+        .modifier(PeekGlassBackground(shape: outerShape))
+        // Tap-to-expand overlay — only mounted at peek (`p < 0.5`).
+        // Transparent Rectangle catches the entire pill area and routes
+        // to `expandToHalf`. Once expanded the overlay disappears and
+        // the TextField (with `allowsHitTesting(p > 0.5)`) receives
+        // taps directly for focus. This split avoids a `.onTapGesture`
+        // on the outer ZStack swallowing the tap that should focus the
+        // TextField at expanded.
+        .overlay {
+            if p < 0.5 {
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(outerShape)
+                    .onTapGesture {
+                        panelModel.expandToHalf(animated: true)
+                    }
             }
-            .padding(.top, 8)
-            .padding(.horizontal, 14)
+        }
+        // .position uses the parent's coordinate space (the
+        // GeometryReader, which is the surface). Centered horizontally;
+        // centerY interpolated above.
+        .position(x: geo.size.width / 2, y: centerY)
+    }
 
-            // Pushes the pill UP to the visible top edge; the box's
-            // off-screen overflow falls below this Spacer.
-            Spacer(minLength: 0)
+    /// Linear interpolation. Clamps `t` to 0…1 defensively — the
+    /// `peekProgress` source is already clamped, but morph values fed
+    /// into geometry want to be robust if the input ever drifts.
+    private func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
+        let clamped = min(max(t, 0), 1)
+        return a + (b - a) * clamped
+    }
+
+    /// Double variant of `lerp` — `.opacity()` takes a Double, and the
+    /// CGFloat→Double cast was sprinkling `Double(lerp(...))` through
+    /// the morphing field. One helper, one cast site.
+    private func lerpD(_ a: Double, _ b: Double, _ t: CGFloat) -> Double {
+        let clamped = min(max(Double(t), 0), 1)
+        return a + (b - a) * clamped
+    }
+
+    /// Outer pill background. iOS 26+ Liquid Glass; falls back to
+    /// `.regularMaterial` on earlier versions. Shape is parameterized
+    /// so the morphing field can pass an interpolated rounded rect.
+    private struct PeekGlassBackground<S: Shape>: ViewModifier {
+        let shape: S
+        @ViewBuilder
+        func body(content: Content) -> some View {
+            if #available(iOS 26.0, *) {
+                content.glassEffect(.regular, in: shape)
+            } else {
+                content.background(.regularMaterial, in: shape)
+            }
         }
     }
 
@@ -259,10 +378,23 @@ struct LibrarianSurface: View {
         .frame(width: 57, height: 57)
     }
 
-    // MARK: - Expanded
+    // MARK: - Expanded chrome (born-in)
 
+    /// Expanded chrome: everything that fades in BEHIND the morphing
+    /// field as `p` climbs past 0.5. The header, chips, transcript /
+    /// search results, input row, and footer. The search field that
+    /// used to live inline here has been retired — the morphing field
+    /// in `body` now IS the search field at p=1. A transparent
+    /// `Color.clear` of the same height holds the vertical pocket so
+    /// the morphing field lands in the right slot when fully grown.
+    ///
+    /// `p` is threaded through so the heavy subtrees (transcript,
+    /// search results, research panel) can perf-gate on `p > 0.4` —
+    /// they don't render at peek when the chrome is invisible anyway,
+    /// keeping the cost of a drag tick close to the cost of the field
+    /// alone.
     @ViewBuilder
-    private func expandedBody(librarian: LibrarianState) -> some View {
+    private func expandedChrome(librarian: LibrarianState, p: CGFloat) -> some View {
         VStack(spacing: 0) {
             // Header: grabber centered + mode icon top-leading + chevron
             // top-trailing, composed in a ZStack so the icon can anchor
@@ -306,37 +438,54 @@ struct LibrarianSurface: View {
             .padding(.bottom, 14)
             .contentShape(Rectangle())
 
-            searchField(librarian: librarian)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 8)
+            // Reserved slot for the morphing field at p=1. Height
+            // matches the field's expandedH (52) + 8pt bottom gap so
+            // the layout below it sits where the inline searchField
+            // used to push it. The field itself is drawn in the
+            // `body` overlay; this just holds the pocket.
+            Color.clear.frame(height: 60)
 
             scopeChipRow(librarian: librarian)
                 .padding(.bottom, 8)
 
-            if !librarian.searchText.isEmpty {
-                // Search takes over the main pane while the field has
-                // content — instant MATCHES (C1) and RELATED (C2)
-                // render in place of the mode pipeline's transcript.
-                // Clearing the field restores the pipeline UI.
-                searchResultsView(librarian: librarian)
-                    .frame(maxHeight: .infinity)
-            } else if librarian.activeMode == .research {
-                researchPanel(librarian: librarian)
-            } else {
-                // Conversation transcript (flexes), input row beneath
-                // it — chat-app convention so new messages land near
-                // the typing area.
-                transcriptView(librarian: librarian)
-                    .frame(maxHeight: .infinity)
+            // Perf gate. Below p=0.4 the chrome is fully invisible
+            // (chromeOpacity = 0 until p=0.5) and the morphing field
+            // covers the visible area anyway — skip building the
+            // heavy transcript / search-results / research subtrees
+            // so a drag tick stays cheap.
+            if p > 0.4 {
+                if !librarian.searchText.isEmpty {
+                    // Search takes over the main pane while the field has
+                    // content — instant MATCHES (C1) and RELATED (C2)
+                    // render in place of the mode pipeline's transcript.
+                    // Clearing the field restores the pipeline UI.
+                    searchResultsView(librarian: librarian)
+                        .frame(maxHeight: .infinity)
+                } else if librarian.activeMode == .research {
+                    researchPanel(librarian: librarian)
+                } else {
+                    // Conversation transcript (flexes), input row beneath
+                    // it — chat-app convention so new messages land near
+                    // the typing area.
+                    transcriptView(librarian: librarian)
+                        .frame(maxHeight: .infinity)
 
-                inputRow(librarian: librarian)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 6)
-                    .padding(.bottom, 14)
+                    inputRow(librarian: librarian)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                        .padding(.bottom, 14)
+                }
+            } else {
+                // Hold the vertical flex so the perf-gated swap doesn't
+                // collapse the chrome's height while invisible — the
+                // field-bottom reserved slot stays aligned with the
+                // chips above it even before the gate flips.
+                Spacer(minLength: 0)
             }
 
             endSessionFooter(librarian: librarian)
         }
+        .frame(maxHeight: .infinity)
         // Lifted field-agnostic Done (Move 2 fix-pass v3 / Item 1).
         // Mounted as a bottom safeAreaInset so SwiftUI's automatic
         // keyboard avoidance — the same mechanism that already lifts
@@ -609,42 +758,57 @@ struct LibrarianSurface: View {
     /// typing happens at the bottom near the keyboard.
     @ViewBuilder
     private func inputRow(librarian: LibrarianState) -> some View {
+        // Klein Blue identity (#1B59C2). Caret + border + trailing-slot
+        // glyph (mic or send) all read against this hue so the Ask
+        // field is clearly differentiated from the Mango Search field
+        // above. Body text stays white; only the accents are Klein.
+        let klein = Color(hexString: "1B59C2")
+        let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
         HStack(spacing: 8) {
-            TextField("Ask anything...", text: Binding(
+            TextField("Ask", text: Binding(
                 get: { librarian.inputText },
                 set: { librarian.inputText = $0 }
             ), axis: .vertical)
                 .focused($isInputFocused)
                 .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(.white)
-                .tint(.white)
+                .tint(klein)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .lineLimit(1...4)
 
-            // Send-only slot (Move 2 fix-pass B): the previous
-            // dismiss-when-empty swap is replaced by a lifted
-            // field-agnostic Done in `expandedBody` so the dismiss is
-            // reachable for the search-results pane too — not just
-            // when the chat input is mounted and empty. Sending still
-            // unfocuses and dismisses the keyboard naturally.
-            Button {
-                Task { await librarian.executeQuery(store: store) }
-            } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(sendIsEnabled(librarian: librarian) ? .white : .white.opacity(0.2))
+            // Messages-pattern trailing slot. Empty field → dictation
+            // mic (Klein, visual-only this pass — speech wiring lives
+            // in a later brief). Non-empty → send arrow that runs the
+            // Ask pipeline. The send swaps to Klein when enabled, dim
+            // white when disabled (matches the prior disabled state).
+            // The lifted field-agnostic Done (Move 2 fix-pass v3 Item
+            // 1) still handles keyboard dismiss for both panes.
+            if hasText {
+                Button {
+                    Task { await librarian.executeQuery(store: store) }
+                } label: {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(sendIsEnabled(librarian: librarian) ? klein : .white.opacity(0.2))
+                }
+                .buttonStyle(.plain)
+                .disabled(!sendIsEnabled(librarian: librarian))
+                .padding(.trailing, 10)
+            } else {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(klein.opacity(0.8))
+                    .padding(.trailing, 10)
             }
-            .buttonStyle(.plain)
-            .disabled(!sendIsEnabled(librarian: librarian))
-            .padding(.trailing, 10)
         }
         .frame(minHeight: 48)
         .background(Color.white.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 22))
         .overlay(
             RoundedRectangle(cornerRadius: 22)
-                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                .strokeBorder(klein.opacity(0.45), lineWidth: 1)
         )
     }
 

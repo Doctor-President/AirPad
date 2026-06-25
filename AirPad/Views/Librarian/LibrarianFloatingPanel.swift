@@ -95,14 +95,11 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     // `@objc optional` (Controller.swift:53-55), so dispatch happens via
     // selector. NSObject subclasses normally get `@objc` inferred for
     // methods that satisfy `@objc` protocol requirements, but pinning it
-    // here removes any doubt during the "no intermediate progress" diag —
-    // if the protocol's required selector ever drifts, the compiler will
-    // flag the mismatch instead of failing silently.
+    // here removes any doubt — if the protocol's required selector ever
+    // drifts, the compiler will flag the mismatch instead of failing
+    // silently.
     @objc nonisolated func floatingPanelDidMove(_ fpc: FloatingPanelController) {
         MainActor.assumeIsolated {
-            // DIAG (peekProgress flat). Remove with the rest of the debug
-            // prints once the signal is confirmed to drive layout.
-            print("[morph] didMove tick — surfaceLocation.y=\(fpc.surfaceLocation.y)")
             recomputeProgress(fpc)
         }
     }
@@ -114,12 +111,10 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
         let span = tipY - halfY
         guard span > 0 else {
             peekProgress = 0
-            print("[morph] recompute — span<=0 (tipY=\(tipY) halfY=\(halfY) liveY=\(liveY)) → progress=0")
             return
         }
         let raw = (tipY - liveY) / span
         peekProgress = min(max(raw, 0), 1)
-        print("[morph] recompute — tipY=\(tipY) halfY=\(halfY) liveY=\(liveY) raw=\(raw) progress=\(peekProgress)")
     }
 
     nonisolated func floatingPanelWillBeginDragging(_ fpc: FloatingPanelController) {

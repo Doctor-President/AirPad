@@ -1038,23 +1038,14 @@ struct LibrarianSurface: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear input")
                 }
-                // Dictating → stop. Idle+text → send. Empty → mic.
-                if isHot {
+                // Dictating WITH text, or idle WITH text → SEND. Sending
+                // also ends any active dictation (one move, no separate
+                // stop step — Ask's intent is to send, not to review).
+                if hasText {
                     Button {
-                        dictation.toggle(
-                            token: "ask",
-                            baseline: librarian.inputText,
-                            onUpdate: { librarian.inputText = $0 }
-                        )
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(kleinGrad)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Stop dictation")
-                } else if hasText {
-                    Button {
+                        if dictation.isListening && dictation.activeToken == "ask" {
+                            dictation.stop()
+                        }
                         Task { await librarian.executeQuery(store: store) }
                     } label: {
                         let enabled = sendIsEnabled(librarian: librarian)
@@ -1068,13 +1059,24 @@ struct LibrarianSurface: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!sendIsEnabled(librarian: librarian))
-                } else {
+                } else if isHot {
+                    // Dictating but NOTHING said yet → stop (nothing to
+                    // send, so offer a way out rather than a dead send).
                     Button {
-                        dictation.toggle(
-                            token: "ask",
-                            baseline: librarian.inputText,
-                            onUpdate: { librarian.inputText = $0 }
-                        )
+                        dictation.toggle(token: "ask", baseline: librarian.inputText,
+                                         onUpdate: { librarian.inputText = $0 })
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(kleinGrad)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Stop dictation")
+                } else {
+                    // Idle, empty → mic.
+                    Button {
+                        dictation.toggle(token: "ask", baseline: librarian.inputText,
+                                         onUpdate: { librarian.inputText = $0 })
                     } label: {
                         Image(systemName: "mic.fill")
                             .font(.system(size: 22))

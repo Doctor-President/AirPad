@@ -29,6 +29,11 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     var selectedVoiceIdentifier: String? {
         didSet {
             UserDefaults.standard.set(selectedVoiceIdentifier, forKey: Self.voiceKey)
+            // A voice change can't apply mid-utterance — stop so the
+            // controls return to a clean idle state. Next play uses
+            // the new voice. (Without this the button's token state
+            // and the synth's actual state drift → stuck control.)
+            if isSpeaking { stop() }
         }
     }
     private static let voiceKey = "tts.selectedVoiceIdentifier"

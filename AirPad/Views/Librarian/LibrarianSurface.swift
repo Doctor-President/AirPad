@@ -280,21 +280,6 @@ struct LibrarianSurface: View {
         let outerCorner = fieldH / 2
         let outerShape = RoundedRectangle(cornerRadius: outerCorner, style: .continuous)
 
-        // Inner darkened inset: at p=0 it's the Maps anatomy (13pt
-        // inset, corner ≈ outer−4, black 0.40); at p=1 the inset
-        // collapses to 0 and the dark fill fades to a flat near-
-        // invisible plate so the field reads as a single panel field.
-        let innerInset = lerp(13, 0, p)
-        let innerCorner = max(outerCorner - 4, 0)
-        let innerShape = RoundedRectangle(cornerRadius: innerCorner, style: .continuous)
-        // Legacy flat fill — dense plate at peek (0.40), near-invisible
-        // plate at expanded (0.06). Mounted ONLY when the peek flare is
-        // OFF; when the flare is ON the masked dark-center layer IS the
-        // dark, so a separate plate would read as a competing glossy
-        // slab behind the masked color (the prior pass left this slab
-        // visible — that's the "sheen" Tom wanted gone).
-        let innerBgOpacity = Double(lerp(0.40, 0.06, p))
-
         // Y-position interpolation. Peek anchor: 21pt above the panel
         // bottom (so the field's bottom edge sits at geo.height − 21).
         // Expanded anchor: anchors a few points inside the header's
@@ -324,6 +309,21 @@ struct LibrarianSurface: View {
         )
 
         ZStack {
+            // Peek flare on the OUTER pill body. Color feathers at the
+            // perimeter via the mask; masked-black center supplies the dark.
+            // Sits over the glass (PeekGlassBackground modifier below) and
+            // under the field content. Fades out as the field grows past peek.
+            if sfPeekFlareOn {
+                let flareFade = max(0, min(1, Double((p - 0.5) / 0.5)))
+                SolarFlarePeekFlare(
+                    palette: SolarFlarePalette(rawValue: sfPeekFlarePaletteRaw) ?? .solar,
+                    desaturate: sfPeekFlareDesat,
+                    strength: sfPeekFlareStrength
+                )
+                .opacity(1 - flareFade)
+                .clipShape(outerShape)
+                .allowsHitTesting(false)
+            }
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 19, weight: .regular))
@@ -372,40 +372,7 @@ struct LibrarianSurface: View {
             }
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
-            .frame(height: max(0, fieldH - innerInset * 2))
-            // Inner-inset background. When the peek flare is ON, the
-            // masked-flare view is the ONLY thing in here — its black-
-            // masked core supplies the dark center and its inverse-
-            // masked color reveals at the edges, all from one PNG asset
-            // used at opposite polarity. No separate dark plate behind
-            // it (the prior pass's plate read as a competing glossy
-            // slab through the color-revealed perimeter). When the
-            // flare is OFF, fall back to the legacy flat plate so the
-            // pill keeps its anchor-dark center either way.
-            .background {
-                ZStack {
-                    if sfPeekFlareOn {
-                        // Hold full flare strength through the peek
-                        // band (p < 0.5), then fade smoothly across
-                        // p=0.5→1.0 so the flare hands off to the
-                        // expanded chrome's flat plate cleanly. The
-                        // 0.5 inflection matches `chromeOpacity`'s
-                        // ramp so flare fade and chrome rise are
-                        // phase-locked.
-                        let flareFade = max(0, min(1, Double((p - 0.5) / 0.5)))
-                        SolarFlarePeekFlare(
-                            palette: SolarFlarePalette(rawValue: sfPeekFlarePaletteRaw) ?? .solar,
-                            desaturate: sfPeekFlareDesat,
-                            strength: sfPeekFlareStrength
-                        )
-                        .opacity(1 - flareFade)
-                        .clipShape(innerShape)
-                    } else {
-                        innerShape.fill(Color.black.opacity(innerBgOpacity))
-                    }
-                }
-            }
-            .padding(innerInset)
+            .frame(height: fieldH)
         }
         .frame(width: fieldW, height: fieldH)
         // Whole-capsule tap target — single-tap focuses Search from

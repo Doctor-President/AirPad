@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 import FloatingPanel
 
 /// Librarian surface — full Librarian chrome rendered inside the
@@ -91,6 +92,7 @@ struct LibrarianSurface: View {
     @State private var keyboardHeight: CGFloat = 0
 
     @State private var dictation = LiveDictationService.shared
+    @State private var speech = SpeechSynthesisService.shared
 
     /// Identifiable wrapper so `.sheet(item:)` re-presents when the user
     /// taps a different chip without dismissing first. Carries the
@@ -1309,6 +1311,46 @@ struct LibrarianSurface: View {
                     liveCitations: liveCitations
                 )
             }
+
+            if !exchange.responseText.isEmpty {
+                let isActive = speech.activeToken == exchange.id
+                let showPause = isActive && speech.isSpeaking && !speech.isPaused
+                let voiceSelection = Binding<String?>(
+                    get: { speech.selectedVoiceIdentifier },
+                    set: { speech.selectedVoiceIdentifier = $0 }
+                )
+                HStack(spacing: 14) {
+                    Button {
+                        speech.toggle(token: exchange.id, text: exchange.responseText)
+                    } label: {
+                        Image(systemName: showPause ? "pause" : "play")
+                            .font(.system(size: 22))
+                            .foregroundStyle(.white.opacity(0.6))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showPause ? "Pause" : "Play")
+
+                    Menu {
+                        Picker("Voice", selection: voiceSelection) {
+                            Text("Best available").tag(String?.none)
+                            ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
+                                Text(voiceLabel(v)).tag(Optional(v.identifier))
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "person.wave.2")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Choose voice")
+                }
+                .padding(.top, 2)
+            }
         }
     }
 
@@ -1442,6 +1484,16 @@ struct LibrarianSurface: View {
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    private func voiceLabel(_ v: AVSpeechSynthesisVoice) -> String {
+        let q: String
+        switch v.quality {
+        case .premium:  q = "Premium"
+        case .enhanced: q = "Enhanced"
+        default:        q = "Default"
+        }
+        return "\(v.name) — \(q)"
     }
 
     private func citationDotColor(node: Node?) -> Color {

@@ -97,6 +97,9 @@ enum SolarFlareTuningKey {
     static let peekFlarePalette      = "sf.peekFlarePalette"
     static let peekFlareStrength     = "sf.peekFlareStrength"
     static let peekFlareDesat        = "sf.peekFlareDesat"
+    static let peekFlareMaskOpacity  = "sf.peekFlareMaskOpacity"
+    static let peekFlareColorA       = "sf.peekFlareColorA"
+    static let peekFlareColorB       = "sf.peekFlareColorB"
 }
 
 // MARK: - Defaults
@@ -158,6 +161,9 @@ enum SolarFlareTuningDefaults {
     static let peekFlarePalette: String       = "Solar"
     static let peekFlareStrength: Double      = 0.90
     static let peekFlareDesat: Double         = 0.00
+    static let peekFlareMaskOpacity: Double   = 1.0
+    static let peekFlareColorA: String        = "Coral"
+    static let peekFlareColorB: String        = "Indigo"
 }
 
 // MARK: - Palette
@@ -185,6 +191,27 @@ enum SolarFlarePalette: String, CaseIterable {
             return [Color(hexString: "E8820A"), Color(hexString: "E36B4E")]
         }
     }
+}
+
+/// On-device color vocabulary for the peek flare's two gradient ends.
+/// Chosen BY NAME only — no hue/color wheel — so the tuner stays usable
+/// for T (colorblind). Hex literals are the verifiable source of truth.
+enum SolarFlareNamedColor: String, CaseIterable {
+    case klein = "Klein", cyan = "Cyan", mango = "Mango", coral = "Coral"
+    case indigo = "Indigo", teal = "Teal", violet = "Violet", magenta = "Magenta"
+    var hex: String {
+        switch self {
+        case .klein:   return "1B59C2"
+        case .cyan:    return "00BFFF"
+        case .mango:   return "E8820A"
+        case .coral:   return "E36B4E"
+        case .indigo:  return "6366F1"
+        case .teal:    return "14B8A6"
+        case .violet:  return "8B5CF6"
+        case .magenta: return "D6409F"
+        }
+    }
+    var color: Color { Color(hexString: hex) }
 }
 
 // MARK: - Noise cache
@@ -640,47 +667,31 @@ struct SolarFlarePrismaticMesh: View {
 ///
 /// `allowsHitTesting(false)` — purely visual.
 struct SolarFlarePeekFlare: View {
-    let palette: SolarFlarePalette
+    let colorA: Color
+    let colorB: Color
     let desaturate: Double
     let strength: Double
+    let maskOpacity: Double
 
     var body: some View {
-        let a0 = SolarFlarePrismaticMesh.desat(palette.accents[0], by: desaturate)
-        let a1 = SolarFlarePrismaticMesh.desat(palette.accents[1], by: desaturate)
+        let a0 = SolarFlarePrismaticMesh.desat(colorA, by: desaturate)
+        let a1 = SolarFlarePrismaticMesh.desat(colorB, by: desaturate)
         let colorField = LinearGradient(
-            colors: [a0, a1],
-            startPoint: .leading,
-            endPoint: .trailing
+            colors: [a0, a1], startPoint: .leading, endPoint: .trailing
         )
-
         ZStack {
-            // EDGE COLOR — opaque rectangle with the PNG pill punched
-            // OUT (destinationOut). The punched-out region (the white
-            // core) becomes transparent in the mask, so the color
-            // beneath it is hidden at center; the un-punched ring
-            // around it stays opaque, so color reveals at the edges.
-            // `.compositingGroup()` isolates the blend so destinationOut
-            // only affects this masked group, not anything below it.
             colorField
                 .opacity(strength)
                 .mask(
                     ZStack {
                         Rectangle().fill(.white)
-                        Image("PeekPillMask")
-                            .resizable()
-                            .blendMode(.destinationOut)
+                        Image("PeekPillMask").resizable().blendMode(.destinationOut)
                     }
                     .compositingGroup()
                 )
-
-            // DARK CENTER — black masked by the PNG as-is. The white
-            // core becomes opaque black, transparent surroundings drop
-            // to clear. No standalone plate; the mask IS the dark.
             Color.black
-                .mask(
-                    Image("PeekPillMask")
-                        .resizable()
-                )
+                .opacity(maskOpacity)
+                .mask(Image("PeekPillMask").resizable())
         }
         .allowsHitTesting(false)
     }
@@ -741,6 +752,9 @@ struct SolarFlareTuningPanel: View {
     @AppStorage(SolarFlareTuningKey.peekFlarePalette) private var peekFlarePaletteRaw: String = SolarFlareTuningDefaults.peekFlarePalette
     @AppStorage(SolarFlareTuningKey.peekFlareStrength) private var peekFlareStrength: Double = SolarFlareTuningDefaults.peekFlareStrength
     @AppStorage(SolarFlareTuningKey.peekFlareDesat) private var peekFlareDesat: Double = SolarFlareTuningDefaults.peekFlareDesat
+    @AppStorage(SolarFlareTuningKey.peekFlareMaskOpacity) private var peekFlareMaskOpacity: Double = SolarFlareTuningDefaults.peekFlareMaskOpacity
+    @AppStorage(SolarFlareTuningKey.peekFlareColorA) private var peekFlareColorA: String = SolarFlareTuningDefaults.peekFlareColorA
+    @AppStorage(SolarFlareTuningKey.peekFlareColorB) private var peekFlareColorB: String = SolarFlareTuningDefaults.peekFlareColorB
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied: Bool = false
@@ -815,17 +829,24 @@ struct SolarFlareTuningPanel: View {
                     // palette/strength/desat dialable on-device, falloff
                     // shape edited by repainting the mask.
                     sectionHeader("peek flare")
-                    Picker("Flare palette", selection: $peekFlarePaletteRaw) {
-                        ForEach(SolarFlarePalette.allCases, id: \.rawValue) { p in
-                            Text(p.rawValue).tag(p.rawValue)
-                        }
+                    HStack(spacing: 8) {
+                        Picker("L", selection: $peekFlareColorA) {
+                            ForEach(SolarFlareNamedColor.allCases, id: \.rawValue) { c in
+                                Text(c.rawValue).tag(c.rawValue)
+                            }
+                        }.pickerStyle(.menu)
+                        Picker("R", selection: $peekFlareColorB) {
+                            ForEach(SolarFlareNamedColor.allCases, id: \.rawValue) { c in
+                                Text(c.rawValue).tag(c.rawValue)
+                            }
+                        }.pickerStyle(.menu)
                     }
-                    .pickerStyle(.segmented)
                     .opacity(peekFlareOn ? 1 : 0.3)
                     .allowsHitTesting(peekFlareOn)
                     Group {
-                        sliderRow(label: "strength", value: $peekFlareStrength,       range: 0...1,     step: 0.01,  gated: !peekFlareOn)
-                        sliderRow(label: "desat",    value: $peekFlareDesat,          range: 0...1,     step: 0.02,  gated: !peekFlareOn)
+                        sliderRow(label: "strength", value: $peekFlareStrength,   range: 0...1, step: 0.01, gated: !peekFlareOn)
+                        sliderRow(label: "mask α",   value: $peekFlareMaskOpacity, range: 0...1, step: 0.01, gated: !peekFlareOn)
+                        sliderRow(label: "desat",    value: $peekFlareDesat,       range: 0...1, step: 0.02, gated: !peekFlareOn)
                     }
                 }
             }
@@ -1063,7 +1084,9 @@ struct SolarFlareTuningPanel: View {
             "    askGlowBlur:            \(String(format: "%.2f", askGlowBlur))",
             "    askGlowOpacity:         \(String(format: "%.2f", askGlowOpacity))",
             "  peekFlare:",
-            "    peekFlarePalette:       \(peekFlarePaletteRaw)",
+            "    peekFlareColorA:        \(peekFlareColorA)",
+            "    peekFlareColorB:        \(peekFlareColorB)",
+            "    peekFlareMaskOpacity:   \(String(format: "%.2f", peekFlareMaskOpacity))",
             "    peekFlareStrength:      \(String(format: "%.2f", peekFlareStrength))",
             "    peekFlareDesat:         \(String(format: "%.2f", peekFlareDesat))"
         ]

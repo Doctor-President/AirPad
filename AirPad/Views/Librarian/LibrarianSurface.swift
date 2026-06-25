@@ -79,6 +79,9 @@ struct LibrarianSurface: View {
     @AppStorage(SolarFlareTuningKey.peekFlarePalette) private var sfPeekFlarePaletteRaw: String = SolarFlareTuningDefaults.peekFlarePalette
     @AppStorage(SolarFlareTuningKey.peekFlareStrength) private var sfPeekFlareStrength: Double = SolarFlareTuningDefaults.peekFlareStrength
     @AppStorage(SolarFlareTuningKey.peekFlareDesat) private var sfPeekFlareDesat: Double = SolarFlareTuningDefaults.peekFlareDesat
+    @AppStorage(SolarFlareTuningKey.peekFlareMaskOpacity) private var sfPeekFlareMaskOpacity: Double = SolarFlareTuningDefaults.peekFlareMaskOpacity
+    @AppStorage(SolarFlareTuningKey.peekFlareColorA) private var sfPeekFlareColorARaw: String = SolarFlareTuningDefaults.peekFlareColorA
+    @AppStorage(SolarFlareTuningKey.peekFlareColorB) private var sfPeekFlareColorBRaw: String = SolarFlareTuningDefaults.peekFlareColorB
 
     /// Live keyboard height, observed via UIResponder notifications.
     /// Drives in-content layout (the input row rides above the keyboard,
@@ -315,10 +318,13 @@ struct LibrarianSurface: View {
             // under the field content. Fades out as the field grows past peek.
             if sfPeekFlareOn {
                 let flareFade = max(0, min(1, Double((p - 0.5) / 0.5)))
+                let cA = (SolarFlareNamedColor(rawValue: sfPeekFlareColorARaw) ?? .coral).color
+                let cB = (SolarFlareNamedColor(rawValue: sfPeekFlareColorBRaw) ?? .indigo).color
                 SolarFlarePeekFlare(
-                    palette: SolarFlarePalette(rawValue: sfPeekFlarePaletteRaw) ?? .solar,
+                    colorA: cA, colorB: cB,
                     desaturate: sfPeekFlareDesat,
-                    strength: sfPeekFlareStrength
+                    strength: sfPeekFlareStrength,
+                    maskOpacity: sfPeekFlareMaskOpacity
                 )
                 .opacity(1 - flareFade)
                 .clipShape(outerShape)

@@ -1,5 +1,7 @@
 import Foundation
+import UIKit
 import AVFoundation
+import MediaPlayer
 import Observation
 
 /// Shared text-to-speech engine. On-device AVSpeechSynthesizer — no
@@ -39,11 +41,81 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     private static let voiceKey = "tts.selectedVoiceIdentifier"
 
     private let synthesizer = AVSpeechSynthesizer()
+    private var remoteCommandsConfigured = false
 
     private override init() {
         super.init()
         synthesizer.delegate = self
         selectedVoiceIdentifier = UserDefaults.standard.string(forKey: Self.voiceKey)
+    }
+
+    /// Wire MPRemoteCommandCenter once on first speak — needed so the
+    /// lock-screen + Control Center transport bar controls drive the
+    /// synthesizer instead of the system's default no-op handlers.
+    private func configureRemoteCommandsIfNeeded() {
+        guard !remoteCommandsConfigured else { return }
+        remoteCommandsConfigured = true
+        let center = MPRemoteCommandCenter.shared()
+
+        center.playCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            if self.isPaused {
+                self.synthesizer.continueSpeaking()
+                self.isPaused = false
+                self.updateNowPlayingPlaybackState()
+                return .success
+            }
+            return .commandFailed
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            guard let self, self.isSpeaking, !self.isPaused else { return .commandFailed }
+            self.synthesizer.pauseSpeaking(at: .word)
+            self.isPaused = true
+            self.updateNowPlayingPlaybackState()
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            guard let self, self.isSpeaking else { return .commandFailed }
+            if self.isPaused {
+                self.synthesizer.continueSpeaking()
+                self.isPaused = false
+            } else {
+                self.synthesizer.pauseSpeaking(at: .word)
+                self.isPaused = true
+            }
+            self.updateNowPlayingPlaybackState()
+            return .success
+        }
+        center.stopCommand.addTarget { [weak self] _ in
+            self?.stop()
+            return .success
+        }
+    }
+
+    private static let nowPlayingArtwork: MPMediaItemArtwork? = {
+        guard let img = UIImage(named: "NowPlayingArtwork") else { return nil }
+        return MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+    }()
+
+    private func setNowPlaying(title: String) {
+        var info: [String: Any] = [:]
+        info[MPMediaItemPropertyTitle] = title
+        info[MPMediaItemPropertyArtist] = "AirPad"
+        info[MPNowPlayingInfoPropertyPlaybackRate] = 1.0
+        if let art = Self.nowPlayingArtwork {
+            info[MPMediaItemPropertyArtwork] = art
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func updateNowPlayingPlaybackState() {
+        guard var info = MPNowPlayingInfoCenter.default().nowPlayingInfo else { return }
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPaused ? 0.0 : 1.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func clearNowPlaying() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     /// Installed voices for the current language, best quality first.
@@ -134,6 +206,8 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         isSpeaking = true
         isPaused = false
         activeToken = token
+        configureRemoteCommandsIfNeeded()
+        setNowPlaying(title: "AirPad")
         synthesizer.speak(utterance)
     }
 
@@ -144,6 +218,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         isSpeaking = false
         isPaused = false
         activeToken = nil
+        clearNowPlaying()
     }
 
     // Delegate — reset state when speech ends naturally or is cancelled.
@@ -153,6 +228,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
             isSpeaking = false
             isPaused = false
             activeToken = nil
+            clearNowPlaying()
         }
     }
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer,
@@ -161,6 +237,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
             isSpeaking = false
             isPaused = false
             activeToken = nil
+            clearNowPlaying()
         }
     }
 }

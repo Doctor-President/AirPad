@@ -37,6 +37,21 @@ struct CanvasChrome: View {
     @State private var showBatchAddTagSheet = false
     @State private var showHistory = false
 
+    #if DEBUG
+    /// DEBUG-only — Solar Flare material spike tuner. Mounted here in
+    /// CanvasChrome (not inside CanvasView/NodeGridView/etc.) so the
+    /// ☀︎ trigger is reachable across every body mode (graph, list,
+    /// grid, cover flow). NOT inside the Librarian panel surface —
+    /// the FloatingPanel eats touches inside its own bounds (the
+    /// repeated past mistake). Self-deletes once the sf.* values are
+    /// baked into SolarFlareMaterial as literals.
+    @State private var showSolarFlareTuningPanel = false
+    /// Drag offset for the floating widget. Owned here so position
+    /// survives close/re-open within a session — same pattern as
+    /// NodeGridView's tile tuning panel.
+    @State private var solarFlareTuningPanelOffset: CGSize = .zero
+    #endif
+
     private var filterState: FilterState {
         store.filterState(for: scope)
     }
@@ -230,6 +245,18 @@ struct CanvasChrome: View {
                 onSettings: { showSettings = true },
                 onQuarantineReview: { showQuarantineReview = true }
             )
+
+            #if DEBUG
+            // Top-most dev layer — placed AFTER CanvasSlideOutMenu so it
+            // renders above every other CanvasChrome overlay (including
+            // the menu, batch bar, banners). Both pieces are zero-cost
+            // when the spike is removed; just delete this block + the
+            // two #if DEBUG @State props above.
+            solarFlareTuningTrigger
+            if showSolarFlareTuningPanel {
+                floatingSolarFlareTuningPanel
+            }
+            #endif
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
@@ -274,6 +301,54 @@ struct CanvasChrome: View {
             Text("This cannot be undone.")
         }
     }
+
+    #if DEBUG
+    // MARK: - Solar Flare tuning (DEBUG)
+
+    /// Tiny ☀︎ in the top-leading corner, below the back button (top: 12)
+    /// and below NodeGridView's tile-tuning ⚙ (top: 60). Faint so it
+    /// doesn't distract in normal use; tap shows/hides the floating
+    /// Solar Flare tuner. Always-on visibility (no detail / selection
+    /// gates) — the spike is meant to be reachable from any state.
+    private var solarFlareTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showSolarFlareTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "sun.max")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 100)
+        .padding(.leading, 10)
+    }
+
+    /// Floating Solar Flare tuner. Default-positioned just above the
+    /// panel's expanded chrome so it doesn't collide with the morphing
+    /// field when T is dialing values from peek. Position is parent-
+    /// owned (`solarFlareTuningPanelOffset`) so the widget survives
+    /// close/re-open within a session.
+    private var floatingSolarFlareTuningPanel: some View {
+        VStack {
+            Spacer()
+            SolarFlareTuningPanel(
+                isPresented: $showSolarFlareTuningPanel,
+                position: $solarFlareTuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+    #endif
 }
 
 // MARK: - Dashboard back button

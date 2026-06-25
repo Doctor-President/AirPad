@@ -47,6 +47,39 @@ struct LibrarianSurface: View {
     /// is live.
     @FocusState private var isSearchFocused: Bool
 
+    /// Focus-driven Solar Flare accent. Mirrors which field is currently
+    /// focused (Search → Mango #E8820A, Ask → Klein #1B59C2, neither →
+    /// nil) so the panel's edge-glow layer can cross-fade to the
+    /// focused field's hue. The field-glow halos read their own
+    /// per-field visibility (isSearchFocused / isInputFocused) and
+    /// don't consume this property — it exists purely for the panel
+    /// edge-glow's color crossfade. Updated inside `withAnimation` so
+    /// the cross-fade is centralized; gated on `accessibilityReduceMotion`.
+    @State private var activeAccent: Color? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @AppStorage(SolarFlareTuningKey.bloomOn) private var sfBloomOn: Bool = SolarFlareTuningDefaults.bloomOn
+
+    // Ask-specific outer-pass overrides for `SolarFlareFieldGlow` —
+    // surfaced here so the call site in `expandedChrome` can pass them
+    // straight through. Search uses the shared `sf.fieldGlow*` defaults
+    // (passes nil for these). See `SolarFlareTuningKey.askGlow*`.
+    @AppStorage(SolarFlareTuningKey.askGlowWidth) private var askGlowWidth: Double = SolarFlareTuningDefaults.askGlowWidth
+    @AppStorage(SolarFlareTuningKey.askGlowBlur) private var askGlowBlur: Double = SolarFlareTuningDefaults.askGlowBlur
+    @AppStorage(SolarFlareTuningKey.askGlowOpacity) private var askGlowOpacity: Double = SolarFlareTuningDefaults.askGlowOpacity
+
+    // Peek-pill masked LIVE color flare — replaces the flat dark inner
+    // fill at peek with the prismatic mesh clipped by a hand-painted
+    // grayscale PNG ("PeekPillMask") that carries the falloff. Driven by
+    // `sf.peekFlare*` knobs in the tuner; gates are read at the
+    // morphingField mount site so the flare fades as the field grows
+    // past peek.
+    @AppStorage(SolarFlareTuningKey.peekFlareOn) private var sfPeekFlareOn: Bool = SolarFlareTuningDefaults.peekFlareOn
+    @AppStorage(SolarFlareTuningKey.peekFlarePalette) private var sfPeekFlarePaletteRaw: String = SolarFlareTuningDefaults.peekFlarePalette
+    @AppStorage(SolarFlareTuningKey.peekFlareStrength) private var sfPeekFlareStrength: Double = SolarFlareTuningDefaults.peekFlareStrength
+    @AppStorage(SolarFlareTuningKey.peekFlareDesat) private var sfPeekFlareDesat: Double = SolarFlareTuningDefaults.peekFlareDesat
+
     /// Live keyboard height, observed via UIResponder notifications.
     /// Drives in-content layout (the input row rides above the keyboard,
     /// the transcript stays readable, the dismiss-keyboard affordance
@@ -89,18 +122,16 @@ struct LibrarianSurface: View {
         // change as p climbs from 0→1.
         GeometryReader { geo in
             ZStack {
-                // Panel material. Tied to `chromeOpacity` so the peek
-                // posture shows only the morphing field's Liquid Glass;
-                // the panel-wide `.regularMaterial` rises with the
-                // chrome. The -150pt bottom buffer is the spring-
-                // overshoot anti-flash carried over from the crossfade
-                // build (panel surface extends past the screen during
-                // attraction; the negative pad draws material into
-                // that tail without inflating chrome layout).
-                RoundedRectangle(cornerRadius: surfaceCornerRadius)
-                    .fill(.regularMaterial)
-                    .ignoresSafeArea(.container, edges: .bottom)
-                    .padding(.bottom, -150)
+                // Panel material — Solar Flare layered look (tuner-driven
+                // base + dark tint + optional rotating prismatic edge).
+                // Tied to `chromeOpacity` so the peek posture shows only
+                // the morphing field's Liquid Glass; the panel-wide
+                // material rises with the chrome. The -150pt bottom
+                // buffer + edge-vs-fill split live inside
+                // `SolarFlareMaterial`. Drag-gate flips off the rotating
+                // edge during finger-drag to keep the live motion cheap.
+                SolarFlareMaterial(isDragging: panelModel.isDragging,
+                                   activeAccent: activeAccent)
                     .opacity(chromeOpacity)
                     .allowsHitTesting(false)
 
@@ -155,6 +186,7 @@ struct LibrarianSurface: View {
             if focused {
                 panelModel.expandToFull(animated: true)
             }
+            updateActiveAccent()
         }
         .onChange(of: isSearchFocused) { _, focused in
             // Mirror the chat input's promote-on-focus for the search
@@ -164,6 +196,7 @@ struct LibrarianSurface: View {
             if focused {
                 panelModel.expandToFull(animated: true)
             }
+            updateActiveAccent()
         }
         .sheet(item: $presentedCitation) { context in
             CitationSheet(
@@ -254,6 +287,12 @@ struct LibrarianSurface: View {
         let innerInset = lerp(13, 0, p)
         let innerCorner = max(outerCorner - 4, 0)
         let innerShape = RoundedRectangle(cornerRadius: innerCorner, style: .continuous)
+        // Legacy flat fill — dense plate at peek (0.40), near-invisible
+        // plate at expanded (0.06). Mounted ONLY when the peek flare is
+        // OFF; when the flare is ON the masked dark-center layer IS the
+        // dark, so a separate plate would read as a competing glossy
+        // slab behind the masked color (the prior pass left this slab
+        // visible — that's the "sheen" Tom wanted gone).
         let innerBgOpacity = Double(lerp(0.40, 0.06, p))
 
         // Y-position interpolation. Peek anchor: 21pt above the panel
@@ -274,12 +313,22 @@ struct LibrarianSurface: View {
         // they hit full Mango so the field reads as Search clearly.
         let mango = Color(hexString: "E8820A")
         let iconOpacity = lerpD(0.66, 1.0, p)
+        // Within-family top→bottom gradient: amber lifted top, mango
+        // grounded bottom. Reads richer than a flat fill while staying
+        // inside the Mango family, paired with the Klein/cyan grad on
+        // the Ask icons so the two fields share treatment.
+        let mangoGrad = LinearGradient(
+            colors: [Color(hexString: "F2A93B"), Color(hexString: "E8820A")],
+            startPoint: .top,
+            endPoint: .bottom
+        )
 
         ZStack {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 19, weight: .regular))
-                    .foregroundStyle(mango.opacity(iconOpacity))
+                    .foregroundStyle(mangoGrad)
+                    .opacity(iconOpacity)
                 // The real Search TextField — binds to the same
                 // `librarian.searchText` that drives instant MATCHES /
                 // RELATED. Gated on `p > 0.5` so at peek the whole pill
@@ -297,25 +346,85 @@ struct LibrarianSurface: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .allowsHitTesting(p > 0.5)
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 19))
-                    .foregroundStyle(mango.opacity(iconOpacity))
+                // Safari-style trailing slot: text present → clear (×),
+                // empty → mic. Replace (not stack) so the trailing
+                // affordance is unambiguous. The clear button keeps
+                // focus — only mutates `searchText`, never touches
+                // `isSearchFocused`. Peek-gated (`p > 0.5`) so the
+                // pill at peek doesn't show a clear control before
+                // the keyboard is even up.
+                if !librarian.searchText.isEmpty && p > 0.5 {
+                    Button {
+                        librarian.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
+                } else {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 19))
+                        .foregroundStyle(mangoGrad)
+                        .opacity(iconOpacity)
+                }
             }
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
             .frame(height: max(0, fieldH - innerInset * 2))
-            .background(Color.black.opacity(innerBgOpacity), in: innerShape)
+            // Inner-inset background. When the peek flare is ON, the
+            // masked-flare view is the ONLY thing in here — its black-
+            // masked core supplies the dark center and its inverse-
+            // masked color reveals at the edges, all from one PNG asset
+            // used at opposite polarity. No separate dark plate behind
+            // it (the prior pass's plate read as a competing glossy
+            // slab through the color-revealed perimeter). When the
+            // flare is OFF, fall back to the legacy flat plate so the
+            // pill keeps its anchor-dark center either way.
+            .background {
+                ZStack {
+                    if sfPeekFlareOn {
+                        // Hold full flare strength through the peek
+                        // band (p < 0.5), then fade smoothly across
+                        // p=0.5→1.0 so the flare hands off to the
+                        // expanded chrome's flat plate cleanly. The
+                        // 0.5 inflection matches `chromeOpacity`'s
+                        // ramp so flare fade and chrome rise are
+                        // phase-locked.
+                        let flareFade = max(0, min(1, Double((p - 0.5) / 0.5)))
+                        SolarFlarePeekFlare(
+                            palette: SolarFlarePalette(rawValue: sfPeekFlarePaletteRaw) ?? .solar,
+                            desaturate: sfPeekFlareDesat,
+                            strength: sfPeekFlareStrength
+                        )
+                        .opacity(1 - flareFade)
+                        .clipShape(innerShape)
+                    } else {
+                        innerShape.fill(Color.black.opacity(innerBgOpacity))
+                    }
+                }
+            }
             .padding(innerInset)
         }
         .frame(width: fieldW, height: fieldH)
+        // Whole-capsule tap target — single-tap focuses Search from
+        // anywhere on the pill (icons, padded gaps, the empty trailing
+        // area), not just the TextField's text region. Gated to
+        // expanded so it doesn't fight the peek expand-overlay below;
+        // at peek, the overlay catches the tap and expandToHalf
+        // dispatches before this gesture is reachable.
+        .contentShape(outerShape)
+        .onTapGesture {
+            if p > 0.5 { isSearchFocused = true }
+        }
         .modifier(PeekGlassBackground(shape: outerShape))
         // Tap-to-expand overlay — only mounted at peek (`p < 0.5`).
         // Transparent Rectangle catches the entire pill area and routes
         // to `expandToHalf`. Once expanded the overlay disappears and
-        // the TextField (with `allowsHitTesting(p > 0.5)`) receives
-        // taps directly for focus. This split avoids a `.onTapGesture`
-        // on the outer ZStack swallowing the tap that should focus the
-        // TextField at expanded.
+        // the parent ZStack's contentShape+onTapGesture (above) routes
+        // taps to `isSearchFocused = true` for any region outside the
+        // TextField's own text hit area.
         .overlay {
             if p < 0.5 {
                 Rectangle()
@@ -326,6 +435,35 @@ struct LibrarianSurface: View {
                     }
             }
         }
+        // Mango → amber field glow locked to the Search field's own
+        // outerShape (the morphing capsule). Mounted as `.background`
+        // so the outward bleed of the stroked-and-blurred halo
+        // radiates past the field edge into the panel material; the
+        // inward bleed is covered by the field's glass fill. NO clip
+        // here — `.background` doesn't clip, so the blur extends
+        // beyond the field bounds (clipped only by the floating-panel
+        // surface boundary, as intended). Gated on `sf.bloomOn` for
+        // isolated judgment.
+        .background {
+            if sfBloomOn {
+                SolarFlareFieldGlow(
+                    shape: outerShape,
+                    accent: Color(hexString: "E8820A"),
+                    secondary: Color(hexString: "F2A93B"),
+                    isVisible: isSearchFocused
+                )
+            }
+        }
+        // Subtle Safari-style focus bounce — resting state sits at
+        // 0.985, focus pops to 1.0 on a tight spring. Transform-only,
+        // no layout / blur work, so it's effectively free. The halo
+        // (.background above) and the field itself share the transform
+        // so they bounce as one. Gated on reduceMotion.
+        .scaleEffect(isSearchFocused ? 1.0 : 0.985)
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
+            value: isSearchFocused
+        )
         // .position uses the parent's coordinate space (the
         // GeometryReader, which is the surface). Centered horizontally;
         // centerY interpolated above.
@@ -351,6 +489,15 @@ struct LibrarianSurface: View {
     /// Outer pill background. iOS 26+ Liquid Glass; falls back to
     /// `.regularMaterial` on earlier versions. Shape is parameterized
     /// so the morphing field can pass an interpolated rounded rect.
+    ///
+    /// TODO (iOS 26 glass-tier): the masked-flare inset region above
+    /// should reveal REAL `.glassEffect` refraction through the same
+    /// soft-edged PeekPillMask, so the upper tier gets live wet-glass
+    /// while the floor (masked mesh) ships everywhere. Today the
+    /// masked color sits over the flat dark plate — fine on iOS 18,
+    /// but on iOS 26 the same mask alpha should drive a layered
+    /// `glassEffect` reveal so the pill picks up canvas refraction
+    /// behind the painted highlight, not just static color.
     private struct PeekGlassBackground<S: Shape>: ViewModifier {
         let shape: S
         @ViewBuilder
@@ -472,6 +619,40 @@ struct LibrarianSurface: View {
                         .frame(maxHeight: .infinity)
 
                     inputRow(librarian: librarian)
+                        // Klein → cyan field glow locked to the Ask
+                        // field's Capsule (matches `.clipShape(Capsule())`
+                        // inside `inputRow`). Mounted as `.background`
+                        // pre-padding so the stroked halo is
+                        // concentric with the capsule, not with the
+                        // padded slot. NO clip — outward bleed
+                        // radiates into the panel material when Ask
+                        // has focus. Ask overrides outer-pass width/
+                        // blur/opacity via `sf.askGlow*` (shorter
+                        // capsule in a busier area needs to radiate
+                        // harder than Search). Gated on `sf.bloomOn`.
+                        .background {
+                            if sfBloomOn {
+                                SolarFlareFieldGlow(
+                                    shape: Capsule(),
+                                    accent: Color(hexString: "1B59C2"),
+                                    secondary: Color(hexString: "00BFFF"),
+                                    isVisible: isInputFocused,
+                                    widthOverride: askGlowWidth,
+                                    blurOverride: askGlowBlur,
+                                    opacityOverride: askGlowOpacity
+                                )
+                            }
+                        }
+                        // Subtle Safari-style focus bounce — applied
+                        // OUTSIDE `.background` so the halo and the
+                        // field scale together. Resting 0.985, focus
+                        // 1.0 on a tight spring. Transform-only, no
+                        // layout work. Gated on reduceMotion.
+                        .scaleEffect(isInputFocused ? 1.0 : 0.985)
+                        .animation(
+                            reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
+                            value: isInputFocused
+                        )
                         .padding(.horizontal, 12)
                         // Top 6→14 adds breathing room above the Ask
                         // field so the tile grid's bottom row no
@@ -568,6 +749,30 @@ struct LibrarianSurface: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Dismiss keyboard")
+    }
+
+    /// Recompute `activeAccent` from the two @FocusState bindings.
+    /// Search wins if both are somehow set (shouldn't happen — focus
+    /// is exclusive — but Search is the higher-up field, so a tie
+    /// favors it). Wrapped in `withAnimation` so the panel edge-glow's
+    /// color crossfade rides the same easing as the field glows'
+    /// per-field opacity ramps; ReduceMotion gates the easing.
+    private func updateActiveAccent() {
+        let next: Color?
+        if isSearchFocused {
+            next = Color(hexString: "E8820A")
+        } else if isInputFocused {
+            next = Color(hexString: "1B59C2")
+        } else {
+            next = nil
+        }
+        if reduceMotion {
+            activeAccent = next
+        } else {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                activeAccent = next
+            }
+        }
     }
 
     /// Footer row holding the End button. Visible whenever the session
@@ -765,11 +970,20 @@ struct LibrarianSurface: View {
     /// typing happens at the bottom near the keyboard.
     @ViewBuilder
     private func inputRow(librarian: LibrarianState) -> some View {
-        // Klein Blue identity (#1B59C2). Caret + border + trailing-slot
-        // glyph (mic or send) all read against this hue so the Ask
-        // field is clearly differentiated from the Mango Search field
-        // above. Body text stays white; only the accents are Klein.
+        // Klein Blue identity (#1B59C2). Caret + trailing-slot glyph
+        // (mic or send) read against this hue so the Ask field is
+        // clearly differentiated from the Mango Search field above.
+        // Body text stays white; only the accents are Klein.
         let klein = Color(hexString: "1B59C2")
+        // Within-family top→bottom gradient: cyan lifted top, klein
+        // grounded bottom. Mirrors the morphing field's mango→amber
+        // gradient direction so the two fields read as a consistent
+        // treatment, just different families.
+        let kleinGrad = LinearGradient(
+            colors: [Color(hexString: "00BFFF"), Color(hexString: "1B59C2")],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         HStack(spacing: 8) {
@@ -814,18 +1028,42 @@ struct LibrarianSurface: View {
 
             // Messages-pattern trailing slot. Empty field → dictation
             // mic (Klein, visual-only this pass — speech wiring lives
-            // in a later brief). Non-empty → send arrow that runs the
-            // Ask pipeline. The send swaps to Klein when enabled, dim
-            // white when disabled (matches the prior disabled state).
-            // The lifted field-agnostic Done (Move 2 fix-pass v3 Item
-            // 1) still handles keyboard dismiss for both panes.
+            // in a later brief). Non-empty → clear (×) + send arrow
+            // that runs the Ask pipeline. The send swaps to Klein when
+            // enabled, dim white when disabled (matches the prior
+            // disabled state). The lifted field-agnostic Done (Move 2
+            // fix-pass v3 Item 1) still handles keyboard dismiss for
+            // both panes.
             if hasText {
+                // Safari-style clear (×) — sits to the LEFT of the
+                // send arrow when text is present. Only mutates
+                // `inputText`, never resigns focus, so the keyboard
+                // stays up after clearing.
+                Button {
+                    librarian.inputText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear input")
+
+                // Enabled send → kleinGrad (within-family gradient
+                // matches the mic + the Search icons). Disabled send
+                // stays a flat dim white — a gradient on a disabled
+                // control reads as enabled.
                 Button {
                     Task { await librarian.executeQuery(store: store) }
                 } label: {
+                    let enabled = sendIsEnabled(librarian: librarian)
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(sendIsEnabled(librarian: librarian) ? klein : .white.opacity(0.2))
+                        .foregroundStyle(
+                            enabled
+                                ? AnyShapeStyle(kleinGrad)
+                                : AnyShapeStyle(Color.white.opacity(0.2))
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(!sendIsEnabled(librarian: librarian))
@@ -833,12 +1071,25 @@ struct LibrarianSurface: View {
             } else {
                 Image(systemName: "mic.fill")
                     .font(.system(size: 22))
-                    .foregroundStyle(klein.opacity(0.8))
+                    .foregroundStyle(kleinGrad)
+                    .opacity(0.8)
                     .padding(.trailing, 10)
             }
         }
         .frame(minHeight: 48)
         .background(Color.white.opacity(0.04))
+        // Whole-capsule tap target — single-tap focuses Ask from
+        // anywhere on the pill (icons, the padded gap to the right of
+        // the mode glyph, the trailing area before mic/send), not
+        // just the TextField text region. The leading mode-glyph
+        // Button and trailing send/mic Button consume their own taps
+        // (`.buttonStyle(.plain)` does not propagate), so they still
+        // fire correctly; this gesture only catches the "empty"
+        // capsule regions.
+        .contentShape(Capsule())
+        .onTapGesture {
+            isInputFocused = true
+        }
         // Capsule (auto-rounds ends to half-height) so the terminating
         // ends are true semicircles concentric with the 44pt glyph ring
         // on the leading edge — the prior fixed cornerRadius: 22 read
@@ -846,10 +1097,23 @@ struct LibrarianSurface: View {
         // grew past one line (lineLimit 1...4) and corners stayed at
         // 22 while the field got taller. Capsule keeps the curve =
         // half-height at every line count.
+        //
+        // Resting stroke is a soft white top→bottom gradient (NOT the
+        // prior solid Klein outline) — restores the lit-top-edge look
+        // the Search field gets for free from its PeekGlassBackground
+        // glass rim, so the two fields read as the same material
+        // family without Ask reading as the "selected" one at rest.
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(klein.opacity(0.45), lineWidth: 1)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.22), .white.opacity(0.04)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 1
+                )
         )
     }
 

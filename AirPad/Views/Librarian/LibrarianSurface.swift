@@ -1022,47 +1022,68 @@ struct LibrarianSurface: View {
             // disabled state). The lifted field-agnostic Done (Move 2
             // fix-pass v3 Item 1) still handles keyboard dismiss for
             // both panes.
-            if hasText {
-                // Safari-style clear (×) — sits to the LEFT of the
-                // send arrow when text is present. Only mutates
-                // `inputText`, never resigns focus, so the keyboard
-                // stays up after clearing.
-                Button {
-                    librarian.inputText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.white.opacity(0.4))
+            let isHot = dictation.isListening && dictation.activeToken == "ask"
+            HStack(spacing: 8) {
+                // × clear — whenever there's text (dictating or not).
+                if hasText {
+                    Button {
+                        librarian.inputText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear input")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear input")
-
-                // Enabled send → kleinGrad (within-family gradient
-                // matches the mic + the Search icons). Disabled send
-                // stays a flat dim white — a gradient on a disabled
-                // control reads as enabled.
-                Button {
-                    Task { await librarian.executeQuery(store: store) }
-                } label: {
-                    let enabled = sendIsEnabled(librarian: librarian)
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(
-                            enabled
-                                ? AnyShapeStyle(kleinGrad)
-                                : AnyShapeStyle(Color.white.opacity(0.2))
+                // Dictating → stop. Idle+text → send. Empty → mic.
+                if isHot {
+                    Button {
+                        dictation.toggle(
+                            token: "ask",
+                            baseline: librarian.inputText,
+                            onUpdate: { librarian.inputText = $0 }
                         )
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(kleinGrad)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Stop dictation")
+                } else if hasText {
+                    Button {
+                        Task { await librarian.executeQuery(store: store) }
+                    } label: {
+                        let enabled = sendIsEnabled(librarian: librarian)
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(
+                                enabled
+                                    ? AnyShapeStyle(kleinGrad)
+                                    : AnyShapeStyle(Color.white.opacity(0.2))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!sendIsEnabled(librarian: librarian))
+                } else {
+                    Button {
+                        dictation.toggle(
+                            token: "ask",
+                            baseline: librarian.inputText,
+                            onUpdate: { librarian.inputText = $0 }
+                        )
+                    } label: {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 22))
+                            .foregroundStyle(kleinGrad)
+                            .opacity(0.8)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dictate")
                 }
-                .buttonStyle(.plain)
-                .disabled(!sendIsEnabled(librarian: librarian))
-                .padding(.trailing, 10)
-            } else {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(kleinGrad)
-                    .opacity(0.8)
-                    .padding(.trailing, 10)
             }
+            .padding(.trailing, 10)
         }
         .frame(minHeight: 48)
         .background(Color.white.opacity(0.04))

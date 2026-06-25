@@ -1506,19 +1506,35 @@ struct LibrarianSurface: View {
         return color
     }
 
-    /// `AttributedString` markdown with a forgiving fallback — if the
-    /// model emits something the parser chokes on, we still show the
-    /// raw text rather than dropping the answer entirely.
+    /// Cache of parsed markdown, keyed by the raw response text.
+    /// Committed exchange text is immutable, so a given string always
+    /// parses to the same AttributedString — caching it stops the
+    /// transcript from re-parsing every response on every drag frame
+    /// (peekProgress changes per-frame → body re-runs → transcript
+    /// rebuilds → this was re-parsing N essays at 60fps).
+    private static var markdownCache: [String: AttributedString] = [:]
+
     private func attributedMarkdown(_ text: String) -> AttributedString {
+        if let cached = Self.markdownCache[text] { return cached }
+        let result: AttributedString
         if let parsed = try? AttributedString(
             markdown: text,
             options: AttributedString.MarkdownParsingOptions(
                 interpretedSyntax: .inlineOnlyPreservingWhitespace
             )
         ) {
-            return parsed
+            result = parsed
+        } else {
+            result = AttributedString(text)
         }
-        return AttributedString(text)
+        // Soft cap — sessions rarely exceed this many distinct
+        // responses; clear-all on overflow is fine (worst case a few
+        // re-parses, not a per-frame leak).
+        if Self.markdownCache.count > 200 {
+            Self.markdownCache.removeAll(keepingCapacity: true)
+        }
+        Self.markdownCache[text] = result
+        return result
     }
 
     @ViewBuilder

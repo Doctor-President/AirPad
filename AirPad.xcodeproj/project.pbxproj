@@ -138,6 +138,7 @@
 		9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */; };
 		9EB9E29886AAC3A0626B456C /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
 		A13084DE621F1F87415AC97F /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
+		A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */; };
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
 		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
@@ -334,6 +335,7 @@
 		8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		909B3DB690784E89652659ED /* Collection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Collection.swift; sourceTree = "<group>"; };
 		90A621BCC5001A67C9B05A19 /* TextEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEntryBody.swift; sourceTree = "<group>"; };
+		9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveDictationService.swift; sourceTree = "<group>"; };
 		92F8312336CC2A7C1C2763EF /* SelectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionService.swift; sourceTree = "<group>"; };
 		9348EE6BAC36DA4236BB5780 /* CanvasState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasState.swift; sourceTree = "<group>"; };
 		9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoScrollDriver.swift; sourceTree = "<group>"; };
@@ -499,6 +501,7 @@
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
 				FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */,
+				9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */,
 				FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */,
 				38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */,
 				3366166820015E0F584466E9 /* OGMetadataService.swift */,
@@ -1051,6 +1054,7 @@
 				FBC912B89F98C2E8F875A72A /* LinkGalleryTile.swift in Sources */,
 				4A2412B05EF3E6B0AC85E119 /* LinkSnapshotService.swift in Sources */,
 				505E0F8BA9D6E93F476B35C0 /* LinkViewModeToggle.swift in Sources */,
+				A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */,
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
 				B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */,
 				588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */,

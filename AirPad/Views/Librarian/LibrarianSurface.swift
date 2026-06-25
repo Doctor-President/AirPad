@@ -90,6 +90,8 @@ struct LibrarianSurface: View {
     /// — this height never moves the panel detent.
     @State private var keyboardHeight: CGFloat = 0
 
+    @State private var dictation = LiveDictationService.shared
+
     /// Identifiable wrapper so `.sheet(item:)` re-presents when the user
     /// taps a different chip without dismissing first. Carries the
     /// full citation list so the sheet can compute its bracket indices
@@ -352,28 +354,41 @@ struct LibrarianSurface: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .allowsHitTesting(p > 0.5)
-                // Safari-style trailing slot: text present → clear (×),
-                // empty → mic. Replace (not stack) so the trailing
-                // affordance is unambiguous. The clear button keeps
-                // focus — only mutates `searchText`, never touches
-                // `isSearchFocused`. Peek-gated (`p > 0.5`) so the
-                // pill at peek doesn't show a clear control before
-                // the keyboard is even up.
-                if !librarian.searchText.isEmpty && p > 0.5 {
-                    Button {
-                        librarian.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.white.opacity(0.4))
+                // Trailing slot: × and stop coexist during dictation so
+                // the user can clear without losing the stop control.
+                // × left, mic/stop right. Peek-gated so the pill at
+                // peek doesn't show a clear before the keyboard is up.
+                let isHot = dictation.isListening && dictation.activeToken == "search"
+                let hasText = !librarian.searchText.isEmpty && p > 0.5
+                HStack(spacing: 8) {
+                    if hasText {
+                        Button {
+                            librarian.searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear search")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
-                } else {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 19))
-                        .foregroundStyle(mangoGrad)
-                        .opacity(iconOpacity)
+                    if isHot || !hasText {
+                        Button {
+                            dictation.toggle(
+                                token: "search",
+                                baseline: librarian.searchText,
+                                onUpdate: { librarian.searchText = $0 }
+                            )
+                        } label: {
+                            Image(systemName: isHot ? "stop.fill" : "mic.fill")
+                                .font(.system(size: 19))
+                                .foregroundStyle(mangoGrad)
+                                .opacity(iconOpacity)
+                        }
+                        .buttonStyle(.plain)
+                        .allowsHitTesting(p > 0.5)
+                        .accessibilityLabel(isHot ? "Stop dictation" : "Dictate search")
+                    }
                 }
             }
             .padding(.horizontal, 16)

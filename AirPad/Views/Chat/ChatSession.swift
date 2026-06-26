@@ -11,12 +11,26 @@ import Observation
 @Observable
 final class ChatSession {
 
-    struct Message: Identifiable, Hashable {
-        enum Role { case user, assistant }
-        let id = UUID()
+    struct Message: Identifiable, Hashable, Codable {
+        enum Role: String, Codable { case user, assistant }
+        let id: UUID
         let role: Role
         var text: String
+
+        init(id: UUID = UUID(), role: Role, text: String) {
+            self.id = id
+            self.role = role
+            self.text = text
+        }
     }
+
+    /// Identity of the current chat. Survives encode/decode so a
+    /// resumed conversation upserts onto its own record rather than
+    /// creating duplicates. Reset to a fresh UUID on `reset()`.
+    var id: UUID = UUID()
+    /// First-message wall-clock. Stable across resumes so the chats
+    /// list (step 2) can group by day. Reset on `reset()`.
+    var createdAt: Date = Date()
 
     /// Permanent transcript. Each completed turn appends one user message
     /// then one assistant message; `streamingText` is the in-flight tail
@@ -31,6 +45,18 @@ final class ChatSession {
     /// Echoed back as a `.user` message the moment send() fires so the
     /// transcript shows the turn instantly while the model starts.
     private(set) var pendingUser: String? = nil
+
+    /// Persistence seam. Wired once by AppRouter after both this session
+    /// and the store exist. Weak so AppRouter remains the sole owner —
+    /// no retain cycle between the singleton router and its child state.
+    @ObservationIgnored
+    weak var store: ChatStore?
+
+    /// Cross-launch restore guard. Flipped to `true` on the first
+    /// restore attempt OR on `reset()` so a fresh chat is never
+    /// clobbered by a stale most-recent record.
+    @ObservationIgnored
+    private var didRestore: Bool = false
 
     static let systemPrompt = """
     You are a thoughtful conversational assistant. The user is thinking out loud \
@@ -78,6 +104,12 @@ final class ChatSession {
 
         streamingText = ""
         isStreaming = false
+
+        // Turn boundary — persist now that the assistant message is
+        // committed. Not per-token: the store coalesces nothing today
+        // but per-turn keeps the disk write count proportional to user
+        // intent rather than to streaming chunk count.
+        flush()
     }
 
     /// Render the prior transcript + the new user turn as a single text
@@ -93,11 +125,68 @@ final class ChatSession {
         return lines.joined(separator: "\n")
     }
 
-    /// Wipe the transcript. Used by the "New chat" affordance.
+    /// Wipe the transcript. Used by the "New chat" affordance. Flushes
+    /// the in-flight chat to the store BEFORE wiping so the prior
+    /// conversation survives the new-chat boundary; then resets identity
+    /// so the next turn starts a brand-new record.
     func reset() {
+        flush()
         messages = []
         streamingText = ""
         pendingUser = nil
         isStreaming = false
+        id = UUID()
+        createdAt = Date()
+        // A fresh chat must not be replaced by the most-recent record
+        // on the next ChatView appearance — mark restore consumed.
+        didRestore = true
+    }
+
+    // MARK: - Persistence seam (ChatStore)
+
+    /// Upsert the current chat into the store and write to disk.
+    /// No-op when the session is empty or the store hasn't been wired.
+    func flush() {
+        guard let store else { return }
+        guard !messages.isEmpty else { return }
+        let chat = buildChatRecord()
+        Task {
+            store.upsert(chat)
+            await store.save()
+        }
+    }
+
+    /// One-shot resume on first ChatView appearance. If the live session
+    /// is empty (cold launch, no prior in-app activity) and the store
+    /// holds a most-recent chat, hydrate this session from it so the
+    /// user lands back in their last conversation. Guarded by
+    /// `didRestore` so it never clobbers an in-progress session.
+    func restoreIfNeededFromStore() async {
+        guard !didRestore, !isStreaming, messages.isEmpty, let store else { return }
+        didRestore = true
+        await store.loadIfNeeded()
+        guard let recent = store.mostRecent() else { return }
+        id = recent.id
+        createdAt = recent.createdAt
+        messages = recent.messages
+    }
+
+    private func buildChatRecord() -> Chat {
+        Chat(
+            id: id,
+            title: derivedTitle(),
+            createdAt: createdAt,
+            updatedAt: Date(),
+            messages: messages
+        )
+    }
+
+    /// Dumb title — first user message truncated to ~40 chars. FM-
+    /// generated titles arrive in a later step; this exists so step 2's
+    /// chats list has something readable to render today.
+    private func derivedTitle() -> String {
+        guard let first = messages.first(where: { $0.role == .user }) else { return "" }
+        let t = first.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.count > 40 ? String(t.prefix(40)) + "…" : t
     }
 }

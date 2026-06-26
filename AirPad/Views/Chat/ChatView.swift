@@ -9,7 +9,9 @@ import SwiftUI
 struct ChatView: View {
 
     @Environment(AppRouter.self) private var router
+    @Environment(\.scenePhase) private var scenePhase
     @State private var input: String = ""
+    @State private var didRestoreOnAppear: Bool = false
     @FocusState private var inputFocused: Bool
 
     private var session: ChatSession { router.chat }
@@ -23,6 +25,14 @@ struct ChatView: View {
                 Divider().overlay(Color.white.opacity(0.08))
                 inputRow
             }
+        }
+        .task {
+            guard !didRestoreOnAppear else { return }
+            didRestoreOnAppear = true
+            await session.restoreIfNeededFromStore()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { session.flush() }
         }
         .navigationTitle("Chat")
         .navigationBarTitleDisplayMode(.inline)
@@ -64,6 +74,17 @@ struct ChatView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 24)
             }
+            // .simultaneousGesture (not .onTapGesture) coexists with text
+            // selection on assistant bubbles and doesn't swallow scroll or
+            // long-press. Sits ABOVE .scrollDismissesKeyboard so the tap
+            // path works even on short transcripts that never overflow —
+            // the interactive-drag dismissal only fires when content
+            // actually scrolls, so a short chat would otherwise have no
+            // dismissal at all.
+            .simultaneousGesture(
+                TapGesture().onEnded { inputFocused = false }
+            )
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: session.messages.count) { _, _ in
                 scrollToBottom(proxy: proxy)
             }

@@ -1689,7 +1689,11 @@ struct LibrarianSurface: View {
                 systemImage: "bubble.left.and.bubble.right",
                 isEnabled: true
             ) {
-                // TODO: route to chat primitive history
+                // Drop to .half first so a full-detent Librarian doesn't
+                // present the sheet from behind itself — mirrors the
+                // `openNode` handoff pattern above.
+                panelModel.dropToHalf(animated: true)
+                router.showChatsList = true
             }
         }
     }

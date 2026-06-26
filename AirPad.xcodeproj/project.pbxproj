@@ -180,6 +180,7 @@
 		CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */; };
 		CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED287727ED25FF9291551213 /* HDBSCANReachability.swift */; };
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
+		CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B63639E3606E8D188FB55AD /* ChatsListView.swift */; };
 		D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804D3764E120F2398822E16A /* AppDelegate.swift */; };
 		D5709E0DEA900DA3FA2CF236 /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */; };
 		D5798CF8FC6B57BE009D8F88 /* NodeBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 376265F2CCAF46EDE2216E54 /* NodeBlock.swift */; };
@@ -279,6 +280,7 @@
 		3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCaptureSheet.swift; sourceTree = "<group>"; };
 		3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LongPressDragRecognizer.swift; sourceTree = "<group>"; };
 		3B1822A03D5407145464AB94 /* AppRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRouter.swift; sourceTree = "<group>"; };
+		3B63639E3606E8D188FB55AD /* ChatsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsListView.swift; sourceTree = "<group>"; };
 		4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockEmbeddingService.swift; sourceTree = "<group>"; };
 		4339BD7FF5450195EDF70A95 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesisService.swift; sourceTree = "<group>"; };
@@ -546,6 +548,7 @@
 			isa = PBXGroup;
 			children = (
 				0C38EEC0DB9F051F85839CCE /* ChatSession.swift */,
+				3B63639E3606E8D188FB55AD /* ChatsListView.swift */,
 				33412943BFC78174C4CB7437 /* ChatView.swift */,
 			);
 			path = Chat;
@@ -1018,6 +1021,7 @@
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
 				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
 				766BF82341F128E5B35B7345 /* ChatView.swift in Sources */,
+				CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */,
 				98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */,
 				86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */,
 				FD2F516F643CD089B6E84F12 /* ClipboardContentRouterDiagnostic.swift in Sources */,

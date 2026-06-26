@@ -142,6 +142,32 @@ final class ChatSession {
         didRestore = true
     }
 
+    // MARK: - Chats-list handoff
+
+    /// Switch the live session to an existing chat record. Flushes the
+    /// current chat first so switching never loses an in-progress
+    /// conversation; then hydrates id / createdAt / messages from the
+    /// stored record. `didRestore` is marked consumed so the
+    /// most-recent-on-launch path can't reach in and clobber a chat the
+    /// user has just explicitly opened.
+    func load(_ chat: Chat) {
+        flush()
+        id = chat.id
+        createdAt = chat.createdAt
+        messages = chat.messages
+        streamingText = ""
+        pendingUser = nil
+        isStreaming = false
+        didRestore = true
+    }
+
+    /// "New chat" affordance. Identical to `reset()` — kept as a named
+    /// entry point so call sites (Chats list "+" button, future entry
+    /// points) read intent rather than mechanism.
+    func startNew() {
+        reset()
+    }
+
     // MARK: - Persistence seam (ChatStore)
 
     /// Upsert the current chat into the store and write to disk.

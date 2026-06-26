@@ -18,6 +18,7 @@ struct ContentView: View {
     private let panelLayout = LibrarianPanelLayout()
 
     var body: some View {
+        @Bindable var routerBinding = router
         ZStack {
             Group {
                 switch router.entryMode {
@@ -61,6 +62,18 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.12), value: router.captureOverlay)
+        // Chats list sheet — shared by the Dashboard header bubble and
+        // the Librarian "Chats" tile via `router.showChatsList`. Mounted
+        // at the root so both entry points present the bit-identical
+        // surface, and so the sheet floats over the Librarian's
+        // FloatingPanel regardless of entry mode.
+        .sheet(isPresented: $routerBinding.showChatsList) {
+            ChatsListView()
+                .environment(store)
+                .environment(router)
+                .environment(selection)
+                .environment(quarantineStore)
+        }
         // In-layout FloatingPanel — the Librarian's structural home. Mounted
         // once at ContentView root and never torn down across entry-mode
         // switches. Step C below moves it to `.tip` / `.hidden` per mode.

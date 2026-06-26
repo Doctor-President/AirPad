@@ -122,6 +122,7 @@
 		92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 496C87CE26D129958AA115EF /* EntryMigration.swift */; };
 		92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */; };
 		933F90BAF8522AC82045E273 /* CanvasSlideOutMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */; };
+		9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92B43ACAA1EFEADD262281A /* ChatStore.swift */; };
 		9427669EFA4ECACBF0439D06 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
 		9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
@@ -381,6 +382,7 @@
 		D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAP.swift; sourceTree = "<group>"; };
 		D78B727835739390B86DF397 /* UMAPModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPModel.swift; sourceTree = "<group>"; };
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
+		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
 		DB97C8C89A4E56E95903000D /* BentoLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BentoLayout.swift; sourceTree = "<group>"; };
 		DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackAudioSession.swift; sourceTree = "<group>"; };
@@ -690,6 +692,7 @@
 		9515265A45A3D3B7B626E916 /* Store */ = {
 			isa = PBXGroup;
 			children = (
+				D92B43ACAA1EFEADD262281A /* ChatStore.swift */,
 				ADDA79A05C807120913FCE5F /* CorpusStore.swift */,
 				C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */,
 				48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */,
@@ -1013,6 +1016,7 @@
 				1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */,
 				21CD74A24FCAA544898228E0 /* CardLinkTile.swift in Sources */,
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
+				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
 				766BF82341F128E5B35B7345 /* ChatView.swift in Sources */,
 				98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */,
 				86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */,

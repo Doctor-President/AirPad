@@ -214,6 +214,31 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode([NodeCollection].self, from: data)
     }
 
+    // MARK: - Chats (clean Chat lane)
+
+    /// Single-file blob at `<root>/chats.json`. Mirrors `collections.json`
+    /// / `tags.json` rather than the per-node directory pattern — chats
+    /// are small JSON records with no sidecars, and a single file means
+    /// one atomic write per upsert. Lives at the same iCloud Drive root
+    /// as the corpus so chats sync alongside the user's nodes.
+    func saveChats(_ chats: [Chat]) throws {
+        let root = try requireRoot()
+        let data = try JSONEncoder.airPad.encode(chats)
+        try data.write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+    }
+
+    /// nil when the file is absent (first launch / pre-chat install).
+    /// Empty array when the user has deleted every chat — distinct
+    /// signal so `ChatStore` doesn't try to seed anything on top of an
+    /// intentionally-empty state.
+    func loadChats() throws -> [Chat]? {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("chats.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode([Chat].self, from: data)
+    }
+
     // MARK: - Canvas layout
 
     func saveCanvasLayout(_ layout: CanvasLayout) throws {

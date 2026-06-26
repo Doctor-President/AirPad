@@ -90,8 +90,17 @@ final class AppRouter {
     /// state — the Dashboard chat surface is its only consumer today.
     @ObservationIgnored let chat = ChatSession()
 
+    /// On-disk chat persistence. Lazily loads from iCloud Drive
+    /// (`<root>/chats.json`) on first ChatView appearance; receives
+    /// flushes from `ChatSession` at turn boundaries / reset / scene
+    /// background so conversations survive a relaunch.
+    @ObservationIgnored let chatStore = ChatStore()
+
     init() {
         AppRouter.shared = self
+        // Wire the persistence seam once. ChatSession holds the store
+        // weakly so the router stays the sole owner.
+        chat.store = chatStore
     }
 }
 

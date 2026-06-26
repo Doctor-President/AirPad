@@ -96,6 +96,13 @@ final class AppRouter {
     /// background so conversations survive a relaunch.
     @ObservationIgnored let chatStore = ChatStore()
 
+    /// Presentation flag for the shared `ChatsListView` sheet. ONE flag
+    /// drives both entry points (Dashboard header bubble + Librarian
+    /// "Chats" tile) so the surface they open is bit-identical — the
+    /// Librarian-has-no-NavigationStack problem is sidestepped because
+    /// the sheet owns its own stack.
+    var showChatsList: Bool = false
+
     init() {
         AppRouter.shared = self
         // Wire the persistence seam once. ChatSession holds the store

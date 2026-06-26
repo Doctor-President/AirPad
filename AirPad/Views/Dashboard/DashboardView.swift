@@ -186,7 +186,7 @@ struct DashboardView: View {
             HStack(spacing: 10) {
                 Spacer()
                 headerIconButton(systemName: "bubble.left.and.bubble.right.fill") {
-                    path.append(.chat)
+                    router.showChatsList = true
                 }
                 inboxButton
                 headerIconButton(systemName: "gearshape.fill") { showSettings = true }

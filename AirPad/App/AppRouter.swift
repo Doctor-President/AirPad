@@ -85,6 +85,11 @@ final class AppRouter {
     /// subsequent commits.
     @ObservationIgnored let librarian = LibrarianState()
 
+    /// Passage-free FM chat instrument. Lives in parallel to `librarian`
+    /// so multi-turn history threads across navigation without losing
+    /// state — the Dashboard chat surface is its only consumer today.
+    @ObservationIgnored let chat = ChatSession()
+
     init() {
         AppRouter.shared = self
     }

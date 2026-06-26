@@ -22,6 +22,11 @@ import SwiftUI
 enum DashboardRoute: Hashable {
     case recents
     case node(Node)
+    /// Passage-free FM chat surface (`ChatView`). Pushed via the header
+    /// chat icon. Detail-depth math (`detailDepth(in:)`) deliberately
+    /// excludes this case so the Librarian panel doesn't duck while the
+    /// chat lane is open.
+    case chat
 }
 
 struct DashboardView: View {
@@ -102,6 +107,8 @@ struct DashboardView: View {
                     RecentsView(onOpenNode: { node in path.append(.node(node)) })
                 case .node(let node):
                     NodeDetailView(nodeID: node.id)
+                case .chat:
+                    ChatView()
                 }
             }
             .sheet(item: $renameTarget) { collection in
@@ -178,6 +185,9 @@ struct DashboardView: View {
 
             HStack(spacing: 10) {
                 Spacer()
+                headerIconButton(systemName: "bubble.left.and.bubble.right.fill") {
+                    path.append(.chat)
+                }
                 inboxButton
                 headerIconButton(systemName: "gearshape.fill") { showSettings = true }
             }

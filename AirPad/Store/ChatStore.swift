@@ -38,6 +38,17 @@ final class ChatStore {
     @ObservationIgnored
     private var didSetup = false
 
+    /// Process-scoped deleted-id set. A live `ChatSession` may still hold
+    /// the id of a chat that was just deleted from the list; its next
+    /// flush (send / reset / scene-background) would otherwise hit the
+    /// insert branch of `upsert` and resurrect the chat. Tombstones
+    /// short-circuit `upsert` so a lagging flush is a no-op. In-memory
+    /// only — across relaunch the chat is already absent from disk, so
+    /// nothing to persist. Ids are fresh UUIDs, so no risk of a future
+    /// genuine chat colliding with a tombstoned id.
+    @ObservationIgnored
+    private var tombstones: Set<UUID> = []
+
     /// Lazy bootstrap. Keeps `init()` synchronous so AppRouter can build
     /// the store eagerly; the actual iCloud lookup + load runs the first
     /// time anyone calls `loadIfNeeded` (ChatView.task) or `save()`.
@@ -61,11 +72,25 @@ final class ChatStore {
         didSetup = true
     }
 
-    /// Replace-by-id or append. Re-sorts so callers reading `chats` see
-    /// the freshly-updated chat at the top.
+    /// Insert-or-update by id. `title` is owned solely by
+    /// `updateTitle(id:title:)` once a chat exists in the store — the
+    /// existing-id path here preserves the stored title and only
+    /// refreshes the transcript + `updatedAt`. Without this guard a
+    /// lagging detached flush would overwrite a freshly-arrived FM
+    /// title with the truncation fallback ("title revert" race). The
+    /// insert path still seeds title from the incoming record so a
+    /// brand-new chat never appears with a blank title.
     func upsert(_ chat: Chat) {
+        // Tombstone guard: a lagging flush from a still-live session
+        // whose chat the user just deleted must not re-insert it. Sits
+        // ABOVE the existing-id / new-id branch so neither path can
+        // resurrect a deleted id.
+        if tombstones.contains(chat.id) { return }
         if let i = chats.firstIndex(where: { $0.id == chat.id }) {
-            chats[i] = chat
+            var updated = chats[i]
+            updated.messages = chat.messages
+            updated.updatedAt = chat.updatedAt
+            chats[i] = updated
         } else {
             chats.append(chat)
         }
@@ -74,10 +99,27 @@ final class ChatStore {
 
     func mostRecent() -> Chat? { chats.first }
 
+    /// Late-arriving title write — the FM title generation in
+    /// `ChatSession` runs in a detached background Task after the first
+    /// assistant turn commits, so by the time it lands the chat is
+    /// already in the store under its truncation-fallback title. Find
+    /// by id, swap the title, bump `updatedAt`, re-sort, persist.
+    /// No-op when the chat has been deleted in the meantime.
+    func updateTitle(id: UUID, title: String) {
+        guard let i = chats.firstIndex(where: { $0.id == id }) else { return }
+        chats[i].title = title
+        chats[i].updatedAt = Date()
+        chats.sort { $0.updatedAt > $1.updatedAt }
+        Task { await save() }
+    }
+
     /// Used by step 2's chats-list swipe-delete. Persists immediately —
     /// deletes are user-visible and shouldn't wait for a coalesced flush.
+    /// Tombstones the id so any in-flight flush from a still-live
+    /// `ChatSession` holding the same id can't resurrect it via `upsert`.
     func delete(id: UUID) {
         chats.removeAll { $0.id == id }
+        tombstones.insert(id)
         Task { await save() }
     }
 

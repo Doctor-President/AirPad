@@ -34,7 +34,7 @@ struct ChatView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { session.flush() }
         }
-        .navigationTitle("Chat")
+        .navigationTitle(session.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {

@@ -58,6 +58,14 @@ final class ChatSession {
     @ObservationIgnored
     private var didRestore: Bool = false
 
+    /// One-shot FM title generation guard. Flipped to `true` the moment
+    /// a title gen is dispatched (so a fast second turn doesn't double-
+    /// fire) OR when an already-titled chat is loaded (don't overwrite
+    /// titles the user has already seen). Reset to `false` in
+    /// `reset()` / `startNew()`.
+    @ObservationIgnored
+    private var didGenerateTitle: Bool = false
+
     static let systemPrompt = """
     You are a thoughtful conversational assistant. The user is thinking out loud \
     and will ask follow-up questions that depend on earlier turns — always take \
@@ -110,6 +118,12 @@ final class ChatSession {
         // but per-turn keeps the disk write count proportional to user
         // intent rather than to streaming chunk count.
         flush()
+
+        // After the first complete turn (user + assistant), fire a
+        // background title generation. Guarded so it runs at most once
+        // per chat; the next send() in this chat is a no-op for this
+        // path. Runs detached so it never blocks the next user turn.
+        scheduleTitleGenerationIfNeeded()
     }
 
     /// Render the prior transcript + the new user turn as a single text
@@ -140,6 +154,9 @@ final class ChatSession {
         // A fresh chat must not be replaced by the most-recent record
         // on the next ChatView appearance — mark restore consumed.
         didRestore = true
+        // Fresh chat → its first complete turn should trigger a new
+        // title generation.
+        didGenerateTitle = false
     }
 
     // MARK: - Chats-list handoff
@@ -159,6 +176,10 @@ final class ChatSession {
         pendingUser = nil
         isStreaming = false
         didRestore = true
+        // Opening an existing chat must not regenerate its title — the
+        // user has already seen the FM (or fallback) title in the list
+        // and overwriting it on every reopen would be churn.
+        didGenerateTitle = true
     }
 
     /// "New chat" affordance. Identical to `reset()` — kept as a named
@@ -172,11 +193,28 @@ final class ChatSession {
 
     /// Upsert the current chat into the store and write to disk.
     /// No-op when the session is empty or the store hasn't been wired.
+    ///
+    /// Snapshot the live state, then BUILD THE CHAT RECORD INSIDE the
+    /// Task — not before it. Building eagerly with `updatedAt = Date()`
+    /// and writing inside a lagging Task lets a late flush land AFTER
+    /// a freshly-arrived FM title update, which previously clobbered
+    /// the title (the "appears then reverts" bug). Building at write
+    /// time keeps the timestamp honest; `ChatStore.upsert` additionally
+    /// refuses to touch `title` on existing-id updates so this race is
+    /// also closed at the store layer (belt + suspenders).
     func flush() {
-        guard let store else { return }
-        guard !messages.isEmpty else { return }
-        let chat = buildChatRecord()
+        guard let store, !messages.isEmpty else { return }
+        let snapshotID = id
+        let snapshotCreatedAt = createdAt
+        let snapshotMessages = messages
         Task {
+            let chat = Chat(
+                id: snapshotID,
+                title: Self.truncationTitle(from: snapshotMessages),
+                createdAt: snapshotCreatedAt,
+                updatedAt: Date(),
+                messages: snapshotMessages
+            )
             store.upsert(chat)
             await store.save()
         }
@@ -197,22 +235,138 @@ final class ChatSession {
         messages = recent.messages
     }
 
-    private func buildChatRecord() -> Chat {
-        Chat(
-            id: id,
-            title: derivedTitle(),
-            createdAt: createdAt,
-            updatedAt: Date(),
-            messages: messages
-        )
+    /// Header / list display title. Reads the stored title from
+    /// `ChatStore` for this chat's id — the FM title once it lands,
+    /// otherwise the insert-time truncation. Falls back to the live
+    /// truncation for a brand-new chat not yet flushed, and finally
+    /// to "Chat" for an empty session. Observable: when
+    /// `chatStore.updateTitle` lands, this getter re-reads through the
+    /// observable `chats` array and SwiftUI updates the header.
+    var displayTitle: String {
+        if let store,
+           let stored = store.chats.first(where: { $0.id == id }) {
+            let t = stored.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !t.isEmpty { return t }
+        }
+        let derived = Self.truncationTitle(from: messages)
+        return derived.isEmpty ? "Chat" : derived
     }
 
-    /// Dumb title — first user message truncated to ~40 chars. FM-
-    /// generated titles arrive in a later step; this exists so step 2's
-    /// chats list has something readable to render today.
-    private func derivedTitle() -> String {
+    /// Truncation-fallback title — first user message clipped to ~40
+    /// chars. Used at INSERT time as the seed for a new chat in the
+    /// store; after that, title is owned solely by
+    /// `ChatStore.updateTitle(id:title:)`. Static so `flush()` can
+    /// compute it from a captured message snapshot inside a Task.
+    private static func truncationTitle(from messages: [Message]) -> String {
         guard let first = messages.first(where: { $0.role == .user }) else { return "" }
         let t = first.text.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.count > 40 ? String(t.prefix(40)) + "…" : t
+    }
+
+    // MARK: - FM title generation (background, refusal-safe)
+
+    /// Fire-once trigger run after the first turn commits. Captures the
+    /// first user + assistant texts and the current chat id, marks the
+    /// guard immediately, then dispatches a detached Task so the title
+    /// call doesn't sit on the MainActor's queue or hold up the next
+    /// user turn. The store hop on success is async (@MainActor); a
+    /// failure / refusal / no-op leaves the fallback title intact.
+    private func scheduleTitleGenerationIfNeeded() {
+        guard !didGenerateTitle else { return }
+        guard let firstUser = messages.first(where: { $0.role == .user })?.text else { return }
+        guard let firstAssistant = messages.first(where: { $0.role == .assistant })?.text else { return }
+        didGenerateTitle = true
+        let chatID = self.id
+        let storeRef = store
+        Task.detached(priority: .utility) {
+            await Self.generateTitle(
+                chatID: chatID,
+                firstUser: firstUser,
+                firstAssistant: firstAssistant,
+                store: storeRef
+            )
+        }
+    }
+
+    private static let titleSystemPrompt = """
+    You write short, specific titles. Output ONLY the title — 3 to 6 words, no \
+    quotes, no punctuation at the end, no preamble. If you cannot, output nothing.
+    """
+
+    /// Static so the detached Task captures only primitives + a weak
+    /// store reference — no `self`. All FM errors / sanitizer rejections
+    /// are silent: the existing truncation fallback in the store stays.
+    private static func generateTitle(
+        chatID: UUID,
+        firstUser: String,
+        firstAssistant: String,
+        store: ChatStore?
+    ) async {
+        let userExcerpt = String(firstUser.prefix(500))
+        let assistantExcerpt = String(firstAssistant.prefix(500))
+        let userPrompt = """
+        Title this conversation:
+
+        User: \(userExcerpt)
+        Assistant: \(assistantExcerpt)
+        """
+        do {
+            let raw = try await ModelRouter.generate(
+                systemPrompt: titleSystemPrompt,
+                userPrompt: userPrompt
+            )
+            guard let cleaned = sanitizeTitleCandidate(raw) else { return }
+            await store?.updateTitle(id: chatID, title: cleaned)
+        } catch {
+            // Silent no-op — refusal/error is expected (~18%); the
+            // truncation fallback already in the store stays put.
+        }
+    }
+
+    /// Conservative sanitizer / validator. Strips quotes + trailing
+    /// punctuation, takes first line only, caps length. Rejects (returns
+    /// nil) on empty, refusal-prefix prose, >10 words, or a long
+    /// sentence-shaped result. When unsure, reject → keep the fallback.
+    private static func sanitizeTitleCandidate(_ raw: String) -> String? {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // First line only — guards against multi-paragraph refusals
+        // that happen to start with a plausible-looking phrase.
+        if let firstLine = s.split(whereSeparator: { $0.isNewline }).first {
+            s = String(firstLine)
+        }
+        // Strip surrounding ASCII + curly quotes / backticks.
+        let quoteSet = CharacterSet(charactersIn: "\"'`\u{201C}\u{201D}\u{2018}\u{2019}")
+        s = s.trimmingCharacters(in: quoteSet)
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Collapse internal whitespace runs to single spaces.
+        s = s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        if s.isEmpty { return nil }
+        // Refusal-prose sentinels.
+        let lower = s.lowercased()
+        let refusalPrefixes = [
+            "i'm sorry", "im sorry", "i am sorry",
+            "i cannot", "i can't", "i can not",
+            "as an", "as a language model",
+            "sure,", "here is", "here's", "title:"
+        ]
+        for p in refusalPrefixes {
+            if lower.hasPrefix(p) { return nil }
+        }
+        // Word-count cap — 3–6 was asked for; allow a little slack but
+        // anything >10 is prose, not a title.
+        let words = s.split(whereSeparator: { $0.isWhitespace })
+        if words.count > 10 { return nil }
+        // Long sentence-shaped result — probably explanatory text.
+        if s.hasSuffix(".") && s.count > 40 { return nil }
+        // Drop trailing punctuation per the system prompt instruction.
+        while let last = s.last, ".!?;:,".contains(last) {
+            s.removeLast()
+        }
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.count > 48 { s = String(s.prefix(48)) }
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Tiny / pure-punctuation results — reject.
+        if s.count < 2 { return nil }
+        return s
     }
 }

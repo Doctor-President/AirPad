@@ -82,6 +82,13 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// content crossfades against this to remove the dismiss-jump
     /// the discrete `.tip` ↔ expanded switch caused.
     @Published var peekProgress: CGFloat = 0
+
+    /// True while the panel is pinned at `.full` with its pan recognizer
+    /// disabled. Drives the expanded header's collapse affordance.
+    /// Cleared via `unlock(animated:)` (collapse-button tap) or
+    /// `duck(animated:)`'s defensive `clearLock()` (forced-exit paths
+    /// like Dashboard nav or capture overlay).
+    @Published var isLocked: Bool = false
     weak var controller: FloatingPanelController?
 
     nonisolated func floatingPanelDidChangeState(_ fpc: FloatingPanelController) {
@@ -172,6 +179,58 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
         controller?.move(to: .half, animated: animated)
     }
 
+    /// Pin the panel at `.full` for a focused chat posture. The lock
+    /// engages SYNCHRONOUSLY before the move so there's no unlocked
+    /// window during the shoot-to-full animation — the panel animates
+    /// while already locked. `isRemovalInteractionEnabled = false` (the
+    /// library default, set here belt-and-suspenders) keeps the duck
+    /// path disarmed. Inner scroll lives on a separate recognizer and
+    /// is unaffected. The lock IS the absence of drag, not a reactive
+    /// snap-back — don't gate it on a move-completion closure that the
+    /// library can drop on interruption.
+    func lockToFull(animated: Bool) {
+        guard let controller else { return }
+        controller.isRemovalInteractionEnabled = false
+        controller.panGestureRecognizer.isEnabled = false
+        isLocked = true
+        controller.move(to: .full, animated: animated)
+    }
+
+    /// Programmatic exit from the locked-at-full posture (the collapse
+    /// affordance in the expanded header taps this). Restores drag
+    /// SYNCHRONOUSLY before the move so a dropped move-completion can
+    /// never leave the pan gesture permanently disabled, then animates
+    /// to `.half`.
+    func unlock(animated: Bool) {
+        guard let controller else { return }
+        clearLock()
+        controller.move(to: .half, animated: animated)
+    }
+
+    /// Defensive lock-clear. Any forced-exit path (duck, future
+    /// programmatic navigation) routes through here so the pan gesture
+    /// can never be left disabled with `isLocked` true. Anywhere
+    /// `isLocked` could be left true with the gesture disabled is a
+    /// permanent wedge — call this on every exit.
+    private func clearLock() {
+        isLocked = false
+        controller?.panGestureRecognizer.isEnabled = true
+    }
+
+    /// Removal-veto delegate. While locked, swipe-to-remove is refused
+    /// at the source (Core.swift `shouldRemove` — the return value
+    /// short-circuits the velocity-threshold check). Free belt to the
+    /// `isRemovalInteractionEnabled = false` gate (delegate is only
+    /// consulted when that flag is `true`).
+    @objc(floatingPanel:shouldRemoveAtLocation:withVelocity:)
+    nonisolated func floatingPanel(_ fpc: FloatingPanelController,
+                                   shouldRemoveAt location: CGPoint,
+                                   with velocity: CGVector) -> Bool {
+        MainActor.assumeIsolated {
+            return !isLocked
+        }
+    }
+
     /// Duck the panel offscreen. Uses the library's `hide(animated:)`
     /// which `move(to: .hidden)`s to the default `hiddenAnchor`. `.hidden`
     /// is not in `LibrarianPanelLayout.anchors` so it isn't a drag target.
@@ -181,9 +240,14 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// regardless of state-change timing — `@FocusState` alone has
     /// missed when the navigation races the detent change. Harmless
     /// no-op when nothing is first responder.
+    ///
+    /// Belt: `clearLock()` runs unconditionally so a duck issued while
+    /// locked (Dashboard nav, capture overlay) cannot strand the pan
+    /// gesture disabled — every forced-exit path restores drag.
     func duck(animated: Bool) {
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
+        clearLock()
         controller?.hide(animated: animated)
     }
 }

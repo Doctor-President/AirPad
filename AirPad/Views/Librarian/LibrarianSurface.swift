@@ -162,6 +162,7 @@ struct LibrarianSurface: View {
                 // it's a full-width rounded field (~52pt tall, corner
                 // 16) just below the chrome's header.
                 morphingField(geo: geo, librarian: librarian, p: p)
+
             }
         }
         .onAppear {
@@ -559,15 +560,54 @@ struct LibrarianSurface: View {
                 HStack(alignment: .top) {
                     Spacer()
 
-                    Button {
-                        panelModel.raiseToPeek(animated: true)
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.55))
-                            .frame(width: 32, height: 32)
+                    // TEMP (3a) — manual lock trigger so 3a's panel
+                    // mechanics can be exercised on device. 3b replaces
+                    // this with the Ask-input → `lockToFull` pipeline
+                    // and removes the button. Visible only when NOT
+                    // already locked.
+                    if !panelModel.isLocked {
+                        Button {
+                            panelModel.lockToFull(animated: true)
+                        } label: {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.35))
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+
+                    if panelModel.isLocked {
+                        // Locked-state collapse exit. Always visible while
+                        // locked so the way out is discoverable at a
+                        // glance. Tap → `unlock(animated:)` clears the
+                        // lock and animates to `.half`. Filled-circle
+                        // backdrop + brighter opacity than the unlocked
+                        // chevron so it reads as a primary affordance
+                        // rather than chrome.
+                        Button {
+                            panelModel.unlock(animated: true)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.85))
+                                .frame(width: 32, height: 32)
+                                .background(
+                                    Circle().fill(Color.white.opacity(0.10))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            panelModel.raiseToPeek(animated: true)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.55))
+                                .frame(width: 32, height: 32)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 14)

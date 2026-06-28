@@ -3,6 +3,7 @@ import AVKit
 import AVFoundation
 import PhotosUI
 import UIKit
+import ImageIO
 import ObjectiveC.runtime
 
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
@@ -2457,11 +2458,32 @@ private struct HeroImageBanner: View {
             aspect = nil
             guard node.coverImageRelativePath != nil,
                   let url = await store.coverImageURL(for: node) else { return }
+            // PERF FIX 1B — downsample at decode time via ImageIO instead
+            // of `UIImage(data:)`, which held the full original bitmap and
+            // forced a main-thread resample on every composite (one of the
+            // two `argb32_image_mark` sources in the CA-commit hot stack).
+            // `kCGImageSourceThumbnailMaxPixelSize` is the banner's max
+            // display pixel size (capped by the wider of `width` or the
+            // 420pt visibleHeight clamp, × screen scale). The image lands
+            // already at display resolution so the downstream
+            // `Image(uiImage:).resizable().scaledToFill().clipShape(...)`
+            // composites without resampling. Decode stays off the main
+            // thread; the placeholder gradient bridges the gap.
+            let scale = UIScreen.main.scale
+            let maxPixel = Int(max(width, 420) * scale)
             let decoded: (UIImage, CGFloat)? = await Task.detached(priority: .userInitiated) {
-                guard let data = try? Data(contentsOf: url),
-                      let img = UIImage(data: data),
-                      img.size.height > 0 else { return nil }
-                return (img, img.size.width / img.size.height)
+                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                let opts: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixel
+                ]
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
+                      cg.height > 0 else { return nil }
+                let img = UIImage(cgImage: cg, scale: scale, orientation: .up)
+                let aspect = CGFloat(cg.width) / CGFloat(cg.height)
+                return (img, aspect)
             }.value
             guard let decoded else { return }
             image = decoded.0

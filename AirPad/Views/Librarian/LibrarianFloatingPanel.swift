@@ -1,6 +1,16 @@
 import SwiftUI
 import FloatingPanel
 
+/// Per-frame morph signal, split OUT of LibrarianPanelStateModel. That model is a
+/// classic ObservableObject — any @Published change invalidates every observing view,
+/// so a per-frame value on it rebuilds LibrarianSurface.body at 60fps during drag.
+/// Housing the per-frame value alone here means only the small subviews observing THIS
+/// re-evaluate per frame; the surface body (observing the big model) stays quiet.
+@MainActor
+final class MorphProgressModel: ObservableObject {
+    @Published var peekProgress: CGFloat = 0
+}
+
 // MARK: - Layout
 
 /// In-layout panel anchors. `position: .bottom`; three user-facing detents
@@ -81,7 +91,15 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// `move(to:)`, hide) settle the value correctly. Surface
     /// content crossfades against this to remove the dismiss-jump
     /// the discrete `.tip` ↔ expanded switch caused.
-    @Published var peekProgress: CGFloat = 0
+    ///
+    /// Per-frame morph signal, isolated (see MorphProgressModel). Surface morph + fade
+    /// wrappers observe THIS, not self, so per-frame churn doesn't wake the surface body.
+    let progress = MorphProgressModel()
+
+    /// Coarse reveal flag — true once dragged past the content-mount point (0.4). Flips
+    /// only at the crossing, so the chrome's heavy subtree mounts on the boundary instead
+    /// of being re-gated every frame. Replaces the surface's inline `p > 0.4` gate.
+    @Published var contentRevealed: Bool = false
 
     /// True while the panel is pinned at `.full` with its pan recognizer
     /// disabled. Drives the expanded header's collapse affordance.
@@ -93,7 +111,7 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
 
     nonisolated func floatingPanelDidChangeState(_ fpc: FloatingPanelController) {
         MainActor.assumeIsolated {
-            state = fpc.state
+            if state != fpc.state { state = fpc.state }   // guard: same-value sets still emit objectWillChange
             recomputeProgress(fpc)
         }
     }
@@ -116,12 +134,10 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
         let halfY = fpc.surfaceLocation(for: .half).y
         let liveY = fpc.surfaceLocation.y
         let span = tipY - halfY
-        guard span > 0 else {
-            peekProgress = 0
-            return
-        }
-        let raw = (tipY - liveY) / span
-        peekProgress = min(max(raw, 0), 1)
+        let value: CGFloat = span > 0 ? min(max((tipY - liveY) / span, 0), 1) : 0
+        progress.peekProgress = value
+        let revealed = value > 0.4
+        if revealed != contentRevealed { contentRevealed = revealed } // emit once per crossing
     }
 
     nonisolated func floatingPanelWillBeginDragging(_ fpc: FloatingPanelController) {

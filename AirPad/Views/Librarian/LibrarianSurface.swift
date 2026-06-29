@@ -115,12 +115,6 @@ struct LibrarianSurface: View {
 
     var body: some View {
         @Bindable var librarian = router.librarian
-        let p = panelModel.peekProgress
-        // Staged born-in chrome opacity. Stays at 0 until p=0.5 so the
-        // chrome never sits full-size behind the pill at peek; ramps
-        // 0→1 across p=0.5→1.0 — Maps cadence (field grows first,
-        // chrome populates second).
-        let chromeOpacity = max(0, (p - 0.5) / 0.5)
 
         // GeometryReader exposes the LIVE surface size, which under
         // FloatingPanel's `.fitToBounds` re-fits per detent and grows
@@ -131,27 +125,32 @@ struct LibrarianSurface: View {
             ZStack {
                 // Panel material — Solar Flare layered look (tuner-driven
                 // base + dark tint + optional rotating prismatic edge).
-                // Tied to `chromeOpacity` so the peek posture shows only
-                // the morphing field's Liquid Glass; the panel-wide
-                // material rises with the chrome. The -150pt bottom
-                // buffer + edge-vs-fill split live inside
-                // `SolarFlareMaterial`. Drag-gate flips off the rotating
-                // edge during finger-drag to keep the live motion cheap.
-                SolarFlareMaterial(isDragging: panelModel.isDragging,
-                                   activeAccent: activeAccent)
-                    .opacity(chromeOpacity)
-                    .allowsHitTesting(false)
+                // Faded via PeekFadeLayer (observes the isolated morph
+                // model) so the peek posture shows only the morphing
+                // field's Liquid Glass; the panel-wide material rises with
+                // the chrome. The -150pt bottom buffer + edge-vs-fill
+                // split live inside `SolarFlareMaterial`. Drag-gate flips
+                // off the rotating edge during finger-drag to keep the
+                // live motion cheap.
+                PeekFadeLayer(
+                    progress: panelModel.progress,
+                    content: SolarFlareMaterial(isDragging: panelModel.isDragging,
+                                                activeAccent: activeAccent)
+                        .allowsHitTesting(false)
+                )
 
                 // Born-in chrome. Header + chips + transcript/results
                 // + input row + footer. The search field is NOT in here
                 // — it's the morphing field overlaid on top, which lands
-                // in the chrome's reserved slot at p=1. Hidden at peek
-                // via `chromeOpacity`; heavy subtrees inside are perf-
-                // gated on p>0.4 so transcript/results don't render
-                // while the panel is still at peek.
-                expandedChrome(librarian: librarian, p: p)
-                    .opacity(chromeOpacity)
-                    .allowsHitTesting(chromeOpacity > 0.5)
+                // in the chrome's reserved slot at p=1. Faded via
+                // PeekFadeLayer; heavy subtrees inside mount on
+                // `contentRevealed` (p>0.4 crossing) so transcript/results
+                // don't render while the panel is still at peek.
+                PeekFadeLayer(
+                    progress: panelModel.progress,
+                    content: expandedChrome(librarian: librarian)
+                        .allowsHitTesting(panelModel.contentRevealed)
+                )
 
                 // THE morphing field. Single view that is both the peek
                 // pill and the expanded search field; never swapped,
@@ -160,8 +159,12 @@ struct LibrarianSurface: View {
                 // panel's live height. At p=0 it's the baked Maps pill
                 // (340 × 64, corner 45, 21pt above safe area). At p=1
                 // it's a full-width rounded field (~52pt tall, corner
-                // 16) just below the chrome's header.
-                morphingField(geo: geo, librarian: librarian, p: p)
+                // 16) just below the chrome's header. Fed the live
+                // per-frame value via PeekProgressReader's isolated
+                // subtree so the parent body stays quiet during drag.
+                PeekProgressReader(progress: panelModel.progress) { p in
+                    morphingField(geo: geo, librarian: librarian, p: p)
+                }
 
             }
         }
@@ -542,7 +545,7 @@ struct LibrarianSurface: View {
     /// keeping the cost of a drag tick close to the cost of the field
     /// alone.
     @ViewBuilder
-    private func expandedChrome(librarian: LibrarianState, p: CGFloat) -> some View {
+    private func expandedChrome(librarian: LibrarianState) -> some View {
         VStack(spacing: 0) {
             // Header: grabber centered + chevron top-trailing. The mode
             // icon used to live top-leading here but was relocated to the
@@ -626,12 +629,14 @@ struct LibrarianSurface: View {
             scopeChipRow(librarian: librarian)
                 .padding(.bottom, 4)
 
-            // Perf gate. Below p=0.4 the chrome is fully invisible
-            // (chromeOpacity = 0 until p=0.5) and the morphing field
-            // covers the visible area anyway — skip building the
-            // heavy transcript / search-results / research subtrees
-            // so a drag tick stays cheap.
-            if p > 0.4 {
+            // Perf gate. Below the p=0.4 crossing the chrome is fully
+            // invisible (PeekFadeLayer opacity = 0 until p=0.5) and the
+            // morphing field covers the visible area anyway — skip
+            // building the heavy transcript / search-results / research
+            // subtrees so a drag tick stays cheap. `contentRevealed`
+            // flips once at the crossing instead of being re-gated every
+            // frame.
+            if panelModel.contentRevealed {
                 if !librarian.searchText.isEmpty {
                     // Search takes over the main pane while the field has
                     // content — instant MATCHES (C1) and RELATED (C2)
@@ -2988,5 +2993,27 @@ private struct StreamingCursorView: View {
                 }
             }
     }
+}
+
+/// Re-applies a peekProgress-derived opacity over BUILD-ONCE content. Parent builds the
+/// content once and stores it; only this wrapper re-evaluates per frame (it observes the
+/// isolated MorphProgressModel) and all it does is change `.opacity()` — a cheap
+/// composite, NOT a rebuild. This keeps the SolarFlareMaterial blur + the chrome out of
+/// the per-frame path.
+private struct PeekFadeLayer<Content: View>: View {
+    @ObservedObject var progress: MorphProgressModel
+    let content: Content
+    var body: some View {
+        content.opacity(max(0, (progress.peekProgress - 0.5) / 0.5))
+    }
+}
+
+/// Hands the live per-frame peekProgress to a builder in an ISOLATED subtree. Only this
+/// view re-evaluates per frame; the parent body does not (it doesn't observe the morph
+/// model). Used by the morphing field, which genuinely needs the continuous value.
+private struct PeekProgressReader<V: View>: View {
+    @ObservedObject var progress: MorphProgressModel
+    @ViewBuilder let build: (CGFloat) -> V
+    var body: some View { build(progress.peekProgress) }
 }
 

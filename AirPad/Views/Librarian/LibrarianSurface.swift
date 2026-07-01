@@ -696,6 +696,12 @@ struct LibrarianSurface: View {
                         if isViewingActiveChat && panelModel.state == .full {
                             chatTranscriptView()
                                 .frame(maxHeight: .infinity)
+                            // Endpoint/network failures surface here as a
+                            // transient banner above the input row — never as
+                            // an assistant bubble in the transcript.
+                            if let error = router.chat.lastError {
+                                chatErrorBanner(message: error)
+                            }
                         } else {
                             librarianHome(librarian: librarian)
                                 .frame(maxHeight: .infinity)
@@ -1548,6 +1554,49 @@ struct LibrarianSurface: View {
         } else {
             ThinkingShimmerView()
         }
+    }
+
+    /// Transient endpoint-failure banner for the Ask chat lane. Renders a
+    /// distinct, non-message error state (amber, Retry + dismiss) so a
+    /// failed send never lands in the transcript as an assistant bubble.
+    /// Retry re-sends the trailing user turn; × clears the banner.
+    @ViewBuilder
+    private func chatErrorBanner(message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(Color(hexString: "E8820A"))
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Retry") {
+                Task { await router.chat.retryLastUserTurn() }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color(hexString: "00BFFF"))
+            .buttonStyle(.plain)
+            .disabled(router.chat.isStreaming)
+            Button {
+                router.chat.clearError()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color(hexString: "E8820A").opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color(hexString: "E8820A").opacity(0.35), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 20)
+        .padding(.top, 4)
     }
 
     /// The conversation pane. Renders compacted summary (if any) +

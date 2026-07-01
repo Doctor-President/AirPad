@@ -45,6 +45,13 @@ final class ChatSession {
     /// Echoed back as a `.user` message the moment send() fires so the
     /// transcript shows the turn instantly while the model starts.
     private(set) var pendingUser: String? = nil
+    /// Non-message failure state for the most recent send. Endpoint /
+    /// network / model-discovery errors set this INSTEAD of being appended
+    /// to `messages`, so the transcript never carries raw error strings.
+    /// Rendered as a transient inline banner (with retry), not an assistant
+    /// turn. Cleared when a new send starts, on `reset()`, and on
+    /// `clearError()` / `retryLastUserTurn()`.
+    private(set) var lastError: String? = nil
 
     /// Persistence seam. Wired once by AppRouter after both this session
     /// and the store exist. Weak so AppRouter remains the sole owner —
@@ -87,6 +94,8 @@ final class ChatSession {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isStreaming else { return }
 
+        // New attempt clears any prior transient failure banner.
+        lastError = nil
         messages.append(Message(role: .user, text: trimmed))
         pendingUser = nil
         isStreaming = true
@@ -106,8 +115,12 @@ final class ChatSession {
                 messages.append(Message(role: .assistant, text: finalText))
             }
         } catch {
+            // Endpoint / network / discovery failure. Surface it as a
+            // distinct, non-message failure state — NOT an assistant turn —
+            // so the transcript stays clean of raw error strings. The
+            // trailing `.user` message remains so retry can re-send it.
             let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            messages.append(Message(role: .assistant, text: "⚠️ \(reason)"))
+            lastError = reason
         }
 
         streamingText = ""
@@ -124,6 +137,24 @@ final class ChatSession {
         // per chat; the next send() in this chat is a no-op for this
         // path. Runs detached so it never blocks the next user turn.
         scheduleTitleGenerationIfNeeded()
+    }
+
+    /// Dismiss the transient failure banner without retrying.
+    func clearError() {
+        lastError = nil
+    }
+
+    /// Re-attempt the most recent user turn after a failed send. On error we
+    /// never appended an assistant turn, so the trailing entry is still that
+    /// user message — pop it and re-send its text through the normal path so
+    /// there's no duplicate user bubble. No-op mid-stream.
+    func retryLastUserTurn() async {
+        guard !isStreaming, let last = messages.last, last.role == .user else {
+            lastError = nil
+            return
+        }
+        messages.removeLast()
+        await send(last.text)
     }
 
     /// Render the prior transcript + the new user turn as a single text
@@ -149,6 +180,7 @@ final class ChatSession {
         streamingText = ""
         pendingUser = nil
         isStreaming = false
+        lastError = nil
         id = UUID()
         createdAt = Date()
         // A fresh chat must not be replaced by the most-recent record

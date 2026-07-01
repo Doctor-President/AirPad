@@ -22,6 +22,9 @@ struct ChatView: View {
 
             VStack(spacing: 0) {
                 transcript
+                if let error = session.lastError {
+                    errorBanner(error)
+                }
                 Divider().overlay(Color.white.opacity(0.08))
                 inputRow
             }
@@ -208,6 +211,44 @@ struct ChatView: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .frame(width: 36, height: 36)
+    }
+
+    // MARK: - Error banner
+
+    /// Transient endpoint-failure banner. Renders the session's non-message
+    /// `lastError` as a distinct state (amber, Retry + dismiss) so a failed
+    /// send never appears as an assistant bubble. Retry re-sends the trailing
+    /// user turn; × clears it.
+    @ViewBuilder
+    private func errorBanner(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundStyle(Color(hexString: "E8820A"))
+            Text(message)
+                .font(.system(size: 13))
+                .foregroundStyle(.white.opacity(0.9))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Retry") {
+                Task { await session.retryLastUserTurn() }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Color(hexString: "00BFFF"))
+            .buttonStyle(.plain)
+            .disabled(session.isStreaming)
+            Button {
+                session.clearError()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss error")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color(hexString: "E8820A").opacity(0.12))
     }
 }
 

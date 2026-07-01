@@ -26,3 +26,11 @@ corpus_index.pre-*.json
 # SwiftPM build artifacts (harness sub-packages)
 .build/
 Package.resolved
+
+# TestFlight / App Store Connect secrets — NEVER commit
+*.p8
+.testflight.env
+testflight.env
+scripts/testflight.env
+# (scripts/testflight.env.example IS committed — it's a no-secret template)
+!scripts/testflight.env.example

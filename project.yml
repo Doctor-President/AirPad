@@ -73,6 +73,14 @@ targets:
           - Lora-Regular.ttf
           - Lora-Bold.ttf
         UILaunchScreen: {}
+        # Portrait-only, full screen. App has no rotation handling and opts out
+        # of iPad multitasking; also required by App Store validation (90474)
+        # since the target is Universal (iPhone+iPad).
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
         # `audio` is required for `AVPlayerViewController` to surface its
         # Picture-in-Picture button. `allowsPictureInPicturePlayback = true`
         # on the controller is necessary but not sufficient — the PiP
@@ -136,4 +144,11 @@ targets:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
-            NSExtensionActivationRule: TRUEPREDICATE
+            # App Store validation (90362) rejects the TRUEPREDICATE string.
+            # Declare the content types ShareViewController actually handles:
+            # web URLs, text, images, and generic files/data.
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 10

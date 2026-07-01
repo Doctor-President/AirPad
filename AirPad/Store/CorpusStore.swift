@@ -584,8 +584,11 @@ final class CorpusStore {
         }
         // Generate initial Über-node clusters
         refreshUberNodeClusters()
-        // Generate initial neighborhoods
-        refreshNeighborhoods()
+        // Generate initial neighborhoods. When the rehydrated cache already
+        // matches the corpus this early-returns cheaply; when the cache is
+        // genuinely cold/stale the heavy path (Louvain + layout + FM naming)
+        // is deferred off the launch/first-paint path.
+        scheduleInitialNeighborhoodRefresh()
         // SB139 Stage 1 — relabel pre-split `embedder_error` records. The
         // original implementation conflated two cases under one reason; if the
         // node has any vectors, the failure was on the FM side, not the
@@ -4732,6 +4735,33 @@ final class CorpusStore {
             generatedAt: corpusIndex.updatedAt
         )
         print("[Neighborhood] Rehydrated cache from persisted index — \(neighborhoods.count) neighborhoods, fingerprint \(fingerprint.prefix(8))…")
+    }
+
+    /// Launch-path neighborhood entry point (Part 2 of the launch-freeze fix).
+    /// If the rehydrated cache already matches the corpus, run
+    /// `refreshNeighborhoods()` inline — it's a single fingerprint hash +
+    /// compare and early-returns, giving the "cache valid: true" confirmation
+    /// log. Otherwise the corpus is genuinely cold or has changed, and the
+    /// heavy path (Louvain + `recomputeAlgorithmicLayout` + the deferred FM
+    /// naming chain) must NOT run on the launch/first-paint path — schedule it
+    /// on a low-priority Task that yields past first paint. The fingerprint
+    /// gate inside `refreshNeighborhoods()` still applies, so this never
+    /// double-computes.
+    private func scheduleInitialNeighborhoodRefresh() {
+        let currentFingerprint = NeighborhoodService().corpusFingerprint(from: nodes)
+        if let cache = neighborhoodCache,
+           !cache.shouldInvalidate(currentFingerprint: currentFingerprint) {
+            refreshNeighborhoods()
+            return
+        }
+        print("[Neighborhood] Cold/stale at launch — deferring full refresh off the launch path")
+        Task(priority: .utility) { @MainActor [weak self] in
+            // Yield past first paint before the heavy compute so Recents stays
+            // interactive immediately; the fingerprint gate re-checks inside.
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self else { return }
+            self.refreshNeighborhoods()
+        }
     }
 
     /// Generate or refresh neighborhoods if needed.

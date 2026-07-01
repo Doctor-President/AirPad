@@ -570,8 +570,16 @@ final class CorpusStore {
                 var upgraded = loadedIndex
                 upgraded.version = CorpusIndex.currentVersion
                 corpusIndex = upgraded
+                // Schema upgrade forces a full re-cluster: leave the cache nil
+                // so the deferred cold path (below) recomputes off the launch
+                // path against the Stage A edge weights.
             } else {
                 corpusIndex = loadedIndex
+                // Rehydrate the in-memory neighborhood cache from the persisted
+                // index so an unchanged corpus hits the fingerprint early-return
+                // in refreshNeighborhoods() — no Louvain, no layout, no FM on
+                // the launch path.
+                rehydrateNeighborhoodCacheFromIndex()
             }
         }
         // Generate initial Über-node clusters
@@ -4671,6 +4679,60 @@ final class CorpusStore {
     }
 
     // MARK: - Neighborhood detection
+
+    /// Rehydrate the in-memory `neighborhoodCache` from the persisted corpus
+    /// index (Part 1 of the launch-freeze fix). Reconstructs the ephemeral
+    /// `Neighborhood`/`NeighborhoodCache` shape from `NeighborhoodIndexEntry`
+    /// records + the persisted `neighborhoodFingerprint` so that, for an
+    /// unchanged corpus, the very next `refreshNeighborhoods()` sees a valid
+    /// cache and takes the fingerprint early-return — skipping Louvain, the
+    /// algorithmic-layout recompute, and the FM naming chain entirely.
+    ///
+    /// No-op (leaves the cache nil → treated as cold) when the index predates
+    /// the `neighborhoodFingerprint` field or carries no neighborhoods. The
+    /// fingerprint stored at compute time (`refreshNeighborhoods`) is exactly
+    /// `NeighborhoodService.corpusFingerprint(from:)`, the same function the
+    /// early-return check recomputes — so an untouched corpus matches.
+    ///
+    /// Mirrors `generateNeighborhoods`' output shape: neighborhoods sorted by
+    /// descending member count (so the structure-change heuristic's
+    /// `neighborhoods.first` largest-cluster assumption holds) and the same
+    /// node→neighborhood reverse map. Reconstruction only; it does not mutate
+    /// `corpusIndex`, so partition determinism on any later real recompute is
+    /// preserved.
+    private func rehydrateNeighborhoodCacheFromIndex() {
+        guard let fingerprint = corpusIndex.neighborhoodFingerprint,
+              !corpusIndex.neighborhoods.isEmpty else {
+            return
+        }
+        let entries = Array(corpusIndex.neighborhoods.values)
+        let neighborhoods: [Neighborhood] = entries.map { entry in
+            Neighborhood(
+                id: entry.id,
+                memberNodeIDs: entry.members,
+                centroid: CGPoint(x: entry.centroid.x, y: entry.centroid.y),
+                memberCount: entry.memberCount
+            )
+        }
+        .sorted { $0.memberCount > $1.memberCount }
+
+        var nodeToNeighborhoodID: [String: String] = [:]
+        for entry in entries {
+            for memberID in entry.members {
+                nodeToNeighborhoodID[memberID] = entry.id
+            }
+        }
+
+        neighborhoodCache = NeighborhoodCache(
+            neighborhoods: neighborhoods,
+            nodeToNeighborhoodID: nodeToNeighborhoodID,
+            unattachedNodeIDs: corpusIndex.unattachedNodes,
+            routingDiagnostics: nil,
+            corpusFingerprint: fingerprint,
+            generatedAt: corpusIndex.updatedAt
+        )
+        print("[Neighborhood] Rehydrated cache from persisted index — \(neighborhoods.count) neighborhoods, fingerprint \(fingerprint.prefix(8))…")
+    }
 
     /// Generate or refresh neighborhoods if needed.
     /// Called automatically after node additions when invalidation threshold is met.

@@ -264,7 +264,10 @@ enum ModelRouter {
     }
 
     private static func firstOllamaModel(base: URL) async throws -> String {
-        let path = "v1/models"
+        // LM Studio moved model listing to api/v0/models in a recent update
+        // and broke the OpenAI-compatible /v1/models endpoint. Response shape
+        // (data array, each entry has an id string) is unchanged.
+        let path = "api/v0/models"
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "GET"
 

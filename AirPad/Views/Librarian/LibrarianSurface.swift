@@ -172,6 +172,14 @@ struct LibrarianSurface: View {
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
+        .task {
+            // Continue-by-default across launches: hydrate the shared
+            // chat lane from the most-recent stored conversation on cold
+            // launch. Internally guarded (`didRestore`) so it's a no-op
+            // once any chat activity exists — safe to call alongside
+            // ChatView's own restore.
+            await router.chat.restoreIfNeededFromStore()
+        }
         .onChange(of: hostScope) { _, _ in
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
@@ -561,6 +569,10 @@ struct LibrarianSurface: View {
                     .padding(.top, 6)
 
                 HStack(alignment: .top) {
+                    // Provisional compose glyph removed (FIX 3). New-chat
+                    // returns later in proper header grammar;
+                    // `router.chat.startNew()` stays intact and new/switch
+                    // chats remain reachable via the Chats tile.
                     Spacer()
 
                     // TEMP (3a) — manual lock trigger so 3a's panel
@@ -626,8 +638,10 @@ struct LibrarianSurface: View {
             // overlay; this just holds the pocket.
             Color.clear.frame(height: 62)
 
-            scopeChipRow(librarian: librarian)
-                .padding(.bottom, 4)
+            // Scope-chip row removed (FIX 2). Scope still defaults from
+            // the host context via `seedScopeFromHostIfNeeded`; only the
+            // UI row is gone. `scopeChipRow` is left defined for a
+            // separate dead-code cleanup pass.
 
             // Perf gate. Below the p=0.4 crossing the chrome is fully
             // invisible (PeekFadeLayer opacity = 0 until p=0.5) and the
@@ -649,9 +663,17 @@ struct LibrarianSurface: View {
                 } else {
                     // Conversation transcript (flexes), input row beneath
                     // it — chat-app convention so new messages land near
-                    // the typing area.
-                    transcriptView(librarian: librarian)
-                        .frame(maxHeight: .infinity)
+                    // the typing area. Ask routes to the clean ChatSession
+                    // lane (passage-free, durable per-turn persistence);
+                    // every other mode keeps the corpus pipeline transcript
+                    // untouched.
+                    if librarian.activeMode == .ask {
+                        chatTranscriptView(librarian: librarian)
+                            .frame(maxHeight: .infinity)
+                    } else {
+                        transcriptView(librarian: librarian)
+                            .frame(maxHeight: .infinity)
+                    }
 
                     inputRow(librarian: librarian)
                         // Klein → cyan field glow locked to the Ask
@@ -706,7 +728,11 @@ struct LibrarianSurface: View {
                 Spacer(minLength: 0)
             }
 
-            endSessionFooter(librarian: librarian)
+            // Back pill replaces the End-session footer (persist, not
+            // kill): collapses the panel to half without touching session
+            // state. The old `endSessionFooter` / End-session dialog are
+            // left dormant for a separate dead-code cleanup pass.
+            backPill()
         }
         .frame(maxHeight: .infinity)
         // Lifted field-agnostic Done (Move 2 fix-pass v3 / Item 1).
@@ -810,6 +836,39 @@ struct LibrarianSurface: View {
         }
     }
 
+    /// Bottom Back pill — replaces the old End-session footer. Drops the
+    /// panel to the half detent and touches NO session state: the Ask
+    /// chat lane auto-persists per turn (`ChatSession.flush`), so
+    /// collapsing is "persist, not kill" rather than the old
+    /// save-or-clear fork. Shown in every mode. The chevron mirrors the
+    /// header's collapse grammar; dropping to half (not peek) keeps the
+    /// conversation a single tap away.
+    @ViewBuilder
+    private func backPill() -> some View {
+        HStack {
+            Spacer()
+            Button {
+                panelModel.dropToHalf(animated: true)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Back")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.06))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Collapse panel")
+            Spacer()
+        }
+        .padding(.bottom, 10)
+    }
+
     /// Footer row holding the End button. Visible whenever the session
     /// has *anything* — either live turns or a compacted summary —
     /// since post-compaction the live history is empty but the session
@@ -863,8 +922,16 @@ struct LibrarianSurface: View {
     }
 
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {
-        !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !librarian.isLoading
+        let hasText = !librarian.inputText
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasText else { return false }
+        // Ask routes through the clean ChatSession lane, so its in-flight
+        // gate is the session's `isStreaming` — not the Librarian
+        // pipeline's `isLoading`, which Ask no longer drives.
+        if librarian.activeMode == .ask {
+            return !router.chat.isStreaming
+        }
+        return !librarian.isLoading
     }
 
     // MARK: - Instant search (ws-instant-search C1)
@@ -1091,7 +1158,17 @@ struct LibrarianSurface: View {
                         if dictation.isListening && dictation.activeToken == "ask" {
                             dictation.stop()
                         }
-                        Task { await librarian.executeQuery(store: store) }
+                        if librarian.activeMode == .ask {
+                            // Clean ChatSession lane. send() appends the
+                            // user message itself + auto-persists per turn,
+                            // so just hand off the text and clear the field
+                            // — no executeQuery, no passages, no manual echo.
+                            let text = librarian.inputText
+                            librarian.inputText = ""
+                            Task { await router.chat.send(text) }
+                        } else {
+                            Task { await librarian.executeQuery(store: store) }
+                        }
                     } label: {
                         let enabled = sendIsEnabled(librarian: librarian)
                         Image(systemName: "arrow.up.circle.fill")
@@ -1178,6 +1255,118 @@ struct LibrarianSurface: View {
     /// Stable id for the bottom anchor used by the scroll-to-latest
     /// behavior. Sentinel string, not a real exchange id.
     private static let transcriptBottomAnchor = "_transcript_bottom"
+
+    // MARK: - Ask chat lane (ChatSession)
+
+    /// Bottom-anchor sentinel for the Ask chat transcript. Distinct from
+    /// the pipeline transcript's anchor so the two scroll views never
+    /// fight over the same id.
+    private static let chatTranscriptBottomAnchor = "_chat_transcript_bottom"
+
+    /// Ask-mode conversation pane, backed by the clean `router.chat`
+    /// (`ChatSession`) lane — no corpus passages, no citations. Renders
+    /// each committed message plus the in-flight tail, mirroring
+    /// `ChatView`'s scroll/stream grammar while reusing the Librarian's
+    /// own bubble styling (`transcriptQueryBubble` + `attributedMarkdown`).
+    /// When the chat is empty and nothing is streaming, falls through to
+    /// the same capability-tile grid the pipeline transcript shows so
+    /// first-open (and a freshly-composed chat) still feels alive and the
+    /// Chats tile stays reachable.
+    @ViewBuilder
+    private func chatTranscriptView(librarian: LibrarianState) -> some View {
+        let chat = router.chat
+        let hasAny = !chat.messages.isEmpty || chat.isStreaming
+
+        if hasAny {
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(chat.messages) { message in
+                            chatBubble(message)
+                                .id(message.id)
+                        }
+
+                        if chat.isStreaming {
+                            chatInflightTail()
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.chatTranscriptBottomAnchor)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .onChange(of: chat.messages.count) { _, _ in
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
+                    }
+                }
+                .onChange(of: chat.streamingText) { _, _ in
+                    // Stream-follow: chase the tail per delta, no animation
+                    // (token cadence is already smooth; animating per-delta
+                    // stutters) — mirrors the pipeline transcript.
+                    scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
+                }
+                .onAppear {
+                    scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
+                }
+                .floatingPanelScrollTracking(proxy: proxy)
+            }
+        } else {
+            ScrollView {
+                capabilityTileGrid(librarian: librarian)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .floatingPanelScrollTracking(proxy: proxy)
+        }
+    }
+
+    /// One committed chat message. User turns reuse the Librarian's
+    /// right-aligned query bubble; assistant turns reuse the same
+    /// inline-markdown body as the pipeline transcript (shared
+    /// `attributedMarkdown` cache).
+    @ViewBuilder
+    private func chatBubble(_ message: ChatSession.Message) -> some View {
+        switch message.role {
+        case .user:
+            transcriptQueryBubble(text: message.text)
+        case .assistant:
+            Text(attributedMarkdown(message.text))
+                .font(.system(size: 15))
+                .foregroundStyle(.white)
+                .lineSpacing(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        }
+    }
+
+    /// In-flight tail for the Ask chat lane. Mounted only while the
+    /// session is streaming. Pre-token → pulsing shimmer; mid-stream →
+    /// raw streamed text + blinking cursor (raw, not markdown, to avoid
+    /// re-parsing partial markdown per delta — same choice as the
+    /// pipeline's `inflightAnswerTail`).
+    @ViewBuilder
+    private func chatInflightTail() -> some View {
+        let chat = router.chat
+        if !chat.streamingText.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(chat.streamingText)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .lineSpacing(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                StreamingCursorView()
+            }
+        } else {
+            ThinkingShimmerView()
+        }
+    }
 
     /// The conversation pane. Renders compacted summary (if any) +
     /// each exchange in `sessionHistory` + any in-flight or error

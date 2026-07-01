@@ -40,6 +40,13 @@ struct LibrarianSurface: View {
     @State private var showEndDialog = false
     @State private var isSavingSession = false
     @State private var researchExportCopied = false
+    /// Ask chat/home toggle. False → Librarian home (capability-tile
+    /// launchpad + active-chat pill). True → the active `router.chat`
+    /// transcript. Only meaningful when `activeMode == .ask`; set true on
+    /// send / active-chat-pill tap, false on Back.
+    @State private var isViewingActiveChat = false
+    /// Drives the active-chat pill's × → "Save or Delete" dialog.
+    @State private var showChatDisposition = false
     @FocusState private var isInputFocused: Bool
     /// Focus state for the persistent search field. Kept separate from
     /// `isInputFocused` so each field's own promote-on-focus
@@ -194,6 +201,16 @@ struct LibrarianSurface: View {
                 isSearchFocused = false
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                 to: nil, from: nil, for: nil)
+                // Leaving .full leaves the chat — a drag-down is a
+                // deliberate exit, identical to Back. Clearing the flag
+                // here means re-entry requires an explicit action (pill
+                // tap or send); dragging back UP to full shows the home,
+                // never a silently re-mounted transcript (which sputtered
+                // mid-animation). `state` publishes settled detents only,
+                // so this can't misfire while raising TO full on entry:
+                // entry sets the flag then expandToFull, and the observer
+                // sees the settled .full → does nothing.
+                isViewingActiveChat = false
             }
         }
         .onChange(of: isInputFocused) { _, focused in
@@ -664,12 +681,25 @@ struct LibrarianSurface: View {
                     // Conversation transcript (flexes), input row beneath
                     // it — chat-app convention so new messages land near
                     // the typing area. Ask routes to the clean ChatSession
-                    // lane (passage-free, durable per-turn persistence);
-                    // every other mode keeps the corpus pipeline transcript
-                    // untouched.
+                    // lane (passage-free, durable per-turn persistence):
+                    // home (tile launchpad + active-chat pill) vs. the
+                    // active chat transcript. The transcript is gated on
+                    // BOTH `isViewingActiveChat` AND the expanded (.full)
+                    // posture — the invariant is transcript ⟺
+                    // (isViewingActiveChat && panel expanded), so at half
+                    // (or below) the home always shows, never the
+                    // transcript peeking. `state` is the authoritative
+                    // expanded signal (peekProgress saturates at 1 for both
+                    // half and full, so it can't distinguish them). Every
+                    // other mode keeps the corpus pipeline transcript.
                     if librarian.activeMode == .ask {
-                        chatTranscriptView(librarian: librarian)
-                            .frame(maxHeight: .infinity)
+                        if isViewingActiveChat && panelModel.state == .full {
+                            chatTranscriptView()
+                                .frame(maxHeight: .infinity)
+                        } else {
+                            librarianHome(librarian: librarian)
+                                .frame(maxHeight: .infinity)
+                        }
                     } else {
                         transcriptView(librarian: librarian)
                             .frame(maxHeight: .infinity)
@@ -728,11 +758,16 @@ struct LibrarianSurface: View {
                 Spacer(minLength: 0)
             }
 
-            // Back pill replaces the End-session footer (persist, not
-            // kill): collapses the panel to half without touching session
-            // state. The old `endSessionFooter` / End-session dialog are
-            // left dormant for a separate dead-code cleanup pass.
-            backPill()
+            // Back pill. In Ask it exits the active chat back to home, so
+            // it rides with the transcript — shown only when the transcript
+            // is (isViewingActiveChat && expanded). At half the home shows
+            // "home only" with no stray Back pill. In the other modes it
+            // stays the quickfix panel-collapse affordance. The old
+            // `endSessionFooter` / End-session dialog remain dormant for a
+            // separate dead-code cleanup pass.
+            if librarian.activeMode != .ask || (isViewingActiveChat && panelModel.state == .full) {
+                backPill()
+            }
         }
         .frame(maxHeight: .infinity)
         // Lifted field-agnostic Done (Move 2 fix-pass v3 / Item 1).
@@ -788,6 +823,32 @@ struct LibrarianSurface: View {
         } message: {
             Text("Save this session as a note, or clear it without saving.")
         }
+        // Active-chat pill × → keep or discard the live chat. Save
+        // persists it to the Chats list and resets to an empty session;
+        // Delete removes it for good. Both leave the session empty so the
+        // pill clears.
+        .confirmationDialog(
+            "Save or delete this chat?",
+            isPresented: $showChatDisposition,
+            titleVisibility: .visible
+        ) {
+            Button("Save") {
+                // Flush + persist the current chat, then reset to a fresh
+                // empty session. The chat stays in the Chats list.
+                router.chat.startNew()
+            }
+            Button("Delete", role: .destructive) {
+                // Same order as the Chats-list delete: startNew() flushes
+                // + resets the live session, then delete(id:) tombstones
+                // the old chat so the lagging flush can't resurrect it.
+                let currentID = router.chat.id
+                router.chat.startNew()
+                router.chatStore.delete(id: currentID)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Save keeps this chat in your Chats list. Delete removes it permanently.")
+        }
     }
 
     /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out
@@ -836,36 +897,37 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// Bottom Back pill — replaces the old End-session footer. Drops the
-    /// panel to the half detent and touches NO session state: the Ask
-    /// chat lane auto-persists per turn (`ChatSession.flush`), so
-    /// collapsing is "persist, not kill" rather than the old
-    /// save-or-clear fork. Shown in every mode. The chevron mirrors the
-    /// header's collapse grammar; dropping to half (not peek) keeps the
-    /// conversation a single tap away.
+    /// Bottom Back pill. Exits the active chat back to the Librarian home
+    /// and drops the panel to `.half`, touching NO session state — the
+    /// Ask chat lane auto-persists per turn (`ChatSession.flush`), so
+    /// leaving is "persist, not kill." Left-anchored with a left-pointing
+    /// chevron to read as "back out" rather than "collapse." In non-Ask
+    /// modes the `isViewingActiveChat = false` is a harmless no-op and the
+    /// pill is just the quickfix panel-collapse affordance.
     @ViewBuilder
     private func backPill() -> some View {
         HStack {
-            Spacer()
             Button {
+                isViewingActiveChat = false
                 panelModel.dropToHalf(animated: true)
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .semibold))
                     Text("Back")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
+                .foregroundStyle(.white.opacity(0.75))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
                 .background(Color.white.opacity(0.06))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Collapse panel")
+            .accessibilityLabel("Back to Librarian home")
             Spacer()
         }
+        .padding(.horizontal, 20)
         .padding(.bottom, 10)
     }
 
@@ -1163,8 +1225,15 @@ struct LibrarianSurface: View {
                             // user message itself + auto-persists per turn,
                             // so just hand off the text and clear the field
                             // — no executeQuery, no passages, no manual echo.
+                            // Sending enters the active chat from home:
+                            // raise to full so the transcript is visible per
+                            // the expanded-posture invariant, not a blank
+                            // half. (Focus usually promotes to full already;
+                            // this covers send-without-focus, e.g. dictation.)
                             let text = librarian.inputText
                             librarian.inputText = ""
+                            isViewingActiveChat = true
+                            panelModel.expandToFull(animated: true)
                             Task { await router.chat.send(text) }
                         } else {
                             Task { await librarian.executeQuery(store: store) }
@@ -1268,62 +1337,119 @@ struct LibrarianSurface: View {
     /// each committed message plus the in-flight tail, mirroring
     /// `ChatView`'s scroll/stream grammar while reusing the Librarian's
     /// own bubble styling (`transcriptQueryBubble` + `attributedMarkdown`).
-    /// When the chat is empty and nothing is streaming, falls through to
-    /// the same capability-tile grid the pipeline transcript shows so
-    /// first-open (and a freshly-composed chat) still feels alive and the
-    /// Chats tile stays reachable.
+    /// Shown only while `isViewingActiveChat` is true — the empty /
+    /// first-open state now lives on `librarianHome`, so no tile fallback
+    /// here.
     @ViewBuilder
-    private func chatTranscriptView(librarian: LibrarianState) -> some View {
+    private func chatTranscriptView() -> some View {
         let chat = router.chat
-        let hasAny = !chat.messages.isEmpty || chat.isStreaming
-
-        if hasAny {
-            ScrollViewReader { scrollProxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        ForEach(chat.messages) { message in
-                            chatBubble(message)
-                                .id(message.id)
-                        }
-
-                        if chat.isStreaming {
-                            chatInflightTail()
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        Color.clear
-                            .frame(height: 1)
-                            .id(Self.chatTranscriptBottomAnchor)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .onChange(of: chat.messages.count) { _, _ in
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
-                    }
-                }
-                .onChange(of: chat.streamingText) { _, _ in
-                    // Stream-follow: chase the tail per delta, no animation
-                    // (token cadence is already smooth; animating per-delta
-                    // stutters) — mirrors the pipeline transcript.
-                    scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
-                }
-                .onAppear {
-                    scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
-                }
-                .floatingPanelScrollTracking(proxy: proxy)
-            }
-        } else {
+        ScrollViewReader { scrollProxy in
             ScrollView {
-                capabilityTileGrid(librarian: librarian)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(chat.messages) { message in
+                        chatBubble(message)
+                            .id(message.id)
+                    }
+
+                    if chat.isStreaming {
+                        chatInflightTail()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.chatTranscriptBottomAnchor)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onChange(of: chat.messages.count) { _, _ in
+                withAnimation(.easeOut(duration: 0.25)) {
+                    scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
+                }
+            }
+            .onChange(of: chat.streamingText) { _, _ in
+                // Stream-follow: chase the tail per delta, no animation
+                // (token cadence is already smooth; animating per-delta
+                // stutters) — mirrors the pipeline transcript.
+                scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
+            }
+            .onAppear {
+                scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
             }
             .floatingPanelScrollTracking(proxy: proxy)
         }
+    }
+
+    /// Ask-mode Librarian home — the capability-tile launchpad (compressed
+    /// to a single row) plus, when a conversation exists, the active-chat
+    /// pill that jumps back into it. This is the landing surface when
+    /// `isViewingActiveChat` is false; Back returns here from the
+    /// transcript.
+    @ViewBuilder
+    private func librarianHome(librarian: LibrarianState) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                capabilityTileGrid(librarian: librarian, singleRow: true)
+
+                // Active-chat pill — the one-tap breadcrumb back into the
+                // live conversation. Only when the chat has messages
+                // ("one pill at a time" — the single live session).
+                if !router.chat.messages.isEmpty {
+                    activeChatPill()
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .floatingPanelScrollTracking(proxy: proxy)
+    }
+
+    /// Active-chat pill on the Ask home. Body tap resumes the live
+    /// `router.chat`; trailing × opens the keep/discard dialog. Title
+    /// tracks `displayTitle` (FM title once it lands, truncation
+    /// fallback before).
+    @ViewBuilder
+    private func activeChatPill() -> some View {
+        HStack(spacing: 10) {
+            Button {
+                // Resume the chat: raise to full so the transcript shows
+                // (transcript ⟺ isViewingActiveChat && expanded), never a
+                // blank half.
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: true)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color(hexString: "00BFFF"))
+                    Text(router.chat.displayTitle)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Resume chat: \(router.chat.displayTitle)")
+
+            Button {
+                showChatDisposition = true
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close chat")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.06))
+        .clipShape(Capsule())
     }
 
     /// One committed chat message. User turns reuse the Librarian's
@@ -1889,46 +2015,68 @@ struct LibrarianSurface: View {
     /// own each surface (corpus reflection, Inbox SB134, chat
     /// primitive, capsule export) wire them up as they land. Capsule
     /// renders dimmed + inert until its export format is locked.
+    /// `singleRow` compresses the four tiles into one row of compact
+    /// cards (the Ask home, which needs vertical room beneath for the
+    /// active-chat pill). Default false keeps the 2×2 grid used by the
+    /// pipeline-mode empty landing.
     @ViewBuilder
-    private func capabilityTileGrid(librarian: LibrarianState) -> some View {
-        let columns = [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
-        ]
-        LazyVGrid(columns: columns, spacing: 12) {
-            capabilityTile(
-                label: "Insights",
-                systemImage: "sparkles",
-                isEnabled: true
-            ) {
-                // TODO: route to corpus-reflection workstream
+    private func capabilityTileGrid(librarian: LibrarianState, singleRow: Bool = false) -> some View {
+        if singleRow {
+            HStack(spacing: 10) {
+                capabilityTiles(compact: true)
             }
-            capabilityTile(
-                label: "Inbox",
-                systemImage: "tray",
-                isEnabled: true
-            ) {
-                // TODO: route to dashboard Inbox surface (SB134).
-                // Future badge count slot lives on this tile.
+        } else {
+            let columns = [
+                GridItem(.flexible(), spacing: 12),
+                GridItem(.flexible(), spacing: 12)
+            ]
+            LazyVGrid(columns: columns, spacing: 12) {
+                capabilityTiles(compact: false)
             }
-            capabilityTile(
-                label: "Capsule",
-                systemImage: "shippingbox",
-                isEnabled: false
-            ) {
-                // Dimmed + inert until export format is locked.
-            }
-            capabilityTile(
-                label: "Chats",
-                systemImage: "bubble.left.and.bubble.right",
-                isEnabled: true
-            ) {
-                // Drop to .half first so a full-detent Librarian doesn't
-                // present the sheet from behind itself — mirrors the
-                // `openNode` handoff pattern above.
-                panelModel.dropToHalf(animated: true)
-                router.showChatsList = true
-            }
+        }
+    }
+
+    /// The four landing tiles, shared by both the 2×2 grid and the
+    /// single-row home layout. `compact` shrinks each card so all four
+    /// fit one row.
+    @ViewBuilder
+    private func capabilityTiles(compact: Bool) -> some View {
+        capabilityTile(
+            label: "Insights",
+            systemImage: "sparkles",
+            isEnabled: true,
+            compact: compact
+        ) {
+            // TODO: route to corpus-reflection workstream
+        }
+        capabilityTile(
+            label: "Inbox",
+            systemImage: "tray",
+            isEnabled: true,
+            compact: compact
+        ) {
+            // TODO: route to dashboard Inbox surface (SB134).
+            // Future badge count slot lives on this tile.
+        }
+        capabilityTile(
+            label: "Capsule",
+            systemImage: "shippingbox",
+            isEnabled: false,
+            compact: compact
+        ) {
+            // Dimmed + inert until export format is locked.
+        }
+        capabilityTile(
+            label: "Chats",
+            systemImage: "bubble.left.and.bubble.right",
+            isEnabled: true,
+            compact: compact
+        ) {
+            // Drop to .half first so a full-detent Librarian doesn't
+            // present the sheet from behind itself — mirrors the
+            // `openNode` handoff pattern above.
+            panelModel.dropToHalf(animated: true)
+            router.showChatsList = true
         }
     }
 
@@ -1944,21 +2092,24 @@ struct LibrarianSurface: View {
         label: String,
         systemImage: String,
         isEnabled: Bool,
+        compact: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        let card = VStack(spacing: 10) {
+        let card = VStack(spacing: compact ? 6 : 10) {
             Image(systemName: systemImage)
-                .font(.system(size: 22, weight: .regular))
+                .font(.system(size: compact ? 18 : 22, weight: .regular))
                 .foregroundStyle(.white.opacity(0.85))
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: compact ? 11 : 12, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
-        .padding(.horizontal, 16)
+        .padding(.vertical, compact ? 12 : 18)
+        .padding(.horizontal, compact ? 8 : 16)
         .background(Color.white.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: compact ? 12 : 14))
 
         if isEnabled {
             Button(action: action) { card }

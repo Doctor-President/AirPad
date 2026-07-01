@@ -1462,12 +1462,68 @@ struct LibrarianSurface: View {
         case .user:
             transcriptQueryBubble(text: message.text)
         case .assistant:
-            Text(attributedMarkdown(message.text))
-                .font(.system(size: 15))
-                .foregroundStyle(.white)
-                .lineSpacing(5)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(attributedMarkdown(message.text))
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+                    .lineSpacing(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+                // Per-turn read-aloud — every settled assistant turn is
+                // independently replayable (Claude's model). Not added to
+                // the in-flight tail; matches the old pipeline transcript.
+                chatReadAloudControl(message: message)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Read-aloud control for a settled assistant chat turn. Re-wires the
+    /// existing `SpeechSynthesisService` (same glyphs, placement, and call
+    /// pattern the old Ask pipeline used in `transcriptResponseBody`) —
+    /// including its lock-screen / Now-Playing plumbing. The per-message
+    /// UUID is the speech token, so each turn's play/pause is independent.
+    @ViewBuilder
+    private func chatReadAloudControl(message: ChatSession.Message) -> some View {
+        if !message.text.isEmpty {
+            let token = message.id.uuidString
+            let isActive = speech.activeToken == token
+            let showPause = isActive && speech.isSpeaking && !speech.isPaused
+            let voiceSelection = Binding<String?>(
+                get: { speech.selectedVoiceIdentifier },
+                set: { speech.selectedVoiceIdentifier = $0 }
+            )
+            HStack(spacing: 14) {
+                Button {
+                    speech.toggle(token: token, text: message.text)
+                } label: {
+                    Image(systemName: showPause ? "pause" : "play")
+                        .font(.system(size: 22))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(showPause ? "Pause" : "Play")
+
+                Menu {
+                    Picker("Voice", selection: voiceSelection) {
+                        Text("Best available").tag(String?.none)
+                        ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
+                            Text(voiceLabel(v)).tag(Optional(v.identifier))
+                        }
+                    }
+                } label: {
+                    Image(systemName: "person.wave.2")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Choose voice")
+            }
+            .padding(.top, 2)
         }
     }
 

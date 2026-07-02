@@ -81,6 +81,10 @@ targets:
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        # Export compliance: the app uses only exempt encryption (standard
+        # HTTPS/system crypto). Declaring this suppresses the export-compliance
+        # prompt on every TestFlight upload — App Store Connect reads it here.
+        ITSAppUsesNonExemptEncryption: false
         # `audio` is required for `AVPlayerViewController` to surface its
         # Picture-in-Picture button. `allowsPictureInPicturePlayback = true`
         # on the controller is necessary but not sufficient — the PiP
@@ -140,6 +144,8 @@ targets:
       path: AirPadShare/Info.plist
       properties:
         CFBundleDisplayName: AirPad Share
+        # Export compliance — mirror the main app; only exempt encryption.
+        ITSAppUsesNonExemptEncryption: false
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController

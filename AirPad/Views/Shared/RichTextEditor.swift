@@ -32,6 +32,13 @@ struct RichTextEditor: UIViewRepresentable {
     /// clear the upstream trigger (e.g. `store.pendingAutoFocusItemID`) on
     /// `.onAppear` so subsequent renders don't re-focus.
     var autoFocusOnAppear: Bool = false
+    /// When true, applies the Note document typography (line height, paragraph
+    /// spacing, list hanging indent) and system-aware colors. Opt-in so other
+    /// consumers of this editor render exactly as before. See `NoteTypography`.
+    var documentStyle: Bool = false
+    /// Serif feel-test typeface (SB121 scaffold). Only applied when
+    /// `documentStyle` is on. `.system` keeps the default system font.
+    var documentFont: NoteFontChoice = .system
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -42,21 +49,22 @@ struct RichTextEditor: UIViewRepresentable {
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.font = UIFont.preferredFont(forTextStyle: .body)
-        textView.textColor = .white
-        textView.tintColor = .white
+        // documentStyle uses semantic `.label` (adaptive) so text is legible in
+        // both light and dark; the legacy path keeps its hardcoded white.
+        textView.textColor = documentStyle ? .label : .white
+        textView.tintColor = documentStyle ? .label : .white
         textView.isScrollEnabled = false
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.adjustsFontForContentSizeCategory = true
         textView.placeholderText = placeholder
         textView.minHeight = minHeight
-        textView.attributedText = MarkdownCodec.decode(text)
-        // Seed typingAttributes so the first keystroke into an empty editor renders white.
-        // UIKit derives typingAttributes from the surrounding character on each cursor move,
-        // but with no characters it falls back to system defaults — which on our dark
-        // surfaces means black-on-black. Set them explicitly here and re-apply whenever
-        // attributedText is replaced.
-        textView.typingAttributes = Self.defaultTypingAttributes
+        textView.attributedText = decodedAttributedText(text)
+        // Seed typingAttributes so the first keystroke into an empty editor renders
+        // legibly. UIKit derives typingAttributes from the surrounding character on
+        // each cursor move, but with no characters it falls back to system defaults.
+        // Set them explicitly here and re-apply whenever attributedText is replaced.
+        textView.typingAttributes = documentStyle ? NoteTypography.typingAttributes : Self.defaultTypingAttributes
         context.coordinator.attachToolbar(to: textView)
         if autoFocusOnAppear {
             // Dispatch so the view is in the window/responder chain before we
@@ -78,16 +86,16 @@ struct RichTextEditor: UIViewRepresentable {
         let currentMarkdown = MarkdownCodec.encode(uiView.attributedText ?? NSAttributedString())
         if currentMarkdown != text {
             let previousRange = uiView.selectedRange
-            uiView.attributedText = MarkdownCodec.decode(text)
+            uiView.attributedText = decodedAttributedText(text)
             let length = uiView.attributedText.length
             let clampedLocation = min(previousRange.location, length)
             let clampedLength = min(previousRange.length, length - clampedLocation)
             uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
             // After replacing attributedText, typingAttributes inherit from the new
             // surrounding character — or default to system attrs if the text is empty.
-            // Re-seed for the empty case so the next keystroke stays white.
+            // Re-seed for the empty case so the next keystroke stays legible.
             if length == 0 {
-                uiView.typingAttributes = Self.defaultTypingAttributes
+                uiView.typingAttributes = documentStyle ? NoteTypography.typingAttributes : Self.defaultTypingAttributes
             }
         }
         uiView.placeholderText = placeholder
@@ -104,6 +112,14 @@ struct RichTextEditor: UIViewRepresentable {
         ]
     }
 
+    /// Decodes the markdown binding, applying Note document typography when
+    /// `documentStyle` is set. The styling is display-only, so `encode` still
+    /// recovers the identical markdown.
+    private func decodedAttributedText(_ markdown: String) -> NSAttributedString {
+        let decoded = MarkdownCodec.decode(markdown)
+        return documentStyle ? NoteTypography.styled(decoded, font: documentFont) : decoded
+    }
+
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: RichTextUIView, context: Context) -> CGSize? {
         let width = proposal.width ?? UIView.layoutFittingExpandedSize.width
         guard width.isFinite, width > 0 else { return nil }
@@ -115,6 +131,10 @@ struct RichTextEditor: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: RichTextEditor
         let state = RichTextEditorState()
+        /// Guards against re-entrancy when `applyInPlace` restyles storage from
+        /// within `refreshActiveState` (a programmatic selection nudge could
+        /// otherwise re-trigger the delegate and recurse).
+        private var isRestyling = false
         private weak var textView: UITextView?
         private var toolbarHost: UIHostingController<RichTextToolbar>?
         /// Tap recognizer that fires only when the tap lands on a checklist
@@ -369,6 +389,16 @@ struct RichTextEditor: UIViewRepresentable {
                 var typing = textView.typingAttributes
                 typing.removeValue(forKey: .attachment)
                 textView.typingAttributes = typing
+            }
+
+            // Keep Note document typography (line height, paragraph spacing, list
+            // hanging indent, adaptive color) applied as the text changes. This is
+            // the single choke point every mutation and keystroke passes through.
+            // Guarded against re-entrancy since it touches storage/selection.
+            if parent.documentStyle, !isRestyling {
+                isRestyling = true
+                NoteTypography.applyInPlace(to: textView, font: parent.documentFont)
+                isRestyling = false
             }
         }
 
@@ -2546,5 +2576,188 @@ enum MarkdownCodec {
             attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue
         }
         return attrs
+    }
+}
+
+// MARK: - Note serif feel-test (SB121)
+
+/// Scaffold font options for the Note serif feel-test. This is throwaway
+/// plumbing — it will be replaced by the real font-picker setting. `.system`
+/// keeps the decoded system font (existing behavior); the serif cases swap the
+/// typeface while preserving each run's size + bold/italic.
+enum NoteFontChoice {
+    case system
+    case lora
+    case sourceSerif4
+
+    /// PostScript face name for the given traits, or nil to keep the system font.
+    /// Neither family ships a bold-italic face, so bold wins when both are set.
+    func faceName(bold: Bool, italic: Bool) -> String? {
+        switch self {
+        case .system:
+            return nil
+        case .lora:
+            if bold { return "Lora-Bold" }
+            return italic ? "Lora-Italic" : "Lora-Regular"
+        case .sourceSerif4:
+            if bold { return "SourceSerif4-Bold" }
+            return italic ? "SourceSerif4-It" : "SourceSerif4-Regular"
+        }
+    }
+}
+
+// MARK: - Note document typography (SB121 #3)
+
+/// Reading/editing typography for the Note (`.text`) entry surface: line height,
+/// paragraph spacing, and hanging indentation for bulleted / numbered / checklist
+/// lines, plus system-aware (light/dark) colors.
+///
+/// Opt-in via `RichTextEditor.documentStyle` so the only other consumer of the
+/// editor (`TextCaptureSheet`) is unaffected.
+///
+/// Storage is untouched: `.paragraphStyle` and `.foregroundColor` are display-only
+/// attributes that `MarkdownCodec.encode` never reads, so markdown round-trips
+/// byte-for-byte. This is a pure rendering layer.
+@MainActor
+enum NoteTypography {
+
+    // Layout constants in points (not colors — safe as literals). Tuned so body
+    // text reads at roughly 1.5x font-size line height with comfortable gaps,
+    // and list items hang under their text like Apple Notes.
+    private static let bodyLineSpacing: CGFloat = 3
+    private static let bodyParagraphSpacing: CGFloat = 7
+    private static let listLineSpacing: CGFloat = 4
+    private static let listParagraphSpacing: CGFloat = 6
+    private static let indentUnit: CGFloat = 22     // horizontal step per nesting level
+    private static let markerHang: CGFloat = 20     // wrapped lines hang past the marker
+
+    /// Text foreground — black in light, white in dark. Semantic + adaptive.
+    static let foreground = UIColor.label
+
+    /// Note base background — clean white in light; warm near-black `#1A1A1A` in
+    /// dark. Deliberately NOT `systemBackground`, whose dark value is pure black;
+    /// the brief calls for near-black-with-warmth, not `#000000`.
+    static let background = UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(red: CGFloat(0x1A) / 255.0,
+                      green: CGFloat(0x1A) / 255.0,
+                      blue: CGFloat(0x1A) / 255.0,
+                      alpha: 1)
+            : .systemBackground
+    }
+
+    static var bodyParagraphStyle: NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        p.lineSpacing = bodyLineSpacing
+        p.paragraphSpacing = bodyParagraphSpacing
+        return p
+    }
+
+    private static func listParagraphStyle(indent: Int) -> NSParagraphStyle {
+        let p = NSMutableParagraphStyle()
+        p.lineSpacing = listLineSpacing
+        p.paragraphSpacing = listParagraphSpacing
+        let base = CGFloat(indent) * indentUnit
+        p.firstLineHeadIndent = base
+        p.headIndent = base + markerHang
+        p.tabStops = [NSTextTab(textAlignment: .left, location: base + markerHang)]
+        return p
+    }
+
+    /// Typing attributes seeded for an empty / freshly-focused editor so the first
+    /// keystrokes render body-styled and in the adaptive foreground.
+    static var typingAttributes: [NSAttributedString.Key: Any] {
+        [
+            .font: UIFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: foreground,
+            .paragraphStyle: bodyParagraphStyle
+        ]
+    }
+
+    /// Returns a styled copy for initial render (decode-time).
+    static func styled(_ attr: NSAttributedString, font: NoteFontChoice = .system) -> NSAttributedString {
+        let mut = NSMutableAttributedString(attributedString: attr)
+        apply(to: mut, font: font)
+        return mut
+    }
+
+    /// Restyles a live text view's storage in place. Attribute-only and
+    /// length-preserving, so the cursor is untouched (selection restored only if
+    /// it somehow shifted, to avoid a redundant delegate callback).
+    static func applyInPlace(to textView: UITextView, font: NoteFontChoice = .system) {
+        let sel = textView.selectedRange
+        let storage = textView.textStorage
+        storage.beginEditing()
+        apply(to: storage, font: font)
+        storage.endEditing()
+        if textView.selectedRange != sel { textView.selectedRange = sel }
+    }
+
+    /// Core pass: per-paragraph paragraph style + white→label color normalization,
+    /// plus an optional typeface swap (serif feel-test).
+    private static func apply(to mut: NSMutableAttributedString, font: NoteFontChoice) {
+        let ns = mut.string as NSString
+        guard ns.length > 0 else { return }
+        ns.enumerateSubstrings(
+            in: NSRange(location: 0, length: ns.length),
+            options: .byParagraphs
+        ) { sub, subRange, enclosing, _ in
+            let line = sub ?? ""
+            let style = paragraphStyle(forLine: line, paragraph: subRange, in: mut)
+            mut.addAttribute(.paragraphStyle, value: style, range: enclosing)
+
+            // Normalize legacy hardcoded white → adaptive label. Leave links
+            // (systemBlue) and any other explicit color intact. Collect first,
+            // then apply, to avoid mutating during enumeration.
+            var whiteRanges: [NSRange] = []
+            mut.enumerateAttribute(.foregroundColor, in: enclosing, options: []) { value, r, _ in
+                let c = value as? UIColor
+                if c == nil || c == .white { whiteRanges.append(r) }
+            }
+            for r in whiteRanges {
+                mut.addAttribute(.foregroundColor, value: foreground, range: r)
+            }
+        }
+        if font != .system { applyFont(font, to: mut) }
+    }
+
+    /// Swaps every text run's typeface to `choice`, preserving point size and
+    /// bold/italic. Inline-code (monospaced) runs are left alone. Scaffold only.
+    private static func applyFont(_ choice: NoteFontChoice, to mut: NSMutableAttributedString) {
+        let full = NSRange(location: 0, length: mut.length)
+        var runs: [(NSRange, UIFont)] = []
+        mut.enumerateAttribute(.font, in: full, options: []) { value, r, _ in
+            let current = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+            let traits = current.fontDescriptor.symbolicTraits
+            if traits.contains(.traitMonoSpace) { return }   // keep inline code monospaced
+            guard let name = choice.faceName(bold: traits.contains(.traitBold),
+                                             italic: traits.contains(.traitItalic)),
+                  let swapped = UIFont(name: name, size: current.pointSize) else { return }
+            runs.append((r, swapped))
+        }
+        for (r, f) in runs { mut.addAttribute(.font, value: f, range: r) }
+    }
+
+    private static func paragraphStyle(
+        forLine line: String,
+        paragraph: NSRange,
+        in attr: NSAttributedString
+    ) -> NSParagraphStyle {
+        let info = RichTextEditor.Coordinator.parseLine(line)
+        if info.kind != nil {
+            return listParagraphStyle(indent: info.indent)
+        }
+        // Checklist paragraphs use an attachment glyph parseLine doesn't recognize.
+        if MarkdownCodec.checklistPrefixRange(in: attr, paragraph: paragraph) != nil {
+            return listParagraphStyle(indent: leadingIndentDepth(line))
+        }
+        return bodyParagraphStyle
+    }
+
+    private static func leadingIndentDepth(_ line: String) -> Int {
+        var work = Substring(line)
+        var depth = 0
+        while work.hasPrefix("  "), depth < 5 { work = work.dropFirst(2); depth += 1 }
+        return depth
     }
 }

@@ -72,6 +72,12 @@ targets:
           - Fraunces_72pt-Bold.ttf
           - Lora-Regular.ttf
           - Lora-Bold.ttf
+          # Note editor serif typography (SB121) — Source Serif 4 (default) +
+          # Lora italic (bundled for the forthcoming user-selectable font picker).
+          - Lora-Italic.ttf
+          - SourceSerif4-Regular.ttf
+          - SourceSerif4-Italic.ttf
+          - SourceSerif4-Bold.ttf
         UILaunchScreen: {}
         # Portrait-only, full screen. App has no rotation handling and opts out
         # of iPad multitasking; also required by App Store validation (90474)

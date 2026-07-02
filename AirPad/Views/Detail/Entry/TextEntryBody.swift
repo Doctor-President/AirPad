@@ -4,9 +4,9 @@ import SwiftUI
 /// `EntryCard`, so the card supplies title row, chrome, and timestamps;
 /// this view is responsible only for the editable text surface itself.
 ///
-/// The RichTextEditor keeps a subtle inset background so it reads as an
-/// input field rather than blending into the card body — same affordance
-/// the pre-3.1a row had.
+/// The RichTextEditor sits on the adaptive Note background (`NoteTypography`)
+/// — clean white in light, warm near-black in dark — so it reads as a real
+/// document surface and flips correctly with the system appearance.
 ///
 /// Inline-append: when a fresh empty entry is created via the in-node "+"
 /// → Text menu, `CorpusStore.appendEmptyTextItem` flags its ID on
@@ -39,10 +39,14 @@ struct TextEntryBody: View {
                     )
                 }
             },
-            autoFocusOnAppear: shouldAutoFocus
+            autoFocusOnAppear: shouldAutoFocus,
+            documentStyle: true,
+            // Source Serif 4 is the Note typography default (SB121). Lora stays
+            // bundled for the forthcoming user-selectable font picker.
+            documentFont: .sourceSerif4
         )
         .padding(12)
-        .background(Color.white.opacity(0.05))
+        .background(Color(NoteTypography.background))
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .onAppear {
             editingText = item.content ?? ""

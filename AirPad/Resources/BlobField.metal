@@ -12,9 +12,10 @@ using namespace metal;
 //   globalOrigin — view's global origin (only used when sharedField > 0.5)
 //   sharedField  — 0 = sample in local space (default); 1 = world space
 //   style        — 0 = lava (additive radial, normalized); 1 = card
-//                  (source-over, blurred-disc, absolute-point)
+//                  (source-over, blurred-disc, absolute-point); 2 = hero
+//                  (card + per-pixel harmonic wobble + drift/buoyancy/breathe)
 //   anchor       — card rest reference as a fraction of size ((0.5,0.5) =
-//                  center; (0.5,1.0) = bottom). Card style only; lava ignores.
+//                  center; (0.5,1.0) = bottom). Card style only; lava/hero ignore.
 //   params       — flat float buffer; stride depends on `style` (see below)
 //   paramCount   — element count of `params`, auto-appended by SwiftUI for the
 //                  .floatArray argument. .floatArray ALWAYS binds TWO shader
@@ -33,9 +34,27 @@ using namespace metal;
 //   [5] phaseX [6] phaseY (already phase*seed, precomputed in Swift)
 //   [7] driftAmp (points) [8] blurWidth (points, the falloff ramp half-width)
 //   [9] peak   [10] cr [11] cg [12] cb
+//
+// HERO layout (stride 23) — the morphing detail-hero blobs (Stage 3). Same
+// source-over blurred blob as CARD, but the boundary radius wobbles per pixel
+// via a harmonic sum, plus drift / buoyancy / breathing. undulation, the three
+// harmonics, and blurWidth ride in the per-blob buffer (no global uniforms):
+//   [0] baseX [1] baseY  (points, rel. view center; baseY folds centerYOffset)
+//   [2] baseSize (points, diameter before breathing)
+//   [3] driftFX [4] driftFY  [5] buoyancyFreq  [6] breatheFreq
+//   [7] seedPhase (per-blob seed; harmonic/drift phases derive from it)
+//   [8..10] harmonic k0,k1,k2   [11..13] harmonic amp0,amp1,amp2
+//   [14..16] harmonic speed0,speed1,speed2 (already base + index*0.03)
+//   [17] undulation [18] blurWidth [19] peak  [20] cr [21] cg [22] cb
 
 constant int LAVA_STRIDE = 10;
 constant int CARD_STRIDE = 13;
+constant int HERO_STRIDE = 23;
+
+// Fixed hero motion constants — match the CPU morphBlob literals.
+constant float HERO_BREATHE_AMP    = 0.10;   // ±10% size pulse
+constant float HERO_DRIFT_AMP      = 30.0;   // ±30pt sin/cos drift
+constant float HERO_BUOYANCY_SWELL = 45.0;   // ±45pt slow vertical swell
 
 // LAVA piecewise opacity ramp by radius fraction f (0 = center, 1 = edge).
 // Reproduces the four SwiftUI gradient stops exactly:
@@ -136,6 +155,70 @@ static half4 cardField(float2 samplePos, float time, float2 size,
     return half4(saturate(accumRGB), saturate(accumA));
 }
 
+// HERO — the morphing detail-hero blobs. Same source-over blurred blob as
+// CARD, but the disc boundary is not a fixed radius: for each pixel we take its
+// angle around the blob center and evaluate the harmonic sum to get the
+// boundary radius AT THAT ANGLE, then test the pixel against it. Same math the
+// CPU BlobShape used to build a 60-point outline — moved from "build the shape"
+// to "test each pixel against the shape." Plus drift, buoyancy, breathing.
+static half4 heroField(float2 samplePos, float time, float2 size,
+                       device const float *params, int paramCount) {
+    float2 center = size * 0.5;
+
+    half3 accumRGB = half3(0.0);
+    half  accumA   = half(0.0);
+
+    int count = paramCount / HERO_STRIDE;
+    for (int i = 0; i < count; i++) {
+        int b = i * HERO_STRIDE;
+        float baseX      = params[b + 0];
+        float baseY      = params[b + 1];
+        float baseSize   = params[b + 2];
+        float driftFX    = params[b + 3];
+        float driftFY    = params[b + 4];
+        float buoyFreq   = params[b + 5];
+        float breatheFreq = params[b + 6];
+        float seed       = params[b + 7];
+        float k0 = params[b + 8],  k1 = params[b + 9],  k2 = params[b + 10];
+        float a0 = params[b + 11], a1 = params[b + 12], a2 = params[b + 13];
+        float s0 = params[b + 14], s1 = params[b + 15], s2 = params[b + 16];
+        float undulation = params[b + 17];
+        float blurWidth  = params[b + 18];
+        float peak       = params[b + 19];
+        half3 col        = half3(params[b + 20], params[b + 21], params[b + 22]);
+
+        // Breathing → base radius.
+        float breatheSize = baseSize * (1.0 + HERO_BREATHE_AMP * sin(breatheFreq * time + seed));
+        float baseR = breatheSize * 0.5;
+
+        // Drift (+ buoyancy on y) → blob center.
+        float driftX = baseX + sin(driftFX * time + seed * 1.3) * HERO_DRIFT_AMP;
+        float driftY = cos(driftFY * time + seed * 0.9) * HERO_DRIFT_AMP
+                     + sin(buoyFreq * time + seed) * HERO_BUOYANCY_SWELL;
+        float cx = center.x + driftX;
+        float cy = center.y + driftY + baseY;
+
+        float2 rel = samplePos - float2(cx, cy);
+        float d = length(rel);
+        float theta = atan2(rel.y, rel.x);
+
+        // Wobbling boundary: r(θ) = R·(1 + undulation·Σ ampᵢ·sin(kᵢθ + speedᵢ·t + φᵢ)),
+        // φᵢ = seed + i·0.9 — the exact harmonic sum the CPU BlobShape used.
+        float deform = a0 * sin(k0 * theta + s0 * time + seed)
+                     + a1 * sin(k1 * theta + s1 * time + seed + 0.9)
+                     + a2 * sin(k2 * theta + s2 * time + seed + 1.8);
+        float boundaryR = baseR * (1.0 + undulation * deform);
+
+        float a = peak * (1.0 - smoothstep(boundaryR - blurWidth, boundaryR + blurWidth, d));
+
+        half sa = half(a);
+        accumRGB = col * sa + accumRGB * (1.0h - sa);
+        accumA   = sa      + accumA   * (1.0h - sa);
+    }
+
+    return half4(saturate(accumRGB), saturate(accumA));
+}
+
 [[ stitchable ]] half4 blobField(float2 position,
                                  half4 color,
                                  float time,
@@ -153,7 +236,9 @@ static half4 cardField(float2 samplePos, float time, float2 size,
 
     if (style < 0.5) {
         return lavaField(samplePos, time, size, params, paramCount);
-    } else {
+    } else if (style < 1.5) {
         return cardField(samplePos, time, size, anchor, params, paramCount);
+    } else {
+        return heroField(samplePos, time, size, params, paramCount);
     }
 }

@@ -16,7 +16,17 @@ import UIKit
 ///   `NodeGradientLayer` path.
 struct BlobFieldView: View {
 
-    private enum Style { case lava, card }
+    private enum Style {
+        case lava, card, hero
+        /// Uniform value passed to the shader's `style` argument.
+        var shaderValue: Float {
+            switch self {
+            case .lava: return 0
+            case .card: return 1
+            case .hero: return 2
+            }
+        }
+    }
 
     // MARK: Lava style (Stage 1)
 
@@ -73,6 +83,38 @@ struct BlobFieldView: View {
         var peak: CGFloat
     }
 
+    // MARK: Hero style (Stage 3)
+
+    /// One morphing hero blob — a source-over blurred blob (like `CardBlob`)
+    /// whose boundary radius wobbles per angle via a harmonic sum, plus drift,
+    /// buoyancy, and breathing. Reproduces the CPU `BlobShape` morph on the GPU.
+    struct HeroBlob {
+        /// Rest offset from view center, points (`y` folds `centerYOffset`).
+        var baseOffset: CGPoint
+        /// Blob diameter in points before breathing (`180 * circleScale`).
+        var baseSize: CGFloat
+        /// Drift frequency per axis (x = sin, y = cos).
+        var driftFreq: CGSize
+        /// Slow vertical swell frequency.
+        var buoyancyFreq: CGFloat
+        /// Size-pulse frequency.
+        var breatheFreq: CGFloat
+        /// Per-blob seed; harmonic and drift phases derive from it.
+        var seedPhase: CGFloat
+        /// The three morph harmonics: lobe counts, amplitudes (fraction of R),
+        /// and rates (rad/s, already `base + index*0.03`). Each array is count 3.
+        var harmonicKs: [CGFloat]
+        var harmonicAmps: [CGFloat]
+        var harmonicSpeeds: [CGFloat]
+        /// Morph amount. Sum(amps) × undulation = peak radius swing.
+        var undulation: CGFloat
+        /// Falloff ramp half-width in points (the blur).
+        var blurWidth: CGFloat
+        var color: Color
+        /// Peak opacity at the blob core (1 = opaque fill).
+        var peak: CGFloat
+    }
+
     // MARK: Stored config
 
     private let style: Style
@@ -111,6 +153,18 @@ struct BlobFieldView: View {
         self.anchor = anchor
     }
 
+    init(heroBlobs: [HeroBlob],
+         animated: Bool,
+         sharedField: Bool = false,
+         frameInterval: Double = 1.0 / 30.0) {
+        self.style = .hero
+        self.packed = Self.packHero(heroBlobs)
+        self.sharedField = sharedField
+        self.animated = animated
+        self.frameInterval = frameInterval
+        self.anchor = .center   // unused by the hero path
+    }
+
     var body: some View {
         GeometryReader { geo in
             let origin = geo.frame(in: .global).origin
@@ -140,7 +194,7 @@ struct BlobFieldView: View {
                     .float2(Float(size.width), Float(size.height)),
                     .float2(Float(origin.x), Float(origin.y)),
                     .float(sharedField ? 1 : 0),
-                    .float(style == .card ? 1 : 0),
+                    .float(style.shaderValue),
                     .float2(Float(anchor.x), Float(anchor.y)),
                     .floatArray(packed)
                 )
@@ -183,6 +237,40 @@ struct BlobFieldView: View {
             out.append(Float(blob.driftPhase.width))
             out.append(Float(blob.driftPhase.height))
             out.append(Float(blob.driftAmp))
+            out.append(Float(blob.blurWidth))
+            out.append(Float(blob.peak))
+            out.append(r)
+            out.append(g)
+            out.append(b)
+        }
+        return out
+    }
+
+    /// HERO layout, stride 23.
+    private static func packHero(_ blobs: [HeroBlob]) -> [Float] {
+        var out: [Float] = []
+        out.reserveCapacity(blobs.count * 23)
+        for blob in blobs {
+            let (r, g, b) = rgb(blob.color)
+            out.append(Float(blob.baseOffset.x))
+            out.append(Float(blob.baseOffset.y))
+            out.append(Float(blob.baseSize))
+            out.append(Float(blob.driftFreq.width))
+            out.append(Float(blob.driftFreq.height))
+            out.append(Float(blob.buoyancyFreq))
+            out.append(Float(blob.breatheFreq))
+            out.append(Float(blob.seedPhase))
+            // Three harmonics: k0..2, amp0..2, speed0..2.
+            out.append(Float(blob.harmonicKs[0]))
+            out.append(Float(blob.harmonicKs[1]))
+            out.append(Float(blob.harmonicKs[2]))
+            out.append(Float(blob.harmonicAmps[0]))
+            out.append(Float(blob.harmonicAmps[1]))
+            out.append(Float(blob.harmonicAmps[2]))
+            out.append(Float(blob.harmonicSpeeds[0]))
+            out.append(Float(blob.harmonicSpeeds[1]))
+            out.append(Float(blob.harmonicSpeeds[2]))
+            out.append(Float(blob.undulation))
             out.append(Float(blob.blurWidth))
             out.append(Float(blob.peak))
             out.append(r)

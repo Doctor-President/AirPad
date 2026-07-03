@@ -60,13 +60,11 @@ struct NodeGradientLayer: View {
     /// negative value so the color form rides up into the hero zone,
     /// matching where a cover image would sit on a hero tile.
     var centerYOffset: CGFloat = 0
-    /// Hero-only morph amount. `0` (default) → byte-for-byte the
-    /// original static-`Circle` path, including current drift offsets —
-    /// guarantees zero regression on every existing card surface, which
-    /// matters because cards render many-at-once and the per-frame blur
-    /// of a shape-changing path can't cache. Hero passes `1.0` to
-    /// activate `BlobShape` + extended drift + buoyancy + breathing
-    /// (one instance, so the uncacheable blur is affordable).
+    /// Hero-only morph amount. `0` (default) routes to the static card blob
+    /// field (blurred discs, drift only). Hero passes `1.0` to route to the
+    /// hero blob field, which adds the per-pixel harmonic wobble plus extended
+    /// drift, buoyancy, and breathing. Both are GPU (BlobField) — the amount
+    /// selects which style, not CPU vs GPU.
     var undulation: CGFloat = 0
     /// Drives `TimelineView(.animation)` when true. When false, the same
     /// layers render with `time = 0` — a still frame of the live gradient,
@@ -125,8 +123,9 @@ struct NodeGradientLayer: View {
         let size: CGFloat = 180 * circleScale
         return Group {
             if undulation > 0 {
-                // HERO — the organic morph stays on its CPU path (Stage 3
-                // territory), byte-for-byte unchanged.
+                // HERO — the organic morph, now on the GPU (BlobField hero
+                // style: per-pixel harmonic boundary + drift/buoyancy/breathe).
+                // ws-render-perf PERF FIX 3, stage 3.
                 heroFill(colors: colors, size: size)
             } else {
                 // STATIC cards/tiles — the three blurred color circles now
@@ -139,20 +138,13 @@ struct NodeGradientLayer: View {
         }
     }
 
-    // Hero morph — unchanged from the original `gradientFill`.
-    @ViewBuilder
+    // Hero morph on the GPU. Dark base stays a SwiftUI layer; radialGlow
+    // (overlay) + vignette composite over it in `body`, same as the card path.
     private func heroFill(colors: (String, String, String), size: CGFloat) -> some View {
-        if animated {
-            // Animated path — NO drawingGroup: re-flattening every frame
-            // would defeat the TimelineView and hurt motion.
-            TimelineView(.animation) { timeline in
-                gradientStack(colors: colors, size: size,
-                              time: timeline.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            // Frozen frame: same layers/colors/blur, time pinned to 0.
-            gradientStack(colors: colors, size: size, time: 0)
-                .drawingGroup()
+        ZStack {
+            Color(red: 0.027, green: 0.027, blue: 0.039)
+            BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
+                          animated: animated)
         }
     }
 
@@ -200,58 +192,46 @@ struct NodeGradientLayer: View {
         ]
     }
 
-    // Dark base + the morphing hero blobs. Hero-only now that the static
-    // circles render on the GPU.
-    private func gradientStack(colors: (String, String, String), size: CGFloat, time: Double) -> some View {
-        ZStack {
-            Color(red: 0.027, green: 0.027, blue: 0.039)
-            morphingBlobs(colors: colors, baseSize: size, time: time)
-        }
-    }
-
-    @ViewBuilder
-    private func morphingBlobs(colors: (String, String, String), baseSize: CGFloat, time: Double) -> some View {
+    /// Build the four hero blobs, reproducing the CPU `morphBlob` math: per-blob
+    /// seed, drift/buoyancy/breathe frequencies, and the three morph harmonics
+    /// (k/amp from the top-of-file tuning constants; speed = base + index*0.03).
+    /// The wobble itself is evaluated per-pixel in the shader; here we just hand
+    /// it the same numbers.
+    private func heroBlobs(colors: (String, String, String), size: CGFloat) -> [BlobFieldView.HeroBlob] {
         let spread: CGFloat = 80 * offsetScale
-        morphBlob(index: 0, baseX: -spread, color: Color(hexString: colors.0), baseSize: baseSize, time: time)
-        morphBlob(index: 1, baseX: 0, color: Color(hexString: colors.1), baseSize: baseSize, time: time)
-        morphBlob(index: 2, baseX: spread, color: Color(hexString: colors.2), baseSize: baseSize, time: time)
-        // 4th blob — density only. If the hero reads too busy, this is
-        // the first thing to pull (delete or comment this single line).
-        // Colour blends the outer two so it doesn't introduce a new hue.
-        morphBlob(index: 3, baseX: -30 * offsetScale, color: blendHex(colors.0, colors.2), baseSize: baseSize, time: time)
-    }
+        let blurWidth: CGFloat = 40 * blurScale
+        let ks = blobMorphKs.map { CGFloat($0) }
 
-    private func morphBlob(index: Int, baseX: CGFloat, color: Color, baseSize: CGFloat, time: Double) -> some View {
-        // Distinct per-blob seeds so silhouettes, drift, buoyancy and
-        // breathing never line up. Derived from `phase` + index so the
-        // pattern is stable per node but unique per blob.
-        let seedPhase = phase + Double(index) * 1.7
-        let driftXFreq = 0.30 + Double(index) * 0.05
-        let driftYFreq = 0.25 + Double(index) * 0.05
-        let buoyancyFreq = 0.10 + Double(index) * 0.02
-        let breatheFreq = 0.20 + Double(index) * 0.03
-        let breatheAmp: CGFloat = 0.10
-        let buoyancySwell: CGFloat = 45
-
-        let breatheSize = baseSize * (1 + breatheAmp * CGFloat(sin(breatheFreq * time + seedPhase)))
-        let driftX = baseX + CGFloat(sin(driftXFreq * time + seedPhase * 1.3)) * 30
-        let driftY = CGFloat(cos(driftYFreq * time + seedPhase * 0.9)) * 30
-            + CGFloat(sin(buoyancyFreq * time + seedPhase)) * buoyancySwell
-
-        let harmonics: [BlobHarmonic] = (0..<3).map { h in
-            BlobHarmonic(
-                k: blobMorphKs[h],
-                amp: blobMorphAmps[h],
-                speed: blobMorphSpeeds[h] + Double(index) * 0.03,
-                phase: seedPhase + Double(h) * 0.9
+        func hero(index: Int, baseX: CGFloat, color: Color) -> BlobFieldView.HeroBlob {
+            let seedPhase = phase + Double(index) * 1.7
+            let speeds = (0..<3).map { CGFloat(blobMorphSpeeds[$0] + Double(index) * 0.03) }
+            return BlobFieldView.HeroBlob(
+                baseOffset: CGPoint(x: baseX, y: centerYOffset),
+                baseSize: size,
+                driftFreq: CGSize(width: 0.30 + CGFloat(index) * 0.05,
+                                  height: 0.25 + CGFloat(index) * 0.05),
+                buoyancyFreq: 0.10 + CGFloat(index) * 0.02,
+                breatheFreq: 0.20 + CGFloat(index) * 0.03,
+                seedPhase: CGFloat(seedPhase),
+                harmonicKs: ks,
+                harmonicAmps: blobMorphAmps,
+                harmonicSpeeds: speeds,
+                undulation: undulation,
+                blurWidth: blurWidth,
+                color: color,
+                peak: 1
             )
         }
 
-        return BlobShape(time: time, undulation: undulation, harmonics: harmonics)
-            .fill(color)
-            .frame(width: breatheSize, height: breatheSize)
-            .blur(radius: 40 * blurScale)
-            .offset(x: driftX, y: driftY + centerYOffset)
+        return [
+            hero(index: 0, baseX: -spread, color: Color(hexString: colors.0)),
+            hero(index: 1, baseX: 0, color: Color(hexString: colors.1)),
+            hero(index: 2, baseX: spread, color: Color(hexString: colors.2)),
+            // 4th blob — density only, hue blended from the outer two so it
+            // doesn't introduce a new colour. Pull this line if the hero reads
+            // too busy.
+            hero(index: 3, baseX: -30 * offsetScale, color: blendHex(colors.0, colors.2)),
+        ]
     }
 
     private var radialGlow: some View {
@@ -280,49 +260,6 @@ struct NodeGradientLayer: View {
         }
         .blendMode(.multiply)
         .allowsHitTesting(false)
-    }
-}
-
-/// Per-harmonic morph parameters for `BlobShape`.
-private struct BlobHarmonic {
-    let k: Int
-    let amp: CGFloat
-    let speed: Double
-    let phase: Double
-}
-
-/// Closed organically-deformed outline replacing `Circle()` on the hero.
-/// Radius is the sum of harmonics: `r(θ) = R · (1 + undulation · Σ ampᵢ·sin(kᵢθ + speedᵢ·t + φᵢ))`.
-/// Path is reconstructed every frame inside `TimelineView(.animation)`
-/// — `time` is a plain stored property, not `Animatable`, because the
-/// surrounding TimelineView already drives the redraw.
-private struct BlobShape: Shape {
-    let time: Double
-    let undulation: CGFloat
-    let harmonics: [BlobHarmonic]
-
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let baseR = min(rect.width, rect.height) / 2
-        let points = 60
-        var path = Path()
-        for i in 0..<points {
-            let theta = Double(i) / Double(points) * 2 * .pi
-            var deformation: CGFloat = 0
-            for h in harmonics {
-                deformation += h.amp * CGFloat(sin(Double(h.k) * theta + h.speed * time + h.phase))
-            }
-            let radius = baseR * (1 + undulation * deformation)
-            let x = center.x + radius * CGFloat(cos(theta))
-            let y = center.y + radius * CGFloat(sin(theta))
-            if i == 0 {
-                path.move(to: CGPoint(x: x, y: y))
-            } else {
-                path.addLine(to: CGPoint(x: x, y: y))
-            }
-        }
-        path.closeSubpath()
-        return path
     }
 }
 

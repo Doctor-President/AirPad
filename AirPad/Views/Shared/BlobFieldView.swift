@@ -1,21 +1,27 @@
 import SwiftUI
 import UIKit
 
-/// GPU-computed animated blob field — the one primitive behind the lava lamp,
-/// and (later stages) the card + hero gradients. Backed by `BlobField.metal`,
-/// driven as a SwiftUI `.colorEffect`: N soft radial blobs are computed
+/// GPU-computed animated blob field — the one primitive behind the lava lamp
+/// (Stage 1) and the static card gradient (Stage 2). Backed by
+/// `BlobField.metal`, driven as a SwiftUI `.colorEffect`: N blobs are computed
 /// analytically in the fragment shader, so there is no CPU `Canvas`
 /// rasterization and no Core Animation `.blur()` pass. The shader's falloff
 /// ramp replaces `.blur(radius:)`.
 ///
-/// Every consumer passes its own `Parameters` — blob count, colors, sizes,
-/// softness, drift, and the `sharedField` switch — so cards get small tight
-/// fast blobs, the hero gets big slow ones, the lava lamp gets four wide
-/// ambient ones. Same engine, different dials.
+/// Two typed entry points feed one shader:
+/// - `init(parameters:)` — the LAVA style: wide ambient blobs, additive, in
+///   normalized (fraction-of-view) space. Used by `DashboardLavaLamp`.
+/// - `init(cardBlobs:animated:)` — the CARD style: opaque discs with a blurred
+///   rim, composited source-over in absolute points. Used by the static
+///   `NodeGradientLayer` path.
 struct BlobFieldView: View {
 
-    /// One radial blob. `origin`/`radius` are fractions of the view size so
-    /// the field scales with whatever surface hosts it.
+    private enum Style { case lava, card }
+
+    // MARK: Lava style (Stage 1)
+
+    /// One lava blob. `origin`/`radius` are fractions of the view size so the
+    /// field scales with whatever surface hosts it.
     struct Blob {
         /// Rest position as a fraction of view size (0...1). The blob drifts
         /// ±0.28 around this via sin/cos.
@@ -41,41 +47,101 @@ struct BlobFieldView: View {
         var frameInterval: Double = 1.0 / 30.0
     }
 
-    let parameters: Parameters
+    // MARK: Card style (Stage 2)
 
+    /// One card blob — an opaque disc with a blurred rim, positioned in
+    /// absolute points relative to the view center. Reproduces a
+    /// `Circle().fill().blur()` from the static `NodeGradientLayer` path.
+    struct CardBlob {
+        /// Rest offset from the view center, in points. `y` folds in the
+        /// consumer's `centerYOffset`.
+        var baseOffset: CGPoint
+        /// Disc radius in points (half the circle diameter).
+        var radius: CGFloat
+        /// Drift frequency per axis (x uses sin, y uses cos).
+        var driftFreq: CGSize
+        /// Drift phase per axis — already `phase * seed`, so no two blobs (or
+        /// nodes) move in lockstep.
+        var driftPhase: CGSize
+        /// Drift amplitude in points.
+        var driftAmp: CGFloat
+        /// Falloff ramp half-width in points — the shader's answer to
+        /// `.blur(radius:)`. Larger = softer rim.
+        var blurWidth: CGFloat
+        var color: Color
+        /// Peak opacity at the disc core (1 = opaque fill).
+        var peak: CGFloat
+    }
+
+    // MARK: Stored config
+
+    private let style: Style
     private let packed: [Float]
+    private let sharedField: Bool
+    private let animated: Bool
+    private let frameInterval: Double
 
     init(parameters: Parameters) {
-        self.parameters = parameters
-        self.packed = Self.pack(parameters.blobs)
+        self.style = .lava
+        self.packed = Self.packLava(parameters.blobs)
+        self.sharedField = parameters.sharedField
+        self.animated = true
+        self.frameInterval = parameters.frameInterval
+    }
+
+    /// - Parameter animated: `false` renders a single still frame (time = 0)
+    ///   with no per-frame redraw — the GPU equivalent of the old frozen +
+    ///   `.drawingGroup()` tile path. Per-blob phase still varies the frame.
+    init(cardBlobs: [CardBlob],
+         animated: Bool,
+         sharedField: Bool = false,
+         frameInterval: Double = 1.0 / 30.0) {
+        self.style = .card
+        self.packed = Self.packCard(cardBlobs)
+        self.sharedField = sharedField
+        self.animated = animated
+        self.frameInterval = frameInterval
     }
 
     var body: some View {
         GeometryReader { geo in
             let origin = geo.frame(in: .global).origin
-            TimelineView(.animation(minimumInterval: parameters.frameInterval)) { timeline in
-                // Wrap time to keep Float precision usable across the app's
-                // multi-hundred-million-second reference clock (per brief).
-                let t = Float(timeline.date.timeIntervalSinceReferenceDate
-                    .truncatingRemainder(dividingBy: 1000.0))
-                Rectangle()
-                    .fill(.black)
-                    .colorEffect(
-                        ShaderLibrary.blobField(
-                            .float(t),
-                            .float2(Float(geo.size.width), Float(geo.size.height)),
-                            .float2(Float(origin.x), Float(origin.y)),
-                            .float(parameters.sharedField ? 1 : 0),
-                            .floatArray(packed)
-                        )
-                    )
+            if animated {
+                TimelineView(.animation(minimumInterval: frameInterval)) { timeline in
+                    // Wrap time to keep Float precision usable across the app's
+                    // multi-hundred-million-second reference clock (per brief).
+                    let t = Float(timeline.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 1000.0))
+                    canvas(size: geo.size, origin: origin, time: t)
+                }
+            } else {
+                // Still frame: time pinned to 0, no TimelineView driving
+                // redraws. CA caches the rendered layer and scrolls it as flat
+                // pixels — cheap, like the old `.drawingGroup()`.
+                canvas(size: geo.size, origin: origin, time: 0)
             }
         }
     }
 
-    /// Flatten blobs into the `device const float *` layout the shader reads.
-    /// Order must match `BLOB_STRIDE`/layout in BlobField.metal.
-    private static func pack(_ blobs: [Blob]) -> [Float] {
+    private func canvas(size: CGSize, origin: CGPoint, time: Float) -> some View {
+        Rectangle()
+            .fill(.black)
+            .colorEffect(
+                ShaderLibrary.blobField(
+                    .float(time),
+                    .float2(Float(size.width), Float(size.height)),
+                    .float2(Float(origin.x), Float(origin.y)),
+                    .float(sharedField ? 1 : 0),
+                    .float(style == .card ? 1 : 0),
+                    .floatArray(packed)
+                )
+            )
+    }
+
+    // MARK: Packing — order must match the layouts in BlobField.metal
+
+    /// LAVA layout, stride 10.
+    private static func packLava(_ blobs: [Blob]) -> [Float] {
         var out: [Float] = []
         out.reserveCapacity(blobs.count * 10)
         for blob in blobs {
@@ -86,6 +152,29 @@ struct BlobFieldView: View {
             out.append(Float(blob.speed.width))
             out.append(Float(blob.speed.height))
             out.append(Float(blob.phase))
+            out.append(Float(blob.peak))
+            out.append(r)
+            out.append(g)
+            out.append(b)
+        }
+        return out
+    }
+
+    /// CARD layout, stride 13.
+    private static func packCard(_ blobs: [CardBlob]) -> [Float] {
+        var out: [Float] = []
+        out.reserveCapacity(blobs.count * 13)
+        for blob in blobs {
+            let (r, g, b) = rgb(blob.color)
+            out.append(Float(blob.baseOffset.x))
+            out.append(Float(blob.baseOffset.y))
+            out.append(Float(blob.radius))
+            out.append(Float(blob.driftFreq.width))
+            out.append(Float(blob.driftFreq.height))
+            out.append(Float(blob.driftPhase.width))
+            out.append(Float(blob.driftPhase.height))
+            out.append(Float(blob.driftAmp))
+            out.append(Float(blob.blurWidth))
             out.append(Float(blob.peak))
             out.append(r)
             out.append(g)

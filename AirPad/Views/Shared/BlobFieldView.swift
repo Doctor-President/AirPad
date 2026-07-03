@@ -80,6 +80,8 @@ struct BlobFieldView: View {
     private let sharedField: Bool
     private let animated: Bool
     private let frameInterval: Double
+    /// Card rest reference as a fraction of view size (card style only).
+    private let anchor: UnitPoint
 
     init(parameters: Parameters) {
         self.style = .lava
@@ -87,13 +89,18 @@ struct BlobFieldView: View {
         self.sharedField = parameters.sharedField
         self.animated = true
         self.frameInterval = parameters.frameInterval
+        self.anchor = .center   // unused by the lava path
     }
 
     /// - Parameter animated: `false` renders a single still frame (time = 0)
     ///   with no per-frame redraw — the GPU equivalent of the old frozen +
     ///   `.drawingGroup()` tile path. Per-blob phase still varies the frame.
+    /// - Parameter anchor: rest reference for the blobs. `.center` (default)
+    ///   matches today; `.bottom` pools the color at the card floor (used on
+    ///   hero-image cards so the gradient doesn't bleed up into the photo).
     init(cardBlobs: [CardBlob],
          animated: Bool,
+         anchor: UnitPoint = .center,
          sharedField: Bool = false,
          frameInterval: Double = 1.0 / 30.0) {
         self.style = .card
@@ -101,6 +108,7 @@ struct BlobFieldView: View {
         self.sharedField = sharedField
         self.animated = animated
         self.frameInterval = frameInterval
+        self.anchor = anchor
     }
 
     var body: some View {
@@ -133,6 +141,7 @@ struct BlobFieldView: View {
                     .float2(Float(origin.x), Float(origin.y)),
                     .float(sharedField ? 1 : 0),
                     .float(style == .card ? 1 : 0),
+                    .float2(Float(anchor.x), Float(anchor.y)),
                     .floatArray(packed)
                 )
             )

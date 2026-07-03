@@ -172,7 +172,7 @@ struct NodeGridView: View {
                                 isPicked: selection.isSelected(node.id),
                                 cellWidth: cellW,
                                 cellHeight: cellH,
-                                animateGradient: columnCount == 2,
+                                animateGradient: true,
                                 columnCount: columnCount
                             )
                             .frame(width: cellW, height: cellH)

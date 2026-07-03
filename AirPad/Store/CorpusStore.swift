@@ -890,11 +890,19 @@ final class CorpusStore {
         guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
               updated.items[itemIdx].type == .text,
               updated.items[itemIdx].content != newContent else { return }
+        // Reap inline-image items whose tokens were removed from the note (e.g.
+        // the user backspaced the image) so they don't resurface as orphaned
+        // gallery cards.
+        let removedImageIDs = Set(MarkdownCodec.referencedImageItemIDs(in: updated.items[itemIdx].content ?? ""))
+            .subtracting(MarkdownCodec.referencedImageItemIDs(in: newContent))
         let now = Date()
         updated.items[itemIdx].content = newContent
         updated.items[itemIdx].updatedAt = now
         updated.updatedAt = now
         await updateNode(updated)
+        if !removedImageIDs.isEmpty {
+            await reapInlineImages(removedImageIDs, nodeID: nodeID)
+        }
     }
 
     // MARK: - Entry-primitive actions (Stage 3.1a commit (b))
@@ -968,6 +976,11 @@ final class CorpusStore {
         var updated = nodes[nodeIdx]
         guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }) else { return }
         let item = updated.items[itemIdx]
+        // A note's inline images are its private children — reap them once the
+        // note is gone (below) so they don't resurface as orphaned gallery cards.
+        let inlineImageIDs: Set<String> = item.type == .text
+            ? Set(MarkdownCodec.referencedImageItemIDs(in: item.content ?? ""))
+            : []
         if let relativePath = item.file {
             let ext = (relativePath as NSString).pathExtension
             if !ext.isEmpty {
@@ -1043,6 +1056,9 @@ final class CorpusStore {
         }
         updated.updatedAt = Date()
         await updateNode(updated)
+        if !inlineImageIDs.isEmpty {
+            await reapInlineImages(inlineImageIDs, nodeID: nodeID)
+        }
     }
 
     /// AT19.3c — extracts the dotted file extension (e.g. `og.jpg`) from a
@@ -5590,6 +5606,84 @@ final class CorpusStore {
             return await service.resolveItemPath(nodeID: nodeID, relativePath: parentFile)
         }
         return nil
+    }
+
+    // MARK: - Inline images (ws-note-primitive)
+
+    /// Persists a picked image as a standalone `.imageVideo` item (same storage
+    /// as any image — no schema change) and returns its id, so the note editor
+    /// can insert an `![](airpad-image:<id>)` attachment token referencing it.
+    /// The item renders inline in the note (NodeDetailView filters it out of the
+    /// standalone payload list), not as a gallery card.
+    @discardableResult
+    func addInlineImageItem(nodeID: String, sourceURL: URL, fileExtension: String) async -> String? {
+        guard nodes.contains(where: { $0.id == nodeID }) else { return nil }
+        let now = Date()
+        // One id for the entry, its GalleryItem, and the file — matches the
+        // codebase's single-media convention (GalleryItem.id == NodeItem.id) so
+        // `deleteEntry`'s file cleanup (keyed on the item id) removes the image.
+        let itemID = UUID().uuidString
+        let pending = PendingMediaItem(
+            itemID: itemID,
+            mediaType: .image,
+            sourceURL: sourceURL,
+            fileExtension: fileExtension
+        )
+        await persistMediaFiles([pending], nodeID: nodeID)
+        let gallery = GalleryItem(
+            id: itemID,
+            mediaType: .image,
+            file: "items/\(itemID).\(fileExtension)",
+            aspectRatio: nil,
+            capturedAt: now
+        )
+        let entry = NodeItem(
+            id: itemID,
+            type: .imageVideo,
+            createdAt: now,
+            file: gallery.file,
+            description: nil,
+            displayName: nil,
+            mediaItems: [gallery],
+            viewMode: nil
+        )
+        await appendItemToNode(nodeID: nodeID, item: entry)
+        return itemID
+    }
+
+    /// Loads the image for an inline-image item id (from an
+    /// `![](airpad-image:<id>)` token). Decode happens off the main actor.
+    func inlineImage(forItemID itemID: String, nodeID: String) async -> UIImage? {
+        guard let node = nodes.first(where: { $0.id == nodeID }),
+              let item = node.items.first(where: { $0.id == itemID }) else { return nil }
+        let url: URL?
+        if let gallery = item.mediaItems?.first {
+            url = await resolveGalleryItemURL(gallery, nodeID: nodeID, fallbackParentItem: item)
+        } else {
+            url = await itemFileURL(for: item, nodeID: nodeID)
+        }
+        guard let fileURL = url else { return nil }
+        return await Task.detached(priority: .userInitiated) {
+            guard let data = try? Data(contentsOf: fileURL) else { return nil }
+            return UIImage(data: data)
+        }.value
+    }
+
+    /// Deletes inline-image items in `ids` that are no longer referenced by any
+    /// note in the node — the cleanup when an inline image is backspaced out of
+    /// a note, or the note holding it is deleted. Never touches a standalone
+    /// gallery: an id only reaches here because it appeared in a note's
+    /// `![](airpad-image:<id>)` token, which standalone galleries never have.
+    private func reapInlineImages(_ ids: Set<String>, nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let stillReferenced = Set(
+            node.items.compactMap { $0.type == .text ? $0.content : nil }
+                .flatMap { MarkdownCodec.referencedImageItemIDs(in: $0) }
+        )
+        for id in ids where !stillReferenced.contains(id) {
+            guard node.items.contains(where: { $0.id == id && $0.type == .imageVideo }) else { continue }
+            await deleteEntry(itemID: id, nodeID: nodeID)
+        }
     }
 
     // MARK: - Semantic placement (Task 4)

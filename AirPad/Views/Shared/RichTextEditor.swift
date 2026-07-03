@@ -39,6 +39,10 @@ struct RichTextEditor: UIViewRepresentable {
     /// Serif feel-test typeface (SB121 scaffold). Only applied when
     /// `documentStyle` is on. `.system` keeps the default system font.
     var documentFont: NoteFontChoice = .system
+    /// Inline-image resolver: item id (from an `![](airpad-image:<id>)` token) →
+    /// loaded image. Provided by the note (TextEntryBody) so the editor stays
+    /// generic. Nil = this consumer doesn't render inline images.
+    var resolveImage: ((String) async -> UIImage?)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -97,6 +101,11 @@ struct RichTextEditor: UIViewRepresentable {
             if length == 0 {
                 uiView.typingAttributes = documentStyle ? NoteTypography.typingAttributes : Self.defaultTypingAttributes
             }
+        }
+        // Inline images: async-load any placeholder attachments (from decoded
+        // `![](airpad-image:<id>)` tokens) that don't yet have an image.
+        if resolveImage != nil {
+            context.coordinator.resolvePendingImages(in: uiView)
         }
         uiView.placeholderText = placeholder
         uiView.minHeight = minHeight
@@ -279,6 +288,63 @@ struct RichTextEditor: UIViewRepresentable {
         /// authoritative as markdown rather than raw display text.
         private func pushBinding(from textView: UITextView) {
             parent.text = MarkdownCodec.encode(textView.attributedText ?? NSAttributedString())
+        }
+
+        // MARK: Inline images
+
+        /// Finds image attachments whose image hasn't loaded yet and resolves
+        /// each via the parent's `resolveImage`, swapping the loaded image in
+        /// (sized to text width) when it arrives.
+        func resolvePendingImages(in textView: UITextView) {
+            guard let resolveImage = parent.resolveImage else { return }
+            let attr = textView.attributedText ?? NSAttributedString()
+            guard attr.length > 0 else { return }
+            var pending: [String] = []
+            attr.enumerateAttribute(.airpadImageItemID, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+                guard let id = value as? String else { return }
+                let att = attr.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment
+                if att?.image == nil { pending.append(id) }
+            }
+            guard !pending.isEmpty else { return }
+            for id in pending {
+                Task { @MainActor [weak textView] in
+                    guard let image = await resolveImage(id), let textView else { return }
+                    self.applyImage(image, forItemID: id, in: textView)
+                }
+            }
+        }
+
+        /// Replaces the placeholder attachment tagged `id` with one carrying the
+        /// loaded image, scaled to the available text width.
+        private func applyImage(_ image: UIImage, forItemID id: String, in textView: UITextView) {
+            let current = textView.attributedText ?? NSAttributedString()
+            var target: NSRange?
+            current.enumerateAttribute(.airpadImageItemID, in: NSRange(location: 0, length: current.length)) { value, range, stop in
+                if (value as? String) == id { target = range; stop.pointee = true }
+            }
+            guard let range = target else { return }
+
+            let available = max(1, textView.bounds.width
+                - textView.textContainerInset.left - textView.textContainerInset.right
+                - 2 * textView.textContainer.lineFragmentPadding)
+            let scale = image.size.width > available ? available / image.size.width : 1
+            let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = CGRect(origin: .zero, size: size)
+            let replacement = NSMutableAttributedString(attributedString: NSAttributedString(attachment: attachment))
+            let full = NSRange(location: 0, length: replacement.length)
+            replacement.addAttribute(.airpadImageItemID, value: id, range: full)
+            replacement.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .body), range: full)
+
+            let selected = textView.selectedRange
+            let mut = NSMutableAttributedString(attributedString: current)
+            mut.replaceCharacters(in: range, with: replacement)
+            // Loaded image encodes to the same token, so the markdown binding is
+            // unchanged — don't push it (avoids a needless re-decode).
+            textView.attributedText = mut
+            textView.selectedRange = NSRange(location: min(selected.location, mut.length), length: 0)
         }
 
         // MARK: UITextViewDelegate
@@ -1448,6 +1514,11 @@ extension NSAttributedString.Key {
     /// reads the marker + value to emit the canonical markdown prefix
     /// `- [ ] ` / `- [x] `.
     static let airpadChecklistGlyph = NSAttributedString.Key("airpadChecklistGlyph")
+
+    /// Tags the single attachment character of an inline image with its
+    /// `.imageVideo` item id. Storage form: `![](airpad-image:<id>)`. The image
+    /// bytes live in the referenced item (ws-note-primitive inline images).
+    static let airpadImageItemID = NSAttributedString.Key("airpadImageItemID")
 }
 
 // MARK: - Gesture recognizer delegate (Stage 2.3 commit 5)
@@ -1869,6 +1940,49 @@ enum MarkdownCodec {
         return NSRange(location: glyphLoc, length: 2)
     }
 
+    // MARK: Inline images (ws-note-primitive)
+    //
+    // Display form: an NSTextAttachment occupying one `NSAttachmentCharacter`
+    // (U+FFFC), tagged `.airpadImageItemID` with the `.imageVideo` item id.
+    // Storage form: markdown `![](airpad-image:<id>)`. The image bytes live in
+    // the referenced item (no schema change) — the token only points to it. The
+    // attachment starts as a placeholder; `RichTextEditor` async-loads the real
+    // image via its `resolveImage` hook and swaps it in, sized to text width.
+
+    static let imageTokenPrefix = "![](airpad-image:"
+
+    /// The storage token for an inline image referencing `itemID`.
+    static func imageToken(itemID: String) -> String { "\(imageTokenPrefix)\(itemID))" }
+
+    /// Single attachment-char string for an inline image, tagged with `itemID`.
+    /// The image is nil until the editor resolves it (placeholder bounds keep
+    /// layout stable meanwhile).
+    static func imageAttachmentString(itemID: String) -> NSAttributedString {
+        let attachment = NSTextAttachment()
+        attachment.bounds = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let mut = NSMutableAttributedString(attributedString: NSAttributedString(attachment: attachment))
+        let range = NSRange(location: 0, length: mut.length)
+        mut.addAttribute(.airpadImageItemID, value: itemID, range: range)
+        mut.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .body), range: range)
+        return mut
+    }
+
+    /// All item ids referenced by `![](airpad-image:<id>)` tokens in `markdown`,
+    /// in order. Used by the note renderer and by NodeDetailView (to hide
+    /// inline images from the standalone payload list).
+    static func referencedImageItemIDs(in markdown: String) -> [String] {
+        guard markdown.contains(imageTokenPrefix) else { return [] }
+        var ids: [String] = []
+        var rest = Substring(markdown)
+        while let start = rest.range(of: imageTokenPrefix) {
+            let after = rest[start.upperBound...]
+            guard let close = after.firstIndex(of: ")") else { break }
+            ids.append(String(after[after.startIndex..<close]))
+            rest = after[after.index(after: close)...]
+        }
+        return ids
+    }
+
     // MARK: Encoding
 
     private static let escapeChars: Set<Character> = ["*", "`", "~", "[", "<", "\\"]
@@ -1962,6 +2076,12 @@ enum MarkdownCodec {
         result.reserveCapacity(range.length)
 
         attr.enumerateAttributes(in: range, options: []) { attrs, runRange, _ in
+            // Inline image: emit the storage token, skip normal text encoding
+            // (the run's char is the U+FFFC attachment placeholder).
+            if let itemID = attrs[.airpadImageItemID] as? String {
+                result += imageToken(itemID: itemID)
+                return
+            }
             let runText = nsString.substring(with: runRange)
             let escaped = escape(runText)
 
@@ -2014,6 +2134,33 @@ enum MarkdownCodec {
     // MARK: Decoding
 
     static func decode(_ markdown: String) -> NSAttributedString {
+        // Inline images: split on `![](airpad-image:<id>)` tokens, decode each
+        // surrounding text segment through the normal pipeline, and splice image
+        // attachments between them. This keeps the (dense) inline markdown parser
+        // untouched — an image token is handled at the top level, never inside it.
+        guard markdown.contains(imageTokenPrefix) else { return decodeText(markdown) }
+        let out = NSMutableAttributedString()
+        var rest = Substring(markdown)
+        while let tokenStart = rest.range(of: imageTokenPrefix) {
+            let before = rest[rest.startIndex..<tokenStart.lowerBound]
+            if !before.isEmpty { out.append(decodeText(String(before))) }
+            let after = rest[tokenStart.upperBound...]
+            guard let close = after.firstIndex(of: ")") else {
+                // Malformed token — emit the remainder literally and stop.
+                out.append(decodeText(String(rest)))
+                return out
+            }
+            let itemID = String(after[after.startIndex..<close])
+            out.append(imageAttachmentString(itemID: itemID))
+            rest = after[after.index(after: close)...]
+        }
+        if !rest.isEmpty { out.append(decodeText(String(rest))) }
+        return out
+    }
+
+    /// The text-only decode pipeline (no image tokens). `decode` splits image
+    /// tokens out and feeds each surrounding text segment through this.
+    private static func decodeText(_ markdown: String) -> NSAttributedString {
         let result = NSMutableAttributedString()
         var state = DecoderState()
         decode(markdown, into: result, state: &state, linkURL: nil)

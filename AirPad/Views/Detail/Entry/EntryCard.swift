@@ -130,6 +130,10 @@ struct EntryCard: View {
                     ? { [file = item.file!, nodeID] in
                         Task { await store.setCoverImage(relativePath: file, nodeID: nodeID) }
                     }
+                    : nil,
+                // Read-aloud through the shared SpeechSynthesisService — notes only.
+                readAloud: item.type == .text
+                    ? NoteReadAloudButton(token: item.id, text: item.content ?? "")
                     : nil
             )
 
@@ -473,6 +477,32 @@ struct EntryCard: View {
     }
 }
 
+/// Read-aloud control for a `.text` note — toggles TTS through the shared
+/// `SpeechSynthesisService` (the same on-device engine + Now Playing/lock-screen
+/// transport the Librarian uses). Play → pause → resume; the icon reflects
+/// whether THIS note is the one currently speaking. Feeds the service
+/// `item.content` (the saved text).
+private struct NoteReadAloudButton: View {
+    let token: String   // item.id — identifies this note to the shared service
+    let text: String    // item.content
+
+    var body: some View {
+        let tts = SpeechSynthesisService.shared
+        let isThisPlaying = tts.activeToken == token && tts.isSpeaking && !tts.isPaused
+        Button {
+            tts.toggle(token: token, text: text)
+        } label: {
+            Image(systemName: isThisPlaying ? "pause.fill" : "speaker.wave.2.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(isThisPlaying ? 0.9 : 0.6))
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+}
+
 // MARK: - Title row
 
 /// Title bar inside an `EntryCard`. Pure view: takes a name + state and
@@ -524,6 +554,9 @@ private struct EntryTitleRow: View {
     /// for every entry type the hero set-point doesn't apply to so the
     /// menu shape is unchanged outside `.image` entries.
     var onSetAsHero: (() -> Void)? = nil
+    /// Read-aloud control — passed only for `.text` notes (nil for every other
+    /// entry type, so their chrome is untouched).
+    var readAloud: NoteReadAloudButton? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -556,6 +589,8 @@ private struct EntryTitleRow: View {
             Spacer(minLength: 0)
 
             if !reorderActive {
+                // Read-aloud (notes only; nil otherwise → renders nothing).
+                readAloud
                 Menu {
                     Button(isAboveFold ? "Remove from card" : "Show on card", action: onPromote)
                     if let onSetAsHero {

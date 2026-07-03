@@ -428,7 +428,11 @@ struct NodeDetailView: View {
                     .transition(.opacity)
             }
         }
-        .background { Color(red: 0.027, green: 0.027, blue: 0.039).ignoresSafeArea() }
+        // Matched-gray detail surface: same warm tone as the note panel
+        // (`NoteTypography.background` — #1A1A1A dark / white light, adaptive),
+        // so the raised note panel separates from the ground by light (shadow +
+        // rim), not colour. Replaces the fixed near-black #070709.
+        .background { Color(NoteTypography.background).ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
 
         // hero-custom-toolbar-overlay — sibling of the ScrollView inside

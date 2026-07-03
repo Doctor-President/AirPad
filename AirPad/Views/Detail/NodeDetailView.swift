@@ -313,6 +313,15 @@ struct NodeDetailView: View {
                 let payloadEntries = Array(node.items.enumerated()).filter { !$1.type.isAtomic }
                 let payloadSnapshot = payloadEntries.map { $0.element.id }
                 let atomicCount = node.items.count - payloadEntries.count
+                // Images inserted inline into a note render inside that note's
+                // flowing document (via `![](airpad-image:<id>)` tokens); hide
+                // them from the standalone list below so they don't also show as
+                // gallery cards. Kept in payloadEntries/snapshot so the reorder
+                // index math (a contiguous non-atomic suffix) is untouched.
+                let inlineImageIDs = Set(
+                    node.items.compactMap { $0.type == .text ? $0.content : nil }
+                        .flatMap { MarkdownCodec.referencedImageItemIDs(in: $0) }
+                )
 
                 // Stage 4.8 Commit B — pinned Attributes section.
                 // Renders only when the node has ≥1 atomic entry; zero
@@ -330,6 +339,11 @@ struct NodeDetailView: View {
                     ForEach(payloadEntries, id: \.element.id) { pair in
                         let rawIndex = pair.offset
                         let item = pair.element
+                        if inlineImageIDs.contains(item.id) {
+                            // Rendered inline in its note; hidden here so it
+                            // doesn't also show as a standalone gallery card.
+                            EmptyView()
+                        } else {
                         // 1pt hairline as a bottom overlay on every row
                         // except the last so the gap between entries
                         // reads as a divider without adding layout
@@ -357,6 +371,7 @@ struct NodeDetailView: View {
                             && rawIndex == node.foldIndex - 1 {
                             FoldDivider()
                                 .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                         }
                     }
                 }

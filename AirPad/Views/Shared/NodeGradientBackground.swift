@@ -70,10 +70,19 @@ struct NodeGradientLayer: View {
     var undulation: CGFloat = 0
     /// Drives `TimelineView(.animation)` when true. When false, the same
     /// layers render with `time = 0` — a still frame of the live gradient,
-    /// not a different visual. Grid tiles at ≥3-col pass `false` so many
-    /// blurred Circles aren't all redrawing per frame during scroll.
+    /// not a different visual. On the GPU (static path) motion is ~free, so
+    /// dense tiles now animate too (see `driftSpeedScale`).
     /// Default true keeps cards / carousel / detail callsites unchanged.
     var animated: Bool = true
+    /// Rest anchor for the static color blobs. `.center` (default) is
+    /// today's full-bleed look; `.bottom` pools the color at the card floor
+    /// so a hero-image card's gradient sits beneath the photo instead of
+    /// washing up into it. Static path only — the hero morph ignores it.
+    var anchor: UnitPoint = .center
+    /// Multiplier on the static blobs' drift frequency. `1.0` (default) is
+    /// the original speed. Dense grid tiles pass <1 (~0.4) so small blobs
+    /// read as slow ambient breathing, not shimmer, now that they animate.
+    var driftSpeedScale: CGFloat = 1.0
 
     @State private var phase: Double = Double.random(in: 0...100)
 
@@ -155,7 +164,8 @@ struct NodeGradientLayer: View {
         ZStack {
             Color(red: 0.027, green: 0.027, blue: 0.039)
             BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
-                          animated: animated)
+                          animated: animated,
+                          anchor: anchor)
         }
     }
 
@@ -174,7 +184,7 @@ struct NodeGradientLayer: View {
             BlobFieldView.CardBlob(
                 baseOffset: CGPoint(x: baseX, y: centerYOffset),
                 radius: radius,
-                driftFreq: CGSize(width: fx, height: fy),
+                driftFreq: CGSize(width: fx * driftSpeedScale, height: fy * driftSpeedScale),
                 driftPhase: CGSize(width: ph * px, height: ph * py),
                 driftAmp: amp,
                 blurWidth: blurWidth,

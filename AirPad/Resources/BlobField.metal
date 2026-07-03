@@ -13,6 +13,8 @@ using namespace metal;
 //   sharedField  — 0 = sample in local space (default); 1 = world space
 //   style        — 0 = lava (additive radial, normalized); 1 = card
 //                  (source-over, blurred-disc, absolute-point)
+//   anchor       — card rest reference as a fraction of size ((0.5,0.5) =
+//                  center; (0.5,1.0) = bottom). Card style only; lava ignores.
 //   params       — flat float buffer; stride depends on `style` (see below)
 //   paramCount   — element count of `params`, auto-appended by SwiftUI for the
 //                  .floatArray argument. .floatArray ALWAYS binds TWO shader
@@ -92,8 +94,11 @@ static half4 lavaField(float2 samplePos, float time, float2 size,
 // last front), so overlaps read exactly like the SwiftUI ZStack of blurred
 // Circles. Coordinates are absolute points (center + drift), not fractions.
 static half4 cardField(float2 samplePos, float time, float2 size,
-                       device const float *params, int paramCount) {
-    float2 center = size * 0.5;
+                       float2 anchor, device const float *params, int paramCount) {
+    // Rest reference for the blobs. (0.5,0.5) = card center (default);
+    // (0.5,1.0) = bottom edge, so on a hero-image card the color pools at
+    // the floor beneath the photo instead of bleeding up into it.
+    float2 center = size * anchor;
 
     // Premultiplied source-over accumulator.
     half3 accumRGB = half3(0.0);
@@ -138,6 +143,7 @@ static half4 cardField(float2 samplePos, float time, float2 size,
                                  float2 globalOrigin,
                                  float sharedField,
                                  float style,
+                                 float2 anchor,
                                  device const float *params,
                                  int paramCount) {
     // sharedField switch: local space by default; offset the sample point by
@@ -148,6 +154,6 @@ static half4 cardField(float2 samplePos, float time, float2 size,
     if (style < 0.5) {
         return lavaField(samplePos, time, size, params, paramCount);
     } else {
-        return cardField(samplePos, time, size, params, paramCount);
+        return cardField(samplePos, time, size, anchor, params, paramCount);
     }
 }

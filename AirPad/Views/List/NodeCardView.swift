@@ -93,7 +93,12 @@ struct NodeCardView: View {
                     ? 0
                     : (heroZoneHeight - geo.size.height) / 2
                 ZStack {
-                    NodeGradientLayer(node: node, centerYOffset: gradientCenterY)
+                    // Hero-image cards anchor the gradient to the floor so the
+                    // color pools beneath the photo instead of washing up into
+                    // it. No-hero cards keep the full-bleed centered look.
+                    NodeGradientLayer(node: node,
+                                      centerYOffset: gradientCenterY,
+                                      anchor: hasHero ? .bottom : .center)
                     if hasHero {
                         heroOverlay(width: geo.size.width, height: geo.size.height)
                     }

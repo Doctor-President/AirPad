@@ -31,6 +31,12 @@ struct NodeGridTile: View {
     /// Density driver. 2-col = editorial composition; 3-col+ = title-only.
     let columnCount: Int
 
+    /// Drift-speed multiplier for the gradient on dense (3-col+) tiles, where
+    /// the blobs are small and full-speed drift reads as shimmer. Slows them
+    /// to ambient breathing. The one dial to nudge on device — T's eye is the
+    /// spec on the exact value (brief suggests ~0.3–0.5).
+    private static let denseGradientDriftScale: CGFloat = 0.4
+
     @Environment(CorpusStore.self) private var store
 
     // MARK: - Tuning storage (per-density, live)
@@ -212,7 +218,12 @@ struct NodeGridTile: View {
                 offsetScale:   tuning.gradientOffsetScale,
                 vignette:      tuning.gradientVignette,
                 centerYOffset: gradientCenterY,
-                animated:      animateGradient
+                animated:      animateGradient,
+                // Hero tiles pool the gradient at the floor beneath the photo.
+                anchor:        hasHero ? .bottom : .center,
+                // Dense tiles now animate (motion is ~free on the GPU) but at
+                // slowed drift so small blobs breathe rather than shimmer.
+                driftSpeedScale: columnCount >= 3 ? Self.denseGradientDriftScale : 1.0
             )
             if hasHero {
                 heroOverlay

@@ -115,60 +115,88 @@ struct NodeGradientLayer: View {
         let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
         let size: CGFloat = 180 * circleScale
         return Group {
-            if animated {
-                // Animated path — NO drawingGroup: re-flattening every
-                // frame would defeat the TimelineView and hurt motion.
-                TimelineView(.animation) { timeline in
-                    gradientStack(colors: colors, size: size,
-                                  time: timeline.date.timeIntervalSinceReferenceDate)
-                }
+            if undulation > 0 {
+                // HERO — the organic morph stays on its CPU path (Stage 3
+                // territory), byte-for-byte unchanged.
+                heroFill(colors: colors, size: size)
             } else {
-                // Frozen frame: same layers/colors/blur, time pinned to 0.
-                // Per-blob sin/cos still use `phase` (per-node seed), so
-                // tiles read as varied still frames, not identical snaps.
-                // .drawingGroup() rasterizes the blurred Circles once into
-                // a cached GPU texture — the expensive gaussian computes
-                // a single time, then scrolls as flat pixels.
-                gradientStack(colors: colors, size: size, time: 0)
-                    .drawingGroup()
+                // STATIC cards/tiles — the three blurred color circles now
+                // run on the GPU via BlobField (ws-render-perf PERF FIX 3,
+                // stage 2). This is the path that rendered many-at-once and
+                // paid a per-frame CPU gaussian blur it couldn't cache while
+                // animated.
+                staticFill(colors: colors, size: size)
             }
         }
     }
 
+    // Hero morph — unchanged from the original `gradientFill`.
     @ViewBuilder
+    private func heroFill(colors: (String, String, String), size: CGFloat) -> some View {
+        if animated {
+            // Animated path — NO drawingGroup: re-flattening every frame
+            // would defeat the TimelineView and hurt motion.
+            TimelineView(.animation) { timeline in
+                gradientStack(colors: colors, size: size,
+                              time: timeline.date.timeIntervalSinceReferenceDate)
+            }
+        } else {
+            // Frozen frame: same layers/colors/blur, time pinned to 0.
+            gradientStack(colors: colors, size: size, time: 0)
+                .drawingGroup()
+        }
+    }
+
+    // Static gradient on the GPU. The dark base stays a SwiftUI layer and the
+    // radialGlow (overlay) + vignette (multiply) composite over it in `body`
+    // exactly as before — only the expensive blurred circles moved to Metal,
+    // so the overlay-blend vividness is unchanged by construction.
+    private func staticFill(colors: (String, String, String), size: CGFloat) -> some View {
+        ZStack {
+            Color(red: 0.027, green: 0.027, blue: 0.039)
+            BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
+                          animated: animated)
+        }
+    }
+
+    /// Map the three static circles to `BlobField` card blobs, preserving the
+    /// original per-blob sin/cos drift, per-node `phase` seed, and every knob
+    /// (`circleScale` via `size`, `blurScale`, `offsetScale`, `centerYOffset`).
+    private func cardBlobs(colors: (String, String, String), size: CGFloat) -> [BlobFieldView.CardBlob] {
+        let radius: CGFloat = size / 2          // size = 180 * circleScale
+        let blurWidth: CGFloat = 40 * blurScale
+        let spread: CGFloat = 80 * offsetScale
+        let amp: CGFloat = 30
+        let ph = CGFloat(phase)
+
+        func blob(baseX: CGFloat, fx: CGFloat, fy: CGFloat,
+                  px: CGFloat, py: CGFloat, hex: String) -> BlobFieldView.CardBlob {
+            BlobFieldView.CardBlob(
+                baseOffset: CGPoint(x: baseX, y: centerYOffset),
+                radius: radius,
+                driftFreq: CGSize(width: fx, height: fy),
+                driftPhase: CGSize(width: ph * px, height: ph * py),
+                driftAmp: amp,
+                blurWidth: blurWidth,
+                color: Color(hexString: hex),
+                peak: 1
+            )
+        }
+
+        return [
+            blob(baseX: -spread, fx: 0.30, fy: 0.25, px: 1.3, py: 0.9, hex: colors.0),
+            blob(baseX: 0,       fx: 0.35, fy: 0.30, px: 1.7, py: 1.1, hex: colors.1),
+            blob(baseX: spread,  fx: 0.40, fy: 0.35, px: 2.1, py: 0.7, hex: colors.2),
+        ]
+    }
+
+    // Dark base + the morphing hero blobs. Hero-only now that the static
+    // circles render on the GPU.
     private func gradientStack(colors: (String, String, String), size: CGFloat, time: Double) -> some View {
         ZStack {
             Color(red: 0.027, green: 0.027, blue: 0.039)
-            if undulation > 0 {
-                morphingBlobs(colors: colors, baseSize: size, time: time)
-            } else {
-                staticCircles(colors: colors, size: size, time: time)
-            }
+            morphingBlobs(colors: colors, baseSize: size, time: time)
         }
-    }
-
-    @ViewBuilder
-    private func staticCircles(colors: (String, String, String), size: CGFloat, time: Double) -> some View {
-        let blur: CGFloat = 40 * blurScale
-        let spread: CGFloat = 80 * offsetScale
-        Circle()
-            .fill(Color(hexString: colors.0))
-            .frame(width: size, height: size)
-            .blur(radius: blur)
-            .offset(x: -spread + sin(time * 0.3 + phase * 1.3) * 30,
-                    y: cos(time * 0.25 + phase * 0.9) * 30 + centerYOffset)
-        Circle()
-            .fill(Color(hexString: colors.1))
-            .frame(width: size, height: size)
-            .blur(radius: blur)
-            .offset(x: sin(time * 0.35 + phase * 1.7) * 30,
-                    y: cos(time * 0.3 + phase * 1.1) * 30 + centerYOffset)
-        Circle()
-            .fill(Color(hexString: colors.2))
-            .frame(width: size, height: size)
-            .blur(radius: blur)
-            .offset(x: spread + sin(time * 0.4 + phase * 2.1) * 30,
-                    y: cos(time * 0.35 + phase * 0.7) * 30 + centerYOffset)
     }
 
     @ViewBuilder

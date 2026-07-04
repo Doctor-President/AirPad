@@ -134,11 +134,10 @@ struct CanvasSlideOutMenu: View {
 
     private func modeRow(_ mode: ViewMode) -> some View {
         let isActive = (mode == currentMode)
-        // Not-yet-built modes (`.userGraph`, `.list`, `.timeline`) render
-        // dimmed with a "Coming soon" subtitle and a no-op tap. `.list` is
-        // reserved for a future compact-list surface — the old full-card
-        // vertical scroll it named now lives inside Card View (`.grid`). Will
-        // become an active select + canvas overlay in a later commit.
+        // Not-yet-built modes (`.userGraph`, `.timeline`) render dimmed with
+        // a "Coming soon" subtitle and a no-op tap. Live modes (System Graph,
+        // List, Card View) select normally. Will become an active select +
+        // canvas overlay for the stubs in a later commit.
         let tappable = mode.isAvailable
         return Button(action: {
             guard tappable else { return }

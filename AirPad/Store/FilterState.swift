@@ -47,14 +47,14 @@ extension ViewMode {
     }
 
     /// `false` for not-yet-built modes — UI surfaces them dimmed with a
-    /// "Coming soon" subtitle and a no-op tap. `.list` is reserved here for
-    /// a future compact-list surface (the old full-card vertical scroll it
+    /// "Coming soon" subtitle and a no-op tap. `.list` is the compact
+    /// scanning surface (`NodeListView`); the full-card vertical scroll it
     /// used to name now lives inside Card View as the vertical-scroll
-    /// presentation — see `VerticalScrollView`).
+    /// presentation (see `VerticalScrollView`).
     var isAvailable: Bool {
         switch self {
-        case .systemGraph, .grid:       return true
-        case .userGraph, .list, .timeline: return false
+        case .systemGraph, .list, .grid: return true
+        case .userGraph, .timeline:      return false
         }
     }
 }

@@ -12,13 +12,12 @@ final class AppRouter {
         /// `RecentsView`.
         case recents
         case canvas
-        /// QuikCapture surface. `forcedCollectionID` pins the capture to a
-        /// specific collection (CollectionView "+" path in c4.7); nil leaves
-        /// the active collection up to QuikCapture's pill rail. `origin`
-        /// tracks where the user entered from so the exit pill knows
-        /// whether to return to dashboard (in-app entry) or suspend the
-        /// app (URL-scheme entry from outside).
-        case quikCapture(forcedCollectionID: String?, origin: QuikCaptureOrigin)
+        /// QuikCapture — a standalone capture screen reached DIRECTLY from the
+        /// URL scheme (`airpad://quikcapture` / Action Button). Rendered at the
+        /// ContentView root as its own view (`QuikCaptureView`), never routed
+        /// through the Dashboard, so entry is instant (no flash) and the
+        /// Librarian is simply not part of the surface.
+        case quikCapture
         /// Scoped collection canvas (Canvas Chrome arc D1c). Routes
         /// through `AppRouter` rather than a `NavigationStack` push so
         /// `CanvasView` / `NodeListView` stay top-level surfaces — their
@@ -26,15 +25,6 @@ final class AppRouter {
         /// stack and renders SwiftUI's missing-destination placeholder.
         /// Back chevron returns to dashboard via `.dashboard` route.
         case collectionCanvas(id: String)
-    }
-
-    /// c4.6 — entry-point tracking for QuikCapture. Determines exit-pill
-    /// behavior: dashboard origin returns to the dashboard; urlScheme
-    /// origin suspends the app so the user lands back where they came from
-    /// (the home screen or whichever app triggered the URL).
-    enum QuikCaptureOrigin: Sendable, Equatable {
-        case dashboard
-        case urlScheme
     }
 
     static var shared: AppRouter?
@@ -53,14 +43,15 @@ final class AppRouter {
     /// fix-pass v3 Item 2a).
     var librarianAtPeek: Bool = false
 
-    /// In-app capture overlay state. Non-nil presents the blur overlay above
-    /// the active entry mode (dashboard / canvas / collectionCanvas) without
+    /// Capture overlay state. Non-nil presents the blur overlay above the
+    /// active entry mode (dashboard / canvas / collectionCanvas) without
     /// changing entry mode itself — the user stays in their current context
     /// and the overlay slides over it. Nil dismisses the overlay.
     ///
-    /// Distinct from `.quikCapture` entry mode: that's the external (URL
-    /// scheme / lock screen) full-screen QuikCapture surface, which remains
-    /// unchanged by the in-app capture overlay arc.
+    /// This is the single capture surface for both the in-app "+" and the
+    /// external QuikCapture entry (URL scheme `airpad://quikcapture` /
+    /// Action Button) — the latter just sets this from `onOpenURL` so the
+    /// overlay rises over whatever's on screen. No separate QuikCapture mode.
     var captureOverlay: CaptureOverlayContext? = nil
 
     /// Capture mode (ws-note-primitive / capture-flow). When true the user is in

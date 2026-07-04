@@ -30,7 +30,10 @@ struct AirPadApp: App {
                 }
                 .onOpenURL { url in
                     guard url.scheme == "airpad", url.host == "quikcapture" else { return }
-                    router.entryMode = .quikCapture(forcedCollectionID: nil, origin: .urlScheme)
+                    // Open the standalone QuikCapture screen DIRECTLY — rendered
+                    // at the ContentView root, no Dashboard/Recents routing, so
+                    // there's no flash on entry.
+                    router.entryMode = .quikCapture
                 }
         }
     }

@@ -1,385 +1,1228 @@
 import SwiftUI
 import UIKit
+import ImageIO
 
+/// QuikCapture root surface (AT19.3+). A self-contained copy of the
+/// `NodeDetailView` capture presentation, mounted directly as a
+/// `ContentView` entry mode (`router.entryMode == .quikCapture`) rather
+/// than pushed via the Dashboard NavigationStack. Creates a fresh blank
+/// capture node on appear and always shows the four entry-type circles +
+/// the state-driven Cancel/Done pill.
+///
+/// The layout/chrome is a faithful COPY of `NodeDetailView.content(node:)`
+/// and its helpers; only shared LEAF components (NodeGradientLayer,
+/// EntryCard, PastePadView, the capture sheets, etc.) are reused. The
+/// private-to-NodeDetailView helpers this presentation needs
+/// (HeroImageBanner, AttributesSection, FoldDivider, the chips) are copied
+/// in below as file-private structs.
 struct QuikCaptureView: View {
-
-    /// Dashboard Stage 4 c4.3 — when non-nil, pins every capture to a specific
-    /// collection (CollectionView "+" path in c4.7). The pill rail still
-    /// renders but is locked: taps are no-ops and only the forced pill shows
-    /// as selected. When nil (URL-scheme entry, dashboard "+" in c4.6) the
-    /// pill rail is interactive and `selectedCollectionID` drives the stamp.
-    var forcedCollectionID: String? = nil
-
-    /// c4.6 — where the user entered QuikCapture from. Drives the exit
-    /// pill's behavior and label. Defaults to .urlScheme to keep the
-    /// pre-c4.6 behavior intact for any legacy call site that doesn't
-    /// thread origin through (the router always passes one in production).
-    var origin: AppRouter.QuikCaptureOrigin = .urlScheme
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
 
-    @State private var showVoiceCapture: Bool = false
-    @State private var showCameraCapture: Bool = false
-    @State private var showTextCapture: Bool = false
-    @State private var showCollectionCreation: Bool = false
-    @State private var showTagSheet: Bool = false
-    @State private var prefilledText: String = ""
-    @State private var emptyClipboardMessageVisible: Bool = false
-    @State private var linkReceipt: LinkReceiptIDs? = nil
-    /// c4.3 — local pill selection. c4.4 will hydrate this from
-    /// `store.lastUsedCollectionID` on appear and persist taps back.
-    @State private var selectedCollectionID: String? = nil
+    /// The capture node's id, created on appear. Nil until
+    /// `createCaptureNode()` returns.
+    @State private var nodeID: String? = nil
 
-    /// Tag names selected via the `TagPillRail` and/or `TagSelectionSheet`
-    /// "More..." surface. Persists across captures within a QuikCapture
-    /// session (same grammar as `selectedCollectionID` — pick once, applies
-    /// to every subsequent capture until cleared). Resets to empty on next
-    /// session entry (URL-scheme reentry recreates @State). Applied to the
-    /// new node at capture commit via `store.applyTags`.
-    @State private var selectedTagNames: Set<String> = []
+    // MARK: - Capture-chrome layout dials
 
-    /// Snapshot of `store.nodes.id`s captured at the moment the user taps
-    /// Voice/Camera/Text/Clipboard-text. The reactive `onChange(of:
-    /// store.nodes.count)` observer diffs against this to find the
-    /// newly-landed node and apply selected tags. Mirrors
-    /// `CaptureOverlayView.armNewNodeCapture` — the inner capture sheets
-    /// dispatch `Task { await addNode }` then `dismiss()` synchronously, so
-    /// `onDismiss` snapshots miss the new node. 3s self-cleaning timeout
-    /// covers cancelled / failed captures.
-    @State private var pendingCaptureSnapshot: Set<String>? = nil
-    @State private var captureTimeoutTask: Task<Void, Never>? = nil
-
-    /// The collection ID actually stamped onto new captures. Forced (from
-    /// router) wins over local pill selection.
-    private var effectiveCollectionID: String? {
-        forcedCollectionID ?? selectedCollectionID
+    /// Capture-chrome layout dials (T's eye is the spec — nudge these).
+    private enum CaptureChrome {
+        static let buttonSize: CGFloat = 48
+        static let buttonSpacing: CGFloat = 10   // tightened so the pill fits the row
+        static let barHPadding: CGFloat = 20
+        static let barBottomPadding: CGFloat = 10
+        /// Extra lift for the pill while the keyboard is up, so it clears the
+        /// rich-text formatting toolbar (a 56pt `inputAccessoryView`).
+        static let keyboardToolbarClearance: CGFloat = 56
     }
 
-    /// Identity pair for the QuikCapture link-receipt overlay. Tracking
-    /// both node + item IDs (vs just nodeID) keeps `QuikCaptureLinkReceipt`
-    /// resilient to future link entries that aren't `items[0]`.
-    private struct LinkReceiptIDs: Equatable {
-        let nodeID: String
-        let itemID: String
+    /// Whether anything has actually been captured yet (drives the "Done"
+    /// control's appearance — it shows once there's something to keep). The
+    /// fresh node opens with one empty text item; a non-empty note or any
+    /// non-text entry counts.
+    private func hasCaptured(_ node: Node) -> Bool {
+        node.items.contains { item in
+            if item.type == .text {
+                return !(item.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return true
+        }
+    }
+
+    // MARK: - Editable fields (mirrored from node, written back on disappear)
+
+    @State private var editedTitle = ""
+    @State private var editedSummary = ""
+    @State private var editedTags: [String] = []
+
+    @FocusState private var focusedField: Bool
+
+    @State private var captureMode: CaptureMode? = nil
+    @State private var showingNewTagSheet = false
+    @State private var showingNewCollectionSheet = false
+    @State private var keyboardVisible = false
+    @State private var showLinkAddAlert = false
+    @State private var linkDraft = ""
+    @State private var showDocumentPicker = false
+
+    /// Capture-time modal for the "+ Document" path. When the user picks
+    /// documents in a node that already has a `.document` entry, we present
+    /// a modal asking whether to append to the most-recently-updated
+    /// `.document` entry or create a fresh one. First-document captures skip
+    /// the modal entirely (`addDocumentEntry` runs directly).
+    @State private var pendingDocumentURLs: [URL] = []
+    @State private var showDocumentAppendModal = false
+
+    /// Owns the entire transient drag-to-reorder UI state. Injected into
+    /// entry cards via Environment so each card can read its own
+    /// offset/lifted/parting treatment without prop-drilling through the
+    /// ForEach.
+    @State private var reorderController = EntryReorderController()
+
+    /// Dev-only runtime visual settings. The inter-card spacing slider
+    /// drives the nested entry-stack's `spacing:`.
+    @State private var visualSettings = EntryVisualSettings.shared
+
+    /// In-node capture surfaces. `.text` is intentionally absent: the note
+    /// itself is the text surface. Voice and Camera stay sheet-based because
+    /// their capture flows are genuinely modal.
+    enum CaptureMode: String, Identifiable {
+        case voice, camera
+        var id: String { rawValue }
+    }
+
+    private var node: Node? {
+        guard let nodeID else { return nil }
+        return store.nodes.first { $0.id == nodeID }
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        Group {
+            if let node {
+                content(node: node)
+                    .environment(reorderController)
+                    .onAppear {
+                        editedTitle   = node.title
+                        editedSummary = node.summary
+                        editedTags    = node.tags
+                        // First-open lazy migration to the entry-primitive
+                        // schema. No-op once the node's schema is current.
+                        Task { await store.ensureEntrySchema(forNodeID: node.id) }
+                    }
+                    .onDisappear {
+                        saveIfChanged()
+                    }
+                    .onChange(of: node.title) { old, new in
+                        if editedTitle == old { editedTitle = new }
+                    }
+                    .onChange(of: node.summary) { old, new in
+                        if editedSummary == old { editedSummary = new }
+                    }
+                    .onChange(of: node.tags) { old, new in
+                        if editedTags == old { editedTags = new }
+                    }
+                    .sheet(item: $captureMode) { mode in
+                        switch mode {
+                        case .voice:  VoiceCaptureSheet(targetNodeID: node.id)
+                        case .camera: CameraCaptureView(targetNodeID: node.id)
+                        }
+                    }
+                    .sheet(isPresented: $showingNewTagSheet) {
+                        TagEditorSheet(existing: nil) { createdName in
+                            if !editedTags.contains(createdName) {
+                                editedTags.append(createdName)
+                            }
+                        }
+                    }
+                    .sheet(isPresented: $showingNewCollectionSheet) {
+                        CollectionCreationSheet(onCreate: { newCol in
+                            let id = node.id
+                            Task { await store.addNodes(ids: [id], toCollection: newCol.id) }
+                            store.markCollectionUsed(newCol.id)
+                        })
+                    }
+                    .sheet(isPresented: $showDocumentPicker) {
+                        DocumentPickerView { urls in
+                            guard !urls.isEmpty else { return }
+                            // Phase 1 rule: append-to-most-recently-updated
+                            // for documents, with an explicit "New entry"
+                            // override surfaced via the capture-time modal.
+                            if node.items.contains(where: { $0.type == .document }) {
+                                pendingDocumentURLs = urls
+                                showDocumentAppendModal = true
+                            } else {
+                                let id = node.id
+                                Task { await store.addDocumentEntry(nodeID: id, sourceURLs: urls) }
+                            }
+                        }
+                    }
+                    .confirmationDialog(
+                        "Append to existing Documents entry?",
+                        isPresented: $showDocumentAppendModal,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Append") {
+                            let urls = pendingDocumentURLs
+                            let nodeIDCopy = node.id
+                            if let targetID = mostRecentDocumentEntryID() {
+                                Task {
+                                    await store.appendDocumentItems(
+                                        toEntryID: targetID,
+                                        nodeID: nodeIDCopy,
+                                        sourceURLs: urls
+                                    )
+                                }
+                            } else {
+                                // Race fallback: a delete between picker
+                                // dismiss and modal action could leave us
+                                // with no append target. Fall through to a
+                                // fresh entry rather than dropping the files.
+                                Task { await store.addDocumentEntry(nodeID: nodeIDCopy, sourceURLs: urls) }
+                            }
+                            pendingDocumentURLs = []
+                        }
+                        Button("New entry") {
+                            let urls = pendingDocumentURLs
+                            let id = node.id
+                            Task { await store.addDocumentEntry(nodeID: id, sourceURLs: urls) }
+                            pendingDocumentURLs = []
+                        }
+                        Button("Cancel", role: .cancel) {
+                            pendingDocumentURLs = []
+                        }
+                    } message: {
+                        Text("Append these documents to your most recent Documents entry, or create a new entry?")
+                    }
+                    .alert("Add link", isPresented: $showLinkAddAlert) {
+                        TextField("https://example.com", text: $linkDraft)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        Button("Cancel", role: .cancel) {}
+                        Button("Add") { saveLink() }
+                    } message: {
+                        Text("Paste or type a URL to add it as a link entry.")
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                        withAnimation(.easeInOut(duration: 0.2)) { keyboardVisible = true }
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                        withAnimation(.easeInOut(duration: 0.2)) { keyboardVisible = false }
+                    }
+            } else {
+                Color(NoteTypography.background).ignoresSafeArea()
+            }
+        }
+        .task {
+            if nodeID == nil, let node = await store.createCaptureNode() {
+                router.isCapturing = true
+                router.captureNodeID = node.id
+                router.captureDraftHasText = false
+                nodeID = node.id
+            }
+        }
+    }
+
+    // MARK: - Main content
+
+    private func content(node: Node) -> some View {
+        // GeometryReader reads the top safe-area inset so the hero slot
+        // can be sized to `200 + topInset` — that's what keeps the title
+        // anchored at its original safe-area-relative position while the
+        // gradient bleeds all the way up to y=0 of the screen.
+        GeometryReader { proxy in
+        let topInset = proxy.safeAreaInsets.top
+        ZStack(alignment: .top) {
+        ScrollView {
+            VStack(spacing: 0) {
+                heroZone(node: node, topInset: topInset, width: proxy.size.width)
+                VStack(alignment: .leading, spacing: 24) {
+                // Title
+                TextField("Title", text: $editedTitle, axis: .vertical)
+                    .font(visualSettings.nodeTitle.resolvedFont())
+                    .foregroundStyle(.white)
+                    .tint(.white)
+                    .focused($focusedField)
+
+                // Summary
+                if !editedSummary.isEmpty || node.summary.isEmpty {
+                    TextField("Summary", text: $editedSummary, axis: .vertical)
+                        .font(visualSettings.nodeSummary.resolvedFont())
+                        .foregroundStyle(.white.opacity(0.75))
+                        .tint(.white)
+                        .focused($focusedField)
+                }
+
+                // Collections (membership chips above tags)
+                collectionsRow(node: node)
+
+                // Tags
+                tagsRow
+
+                Divider().background(Color.white.opacity(0.12))
+
+                // Items — every entry is rendered as an `EntryCard`. Each
+                // card needs its index + a snapshot of sibling IDs so the
+                // reorder controller can do its parting math without
+                // re-reading the store mid-drag.
+                let payloadEntries = Array(node.items.enumerated()).filter { !$1.type.isAtomic }
+                let payloadSnapshot = payloadEntries.map { $0.element.id }
+                let atomicCount = node.items.count - payloadEntries.count
+                // Images inserted inline into a note render inside that note's
+                // flowing document; hide them from the standalone list below.
+                let inlineImageIDs = Set(
+                    node.items.compactMap { $0.type == .text ? $0.content : nil }
+                        .flatMap { MarkdownCodec.referencedImageItemIDs(in: $0) }
+                )
+
+                // Pinned Attributes section — renders only when the node
+                // has ≥1 atomic entry.
+                if atomicCount > 0 {
+                    QuikCaptureAttributesSection(nodeID: node.id)
+                }
+
+                VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
+                    ForEach(payloadEntries, id: \.element.id) { pair in
+                        let rawIndex = pair.offset
+                        let item = pair.element
+                        if inlineImageIDs.contains(item.id) {
+                            // Rendered inline in its note; hidden here so it
+                            // doesn't also show as a standalone gallery card.
+                            EmptyView()
+                        } else {
+                        EntryCard(item: item, nodeID: node.id, index: rawIndex, snapshotIDs: payloadSnapshot)
+                            .overlay(alignment: .bottom) {
+                                if rawIndex < node.items.count - 1 {
+                                    Rectangle()
+                                        .fill(Color(hexString: "FFFFFF").opacity(0.08))
+                                        .frame(height: 1)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+
+                        if !reorderController.isReorderActive
+                            && node.foldIndex > atomicCount
+                            && rawIndex == node.foldIndex - 1 {
+                            QuikCaptureFoldDivider()
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
+                        }
+                    }
+                }
+                .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
+                .animation(.easeInOut(duration: 0.22), value: node.foldIndex)
+
+                // Paste Pad wired to per-type routing.
+                PastePadView(onPaste: handlePastedContent)
+
+                // Trailing spacer so the last entry isn't tucked under the
+                // capture chrome.
+                Spacer(minLength: 80)
+
+                // Invisible sentinel that introspects up to the enclosing
+                // UIScrollView and drives auto-scroll while a reorder card
+                // is lifted near the top/bottom edge zones.
+                AutoScrollDriver(
+                    isActive: reorderController.isCardLifted,
+                    touchWindowY: reorderController.currentTouchWindowY,
+                    edgeZone: EntryReorderController.edgeAutoScrollZone,
+                    onScrollDelta: { delta in
+                        reorderController.setScrollDelta(delta)
+                    }
+                )
+                .frame(width: 1, height: 1)
+                .allowsHitTesting(false)
+            }
+            .padding(20)
+            .dismissKeyboardOnTapOutside()
+            }
+        }
+        // Capture chrome — the four entry-type circles + the Cancel/Done
+        // pill, always shown. `safeAreaInset` gets keyboard avoidance so the
+        // bar rides above the keyboard with the note live.
+        .safeAreaInset(edge: .bottom) {
+            captureChrome(node: node)
+        }
+        // Matched-gray detail surface: same warm tone as the note panel.
+        .background { Color(NoteTypography.background).ignoresSafeArea() }
+        .ignoresSafeArea(.container, edges: .top)
+        } // close ZStack
+        } // close GeometryReader
+    }
+
+    // MARK: - Capture chrome
+
+    /// The capture bar: the four primitive-type circles (Voice / Camera /
+    /// Document / Link) in thumb reach, plus a state-driven Cancel/Done pill
+    /// at the far right. The note itself (tap for text) and the PastePad
+    /// live in the scroll content.
+    ///
+    /// Pill: one button, two truths. Empty session → **Cancel** (bail,
+    /// discard the blank node). Any content → **Done** (exit to Recents,
+    /// node already persisted).
+    @ViewBuilder
+    private func captureChrome(node: Node) -> some View {
+        let hasContent = hasCaptured(node) || router.captureDraftHasText
+        HStack(spacing: CaptureChrome.buttonSpacing) {
+            captureTypeButton(symbol: "waveform", label: "Voice") { captureMode = .voice }
+            captureTypeButton(symbol: "camera.fill", label: "Camera") { captureMode = .camera }
+            captureTypeButton(symbol: "doc.fill", label: "Document") { showDocumentPicker = true }
+            captureTypeButton(symbol: "link", label: "Link") {
+                linkDraft = ""
+                showLinkAddAlert = true
+            }
+            Spacer(minLength: 8)
+            Button {
+                if hasContent { doneCapture() } else { cancelCapture() }
+            } label: {
+                Text(hasContent ? "Done" : "Cancel")
+                    .font(.headline)
+                    .foregroundStyle(hasContent ? .black : .white)
+                    .padding(.horizontal, 18)
+                    .frame(height: 44)
+                    .background(hasContent ? Color.white : Color.white.opacity(0.14), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .animation(.easeInOut(duration: 0.2), value: hasContent)
+        }
+        .padding(.horizontal, CaptureChrome.barHPadding)
+        // Lift above the rich-text toolbar while writing; sit at the normal
+        // bottom on the launchpad (keyboard down).
+        .padding(.bottom, CaptureChrome.barBottomPadding
+            + (keyboardVisible ? CaptureChrome.keyboardToolbarClearance : 0))
+        .animation(.easeInOut(duration: 0.2), value: keyboardVisible)
+    }
+
+    private func captureTypeButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: CaptureChrome.buttonSize, height: CaptureChrome.buttonSize)
+                .background(Color.white.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    // MARK: - Exit
+
+    /// "Done" exit: the node is already persisted; leave capture mode and
+    /// route to Recents where the freshly-captured node sits on top.
+    private func doneCapture() {
+        router.isCapturing = false
+        router.captureNodeID = nil
+        router.captureDraftHasText = false
+        router.entryMode = .recents
+    }
+
+    /// Cancel exit: discard the blank node (nothing was captured) and route
+    /// to Recents. QuikCapture is a root screen, so we set entry mode
+    /// directly rather than dismissing a pushed detail.
+    private func cancelCapture() {
+        router.isCapturing = false
+        router.captureNodeID = nil
+        router.captureDraftHasText = false
+        let id = nodeID
+        router.entryMode = .recents
+        if let id { Task { await store.deleteNode(id: id) } }
+    }
+
+    // MARK: - Hero zone
+
+    @ViewBuilder
+    private func heroZone(node: Node, topInset: CGFloat, width: CGFloat) -> some View {
+        // Compact banner — top full-bleeds under the status bar (y=0),
+        // bottom is a defined edge via rounded corners.
+        if node.coverImageRelativePath == nil {
+            let totalHeight: CGFloat = 200 + topInset
+            NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
+                .frame(height: totalHeight)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        bottomLeadingRadius: 30,
+                        bottomTrailingRadius: 30,
+                        style: .continuous
+                    )
+                )
+        } else {
+            QuikCaptureHeroImageBanner(node: node, topInset: topInset, width: width)
+                .id(node.coverImageRelativePath)
+        }
+    }
+
+    // MARK: - Collections row
+
+    @ViewBuilder
+    private func collectionsRow(node: Node) -> some View {
+        let membershipIDs = collectionMembershipIDs(node: node)
+        let excludeIDs: Set<String> = Set(membershipIDs).union([NodeCollection.corpusID])
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(membershipIDs, id: \.self) { id in
+                    QuikCaptureCollectionChip(name: collectionDisplayName(for: id)) {
+                        removeMembership(id: id)
+                    }
+                }
+                Menu {
+                    CollectionPickerMenuContent(
+                        collections: store.collections.filter { !$0.isCorpus },
+                        collectionLastUsedAt: store.collectionLastUsedAt,
+                        excludeIDs: excludeIDs,
+                        onPick: { addMembership(collectionID: $0) },
+                        onCreateNew: { showingNewCollectionSheet = true }
+                    )
+                } label: {
+                    Label("Add to collection", systemImage: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                }
+            }
+        }
+    }
+
+    private func collectionMembershipIDs(node: Node) -> [String] {
+        var ids: [String] = node.collectionIDs.filter { $0 != NodeCollection.corpusID }
+        if node.journalDate != nil {
+            ids.append(NodeCollection.journalID)
+        }
+        return ids.sorted { a, b in
+            let aDate = store.collectionLastUsedAt[a] ?? .distantPast
+            let bDate = store.collectionLastUsedAt[b] ?? .distantPast
+            return aDate > bDate
+        }
+    }
+
+    private func collectionDisplayName(for id: String) -> String {
+        if id == NodeCollection.journalID { return "Journal" }
+        return store.collections.first { $0.id == id }?.name ?? id
+    }
+
+    private func addMembership(collectionID: String) {
+        if collectionID == NodeCollection.journalID {
+            guard let current = node else { return }
+            var updated = current
+            updated.journalDate = Calendar.current.startOfDay(for: Date())
+            updated.updatedAt = Date()
+            Task { await store.updateNode(updated) }
+        } else if let id = nodeID {
+            Task { await store.addNodes(ids: [id], toCollection: collectionID) }
+        }
+        store.markCollectionUsed(collectionID)
+    }
+
+    private func removeMembership(id: String) {
+        if id == NodeCollection.journalID {
+            guard let current = node else { return }
+            var updated = current
+            updated.journalDate = nil
+            updated.updatedAt = Date()
+            Task { await store.updateNode(updated) }
+        } else if let nodeID {
+            Task { await store.removeNodes(ids: [nodeID], fromCollection: id) }
+        }
+    }
+
+    // MARK: - Tags row
+
+    private var tagsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(editedTags, id: \.self) { name in
+                    QuikCaptureTagChip(name: name, store: store) {
+                        editedTags.removeAll { $0 == name }
+                    }
+                }
+                // Add from vocabulary
+                Menu {
+                    TagPickerMenuContent(
+                        tags: store.tags,
+                        excludeNames: Set(editedTags),
+                        onPickExisting: { name in
+                            if !editedTags.contains(name) {
+                                editedTags.append(name)
+                            }
+                        },
+                        onAddNew: { showingNewTagSheet = true }
+                    )
+                } label: {
+                    Label("Add tag", systemImage: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color.white.opacity(0.08))
+                        .clipShape(Capsule())
+                }
+            }
+        }
+    }
+
+    // MARK: - Document capture helpers
+
+    private func mostRecentDocumentEntryID() -> String? {
+        node?.items
+            .filter { $0.type == .document }
+            .max(by: { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) })?
+            .id
+    }
+
+    // MARK: - Link add
+
+    private func saveLink() {
+        let trimmed = linkDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = nodeID else { return }
+        Task { await store.appendLinkItem(nodeID: id, urlString: trimmed) }
+    }
+
+    // MARK: - Paste Pad handlers
+
+    /// Dispatches a classified clipboard payload through the existing
+    /// per-type capture paths. Empty can't reach this callback because
+    /// `PastePadView` gates the tap on `isPrimed`.
+    private func handlePastedContent(_ content: ClipboardContent) {
+        switch content {
+        case .url(let url):
+            handlePastedURL(url)
+        case .image(let image):
+            handlePastedImage(image)
+        case .video(let url):
+            handlePastedVideo(url)
+        case .file(let url, let fileType):
+            handlePastedFile(url, fileType: fileType)
+        case .text(let text):
+            handlePastedText(text)
+        case .multi(let items):
+            handlePastedMulti(items)
+        case .empty:
+            break
+        }
+    }
+
+    private func handlePastedURL(_ url: URL) {
+        guard let id = nodeID else { return }
+        Task { await store.appendLinkItem(nodeID: id, urlString: url.absoluteString) }
+    }
+
+    private func handlePastedText(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = nodeID else { return }
+        let now = Date()
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .text,
+            createdAt: now,
+            content: text,
+            displayName: nil,
+            isExpanded: true,
+            updatedAt: now
+        )
+        Task { await store.appendItemToNode(nodeID: id, item: item) }
+    }
+
+    /// Appends the pasted image to the most-recently-updated `.imageVideo`
+    /// entry on this node, or creates a fresh gallery entry when none exists.
+    private func handlePastedImage(_ image: UIImage) {
+        guard let pending = makePendingImageItem(from: image), let targetNodeID = nodeID else { return }
+        if let existingID = mostRecentMediaEntryID() {
+            Task {
+                await store.appendMediaItems(
+                    toEntryID: existingID,
+                    nodeID: targetNodeID,
+                    mediaItems: [pending]
+                )
+            }
+        } else {
+            Task {
+                await store.addMediaItems(
+                    toNodeID: targetNodeID,
+                    mediaItems: [pending],
+                    description: "",
+                    position: .zero
+                )
+            }
+        }
+    }
+
+    private func handlePastedVideo(_ url: URL) {
+        guard let pending = makePendingVideoItem(from: url), let targetNodeID = nodeID else { return }
+        if let existingID = mostRecentMediaEntryID() {
+            Task {
+                await store.appendMediaItems(
+                    toEntryID: existingID,
+                    nodeID: targetNodeID,
+                    mediaItems: [pending]
+                )
+            }
+        } else {
+            Task {
+                await store.addMediaItems(
+                    toNodeID: targetNodeID,
+                    mediaItems: [pending],
+                    description: "",
+                    position: .zero
+                )
+            }
+        }
+    }
+
+    private func handlePastedFile(_ url: URL, fileType: String) {
+        _ = fileType  // reserved for future per-extension routing
+        guard let targetNodeID = nodeID else { return }
+        if let n = node, n.items.contains(where: { $0.type == .document }) {
+            pendingDocumentURLs = [url]
+            showDocumentAppendModal = true
+        } else {
+            Task { await store.addDocumentEntry(nodeID: targetNodeID, sourceURLs: [url]) }
+        }
+    }
+
+    private func handlePastedMulti(_ items: [ClipboardContent]) {
+        guard let targetNodeID = nodeID else { return }
+        var mediaBatch: [CorpusStore.PendingMediaItem] = []
+        var urlTargets: [String] = []
+        var textBodies: [String] = []
+        var fileURLs: [URL] = []
+
+        for item in items {
+            switch item {
+            case .url(let url):
+                urlTargets.append(url.absoluteString)
+            case .image(let image):
+                if let pending = makePendingImageItem(from: image) {
+                    mediaBatch.append(pending)
+                }
+            case .video(let url):
+                if let pending = makePendingVideoItem(from: url) {
+                    mediaBatch.append(pending)
+                }
+            case .file(let url, _):
+                fileURLs.append(url)
+            case .text(let text):
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { textBodies.append(text) }
+            case .multi, .empty:
+                continue
+            }
+        }
+
+        // Media batch → one gallery destination.
+        if !mediaBatch.isEmpty {
+            let batch = mediaBatch
+            if let existingID = mostRecentMediaEntryID() {
+                Task {
+                    await store.appendMediaItems(
+                        toEntryID: existingID,
+                        nodeID: targetNodeID,
+                        mediaItems: batch
+                    )
+                }
+            } else {
+                Task {
+                    await store.addMediaItems(
+                        toNodeID: targetNodeID,
+                        mediaItems: batch,
+                        description: "",
+                        position: .zero
+                    )
+                }
+            }
+        }
+
+        // Links — serialized inside one Task so clipboard order is preserved.
+        if !urlTargets.isEmpty {
+            let urls = urlTargets
+            Task {
+                for urlString in urls {
+                    await store.appendLinkItem(nodeID: targetNodeID, urlString: urlString)
+                }
+            }
+        }
+
+        // Text — serialized inside one Task for the same ordering reason.
+        if !textBodies.isEmpty {
+            let bodies = textBodies
+            Task {
+                let now = Date()
+                for text in bodies {
+                    let item = NodeItem(
+                        id: UUID().uuidString,
+                        type: .text,
+                        createdAt: now,
+                        content: text,
+                        displayName: nil,
+                        isExpanded: true,
+                        updatedAt: now
+                    )
+                    await store.appendItemToNode(nodeID: targetNodeID, item: item)
+                }
+            }
+        }
+
+        // Files — single modal decision for the whole batch when a
+        // `.document` entry already exists; otherwise direct add.
+        if !fileURLs.isEmpty {
+            if let n = node, n.items.contains(where: { $0.type == .document }) {
+                pendingDocumentURLs = fileURLs
+                showDocumentAppendModal = true
+            } else {
+                let urls = fileURLs
+                Task { await store.addDocumentEntry(nodeID: targetNodeID, sourceURLs: urls) }
+            }
+        }
+    }
+
+    private func mostRecentMediaEntryID() -> String? {
+        node?.items
+            .filter { $0.type == .imageVideo }
+            .max(by: { ($0.updatedAt ?? $0.createdAt) < ($1.updatedAt ?? $1.createdAt) })?
+            .id
+    }
+
+    private func makePendingImageItem(from image: UIImage) -> CorpusStore.PendingMediaItem? {
+        let itemID = UUID().uuidString
+        let ext = "png"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(itemID).\(ext)")
+        guard let data = image.pngData() else { return nil }
+        do {
+            try data.write(to: tempURL)
+        } catch {
+            return nil
+        }
+        return CorpusStore.PendingMediaItem(
+            itemID: itemID,
+            mediaType: .image,
+            sourceURL: tempURL,
+            fileExtension: ext
+        )
+    }
+
+    private func makePendingVideoItem(from sourceURL: URL) -> CorpusStore.PendingMediaItem? {
+        let itemID = UUID().uuidString
+        let ext = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension.lowercased()
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(itemID).\(ext)")
+        let needsScope = sourceURL.startAccessingSecurityScopedResource()
+        defer { if needsScope { sourceURL.stopAccessingSecurityScopedResource() } }
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: tempURL)
+        } catch {
+            return nil
+        }
+        return CorpusStore.PendingMediaItem(
+            itemID: itemID,
+            mediaType: .video,
+            sourceURL: tempURL,
+            fileExtension: ext
+        )
+    }
+
+    // MARK: - Auto-save
+
+    private func saveIfChanged() {
+        guard let node else { return }
+        var updated = node
+        var changed = false
+        if updated.title != editedTitle { updated.title = editedTitle; changed = true }
+        if updated.summary != editedSummary {
+            updated.summary = editedSummary
+            updated.summarySource = .user
+            changed = true
+        }
+        if updated.tags != editedTags {
+            updated.tags = editedTags
+            let editedSet = Set(editedTags)
+            for name in editedTags { updated.tagSources[name] = TagOrigin(source: .user) }
+            for name in updated.tagSources.keys where !editedSet.contains(name) {
+                updated.tagSources.removeValue(forKey: name)
+            }
+            changed = true
+        }
+        guard changed else { return }
+        updated.updatedAt = Date()
+        Task { await store.updateNode(updated) }
+    }
+}
+
+// MARK: - Collection chip (copied from NodeDetailView; private there)
+
+/// Membership chip for the Collections row. Rounded-rect shape + neutral
+/// fill so it reads distinct from the capsule tag pills.
+private struct QuikCaptureCollectionChip: View {
+    let name: String
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "folder")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+            Text(name)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.white.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 7)
+                .stroke(Color.white.opacity(0.25), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+    }
+}
+
+// MARK: - Tag chip (copied from NodeDetailView; private there)
+
+private struct QuikCaptureTagChip: View {
+    let name: String
+    let store: CorpusStore
+    let onRemove: () -> Void
+
+    private var color: Color {
+        if let tag = store.tags.first(where: { $0.name == name }) {
+            return Color(hex: tag.colorHex) ?? .gray
+        }
+        return .gray
     }
 
     var body: some View {
-        ZStack {
-            Color(hex: "#07070A").ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                HStack {
-                    exitPill
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-
-                Spacer()
-
-                CollectionPillRail(
-                    selectedCollectionID: $selectedCollectionID,
-                    lockedID: forcedCollectionID,
-                    onCreateNew: { showCollectionCreation = true }
-                )
-                .padding(.bottom, 12)
-
-                TagPillRail(
-                    selectedTagNames: $selectedTagNames,
-                    onMore: { showTagSheet = true }
-                )
-                .padding(.bottom, 20)
-
-                if emptyClipboardMessageVisible {
-                    Text("Nothing in clipboard yet.")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .padding(.bottom, 24)
-                        .transition(.opacity)
-                }
-
-                HStack(spacing: 0) {
-                    Spacer()
-                    captureButton(symbol: "mic.fill", label: "Voice") {
-                        armNewNodeCapture()
-                        showVoiceCapture = true
-                    }
-                    Spacer()
-                    captureButton(symbol: "camera.fill", label: "Camera") {
-                        armNewNodeCapture()
-                        showCameraCapture = true
-                    }
-                    Spacer()
-                    captureButton(symbol: "pencil", label: "Text") {
-                        prefilledText = ""
-                        armNewNodeCapture()
-                        showTextCapture = true
-                    }
-                    Spacer()
-                    captureButton(symbol: "doc.on.clipboard.fill", label: "Clipboard") {
-                        handleClipboardTap()
-                    }
-                    Spacer()
-                }
-                .padding(.bottom, 48)
-            }
-        }
-        .overlay {
-            if let receipt = linkReceipt {
-                QuikCaptureLinkReceipt(
-                    nodeID: receipt.nodeID,
-                    itemID: receipt.itemID,
-                    onDismiss: { linkReceipt = nil }
-                )
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeInOut(duration: 0.18), value: linkReceipt)
-        .sheet(isPresented: $showVoiceCapture) {
-            VoiceCaptureSheet(targetCollectionID: effectiveCollectionID)
-        }
-        .sheet(isPresented: $showCameraCapture) {
-            CameraCaptureView(targetCollectionID: effectiveCollectionID)
-        }
-        .sheet(isPresented: $showTextCapture) {
-            TextCaptureSheet(targetCollectionID: effectiveCollectionID, initialText: prefilledText)
-        }
-        .sheet(isPresented: $showCollectionCreation) {
-            CollectionCreationSheet { newCollection in
-                // Pin the new collection as the active selection and bump
-                // its recency so it lands at the front of the rail. This
-                // matches the "tap-a-pill" interaction the user just
-                // implicitly performed by choosing to create it.
-                store.markCollectionUsed(newCollection.id)
-                selectedCollectionID = newCollection.id
-            }
-        }
-        .sheet(isPresented: $showTagSheet) {
-            TagSelectionSheet(selectedTagNames: $selectedTagNames)
-        }
-        .onChange(of: store.nodes.count) { _, _ in
-            handlePotentialNewNode()
-        }
-        .onAppear {
-            // c4.4 — pre-select the user's last-used pill on entry. Forced
-            // mode (CollectionView "+" path in c4.7) wins; in that case we
-            // leave selectedCollectionID alone and the locked pill comes
-            // from `effectiveCollectionID = forcedCollectionID` directly.
-            if forcedCollectionID == nil, selectedCollectionID == nil {
-                selectedCollectionID = store.lastUsedCollectionID
-            }
-        }
-    }
-
-    private var exitPill: some View {
-        Button {
-            switch origin {
-            case .dashboard:
-                // In-app entry — return to where the user came from so the
-                // dashboard's nav state stays intact.
-                router.entryMode = .dashboard
-            case .urlScheme:
-                // External entry — suspend the app so the user lands back
-                // on the home screen / origin app instead of being dumped
-                // into the dashboard they never asked to see. Reset the
-                // router before suspending: the process isn't killed (just
-                // backgrounded), so without the reset the next foreground
-                // would land on a stale QuikCapture surface. The
-                // scenePhase→dashboard hook that previously masked this
-                // was removed in 6171312 because it clobbered in-progress
-                // edit sessions on incidental backgrounding.
-                router.entryMode = .dashboard
-                UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-            }
-        } label: {
-            Text(exitPillLabel)
+        HStack(spacing: 4) {
+            Text(name)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color(hex: "#1B59C2"))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var exitPillLabel: String {
-        switch origin {
-        case .dashboard: "← Dashboard"
-        case .urlScheme: "Exit QuikCapture ↩"
-        }
-    }
-
-    private func captureButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        VStack(spacing: 8) {
-            Button(action: action) {
-                Image(systemName: symbol)
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(.black)
-                    .frame(width: 64, height: 64)
-                    .background(Color.white)
-                    .clipShape(Circle())
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
             }
-            .buttonStyle(.plain)
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(color.opacity(0.3))
+        .overlay(Capsule().stroke(color.opacity(0.5), lineWidth: 1))
+        .clipShape(Capsule())
+    }
+}
+
+// MARK: - Fold divider (copied from NodeDetailView; private there)
+
+private struct QuikCaptureFoldDivider: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle()
+                .fill(Color(hexString: "FFFFFF").opacity(0.14))
+                .frame(height: 1)
+            Text("↑ card-visible entries ↑")
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.45))
+                .fixedSize()
+            Rectangle()
+                .fill(Color(hexString: "FFFFFF").opacity(0.14))
+                .frame(height: 1)
+        }
+        .padding(.vertical, 4)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Attributes section (copied from NodeDetailView; private there)
+
+/// Pinned Attributes section for atomic entries (Rating today). Renders
+/// only when the node has ≥1 atomic entry; a fresh capture node never does,
+/// so this is effectively dead on this surface — copied verbatim to keep
+/// the payload-list layout faithful.
+private struct QuikCaptureAttributesSection: View {
+
+    let nodeID: String
+
+    @Environment(CorpusStore.self) private var store
+    @State private var editingItem: NodeItem? = nil
+
+    private var node: Node? {
+        store.nodes.first { $0.id == nodeID }
+    }
+
+    private var atomicItems: [NodeItem] {
+        guard let node else { return [] }
+        let atomicCount = node.items.lazy.filter { $0.type.isAtomic }.count
+        return Array(node.items.prefix(atomicCount))
+    }
+
+    private var addable: [NodeItemType] {
+        let present = Set(atomicItems.map { $0.type })
+        return [NodeItemType.rating].filter { !present.contains($0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(atomicItems) { item in
+                    rowFor(item)
+                }
+            }
+        }
+        .sheet(item: $editingItem) { item in
+            if item.type == .rating, let rating = item.rating {
+                QuikCaptureRatingEditSheet(
+                    itemID: item.id,
+                    nodeID: nodeID,
+                    initialValue: rating.value,
+                    scale: rating.scale
+                )
+                .presentationDetents([.height(260)])
+                .presentationDragIndicator(.visible)
+            }
         }
     }
 
-    // MARK: - Clipboard routing
-
-    private func handleClipboardTap() {
-        Task.detached(priority: .userInitiated) {
-            let url = UIPasteboard.general.url
-            let text = UIPasteboard.general.string
-            await MainActor.run {
-                if let url, url.scheme == "http" || url.scheme == "https" {
-                    createLinkNode(url: url)
-                } else if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    prefilledText = text
-                    armNewNodeCapture()
-                    showTextCapture = true
-                } else {
-                    showEmptyClipboardMessage()
+    private var sectionHeader: some View {
+        HStack(spacing: 8) {
+            Text("ATTRIBUTES")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .tracking(0.6)
+                .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.45))
+            Spacer(minLength: 0)
+            if !addable.isEmpty {
+                Menu {
+                    ForEach(addable, id: \.self) { type in
+                        Button {} label: {
+                            Label(type.defaultDisplayName, systemImage: "plus")
+                        }
+                        .disabled(true)
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.55))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
             }
         }
     }
 
-    // MARK: - Reactive new-node tag application
-
-    /// Snapshot the current node-ID set at the moment the user taps a
-    /// capture button. The `onChange(of: store.nodes.count)` observer
-    /// diffs against this snapshot when the inner sheet's `addNode` lands
-    /// and applies `selectedTagNames` to the new node. 3s timeout
-    /// self-cleans the snapshot if the capture is cancelled or fails.
-    private func armNewNodeCapture() {
-        pendingCaptureSnapshot = Set(store.nodes.map(\.id))
-        captureTimeoutTask?.cancel()
-        captureTimeoutTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(3))
-            guard !Task.isCancelled else { return }
-            pendingCaptureSnapshot = nil
-        }
-    }
-
-    private func handlePotentialNewNode() {
-        guard let snapshot = pendingCaptureSnapshot,
-              let newID = store.nodes.first(where: { !snapshot.contains($0.id) })?.id
-        else { return }
-        let tagsToApply = Array(selectedTagNames)
-        pendingCaptureSnapshot = nil
-        captureTimeoutTask?.cancel()
-        captureTimeoutTask = nil
-        guard !tagsToApply.isEmpty else { return }
-        Task {
-            await store.applyTags(tagsToApply, toNodeID: newID, source: .user)
-        }
-    }
-
-    private func showEmptyClipboardMessage() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            emptyClipboardMessageVisible = true
-        }
-        Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            withAnimation(.easeInOut(duration: 0.2)) {
-                emptyClipboardMessageVisible = false
-            }
-        }
-    }
-
-    // MARK: - Link node creation
-
-    private func createLinkNode(url: URL) {
-        let tagsToApply = Array(selectedTagNames)
-        Task {
-            // AT19.3c commit 6 — receipt overlay. Present immediately after
-            // the node lands in the store so the receipt can resolve the
-            // item; if OG hasn't returned yet the overlay shows State B
-            // (bare URL) and upgrades to State C in-place when applyOGFetch
-            // mutates the store within the 1.0s window. The OG fetch +
-            // title upgrade + AI processing run silently inside
-            // `store.addLinkNode` after this call returns.
-            let (nodeID, itemID) = await store.addLinkNode(
-                url: url,
-                targetCollectionID: effectiveCollectionID
+    @ViewBuilder
+    private func rowFor(_ item: NodeItem) -> some View {
+        switch item.type {
+        case .rating:
+            QuikCaptureRatingAttributeRow(
+                item: item,
+                onTap: { editingItem = item },
+                onDelete: {
+                    Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
+                }
             )
-            if !tagsToApply.isEmpty {
-                await store.applyTags(tagsToApply, toNodeID: nodeID, source: .user)
-            }
-            linkReceipt = LinkReceiptIDs(nodeID: nodeID, itemID: itemID)
+        default:
+            EmptyView()
         }
     }
 }
 
-/// AT19.3c commit 6 — receipt modal shown after a clipboard URL is captured
-/// via QuikCapture. Renders `OGPreviewView` (non-interactive) so the user
-/// sees the same visual treatment they'll get on the canvas, with a
-/// "Web clipping captured" caption above it. Auto-dismisses after 2.0s;
-/// tap anywhere to dismiss early. Because the underlying `NodeItem` is
-/// read from the store on every render, applyOGFetch landing inside the
-/// 2.0s window animates the preview from bare-URL to rich card in place.
-private struct QuikCaptureLinkReceipt: View {
+/// Compact, borderless rating row. Copied from NodeDetailView (private there).
+private struct QuikCaptureRatingAttributeRow: View {
 
-    let nodeID: String
+    let item: NodeItem
+    let onTap: () -> Void
+    let onDelete: () -> Void
+
+    private var rating: Rating { item.rating ?? Rating(value: 0) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(item.type.defaultDisplayName)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
+
+            stars
+                .accessibilityElement()
+                .accessibilityLabel("Rating")
+                .accessibilityValue("\(rating.value) of \(rating.scale) stars")
+
+            Spacer(minLength: 12)
+
+            Menu {
+                Button("Delete", role: .destructive, action: onDelete)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+        }
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onTap)
+    }
+
+    private var stars: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<rating.scale, id: \.self) { idx in
+                let filled = idx < rating.value
+                Image(systemName: filled ? "star.fill" : "star")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(
+                        filled
+                            ? Color(hexString: "FACC15")
+                            : Color(hexString: "FFFFFF").opacity(0.25)
+                    )
+            }
+        }
+    }
+}
+
+/// Minimal rating editor. Copied from NodeDetailView (private there).
+private struct QuikCaptureRatingEditSheet: View {
+
     let itemID: String
-    let onDismiss: () -> Void
+    let nodeID: String
+    let initialValue: Int
+    let scale: Int
 
     @Environment(CorpusStore.self) private var store
-    @State private var visible: Bool = false
+    @State private var value: Int
 
-    private var currentItem: NodeItem? {
-        store.nodes.first(where: { $0.id == nodeID })?
-            .items.first(where: { $0.id == itemID })
+    init(itemID: String, nodeID: String, initialValue: Int, scale: Int) {
+        self.itemID = itemID
+        self.nodeID = nodeID
+        self.initialValue = initialValue
+        self.scale = scale
+        self._value = State(initialValue: initialValue)
     }
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.65)
-                .ignoresSafeArea()
+        VStack(spacing: 24) {
+            Text("Rating")
+                .font(.headline)
+                .foregroundStyle(.white)
+                .padding(.top, 28)
 
-            VStack(spacing: 14) {
-                Text("Web clipping captured")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-
-                if let item = currentItem {
-                    OGPreviewView(
-                        item: item,
-                        nodeID: nodeID,
-                        onCommitURL: { _ in },
-                        interactive: false
-                    )
-                    .padding(14)
-                    .background(Color(hex: "#1A1A20"))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
+            HStack(spacing: 12) {
+                ForEach(1...scale, id: \.self) { star in
+                    Button {
+                        let next = (value == star) ? 0 : star
+                        value = next
+                        Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: next) }
+                    } label: {
+                        Image(systemName: star <= value ? "star.fill" : "star")
+                            .font(.system(size: 36, weight: .medium))
+                            .foregroundStyle(
+                                star <= value
+                                    ? Color(hexString: "FACC15")
+                                    : Color(hexString: "FFFFFF").opacity(0.25)
+                            )
+                            .frame(width: 48, height: 48)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 32)
+
+            Button {
+                value = 0
+                Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: 0) }
+            } label: {
+                Text("Clear")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.plain)
+            .disabled(value == 0)
+            .opacity(value == 0 ? 0.4 : 1)
+
+            Spacer(minLength: 0)
         }
-        .opacity(visible ? 1 : 0)
-        .contentShape(Rectangle())
-        .onTapGesture { dismiss() }
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.18)) { visible = true }
-            Task {
-                try? await Task.sleep(for: .seconds(2.0))
-                dismiss()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(red: 0.027, green: 0.027, blue: 0.039))
+    }
+}
+
+// MARK: - Hero image banner (copied from NodeDetailView; private there)
+
+/// Cover-cropped hero banner. Copied from NodeDetailView (private there).
+/// Only rendered when the node has a chosen cover image — never for a fresh
+/// capture node — but copied to keep `heroZone` a faithful copy.
+private struct QuikCaptureHeroImageBanner: View {
+
+    let node: Node
+    let topInset: CGFloat
+    let width: CGFloat
+
+    @Environment(CorpusStore.self) private var store
+
+    @State private var image: UIImage? = nil
+    @State private var aspect: CGFloat? = nil
+
+    var body: some View {
+        Group {
+            if let image, let aspect {
+                let visibleHeight = max(200, min(420, width / max(aspect, 0.01)))
+                let totalHeight = visibleHeight + topInset
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: totalHeight)
+                    .clipped()
+                    .clipShape(
+                        UnevenRoundedRectangle(
+                            bottomLeadingRadius: 30,
+                            bottomTrailingRadius: 30,
+                            style: .continuous
+                        )
+                    )
+            } else {
+                let totalHeight: CGFloat = 200 + topInset
+                NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
+                    .frame(height: totalHeight)
+                    .clipShape(
+                        UnevenRoundedRectangle(
+                            bottomLeadingRadius: 30,
+                            bottomTrailingRadius: 30,
+                            style: .continuous
+                        )
+                    )
             }
         }
-    }
-
-    private func dismiss() {
-        // Idempotent: both the tap path and the auto-dismiss timer call
-        // this; whichever fires second is a no-op so `onDismiss` runs once.
-        guard visible else { return }
-        withAnimation(.easeIn(duration: 0.18)) { visible = false }
-        Task {
-            try? await Task.sleep(for: .milliseconds(180))
-            onDismiss()
+        .task(id: node.coverImageRelativePath) {
+            image = nil
+            aspect = nil
+            guard node.coverImageRelativePath != nil,
+                  let url = await store.coverImageURL(for: node) else { return }
+            let scale = UIScreen.main.scale
+            let maxPixel = Int(max(width, 420) * scale)
+            let decoded: (UIImage, CGFloat)? = await Task.detached(priority: .userInitiated) {
+                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                let opts: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixel
+                ]
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
+                      cg.height > 0 else { return nil }
+                let img = UIImage(cgImage: cg, scale: scale, orientation: .up)
+                let aspect = CGFloat(cg.width) / CGFloat(cg.height)
+                return (img, aspect)
+            }.value
+            guard let decoded else { return }
+            image = decoded.0
+            aspect = decoded.1
         }
     }
 }

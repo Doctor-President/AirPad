@@ -49,6 +49,13 @@ struct NodeCardView: View {
     private static let hairline = Color(red: 1.0, green: 0.925, blue: 0.804).opacity(0.22)
     private static let cornerRadius: CGFloat = 30
 
+    // R6 — raised-panel float cue, copied from the Note panel's rim treatment
+    // (TextEntryBody.Panel) and extended with a faint specular sheen. Two
+    // intensities, dial on device. Keep faint: the gradient art stays the hero.
+    private static let rimOpacity: Double = 0.24    // top-edge white rim light
+    private static let sheenOpacity: Double = 0.14  // specular top sheen
+    private static let rimWidth: CGFloat = 1.5       // rim hairline width
+
     var body: some View {
         if animateEntry {
             cardBody
@@ -105,8 +112,24 @@ struct NodeCardView: View {
                     travelingScrim
                     editorialContent(cardHeight: geo.size.height)
                     watermark
+                    sheen
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                // R6 — top-edge rim light (float cue). Brightest along the
+                // upper edge, fading down the sides, so the face reads as a
+                // raised panel catching ambient light from above.
+                .overlay(
+                    RoundedRectangle(cornerRadius: Self.cornerRadius)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(Self.rimOpacity), Color.white.opacity(0)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: Self.rimWidth
+                        )
+                        .allowsHitTesting(false)
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: Self.cornerRadius)
                         .stroke(Color.white, lineWidth: isSelecting && isPicked ? 3 : 0)
@@ -152,6 +175,24 @@ struct NodeCardView: View {
                 .init(color: Color.clear,               location: 0.20),
                 .init(color: Color.clear,               location: 0.80),
                 .init(color: Color.black.opacity(0.52), location: 1.0)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Specular sheen
+    // R6 — a faint glassy highlight concentrated at the very top edge, fading
+    // out fast so it re-lights the top of the raised panel without washing the
+    // gradient art. Pairs with the top-edge rim light for the float cue.
+
+    private var sheen: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color.white.opacity(Self.sheenOpacity),        location: 0.0),
+                .init(color: Color.white.opacity(Self.sheenOpacity * 0.35), location: 0.12),
+                .init(color: Color.clear,                                   location: 0.40)
             ],
             startPoint: .top,
             endPoint: .bottom

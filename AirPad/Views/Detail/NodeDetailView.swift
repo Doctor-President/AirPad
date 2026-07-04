@@ -39,10 +39,12 @@ struct NodeDetailView: View {
 
     /// Capture-chrome layout dials (T's eye is the spec — nudge these).
     private enum CaptureChrome {
-        static let buttonSize: CGFloat = 48
-        static let buttonSpacing: CGFloat = 10   // tightened so the pill fits the row
+        static let buttonSpacing: CGFloat = 10
         static let barHPadding: CGFloat = 20
         static let barBottomPadding: CGFloat = 10
+        /// Extra lift for the pill while the keyboard is up, so it clears the
+        /// rich-text formatting toolbar (a 56pt `inputAccessoryView`).
+        static let keyboardToolbarClearance: CGFloat = 56
     }
 
     /// "Done" exit: hand off to the Dashboard to reset navigation to Recents,
@@ -51,10 +53,8 @@ struct NodeDetailView: View {
         router.exitCaptureToRecents = true
     }
 
-    /// The capture bar: the four primitive-type buttons (Audio / Camera / File /
-    /// Link) in thumb reach, plus a state-driven pill at the far right. The note
-    /// itself (tap for text) and the PastePad live in the scroll content — Text
-    /// and Paste are deliberately not buttons here.
+    /// The capture bar: a single state-driven Cancel/Done pill. Entry types
+    /// are added via the node's "+" flyout — the bar stays calm.
     ///
     /// Pill: one button, two truths. Empty session → **Cancel** (bail, discard
     /// the blank node). Any content → **Done** (exit to Recents, node on top).
@@ -62,18 +62,6 @@ struct NodeDetailView: View {
     private func captureChrome(node: Node) -> some View {
         let hasContent = hasCaptured(node) || router.captureDraftHasText
         HStack(spacing: CaptureChrome.buttonSpacing) {
-            // The four type-buttons show in the launchpad state; while writing
-            // (keyboard up) they collapse into the "+" (see floatingAddButton),
-            // leaving the keyboard zone to the formatting bar.
-            if captureButtonsExpanded {
-                captureTypeButton(symbol: "waveform", label: "Audio") { captureMode = .voice }
-                captureTypeButton(symbol: "camera.fill", label: "Camera") { captureMode = .camera }
-                captureTypeButton(symbol: "doc.fill", label: "File") { showDocumentPicker = true }
-                captureTypeButton(symbol: "link", label: "Link") {
-                    linkDraft = ""
-                    showLinkAddAlert = true
-                }
-            }
             Spacer(minLength: 8)
             Button {
                 if hasContent { exitCaptureToRecents() } else { cancelCapture(nodeID: node.id) }
@@ -89,7 +77,11 @@ struct NodeDetailView: View {
             .animation(.easeInOut(duration: 0.2), value: hasContent)
         }
         .padding(.horizontal, CaptureChrome.barHPadding)
-        .padding(.bottom, CaptureChrome.barBottomPadding)
+        // Lift above the rich-text toolbar while writing; sit at the normal
+        // bottom on the launchpad (keyboard down).
+        .padding(.bottom, CaptureChrome.barBottomPadding
+            + (keyboardVisible ? CaptureChrome.keyboardToolbarClearance : 0))
+        .animation(.easeInOut(duration: 0.2), value: keyboardVisible)
     }
 
     /// Cancel exit: discard the blank node (nothing was captured) and leave
@@ -100,18 +92,6 @@ struct NodeDetailView: View {
         router.captureDraftHasText = false
         dismiss()
         Task { await store.deleteNode(id: nodeID) }
-    }
-
-    private func captureTypeButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: CaptureChrome.buttonSize, height: CaptureChrome.buttonSize)
-                .background(Color.white.opacity(0.12), in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 
     // Editable fields (mirrored from node, written back on disappear)
@@ -125,10 +105,6 @@ struct NodeDetailView: View {
     // inline bottom composer triad with a single floating Menu button that
     // routes to one of six entry types.
     @State private var captureMode: CaptureMode? = nil
-    /// Capture mode: whether the four type-buttons are expanded. Collapses into
-    /// the "+" when the keyboard rises (writing owns the keyboard zone); tapping
-    /// the "+" re-expands them.
-    @State private var captureButtonsExpanded = true
     @State private var showPromoteConfirmation = false
     @State private var showingNewTagSheet = false
     @State private var showingNewCollectionSheet = false
@@ -534,12 +510,7 @@ struct NodeDetailView: View {
             // RichTextEditor body via accessory toolbar). Stage 3.1b also
             // hides it during reorder mode — no new entries while
             // restructuring.
-            // Normal: shown when the keyboard's down and not reordering.
-            // Capture mode: shown as the COLLAPSED state — when writing folds the
-            // four buttons away, the "+" takes their place in its usual spot.
-            if !reorderController.isReorderActive
-                && ((!keyboardVisible && !isCaptureMode)
-                    || (isCaptureMode && !captureButtonsExpanded)) {
+            if !keyboardVisible && !reorderController.isReorderActive {
                 floatingAddButton
                     .padding(.trailing, 24)
                     // Lift above the persistent Librarian peek pill so the
@@ -558,14 +529,6 @@ struct NodeDetailView: View {
         .safeAreaInset(edge: .bottom) {
             if isCaptureMode {
                 captureChrome(node: node)
-            }
-        }
-        // Capture mode: writing (keyboard up) collapses the four buttons into
-        // the "+"; keyboard down (launchpad) expands them again.
-        .onChange(of: keyboardVisible) { _, visible in
-            guard isCaptureMode else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                captureButtonsExpanded = !visible
             }
         }
         // Matched-gray detail surface: same warm tone as the note panel
@@ -902,74 +865,56 @@ struct NodeDetailView: View {
     /// brief: Text, Camera, Voice, Link, Document, More... (More... is a
     /// no-op stub seat for 3.1a; the eventual sheet ships when there's
     /// something to put in it).
-    @ViewBuilder
     private var floatingAddButton: some View {
-        if isCaptureMode {
-            // Capture mode: the "+" IS the collapsed four-button row — tapping it
-            // re-expands them, rather than opening the add-entry menu.
+        Menu {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { captureButtonsExpanded = true }
+                // Inline append: create an empty text entry, expanded, and
+                // mark it for autofocus so the body's editor raises the
+                // keyboard on appearance. No sheet — the card itself is
+                // the writing surface inside a node.
+                Task { await store.appendEmptyTextItem(nodeID: nodeID) }
             } label: {
-                plusLabel
+                Label("Text", systemImage: "pencil")
             }
-            .buttonStyle(.plain)
-        } else {
+            Button { captureMode = .camera } label: {
+                Label("Camera", systemImage: "camera.fill")
+            }
+            Button { captureMode = .voice } label: {
+                Label("Voice", systemImage: "mic.fill")
+            }
+            Button {
+                linkDraft = ""
+                showLinkAddAlert = true
+            } label: {
+                Label("Link", systemImage: "link")
+            }
+            Button {
+                showDocumentPicker = true
+            } label: {
+                Label("Document", systemImage: "doc.fill")
+            }
+            Divider()
+            // Stage 4.8 — More… houses the typed-entry catalog (Rating first);
+            // gated by `hasRating` so the singleton contract holds.
             Menu {
                 Button {
-                    // Inline append: create an empty text entry, expanded, and
-                    // mark it for autofocus so the body's editor raises the
-                    // keyboard on appearance. No sheet — the card itself is
-                    // the writing surface inside a node.
-                    Task { await store.appendEmptyTextItem(nodeID: nodeID) }
+                    Task { await store.appendRatingItem(nodeID: nodeID) }
                 } label: {
-                    Label("Text", systemImage: "pencil")
+                    Label("Rating", systemImage: "star.fill")
                 }
-                Button { captureMode = .camera } label: {
-                    Label("Camera", systemImage: "camera.fill")
-                }
-                Button { captureMode = .voice } label: {
-                    Label("Voice", systemImage: "mic.fill")
-                }
-                Button {
-                    linkDraft = ""
-                    showLinkAddAlert = true
-                } label: {
-                    Label("Link", systemImage: "link")
-                }
-                Button {
-                    showDocumentPicker = true
-                } label: {
-                    Label("Document", systemImage: "doc.fill")
-                }
-                Divider()
-                // Stage 4.8 — More… houses the typed-entry catalog (Rating first);
-                // gated by `hasRating` so the singleton contract holds.
-                Menu {
-                    Button {
-                        Task { await store.appendRatingItem(nodeID: nodeID) }
-                    } label: {
-                        Label("Rating", systemImage: "star.fill")
-                    }
-                    .disabled(hasRating)
-                } label: {
-                    Label("More…", systemImage: "ellipsis")
-                }
+                .disabled(hasRating)
             } label: {
-                plusLabel
+                Label("More…", systemImage: "ellipsis")
             }
+        } label: {
+            Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+                .foregroundStyle(.black)
+                .frame(width: 56, height: 56)
+                .background(.white)
+                .clipShape(Circle())
+                .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
         }
-    }
-
-    /// The white circular "+" glyph shared by the add-entry menu and the
-    /// capture-mode collapsed control.
-    private var plusLabel: some View {
-        Image(systemName: "plus")
-            .font(.title2.weight(.semibold))
-            .foregroundStyle(.black)
-            .frame(width: 56, height: 56)
-            .background(.white)
-            .clipShape(Circle())
-            .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
     }
 
     // MARK: - Rating singleton gate

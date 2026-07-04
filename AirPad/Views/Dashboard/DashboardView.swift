@@ -132,6 +132,14 @@ struct DashboardView: View {
                 path.append(.node(node))
                 router.pendingNodeNavigationID = nil
             }
+            // Capture-mode "Done" → land in Recents with the fresh node on top.
+            // Replacing the path drops the capture detail (which clears
+            // `isCapturing` + restores the Librarian via ContentView).
+            .onChange(of: router.exitCaptureToRecents) { _, exit in
+                guard exit else { return }
+                path = [.recents]
+                router.exitCaptureToRecents = false
+            }
             // Authoritative depth signal. `path` is [DashboardRoute] mixing
             // the pushed `.recents` landing with node details, so raw
             // `path.count` would over-count — `detailDepth(in:)` counts only
@@ -365,7 +373,16 @@ struct DashboardView: View {
                 Spacer()
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    router.captureOverlay = CaptureOverlayContext(scope: .corpus)
+                    // Capture mode: a fresh blank node opens in the note primitive
+                    // (keyboard up) with the Librarian ducked. Reuses the existing
+                    // pendingNodeNavigationID handoff to push the detail route.
+                    Task {
+                        guard let node = await store.createCaptureNode() else { return }
+                        router.isCapturing = true
+                        router.captureNodeID = node.id
+                        router.captureDraftHasText = false
+                        router.pendingNodeNavigationID = node.id
+                    }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 24, weight: .semibold))

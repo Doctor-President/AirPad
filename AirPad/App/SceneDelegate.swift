@@ -19,7 +19,8 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
         for urlContext in urlContexts {
             let url = urlContext.url
             if url.scheme == "airpad", url.host == "quikcapture" {
-                AppRouter.shared?.entryMode = .quikCapture(forcedCollectionID: nil, origin: .urlScheme)
+                // Open the standalone QuikCapture screen directly (no routing).
+                AppRouter.shared?.entryMode = .quikCapture
                 return
             }
         }

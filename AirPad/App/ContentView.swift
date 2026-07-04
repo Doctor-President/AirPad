@@ -26,8 +26,8 @@ struct ContentView: View {
                     DashboardView(initialRoute: nil)
                 case .recents:
                     DashboardView(initialRoute: .recents)
-                case .quikCapture(let forcedCollectionID, let origin):
-                    QuikCaptureView(forcedCollectionID: forcedCollectionID, origin: origin)
+                case .quikCapture:
+                    QuikCaptureView()
                 case .canvas:
                     CanvasChrome(scope: .corpus)
                 case .collectionCanvas(let id):
@@ -137,7 +137,7 @@ struct ContentView: View {
         // our `move(to: .tip)` runs, producing a posture flash.
         .floatingPanelContentMode(.fitToBounds)
         // Single existence rule: canvas / collectionCanvas raise the panel
-        // to peek; dashboard / quikCapture duck it offscreen. Panel stays
+        // to peek; dashboard / recents duck it offscreen. Panel stays
         // mounted across all modes — never torn down. `.hidden` is not in
         // the layout's anchor set, so the duck goes through `hide()` (which
         // routes to a library-default offscreen anchor) — keeping `.tip`
@@ -159,7 +159,7 @@ struct ContentView: View {
         // doesn't render over the capture UI (Librarian is the topmost
         // layout resident — same reason QuikCapture mode ducks above).
         // On dismiss restore per current entry mode; if we're on
-        // dashboard / quikCapture the panel was already ducked so this
+        // dashboard / recents the panel was already ducked so this
         // is a no-op there.
         .onChange(of: router.captureOverlay) { _, ctx in
             if ctx != nil {
@@ -249,8 +249,8 @@ struct ContentView: View {
         }
     }
 
-    /// Collapse the four entry modes to a Librarian scope.
-    /// `canvas` and the two ducked modes (dashboard/quikCapture) show
+    /// Collapse the entry modes to a Librarian scope.
+    /// `canvas` and the two ducked modes (dashboard/recents) show
     /// the whole-corpus slice; only an explicit collection canvas
     /// scopes the Librarian to that collection. The Librarian reads
     /// this on first appear in a new host and seeds

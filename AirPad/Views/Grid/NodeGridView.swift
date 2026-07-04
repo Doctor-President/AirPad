@@ -51,6 +51,30 @@ struct NodeGridView: View {
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
+    // R6 — raised-panel float cue on grid tiles: mirrors NodeCardView's
+    // top-edge rim light + specular sheen, tuned separately for the smaller
+    // 14pt-radius tile. Two faint intensities, dial on device — the gradient
+    // art stays the hero. The tile owns no clip (NodeGridView clips at 14), so
+    // the cue is applied here around that clip.
+    private static let tileRimOpacity: Double = 0.24    // top-edge white rim light
+    private static let tileSheenOpacity: Double = 0.14  // specular top sheen
+    private static let tileRimWidth: CGFloat = 1.5       // rim hairline width
+
+    /// Faint glassy highlight at the tile's top edge, fading out fast. Applied
+    /// pre-clip so it's masked to the rounded tile shape.
+    private static var tileSheen: some View {
+        LinearGradient(
+            stops: [
+                .init(color: Color.white.opacity(tileSheenOpacity),        location: 0.0),
+                .init(color: Color.white.opacity(tileSheenOpacity * 0.35), location: 0.12),
+                .init(color: Color.clear,                                  location: 0.40)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
+    }
+
     private var nodes: [Node] { store.filteredNodes(in: scope) }
 
     /// Per-sort scrubber mode. >15 threshold skips the rail on tiny corpora;
@@ -176,7 +200,24 @@ struct NodeGridView: View {
                                 columnCount: columnCount
                             )
                             .frame(width: cellW, height: cellH)
+                            // R6 — specular sheen over the tile content, masked
+                            // to the tile shape by the clip that follows.
+                            .overlay(Self.tileSheen)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
+                            // R6 — top-edge rim light on the rounded edge.
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .strokeBorder(
+                                        LinearGradient(
+                                            colors: [Color.white.opacity(Self.tileRimOpacity),
+                                                     Color.white.opacity(0)],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        ),
+                                        lineWidth: Self.tileRimWidth
+                                    )
+                                    .allowsHitTesting(false)
+                            )
                             .matchedTransitionSource(id: node.id, in: zoomNamespace)
                             .id(node.id)
                             .contentShape(Rectangle())

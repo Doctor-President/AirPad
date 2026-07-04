@@ -108,7 +108,11 @@ struct CoverFlowView: View {
     private var carousel: some View {
         let screenW = UIScreen.main.bounds.width
         let cardWidth = screenW * CGFloat(centerWidthFraction)
-        let cardHeight = cardWidth * 7.0 / 5.0
+        // R7 — carousel cards ride taller than the 5:7 grid face (was 7/5 =
+        // 1.4). One dial: raise this ratio to grow card height. Fits the
+        // vertical budget on Pro Max (top 110 + bottom peek+56 reserved).
+        let cardHeightRatio: CGFloat = 1.56
+        let cardHeight = cardWidth * cardHeightRatio
         let edgeMargin = (screenW - cardWidth) / 2.0
 
         // Reserved bands above/below the carousel. Top matches

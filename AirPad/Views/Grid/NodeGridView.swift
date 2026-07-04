@@ -8,10 +8,10 @@ import SwiftUI
 // is driven by the top-center DensityPill in CanvasChrome; the pinch
 // gesture was retired so there's a single canonical control.
 // No header, sort UI, search, graze, or snapshot cache here — those
-// land in later passes. The carousel (NodeListView) is parked, not
+// land in later passes. The carousel (VerticalScrollView) is parked, not
 // deleted; CanvasChrome's else-branch points here instead.
 //
-// Mirrors NodeListView's shell wiring verbatim so the R5
+// Mirrors VerticalScrollView's shell wiring verbatim so the R5
 // `detailViewDepth` invariant + router-driven Librarian-nav handoff
 // keep working unchanged across the swap.
 
@@ -25,7 +25,7 @@ struct NodeGridView: View {
     var scope: CanvasScope = .corpus
 
     @State private var navigationPath = NavigationPath()
-    /// Mirrors NodeListView's dedupe — Node ID currently sitting at
+    /// Mirrors VerticalScrollView's dedupe — Node ID currently sitting at
     /// the top of the navigation stack after a router-driven push.
     @State private var currentDetailNodeID: String? = nil
 
@@ -84,7 +84,7 @@ struct NodeGridView: View {
                 gridContent
 
                 // Hide the "+" whenever the Librarian is raised above peek
-                // (fix-pass v3 Item 2a) — same gating as NodeListView.
+                // (fix-pass v3 Item 2a) — same gating as VerticalScrollView.
                 if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
                     VStack {
                         Spacer()
@@ -124,12 +124,12 @@ struct NodeGridView: View {
             }
         }
         .onAppear {
-            // Clamp any out-of-ladder values back into {1, 2, 3}. 1 routes
-            // to CoverFlowView at the CanvasChrome switch; this host only
-            // ever runs at 2 or 3, but the clamp leaves 1 alone so the
-            // density pill can swap to Cover Flow without first bouncing
-            // through a re-clamp here.
-            if columnCount != 1 && columnCount != 2 && columnCount != 3 {
+            // Clamp any out-of-ladder values back into {1, 2, 3, 4}. This
+            // host only ever runs at 2 or 3; 1 routes to CoverFlowView and 4
+            // to VerticalScrollView at the CanvasChrome switch, so the clamp
+            // leaves both alone so the density pill can swap to those bodies
+            // without first bouncing through a re-clamp here.
+            if columnCount != 1 && columnCount != 2 && columnCount != 3 && columnCount != 4 {
                 columnCount = 2
             }
             haptic.prepare()

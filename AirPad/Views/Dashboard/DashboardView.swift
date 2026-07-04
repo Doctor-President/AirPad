@@ -12,7 +12,7 @@ import SwiftUI
 ///      mode flip. User-collection rows + Journal route to a scoped canvas
 ///      via `router.entryMode = .collectionCanvas(id:)` (Canvas Chrome arc
 ///      D1c — was a NavigationStack push pre-D1c, but the inner stack in
-///      CanvasView/NodeListView collided with the dashboard's outer one).
+///      CanvasView/VerticalScrollView collided with the dashboard's outer one).
 ///   4. Persistent floating "+" bottom-right — routes to QuikCapture with
 ///      `.dashboard` origin so the exit pill returns here rather than
 ///      suspending the app (c4.6).

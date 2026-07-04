@@ -48,7 +48,7 @@ struct ContentView: View {
             // is active without changing the entry mode itself. Navigation
             // is deferred to the active surface via
             // `router.pendingNodeNavigationID` — the NavigationStack-owning
-            // view (Dashboard, CanvasView, NodeListView) observes that
+            // view (Dashboard, CanvasView, VerticalScrollView) observes that
             // field and pushes onto its own path.
             if let ctx = router.captureOverlay {
                 CaptureOverlayView(
@@ -226,7 +226,7 @@ struct ContentView: View {
         // Mirror the panel detent onto the router (fix-pass v3 Item 2a)
         // so views without a direct handle on `panelState` can gate
         // themselves on peek vs raised — the "+" capture trigger in
-        // CanvasView / NodeListView uses this.
+        // CanvasView / VerticalScrollView uses this.
         .onChange(of: panelState.state) { _, newState in
             router.librarianAtPeek = (newState == .tip)
         }

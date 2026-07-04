@@ -217,10 +217,19 @@ final class CorpusStore {
     /// 2026-06. Coalescing on read means a user who last used Thematic
     /// lands on Recency the next time the canvas opens, instead of a
     /// now-hidden sort order.
+    ///
+    /// Same coalescing for `.list`: the old full-card vertical scroll it
+    /// used to select now lives inside Card View (`.grid`, vertical-scroll
+    /// density segment), and `.list` is reserved for a future compact-list
+    /// surface (currently "Coming soon"). A user who last used the old List
+    /// mode lands in Card View instead of an unavailable mode.
     func filterState(for scope: CanvasScope) -> FilterState {
         var state = filterStates[scope.key] ?? FilterState()
         if state.sortOrder == .thematic {
             state.sortOrder = .recency
+        }
+        if state.viewMode == .list {
+            state.viewMode = .grid
         }
         return state
     }
@@ -236,7 +245,7 @@ final class CorpusStore {
     /// Number of NodeDetailViews currently on screen. Stacked details
     /// (search-result tap from inside a detail) push this to 2; a single
     /// detail is 1; no detail is 0. Writers: each NavigationStack host
-    /// (CanvasView, NodeListView, RecentsView, DashboardView) asserts
+    /// (CanvasView, VerticalScrollView, RecentsView, DashboardView) asserts
     /// `detailViewDepth = path.count` on every `path.count` change and
     /// on its own `.onAppear`. `path` is the authoritative depth signal:
     /// it commits at push/pop and can't drift, unlike the prior
@@ -245,7 +254,7 @@ final class CorpusStore {
     var detailViewDepth: Int = 0
 
     /// True while any NodeDetailView is on screen. Readers (CanvasChrome
-    /// toolbar gate, NodeListView fade, etc.) stay correct — only goes
+    /// toolbar gate, VerticalScrollView fade, etc.) stay correct — only goes
     /// false when the last detail closes (depth → 0).
     var isInDetailView: Bool { detailViewDepth > 0 }
 

@@ -31,7 +31,7 @@ extension ViewMode {
         case .systemGraph: return "System Graph"
         case .userGraph:   return "User Graph"
         case .list:        return "List"
-        case .grid:        return "Grid"
+        case .grid:        return "Card View"
         case .timeline:    return "Timeline"
         }
     }
@@ -46,13 +46,15 @@ extension ViewMode {
         }
     }
 
-    /// `false` for C1's stub modes — UI surfaces them with a "Coming soon"
-    /// affordance but still allows tap-selection (canvas mounts the
-    /// coming-soon overlay; gates non-functional substrate ops).
+    /// `false` for not-yet-built modes — UI surfaces them dimmed with a
+    /// "Coming soon" subtitle and a no-op tap. `.list` is reserved here for
+    /// a future compact-list surface (the old full-card vertical scroll it
+    /// used to name now lives inside Card View as the vertical-scroll
+    /// presentation — see `VerticalScrollView`).
     var isAvailable: Bool {
         switch self {
-        case .systemGraph, .list, .grid: return true
-        case .userGraph, .timeline:      return false
+        case .systemGraph, .grid:       return true
+        case .userGraph, .list, .timeline: return false
         }
     }
 }

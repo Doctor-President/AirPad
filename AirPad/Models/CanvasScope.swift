@@ -3,7 +3,7 @@ import Foundation
 /// What slice of the corpus a canvas surface is rendering.
 ///
 /// Introduced in the Canvas Chrome + Collection Canvas arc (A1) so a single
-/// `CanvasView` / `NodeListView` can render either the full corpus or the
+/// `CanvasView` / `VerticalScrollView` can render either the full corpus or the
 /// members of a specific collection without forking the view tree. The
 /// `CorpusStore` exposes scope-aware accessors (`nodes(in:)`,
 /// `filteredNodes(in:)`, `visibleNodes(in:)`) that resolve membership.

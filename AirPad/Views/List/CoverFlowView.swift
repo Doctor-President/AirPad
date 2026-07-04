@@ -113,21 +113,26 @@ struct CoverFlowView: View {
     /// derives from the same fraction so the first/last cards can settle
     /// near center under `.viewAligned`.
     private var carousel: some View {
-        let screenW = UIScreen.main.bounds.width
+        GeometryReader { geo in
+        let screenW = geo.size.width
         let cardWidth = screenW * CGFloat(centerWidthFraction)
-        // R7 — carousel cards ride taller than the 5:7 grid face (was 7/5 =
-        // 1.4). One dial: raise this ratio to grow card height. Fits the
-        // vertical budget on Pro Max (top 110 + bottom peek+56 reserved).
-        let cardHeightRatio: CGFloat = 1.56
-        let cardHeight = cardWidth * cardHeightRatio
+        // 25% height — carousel cards ride 1.95× width (+25% over R7's 1.56,
+        // itself up from the 5:7 grid face's 7/5 = 1.4). One dial. Clamped
+        // below to the reserved band so the taller card never overflows/clips.
+        let cardHeightRatio: CGFloat = 1.95
         let edgeMargin = (screenW - cardWidth) / 2.0
 
-        // Reserved bands above/below the carousel. Top matches
-        // NodeGridView.topInset so the back/chrome row clears; bottom
-        // covers the density-pill zone (Librarian peek + pill height +
-        // margins). Equal `Spacer`s between them center the card visually.
-        let topReserve: CGFloat = 110
-        let bottomReserve: CGFloat = LibrarianPanelLayout.peekDetentHeight + 56
+        // Reserved bands above/below the carousel. Top clears the back/chrome
+        // row; bottom covers the Librarian peek + density-pill zone. Trimmed
+        // from R7's (110 / peek+56) to give the taller card room; equal
+        // `Spacer`s between them centre the card in the leftover space.
+        let topReserve: CGFloat = 90
+        let bottomReserve: CGFloat = LibrarianPanelLayout.peekDetentHeight + 8
+
+        // Clamp the +25% target to the space actually available between the
+        // reserves (measured via GeometryReader) so it can't overflow/clip.
+        let availableHeight = max(0, geo.size.height - topReserve - bottomReserve)
+        let cardHeight = min(cardWidth * cardHeightRatio, availableHeight)
 
         // R8 — distance between adjacent card centres (card width + the
         // negative inter-card spacing). Under `.viewAligned` + symmetric
@@ -181,9 +186,7 @@ struct CoverFlowView: View {
             // R8 — live scroll offset → continuous centred-card index. Fires
             // every frame during a drag/deceleration, so the zIndex ramp above
             // reorders continuously (no settle-time pop, no wrong card on top).
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
-                geo.contentOffset.x
-            } action: { _, offsetX in
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, offsetX in
                 centerFraction = cardStride > 0 ? offsetX / cardStride : 0
             }
             .frame(height: cardHeight)
@@ -195,6 +198,7 @@ struct CoverFlowView: View {
             }
             Spacer(minLength: 0)
             Color.clear.frame(height: bottomReserve)
+        }
         }
     }
 

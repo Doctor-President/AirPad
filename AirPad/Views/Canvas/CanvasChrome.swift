@@ -6,7 +6,7 @@ import SwiftUI
 /// cluster collapsed to a single ellipsis trigger in C3 (this commit).
 ///
 /// Scope-aware pieces:
-///   - body switcher passes `scope` into `CanvasView` / `NodeListView`
+///   - body switcher passes `scope` into `CanvasView` / `VerticalScrollView`
 ///   - `ChromeBar`'s select segment enters selection on this scope
 ///   - view-mode / filter reads + writes use `store.filterState(for: scope)`
 ///     and `setFilterState(_, for: scope)`; `FilterPanelView` mirrors
@@ -14,7 +14,7 @@ import SwiftUI
 ///   - Back chevron unconditionally returns to dashboard via the router.
 ///     Both corpus and collection canvases route in via `AppRouter.entryMode`
 ///     (D1c — was a NavigationStack push pre-D1c, but the inner stack in
-///     CanvasView/NodeListView collided with the dashboard's outer stack).
+///     CanvasView/VerticalScrollView collided with the dashboard's outer stack).
 ///   - Settings and Quarantine rows operate on global state regardless of
 ///     scope. Collection canvases share the same settings/quarantine surfaces.
 struct CanvasChrome: View {
@@ -25,9 +25,9 @@ struct CanvasChrome: View {
     @Environment(CorpusStore.self) private var store
     @Environment(QuarantineStore.self) private var quarantineStore
     @Environment(SelectionService.self) private var selection
-    /// Body-switcher dispatch in the default branch: count == 1 → Cover Flow
-    /// primitive; 2 or 3 → NodeGridView. Same key the grid + density pill
-    /// read, so the pill swaps the body live.
+    /// Card View presentation dispatch (default branch): count == 1 → Cover
+    /// Flow carousel; 4 → VerticalScrollView; 2 or 3 → NodeGridView. Same key
+    /// the grid + density pill read, so the pill swaps the body live.
     @AppStorage("gridColumnCount") private var gridColumnCount: Int = 2
     @State private var showFilterPanel = false
     @State private var showSettings = false
@@ -40,8 +40,8 @@ struct CanvasChrome: View {
     #if DEBUG
     /// DEBUG-only — Solar Flare material spike tuner. Mounted here in
     /// CanvasChrome (not inside CanvasView/NodeGridView/etc.) so the
-    /// ☀︎ trigger is reachable across every body mode (graph, list,
-    /// grid, cover flow). NOT inside the Librarian panel surface —
+    /// ☀︎ trigger is reachable across every body mode (graph, grid,
+    /// carousel, vertical scroll). NOT inside the Librarian panel surface —
     /// the FloatingPanel eats touches inside its own bounds (the
     /// repeated past mistake). Self-deletes once the sf.* values are
     /// baked into SolarFlareMaterial as literals.
@@ -66,7 +66,7 @@ struct CanvasChrome: View {
 
     var body: some View {
         ZStack {
-            // Main content — switches between graph and list mode. Each
+            // Main content — switches between graph and Card View. Each
             // owns its own NavigationStack; the floating "+" trigger lives
             // inside them so navigation handoff from the in-app capture
             // overlay can push onto the local path.
@@ -74,15 +74,19 @@ struct CanvasChrome: View {
                 switch filterState.viewMode {
                 case .systemGraph:
                     CanvasView(scope: scope)
-                case .list:
-                    NodeListView(scope: scope)
                 default:
-                    // Density-pill drives the dispatch: Full (1) = Cover Flow
-                    // 3D carousel; 2/3 = uniform-tile grid. Both share the
-                    // `gridColumnCount` key so the pill swaps the body live.
-                    if gridColumnCount == 1 {
+                    // Card View. The density pill drives the presentation via
+                    // the shared `gridColumnCount` key so it swaps the body
+                    // live: 1 = Cover Flow 3D carousel; 4 = vertical-scroll
+                    // full cards; 2/3 = uniform-tile grid. (`.list` is a
+                    // coming-soon future surface, coalesced to `.grid` on read
+                    // in the store, so it never reaches this branch.)
+                    switch gridColumnCount {
+                    case 1:
                         CoverFlowView(scope: scope)
-                    } else {
+                    case 4:
+                        VerticalScrollView(scope: scope)
+                    default:
                         NodeGridView(scope: scope)
                     }
                 }
@@ -154,8 +158,7 @@ struct CanvasChrome: View {
                 if !store.isInDetailView
                     && !selection.isActive
                     && router.librarianAtPeek
-                    && filterState.viewMode != .systemGraph
-                    && filterState.viewMode != .list {
+                    && filterState.viewMode != .systemGraph {
                     VStack {
                         Spacer()
                         ZStack {
@@ -463,10 +466,12 @@ private struct SortMenu: View {
 
 // MARK: - Density pill
 
-/// Bottom-anchored segmented density control. Three SF Symbol segments —
-/// tall card (Cover Flow), 2x2 grid, 3x3 grid — driving the same
+/// Bottom-anchored segmented Card View presentation control. Four SF Symbol
+/// segments — tall card (Cover Flow carousel), 2x2 grid, 3x3 grid, and
+/// vertical scroll (full-card stack) — driving the same
 /// `@AppStorage("gridColumnCount")` the body switcher and NodeGridView
-/// read. Replaces the retired MagnifyGesture so a single canonical
+/// read (value 4 = vertical scroll routes to VerticalScrollView, never to
+/// NodeGridView). Replaces the retired MagnifyGesture so a single canonical
 /// control runs the default arm. Visibility is gated by the caller
 /// (rides the "+" capture trigger's signal so it hides when the
 /// Librarian rises above peek). Segments are sized for thumb tapping.
@@ -478,6 +483,7 @@ private struct DensityPill: View {
             segment(value: 1, symbol: "rectangle.portrait")
             segment(value: 2, symbol: "square.grid.2x2")
             segment(value: 3, symbol: "square.grid.3x3")
+            segment(value: 4, symbol: "rectangle.grid.1x2")
         }
         .padding(.horizontal, 4)
         .padding(.vertical, 4)

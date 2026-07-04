@@ -20,7 +20,7 @@ final class AppRouter {
         case quikCapture
         /// Scoped collection canvas (Canvas Chrome arc D1c). Routes
         /// through `AppRouter` rather than a `NavigationStack` push so
-        /// `CanvasView` / `NodeListView` stay top-level surfaces — their
+        /// `CanvasView` / `VerticalScrollView` stay top-level surfaces — their
         /// internal `NavigationStack` collides with the dashboard's outer
         /// stack and renders SwiftUI's missing-destination placeholder.
         /// Back chevron returns to dashboard via `.dashboard` route.
@@ -37,7 +37,7 @@ final class AppRouter {
     /// `ContentView` via `.onChange(of: panelState.state)` so views
     /// without direct access to the panel model can gate themselves
     /// on the detent. Capture "+" buttons in `CanvasView` and
-    /// `NodeListView` use it to hide themselves while the Librarian is
+    /// `VerticalScrollView` use it to hide themselves while the Librarian is
     /// raised (peek-pill clearance only covers the peek detent, so at
     /// half / full the chevron region overlaps the "+" hit target —
     /// fix-pass v3 Item 2a).
@@ -74,7 +74,7 @@ final class AppRouter {
     /// One-shot navigation handoff from the capture overlay. Set when the
     /// user picks a node in `NodePickerSheet` or completes a capture that
     /// should drop them into the detail view. Each NavigationStack-owning
-    /// surface (DashboardView, CanvasView, NodeListView) observes this and
+    /// surface (DashboardView, CanvasView, VerticalScrollView) observes this and
     /// appends the matching node to its own path, then clears the field so
     /// it fires exactly once.
     var pendingNodeNavigationID: String? = nil

@@ -1,17 +1,21 @@
 import SwiftUI
 
-// MARK: - List node (wrapper for sentinel/real items in the looping scroll)
+// MARK: - Scroll node (wrapper for sentinel/real items in the looping scroll)
 
-private struct ListItem: Identifiable {
+private struct ScrollItem: Identifiable {
     let id: String        // "real-<nodeID>" | "sent-start-<nodeID>" | "sent-end-<nodeID>"
     let node: Node
     var isReal: Bool { id.hasPrefix("real-") }
     var realNodeID: String { String(id.dropFirst(id.hasPrefix("real-") ? 5 : id.hasPrefix("sent-start-") ? 11 : 9)) }
 }
 
-// MARK: - NodeListView
+// MARK: - VerticalScrollView
 
-struct NodeListView: View {
+/// Vertical-scroll presentation of Card View — full-bleed NodeCardView
+/// faces stacked in a viewAligned vertical scroll (one card centered at a
+/// time, infinite loop). Reached from the density pill's 4th segment
+/// (`gridColumnCount == 4`) alongside carousel / 2-col / dense grid.
+struct VerticalScrollView: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
@@ -23,12 +27,12 @@ struct NodeListView: View {
     /// same Librarian match (which otherwise stack identical detail
     /// views). Cleared when the path returns to root.
     @State private var currentDetailNodeID: String? = nil
-    @State private var displayItems: [ListItem] = []
+    @State private var displayItems: [ScrollItem] = []
     @State private var scrolledID: String? = nil
     @State private var isJumping = false
 
     @State private var scrollToFirstAfterSort = false
-    /// What slice of the corpus this list renders. Defaults to `.corpus` so
+    /// What slice of the corpus this view renders. Defaults to `.corpus` so
     /// the existing ContentView call site keeps its behavior unchanged.
     /// Collection canvases pass `.collection(id)` once D1 wires them up.
     var scope: CanvasScope = .corpus
@@ -38,8 +42,8 @@ struct NodeListView: View {
     // existing `.padding(.horizontal, width * 0.05)` below); height is
     // the 7/5 of that. Tune width factor on-device, not here.
     private let cardHeight: CGFloat = UIScreen.main.bounds.width * 0.9 * (7.0 / 5.0)
-    private let cardSpacing: CGFloat = 12
-    private let topBarHeight: CGFloat = 110  // Graph/List toggle bar + padding from ContentView
+    private let cardSpacing: CGFloat = 6
+    private let topBarHeight: CGFloat = 110  // top chrome row + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
@@ -51,7 +55,7 @@ struct NodeListView: View {
                     BackgroundGridView()
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
-                    listContent(containerHeight: geo.size.height)
+                    cardScrollContent(containerHeight: geo.size.height)
                     VStack(spacing: 0) {
                         LinearGradient(
                             colors: [.black, .clear],
@@ -165,7 +169,7 @@ struct NodeListView: View {
 
     // MARK: - Scroll content
 
-    private func listContent(containerHeight: CGFloat) -> some View {
+    private func cardScrollContent(containerHeight: CGFloat) -> some View {
         let margin = max(60, (containerHeight - cardHeight) / 2)
         let screenMidY = containerHeight / 2.0
 
@@ -177,7 +181,7 @@ struct NodeListView: View {
                         // R2 — pass the ID + a snapshot fallback. The card
                         // owns the live lookup (mirrors NodeDetailView), so
                         // in-place fold/entry edits re-render the card in
-                        // place without waiting for the list to recycle.
+                        // place without waiting for the scroll to recycle.
                         NodeCardView(
                             nodeID: item.realNodeID,
                             fallbackNode: item.node,
@@ -275,16 +279,16 @@ struct NodeListView: View {
         guard !nodes.isEmpty else { displayItems = []; return }
 
         let sentCount = min(3, nodes.count)
-        var result: [ListItem] = []
+        var result: [ScrollItem] = []
 
         for node in nodes.suffix(sentCount) {
-            result.append(ListItem(id: "sent-start-\(node.id)", node: node))
+            result.append(ScrollItem(id: "sent-start-\(node.id)", node: node))
         }
         for node in nodes {
-            result.append(ListItem(id: "real-\(node.id)", node: node))
+            result.append(ScrollItem(id: "real-\(node.id)", node: node))
         }
         for node in nodes.prefix(sentCount) {
-            result.append(ListItem(id: "sent-end-\(node.id)", node: node))
+            result.append(ScrollItem(id: "sent-end-\(node.id)", node: node))
         }
         displayItems = result
     }

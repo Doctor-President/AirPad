@@ -16,7 +16,7 @@ import SwiftUI
 /// list / menus operate on the collection's membership (see
 /// `CorpusStore.nodes(in:)`, `visibleNodes(in:)`, `filterState(for:)`).
 ///
-/// The floating "+" lives inside CanvasView / NodeListView (the surfaces
+/// The floating "+" lives inside CanvasView / VerticalScrollView (the surfaces
 /// CanvasChrome switches between), so this wrapper just hosts the chrome
 /// and bumps recency on appear. The "+" inside those views reads `scope`
 /// to pin the in-app capture overlay to this collection.

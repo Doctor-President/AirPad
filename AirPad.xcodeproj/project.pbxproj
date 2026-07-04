@@ -116,7 +116,6 @@
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
 		8C06E3866E668409E3983A5D /* SubstrateSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */; };
 		8C733440249680712EED9AAE /* NodeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */; };
-		8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D539DCAE9FDB57420DF7460 /* NodeListView.swift */; };
 		8D93AB74B120515EE87D5A07 /* DocumentGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03D5CDD92B068C0BDB141317 /* DocumentGalleryBody.swift */; };
 		8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */; };
 		8DF5479C80E72F6CE5DCC035 /* SubstrateLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */; };
@@ -147,6 +146,7 @@
 		9EB9E29886AAC3A0626B456C /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
 		A13084DE621F1F87415AC97F /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
 		A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */; };
+		A3E698D765C180092E891E83 /* VerticalScrollView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45A1B85265CDBCD7A2E66288 /* VerticalScrollView.swift */; };
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
 		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
@@ -290,6 +290,7 @@
 		4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockEmbeddingService.swift; sourceTree = "<group>"; };
 		4339BD7FF5450195EDF70A95 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesisService.swift; sourceTree = "<group>"; };
+		45A1B85265CDBCD7A2E66288 /* VerticalScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerticalScrollView.swift; sourceTree = "<group>"; };
 		463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RejectedBlock.swift; sourceTree = "<group>"; };
 		46B2E50D5AC047E8D52B2013 /* Lora-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lora-Regular.ttf"; sourceTree = "<group>"; };
 		47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaEntryChrome.swift; sourceTree = "<group>"; };
@@ -298,7 +299,6 @@
 		496C87CE26D129958AA115EF /* EntryMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigration.swift; sourceTree = "<group>"; };
 		497A2D223E494E948D445DFF /* NodeGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGradientBackground.swift; sourceTree = "<group>"; };
 		49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOverlayView.swift; sourceTree = "<group>"; };
-		4D539DCAE9FDB57420DF7460 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
 		4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkEntryBody.swift; sourceTree = "<group>"; };
 		4EAC56542567C77B0E89E836 /* UMAPRandom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPRandom.swift; sourceTree = "<group>"; };
 		4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CitationSheet.swift; sourceTree = "<group>"; };
@@ -875,7 +875,7 @@
 				0AD607D873DD5FF571DE6C5D /* CardLinkTile.swift */,
 				C49FE808E3476860F4E68D4F /* CoverFlowView.swift */,
 				FD659A40CE161F15D371C285 /* NodeCardView.swift */,
-				4D539DCAE9FDB57420DF7460 /* NodeListView.swift */,
+				45A1B85265CDBCD7A2E66288 /* VerticalScrollView.swift */,
 			);
 			path = List;
 			sourceTree = "<group>";
@@ -1132,7 +1132,6 @@
 				8C733440249680712EED9AAE /* NodeGridView.swift in Sources */,
 				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,
 				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,
-				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
 				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
 				AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */,
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
@@ -1188,6 +1187,7 @@
 				82A241AC4B5BE28AC0C44FCE /* UMAPTransform.swift in Sources */,
 				9EB9E29886AAC3A0626B456C /* UberNode.swift in Sources */,
 				07CB581F48846F9CC3814049 /* UberNodeService.swift in Sources */,
+				A3E698D765C180092E891E83 /* VerticalScrollView.swift in Sources */,
 				774AD9C545FED85D651CA8D7 /* VideoEntryBody.swift in Sources */,
 				0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */,
 				FCC7997009DE3B635D382FFF /* VoiceCaptureSheet.swift in Sources */,

@@ -10,7 +10,7 @@ import FloatingPanel
 /// source of truth.
 ///
 /// Retrieval rows hand off navigation via `router.pendingNodeNavigationID`
-/// so the host NavigationStack (CanvasView / NodeListView) owns the
+/// so the host NavigationStack (CanvasView / VerticalScrollView) owns the
 /// detail-view push — mirroring the capture-overlay pattern.
 struct LibrarianSurface: View {
 
@@ -1110,7 +1110,7 @@ struct LibrarianSurface: View {
 
     /// Hand a search-result tap to the host NavigationStack via the
     /// router. Mirrors the `CitationSheet.onOpenNote` pattern so the
-    /// detail-view push is owned by `CanvasView` / `NodeListView`,
+    /// detail-view push is owned by `CanvasView` / `VerticalScrollView`,
     /// not the Librarian surface. v1 navigates to top of the detail;
     /// scroll-to-block + highlight is its own follow-on brief.
     ///

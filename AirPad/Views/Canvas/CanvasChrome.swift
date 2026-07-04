@@ -66,7 +66,7 @@ struct CanvasChrome: View {
 
     var body: some View {
         ZStack {
-            // Main content — switches between graph and Card View. Each
+            // Main content — switches between graph, List, and Card View. Each
             // owns its own NavigationStack; the floating "+" trigger lives
             // inside them so navigation handoff from the in-app capture
             // overlay can push onto the local path.
@@ -74,13 +74,13 @@ struct CanvasChrome: View {
                 switch filterState.viewMode {
                 case .systemGraph:
                     CanvasView(scope: scope)
+                case .list:
+                    NodeListView(scope: scope)
                 default:
                     // Card View. The density pill drives the presentation via
                     // the shared `gridColumnCount` key so it swaps the body
                     // live: 1 = Cover Flow 3D carousel; 4 = vertical-scroll
-                    // full cards; 2/3 = uniform-tile grid. (`.list` is a
-                    // coming-soon future surface, coalesced to `.grid` on read
-                    // in the store, so it never reaches this branch.)
+                    // full cards; 2/3 = uniform-tile grid.
                     switch gridColumnCount {
                     case 1:
                         CoverFlowView(scope: scope)
@@ -158,7 +158,8 @@ struct CanvasChrome: View {
                 if !store.isInDetailView
                     && !selection.isActive
                     && router.librarianAtPeek
-                    && filterState.viewMode != .systemGraph {
+                    && filterState.viewMode != .systemGraph
+                    && filterState.viewMode != .list {
                     VStack {
                         Spacer()
                         ZStack {

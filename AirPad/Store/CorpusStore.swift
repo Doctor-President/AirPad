@@ -217,19 +217,10 @@ final class CorpusStore {
     /// 2026-06. Coalescing on read means a user who last used Thematic
     /// lands on Recency the next time the canvas opens, instead of a
     /// now-hidden sort order.
-    ///
-    /// Same coalescing for `.list`: the old full-card vertical scroll it
-    /// used to select now lives inside Card View (`.grid`, vertical-scroll
-    /// density segment), and `.list` is reserved for a future compact-list
-    /// surface (currently "Coming soon"). A user who last used the old List
-    /// mode lands in Card View instead of an unavailable mode.
     func filterState(for scope: CanvasScope) -> FilterState {
         var state = filterStates[scope.key] ?? FilterState()
         if state.sortOrder == .thematic {
             state.sortOrder = .recency
-        }
-        if state.viewMode == .list {
-            state.viewMode = .grid
         }
         return state
     }

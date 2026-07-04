@@ -43,6 +43,13 @@ struct CoverFlowView: View {
     private var cardSpacing: Double = CoverFlowDefaults.cardSpacing
 
     @State private var snappedID: String?
+    /// R8 — continuous fractional index of the card under the viewport centre,
+    /// derived live from the scroll offset (`offset / cardStride`). Drives the
+    /// zIndex ramp every frame so the most-centred card is always frontmost.
+    /// The old ramp keyed off `snappedID`, which only updates at settle — so
+    /// mid-swipe the outgoing card kept the top zIndex and (with the negative
+    /// card spacing) painted over the incoming one until the snap landed.
+    @State private var centerFraction: CGFloat = 0
 
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let pickHaptic = UIImpactFeedbackGenerator(style: .medium)
@@ -122,11 +129,12 @@ struct CoverFlowView: View {
         let topReserve: CGFloat = 110
         let bottomReserve: CGFloat = LibrarianPanelLayout.peekDetentHeight + 56
 
-        // Index of the currently-snapped card in the array; falls back to 0
-        // before the first snap settles (initial paint). Drives a symmetric
-        // zIndex ramp so the focal card sits on top.
-        let snappedIndex: Int = snappedID
-            .flatMap { id in nodes.firstIndex(where: { $0.id == id }) } ?? 0
+        // R8 — distance between adjacent card centres (card width + the
+        // negative inter-card spacing). Under `.viewAligned` + symmetric
+        // `contentMargins`, card k sits centred at contentOffset.x = k·stride,
+        // so `offset / stride` is the continuous centred-card index that drives
+        // the zIndex ramp (updated live in `onScrollGeometryChange` below).
+        let cardStride = cardWidth + CGFloat(cardSpacing)
 
         return VStack(spacing: 0) {
             Color.clear.frame(height: topReserve)
@@ -154,12 +162,14 @@ struct CoverFlowView: View {
                                 navigationPath.append(node)
                             }
                         }
-                        // Most-centered card = highest zIndex (`nodes.count`),
-                        // each step away subtracts 1. Must live on the direct
-                        // HStack child — preference-key feedback for this is a
-                        // dead end because reduce() collapses to one shared
-                        // value across siblings.
-                        .zIndex(Double(nodes.count - abs(index - snappedIndex)))
+                        // R8 — most-centred card = highest zIndex, falling off
+                        // continuously with distance from the LIVE centre
+                        // (`centerFraction`), so the frontmost card tracks the
+                        // swipe every frame instead of popping at settle. Must
+                        // live on the direct HStack child — a preference-key
+                        // feedback loop is a dead end (reduce() collapses
+                        // sibling values to one shared number).
+                        .zIndex(Double(nodes.count) - abs(Double(index) - centerFraction))
                     }
                 }
                 .scrollTargetLayout()
@@ -168,6 +178,14 @@ struct CoverFlowView: View {
             .contentMargins(.horizontal, edgeMargin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $snappedID)
+            // R8 — live scroll offset → continuous centred-card index. Fires
+            // every frame during a drag/deceleration, so the zIndex ramp above
+            // reorders continuously (no settle-time pop, no wrong card on top).
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.contentOffset.x
+            } action: { _, offsetX in
+                centerFraction = cardStride > 0 ? offsetX / cardStride : 0
+            }
             .frame(height: cardHeight)
             .onChange(of: snappedID) { _, newID in
                 // One light tap per snap-to-new-card.

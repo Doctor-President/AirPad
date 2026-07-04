@@ -63,6 +63,23 @@ final class AppRouter {
     /// unchanged by the in-app capture overlay arc.
     var captureOverlay: CaptureOverlayContext? = nil
 
+    /// Capture mode (ws-note-primitive / capture-flow). When true the user is in
+    /// the focused blank-node capture surface: the Librarian ducks, the note is
+    /// live (keyboard up), and the type-buttons + PastePad are in reach. Set by
+    /// the Dashboard "+"; cleared on exit (Done → Recents, or backing out).
+    var isCapturing: Bool = false
+    /// The node being captured into while `isCapturing`.
+    var captureNodeID: String? = nil
+    /// One-shot: set by the capture surface's "Done" to exit to Recents (the
+    /// freshly-captured node lands on top). The NavigationStack-owning Dashboard
+    /// observes it, resets its path to Recents, and clears the flag.
+    var exitCaptureToRecents: Bool = false
+    /// Live "the capture note has typed text" signal, fed by `TextEntryBody`
+    /// while editing. Drives the Cancel↔Done pill so it flips the instant the
+    /// user types — the note's `content` only persists on end-editing, so the
+    /// pill can't wait for that (else a "Cancel" tap could discard typed text).
+    var captureDraftHasText: Bool = false
+
     /// One-shot navigation handoff from the capture overlay. Set when the
     /// user picks a node in `NodePickerSheet` or completes a capture that
     /// should drop them into the detail view. Each NavigationStack-owning

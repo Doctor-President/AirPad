@@ -59,8 +59,20 @@ struct EntryCard: View {
         self._isExpanded = State(initialValue: item.isExpanded ?? true)
     }
 
+    /// Vertical padding around a `.text` (note) entry header — tightened from
+    /// the default 12 so the note body + PastePad sit higher (T's capture-area
+    /// feel). Tunable. Other entry types keep 12.
+    private static let noteHeaderVerticalPadding: CGFloat = 4
+
     private var displayName: String {
-        item.displayName ?? item.type.defaultDisplayName
+        // The note primitive shows "Note" as its default label. View-only — the
+        // stored type/schema is unchanged, and migrated notes may carry the old
+        // "Text" default, so treat that as unnamed too. Custom names pass through.
+        if item.type == .text,
+           item.displayName == nil || item.displayName == item.type.defaultDisplayName {
+            return "Note"
+        }
+        return item.displayName ?? item.type.defaultDisplayName
     }
 
     /// Force-collapsed during reorder mode so every card renders as a
@@ -134,7 +146,8 @@ struct EntryCard: View {
                 // Read-aloud through the shared SpeechSynthesisService — notes only.
                 readAloud: item.type == .text
                     ? NoteReadAloudButton(token: item.id, text: item.content ?? "")
-                    : nil
+                    : nil,
+                isNote: item.type == .text
             )
 
             if effectiveExpansion {
@@ -142,7 +155,10 @@ struct EntryCard: View {
                     .padding(.top, 8)
             }
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        // Note headers tighten the vertical padding so the body + PastePad sit
+        // higher; other entry types keep the original 12.
+        .padding(.vertical, item.type == .text ? Self.noteHeaderVerticalPadding : 12)
         .background {
             // Long-press recognizer lives in the background slot so foreground
             // interactive widgets (chevron, menu, text editors, waveform
@@ -557,6 +573,15 @@ private struct EntryTitleRow: View {
     /// Read-aloud control — passed only for `.text` notes (nil for every other
     /// entry type, so their chrome is untouched).
     var readAloud: NoteReadAloudButton? = nil
+    /// Notes use a shorter title-row height so the body/PastePad sit higher.
+    /// Other entry types keep the 44pt row. This is the dominant header-height
+    /// lever — the fixed 44pt row (not outer padding) is what pushed content down.
+    var isNote: Bool = false
+
+    /// Title-row height for notes (also the chevron button's height). Tunable.
+    /// The 44pt default is Apple's min tap target; notes trade a little vertical
+    /// slop for a tighter capture area. Row grows past this if the text needs it.
+    private static let noteRowHeight: CGFloat = 34
 
     var body: some View {
         HStack(spacing: 8) {
@@ -572,7 +597,7 @@ private struct EntryTitleRow: View {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(reorderActive ? 0.25 : 0.6))
-                    .frame(width: 44, height: 44)
+                    .frame(width: 44, height: isNote ? Self.noteRowHeight : 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -619,7 +644,7 @@ private struct EntryTitleRow: View {
                     .frame(width: 32, height: 32)
             }
         }
-        .frame(minHeight: 44)
+        .frame(minHeight: isNote ? Self.noteRowHeight : 44)
     }
 
     /// Muted relative timestamp shown under the display name. Sized one step

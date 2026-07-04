@@ -168,6 +168,16 @@ struct ContentView: View {
                 restorePanelForEntryMode()
             }
         }
+        // Capture mode (Dashboard "+"): the focused blank-node surface ducks the
+        // Librarian so the note + capture buttons own the screen. Same duck path
+        // as the capture overlay above; restore per entry mode on exit.
+        .onChange(of: router.isCapturing) { _, capturing in
+            if capturing {
+                panelState.duck(animated: true)
+            } else {
+                restorePanelForEntryMode()
+            }
+        }
         // Detail-view coexistence. ContentView's panel visibility is keyed
         // on entryMode, but a node detail is pushed inside the host
         // surface's NavigationStack without changing entryMode — so a
@@ -188,10 +198,18 @@ struct ContentView: View {
         // separate early-restore signal.
         .onChange(of: store.isInDetailView) { _, inDetail in
             if inDetail {
-                if panelState.state == .hidden {
+                // Capture mode keeps the Librarian ducked — don't rescue-raise it
+                // when entering the capture detail.
+                if panelState.state == .hidden && !router.isCapturing {
                     panelState.raiseToPeek(animated: true)
                 }
             } else {
+                // Leaving the detail ends capture mode (Done → Recents and a
+                // plain back-out both land here).
+                if router.isCapturing {
+                    router.isCapturing = false
+                    router.captureNodeID = nil
+                }
                 restorePanelForEntryMode()
             }
         }
@@ -218,6 +236,11 @@ struct ContentView: View {
     /// capture-overlay dismiss and detail-view exit can share it without
     /// duplicating the switch.
     private func restorePanelForEntryMode() {
+        // Capture mode overrides the entry-mode rule — stay ducked until it ends.
+        if router.isCapturing {
+            panelState.duck(animated: true)
+            return
+        }
         switch router.entryMode {
         case .canvas, .collectionCanvas:
             panelState.raiseToPeek(animated: true)

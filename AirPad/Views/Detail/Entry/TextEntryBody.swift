@@ -34,6 +34,7 @@ struct TextEntryBody: View {
     }
 
     @Environment(CorpusStore.self) private var store
+    @Environment(AppRouter.self) private var router
     @State private var editingText = ""
     @State private var didConsumeAutoFocus = false
     /// Photos-picker selection for inserting an inline image into the note.
@@ -105,6 +106,12 @@ struct TextEntryBody: View {
         .onChange(of: pickerItem) { _, newItem in
             guard let newItem else { return }
             Task { await insertPickedImage(newItem) }
+        }
+        // Capture mode: feed the live "has typed text" signal so the Cancel↔Done
+        // pill flips as the user types (content only persists on end-editing).
+        .onChange(of: editingText) { _, newValue in
+            guard router.isCapturing, router.captureNodeID == nodeID else { return }
+            router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         .onAppear {
             editingText = item.content ?? ""

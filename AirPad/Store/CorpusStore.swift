@@ -793,6 +793,31 @@ final class CorpusStore {
         return nodes.first(where: { $0.id == node.id })
     }
 
+    /// Creates a fresh, untitled blank node with a live empty text item for the
+    /// capture-mode surface (the Dashboard "+"). Unlike the journal node this is
+    /// not date-bound — each capture session starts a new node that lands in
+    /// Recents on Done. The empty text item flags `pendingAutoFocusItemID` so the
+    /// note opens with the keyboard up.
+    func createCaptureNode() async -> Node? {
+        let now = Date()
+        let node = Node(
+            id: UUID().uuidString,
+            createdAt: now,
+            updatedAt: now,
+            title: "",
+            summary: "",
+            tags: [],
+            entrySchemaVersion: 1
+        )
+        await addNode(node, position: .zero)
+        _ = await appendEmptyTextItem(nodeID: node.id)
+        // Launchpad: the note is one of four equal capture choices, so do NOT
+        // auto-raise the keyboard on open. `appendEmptyTextItem` primes
+        // autofocus; clear it so capture mode opens calm (tap the note for text).
+        pendingAutoFocusItemID = nil
+        return nodes.first(where: { $0.id == node.id })
+    }
+
     // MARK: - Update existing nodes
 
     func updateNode(_ updated: Node) async {

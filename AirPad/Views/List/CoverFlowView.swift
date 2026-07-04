@@ -127,12 +127,14 @@ struct CoverFlowView: View {
         // below to the reserved band so the taller card never overflows/clips.
         let cardHeightRatio: CGFloat = 1.95
 
-        // Reserved bands above/below the carousel. Top clears the back/chrome
-        // row; bottom covers the Librarian peek + density-pill zone. Trimmed
-        // from R7's (110 / peek+56) to give the taller card room; equal
-        // `Spacer`s between them centre the card in the leftover space.
+        // Reserved bands above/below the carousel. Top (90) clears the
+        // back/chrome row. Bottom = Librarian peek (95) + the density pill's
+        // offset above it (12) + the pill height (~48) + ~12pt breathing room
+        // = peek + 72, so the card's bottom edge clears the pill. With that
+        // band the clamp below lands max card height ≈ 640 on Pro Max. Equal
+        // `Spacer`s centre the card in the leftover space.
         let topReserve: CGFloat = 90
-        let bottomReserve: CGFloat = LibrarianPanelLayout.peekDetentHeight + 8
+        let bottomReserve: CGFloat = LibrarianPanelLayout.peekDetentHeight + 72
 
         // Clamp the +25% target to the space actually available between the
         // reserves (measured via GeometryReader) so it can't overflow/clip.

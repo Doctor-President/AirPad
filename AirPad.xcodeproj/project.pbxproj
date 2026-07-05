@@ -23,7 +23,6 @@
 		0A1E663CC31AC33AC01C329C /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0DA4D90F51F7EBBB06AF43BF /* UMAPRandom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EAC56542567C77B0E89E836 /* UMAPRandom.swift */; };
 		0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F017F0A0FBF6A049612B0607 /* ViewModeToggle.swift */; };
-		0E4728F3BB69F32DCABA416B /* CaptureOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */; };
 		0E65AFD08082B04CE1E21753 /* SubstrateCoord2D.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4204EBBDB6AEFAC59BB313 /* SubstrateCoord2D.swift */; };
 		0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */; };
 		1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 321F93F7630A107A8A1266EF /* CardDocumentTile.swift */; };
@@ -134,7 +133,6 @@
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
 		9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */; };
 		97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
-		980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */; };
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
 		989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C49FE808E3476860F4E68D4F /* CoverFlowView.swift */; };
 		98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */; };
@@ -301,7 +299,6 @@
 		495540C7C08695DEA4B137D3 /* DocumentGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryTile.swift; sourceTree = "<group>"; };
 		496C87CE26D129958AA115EF /* EntryMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigration.swift; sourceTree = "<group>"; };
 		497A2D223E494E948D445DFF /* NodeGradientBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGradientBackground.swift; sourceTree = "<group>"; };
-		49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOverlayView.swift; sourceTree = "<group>"; };
 		4D539DCAE9FDB57420DF7460 /* NodeListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeListView.swift; sourceTree = "<group>"; };
 		4E72F7C5BEAD8D357C8976F7 /* LinkEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkEntryBody.swift; sourceTree = "<group>"; };
 		4EAC56542567C77B0E89E836 /* UMAPRandom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPRandom.swift; sourceTree = "<group>"; };
@@ -373,7 +370,6 @@
 		AE402981E931009EBB3F93EE /* Neighborhood.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Neighborhood.swift; sourceTree = "<group>"; };
 		B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadService.swift; sourceTree = "<group>"; };
 		B05B92C729C4833EC93C3A4A /* LibrarianState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianState.swift; sourceTree = "<group>"; };
-		B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodePickerSheet.swift; sourceTree = "<group>"; };
 		B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlobFieldView.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
@@ -596,10 +592,8 @@
 		60660408D5EEF211EB72BA7D /* Capture */ = {
 			isa = PBXGroup;
 			children = (
-				49BDB8BDC5F0A88203D59E39 /* CaptureOverlayView.swift */,
 				6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */,
 				C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */,
-				B0CF42774C1F05903A2DF361 /* NodePickerSheet.swift */,
 				67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */,
 				586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */,
 				3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */,
@@ -1052,7 +1046,6 @@
 				94765E10145D5017BDE18696 /* CanvasState.swift in Sources */,
 				14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */,
 				CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */,
-				0E4728F3BB69F32DCABA416B /* CaptureOverlayView.swift in Sources */,
 				A795741744098AF3B305335B /* CardBlurTest.swift in Sources */,
 				1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */,
 				21CD74A24FCAA544898228E0 /* CardLinkTile.swift in Sources */,
@@ -1140,7 +1133,6 @@
 				9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */,
 				89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */,
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
-				980DA2AAD9F7ED4474D295C8 /* NodePickerSheet.swift in Sources */,
 				AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */,
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
 				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,

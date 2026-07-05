@@ -43,16 +43,6 @@ final class AppRouter {
     /// fix-pass v3 Item 2a).
     var librarianAtPeek: Bool = false
 
-    /// Capture overlay state. Non-nil presents the blur overlay above the
-    /// active entry mode (dashboard / canvas / collectionCanvas) without
-    /// changing entry mode itself — the user stays in their current context
-    /// and the overlay slides over it. Nil dismisses the overlay.
-    ///
-    /// This is the single capture surface for both the in-app "+" and the
-    /// external QuikCapture entry (URL scheme `airpad://quikcapture` /
-    /// Action Button) — the latter just sets this from `onOpenURL` so the
-    /// overlay rises over whatever's on screen. No separate QuikCapture mode.
-    var captureOverlay: CaptureOverlayContext? = nil
 
     /// Capture mode (ws-note-primitive / capture-flow). When true the user is in
     /// the focused blank-node capture surface: the Librarian ducks, the note is
@@ -119,10 +109,3 @@ final class AppRouter {
     }
 }
 
-/// Context for the in-app capture overlay. `scope` controls whether the
-/// collection pill rail is interactive (`.corpus`: full rail, defaults to
-/// last-used) or locked to a fixed pin (`.collection(id)`: rail shows the
-/// active collection only, taps no-op — capture lands in that collection).
-struct CaptureOverlayContext: Sendable, Equatable {
-    var scope: CanvasScope
-}

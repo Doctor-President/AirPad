@@ -316,15 +316,17 @@ struct LibrarianSurface: View {
         let outerCorner = fieldH / 2
         let outerShape = RoundedRectangle(cornerRadius: outerCorner, style: .continuous)
 
-        // Y-position interpolation. Peek anchor: 21pt above the panel
-        // bottom (so the field's bottom edge sits at geo.height − 21).
+        // Y-position interpolation. Peek anchor: `peekBottomGap` above the
+        // panel bottom (so the field's bottom edge sits at
+        // geo.height − peekBottomGap). Shared with `peekDetentHeight` so
+        // the capsule and the band reserving space for it move together.
         // Expanded anchor: anchors a few points inside the header's
         // bottom-padding band so the Search field sits snug to the
         // chevron (chevron bottom ≈ y=46; field top at y=54 with this
         // anchor → ~8pt gap). The header ZStack itself runs ~60pt tall,
         // but the bottom 14pt is empty padding the field can ride into
         // without colliding with chevron/grabber visuals.
-        let peekCenterY = geo.size.height - 21 - peekH / 2
+        let peekCenterY = geo.size.height - LibrarianPanelLayout.peekBottomGap - peekH / 2
         let expandedCenterY: CGFloat = 54 + expandedH / 2
         let centerY = lerp(peekCenterY, expandedCenterY, p)
 

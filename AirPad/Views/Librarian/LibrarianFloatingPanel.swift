@@ -26,16 +26,28 @@ final class MorphProgressModel: ObservableObject {
 /// `backdropAlpha = 0` for every state so `FloatingPanelPassThroughView`
 /// lets touches reach the SpriteKit canvas behind the panel.
 final class LibrarianPanelLayout: FloatingPanelLayout {
+    /// Float-gap between the peek capsule's bottom edge and the safe-area
+    /// bottom. SINGLE SOURCE OF TRUTH for that gap — `peekDetentHeight`
+    /// below folds it into the band height, and `LibrarianSurface`'s
+    /// `morphingField` peek anchor (`peekCenterY`) subtracts the SAME
+    /// value, so the capsule and the band reserving space for it always
+    /// move together (the two used to carry a duplicated literal `21`
+    /// that could silently drift). Reduced 21 → 8 for the dock-
+    /// consolidation pass: pulls the pill toward the bottom edge and,
+    /// because the band shrinks, the capture "+" / carousel reserve /
+    /// density pill (all `peekDetentHeight`-derived) follow it down.
+    static let peekBottomGap: CGFloat = 8
+
     /// Height of the peek (`.tip`) detent band in points. Single source
     /// of truth — the anchor below and any overlay that must ride above
     /// the peek pill (capture "+" buttons on canvas and node detail)
     /// read from here so the value lives in one place.
     ///
-    /// The band is 95pt = 64pt Apple-Maps-style capsule + 21pt float gap
-    /// to the safe-area bottom + ~10pt top breathing. The pill itself
+    /// The band is `10pt top breathing + 64pt Apple-Maps-style capsule +
+    /// peekBottomGap float gap to the safe-area bottom`. The pill itself
     /// owns its 340pt width directly in `LibrarianSurface`'s peek branch
     /// (centered), so no side-inset value lives here.
-    static let peekDetentHeight: CGFloat = 95
+    static let peekDetentHeight: CGFloat = 10 + 64 + peekBottomGap
 
     /// Bottom padding for overlay chrome that must sit above the peek
     /// panel: peek height + 10pt breathing room. Used by

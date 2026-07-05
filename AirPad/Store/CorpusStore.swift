@@ -830,6 +830,70 @@ final class CorpusStore {
         }
     }
 
+    // MARK: - Backlinks (user connections)
+    // The ONLY write paths into `Node.connections` — the system never
+    // auto-writes it (hybrid-authorship: the user authors relations). Backlinks
+    // are bidirectional: both endpoints carry a `NodeConnection` sharing one
+    // edge `id`, so a pair is created and removed as a unit.
+
+    /// True when a user backlink already joins `sourceID` → `targetID` at the
+    /// given target-entry granularity. Dedup guard for the creation flow.
+    func connectionExists(from sourceID: String, to targetID: String, targetEntryID: String?) -> Bool {
+        guard let src = nodes.first(where: { $0.id == sourceID }) else { return false }
+        return src.connections.contains { $0.nodeID == targetID && $0.entryID == targetEntryID }
+    }
+
+    /// Draw a user backlink between two nodes, bidirectionally. Both endpoints
+    /// get a `NodeConnection` sharing one `id`; `targetEntryID` optionally
+    /// qualifies the entry the source points at, `sourceEntryID` the entry the
+    /// target points back at. No-op on self-link or an exact duplicate.
+    /// Returns whether an edge was created.
+    @discardableResult
+    func addConnection(from sourceID: String,
+                       sourceEntryID: String? = nil,
+                       to targetID: String,
+                       targetEntryID: String? = nil) async -> Bool {
+        guard sourceID != targetID else { return false }
+        guard let sIdx = nodes.firstIndex(where: { $0.id == sourceID }),
+              let tIdx = nodes.firstIndex(where: { $0.id == targetID }) else { return false }
+        // Dedup at the same neighbour + target-entry granularity.
+        if nodes[sIdx].connections.contains(where: { $0.nodeID == targetID && $0.entryID == targetEntryID }) {
+            return false
+        }
+        let edgeID = UUID().uuidString
+        nodes[sIdx].connections.append(NodeConnection(id: edgeID, nodeID: targetID, entryID: targetEntryID))
+        nodes[tIdx].connections.append(NodeConnection(id: edgeID, nodeID: sourceID, entryID: sourceEntryID))
+        await persistConnectionPair(sIdx, tIdx)
+        return true
+    }
+
+    /// Remove a user backlink from BOTH endpoints by its shared edge `id`.
+    func removeConnection(id edgeID: String, from nodeID: String) async {
+        guard let nIdx = nodes.firstIndex(where: { $0.id == nodeID }),
+              let edge = nodes[nIdx].connections.first(where: { $0.id == edgeID }) else { return }
+        let otherID = edge.nodeID
+        nodes[nIdx].connections.removeAll { $0.id == edgeID }
+        if let oIdx = nodes.firstIndex(where: { $0.id == otherID }) {
+            nodes[oIdx].connections.removeAll { $0.id == edgeID }
+            await persistConnectionPair(nIdx, oIdx)
+        } else {
+            do { try await saveAndEnqueue(nodes[nIdx]) }
+            catch { print("[CorpusStore] connection persist error: \(error)") }
+        }
+    }
+
+    /// Persist both endpoints of an edge. Snapshots before the first `await` so
+    /// a reentrant mutation during the save can't corrupt the second write.
+    private func persistConnectionPair(_ i: Int, _ j: Int) async {
+        let a = nodes[i], b = nodes[j]
+        do {
+            try await saveAndEnqueue(a)
+            try await saveAndEnqueue(b)
+        } catch {
+            print("[CorpusStore] connection persist error: \(error)")
+        }
+    }
+
     /// Stage 3.1a — lazy per-node migration to the entry-primitive schema.
     /// Called from `NodeDetailView.onAppear` so a node is only migrated when
     /// the user actually opens it; the corpus is never bulk-walked at launch.

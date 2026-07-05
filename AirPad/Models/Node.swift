@@ -92,6 +92,13 @@ struct Node: Codable, Identifiable, Hashable {
     /// `decodeIfPresent ?? []` on the decoder side means legacy nodes
     /// silently decode as empty — no schema-version bump required.
     var collectionIDs: [String]
+    /// Backlinks v1 — user-asserted relational edges (see `NodeConnection`).
+    /// Durable, bidirectional (both endpoint nodes carry the edge, sharing an
+    /// `id`), independent of substrate similarity. **The system NEVER
+    /// auto-writes this** — only explicit user actions (drawing a backlink,
+    /// accepting a suggestion) mutate it. `decodeIfPresent ?? []` means legacy
+    /// nodes decode as empty — no schema-version bump (mirrors `collectionIDs`).
+    var connections: [NodeConnection]
     /// Import breadcrumb. Format: "import-<ISO8601 timestamp>". Nil for organically captured nodes.
     var source: String?
     /// SB126 Stage 2 — `NLEmbedding.sentenceEmbedding(for: .english)` of the
@@ -221,6 +228,7 @@ struct Node: Codable, Identifiable, Hashable {
         case needsReview = "needs_review"
         case journalDate = "journal_date"
         case collectionIDs = "collection_ids"
+        case connections
         case tagSources = "tag_sources"
         case contentEmbedding = "content_embedding"
         case fmSuggestedNeighborhoodID = "fm_suggested_neighborhood_id"
@@ -266,6 +274,7 @@ struct Node: Codable, Identifiable, Hashable {
         needsReview: Bool = false,
         journalDate: Date? = nil,
         collectionIDs: [String] = [],
+        connections: [NodeConnection] = [],
         source: String? = nil,
         contentEmbedding: [Float]? = nil,
         fmSuggestedNeighborhoodID: String? = nil,
@@ -304,6 +313,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.needsReview                 = needsReview
         self.journalDate                 = journalDate
         self.collectionIDs               = collectionIDs
+        self.connections                 = connections
         self.source                      = source
         self.contentEmbedding            = contentEmbedding
         self.fmSuggestedNeighborhoodID   = fmSuggestedNeighborhoodID
@@ -349,6 +359,7 @@ extension Node {
         needsReview               = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
         journalDate               = try c.decodeIfPresent(Date.self,      forKey: .journalDate)
         collectionIDs             = try c.decodeIfPresent([String].self,  forKey: .collectionIDs) ?? []
+        connections               = try c.decodeIfPresent([NodeConnection].self, forKey: .connections) ?? []
         source                    = try c.decodeIfPresent(String.self,    forKey: .source)
         contentEmbedding          = try c.decodeIfPresent([Float].self,   forKey: .contentEmbedding)
         fmSuggestedNeighborhoodID = try c.decodeIfPresent(String.self,    forKey: .fmSuggestedNeighborhoodID)

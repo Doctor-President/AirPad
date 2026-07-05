@@ -31,6 +31,10 @@ struct EntryCard: View {
     /// All item IDs in the node, in current display order. Passed down so
     /// the long-press path can snapshot without re-reading the store.
     let snapshotIDs: [String]
+    /// Backlinks v1 — fired by the entry's "Backlink" menu action; the parent
+    /// (`NodeDetailView`) presents the picker anchored on this entry. Nil (e.g.
+    /// in QuikCapture) hides the menu item entirely.
+    let onBacklink: (() -> Void)?
 
     @Environment(CorpusStore.self) private var store
     @Environment(EntryReorderController.self) private var reorder
@@ -51,11 +55,12 @@ struct EntryCard: View {
     @State private var renameDraft = ""
     @State private var showDeleteConfirmation = false
 
-    init(item: NodeItem, nodeID: String, index: Int, snapshotIDs: [String]) {
+    init(item: NodeItem, nodeID: String, index: Int, snapshotIDs: [String], onBacklink: (() -> Void)? = nil) {
         self.item = item
         self.nodeID = nodeID
         self.index = index
         self.snapshotIDs = snapshotIDs
+        self.onBacklink = onBacklink
         self._isExpanded = State(initialValue: item.isExpanded ?? true)
     }
 
@@ -128,6 +133,7 @@ struct EntryCard: View {
                 onRename: beginRename,
                 onDuplicate: duplicate,
                 onCopy: copyContent,
+                onBacklink: onBacklink,
                 onChangeType: {},
                 onReorder: enterReorderModeViaMenu,
                 onDelete: { showDeleteConfirmation = true },
@@ -558,6 +564,9 @@ private struct EntryTitleRow: View {
     let onRename: () -> Void
     let onDuplicate: () -> Void
     let onCopy: () -> Void
+    /// Backlinks v1 — opens the backlink picker anchored on this entry. Nil
+    /// hides the menu item (e.g. QuikCapture).
+    let onBacklink: (() -> Void)?
     /// Stage 3.1a stub — present-but-disabled so the architectural seat
     /// for the future smart-conversion prompt is reserved. Wired to a
     /// `.disabled(true)` menu button below; the closure is never called.
@@ -625,6 +634,9 @@ private struct EntryTitleRow: View {
                     Button("Rename", action: onRename)
                     Button("Duplicate", action: onDuplicate)
                     Button("Copy", action: onCopy)
+                    if let onBacklink {
+                        Button("Backlink", systemImage: "link", action: onBacklink)
+                    }
                     Button("Change type", action: onChangeType)
                         .disabled(true)
                     Button("Reorder", action: onReorder)

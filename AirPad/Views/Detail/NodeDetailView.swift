@@ -105,6 +105,10 @@ struct NodeDetailView: View {
     // inline bottom composer triad with a single floating Menu button that
     // routes to one of six entry types.
     @State private var captureMode: CaptureMode? = nil
+    /// Backlinks v1 — non-nil presents the backlink picker anchored on the
+    /// entry whose id it carries (set by an entry's "Backlink" menu action).
+    private struct BacklinkSource: Identifiable { let id: String }
+    @State private var backlinkSource: BacklinkSource?
     @State private var showPromoteConfirmation = false
     @State private var showingNewTagSheet = false
     @State private var showingNewCollectionSheet = false
@@ -223,6 +227,9 @@ struct NodeDetailView: View {
             case .voice:  VoiceCaptureSheet(targetNodeID: nodeID)
             case .camera: CameraCaptureView(targetNodeID: nodeID)
             }
+        }
+        .sheet(item: $backlinkSource) { src in
+            BacklinkPickerSheet(sourceNodeID: nodeID, sourceEntryID: src.id)
         }
         .sheet(isPresented: $showingNewTagSheet) {
             TagEditorSheet(existing: nil) { createdName in
@@ -435,7 +442,8 @@ struct NodeDetailView: View {
                         // the reflow doesn't snap. Single ForEach is
                         // preserved — the divider is a conditional
                         // adornment at the boundary, not a split.
-                        EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot)
+                        EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot,
+                                  onBacklink: { backlinkSource = BacklinkSource(id: item.id) })
                             .overlay(alignment: .bottom) {
                                 if rawIndex < node.items.count - 1 {
                                     Rectangle()
@@ -456,6 +464,11 @@ struct NodeDetailView: View {
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
                 .animation(.easeInOut(duration: 0.22), value: node.foldIndex)
+
+                // Backlinks v1 — Related Nodes (user channel). Renders nothing
+                // when the node has no connections. System-suggestion channel is
+                // a later phase.
+                RelatedNodesSection(nodeID: nodeID)
 
                 // Meta-node provenance + promotion
                 if node.isMeta {

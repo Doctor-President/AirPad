@@ -49,16 +49,19 @@ struct CoverFlowView: View {
     @AppStorage(CardTuningKey.key(.carousel, .height))
     private var cardHeightRatio: Double = CardTuningDefaults.value(.carousel, .height)
 
-    // Native-scroll carousel. The system scroll engine drives motion (drag,
-    // momentum, viewAligned snap) via an invisible per-card track; the visible
-    // cards ride in an overlay ZStack deck that owns ONLY draw order (mount
-    // order, so the centred card is frontmost — a LazyHStack ignores zIndex,
-    // the R8 finding, which is why the deck stays a ZStack). `snappedID` is the
-    // viewAligned centred card (drives the snap haptic); `centerFraction` is the
-    // live fractional centred index read from the scroll offset, positioning +
-    // raking the deck every frame. No custom drag/settle physics.
-    @State private var snappedID: String?
-    @State private var centerFraction: CGFloat = 0
+    // R8 rebuild — the carousel is a self-owned ZStack deck, not a
+    // ScrollView + LazyHStack. Inside a lazy scroll container zIndex is
+    // ignored and draw order follows document order (left neighbour always
+    // behind, right always in front), so overlapping cards can't layer
+    // correctly. In a ZStack WE own draw order via mount order.
+    //
+    // `settledFraction` is the resting fractional index (integer at rest);
+    // `dragFraction` is the live in-drag delta in index units. Their sum is
+    // the continuous centred-card index that positions + rakes every card and
+    // decides mount order. `lastCenterIndex` gates the per-card snap haptic.
+    @State private var settledFraction: CGFloat = 0
+    @State private var dragFraction: CGFloat = 0
+    @State private var lastCenterIndex: Int = 0
 
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private let pickHaptic = UIImpactFeedbackGenerator(style: .medium)
@@ -156,17 +159,14 @@ struct CoverFlowView: View {
         // sits at x = (k − centerFraction)·stride from the deck centre.
         let cardStride = cardWidth + CGFloat(cardSpacing)
 
-        // Continuous centred-card index, read live from the native scroll
-        // offset (offset / stride) in `onScrollGeometryChange` below. Positions
-        // + rakes the overlay deck and picks the visible window. No custom
-        // drag/settle math — the system scroll engine owns motion.
-        let centerFraction = self.centerFraction
+        // Single source of truth for the whole deck: the continuous centred-
+        // card index (resting index + live drag delta), clamped to the corpus.
+        let centerFraction = clampFraction(settledFraction + dragFraction)
 
         // Visible window: centre ± 2 (everything else stays unmounted).
         // Ordered farthest → nearest so the most-centred card mounts LAST and
-        // therefore draws frontmost — mount order IS draw order in a ZStack.
-        // The deck is now an OVERLAY on the scroll track; it owns ONLY draw
-        // order (LazyHStack ignores zIndex, the R8 finding).
+        // therefore draws frontmost — mount order IS draw order in a ZStack,
+        // which is the whole point of the rebuild.
         let count = nodes.count
         let centreIdx = Int(centerFraction.rounded())
         let visible: [Int] = count > 0
@@ -175,85 +175,88 @@ struct CoverFlowView: View {
         let ordered = visible.sorted {
             abs(CGFloat($0) - centerFraction) > abs(CGFloat($1) - centerFraction)
         }
-        // Symmetric inset so the first/last card can settle at centre under
-        // .viewAligned (card k then centres at contentOffset.x = k·stride).
-        let edgeMargin = (screenW - cardWidth) / 2.0
 
         return VStack(spacing: 0) {
             Color.clear.frame(height: topReserve)
             Spacer(minLength: 0)
-            // Native scroll TRACK — invisible per-card slots hand the carousel
-            // the system scroll engine (drag, momentum, viewAligned snap): the
-            // same fluidity as vertical scroll. The visible cards ride in the
-            // overlay deck below, driven by the live scroll offset. Taps on a
-            // slot open its node (drags scroll); the overlay is non-interactive.
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: CGFloat(cardSpacing)) {
-                    ForEach(Array(nodes.enumerated()), id: \.element.id) { _, node in
-                        Color.clear
-                            .frame(width: cardWidth, height: cardHeight)
-                            .id(node.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if selection.isActive {
-                                    pickHaptic.impactOccurred()
-                                    selection.toggle(node.id)
-                                } else {
-                                    navHaptic.impactOccurred()
-                                    navigationPath.append(node)
-                                }
-                            }
+            ZStack {
+                ForEach(ordered, id: \.self) { index in
+                    let node = nodes[index]
+                    let dist = CGFloat(index) - centerFraction
+                    CoverFlowCell(
+                        node: node,
+                        cardWidth: cardWidth,
+                        cardHeight: cardHeight,
+                        rotationMaxDegrees: rotationMaxDegrees,
+                        sideScale: sideScale,
+                        perspective: perspective,
+                        // Rake saturates at ±1 (edge cards look like the ±1
+                        // neighbour, just pushed further out by the offset).
+                        phase: max(-1, min(1, dist))
+                    )
+                    .offset(x: dist * cardStride)
+                    .matchedTransitionSource(id: node.id, in: zoomNamespace)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if selection.isActive {
+                            pickHaptic.impactOccurred()
+                            selection.toggle(node.id)
+                        } else {
+                            navHaptic.impactOccurred()
+                            navigationPath.append(node)
+                        }
                     }
                 }
-                .scrollTargetLayout()
             }
-            .scrollClipDisabled()
-            .contentMargins(.horizontal, edgeMargin, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $snappedID)
-            // Live scroll offset → continuous centred-card index every frame, so
-            // the overlay deck tracks the swipe.
-            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.x } action: { _, offsetX in
-                // Assign the @State via self — the local `centerFraction` above
-                // is an immutable snapshot for this body pass.
-                self.centerFraction = cardStride > 0 ? offsetX / cardStride : 0
-            }
-            // One light tap per snap-to-new-card.
-            .onChange(of: snappedID) { _, newID in
-                if newID != nil { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-            }
+            .frame(maxWidth: .infinity)
             .frame(height: cardHeight)
-            .overlay {
-                // Visual deck — windowed, positioned + raked by the live
-                // centerFraction, mounted farthest → nearest so the centred card
-                // draws frontmost. Non-interactive: taps + drags fall through to
-                // the track ScrollView beneath.
-                ZStack {
-                    ForEach(ordered, id: \.self) { index in
-                        let node = nodes[index]
-                        let dist = CGFloat(index) - centerFraction
-                        CoverFlowCell(
-                            node: node,
-                            cardWidth: cardWidth,
-                            cardHeight: cardHeight,
-                            rotationMaxDegrees: rotationMaxDegrees,
-                            sideScale: sideScale,
-                            perspective: perspective,
-                            // Rake saturates at ±1 (edge cards look like the ±1
-                            // neighbour, just pushed further out by the offset).
-                            phase: max(-1, min(1, dist))
-                        )
-                        .offset(x: dist * cardStride)
-                        .matchedTransitionSource(id: node.id, in: zoomNamespace)
-                    }
-                }
-                .frame(height: cardHeight)
-                .allowsHitTesting(false)
-            }
+            .contentShape(Rectangle())
+            .gesture(deckDrag(stride: cardStride, count: count))
             Spacer(minLength: 0)
             Color.clear.frame(height: bottomReserve)
         }
         }
+    }
+
+    // MARK: - Deck drag / snap
+
+    /// Clamp a fractional index into the corpus bounds.
+    private func clampFraction(_ f: CGFloat) -> CGFloat {
+        let n = nodes.count
+        guard n > 1 else { return 0 }
+        return min(max(f, 0), CGFloat(n - 1))
+    }
+
+    /// Horizontal drag → continuous `dragFraction`; on release, project the
+    /// flick velocity and spring-snap to the nearest whole card (viewAligned-
+    /// style feel). One light tap each time the centred card changes — during
+    /// the drag and at the settle.
+    private func deckDrag(stride: CGFloat, count: Int) -> some Gesture {
+        DragGesture()
+            .onChanged { value in
+                guard stride > 0, count > 0 else { return }
+                dragFraction = -value.translation.width / stride
+                let idx = Int(clampFraction(settledFraction + dragFraction).rounded())
+                if idx != lastCenterIndex {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    lastCenterIndex = idx
+                }
+            }
+            .onEnded { value in
+                guard stride > 0, count > 0 else { return }
+                // Project the release velocity so a flick carries across cards.
+                let projected = settledFraction - value.predictedEndTranslation.width / stride
+                let target = min(max(projected.rounded(), 0), CGFloat(count - 1))
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.82)) {
+                    settledFraction = target
+                    dragFraction = 0
+                }
+                let idx = Int(target)
+                if idx != lastCenterIndex {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+                lastCenterIndex = idx
+            }
     }
 
     // MARK: - Tuning trigger (DEBUG)

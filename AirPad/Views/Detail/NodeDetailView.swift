@@ -11,6 +11,10 @@ import ObjectiveC.runtime
 struct NodeDetailView: View {
 
     let nodeID: String
+    /// Backlinks v1 — when set, the view scrolls to this entry on appear. Used
+    /// by the entry-level backlink peek so the real detail view opens focused on
+    /// the linked entry.
+    var focusEntryID: String? = nil
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -333,6 +337,7 @@ struct NodeDetailView: View {
         GeometryReader { proxy in
         let topInset = proxy.safeAreaInsets.top
         ZStack(alignment: .top) {
+        ScrollViewReader { scrollProxy in
         ScrollView {
             VStack(spacing: 0) {
                 heroZone(node: node, topInset: topInset, width: proxy.size.width)
@@ -444,6 +449,7 @@ struct NodeDetailView: View {
                         // adornment at the boundary, not a split.
                         EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot,
                                   onBacklink: { backlinkSource = BacklinkSource(id: item.id) })
+                            .id(item.id)
                             .overlay(alignment: .bottom) {
                                 if rawIndex < node.items.count - 1 {
                                     Rectangle()
@@ -550,6 +556,16 @@ struct NodeDetailView: View {
         // rim), not colour. Replaces the fixed near-black #070709.
         .background { Color(NoteTypography.background).ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
+        .onAppear {
+            guard let focusEntryID else { return }
+            // Defer past first layout so the target entry's anchor exists.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    scrollProxy.scrollTo(focusEntryID, anchor: .top)
+                }
+            }
+        }
+        }  // ScrollViewReader
 
         // hero-custom-toolbar-overlay — sibling of the ScrollView inside
         // the ZStack, not an overlay on it. The ZStack respects the top

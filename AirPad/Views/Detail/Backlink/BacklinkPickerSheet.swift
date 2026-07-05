@@ -102,8 +102,20 @@ private struct BacklinkTargetPicker: View {
     /// Payload entries only — atomics (ratings) aren't meaningful link targets.
     private var entries: [NodeItem] { targetNode?.items.filter { !$0.type.isAtomic } ?? [] }
 
+    /// Backlinks v1 — soft warning threshold. No hard cap; ~20 is just where a
+    /// node gets dense enough to nudge the user.
+    private var sourceConnectionCount: Int {
+        store.nodes.first { $0.id == sourceNodeID }?.connections.count ?? 0
+    }
+
     var body: some View {
         List {
+            if sourceConnectionCount >= 20 {
+                Text("This node already has \(sourceConnectionCount) connections. Adding more is fine — just getting dense.")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .listRowBackground(Color.orange.opacity(0.10))
+            }
             // Node-level target.
             row(
                 title: targetNode.map(BacklinkLabels.title) ?? "Untitled",

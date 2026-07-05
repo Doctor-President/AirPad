@@ -53,15 +53,15 @@ struct NodeListView: View {
                     bucketList
                 }
 
-                // Local sort toggle + capture "+", pinned above the Librarian
-                // peek. Both ride the same visibility signal as the sibling
-                // bodies (hidden in detail, during selection, or when the
-                // Librarian rises above peek).
+                // Local sort toggle, pinned above the Librarian peek. Rides
+                // the same visibility signal as the sibling bodies (hidden in
+                // detail, during selection, or when the Librarian rises above
+                // peek). The capture "+" is no longer per-body — it lives once
+                // in the persistent chrome layer (CanvasChrome).
                 if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
                     HStack {
                         sortControl
                         Spacer()
-                        captureTriggerButton
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, LibrarianPanelLayout.peekDetentHeight + 12)
@@ -165,25 +165,6 @@ struct NodeListView: View {
         }
     }
 
-    // MARK: - Capture trigger
-
-    /// "+" capture trigger — mirrors the sibling bodies so capture works in
-    /// List view and navigation handoff arrives via `pendingNodeNavigationID`.
-    private var captureTriggerButton: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            router.captureOverlay = CaptureOverlayContext(scope: scope)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.black)
-                .frame(width: 60, height: 60)
-                .background(Color.white)
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - Sectioning
     // Copied+adapted from RecentsView.buckets: same Today / Previous 7 Days /

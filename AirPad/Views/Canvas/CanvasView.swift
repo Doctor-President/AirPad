@@ -223,46 +223,7 @@ struct CanvasView: View {
             nodeSummaryLayer
             drillDownBackButton
 
-            // Hide the "+" whenever the Librarian is raised above peek
-            // (fix-pass v3 Item 2a). The button's bottom padding only
-            // clears the peek pill — at half / full the chevron region
-            // overlaps the "+" hit target and a chevron tap was tripping
-            // capture. The button reappears when the panel returns to
-            // peek (or ducks for capture / dashboard).
-            if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
-                VStack {
-                    Spacer()
-                    HStack {
-                        Spacer()
-                        captureTriggerButton
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
-            }
         }
-    }
-
-    /// "+" capture trigger — sits above the LibrarianSurface in the
-    /// bottom-anchored VStack so it rides up with the morphing surface
-    /// rather than overlapping it. Tap presents the in-app capture overlay
-    /// (mounted at ContentView); navigation handoff arrives via
-    /// `router.pendingNodeNavigationID` and is pushed onto our own
-    /// `navigationPath` (see `canvasStack`).
-    private var captureTriggerButton: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            router.captureOverlay = CaptureOverlayContext(scope: scope)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.black)
-                .frame(width: 60, height: 60)
-                .background(Color.white)
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder

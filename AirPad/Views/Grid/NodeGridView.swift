@@ -107,20 +107,6 @@ struct NodeGridView: View {
 
                 gridContent
 
-                // Hide the "+" whenever the Librarian is raised above peek
-                // (fix-pass v3 Item 2a) — same gating as VerticalScrollView.
-                if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            captureTriggerButton
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 119)
-                }
-
                 #if DEBUG
                 tileTuningTrigger
                 if showTileTuningPanel {
@@ -310,24 +296,6 @@ struct NodeGridView: View {
         .allowsHitTesting(true)
     }
     #endif
-
-    // MARK: - Capture trigger
-
-    private var captureTriggerButton: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            router.captureOverlay = CaptureOverlayContext(scope: scope)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.black)
-                .frame(width: 60, height: 60)
-                .background(Color.white)
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 // MARK: - NodeTileView

@@ -77,23 +77,6 @@ struct VerticalScrollView: View {
                     }
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
-
-                    // Hide the "+" whenever the Librarian is raised above
-                    // peek (fix-pass v3 Item 2a) — same reason as
-                    // CanvasView: the peek-only bottom clearance lets
-                    // the chevron's hit region overlap the "+" at half /
-                    // full.
-                    if !store.isInDetailView && !selection.isActive && router.librarianAtPeek {
-                        VStack {
-                            Spacer()
-                            HStack {
-                                Spacer()
-                                captureTriggerButton
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 119)
-                    }
                 }
                 .navigationDestination(for: Node.self) { node in
                     NodeDetailView(nodeID: node.id)
@@ -144,28 +127,6 @@ struct VerticalScrollView: View {
     }
 
     // MARK: - Capture trigger
-
-    /// "+" capture trigger — sits above the LibrarianSurface in the
-    /// bottom-anchored VStack so it rides up with the morphing surface
-    /// rather than overlapping it. Tap presents the in-app capture overlay
-    /// (mounted at ContentView); navigation handoff arrives via
-    /// `router.pendingNodeNavigationID` and is pushed onto our own
-    /// `navigationPath`.
-    private var captureTriggerButton: some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            router.captureOverlay = CaptureOverlayContext(scope: scope)
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.black)
-                .frame(width: 60, height: 60)
-                .background(Color.white)
-                .clipShape(Circle())
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
-        }
-        .buttonStyle(.plain)
-    }
 
     // MARK: - Scroll content
 

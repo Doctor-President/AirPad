@@ -35,7 +35,6 @@ struct CanvasChrome: View {
     @State private var showSlideOutMenu = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
-    @State private var showHistory = false
 
     #if DEBUG
     /// DEBUG-only — Solar Flare material spike tuner. Mounted here in
@@ -62,6 +61,34 @@ struct CanvasChrome: View {
     /// nudges the user to look inside.
     private var menuHasAttention: Bool {
         filterState.activeFilterCount > 0 || quarantineStore.entries.count > 0
+    }
+
+    /// Persistent capture "+" for the chrome layer. Creates a fresh blank
+    /// capture node (rich note surface — the four entry-type circles live
+    /// inside it) and hands navigation to the active body's NavigationStack
+    /// via `router.pendingNodeNavigationID`, exactly as the Dashboard "+"
+    /// does. Replaces the four per-body triggers that routed to the retired
+    /// `CaptureOverlayView`.
+    private var captureTriggerButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            Task {
+                guard let node = await store.createCaptureNode() else { return }
+                router.isCapturing = true
+                router.captureNodeID = node.id
+                router.captureDraftHasText = false
+                router.pendingNodeNavigationID = node.id
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.black)
+                .frame(width: 60, height: 60)
+                .background(Color.white)
+                .clipShape(Circle())
+                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+        }
+        .buttonStyle(.plain)
     }
 
     var body: some View {
@@ -129,17 +156,26 @@ struct CanvasChrome: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
                         } else {
-                            HStack(alignment: .center, spacing: 8) {
-                                DashboardBackButton {
-                                    router.entryMode = .dashboard
+                            // ZStack (not HStack + Spacers) so the view pill is
+                            // TRUE-centered on screen regardless of the leading
+                            // back button vs. the wider trailing ChromeBar —
+                            // two Spacers would bias it toward the narrower side.
+                            ZStack {
+                                // Top-center view pill — the single view-mode
+                                // switcher, persistent across every canvas mode.
+                                ViewPill(scope: scope)
+
+                                HStack(alignment: .center, spacing: 8) {
+                                    DashboardBackButton {
+                                        router.entryMode = .dashboard
+                                    }
+                                    Spacer()
+                                    ChromeBar(
+                                        menuHasAttention: menuHasAttention,
+                                        onSelect: { selection.enter(scope: scope) },
+                                        onMenu: { showSlideOutMenu = true }
+                                    )
                                 }
-                                Spacer()
-                                ChromeBar(
-                                    menuHasAttention: menuHasAttention,
-                                    onHistory: { showHistory = true },
-                                    onSelect: { selection.enter(scope: scope) },
-                                    onMenu: { showSlideOutMenu = true }
-                                )
                             }
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
@@ -171,6 +207,29 @@ struct CanvasChrome: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, LibrarianPanelLayout.peekDetentHeight + 12)
+                    }
+                }
+
+                // Persistent capture "+" — ONE button in the chrome layer
+                // above the body switcher, so every view mode (all four Card
+                // presentations, List, and the graph canvas) shows an
+                // identical capture affordance. Replaces the four per-body
+                // copies that had drifted (missing entirely from the carousel;
+                // a hardcoded bottom inset in vertical scroll). Bottom-trailing,
+                // clearing the peek pill. Shares the density/pill visibility
+                // gate — hidden in detail view, during selection, or when the
+                // Librarian rises above peek.
+                if !store.isInDetailView
+                    && !selection.isActive
+                    && router.librarianAtPeek {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            captureTriggerButton
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
                     }
                 }
 
@@ -272,11 +331,6 @@ struct CanvasChrome: View {
         .sheet(isPresented: $showQuarantineReview) {
             QuarantineReviewSheet()
         }
-        .sheet(isPresented: $showHistory) {
-            HistoryPanel(onSelect: { node in
-                router.pendingNodeNavigationID = node.id
-            })
-        }
         .sheet(isPresented: $showBatchAddTagSheet) {
             TagEditorSheet(existing: nil) { createdName in
                 let ids = selection.selected
@@ -374,21 +428,20 @@ private struct DashboardBackButton: View {
     }
 }
 
-// MARK: - Chrome bar (History / Select / Menu)
+// MARK: - Chrome bar (Select / Menu)
 
-/// Three icon segments inside one Capsule with a shared chrome surface
-/// (Liquid Glass on iOS 26+, `.thinMaterial` fallback below). Replaces the
-/// prior three discrete circles. Height matches the standalone back-button
-/// circle (48) so the row aligns.
+/// Icon segments inside one Capsule with a shared chrome surface
+/// (Liquid Glass on iOS 26+, `.thinMaterial` fallback below). Height matches
+/// the standalone back-button circle (48) so the row aligns. The former
+/// leading "Recents" (history) segment was retired — recency now lives in
+/// List view's default sort, reached via the top-center view pill.
 private struct ChromeBar: View {
     let menuHasAttention: Bool
-    let onHistory: () -> Void
     let onSelect: () -> Void
     let onMenu: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            segment(icon: "clock.arrow.circlepath", weightSize: 17, action: onHistory)
             segment(icon: "checkmark.circle", weightSize: 18, action: onSelect)
             segment(icon: "line.3.horizontal.decrease", weightSize: 18, action: onMenu)
                 .overlay(alignment: .topTrailing) {
@@ -412,6 +465,85 @@ private struct ChromeBar: View {
                 .frame(width: 48, height: 48)
                 .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - View pill (top-center)
+
+/// Top-center view pill — the single view-mode switcher for the whole
+/// canvas chrome. Shows the current view's NAME (Card / List / Map) and
+/// taps open an inline `Picker` flyout (checkmark on the current mode).
+/// Lives in the persistent chrome layer above the body switcher, so it
+/// rides EVERY view mode — the user hops graph→list→card from anywhere.
+/// Replaces both the retired Dashboard Recents button and the earlier
+/// bottom trailing-slot toggle (which clashed with the capture "+").
+///
+/// The right-edge slide-out menu keeps its own View rows too (intentional
+/// redundancy per the unification brief); this is the fast path.
+///
+/// Destinations map short pill names onto `ViewMode`: "Card" → `.grid`
+/// (Card View's presentation family), "List" → `.list`, "Map" →
+/// `.systemGraph` (the graph canvas). The two "coming soon" stubs
+/// (`.userGraph`, `.timeline`) are intentionally absent — the pill offers
+/// only the live primaries; the slide-out menu still lists the stubs.
+private struct ViewPill: View {
+    @Environment(CorpusStore.self) private var store
+    let scope: CanvasScope
+
+    private static let destinations: [(mode: ViewMode, label: String, icon: String)] = [
+        (.grid,        "Card", "square.grid.2x2"),
+        (.list,        "List", "list.bullet"),
+        (.systemGraph, "Map",  "circle.hexagongrid.fill"),
+    ]
+
+    private var current: ViewMode { store.filterState(for: scope).viewMode }
+
+    /// Card View spans several `viewMode`s that all route to the `.grid`
+    /// destination, so fall back to the first entry (Card) when the live
+    /// mode isn't one of the three pill primaries.
+    private var currentDest: (mode: ViewMode, label: String, icon: String) {
+        Self.destinations.first { $0.mode == current } ?? Self.destinations[0]
+    }
+
+    private var modeBinding: Binding<ViewMode> {
+        Binding(
+            get: { current },
+            set: { newValue in
+                guard newValue != current else { return }
+                var s = store.filterState(for: scope)
+                s.viewMode = newValue
+                store.setFilterState(s, for: scope)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        )
+    }
+
+    var body: some View {
+        Menu {
+            Picker("View", selection: modeBinding) {
+                ForEach(Self.destinations, id: \.mode) { dest in
+                    Label(dest.label, systemImage: dest.icon).tag(dest.mode)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: currentDest.icon)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(currentDest.label)
+                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .opacity(0.6)
+            }
+            .foregroundStyle(.white)
+            .frame(height: 36)
+            .padding(.horizontal, 14)
+            .contentShape(Capsule())
+            .chromeSurface(Capsule())
+            .clipShape(Capsule())
+        }
+        .menuStyle(.button)
         .buttonStyle(.plain)
     }
 }

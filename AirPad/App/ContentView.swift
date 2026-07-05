@@ -42,26 +42,7 @@ struct ContentView: View {
             .overlay(alignment: .topTrailing) {
                 EntryVisualDevPanelHost()
             }
-
-            // In-app capture overlay (ws-in-app-capture-overlay). Lives at
-            // the ContentView root so it floats over whichever entry mode
-            // is active without changing the entry mode itself. Navigation
-            // is deferred to the active surface via
-            // `router.pendingNodeNavigationID` — the NavigationStack-owning
-            // view (Dashboard, CanvasView, VerticalScrollView) observes that
-            // field and pushes onto its own path.
-            if let ctx = router.captureOverlay {
-                CaptureOverlayView(
-                    context: ctx,
-                    onDismiss: { router.captureOverlay = nil },
-                    onNavigateToNode: { id in
-                        router.pendingNodeNavigationID = id
-                    }
-                )
-                .transition(.opacity)
-            }
         }
-        .animation(.easeInOut(duration: 0.12), value: router.captureOverlay)
         // Chats list sheet — shared by the Dashboard header bubble and
         // the Librarian "Chats" tile via `router.showChatsList`. Mounted
         // at the root so both entry points present the bit-identical
@@ -152,20 +133,6 @@ struct ContentView: View {
                 // the Librarian persists across dashboard too. Do NOT
                 // build that here; it belongs to a later move.
                 panelState.duck(animated: true)
-            }
-        }
-        // Capture coexistence (fix-pass v3 Item 2b). When the in-app
-        // capture overlay activates, duck the Librarian so its panel
-        // doesn't render over the capture UI (Librarian is the topmost
-        // layout resident — same reason QuikCapture mode ducks above).
-        // On dismiss restore per current entry mode; if we're on
-        // dashboard / recents the panel was already ducked so this
-        // is a no-op there.
-        .onChange(of: router.captureOverlay) { _, ctx in
-            if ctx != nil {
-                panelState.duck(animated: true)
-            } else {
-                restorePanelForEntryMode()
             }
         }
         // Capture mode (Dashboard "+"): the focused blank-node surface ducks the

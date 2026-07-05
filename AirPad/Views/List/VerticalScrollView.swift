@@ -38,14 +38,25 @@ struct VerticalScrollView: View {
     var scope: CanvasScope = .corpus
     @State private var centerIdx = 0
 
-    // 5:7 editorial card face. Card width = screen × 0.9 (from the
-    // existing `.padding(.horizontal, width * 0.05)` below); height is
-    // the 7/5 of that. Tune width factor on-device, not here.
-    private let cardHeight: CGFloat = UIScreen.main.bounds.width * 0.9 * (7.0 / 5.0)
-    private let cardSpacing: CGFloat = 6
+    // 5:7 editorial card face. Card width = screen × 0.9 (from the existing
+    // `.padding(.horizontal, width * 0.05)` below); height + inter-card gap are
+    // CardTuning dials (keyed `.vertical`). Defaults reproduce the prior baked
+    // values (height ratio 0.9·7/5 = 1.26 × screen width; spacing 6).
+    @AppStorage(CardTuningKey.key(.vertical, .height))
+    private var heightRatio: Double = CardTuningDefaults.value(.vertical, .height)
+    @AppStorage(CardTuningKey.key(.vertical, .spacing))
+    private var cardSpacingRaw: Double = CardTuningDefaults.value(.vertical, .spacing)
+
+    private var cardHeight: CGFloat { UIScreen.main.bounds.width * CGFloat(heightRatio) }
+    private var cardSpacing: CGFloat { CGFloat(cardSpacingRaw) }
     private let topBarHeight: CGFloat = 110  // top chrome row + padding from ContentView
     private let haptic = UIImpactFeedbackGenerator(style: .medium)
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
+
+    #if DEBUG
+    @State private var showCardTuning = false
+    @State private var cardTuningOffset: CGSize = .zero
+    #endif
 
     var body: some View {
         GeometryReader { geo in
@@ -77,6 +88,13 @@ struct VerticalScrollView: View {
                     }
                     .allowsHitTesting(false)
                     .ignoresSafeArea()
+
+                    #if DEBUG
+                    cardTuningTrigger
+                    if showCardTuning {
+                        floatingCardTuningPanel
+                    }
+                    #endif
                 }
                 .navigationDestination(for: Node.self) { node in
                     NodeDetailView(nodeID: node.id)
@@ -126,7 +144,43 @@ struct VerticalScrollView: View {
         }
     }
 
-    // MARK: - Capture trigger
+    // MARK: - Card tuning (DEBUG)
+
+    #if DEBUG
+    private var cardTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showCardTuning.toggle()
+                } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 60)
+        .padding(.leading, 10)
+    }
+
+    private var floatingCardTuningPanel: some View {
+        VStack {
+            Spacer()
+            CardTuningPanel(
+                isPresented: $showCardTuning,
+                position: $cardTuningOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+    #endif
 
     // MARK: - Scroll content
 
@@ -147,7 +201,8 @@ struct VerticalScrollView: View {
                             nodeID: item.realNodeID,
                             fallbackNode: item.node,
                             isSelecting: selection.isActive,
-                            isPicked: selection.isSelected(item.realNodeID)
+                            isPicked: selection.isSelected(item.realNodeID),
+                            presentation: .vertical
                         )
                         .frame(height: cardHeight)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)

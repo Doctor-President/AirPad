@@ -34,6 +34,40 @@ struct NodeCardView: View {
     /// Grid context disables this — many tiny cards bouncing on viewport
     /// entry reads as noise. Default keeps carousel behavior unchanged.
     var animateEntry: Bool = true
+    /// Which full-card surface this face renders in — selects the per-
+    /// presentation tuning values (hero-zone / font / text-opacity) via
+    /// `CardTuning`. Defaults to `.carousel` to preserve the memberwise-
+    /// init call shape at existing sites.
+    var presentation: CardPresentation = .carousel
+
+    // CardTuning dials (DEBUG-tunable, live in all builds at defaults so
+    // Release is pixel-identical). Keyed per presentation; wired in `init`.
+    @AppStorage private var heroFraction: Double
+    @AppStorage private var fontScale: Double
+    @AppStorage private var textOpacity: Double
+
+    private var hero: CGFloat { CGFloat(heroFraction) }
+    private var fs: CGFloat { CGFloat(fontScale) }
+
+    init(nodeID: String,
+         fallbackNode: Node,
+         isSelecting: Bool = false,
+         isPicked: Bool = false,
+         animateEntry: Bool = true,
+         presentation: CardPresentation = .carousel) {
+        self.nodeID = nodeID
+        self.fallbackNode = fallbackNode
+        self.isSelecting = isSelecting
+        self.isPicked = isPicked
+        self.animateEntry = animateEntry
+        self.presentation = presentation
+        _heroFraction = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .heroZone),
+                                   CardTuningKey.key(presentation, .heroZone))
+        _fontScale = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .fontScale),
+                                CardTuningKey.key(presentation, .fontScale))
+        _textOpacity = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .textOpacity),
+                                  CardTuningKey.key(presentation, .textOpacity))
+    }
 
     @Environment(CorpusStore.self) private var store
     @State private var appeared = false
@@ -95,7 +129,7 @@ struct NodeCardView: View {
                 // NodeGridTile's resolver — same heroPercent (0.42) the
                 // editorial topInset uses, so the gradient and the title band
                 // stay in sync.
-                let heroZoneHeight = geo.size.height * 0.42
+                let heroZoneHeight = geo.size.height * hero
                 let gradientCenterY: CGFloat = hasHero
                     ? 0
                     : (heroZoneHeight - geo.size.height) / 2
@@ -143,7 +177,7 @@ struct NodeCardView: View {
 
     @ViewBuilder
     private func heroOverlay(width: CGFloat, height: CGFloat) -> some View {
-        let heroHeight = height * 0.42
+        let heroHeight = height * hero
         VStack(spacing: 0) {
             CardHeroImage(node: node)
                 .frame(width: width, height: heroHeight)
@@ -210,7 +244,7 @@ struct NodeCardView: View {
         // Reserve the SAME hero zone whether or not a hero exists, so the
         // title always sits below the color band (gradientCenterY in the
         // ZStack rides the same fraction). Parity with NodeGridTile.
-        let topInset: CGFloat = cardHeight * 0.42 + 18
+        let topInset: CGFloat = cardHeight * hero + 18
 
         // Entry-stream partition. Atomics are normalized to the contiguous
         // front of `node.items`; foldIndex is guaranteed ≥ atomicCount.
@@ -230,14 +264,14 @@ struct NodeCardView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let category {
                     Text(category)
-                        .font(.system(size: 12, design: .serif))
+                        .font(.system(size: 12 * fs, design: .serif))
                         .italic()
                         .foregroundColor(Self.inkMeta)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(node.relativeTimestamp.uppercased())
-                    .font(.system(size: 10, design: .serif))
+                    .font(.system(size: 10 * fs, design: .serif))
                     .tracking(2.2)
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
@@ -252,7 +286,7 @@ struct NodeCardView: View {
 
             // Title
             Text(titleText)
-                .font(.system(size: 23, weight: .bold, design: .serif))
+                .font(.system(size: 23 * fs, weight: .bold, design: .serif))
                 .tracking(-0.35)
                 .foregroundColor(Self.inkTitle)
                 .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
@@ -265,7 +299,7 @@ struct NodeCardView: View {
                     // Folded entries own the flex slot below — keep the deck a
                     // capped 3-line lede so the body has room.
                     Text(node.summary)
-                        .font(.system(size: 14, design: .serif))
+                        .font(.system(size: 14 * fs, design: .serif))
                         .italic()
                         .foregroundColor(Self.inkDeck)
                         .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -281,7 +315,7 @@ struct NodeCardView: View {
                     // to the bottom.
                     fitLinesText(
                         node.summary,
-                        fontSize: 14,
+                        fontSize: 14 * fs,
                         italic: true,
                         lineSpacing: 3,
                         color: Self.inkDeck,
@@ -339,7 +373,7 @@ struct NodeCardView: View {
                     .frame(height: 0.5)
                     .padding(.bottom, 10)
                 Text(tagList.map { $0.uppercased() }.joined(separator: " · "))
-                    .font(.system(size: 10, weight: .medium, design: .serif))
+                    .font(.system(size: 10 * fs, weight: .medium, design: .serif))
                     .tracking(2.0)
                     .foregroundColor(Self.inkMeta)
                     .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
@@ -350,6 +384,10 @@ struct NodeCardView: View {
         .padding(.top, topInset)
         .padding(.bottom, 22)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // Text-opacity dial — multiplies the whole editorial block (default
+        // 1.0 = identical). Faint hairlines/shadows ride along, acceptable
+        // for a face-tuning knob.
+        .opacity(textOpacity)
     }
 
     // MARK: - Entry stream — stat line, payload card-forms, overflow

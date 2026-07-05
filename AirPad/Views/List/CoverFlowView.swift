@@ -42,6 +42,13 @@ struct CoverFlowView: View {
     @AppStorage(CoverFlowKey.cardSpacing)
     private var cardSpacing: Double = CoverFlowDefaults.cardSpacing
 
+    // Card-content tuning (shared with vertical scroll via CardTuning). Height
+    // is the carousel's card-height multiplier (×cardWidth); spacing reuses the
+    // CoverFlowKey above. Hero-zone / font / text-opacity live inside
+    // NodeCardView, keyed by `presentation: .carousel`.
+    @AppStorage(CardTuningKey.key(.carousel, .height))
+    private var cardHeightRatio: Double = CardTuningDefaults.value(.carousel, .height)
+
     // R8 rebuild — the carousel is a self-owned ZStack deck, not a
     // ScrollView + LazyHStack. Inside a lazy scroll container zIndex is
     // ignored and draw order follows document order (left neighbour always
@@ -62,6 +69,8 @@ struct CoverFlowView: View {
     #if DEBUG
     @State private var showTuningPanel = false
     @State private var tuningPanelOffset: CGSize = .zero
+    @State private var showCardTuning = false
+    @State private var cardTuningOffset: CGSize = .zero
     #endif
 
     private var nodes: [Node] { store.filteredNodes(in: scope) }
@@ -80,6 +89,9 @@ struct CoverFlowView: View {
                 tuningTrigger
                 if showTuningPanel {
                     floatingTuningPanel
+                }
+                if showCardTuning {
+                    floatingCardTuningPanel
                 }
                 #endif
             }
@@ -122,10 +134,11 @@ struct CoverFlowView: View {
         GeometryReader { geo in
         let screenW = geo.size.width
         let cardWidth = screenW * CGFloat(centerWidthFraction)
-        // 25% height — carousel cards ride 1.95× width (+25% over R7's 1.56,
-        // itself up from the 5:7 grid face's 7/5 = 1.4). One dial. Clamped
-        // below to the reserved band so the taller card never overflows/clips.
-        let cardHeightRatio: CGFloat = 1.95
+        // Carousel card-height multiplier (×cardWidth). Default 1.95 (+25%
+        // over R7's 1.56, itself up from the 5:7 grid face's 7/5 = 1.4). Now a
+        // CardTuning dial. Clamped below to the reserved band so the taller
+        // card never overflows/clips.
+        let cardHeightRatio = CGFloat(self.cardHeightRatio)
 
         // Reserved bands above/below the carousel. Top (90) clears the
         // back/chrome row. Bottom = Librarian peek (95) + the density pill's
@@ -262,6 +275,18 @@ struct CoverFlowView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // Card-content tuner (height / hero / font / opacity / spacing)
+                // — distinct from the carousel-geometry tuner beside it.
+                Button {
+                    showCardTuning.toggle()
+                } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.35))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 Spacer()
             }
             Spacer()
@@ -276,6 +301,19 @@ struct CoverFlowView: View {
             CoverFlowTuningPanel(
                 isPresented: $showTuningPanel,
                 position: $tuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+
+    private var floatingCardTuningPanel: some View {
+        VStack {
+            Spacer()
+            CardTuningPanel(
+                isPresented: $showCardTuning,
+                position: $cardTuningOffset
             )
             .padding(.bottom, 80)
         }

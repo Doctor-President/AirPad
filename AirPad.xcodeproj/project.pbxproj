@@ -163,6 +163,7 @@
 		AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3366166820015E0F584466E9 /* OGMetadataService.swift */; };
 		AE9C0E76D1F909B7C3197976 /* SubstrateColoringPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */; };
 		AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */; };
+		B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F96F01949F13EC35528775 /* CardTuning.swift */; };
 		B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B37326A27826C7715C130B6 /* SingleMediaBody.swift */; };
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
@@ -280,6 +281,7 @@
 		34AC513418FD53025E45C9B6 /* BlockChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChunker.swift; sourceTree = "<group>"; };
 		36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageView.swift; sourceTree = "<group>"; };
 		376265F2CCAF46EDE2216E54 /* NodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeBlock.swift; sourceTree = "<group>"; };
+		37F96F01949F13EC35528775 /* CardTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardTuning.swift; sourceTree = "<group>"; };
 		38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusIndex.swift; sourceTree = "<group>"; };
 		38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodService.swift; sourceTree = "<group>"; };
 		39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouter.swift; sourceTree = "<group>"; };
@@ -875,6 +877,7 @@
 				B65719255B960A7B6876EC2A /* CardBlurTest.swift */,
 				321F93F7630A107A8A1266EF /* CardDocumentTile.swift */,
 				0AD607D873DD5FF571DE6C5D /* CardLinkTile.swift */,
+				37F96F01949F13EC35528775 /* CardTuning.swift */,
 				C49FE808E3476860F4E68D4F /* CoverFlowView.swift */,
 				FD659A40CE161F15D371C285 /* NodeCardView.swift */,
 				4D539DCAE9FDB57420DF7460 /* NodeListView.swift */,
@@ -1053,6 +1056,7 @@
 				A795741744098AF3B305335B /* CardBlurTest.swift in Sources */,
 				1121953E0B7C6CA81992C90F /* CardDocumentTile.swift in Sources */,
 				21CD74A24FCAA544898228E0 /* CardLinkTile.swift in Sources */,
+				B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */,
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
 				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
 				766BF82341F128E5B35B7345 /* ChatView.swift in Sources */,

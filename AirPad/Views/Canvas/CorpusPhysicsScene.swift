@@ -315,9 +315,18 @@ final class CorpusPhysicsScene: SKScene {
         territoryLabelData = labels
     }
 
+    /// Condensed system label font (SF Compact / condensed width) for the tiny
+    /// RESTING node labels only — a serif reads muddy at 8–14pt on a wobbling
+    /// blob, whereas condensed sans stays crisp and packs more glyphs per line.
+    /// Serif (Source Serif 4) stays everywhere identity-bearing: focal bubble,
+    /// card face, territory pills, über titles.
+    static func condensedLabelFont(size: CGFloat) -> UIFont {
+        UIFont.systemFont(ofSize: size, weight: .semibold, width: .condensed)
+    }
+
     /// Source Serif 4 — the app's editorial serif (note editor default, SB121).
-    /// The Map's node + focal text speak it so the type voice is one. Falls back
-    /// to the system serif, then Georgia, if the bundled face fails to load.
+    /// The Map's focal + identity text speak it so the type voice is one. Falls
+    /// back to the system serif, then Georgia, if the bundled face fails to load.
     static func serifFont(size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
         let isBold = weight.rawValue >= UIFont.Weight.semibold.rawValue
         if let f = UIFont(name: isBold ? "SourceSerif4-Bold" : "SourceSerif4-Regular", size: size) {
@@ -2940,16 +2949,16 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    /// Bold serif title font scaled to the node's box (≈ side/6, floored 8pt,
-    /// capped 18pt), then FIT-THEN-SHRINK: step the size down until the whole
-    /// title fits the two-line box, so truncation only kicks in when even the
-    /// 8pt floor won't hold it.
+    /// Resting-label font — condensed SF (NOT the serif; see `condensedLabelFont`),
+    /// scaled to the node's box (≈ side/6, floored 8pt, capped 18pt), then
+    /// FIT-THEN-SHRINK: step the size down until the whole title fits the two-line
+    /// box, so truncation only kicks in when even the 8pt floor won't hold it.
     private func fittedTitleFont(_ text: String, boxWidth: CGFloat) -> UIFont {
         let floorSize: CGFloat = 8
         let maxSize = min(18, max(floorSize, boxWidth / 6))
         var size = maxSize
         while size > floorSize {
-            let f = CorpusPhysicsScene.serifFont(size: size, weight: .bold)
+            let f = CorpusPhysicsScene.condensedLabelFont(size: size)
             let bounds = (text as NSString).boundingRect(
                 with: CGSize(width: boxWidth, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -2957,7 +2966,7 @@ final class CorpusPhysicsScene: SKScene {
             if bounds.height <= f.lineHeight * 2 + 1 { break }   // fits in ≤2 lines
             size -= 1
         }
-        return CorpusPhysicsScene.serifFont(size: size, weight: .bold)
+        return CorpusPhysicsScene.condensedLabelFont(size: size)
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {

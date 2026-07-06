@@ -32,6 +32,62 @@ struct CanvasView: View {
 
     @Namespace private var zoomNamespace
 
+    // Tag-anchored Map — signal weights (the "gravity" strengths). Tunable dials;
+    // T calibrates on device, bake later. The permeability dial binds `language`.
+    @AppStorage("map.weight.collection") private var wCollection: Double = 1.0
+    @AppStorage("map.weight.anchor") private var wAnchor: Double = 0.6
+    @AppStorage("map.weight.language") private var wLanguage: Double = 0.3
+    @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
+    @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
+    private var mapWeights: TagTerritoryLayout.SignalWeights {
+        .init(collection: wCollection, anchor: wAnchor, language: wLanguage, backlink: wBacklink)
+    }
+
+    /// Per-node territory tint — a within-family gradient anchored on the
+    /// territory's palette hex, varied by recency (or a stable hash when off).
+    /// Label pills keep the flat family anchor.
+    private func mapTerritoryColors(_ layout: TagTerritoryLayout.Layout, nodes: [Node]) -> [String: UIColor] {
+        let keyColor = territoryColorMap(layout.territories)
+        let dates = nodes.map { $0.updatedAt.timeIntervalSince1970 }
+        let minD = dates.min() ?? 0
+        let span = max(1, (dates.max() ?? 1) - minD)
+        let byID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var out: [String: UIColor] = [:]
+        for (nodeID, key) in layout.nodeTerritory {
+            guard let base = keyColor[key] else { continue }
+            let t: Double
+            if tintByRecency, let node = byID[nodeID] {
+                t = (node.updatedAt.timeIntervalSince1970 - minD) / span
+            } else {
+                t = Double(abs(nodeID.hashValue) % 100) / 100
+            }
+            out[nodeID] = familyTint(base, t)
+        }
+        return out
+    }
+
+    /// Re-derive Map positions + tint live (weight or tint-toggle change).
+    private func reblendMap() {
+        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
+        let nodes = store.visibleNodes(in: scope)
+        let layout = TagTerritoryLayout.layout(
+            nodes: nodes, anchors: store.canvasAnchorTags,
+            collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
+        )
+        scene.rearrangeToPositions(layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
+        scene.applyTerritoryColors(mapTerritoryColors(layout, nodes: nodes))
+    }
+
+    /// Shift a base color within its hue family — brightness (+ a touch of
+    /// saturation) by `t` (0 dimmer/older → 1 brighter/newer). Hue is anchored.
+    private func familyTint(_ base: UIColor, _ t: Double) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getHue(&h, saturation: &s, brightness: &b, alpha: &a) else { return base }
+        let nb = min(1.0, max(0.40, b * CGFloat(0.78 + 0.44 * t)))
+        let ns = min(1.0, max(0.0, s * CGFloat(1.05 - 0.15 * t)))
+        return UIColor(hue: h, saturation: ns, brightness: nb, alpha: a)
+    }
+
     @State private var scene: CorpusPhysicsScene = {
         let s = CorpusPhysicsScene(size: CGSize(width: 393, height: 852))
         s.scaleMode = .resizeFill
@@ -90,6 +146,35 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.visibleNodes(in: scope))
         }
+        // Tag-anchored Map — migration. When the anchor SET changes (designate /
+        // demote), animate existing sprites to their new territory homes (or
+        // back to the canonical layout when the last anchor is demoted). `syncScene`
+        // above already refreshed `positionMap` for new sprites; this moves the
+        // ones already on screen so nothing teleports.
+        .onChange(of: store.tags.filter(\.isCanvasAnchor).map(\.id.uuidString).sorted()) { _, _ in
+            let nodes = store.visibleNodes(in: scope)
+            if store.canvasAnchorTags.isEmpty && !hasUserCollections {
+                // No territories left → animate back to the canonical layout and
+                // clear the tint (labels are cleared by syncScene above).
+                let sk = store.canvasLayout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) }
+                scene.rearrangeToPositions(sk)
+                scene.applyTerritoryColors([:])
+            } else {
+                let layout = TagTerritoryLayout.layout(
+                    nodes: nodes, anchors: store.canvasAnchorTags,
+                    collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
+                )
+                // SwiftUI-space → SpriteKit (y-up).
+                scene.rearrangeToPositions(layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
+                scene.applyTerritoryColors(mapTerritoryColors(layout, nodes: nodes))
+            }
+        }
+        // Tag-anchored Map — re-blend live as the gravity weights (and tint
+        // toggle) are dialed.
+        .onChange(of: [wCollection, wAnchor, wLanguage, wBacklink]) { _, _ in
+            reblendMap()
+        }
+        .onChange(of: tintByRecency) { _, _ in reblendMap() }
         .onChange(of: store.filterState.sortOrder) { _, newOrder in
             rearrangeForSortOrder(newOrder, nodes: store.visibleNodes(in: scope))
         }
@@ -219,6 +304,7 @@ struct CanvasView: View {
             }
 
             clusterLabelOverlay
+            territoryLabelOverlay
             focalEngagementOverlay
             nodeSummaryLayer
             drillDownBackButton
@@ -301,9 +387,11 @@ struct CanvasView: View {
     /// sprite as it eases back into the corpus instead of cutting at full size.
     /// Hidden during zoom — `nodeSummaryLayer` morphs in with the same gradient
     /// and takes over.
-    /// Title/summary text rendered here too, since the SpriteKit sprite (and its
-    /// child titleLabel) is hidden via alpha=0 during engagement. Font sizes mirror
-    /// swapToFocalTexture in CorpusPhysicsScene so the visual matches.
+    /// Title/summary text renders HERE (the SpriteKit sprite + its child
+    /// titleLabel are alpha-0 during engagement, and `swapToFocalTexture` no
+    /// longer rasterizes focal text). The type is drawn at the FINAL focal size
+    /// (`focalNodeFinalDiameter`) so it doesn't reflow as the node grows, with a
+    /// single opacity crossfade in on engage / out on release.
     @ViewBuilder
     private var focalEngagementOverlay: some View {
         let isFading = canvasState.currentFocalNodeID == nil
@@ -316,38 +404,89 @@ struct CanvasView: View {
                canvasState.focalNodeDiameter > 0,
                let node = store.nodes.first(where: { $0.id == id }) {
                 let diameter = canvasState.focalNodeDiameter
+                // Final (settled) focal size — the title renders at THIS size and
+                // just crossfades, so it doesn't reflow/scale as the node grows in.
+                let finalDiameter = canvasState.focalNodeFinalDiameter > 0
+                    ? canvasState.focalNodeFinalDiameter : diameter
                 let displayTitle = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
 
+                // MORPH-TO-CARD — one clock (focalMorph): the focal grows as a
+                // bubble, then morphs into the node's actual Card View face in
+                // place. Frame + corner interpolate circle → 5:7 card; the bubble
+                // crossfades out as the card fades in. Release runs it back.
+                let m = canvasState.focalMorph
+                let cardH = finalDiameter * 1.4          // 5:7 portrait
+                let w = diameter + (finalDiameter - diameter) * m
+                let h = diameter + (cardH - diameter) * m
+                let cardCorner: CGFloat = 30             // mirrors NodeCardView.cornerRadius
+                let corner = (diameter / 2) + (cardCorner - diameter / 2) * m
+
                 ZStack {
-                    NodeGradientBackground(node: node, cornerRadius: diameter / 2)
+                    // BUBBLE — gradient + centered title, clipped to the morphing
+                    // shape, crossfading out as the card comes in. Title opacity is
+                    // slaved to scale progress (one clock) so a fast graze never
+                    // lets it linger; it also hands off to the card's own title.
+                    ZStack {
+                        // Node wash (option 3) — a subtle DIAGONAL two-stop gradient
+                        // of the node's own territory shade (one hue, light → dark),
+                        // topLeading → bottomTrailing. The dark stop is clamped out
+                        // of the mid-luminance dead zone, so there's always a dark
+                        // region under the text.
+                        let (washLight, washDark) = NodeGradientLayer.washStops(
+                            baseHex: canvasState.focalNodeShadeHex ?? "#5B8FFF")
+                        LinearGradient(colors: [washLight, washDark],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
 
-                    VStack(spacing: diameter * 0.025) {
-                        Text(displayTitle)
-                            .font(.system(size: diameter * 0.085, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-
-                        if !node.summary.isEmpty {
-                            Text(node.summary)
-                                .font(.system(size: diameter * 0.05))
-                                .foregroundStyle(.white.opacity(0.85))
+                        // The wash guarantees a dark region under the text, so the
+                        // contrast rule resolves to light ink + a dark halo (the
+                        // halo also carries the type across the lighter diagonal end).
+                        let ink = Color(red: 1.0, green: 0.98, blue: 0.95)
+                        let halo = Color.black.opacity(0.6)
+                        VStack(spacing: finalDiameter * 0.025) {
+                            Text(displayTitle)
+                                .font(.custom("SourceSerif4-Bold", size: finalDiameter * 0.085))
+                                .foregroundStyle(ink)
+                                .shadow(color: halo, radius: 3)
+                                .shadow(color: halo, radius: 1)
                                 .multilineTextAlignment(.center)
-                                .lineLimit(4)
+                                .lineLimit(2)
+
+                            if !node.summary.isEmpty {
+                                Text(node.summary)
+                                    .font(.custom("SourceSerif4-Regular", size: finalDiameter * 0.05))
+                                    .foregroundStyle(ink)
+                                    .shadow(color: halo, radius: 3)
+                                    .shadow(color: halo, radius: 1)
+                                    .multilineTextAlignment(.center)
+                                    .lineLimit(4)
+                            }
                         }
+                        .frame(width: finalDiameter * 0.7)
+                        .opacity(canvasState.focalScaleProgress)
                     }
-                    .frame(width: diameter * 0.7)
+                    .frame(width: w, height: h)
+                    .clipShape(RoundedRectangle(cornerRadius: corner))
+                    .opacity(1 - m)
+
+                    // CARD — the node's real face (same type voice), fading in as
+                    // the bubble morphs. Built only while morphing (m>0), so a fast
+                    // graze that never settles never instantiates the card.
+                    if m > 0.001 {
+                        NodeCardView(nodeID: id, fallbackNode: node, animateEntry: false)
+                            .frame(width: w, height: h)
+                            .opacity(m)
+                            .allowsHitTesting(false)
+                    }
                 }
-                .frame(width: diameter, height: diameter)
-                .clipShape(Circle())
                 .position(canvasState.focalNodeScreenPosition)
                 .opacity(isFading ? 0 : 1)
                 .allowsHitTesting(false)
                 .ignoresSafeArea()
-                .transition(.scale(scale: 0.7, anchor: .center).combined(with: .opacity))
+                // Single crossfade in/out — no scale/bounce.
+                .transition(.opacity)
             }
         }
-        .animation(.bouncy(duration: 0.35, extraBounce: 0.2), value: isFading)
+        .animation(.easeInOut(duration: 0.22), value: isFading)
     }
 
     @ViewBuilder
@@ -403,6 +542,19 @@ struct CanvasView: View {
                 positions: canvasState.clusterCentroidScreenPositions,
                 memberCounts: bagMemberCounts()
             )
+        }
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
+    }
+
+    /// Tag-anchored Map — territory name pills as real `.ultraThinMaterial`
+    /// glass above the SpriteKitView (same overlay pattern + rationale as the
+    /// cluster labels). Positions are bridged screen-space centroids, refreshed
+    /// every frame via `TimelineView(.animation)`.
+    @ViewBuilder
+    private var territoryLabelOverlay: some View {
+        TimelineView(.animation) { _ in
+            TerritoryLabelLayer(labels: canvasState.territoryLabels)
         }
         .allowsHitTesting(false)
         .ignoresSafeArea()
@@ -467,6 +619,60 @@ struct CanvasView: View {
         scene.rearrangeToPositions(positions)
     }
 
+    /// True when there's at least one user (non-system) collection — collections
+    /// are gravity territories, so the Map activates for them even without anchors.
+    private var hasUserCollections: Bool {
+        store.collections.contains {
+            !$0.isCorpus && !$0.isJournal && $0.id != NodeCollection.librarianSessionsID
+        }
+    }
+
+    /// Territory key → designed palette color, assigned by the engine's territory
+    /// order. Single source so tint + labels + migration agree.
+    private func territoryColorMap(_ territories: [TagTerritoryLayout.Territory]) -> [String: UIColor] {
+        var m: [String: UIColor] = [:]
+        let palette = CorpusPhysicsScene.territoryPalette
+        for (i, t) in territories.enumerated() {
+            m[t.key] = palette[i % palette.count]
+        }
+        return m
+    }
+
+    /// Map layout radii — mirror the substrate path's documented fallback chain
+    /// (`store.nodeRadii[id]` → `min(30 + 4×(items−1), 60)`, then `× 1.15 + 0.5`
+    /// visual inflation) so TagTerritoryLayout is never blind to big nodes' real
+    /// extent. `store.nodeRadii` is NOT persisted — on a fresh launch it starts
+    /// empty and only fills after capture/import, so passing it raw left big
+    /// nodes (Project: AirPad) packed as default-radius and overlapping at rest.
+    /// THE EMPTY-nodeRadii-ON-LAUNCH TRAP — 2nd occurrence (1st was substrate 4c1.3).
+    private func mapLayoutRadii(for nodes: [Node]) -> [String: CGFloat] {
+        var out: [String: CGFloat] = [:]
+        out.reserveCapacity(nodes.count)
+        for node in nodes {
+            let geometric: CGFloat
+            if let r = store.nodeRadii[node.id] {
+                geometric = r
+            } else {
+                let extra = CGFloat(max(0, node.items.count - 1)) * 4.0
+                geometric = min(30.0 + extra, 60.0)
+            }
+            out[node.id] = geometric * 1.15 + 0.5
+        }
+        return out
+    }
+
+    /// Territory key → palette HEX (same index assignment as `territoryColorMap`,
+    /// so the pill stroke and node tint always pair). Hex literal for the label
+    /// overlay, per the colorblind house rule.
+    private func territoryHexMap(_ territories: [TagTerritoryLayout.Territory]) -> [String: String] {
+        var m: [String: String] = [:]
+        let hex = CorpusPhysicsScene.territoryPaletteHex
+        for (i, t) in territories.enumerated() {
+            m[t.key] = hex[i % hex.count]
+        }
+        return m
+    }
+
     private func syncScene(nodes: [Node], newNodeID: String? = nil, expandingFrom: CGPoint? = nil) {
         print("[Canvas] syncScene: \(nodes.count) nodes, expandingFrom=\(expandingFrom != nil), sprites before=\(scene.spriteCount)")
 
@@ -481,11 +687,37 @@ struct CanvasView: View {
         // Compute layout: radial when drilled in, substrate when flag on +
         // fitted, canonical otherwise.
         let layoutPositions: [String: CanvasPosition]
+        var territoryColors: [String: UIColor] = [:]
+        var territoryLabels: [CorpusPhysicsScene.TerritoryLabel] = []
         if let drilledClusterID = canvasState.drilledInto,
            store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) != nil,
            let centerPos = expandingFrom {
             // Radial layout around Über-node position
             layoutPositions = computeRadialLayout(nodes: nodes, center: centerPos)
+        } else if !store.canvasAnchorTags.isEmpty || hasUserCollections {
+            // Tag-anchored Map (gravity model) — collections + anchor tags are
+            // territories that take layout authority over UMAP/substrate.
+            // Physics/engagement/focal untouched; this supplies the re-derived
+            // seed + territory tint/labels.
+            let layout = TagTerritoryLayout.layout(
+                nodes: nodes, anchors: store.canvasAnchorTags,
+                collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
+            )
+            layoutPositions = layout.positions
+            let keyHex = territoryHexMap(layout.territories)   // flat family anchor — for label pill stroke
+            territoryColors = mapTerritoryColors(layout, nodes: nodes)  // per-node within-family gradient
+            var membersByKey: [String: [String]] = [:]
+            for (nodeID, key) in layout.nodeTerritory {
+                membersByKey[key, default: []].append(nodeID)
+            }
+            territoryLabels = layout.territories.compactMap { t in
+                guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
+                return CorpusPhysicsScene.TerritoryLabel(
+                    name: t.name,
+                    colorHex: keyHex[t.key] ?? "#BBBBBB",
+                    memberIDs: members
+                )
+            }
         } else if FeatureFlags.substrateLayout,
                   let placements = SubstrateLayoutService.shared.canvasPlacements() {
             // SB139 Stage 4c1 — substrate-as-baseline. Below the auto-fit
@@ -575,8 +807,12 @@ struct CanvasView: View {
             uberNodeClusters: uberClusters,
             expandingFrom: expandingFrom,
             neighborhoodCache: store.neighborhoodCache,
-            nodeRadii: store.nodeRadii
+            nodeRadii: store.nodeRadii,
+            territoryColors: territoryColors
         )
+        // Tag-anchored Map — territory name labels (empty in non-Map modes,
+        // which clears any previously drawn labels).
+        scene.setTerritoryLabels(territoryLabels)
         scene.refreshSelectionOutlines()
         print("[Canvas] syncScene: \(scene.spriteCount) sprites after, \(uberClusters.count) Über-nodes")
     }
@@ -974,6 +1210,74 @@ private struct LabelPill: View {
             .overlay(
                 Capsule().stroke(.white.opacity(0.10), lineWidth: 0.5)
             )
+    }
+}
+
+/// Tag-anchored Map — territory name pills, screen-positioned from bridged
+/// centroids. Real `.ultraThinMaterial` glass; Source Serif 4; palette stroke.
+private struct TerritoryLabelLayer: View {
+    let labels: [CanvasState.TerritoryLabelInfo]
+
+    private static let fontSize: CGFloat = 15
+    private static let hPad: CGFloat = 14
+    private static let vPad: CGFloat = 7
+    private static let minHeight: CGFloat = 30
+    private static let approxGlyphWidth: CGFloat = 10.5  // Source Serif 4 15pt uppercase + tracking, empirical
+    private static let halo: CGFloat = 6
+
+    var body: some View {
+        GeometryReader { geo in
+            let bounds = CGRect(origin: .zero, size: geo.size)
+            let visible = declutter(in: bounds)
+            ZStack(alignment: .topLeading) {
+                ForEach(visible) { label in
+                    TerritoryLabelPill(text: label.name, colorHex: label.colorHex)
+                        .position(label.screenPosition)
+                }
+            }
+        }
+    }
+
+    /// Greedy declutter in layout order (the engine already emits larger
+    /// continents first). Off-screen candidates are dropped; a candidate whose
+    /// padded bbox hits an already-placed one is skipped.
+    private func declutter(in bounds: CGRect) -> [CanvasState.TerritoryLabelInfo] {
+        var placed: [CGRect] = []
+        var visible: [CanvasState.TerritoryLabelInfo] = []
+        for label in labels {
+            let textW = CGFloat(label.name.count) * Self.approxGlyphWidth
+            let w = textW + Self.hPad * 2
+            let h = max(Self.fontSize + Self.vPad * 2, Self.minHeight)
+            let box = CGRect(x: label.screenPosition.x - w / 2,
+                             y: label.screenPosition.y - h / 2,
+                             width: w, height: h)
+                .insetBy(dx: -Self.halo, dy: -Self.halo)
+            if !box.intersects(bounds) { continue }
+            if placed.contains(where: { $0.intersects(box) }) { continue }
+            placed.append(box)
+            visible.append(label)
+        }
+        return visible
+    }
+}
+
+private struct TerritoryLabelPill: View {
+    let text: String
+    let colorHex: String
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.custom("SourceSerif4-Bold", size: 15))
+            .tracking(1.5)
+            .foregroundStyle(.white.opacity(0.95))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .frame(minHeight: 30)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(
+                Capsule().stroke(Color(hexString: colorHex).opacity(0.95), lineWidth: 1.5)
+            )
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
     }
 }
 

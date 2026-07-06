@@ -32,6 +32,29 @@ final class CanvasState {
     /// scale + camera zoom so the SwiftUI overlay matches the canvas node visually.
     var focalNodeDiameter: CGFloat = 0
 
+    /// Screen-space diameter the focal node settles at (the lens' full focal
+    /// size, constant per screen width). The overlay renders the focal TITLE at
+    /// this size so the type doesn't reflow as the node grows in.
+    var focalNodeFinalDiameter: CGFloat = 0
+
+    /// How far the focal has grown, 0 (resting) → 1 (full focal size). The ONE
+    /// CLOCK for focal presentation: the overlay text opacity is slaved to it,
+    /// so a fast graze (focal never fully grows) never lets text linger, and on
+    /// release it fades in lockstep with the shrink.
+    var focalScaleProgress: CGFloat = 0
+
+    /// Hex of the focal node's rendered shade (territory tint in Map mode, else
+    /// its base fill). The focal bubble builds its subtle DIAGONAL two-stop wash
+    /// from this — one hue, light→dark, clamped out of the mid-luminance dead zone.
+    var focalNodeShadeHex: String? = nil
+
+    /// Bubble→card morph amount, 0 (bubble) → 1 (full card face), eased off the
+    /// tail of `focalScaleProgress`: the focal grows as a bubble, then morphs
+    /// into the node's actual Card View face once mostly grown. Release runs it
+    /// back to 0 (card → bubble). Drives both the overlay morph and the
+    /// solidity-law card footprint.
+    var focalMorph: CGFloat = 0
+
     /// ID of the previously-focal node while it shrinks back into the corpus
     /// during preCollapse and disengaging. Lets the SwiftUI overlay remain
     /// parented to the sprite as it animates back to its resting state, so the
@@ -61,4 +84,22 @@ final class CanvasState {
     /// pass typically runs before the embedded SKView's pass, so during
     /// fast pan/zoom the overlay reads a 1-frame-stale centroid.
     var clusterCentroidScreenPositions: [UUID: CGPoint] = [:]
+
+    /// Tag-anchored Map — resolved territory name labels in **screen-space**,
+    /// written each scene tick by `syncTerritoryLabelsToCanvasState`. The
+    /// SwiftUI `territoryLabelOverlay` renders these as real
+    /// `.ultraThinMaterial` glass pills (Source Serif 4) above the SpriteKitView
+    /// — same overlay pattern as the cluster labels, for the same reason (SK
+    /// can't reproduce the system blur). Empty in every non-Map mode.
+    var territoryLabels: [TerritoryLabelInfo] = []
+
+    /// One territory name pill: its name, palette stroke color (hex literal, per
+    /// the colorblind house rule), and screen-space center.
+    struct TerritoryLabelInfo: Identifiable, Equatable {
+        let key: String
+        let name: String
+        let colorHex: String
+        let screenPosition: CGPoint
+        var id: String { key }
+    }
 }

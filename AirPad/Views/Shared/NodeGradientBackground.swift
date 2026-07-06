@@ -94,7 +94,9 @@ struct NodeGradientLayer: View {
         ("A78BFA", "818CF8", "E36B4E"),
     ]
 
-    private var paletteIndex: Int {
+    private var paletteIndex: Int { Self.paletteSlot(for: node) }
+
+    static func paletteSlot(for node: Node) -> Int {
         guard let tagName = node.primaryTag else { return 0 }
         switch tagName {
         case "pal0": return 0
@@ -106,6 +108,75 @@ struct NodeGradientLayer: View {
         case "pal6": return 6
         default: return abs(tagName.hashValue) % 7
         }
+    }
+
+    // MARK: - Luminance-aware ink
+
+    private static func rgb(_ hex: String) -> (Double, Double, Double) {
+        let h = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: h).scanHexInt64(&int)
+        return (Double((int >> 16) & 0xFF) / 255,
+                Double((int >> 8) & 0xFF) / 255,
+                Double(int & 0xFF) / 255)
+    }
+
+    /// Representative luminance (0…1) of the node's gradient — the mean relative
+    /// luminance of its three blob colors, which pool where the bubble text sits.
+    static func representativeLuminance(for node: Node) -> Double {
+        let (a, b, c) = circleColors[paletteSlot(for: node) % circleColors.count]
+        func lum(_ hex: String) -> Double {
+            let (r, g, bl) = rgb(hex)
+            return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+        }
+        return (lum(a) + lum(b) + lum(c)) / 3
+    }
+
+    /// Ink that reads legibly over the node's bubble gradient (which, unlike the
+    /// card face, has no darkening scrim): warm near-black on a light palette,
+    /// warm off-white on a dark one. Pair with `legibleHalo` for a contrast
+    /// outline so mid-luminance palettes read too.
+    static func legibleInk(for node: Node) -> Color {
+        representativeLuminance(for: node) > 0.62
+            ? Color(red: 0.08, green: 0.07, blue: 0.06)
+            : Color(red: 1.0, green: 0.98, blue: 0.95)
+    }
+
+    /// Contrast halo behind the ink — the OPPOSITE luminance, applied as a text
+    /// shadow so the type separates from a mid-tone gradient where neither pure
+    /// ink has strong contrast on its own (the bubble carries no scrim).
+    static func legibleHalo(for node: Node) -> Color {
+        representativeLuminance(for: node) > 0.62
+            ? Color.white.opacity(0.55)     // dark ink → light halo
+            : Color.black.opacity(0.60)     // light ink → dark halo
+    }
+
+    // MARK: - Diagonal node wash (single-hue territory shade)
+
+    private static func luminance(_ r: Double, _ g: Double, _ b: Double) -> Double {
+        0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    /// Two stops of ONE shade for the focal bubble's subtle diagonal wash: a
+    /// gentle lift and a darker anchor. The dark stop is CLAMPED below the
+    /// mid-luminance dead zone (≤ 0.22) so there's always a genuinely dark region
+    /// for the light type to read against — the text-contrast rule samples this
+    /// darkest region, so legibility no longer depends on the base landing outside
+    /// the muddy middle. Returned light → dark for a topLeading→bottomTrailing fill.
+    static func washStops(baseHex: String) -> (light: Color, dark: Color) {
+        let (r, g, b) = rgb(baseHex)
+        // Light stop — a subtle lift of the same hue (kept modest so it stays a
+        // wash, not a spotlight).
+        let lf = 1.14
+        let light = Color(red: min(1, r * lf), green: min(1, g * lf), blue: min(1, b * lf))
+        // Dark stop — scale the hue down until it clears the dead zone.
+        var f = 0.68
+        var dr = r * f, dg = g * f, db = b * f
+        var i = 0
+        while luminance(dr, dg, db) > 0.22 && i < 14 {
+            f *= 0.85; dr = r * f; dg = g * f; db = b * f; i += 1
+        }
+        return (light, Color(red: dr, green: dg, blue: db))
     }
 
     var body: some View {

@@ -33,6 +33,7 @@ struct CanvasChrome: View {
     @State private var showSettings = false
     @State private var showQuarantineReview = false
     @State private var showSlideOutMenu = false
+    @State private var showEditMap = false
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
 
@@ -163,7 +164,7 @@ struct CanvasChrome: View {
                             ZStack {
                                 // Top-center view pill — the single view-mode
                                 // switcher, persistent across every canvas mode.
-                                ViewPill(scope: scope)
+                                ViewPill(scope: scope, onEditMap: { showEditMap = true })
 
                                 HStack(alignment: .center, spacing: 8) {
                                     DashboardBackButton {
@@ -324,6 +325,9 @@ struct CanvasChrome: View {
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
             FilterPanelView(scope: scope)
+        }
+        .sheet(isPresented: $showEditMap) {
+            EditMapSheet()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -490,6 +494,9 @@ private struct ChromeBar: View {
 private struct ViewPill: View {
     @Environment(CorpusStore.self) private var store
     let scope: CanvasScope
+    /// Tag-anchored Map — opens the anchor-designation settings. Shown in the
+    /// flyout only when Map is the active view.
+    var onEditMap: () -> Void = {}
 
     private static let destinations: [(mode: ViewMode, label: String, icon: String)] = [
         (.grid,        "Card", "square.grid.2x2"),
@@ -525,6 +532,11 @@ private struct ViewPill: View {
                 ForEach(Self.destinations, id: \.mode) { dest in
                     Label(dest.label, systemImage: dest.icon).tag(dest.mode)
                 }
+            }
+            // Map settings — anchor designation. Only meaningful on the Map.
+            if current == .systemGraph {
+                Divider()
+                Button("Edit Map…", systemImage: "slider.horizontal.3", action: onEditMap)
             }
         } label: {
             HStack(spacing: 5) {

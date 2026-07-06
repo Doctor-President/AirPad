@@ -2991,6 +2991,46 @@ final class CorpusStore {
         await persistTags()
     }
 
+    // MARK: - Canvas anchors (tag-anchored Map v1)
+    // A corpus tag the user has promoted to a spatial territory on the canvas.
+    // User-only — the system NEVER designates anchors. Capped so the map stays
+    // readable.
+
+    static let maxCanvasAnchors = 12
+
+    /// Tags currently designated as canvas anchors, most-covered first (the
+    /// order territories are laid out in).
+    var canvasAnchorTags: [Tag] {
+        tags.filter(\.isCanvasAnchor)
+            .sorted { nodeCount(forTag: $0.name) > nodeCount(forTag: $1.name) }
+    }
+
+    /// Node coverage for a tag — recomputed (no cached index). Drives the
+    /// Edit-Map list sort + the advisory badges.
+    func nodeCount(forTag name: String) -> Int {
+        nodes.reduce(0) { $0 + ($1.tags.contains(name) ? 1 : 0) }
+    }
+
+    /// Promote a corpus tag to a canvas anchor. No-op past the cap or if
+    /// already an anchor. Returns whether it was promoted.
+    @discardableResult
+    func promoteToCanvasAnchor(tagID: UUID) async -> Bool {
+        guard canvasAnchorTags.count < Self.maxCanvasAnchors,
+              let idx = tags.firstIndex(where: { $0.id == tagID }),
+              !tags[idx].isCanvasAnchor else { return false }
+        tags[idx].isCanvasAnchor = true
+        await persistTags()
+        return true
+    }
+
+    /// Demote a canvas anchor back to a plain corpus tag.
+    func demoteCanvasAnchor(tagID: UUID) async {
+        guard let idx = tags.firstIndex(where: { $0.id == tagID }),
+              tags[idx].isCanvasAnchor else { return }
+        tags[idx].isCanvasAnchor = false
+        await persistTags()
+    }
+
     /// Applies tag names to a node, merging with its existing tags (no duplicates).
     /// `source` records provenance in `tagSources` — never downgrades `.user` to `.model`.
     /// `.user`-sourced applies bump `tagLastUsedAt` for each name (drives the

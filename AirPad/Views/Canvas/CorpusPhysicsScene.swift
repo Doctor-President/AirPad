@@ -179,9 +179,11 @@ final class CorpusPhysicsScene: SKScene {
         uberNodeClusters: [UberNodeCluster] = [],
         expandingFrom: CGPoint? = nil,
         neighborhoodCache: NeighborhoodCache? = nil,
-        nodeRadii: [String: CGFloat] = [:]
+        nodeRadii: [String: CGFloat] = [:],
+        territoryColors: [String: UIColor] = [:]
     ) {
         self.tagColors = tagColors
+        self.territoryColors = territoryColors
         positionMap = layoutPositions
         self.neighborhoodCache = neighborhoodCache
         self.nodeRadii = nodeRadii
@@ -269,6 +271,70 @@ final class CorpusPhysicsScene: SKScene {
     private var positionMap: [String: CanvasPosition] = [:]
 
     private var tagColors: [String: UIColor] = [:]
+    /// Tag-anchored Map — per-node territory tint (nodeID → its territory tag's
+    /// color). Empty in every other mode. Takes precedence in `bubbleColor`.
+    private var territoryColors: [String: UIColor] = [:]
+
+    /// Re-tint the sprites already on screen for a live designate/demote — new
+    /// sprites already read this via `bubbleColor`. Passing `[:]` restores each
+    /// node's original (substrate/neighborhood) color.
+    func applyTerritoryColors(_ colors: [String: UIColor]) {
+        territoryColors = colors
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for (id, sprite) in nodeSprites {
+            guard let node = byID[id] else { continue }
+            sprite.fillColor = bubbleColor(for: node)
+        }
+    }
+
+    /// Designed, distinct territory palette (colorblind-considered qualitative
+    /// set; hex literals so it's verifiable per house rule). Assigned to
+    /// territories by anchor order; the label pill stroke and member tint share
+    /// the same entry so colour + name always pair.
+    static let territoryPaletteHex: [String] = [
+        "#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377",
+        "#EE7733", "#0099BB", "#DDCC77", "#882255", "#44AA99", "#BBBBBB"
+    ]
+    static let territoryPalette: [UIColor] = territoryPaletteHex.map { UIColor(hex: $0) ?? .gray }
+
+    /// A territory name label. Position is NOT stored — it's re-derived each
+    /// frame from members' live sprite positions and bridged to the SwiftUI
+    /// overlay (`territoryLabelScreenInfo` → `canvasState.territoryLabels`), so
+    /// the pill can render as real `.ultraThinMaterial` glass above the SK view.
+    struct TerritoryLabel {
+        let name: String
+        let colorHex: String
+        let memberIDs: [String]
+    }
+
+    /// Store the Map's territory label metadata. The pills themselves are NOT
+    /// drawn in-scene (SK can't reproduce `.ultraThinMaterial`); each frame
+    /// `syncTerritoryLabelsToCanvasState` projects member centroids to screen
+    /// space for the SwiftUI overlay. Passing `[]` clears the overlay.
+    func setTerritoryLabels(_ labels: [TerritoryLabel]) {
+        territoryLabelData = labels
+    }
+
+    /// Source Serif 4 — the app's editorial serif (note editor default, SB121).
+    /// The Map's node + focal text speak it so the type voice is one. Falls back
+    /// to the system serif, then Georgia, if the bundled face fails to load.
+    static func serifFont(size: CGFloat, weight: UIFont.Weight = .regular) -> UIFont {
+        let isBold = weight.rawValue >= UIFont.Weight.semibold.rawValue
+        if let f = UIFont(name: isBold ? "SourceSerif4-Bold" : "SourceSerif4-Regular", size: size) {
+            return f
+        }
+        let base = UIFont.systemFont(ofSize: size, weight: weight)
+        if let d = base.fontDescriptor.withDesign(.serif) {
+            return UIFont(descriptor: d, size: size)
+        }
+        return UIFont(name: isBold ? "Georgia-Bold" : "Georgia", size: size) ?? base
+    }
+
+    private var territoryLabelData: [TerritoryLabel] = []
+    /// True after we last wrote an empty territory-label set, so we clear the
+    /// overlay once instead of every idle frame.
+    private var lastTerritoryLabelsEmpty = true
+
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
 
@@ -299,6 +365,32 @@ final class CorpusPhysicsScene: SKScene {
         UIRectFill(CGRect(origin: .zero, size: size))
         let img = UIGraphicsGetImageFromCurrentImageContext()!
         UIGraphicsEndImageContext()
+        return SKTexture(image: img)
+    }()
+
+    /// Shared diagonal wash — a circle-masked ramp from clear (top-leading) to
+    /// translucent black (bottom-trailing), used as a child sprite over every
+    /// node so each carries a subtle DIAGONAL gradient of its own shade (light →
+    /// darker of the same hue). One texture for all nodes; circle mask keeps it
+    /// inside the blob so no square corners spill. GPU-cheap (one texture sample).
+    private lazy var nodeWashTexture: SKTexture = {
+        let size = CGSize(width: 128, height: 128)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let img = renderer.image { ctx in
+            let c = ctx.cgContext
+            c.addEllipse(in: CGRect(origin: .zero, size: size))
+            c.clip()
+            let colors = [UIColor.black.withAlphaComponent(0).cgColor,
+                          UIColor.black.withAlphaComponent(0.38).cgColor] as CFArray
+            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: colors, locations: [0, 1]) else { return }
+            // Top-leading (clear) → bottom-trailing (dark). UIKit y-down, so start
+            // top-left, end bottom-right = the requested diagonal.
+            c.drawLinearGradient(grad,
+                                 start: .zero,
+                                 end: CGPoint(x: size.width, y: size.height),
+                                 options: [])
+        }
         return SKTexture(image: img)
     }()
 
@@ -625,11 +717,15 @@ final class CorpusPhysicsScene: SKScene {
     // euclidean distance from focal normalized by `characteristicSpacing`)
     private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
     private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
-    private let scaleSigmoidSteepness: CGFloat = 3.0      // SB85 baseline
-    private let scaleSigmoidMidpoint: CGFloat = 0.7       // SB85 baseline
+    // Graze tuning dials — baked defaults, live-overridable from the Tuning
+    // group (UserDefaults keys below). Cached here and refreshed once per frame
+    // (`refreshGrazeTuning`) so the per-node lens reads a stored value, not
+    // UserDefaults, on the hot path.
+    private var scaleSigmoidSteepness: CGFloat = 3.0      // SB85 baseline
+    private var scaleSigmoidMidpoint: CGFloat = 0.7       // SB85 baseline
 
     // Radial position compression
-    private let positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
+    private var positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
     private let positionCompressionFalloff: CGFloat = 3.0    // normalized distance at which compression effect halves
     private let neighborBreathingGap: CGFloat = 8.0          // world-space gap between focal edge and neighbor edge
 
@@ -654,11 +750,37 @@ final class CorpusPhysicsScene: SKScene {
     private let positionMatchTolerance: CGFloat = 2.0
     private let scaleMatchTolerance: CGFloat = 0.05
 
-    private let hysteresisThreshold: CGFloat = 20.0
+    private var hysteresisThreshold: CGFloat = 20.0
 
     // SB92: Track per-focal-switch lerp ramp window
     private var focalSwitchTimestamp: TimeInterval? = nil
-    private let focalSwitchSlowLerpDuration: TimeInterval = 0.15
+    private var focalSwitchSlowLerpDuration: TimeInterval = 0.15
+
+    /// UserDefaults keys for the Graze tuning dials (shared with the SwiftUI
+    /// Tuning group's `@AppStorage`). Baked defaults live on the properties
+    /// above; a key is only read when the user has set it.
+    private enum GrazeTuningKey {
+        static let hysteresis = "graze.hysteresis"
+        static let sigmoidSteepness = "graze.sigmoidSteepness"
+        static let sigmoidMidpoint = "graze.sigmoidMidpoint"
+        static let compression = "graze.compression"
+        static let switchLerpDuration = "graze.switchLerpDuration"
+    }
+
+    /// Pull the live dial values into the cached properties. Called once per
+    /// frame from `update` — cheap (5 UserDefaults reads), and keeps the
+    /// per-node lens off UserDefaults. Absent key → keep the baked default.
+    private func refreshGrazeTuning() {
+        let d = UserDefaults.standard
+        func tuned(_ key: String, _ fallback: CGFloat) -> CGFloat {
+            d.object(forKey: key) == nil ? fallback : CGFloat(d.double(forKey: key))
+        }
+        hysteresisThreshold = tuned(GrazeTuningKey.hysteresis, 20.0)
+        scaleSigmoidSteepness = tuned(GrazeTuningKey.sigmoidSteepness, 3.0)
+        scaleSigmoidMidpoint = tuned(GrazeTuningKey.sigmoidMidpoint, 0.7)
+        positionCompressionStrength = tuned(GrazeTuningKey.compression, 0.55)
+        focalSwitchSlowLerpDuration = TimeInterval(tuned(GrazeTuningKey.switchLerpDuration, 0.15))
+    }
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -731,6 +853,8 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+
+        refreshGrazeTuning()  // pull live Graze dials into cached properties
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {
@@ -938,10 +1062,15 @@ final class CorpusPhysicsScene: SKScene {
             // because compression falloff has died out and overlaps are rare.
             var relaxationSet: [String] = [focalID]
             for nodeID in nodeSprites.keys where nodeID != focalID {
-                // Strand-ring members sit in the undistorted frame outside the
-                // lens with their own angular separation; PBD resolves overlap
-                // among lens-compressed nodes only.
-                if strandTargets[nodeID] != nil { continue }
+                // SOLIDITY LAW: every body near focal is physical — strand-ring
+                // members included — so radius-aware repulsion resolves any
+                // overlap between a ring slot and a lens-compressed neighbor.
+                // The ring target stays the attractor (reset each frame in
+                // Phase 1); PBD only nudges on a real overlap, then it returns.
+                if strandTargets[nodeID] != nil {
+                    relaxationSet.append(nodeID)
+                    continue
+                }
                 guard let restingPos = nodeRestingPositions[nodeID] else { continue }
                 let dx = restingPos.x - focalRestingPos.x
                 let dy = restingPos.y - focalRestingPos.y
@@ -954,6 +1083,13 @@ final class CorpusPhysicsScene: SKScene {
                     relaxationSet.append(nodeID)
                 }
             }
+
+            // MORPH-TO-CARD solidity: once the focal morphs toward its card face,
+            // its collision footprint becomes the card's 5:7 rounded rect (taller
+            // than wide), so the crowd yields to the card's REAL shape instead of a
+            // circle. 0 while it's still a bubble → the circle path below runs.
+            let focalMorph = morphAmount(focalScaleProgress(for: focalID, isActive: true))
+            let cardAspect: CGFloat = 1.4   // 5:7 portrait (height / width)
 
             for _ in 0..<relaxationPasses {
                 var anyOverlap = false
@@ -977,6 +1113,34 @@ final class CorpusPhysicsScene: SKScene {
                         // SB94: Scale-aware breathing gap. Constant world-space gap shrinks to invisibility at zoom-out
                         // (6pt world × 0.25 cameraScale = 1.5pt screen). Divide by cameraScale so screen-space gap stays consistent.
                         let effectiveBreathingGap = relaxationBreathingGap / max(cameraScale, 0.1)
+
+                        if (aIsFocal || bIsFocal) && focalMorph > 0.01 {
+                            // Card AABB footprint — focal stays put; the other node
+                            // yields out along its least-penetration axis.
+                            let focalPos = aIsFocal ? posA : posB
+                            let otherID  = aIsFocal ? idB : idA
+                            let otherPos = aIsFocal ? posB : posA
+                            let focalR   = aIsFocal ? radA : radB
+                            let otherR   = aIsFocal ? radB : radA
+                            let halfW = focalR + otherR + effectiveBreathingGap
+                            let halfH = focalR * (1 + (cardAspect - 1) * focalMorph) + otherR + effectiveBreathingGap
+                            let ddx = otherPos.x - focalPos.x
+                            let ddy = otherPos.y - focalPos.y
+                            let ox = halfW - abs(ddx)
+                            let oy = halfH - abs(ddy)
+                            if ox > 0 && oy > 0 {
+                                anyOverlap = true
+                                if ox <= oy {
+                                    let s: CGFloat = ddx >= 0 ? 1 : -1
+                                    targetPositions[otherID] = CGPoint(x: otherPos.x + s * ox, y: otherPos.y)
+                                } else {
+                                    let s: CGFloat = ddy >= 0 ? 1 : -1
+                                    targetPositions[otherID] = CGPoint(x: otherPos.x, y: otherPos.y + s * oy)
+                                }
+                            }
+                            continue
+                        }
+
                         let required = radA + radB + effectiveBreathingGap
                         let dx = posB.x - posA.x
                         let dy = posB.y - posA.y
@@ -1189,6 +1353,7 @@ final class CorpusPhysicsScene: SKScene {
 
         syncFocalToCanvasState()
         syncClusterCentroidsToCanvasState()
+        syncTerritoryLabelsToCanvasState()
 
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
@@ -1247,15 +1412,66 @@ final class CorpusPhysicsScene: SKScene {
                 canvasState?.disengagingFocalNodeID = isActive ? nil : trackedID
                 canvasState?.focalNodeScreenPosition = centerView
                 canvasState?.focalNodeDiameter = diameterView
+                canvasState?.focalNodeFinalDiameter = view.bounds.width * focalScreenFraction
+                let progress = focalScaleProgress(for: trackedID, isActive: isActive)
+                canvasState?.focalScaleProgress = progress
+                canvasState?.focalMorph = morphAmount(progress)
+                if let focalNode = currentNodes.first(where: { $0.id == trackedID }) {
+                    canvasState?.focalNodeShadeHex = hexString(bubbleColor(for: focalNode))
+                }
             }
             lastSyncedFocalID = trackedID
         } else if lastSyncedFocalID != nil {
             MainActor.assumeIsolated {
                 canvasState?.currentFocalNodeID = nil
                 canvasState?.disengagingFocalNodeID = nil
+                canvasState?.focalScaleProgress = 0
+                canvasState?.focalMorph = 0
             }
             lastSyncedFocalID = nil
         }
+    }
+
+    /// `#RRGGBB` for a UIColor (sRGB). Used to bridge the focal node's rendered
+    /// shade to the SwiftUI bubble wash.
+    private func hexString(_ color: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X",
+                      Int((max(0, min(1, r)) * 255).rounded()),
+                      Int((max(0, min(1, g)) * 255).rounded()),
+                      Int((max(0, min(1, b)) * 255).rounded()))
+    }
+
+    /// Fraction of the focal's growth held before it starts morphing to a card.
+    private let morphStartProgress: CGFloat = 0.6
+
+    /// MORPH-TO-CARD easing: the focal holds as a bubble until it's mostly grown
+    /// (`morphStartProgress`), then eases into the card face over the top of the
+    /// grow. Shared clock = `focalScaleProgress`, so it also runs backward on
+    /// release (card → bubble → shrink).
+    private func morphAmount(_ p: CGFloat) -> CGFloat {
+        guard p > morphStartProgress else { return 0 }
+        let x = min(1, (p - morphStartProgress) / (1 - morphStartProgress))
+        return x * x * (3 - 2 * x)   // smoothstep
+    }
+
+    /// The ONE CLOCK for focal presentation: how far `nodeID` has grown between
+    /// its resting scale and full focal scale, clamped 0…1. Slaves the overlay
+    /// text opacity (and, later, the morph) to the actual sprite scale, so a
+    /// fast graze that never fully grows never lets text linger, and release
+    /// fades it in lockstep with the shrink.
+    private func focalScaleProgress(for nodeID: String, isActive: Bool) -> CGFloat {
+        guard let sprite = nodeSprites[nodeID], let view = self.view else {
+            return isActive ? 1 : 0
+        }
+        let intrinsic = max(nodeIntrinsicRadii[nodeID] ?? 30, 0.001)
+        let restingScale = nodeRestingScales[nodeID] ?? 1.0
+        let fullFocalWorldRadius = (view.bounds.width * focalScreenFraction / 2) * cameraNode.xScale
+        let fullFocalScale = fullFocalWorldRadius / intrinsic
+        let denom = fullFocalScale - restingScale
+        guard denom > 0.0001 else { return isActive ? 1 : 0 }
+        return min(1, max(0, (sprite.xScale - restingScale) / denom))
     }
 
     /// SB139 ws-canvas-visual-model — bridge bag centroids to
@@ -1339,6 +1555,49 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Tag-anchored Map — bridge each territory label's screen-space centroid to
+    /// `canvasState.territoryLabels` every frame so the SwiftUI overlay can draw
+    /// real `.ultraThinMaterial` glass pills above the SpriteKitView. Centroid is
+    /// the mean of the territory members' LIVE sprite positions (so the pill
+    /// rides with its nodes through pan/zoom/engagement), projected via
+    /// `view.convert(_:from:)`. Empty data clears the overlay once.
+    private func syncTerritoryLabelsToCanvasState() {
+        guard let view = self.view else { return }
+        MainActor.assumeIsolated {
+            guard !territoryLabelData.isEmpty else {
+                if !lastTerritoryLabelsEmpty {
+                    canvasState?.territoryLabels = []
+                    lastTerritoryLabelsEmpty = true
+                }
+                return
+            }
+            lastTerritoryLabelsEmpty = false
+
+            var out: [CanvasState.TerritoryLabelInfo] = []
+            out.reserveCapacity(territoryLabelData.count)
+            for label in territoryLabelData {
+                var sum = CGPoint.zero
+                var n: CGFloat = 0
+                for id in label.memberIDs {
+                    guard let sprite = nodeSprites[id] else { continue }
+                    sum.x += sprite.position.x
+                    sum.y += sprite.position.y
+                    n += 1
+                }
+                guard n > 0 else { continue }
+                let world = CGPoint(x: sum.x / n, y: sum.y / n)
+                let screen = view.convert(world, from: self)
+                out.append(CanvasState.TerritoryLabelInfo(
+                    key: label.name,
+                    name: label.name,
+                    colorHex: label.colorHex,
+                    screenPosition: screen
+                ))
+            }
+            canvasState?.territoryLabels = out
+        }
+    }
+
     /// Rebuilds the nodeID → persistent-cluster-UUID lookup from the
     /// substrate service's current fitted model + persistent ID array.
     /// Empties the lookup when no model is loaded, when clustering hasn't
@@ -1403,7 +1662,15 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    // MARK: - Strand ring targets
+    // MARK: - Strand ring targets  ·  ⚠️ DORMANT (retired 2026-07-06)
+    //
+    // Strands are RETIRED from engagement. `recomputeStrandTargets` is neutered
+    // to always clear `strandTargets` (and undo any dim / z-lift), so every
+    // downstream `strandTargets`-guarded path (Phase 1 ring override, Phase 1.1
+    // scale override, Phase 1.5 inclusion, dimming) is inert. The successor is
+    // TETHERS-ON-TAP. The mechanism below (ringSlots, dimming, z-lift, radius)
+    // is preserved DORMANT for reference / possible revival — reversible by
+    // restoring `recomputeStrandTargets`'s original body (see git history).
 
     /// Default ring-radius multiplier applied to focal's steady-state world
     /// radius. Tunable from inspect view via `strand.ringRadiusMultiplier`.
@@ -1431,36 +1698,12 @@ final class CorpusPhysicsScene: SKScene {
     /// the dict (a sparse or empty ring is valid output). Called from the
     /// engaged-state branch when focal changes — single source of trigger.
     private func recomputeStrandTargets(focalID: String, screenWidth: CGFloat) {
-        guard FeatureFlags.strandSnap else {
-            strandTargets.removeAll()
-            return
-        }
-        guard let focalNode = currentNodes.first(where: { $0.id == focalID }),
-              let focalRestingPos = nodeRestingPositions[focalID] else {
-            strandTargets.removeAll()
-            return
-        }
-
-        let picks = StrandService.neighbors(of: focalNode, in: currentNodes, k: 5)
-        var neighborPositions: [StrandService.NeighborPos] = []
-        neighborPositions.reserveCapacity(picks.count)
-        for pick in picks {
-            guard let pos = nodeRestingPositions[pick.node.id] else { continue }
-            neighborPositions.append(StrandService.NeighborPos(id: pick.node.id, pos: pos))
-        }
-
-        let radius = strandRingRadius(focalID: focalID, screenWidth: screenWidth)
-        strandTargets = StrandService.ringSlots(
-            focalRestingPos: focalRestingPos,
-            neighbors: neighborPositions,
-            radius: radius,
-            minAngularSeparation: StrandService.minAngularSeparation
-        )
-
-        print("[Strand] focal=\(focalID) neighbors=\(neighborPositions.count)/\(picks.count) radius=\(Int(radius))")
-
-        applyStrandDimming(focalID: focalID)
-        liftStrandZPositions()
+        // DORMANT — strands retired (see section banner). No ring is ever built:
+        // clear targets and undo any lingering dim / z-lift so engagement runs
+        // with the crowd solid and undimmed. Successor: tethers-on-tap.
+        strandTargets.removeAll()
+        clearStrandDimming()
+        restoreStrandZPositions()
     }
 
     /// Saves the current zPosition of each strand neighbor, then lifts them to
@@ -1652,17 +1895,29 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Honeycomb helpers
 
-    /// Find the node sprite nearest to the camera center with hysteresis.
+    /// Find the node nearest to the camera center with hysteresis.
+    ///
+    /// Ranks by each node's TRUE HOME (`nodeRestingPositions`), NOT its displaced
+    /// sprite position. During engagement the parting crowd pushes neighbour
+    /// sprites radially outward; ranking by displaced positions moved switch
+    /// targets away from the finger, so focus jittered and drifted off the node
+    /// under the user's thumb. Resting homes are stable, so the focus decision
+    /// tracks where the finger actually is — the crowd parts without changing who
+    /// the finger is over. (Falls back to the sprite position pre-layout.)
     private func findNearestNodeToCamera() -> String? {
         let cameraCenter = cameraNode.position
+
+        func homeDistance(_ nodeID: String) -> CGFloat {
+            let home = nodeRestingPositions[nodeID] ?? nodeSprites[nodeID]?.position ?? cameraCenter
+            let dx = home.x - cameraCenter.x
+            let dy = home.y - cameraCenter.y
+            return sqrt(dx * dx + dy * dy)
+        }
+
         var nearestID: String? = nil
         var nearestDistance: CGFloat = .infinity
-
-        for (nodeID, sprite) in nodeSprites {
-            let dx = sprite.position.x - cameraCenter.x
-            let dy = sprite.position.y - cameraCenter.y
-            let distance = sqrt(dx * dx + dy * dy)
-
+        for (nodeID, _) in nodeSprites {
+            let distance = homeDistance(nodeID)
             if distance < nearestDistance {
                 nearestDistance = distance
                 nearestID = nodeID
@@ -1670,11 +1925,8 @@ final class CorpusPhysicsScene: SKScene {
         }
 
         // Apply hysteresis if there's a current focal
-        if let currentID = currentFocalNodeID,
-           let currentSprite = nodeSprites[currentID] {
-            let currentDx = currentSprite.position.x - cameraCenter.x
-            let currentDy = currentSprite.position.y - cameraCenter.y
-            let currentDistance = sqrt(currentDx * currentDx + currentDy * currentDy)
+        if let currentID = currentFocalNodeID, nodeSprites[currentID] != nil {
+            let currentDistance = homeDistance(currentID)
 
             // SB92: Scale-aware hysteresis for consistent screen-space behavior across zoom
             let effectiveHysteresis = hysteresisThreshold / max(cameraNode.xScale, 0.1)
@@ -1714,7 +1966,7 @@ final class CorpusPhysicsScene: SKScene {
         shape.userData?["radius"] = radius
 
         let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
-        let labelSprite = makeTitleSprite(text: displayText, radius: radius)
+        let labelSprite = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node))
         shape.addChild(labelSprite)
 
         if node.isMeta {
@@ -1982,10 +2234,14 @@ final class CorpusPhysicsScene: SKScene {
         shape.userData = ["childNodeIDs": cluster.childNodeIDs]
 
         // Title label (cluster title, e.g., "Work (12)")
-        let titleLabel = SKLabelNode(text: cluster.title)
-        titleLabel.fontSize = 11
-        titleLabel.fontName = "HelveticaNeue-Medium"
-        titleLabel.fontColor = UIColor.white.withAlphaComponent(0.85)
+        let titleLabel = SKLabelNode()
+        titleLabel.attributedText = NSAttributedString(
+            string: cluster.title,
+            attributes: [
+                .font: CorpusPhysicsScene.serifFont(size: 11, weight: .medium),
+                .foregroundColor: UIColor.white.withAlphaComponent(0.85),
+            ]
+        )
         titleLabel.verticalAlignmentMode = .center
         titleLabel.horizontalAlignmentMode = .center
         titleLabel.position = .zero
@@ -2429,6 +2685,17 @@ final class CorpusPhysicsScene: SKScene {
             // Start organic breathing animation
             startBlobBreathing(for: shape, nodeID: nodeID, radius: radius)
         }
+
+        // Subtle diagonal wash — darkens the bottom-trailing diagonal of the
+        // node's own fill, so each unengaged node reads as a soft gradient of its
+        // shade (not a flat disc). Child sprite → independent of the fill / focal
+        // shader pipeline; hidden automatically when the parent goes alpha-0 focal.
+        let wash = SKSpriteNode(texture: nodeWashTexture)
+        wash.size = CGSize(width: radius * 2, height: radius * 2)
+        wash.zPosition = 0.5                 // above the fill, below the title (z=2)
+        wash.name = "wash"
+        shape.addChild(wash)
+
         return shape
     }
 
@@ -2473,6 +2740,23 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
+    /// Ink + halo that read legibly over a given fill: warm near-black on a light
+    /// fill, warm off-white on a dark one, each paired with an opposite-luminance
+    /// halo so the type separates on mid-tones too. Mirrors the focal bubble's
+    /// SwiftUI rule (`NodeGradientLayer.legibleInk`), in UIKit for the sprite path.
+    private func legibleInk(over fill: UIColor) -> (ink: UIColor, halo: UIColor) {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        fill.getRed(&r, green: &g, blue: &b, alpha: &a)
+        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        if lum > 0.6 {
+            return (UIColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0),
+                    UIColor(white: 1.0, alpha: 0.6))     // dark ink, light halo
+        } else {
+            return (UIColor(red: 1.0, green: 0.98, blue: 0.95, alpha: 1.0),
+                    UIColor(white: 0.0, alpha: 0.6))     // light ink, dark halo
+        }
+    }
+
     /// AT17.3.4: Render title + summary into a square canvas, vertically centered.
     /// The texture is treated as an icon — same square dimensions regardless of text content.
     /// Long content truncates with ellipsis. The square is sized in the bubble's intrinsic
@@ -2483,19 +2767,32 @@ final class CorpusPhysicsScene: SKScene {
         side: CGFloat,
         titleFont: UIFont,
         summaryFont: UIFont,
-        renderScale: CGFloat
+        renderScale: CGFloat,
+        fillColor: UIColor
     ) -> SKTexture {
         let textWidth = side  // padding inside the square
-        let textColor = UIColor.white.withAlphaComponent(0.85)
+        // Luminance-aware ink + soft halo, from the node's OWN fill — so the
+        // resting title reads on a light node (dark ink) as well as a dark one
+        // (light ink), and the halo separates it on mid-tones.
+        // Ink-flip only — luminance-aware color, no baked halo (the NSShadow
+        // muddied minified text). Clean minification comes from texture mipmaps.
+        let (ink, _) = legibleInk(over: fillColor)
+        func styled(_ text: String, _ font: UIFont) -> NSAttributedString {
+            let para = NSMutableParagraphStyle()
+            para.alignment = .center
+            para.lineBreakMode = .byTruncatingTail
+            return NSAttributedString(string: text, attributes: [
+                .font: font,
+                .foregroundColor: ink,
+                .paragraphStyle: para,
+            ])
+        }
 
         // Title label
         let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = titleFont
-        titleLabel.textColor = textColor
+        titleLabel.attributedText = styled(title, titleFont)
         titleLabel.numberOfLines = 2
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.textAlignment = .center
         let titleMaxHeight = titleFont.lineHeight * 2 + 4
         titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleMaxHeight)
         let titleFit = titleLabel.sizeThatFits(CGSize(width: textWidth, height: titleMaxHeight))
@@ -2508,12 +2805,9 @@ final class CorpusPhysicsScene: SKScene {
         var summaryHeight: CGFloat = 0
         if let summary, !summary.isEmpty {
             let s = UILabel()
-            s.text = summary
-            s.font = summaryFont
-            s.textColor = textColor
+            s.attributedText = styled(summary, summaryFont)
             s.numberOfLines = 4
             s.lineBreakMode = .byTruncatingTail
-            s.textAlignment = .center
             let sMaxHeight = summaryFont.lineHeight * 4 + 4
             s.frame = CGRect(x: 0, y: 0, width: textWidth, height: sMaxHeight)
             let sFit = s.sizeThatFits(CGSize(width: textWidth, height: sMaxHeight))
@@ -2548,6 +2842,7 @@ final class CorpusPhysicsScene: SKScene {
 
         let texture = SKTexture(image: image)
         texture.filteringMode = .linear
+        texture.usesMipmaps = true   // clean minification when the sprite scales down
         return texture
     }
 
@@ -2645,65 +2940,65 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    private func makeTitleSprite(text: String, radius: CGFloat) -> SKSpriteNode {
-        // Rasterize at displayed dimensions (full visual size); sprite is sized in
-        // intrinsic coords so parent scaling stays consistent.
-        let displayedCanvasSide: CGFloat = 84
-        let displayedTitleFontSize: CGFloat = 14
-        let titleFont = UIFont(name: "HelveticaNeue", size: displayedTitleFontSize) ?? UIFont.systemFont(ofSize: displayedTitleFontSize)
+    /// Bold serif title font scaled to the node's box (≈ side/6, floored 8pt,
+    /// capped 18pt), then FIT-THEN-SHRINK: step the size down until the whole
+    /// title fits the two-line box, so truncation only kicks in when even the
+    /// 8pt floor won't hold it.
+    private func fittedTitleFont(_ text: String, boxWidth: CGFloat) -> UIFont {
+        let floorSize: CGFloat = 8
+        let maxSize = min(18, max(floorSize, boxWidth / 6))
+        var size = maxSize
+        while size > floorSize {
+            let f = CorpusPhysicsScene.serifFont(size: size, weight: .bold)
+            let bounds = (text as NSString).boundingRect(
+                with: CGSize(width: boxWidth, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: f], context: nil)
+            if bounds.height <= f.lineHeight * 2 + 1 { break }   // fits in ≤2 lines
+            size -= 1
+        }
+        return CorpusPhysicsScene.serifFont(size: size, weight: .bold)
+    }
+
+    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
+        // Rasterize in the node's ACTUAL display box (radius × 1.4), not a fixed
+        // 84pt canvas scaled down — so the title lays out + renders at its real
+        // on-screen size per node (1:1), instead of being wrapped for 84pt and
+        // squished on small nodes.
+        let side = radius * 1.4
+        let titleFont = fittedTitleFont(text, boxWidth: side)
         let texture = rasterizeSquareText(
             title: text,
             summary: nil,
-            side: displayedCanvasSide,
+            side: side,
             titleFont: titleFont,
             summaryFont: titleFont,
-            renderScale: 6.0
+            renderScale: 6.0,
+            fillColor: fillColor
         )
         let sprite = SKSpriteNode(texture: texture)
         sprite.position = .zero
         sprite.zPosition = 2
         sprite.name = "titleLabel"
         sprite.userData = ["fullTitle": text, "isFocal": false]
-        sprite.size = CGSize(width: radius * 1.4, height: radius * 1.4)
+        sprite.size = CGSize(width: side, height: side)
         return sprite
     }
 
+    /// Focal text is NO LONGER rasterized into the sprite. The focal sprite is
+    /// `alpha = 0` during engagement (see `setFocalShader`), so a scaled focal
+    /// texture would never be seen — the title/summary render in the SwiftUI
+    /// `focalEngagementOverlay` at final size instead. We only flag the sprite
+    /// so its small non-focal texture is restored on release
+    /// (`swapToNonFocalTexture`). The child keeps its non-focal texture, hidden
+    /// by the parent's alpha throughout.
     private func swapToFocalTexture(nodeID: String) {
         guard let shape = nodeSprites[nodeID],
               let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-              let fullTitle = sprite.userData?["fullTitle"] as? String,
               let isFocal = sprite.userData?["isFocal"] as? Bool,
-              !isFocal,
-              let node = currentNodes.first(where: { $0.id == nodeID }),
-              let radius = nodeIntrinsicRadii[nodeID],
-              let view = self.view
+              !isFocal
         else { return }
-
-        // Rasterize at displayed dimensions (full visual size) so glyphs render at their
-        // actual on-screen point size. Sprite is sized in intrinsic coords so parent xScale
-        // still drives the engagement scaling — it just lands at 1:1 with the bitmap.
-        let displayedDiameter = focalScreenFraction * view.bounds.width
-        let displayedSquareSide = displayedDiameter * 0.7
-        let displayedTitleFontSize = displayedDiameter * 0.085
-        let displayedSummaryFontSize = displayedDiameter * 0.05
-
-        let titleFont = UIFont(name: "HelveticaNeue-Bold", size: displayedTitleFontSize) ?? UIFont.boldSystemFont(ofSize: displayedTitleFontSize)
-        let summaryFont = UIFont(name: "HelveticaNeue", size: displayedSummaryFontSize) ?? UIFont.systemFont(ofSize: displayedSummaryFontSize)
-
-        let texture = rasterizeSquareText(
-            title: fullTitle,
-            summary: node.summary,
-            side: displayedSquareSide,
-            titleFont: titleFont,
-            summaryFont: summaryFont,
-            renderScale: 6.0
-        )
-        sprite.texture = texture
-        print("[FocalDebug] textureFiltering=\(texture.filteringMode.rawValue) spriteBlend=\(sprite.blendMode.rawValue) parentBlend=\(shape.blendMode.rawValue) parentHasShader=\(shape.fillShader != nil)")
-        sprite.size = CGSize(width: radius * 1.4, height: radius * 1.4)
         sprite.userData?["isFocal"] = true
-
-        print("[FocalText] swap radius=\(radius) intrinsicSide=\(radius * 1.4) displayedSide=\(displayedSquareSide) titleFontSize=\(displayedTitleFontSize) texture=\(texture.size())")
     }
 
     private func swapToNonFocalTexture(nodeID: String) {
@@ -2715,20 +3010,21 @@ final class CorpusPhysicsScene: SKScene {
               let radius = nodeIntrinsicRadii[nodeID]
         else { return }
 
-        let displayedCanvasSide: CGFloat = 84
-        let displayedTitleFontSize: CGFloat = 14
-        let titleFont = UIFont(name: "HelveticaNeue", size: displayedTitleFontSize) ?? UIFont.systemFont(ofSize: displayedTitleFontSize)
+        let side = radius * 1.4
+        let titleFont = fittedTitleFont(fullTitle, boxWidth: side)
 
+        let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
         let texture = rasterizeSquareText(
             title: fullTitle,
             summary: nil,
-            side: displayedCanvasSide,
+            side: side,
             titleFont: titleFont,
             summaryFont: titleFont,
-            renderScale: 6.0
+            renderScale: 6.0,
+            fillColor: fillColor
         )
         sprite.texture = texture
-        sprite.size = CGSize(width: radius * 1.4, height: radius * 1.4)
+        sprite.size = CGSize(width: side, height: side)
         sprite.userData?["isFocal"] = false
     }
 
@@ -2812,6 +3108,10 @@ final class CorpusPhysicsScene: SKScene {
     /// Über-nodes are not routed here — they have their own path via
     /// `makeUberNodeShape` + `sampleChildColors`, which still reads `tagColors`.
     private func bubbleColor(for node: Node) -> UIColor {
+        // Tag-anchored Map — territory tint takes precedence when the node sits
+        // in a designated-anchor territory (paired with the on-canvas label for
+        // colorblind-safe reading).
+        if let territory = territoryColors[node.id] { return territory }
         // SB139 Stage 4c1.1 — substrate-as-baseline color path. When the flag
         // is on and the substrate has computed an HSB for this node, render
         // it. Otherwise fall through to the legacy neighborhood palette so

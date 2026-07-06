@@ -53,6 +53,7 @@
 		2D797B443BD3042A6F78FC40 /* LinkAppendSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */; };
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
+		334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */; };
 		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
 		348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */; };
 		35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */; };
@@ -125,6 +126,7 @@
 		8FCCD1C11E415D8FDC0322CA /* ZoomableImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
+		918876676560C61205991A10 /* EditMapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */; };
 		920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1213E716A9E302D0B777EDD /* EntryCard.swift */; };
 		92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 496C87CE26D129958AA115EF /* EntryMigration.swift */; };
 		92F35A9326AC198E2D28E79B /* CorpusIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */; };
@@ -268,6 +270,7 @@
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagTerritoryLayout.swift; sourceTree = "<group>"; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
@@ -403,6 +406,7 @@
 		D78B727835739390B86DF397 /* UMAPModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPModel.swift; sourceTree = "<group>"; };
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
 		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
+		D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMapSheet.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
 		DB97C8C89A4E56E95903000D /* BentoLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BentoLayout.swift; sourceTree = "<group>"; };
 		DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackAudioSession.swift; sourceTree = "<group>"; };
@@ -488,6 +492,7 @@
 				9348EE6BAC36DA4236BB5780 /* CanvasState.swift */,
 				66610DC5B90AC2729F2B6F1D /* CanvasView.swift */,
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
+				D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
 				03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */,
 			);
@@ -549,6 +554,7 @@
 				E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */,
 				5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */,
 				AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */,
+				219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */,
 				B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */,
 				1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */,
 			);
@@ -1096,6 +1102,7 @@
 				3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */,
 				868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */,
 				60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */,
+				918876676560C61205991A10 /* EditMapSheet.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
 				920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */,
 				ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */,
@@ -1192,6 +1199,7 @@
 				729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */,
 				AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */,
 				C903E8B2386E55E01245428C /* TagSelectionSheet.swift in Sources */,
+				334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */,
 				2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */,
 				019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */,
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,

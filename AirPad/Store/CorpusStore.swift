@@ -264,6 +264,12 @@ final class CorpusStore {
     /// with correct layout positions — belt-and-suspenders on top of onChange(of: nodes).
     var canvasNeedsSync = UUID()
 
+    /// Bumped by `runCorpusAnalysis` (Analyze button / idle fallback). CanvasView
+    /// observes this to DELIBERATELY re-form territories — the only reactive path
+    /// allowed to re-territorialize. Capture/cancel (the plain `nodes` observer)
+    /// reuse the frozen formation; territory identity is a corpus-clock event.
+    var territoryFormationRequest = UUID()
+
     /// Blocks that failed the quality gate during batch import.
     /// Never silently discarded — user reviews from Settings.
     var reviewQueue: [RejectedBlock] = [] {
@@ -286,6 +292,21 @@ final class CorpusStore {
     /// Runs off the launch/commit path so the open stays cool; cancelled & coalesced
     /// when refreshNeighborhoods fires again before it has run.
     private var deferredIntelligenceTask: Task<Void, Never>?
+
+    /// Foreground-idle fallback for corpus analysis (decisions.md 2026-07-06).
+    /// Armed/re-armed on capture; fires runCorpusAnalysis(.idle) after a window
+    /// of no further mutation so a user who never taps Analyze still gets a pass.
+    /// In-process Task.sleep only advances while foregrounded → foreground-idle.
+    private var idleAnalysisTask: Task<Void, Never>?
+    private let idleAnalysisWindow: Duration = .seconds(120)
+
+    /// Debounced per-node automatic-enrichment tasks (title/summary from the
+    /// note's own content). Keyed by nodeID; re-arming cancels the prior task so
+    /// rapid text commits coalesce. Debouncing + re-reading the node fresh at
+    /// fire time makes enrichment immune to the commit-timing race that made it
+    /// fire against a not-yet-committed body on the heavier Map surface (voice/
+    /// Card worked, Map didn't) — decisions.md 2026-07-06.
+    private var enrichmentTasks: [String: Task<Void, Never>] = [:]
 
     /// Nodes after applying the active corpus-scope filter and sort order.
     var filteredNodes: [Node] {
@@ -646,12 +667,12 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Save error: \(error)")
         }
-        // Refresh Über-node clusters (auto-invalidates at 5+ new nodes)
-        refreshUberNodeClusters()
-        // Refresh neighborhoods (may trigger layout recompute if structure changes)
-        refreshNeighborhoods()
-        // Single-node capture: recompute layout (inertia keeps existing nodes stable)
-        recomputeAlgorithmicLayout(reason: "single-node capture")
+        // Capture path is intentionally analysis-free (decisions.md 2026-07-06):
+        // corpus-wide clustering + neighborhoods + layout no longer run as a
+        // side effect of capture — the interaction clock must never block on the
+        // corpus clock. The note opens immediately; analysis runs on the explicit
+        // Analyze button or the idle fallback armed below.
+        armIdleAnalysis()
         // Thread analysis is gated on batchProcessingComplete (end of Phase 4) — see batchImportText.
         // Single-node insert does not trigger evaluation against an incomplete corpus (SB123).
     }
@@ -967,6 +988,13 @@ final class CorpusStore {
         updated.items.append(item)
         updated.updatedAt = Date()
         await updateNode(updated)
+        // Automatic enrichment on content-add — the append counterpart to
+        // updateTextItem's trigger. PastePad drops pasted text into a NEW entry
+        // through here (not updateTextItem), so without this a pasted note never
+        // gets an FM title/summary. Same debounced, fill-empty-gated, fresh-read
+        // scheduler — self-gates to text-bearing, un-enriched nodes, so it's a
+        // no-op for media-only appends.
+        scheduleEnrichment(nodeID: nodeID)
     }
 
     /// Updates the text content of an existing text-type item in a node.
@@ -991,6 +1019,41 @@ final class CorpusStore {
         await updateNode(updated)
         if !removedImageIDs.isEmpty {
             await reapInlineImages(removedImageIDs, nodeID: nodeID)
+        }
+        // Automatic per-node enrichment (decisions.md 2026-07-06 — enrichment is
+        // fast-clock, per-node, "fires quietly on save"). This is the ONLY trigger
+        // on the "+"→note-editor TEXT path — voice/link/camera call
+        // processNodeWithAI from their own capture sheets, but a typed note reaches
+        // the store only here, so without it a text note never gets an FM
+        // title/summary (the tile falls back to raw first-words). Scheduled
+        // (debounced, fresh-read) rather than fired inline so it can't run against
+        // a not-yet-committed body during the Map surface's capture churn.
+        scheduleEnrichment(nodeID: nodeID)
+    }
+
+    /// Debounced automatic enrichment for a single node. Coalesces rapid text
+    /// commits (cancel + re-arm), then re-reads the node FRESH at fire time and
+    /// only enriches when it's still un-enriched (empty title = fill-empty rule)
+    /// and actually has content — so it never races the commit or overwrites an
+    /// authored/edited note. Per-node only; never corpus-wide analysis (stays
+    /// decoupled from the Analyze/idle territory pass). Quiet: no tag sheet.
+    func scheduleEnrichment(nodeID: String) {
+        enrichmentTasks[nodeID]?.cancel()
+        enrichmentTasks[nodeID] = Task(priority: .userInitiated) { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self, !Task.isCancelled else { return }
+            defer { self.enrichmentTasks[nodeID] = nil }
+            guard let node = self.nodes.first(where: { $0.id == nodeID }) else { return }
+            let title = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = node.items.compactMap { item -> String? in
+                item.type == .text ? item.content : item.transcript
+            }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard title.isEmpty, !content.isEmpty else {
+                print("[Enrich] skip node=\(nodeID) titleEmpty=\(title.isEmpty) contentLen=\(content.count)")
+                return
+            }
+            print("[Enrich] firing node=\(nodeID) contentLen=\(content.count)")
+            await self.processNodeWithAI(nodeID: nodeID, suppressTagSheet: true)
         }
     }
 
@@ -4809,6 +4872,43 @@ final class CorpusStore {
         refreshNeighborhoods()
     }
 
+    // MARK: - Corpus analysis (explicit Analyze button + idle fallback)
+
+    /// What summoned a corpus-analysis pass. Both levers below call the SAME
+    /// underlying function — no forked logic (decisions.md 2026-07-06).
+    enum AnalysisTrigger: String { case manual, idle, batchImport }
+
+    /// The single corpus-analysis pass. Semantic layer only — clusters +
+    /// neighborhoods + the deferred FM naming chain scheduled inside
+    /// refreshNeighborhoods. Does NOT recompute positions: map persistence is
+    /// the default ("the map is a place, not a printout" — decisions.md
+    /// 2026-07-06). Self-gates via the fingerprint checks inside each refresh,
+    /// so an unchanged corpus is a cheap no-op.
+    func runCorpusAnalysis(trigger: AnalysisTrigger) {
+        print("[Analyze] Running corpus analysis — trigger: \(trigger.rawValue)")
+        refreshUberNodeClusters()
+        refreshNeighborhoods()
+        // Deliberate territory re-formation — the ONLY reactive path allowed to
+        // re-territorialize. CanvasView observes this and re-forms; capture/cancel
+        // never do (they reuse the frozen formation).
+        territoryFormationRequest = UUID()
+    }
+
+    /// Arm/re-arm the foreground-idle analysis fallback. Called on capture; a
+    /// burst of captures coalesces (cancel + reschedule) to one pass after the
+    /// corpus settles. The fingerprint gate inside runCorpusAnalysis makes it a
+    /// no-op if nothing actually changed.
+    private func armIdleAnalysis() {
+        idleAnalysisTask?.cancel()
+        idleAnalysisTask = Task(priority: .utility) { @MainActor [weak self] in
+            let window = self?.idleAnalysisWindow ?? .seconds(120)
+            try? await Task.sleep(for: window)
+            guard let self, !Task.isCancelled else { return }
+            print("[Analyze] Idle fallback fired")
+            self.runCorpusAnalysis(trigger: .idle)
+        }
+    }
+
     /// Schedule the deferred corpus-intelligence batch (neighborhood naming +
     /// corpus summary) off the launch/commit path. Debounced via cancel() so
     /// rapid successive refreshes coalesce — last write wins, same pattern as
@@ -4956,8 +5056,14 @@ final class CorpusStore {
                 abs(Double(newLargestMemberCount - previousLargestMemberCount)) / Double(previousLargestMemberCount) : 0
 
             if countDelta >= 3 || largestCountChange >= 0.3 {
-                print("[Neighborhood] Significant structure change detected (count Δ\(countDelta), largest member Δ\(String(format: "%.1f", largestCountChange * 100))%)")
-                recomputeAlgorithmicLayout(reason: "neighborhood structure change")
+                // Structure changed, but positions are NOT reshuffled here — map
+                // persistence is the default (decisions.md 2026-07-06: "the map is
+                // a place, not a printout"). Existing nodes keep their geography;
+                // the semantic layer (neighborhoods/hues/naming) refreshes below.
+                // A real Map-v2 drift layout (new nodes settling toward their
+                // neighborhood while existing nodes stay put) is the deferred
+                // follow-up — ws-canvas-layout-tag-anchored.
+                print("[Neighborhood] Significant structure change detected (count Δ\(countDelta), largest member Δ\(String(format: "%.1f", largestCountChange * 100))%) — positions frozen (map persistence)")
             }
 
             updateCorpusIndexNeighborhoodLayer(cache: cache)

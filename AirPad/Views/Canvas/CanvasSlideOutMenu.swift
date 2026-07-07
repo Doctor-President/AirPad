@@ -24,6 +24,7 @@ struct CanvasSlideOutMenu: View {
     let quarantineCount: Int
 
     let onSelectMode: (ViewMode) -> Void
+    let onAnalyze: () -> Void
     let onFilter: () -> Void
     let onSettings: () -> Void
     let onQuarantineReview: () -> Void
@@ -66,6 +67,11 @@ struct CanvasSlideOutMenu: View {
                 }
 
                 section("Tools") {
+                    actionRow(
+                        icon: "point.3.connected.trianglepath.dotted",
+                        label: "Analyze",
+                        action: { dismiss(then: onAnalyze) }
+                    )
                     actionRow(
                         icon: "slider.horizontal.3",
                         label: "Filter",

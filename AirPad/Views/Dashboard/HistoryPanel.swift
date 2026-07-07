@@ -22,6 +22,7 @@ struct HistoryPanel: View {
                         dismiss()
                     } label: {
                         RecentNodeRow(node: node, timestamp: node.updatedAt)
+                            .equatable()
                     }
                     .listRowBackground(Color.white.opacity(0.05))
                 }

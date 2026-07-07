@@ -116,6 +116,7 @@ struct RecentsView: View {
                             onOpenNode(node)
                         } label: {
                             RecentNodeRow(node: node, timestamp: date(for: node))
+                                .equatable()
                         }
                         .listRowBackground(Color.white.opacity(0.05))
                     }
@@ -221,11 +222,23 @@ struct RecentsView: View {
 /// timestamp layout so the two surfaces can't drift visually. Caller
 /// passes the timestamp explicitly because Recents tracks an active
 /// sort key (updatedAt ⇄ createdAt) and the row should reflect it.
-struct RecentNodeRow: View {
+struct RecentNodeRow: View, Equatable {
     let node: Node
     let timestamp: Date
 
     @Environment(CorpusStore.self) private var store
+
+    // Commit 3 — targeted re-render. Diff on exactly what this row renders:
+    // the title, the tag that drives the color dot, and the timestamp. `Node.==`
+    // is id-only, so without this a title change never re-renders the row.
+    // (Tag-color *definition* edits in store.tags are a rare, separate concern
+    // and intentionally out of this set.)
+    static func == (l: RecentNodeRow, r: RecentNodeRow) -> Bool {
+        l.node.id == r.node.id &&
+        l.node.title == r.node.title &&
+        l.node.tags == r.node.tags &&
+        l.timestamp == r.timestamp
+    }
 
     var body: some View {
         HStack(spacing: 12) {

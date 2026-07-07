@@ -51,24 +51,35 @@ struct NodeDetailView: View {
         static let keyboardToolbarClearance: CGFloat = 56
     }
 
-    /// "Done" exit: hand off to the Dashboard to reset navigation to Recents,
-    /// where the freshly-captured node sits on top.
-    private func exitCaptureToRecents() {
-        router.exitCaptureToRecents = true
+    /// "Done" exit: return to the ORIGIN view — wherever capture was summoned
+    /// from (Map / List / Grid / Recents / Dashboard). The origin is already the
+    /// surface underneath this pushed capture detail (capture never changes
+    /// `entryMode`), so `dismiss()` pops back to it — no forced Recents reset.
+    /// The node is already persisted; `isCapturing` / `captureNodeID` are cleared
+    /// by ContentView's detail-exit handler. Tier 2: hand the new node to the
+    /// grid scroll-to-node seam so, IF the origin is the grid, it focuses the new
+    /// tile on return. Only NodeGridView consumes this field; it's a one-shot and
+    /// harmless for origins without a scroll-to-node hook (Map/List/Recents/
+    /// carousel) — SwiftUI `.onChange` won't fire for a value set before mount.
+    private func finishCapture(node: Node) {
+        router.pendingGridScrollNodeID = node.id
+        router.captureDraftHasText = false
+        dismiss()
     }
 
     /// The capture bar: a single state-driven Cancel/Done pill. Entry types
     /// are added via the node's "+" flyout — the bar stays calm.
     ///
     /// Pill: one button, two truths. Empty session → **Cancel** (bail, discard
-    /// the blank node). Any content → **Done** (exit to Recents, node on top).
+    /// the blank node). Any content → **Done** (return to the origin view, node
+    /// captured — focused on return where the origin has a scroll-to-node hook).
     @ViewBuilder
     private func captureChrome(node: Node) -> some View {
         let hasContent = hasCaptured(node) || router.captureDraftHasText
         HStack(spacing: CaptureChrome.buttonSpacing) {
             Spacer(minLength: 8)
             Button {
-                if hasContent { exitCaptureToRecents() } else { cancelCapture(nodeID: node.id) }
+                if hasContent { finishCapture(node: node) } else { cancelCapture(nodeID: node.id) }
             } label: {
                 Text(hasContent ? "Done" : "Cancel")
                     .font(.headline)
@@ -1011,6 +1022,21 @@ struct NodeDetailView: View {
     private func handlePastedText(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        // Route into an existing EMPTY text entry (the auto-populated first note)
+        // rather than spawning a duplicate the user would then have to delete.
+        // "Empty" = a `.text` entry whose content is blank (whitespace counts as
+        // empty; a blank text entry carries no inline-image tokens, so no image
+        // either). First empty entry wins; an entry that already has content is
+        // never overwritten. Text-only rule — links keep becoming their own entry
+        // (handlePastedURL). Both branches enrich: updateTextItem and
+        // appendItemToNode each schedule enrichment.
+        if let target = node?.items.first(where: {
+            $0.type == .text && ($0.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            let itemID = target.id
+            Task { await store.updateTextItem(itemID: itemID, newContent: text, nodeID: nodeID) }
+            return
+        }
         let now = Date()
         let item = NodeItem(
             id: UUID().uuidString,

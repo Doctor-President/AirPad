@@ -113,6 +113,15 @@ struct TextEntryBody: View {
             guard router.isCapturing, router.captureNodeID == nodeID else { return }
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        .onChange(of: item.content) { old, new in
+            // Sync the editor when the entry's content changes from OUTSIDE the
+            // editor — e.g. PastePad routing pasted text into this (previously
+            // empty) entry. Guarded so it only applies when the user hasn't
+            // diverged locally (editingText still matches the old stored value),
+            // so it never clobbers active typing. Mirrors NodeDetailView's
+            // editedTitle/editedSummary reconciliation.
+            if editingText == (old ?? "") { editingText = new ?? "" }
+        }
         .onAppear {
             editingText = item.content ?? ""
             if shouldAutoFocus {

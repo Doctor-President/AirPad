@@ -302,6 +302,10 @@ final class CorpusPhysicsScene: SKScene {
     /// overlay (`territoryLabelScreenInfo` → `canvasState.territoryLabels`), so
     /// the pill can render as real `.ultraThinMaterial` glass above the SK view.
     struct TerritoryLabel {
+        /// Unique territory key ("col:<id>" / "tag:<name>"). Distinct from `name`
+        /// so two same-named territories (e.g. a collection and a tag both named
+        /// "AirPad") get distinct Identifiable ids downstream.
+        let key: String
         let name: String
         let colorHex: String
         let memberIDs: [String]
@@ -1597,7 +1601,7 @@ final class CorpusPhysicsScene: SKScene {
                 let world = CGPoint(x: sum.x / n, y: sum.y / n)
                 let screen = view.convert(world, from: self)
                 out.append(CanvasState.TerritoryLabelInfo(
-                    key: label.name,
+                    key: label.key,
                     name: label.name,
                     colorHex: label.colorHex,
                     screenPosition: screen

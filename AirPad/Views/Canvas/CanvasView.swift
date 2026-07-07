@@ -14,6 +14,12 @@ struct CanvasView: View {
     /// commit D1 wires them up.
     var scope: CanvasScope = .corpus
     @State private var previousNodeIDs: Set<String> = []
+    /// Frozen tag-anchored territory formation. Computed ONLY on deliberate
+    /// triggers (appear, anchor/weight/tint change, Analyze/idle) and reused by
+    /// the reactive `syncScene` — so capture/cancel never re-territorialize.
+    /// Territory identity is a corpus-clock event; the `nodes` observer is the
+    /// interaction clock (decisions.md 2026-07-06 — "the map is a place").
+    @State private var territory: FrozenTerritory? = nil
     @State private var navigationPath = NavigationPath()
     /// Node ID currently sitting at the top of the navigation stack
     /// after a router-driven push. Used to dedupe rapid multi-taps on
@@ -43,6 +49,20 @@ struct CanvasView: View {
         .init(collection: wCollection, anchor: wAnchor, language: wLanguage, backlink: wBacklink)
     }
 
+    /// Commit 3 — Map is a SpriteKit surface, not a SwiftUI cell, so it can't
+    /// diff per-cell. `.onChange(of: store.nodes)` is gated by `Node.==` (id-only)
+    /// and never fires on a title/summary/color edit, so an enriched node's sprite
+    /// stays stale until a structural resync. This signature captures EXACTLY the
+    /// fields `updateNodeSprite` / `bubbleColor` render — id, title, fallback
+    /// content, isMeta, tags — so an onChange on it re-runs `syncScene` (which
+    /// reuses the frozen territory cache and re-rasterizes only changed sprites)
+    /// on precisely those changes and nothing else.
+    private var spriteDisplaySignature: [String] {
+        store.visibleNodes(in: scope).map { n in
+            "\(n.id)\u{01}\(n.title)\u{01}\(n.isMeta ? 1 : 0)\u{01}\(n.tags.joined(separator: ","))\u{01}\(n.items.first?.content ?? "")"
+        }
+    }
+
     /// Per-node territory tint — a within-family gradient anchored on the
     /// territory's palette hex, varied by recency (or a stable hash when off).
     /// Label pills keep the flat family anchor.
@@ -66,16 +86,43 @@ struct CanvasView: View {
         return out
     }
 
-    /// Re-derive Map positions + tint live (weight or tint-toggle change).
-    private func reblendMap() {
-        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
-        let nodes = store.visibleNodes(in: scope)
+    /// A frozen territory formation — the deliberate-clock output that reactive
+    /// syncs reuse. `colors` is captured at formation time so existing nodes'
+    /// tints are byte-identical across a capture/cancel (recency span can't shift
+    /// them). `layout` carries frozen positions, membership, centers, centroids.
+    private struct FrozenTerritory {
+        let layout: TagTerritoryLayout.Layout
+        let colors: [String: UIColor]
+    }
+
+    /// Deliberately (re)form territories and cache the result. The ONLY place
+    /// `TagTerritoryLayout.layout` runs — never on the `nodes` observer. Clears
+    /// the cache when the corpus/config has no territories. Logs so console and
+    /// on-screen behavior can be reconciled (the old `[Layout]` line was blind
+    /// to this path).
+    private func formTerritories(nodes: [Node], trigger: String) {
+        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else {
+            territory = nil
+            print("[Territory] No territories (no anchors / user collections) — trigger: \(trigger)")
+            return
+        }
         let layout = TagTerritoryLayout.layout(
             nodes: nodes, anchors: store.canvasAnchorTags,
             collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
         )
-        scene.rearrangeToPositions(layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-        scene.applyTerritoryColors(mapTerritoryColors(layout, nodes: nodes))
+        territory = FrozenTerritory(layout: layout, colors: mapTerritoryColors(layout, nodes: nodes))
+        print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger)")
+    }
+
+    /// Re-derive Map positions + tint live (weight or tint-toggle change — a
+    /// DELIBERATE map action, so it re-forms the frozen cache).
+    private func reblendMap() {
+        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
+        let nodes = store.visibleNodes(in: scope)
+        formTerritories(nodes: nodes, trigger: "reblend")
+        guard let frozen = territory else { return }
+        scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
+        scene.applyTerritoryColors(frozen.colors)
     }
 
     /// Shift a base color within its hue family — brightness (+ a touch of
@@ -98,6 +145,13 @@ struct CanvasView: View {
     // MARK: - Body
 
     var body: some View {
+        canvasWithLateObservers
+    }
+
+    // Body observers are split across two computed properties purely to keep
+    // each modifier chain within the Swift type-checker's budget (same reason
+    // `canvasStack` is extracted). Order is preserved; behavior is unchanged.
+    private var canvasWithEarlyObservers: some View {
         NavigationStack(path: $navigationPath) {
             canvasStack
         }
@@ -107,10 +161,23 @@ struct CanvasView: View {
             store.canvasState = canvasState
             store.detailViewDepth = navigationPath.count
             previousNodeIDs = Set(store.filteredNodes(in: scope).map { $0.id })
+            // .onAppear RENDERS — it must never re-derive territories. A
+            // view-lifecycle event (e.g. returning from the capture sheet, which
+            // re-presents the canvas underneath) would otherwise rebuild every
+            // territory from zero — the cancel shift. syncScene forms ONCE on cold
+            // start (territory == nil); a valid cache is only rendered. Deliberate
+            // re-formation is Analyze/idle/anchor/weights/batch — not appear.
             syncScene(nodes: store.visibleNodes(in: scope))
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
             kickOffClusterLabelingIfNeeded()
+        }
+        .onChange(of: store.territoryFormationRequest) { _, _ in
+            // DELIBERATE re-formation — Analyze button / idle fallback bumped the
+            // signal (runCorpusAnalysis). This is the only reactive path allowed
+            // to re-territorialize; capture/cancel reuse the frozen formation.
+            formTerritories(nodes: store.visibleNodes(in: scope), trigger: "analyze")
+            syncScene(nodes: store.visibleNodes(in: scope))
         }
         .onChange(of: store.nodes) { old, newNodes in
             // Observe the broad signal (raw nodes) so collection scopes still
@@ -124,6 +191,13 @@ struct CanvasView: View {
             print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), visibleNodes=\(store.visibleNodes(in: scope).count), layoutPositions=\(store.canvasLayout.positions.count)")
             syncScene(nodes: store.visibleNodes(in: scope), newNodeID: addedID)
             kickOffSubstrateAutoFitIfNeeded()
+        }
+        .onChange(of: spriteDisplaySignature) { _, _ in
+            // Commit 3 — a sprite's rendered fields (title/summary/color) changed
+            // (e.g. enrichment wrote a title) but `Node.==` hid it from the nodes
+            // observer above. Re-sync so `updateNodeSprite` re-rasterizes the
+            // changed sprite. Reuses the frozen territory cache — no reshuffle.
+            syncScene(nodes: store.visibleNodes(in: scope))
         }
         .onChange(of: SubstrateLayoutService.shared.generation) { _, _ in
             // SB139 Stage 4c1 — fit/load/clear in the substrate service bumps
@@ -146,27 +220,32 @@ struct CanvasView: View {
         .onChange(of: store.tags) { _, _ in
             syncScene(nodes: store.visibleNodes(in: scope))
         }
+    }
+
+    private var canvasWithLateObservers: some View {
+        canvasWithEarlyObservers
         // Tag-anchored Map — migration. When the anchor SET changes (designate /
         // demote), animate existing sprites to their new territory homes (or
         // back to the canonical layout when the last anchor is demoted). `syncScene`
         // above already refreshed `positionMap` for new sprites; this moves the
         // ones already on screen so nothing teleports.
         .onChange(of: store.tags.filter(\.isCanvasAnchor).map(\.id.uuidString).sorted()) { _, _ in
+            // Designating/demoting an anchor is a DELIBERATE map action → re-form.
             let nodes = store.visibleNodes(in: scope)
             if store.canvasAnchorTags.isEmpty && !hasUserCollections {
                 // No territories left → animate back to the canonical layout and
-                // clear the tint (labels are cleared by syncScene above).
+                // clear the tint + frozen cache.
+                territory = nil
                 let sk = store.canvasLayout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) }
                 scene.rearrangeToPositions(sk)
                 scene.applyTerritoryColors([:])
             } else {
-                let layout = TagTerritoryLayout.layout(
-                    nodes: nodes, anchors: store.canvasAnchorTags,
-                    collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
-                )
-                // SwiftUI-space → SpriteKit (y-up).
-                scene.rearrangeToPositions(layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-                scene.applyTerritoryColors(mapTerritoryColors(layout, nodes: nodes))
+                formTerritories(nodes: nodes, trigger: "anchor-change")
+                if let frozen = territory {
+                    // SwiftUI-space → SpriteKit (y-up).
+                    scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
+                    scene.applyTerritoryColors(frozen.colors)
+                }
             }
         }
         // Tag-anchored Map — re-blend live as the gravity weights (and tint
@@ -182,8 +261,11 @@ struct CanvasView: View {
             // Fired by batchImportText after canvasLayout is updated with all new positions.
             // Belt-and-suspenders: ensures the scene reflects the final store state even if
             // the per-node onChange chain was coalesced or ran before canvasLayout was ready.
+            // Batch import is a DELIBERATE bulk placement → re-form territories so the
+            // imported nodes land in geography (single-node drift can't cover a bulk add).
             previousNodeIDs = Set(store.nodes(in: scope).map { $0.id })
             print("[Canvas] canvasNeedsSync: forcing full resync — visibleNodes=\(store.visibleNodes(in: scope).count) layoutPositions=\(store.canvasLayout.positions.count) sprites=\(scene.spriteCount)")
+            formTerritories(nodes: store.visibleNodes(in: scope), trigger: "batch-resync")
             syncScene(nodes: store.visibleNodes(in: scope))
             print("[Canvas] canvasNeedsSync: after syncScene sprites=\(scene.spriteCount)")
         }
@@ -695,28 +777,53 @@ struct CanvasView: View {
             // Radial layout around Über-node position
             layoutPositions = computeRadialLayout(nodes: nodes, center: centerPos)
         } else if !store.canvasAnchorTags.isEmpty || hasUserCollections {
-            // Tag-anchored Map (gravity model) — collections + anchor tags are
-            // territories that take layout authority over UMAP/substrate.
-            // Physics/engagement/focal untouched; this supplies the re-derived
-            // seed + territory tint/labels.
-            let layout = TagTerritoryLayout.layout(
-                nodes: nodes, anchors: store.canvasAnchorTags,
-                collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
-            )
-            layoutPositions = layout.positions
-            let keyHex = territoryHexMap(layout.territories)   // flat family anchor — for label pill stroke
-            territoryColors = mapTerritoryColors(layout, nodes: nodes)  // per-node within-family gradient
-            var membersByKey: [String: [String]] = [:]
-            for (nodeID, key) in layout.nodeTerritory {
-                membersByKey[key, default: []].append(nodeID)
+            // Tag-anchored Map (gravity model). REUSE the frozen formation —
+            // never re-derive here (this runs on the interaction clock). A
+            // newly captured node DRIFTS into the frozen geography at its
+            // best-fit centroid; every existing node keeps its frozen position,
+            // tint, and territory. Re-formation happens only on deliberate
+            // triggers (see `formTerritories`).
+            if territory == nil {
+                formTerritories(nodes: nodes, trigger: "cold-start")
             }
-            territoryLabels = layout.territories.compactMap { t in
-                guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
-                return CorpusPhysicsScene.TerritoryLabel(
-                    name: t.name,
-                    colorHex: keyHex[t.key] ?? "#BBBBBB",
-                    memberIDs: members
-                )
+            if let frozen = territory {
+                let layout = frozen.layout
+                var positions = layout.positions
+                var colors = frozen.colors
+                var membersByKey: [String: [String]] = [:]
+                for (nodeID, key) in layout.nodeTerritory {
+                    membersByKey[key, default: []].append(nodeID)
+                }
+                // Drift the newly captured node into the frozen formation.
+                if let newNodeID, positions[newNodeID] == nil,
+                   let newNode = nodes.first(where: { $0.id == newNodeID }) {
+                    let placement = TagTerritoryLayout.driftPlacement(
+                        for: newNode, anchors: store.canvasAnchorTags,
+                        collections: store.collections, weights: mapWeights, in: layout
+                    )
+                    positions[newNodeID] = placement.position
+                    if let key = placement.key {
+                        membersByKey[key, default: []].append(newNodeID)
+                        if let base = territoryColorMap(layout.territories)[key] {
+                            colors[newNodeID] = familyTint(base, Double(abs(newNodeID.hashValue) % 100) / 100)
+                        }
+                    }
+                }
+                layoutPositions = positions
+                territoryColors = colors
+                let keyHex = territoryHexMap(layout.territories)   // flat family anchor — label pill stroke
+                territoryLabels = layout.territories.compactMap { t in
+                    guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
+                    return CorpusPhysicsScene.TerritoryLabel(
+                        key: t.key,
+                        name: t.name,
+                        colorHex: keyHex[t.key] ?? "#BBBBBB",
+                        memberIDs: members
+                    )
+                }
+            } else {
+                // No territories in this corpus/config — canonical positions.
+                layoutPositions = store.canvasLayout.positions
             }
         } else if FeatureFlags.substrateLayout,
                   let placements = SubstrateLayoutService.shared.canvasPlacements() {

@@ -32,10 +32,15 @@ enum TagTerritoryLayout {
         var positions: [String: CanvasPosition] = [:]
         /// nodeID → territory key (tint + provenance source). Absent = unanchored.
         var nodeTerritory: [String: String] = [:]
-        /// Ordered territories (palette + label order).
+        /// Ordered territories (palette + label order). Stable across recomputes
+        /// (sorted by key) so palette assignment is deterministic.
         var territories: [Territory] = []
         /// Territory key → center (SwiftUI space).
         var centers: [String: CGPoint] = [:]
+        /// Territory key → embedding centroid. Retained so a single new node can
+        /// be argmax-placed against the FROZEN formation (drift-in) without
+        /// re-running the whole pass. Empty for territories with no vectors.
+        var centroids: [String: [Float]] = [:]
     }
 
     /// Tunable signal weights (the "gravity" strengths). T calibrates on device;
@@ -113,7 +118,13 @@ enum TagTerritoryLayout {
                     if s > 0 { pull[key, default: 0] += weights.language * s }
                 }
             }
-            let ranked = pull.sorted { $0.value > $1.value }
+            // Deterministic argmax: sort by pull descending, then key ascending
+            // as a stable tiebreaker. Without the tiebreak, two territories with
+            // EQUAL pull (e.g. a node carrying two anchor tags, both weight 0.6)
+            // order by Dictionary iteration — so the winner (and therefore which
+            // territory labels render at all) flips run-to-run on identical
+            // membership. That was the shifting-names non-determinism.
+            let ranked = pull.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
             guard let win = ranked.first, win.value > 0 else { unanchored.append(node); continue }
             members[win.key, default: []].append(node)
             nodeTerritory[node.id] = win.key
@@ -123,7 +134,9 @@ enum TagTerritoryLayout {
         }
 
         // 4. CONTINENT SPACING — footprint pack the winner territories.
-        let keys = Array(members.keys)
+        // Sorted (not raw Dictionary order) so territory order — and therefore
+        // palette-color assignment downstream — is DETERMINISTIC across recomputes.
+        let keys = members.keys.sorted()
         let center = continentSpacing(keys: keys, centroid: centroid,
                                       memberCounts: members.mapValues { $0.count })
 
@@ -179,8 +192,59 @@ enum TagTerritoryLayout {
         relaxOverlaps(&out, radii: radii)
 
         let territories = keys.map { Territory(key: $0, name: name[$0] ?? $0) }
+        // Retain centroids for winner territories only (the ones that became
+        // `keys`) so drift-in placement argmaxes against the same set.
+        let winnerCentroids = centroid.filter { members[$0.key] != nil }
         return Layout(positions: out, nodeTerritory: nodeTerritory,
-                      territories: territories, centers: center)
+                      territories: territories, centers: center,
+                      centroids: winnerCentroids)
+    }
+
+    /// Drift a single NEW node into a FROZEN formation without re-deriving it.
+    /// Argmax the node's pull toward the cached territories (collection/anchor
+    /// direct membership, else nearest cached embedding centroid by language
+    /// cosine — the same rule as `layout`), and seed it near that territory's
+    /// cached center. Unanchored → the edge region. Existing nodes are never
+    /// touched; the scene's repulsion relaxes the seed into a free slot.
+    /// Returns `(key, position)` — key is the winning territory (nil = unanchored)
+    /// so the caller can tint the new dot to match its territory.
+    static func driftPlacement(for node: Node, anchors: [Tag], collections: [NodeCollection] = [],
+                               weights: SignalWeights = .default,
+                               in layout: Layout) -> (key: String?, position: CanvasPosition) {
+        let userCollections = collections.filter { !$0.isCorpus && !$0.isJournal && $0.id != NodeCollection.librarianSessionsID }
+        let collectionByID = Dictionary(userCollections.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let anchorSet = Set(anchors.map(\.name))
+
+        var pull: [String: Double] = [:]
+        for cid in node.collectionIDs where collectionByID[cid] != nil {
+            pull["col:" + cid, default: 0] += weights.collection
+        }
+        for tag in node.tags where anchorSet.contains(tag) {
+            pull["tag:" + tag, default: 0] += weights.anchor
+        }
+        if weights.language > 0, let vec = SubstrateLayoutService.shared.substrateVector(for: node) {
+            for (key, cen) in layout.centroids {
+                let s = max(0, cosine(vec, cen) ?? 0)
+                if s > 0 { pull[key, default: 0] += weights.language * s }
+            }
+        }
+        // Only territories that exist in the frozen formation are candidates.
+        // Same deterministic argmax as `layout` (value desc, key asc tiebreak).
+        let winner = pull.filter { layout.centers[$0.key] != nil }
+            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .first
+
+        // Small deterministic jitter off the center so the seed doesn't land
+        // exactly on an existing node before physics relaxes it.
+        let h = abs(node.id.hashValue)
+        let jx = CGFloat(h % 61) - 30
+        let jy = CGFloat((h / 61) % 61) - 30
+
+        if let winner, winner.value > 0, let center = layout.centers[winner.key] {
+            return (winner.key, CanvasPosition(x: Double(center.x + jx), y: Double(center.y + jy)))
+        }
+        let edge = CGPoint(x: 0, y: territoryRingRadius * 1.95)
+        return (nil, CanvasPosition(x: Double(edge.x + jx), y: Double(edge.y + jy)))
     }
 
     /// Clear space between two node EDGES at rest (added to each pair's radii).

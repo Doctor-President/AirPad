@@ -103,6 +103,7 @@ struct NodeListView: View {
                             navigationPath.append(node)
                         } label: {
                             RecentNodeRow(node: node, timestamp: node.updatedAt)
+                                .equatable()
                         }
                         // Frosted glass so bands read as separated panels
                         // over the dotted canvas — the material blurs the grid

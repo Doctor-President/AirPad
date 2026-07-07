@@ -305,6 +305,7 @@ struct CanvasChrome: View {
                     s.viewMode = mode
                     store.setFilterState(s, for: scope)
                 },
+                onAnalyze: { Task { store.runCorpusAnalysis(trigger: .manual) } },
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },
                 onQuarantineReview: { showQuarantineReview = true }

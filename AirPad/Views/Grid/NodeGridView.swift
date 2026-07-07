@@ -185,6 +185,10 @@ struct NodeGridView: View {
                                 animateGradient: true,
                                 columnCount: columnCount
                             )
+                            // Commit 3 — skip re-rendering tiles whose rendered
+                            // fields didn't change (NodeTileView.==), so a single
+                            // node's enrichment re-renders only its tile.
+                            .equatable()
                             .frame(width: cellW, height: cellH)
                             // R6 — specular sheen over the tile content, masked
                             // to the tile shape by the clip that follows.
@@ -303,13 +307,34 @@ struct NodeGridView: View {
 // Renders the tile directly at cell size (no native-design / scaleEffect
 // trick the full card needed); the cell owns shape via `.frame` + `.clipShape`.
 
-private struct NodeTileView: View {
+private struct NodeTileView: View, Equatable {
     let node: Node
     let isPicked: Bool
     let cellWidth: CGFloat
     let cellHeight: CGFloat
     let animateGradient: Bool
     let columnCount: Int
+
+    // Commit 3 — targeted re-render. `Node.==` is id-only, so SwiftUI's default
+    // diff hides title/summary/etc. edits and the tile renders stale until a
+    // structural rebuild. Diff on EXACTLY the fields this tile renders (see
+    // NodeGridTile body) plus its layout/selection inputs, so a single node's
+    // display change re-renders ONLY its tile — no whole-array storm.
+    static func == (l: NodeTileView, r: NodeTileView) -> Bool {
+        l.isPicked == r.isPicked &&
+        l.cellWidth == r.cellWidth &&
+        l.cellHeight == r.cellHeight &&
+        l.animateGradient == r.animateGradient &&
+        l.columnCount == r.columnCount &&
+        l.node.id == r.node.id &&
+        l.node.title == r.node.title &&
+        l.node.summary == r.node.summary &&
+        l.node.tags == r.node.tags &&
+        l.node.items == r.node.items &&
+        l.node.coverImageRelativePath == r.node.coverImageRelativePath &&
+        l.node.descriptionOnCard == r.node.descriptionOnCard &&
+        l.node.updatedAt == r.node.updatedAt
+    }
 
     var body: some View {
         NodeGridTile(

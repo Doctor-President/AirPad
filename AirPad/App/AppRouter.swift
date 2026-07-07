@@ -51,10 +51,6 @@ final class AppRouter {
     var isCapturing: Bool = false
     /// The node being captured into while `isCapturing`.
     var captureNodeID: String? = nil
-    /// One-shot: set by the capture surface's "Done" to exit to Recents (the
-    /// freshly-captured node lands on top). The NavigationStack-owning Dashboard
-    /// observes it, resets its path to Recents, and clears the flag.
-    var exitCaptureToRecents: Bool = false
     /// Live "the capture note has typed text" signal, fed by `TextEntryBody`
     /// while editing. Drives the Cancel↔Done pill so it flips the instant the
     /// user types — the note's `content` only persists on end-editing, so the

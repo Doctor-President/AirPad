@@ -132,14 +132,10 @@ struct DashboardView: View {
                 path.append(.node(node))
                 router.pendingNodeNavigationID = nil
             }
-            // Capture-mode "Done" → land in Recents with the fresh node on top.
-            // Replacing the path drops the capture detail (which clears
-            // `isCapturing` + restores the Librarian via ContentView).
-            .onChange(of: router.exitCaptureToRecents) { _, exit in
-                guard exit else { return }
-                path = [.recents]
-                router.exitCaptureToRecents = false
-            }
+            // Capture-mode "Done" now returns to origin via NodeDetailView's
+            // `dismiss()` (pops the pushed capture detail back to whatever surface
+            // summoned it — Recents/Dashboard included), so no forced path reset
+            // lives here anymore. See NodeDetailView.finishCapture.
             // Authoritative depth signal. `path` is [DashboardRoute] mixing
             // the pushed `.recents` landing with node details, so raw
             // `path.count` would over-count — `detailDepth(in:)` counts only

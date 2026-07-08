@@ -191,6 +191,7 @@
 		CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED287727ED25FF9291551213 /* HDBSCANReachability.swift */; };
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B63639E3606E8D188FB55AD /* ChatsListView.swift */; };
+		CEC9C7F4431D0776A1A4DC13 /* AirPad.icon in Resources */ = {isa = PBXBuildFile; fileRef = D86D98BB8BD1E493F884909C /* AirPad.icon */; };
 		CFFE64A955B749CCBAA0C04D /* BacklinkPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA44132CD96DC6E2560940ED /* BacklinkPickerSheet.swift */; };
 		D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804D3764E120F2398822E16A /* AppDelegate.swift */; };
 		D5709E0DEA900DA3FA2CF236 /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */; };
@@ -405,6 +406,7 @@
 		D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAP.swift; sourceTree = "<group>"; };
 		D78B727835739390B86DF397 /* UMAPModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPModel.swift; sourceTree = "<group>"; };
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
+		D86D98BB8BD1E493F884909C /* AirPad.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AirPad.icon; sourceTree = "<group>"; };
 		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMapSheet.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
@@ -758,6 +760,7 @@
 				3227935C1477D723C015BBFB /* Services */,
 				9515265A45A3D3B7B626E916 /* Store */,
 				606CFA4703585800983C4127 /* Views */,
+				D86D98BB8BD1E493F884909C /* AirPad.icon */,
 				8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */,
 			);
 			path = AirPad;
@@ -1026,6 +1029,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CEC9C7F4431D0776A1A4DC13 /* AirPad.icon in Resources */,
 				94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */,
 				3E395C3D1D01816EA4255C62 /* Fraunces_72pt-Bold.ttf in Resources */,
 				7F1400E0F8FC4DC57AFA78B0 /* Fraunces_72pt-Regular.ttf in Resources */,
@@ -1281,7 +1285,7 @@
 		59B4832112D2799C5485A624 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AirPad;
 				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
@@ -1382,7 +1386,7 @@
 		B123521643E70F4FDECEC4C8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AirPad;
 				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;

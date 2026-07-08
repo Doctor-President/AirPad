@@ -1,0 +1,107 @@
+{
+  "fill-specializations" : [
+    {
+      "value" : {
+        "solid" : "display-p3:0.94058,1.00000,0.90785,1.00000"
+      }
+    },
+    {
+      "appearance" : "light",
+      "value" : {
+        "linear-gradient" : [
+          "display-p3:0.47273,0.76394,1.00000,1.00000",
+          "display-p3:0.13429,0.20723,0.89993,1.00000"
+        ],
+        "orientation" : {
+          "start" : {
+            "x" : 0.5,
+            "y" : 0
+          },
+          "stop" : {
+            "x" : 0.5,
+            "y" : 0.7
+          }
+        }
+      }
+    }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.22297,0.51738,1.00000,1.00000",
+                  "display-p3:1.00000,0.88154,0.52447,1.00000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 1,
+                    "y" : 0.048915446240654054
+                  },
+                  "stop" : {
+                    "x" : 0.26272650935446396,
+                    "y" : 0.8974371732956592
+                  }
+                }
+              }
+            },
+            {
+              "appearance" : "light",
+              "value" : {
+                "linear-gradient" : [
+                  "display-p3:0.73249,0.76187,0.75285,0.86131",
+                  "display-p3:1.00000,0.98275,0.99569,0.50000"
+                ],
+                "orientation" : {
+                  "start" : {
+                    "x" : 0.08323146011739842,
+                    "y" : 0.9058668675040285
+                  },
+                  "stop" : {
+                    "x" : 0.9195733185423933,
+                    "y" : 0.103096837078065
+                  }
+                }
+              }
+            }
+          ],
+          "glass-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "light",
+              "value" : true
+            }
+          ],
+          "image-name" : "Icon-Blue.svg",
+          "name" : "Icon-Blue",
+          "position" : {
+            "scale" : 1.45,
+            "translation-in-points" : [
+              -0.7484753739863663,
+              0.04113898077093836
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}

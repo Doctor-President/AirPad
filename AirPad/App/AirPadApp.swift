@@ -19,6 +19,13 @@ struct AirPadApp: App {
 
     var body: some Scene {
         WindowGroup {
+            // ⚠️ SPIKE BRANCH ONLY (spike/native-sheet) — the native-sheet
+            // throwaway rig is the app root. To return to the real app, delete
+            // this line and un-comment the ContentView block below (and delete
+            // Views/Spike/SpikeSheetHostView.swift).
+            SpikeSheetHostView()
+
+            /*
             ContentView()
                 .environment(store)
                 .environment(quarantineStore)
@@ -35,6 +42,7 @@ struct AirPadApp: App {
                     // there's no flash on entry.
                     router.entryMode = .quikCapture
                 }
+            */
         }
     }
 }

@@ -184,6 +184,7 @@
 		C3D20531250163A764EAB625 /* LinkGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */; };
 		C87A28595DB3F99CAB512AE5 /* SubstrateRelaxationPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */; };
 		C903E8B2386E55E01245428C /* TagSelectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1005ACA467AE3052F511365B /* TagSelectionSheet.swift */; };
+		C93CF897F9F61E29793CF46A /* SpikeSheetHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1A98CA2C55F9001AFBB44C /* SpikeSheetHostView.swift */; };
 		CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4339BD7FF5450195EDF70A95 /* Speech.framework */; };
 		CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */; };
 		CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */; };
@@ -332,6 +333,7 @@
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
 		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
 		68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModeToggle.swift; sourceTree = "<group>"; };
+		6A1A98CA2C55F9001AFBB44C /* SpikeSheetHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpikeSheetHostView.swift; sourceTree = "<group>"; };
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
 		6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasLayout.swift; sourceTree = "<group>"; };
@@ -501,6 +503,14 @@
 			path = Canvas;
 			sourceTree = "<group>";
 		};
+		1A85515C419B9B0CFBD65936 /* Spike */ = {
+			isa = PBXGroup;
+			children = (
+				6A1A98CA2C55F9001AFBB44C /* SpikeSheetHostView.swift */,
+			);
+			path = Spike;
+			sourceTree = "<group>";
+		};
 		2B9615A52E1C8DCD63462128 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -632,6 +642,7 @@
 				E2DA2EA8F4AA00E1FCC24AFC /* List */,
 				2B9615A52E1C8DCD63462128 /* Settings */,
 				DF9CD6E4FF1185B7CEF053EE /* Shared */,
+				1A85515C419B9B0CFBD65936 /* Spike */,
 				01B3209F32045005E03F39C8 /* Tags */,
 				CF874724BE8A2033D58ADCC8 /* Threads */,
 				059B8AB893A1529A3DA1AF20 /* CanvasPlaceholderView.swift */,
@@ -1184,6 +1195,7 @@
 				B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */,
 				F37D50BEE893123479290739 /* SolarFlareTuning.swift in Sources */,
 				7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */,
+				C93CF897F9F61E29793CF46A /* SpikeSheetHostView.swift in Sources */,
 				9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */,
 				9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */,
 				35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */,

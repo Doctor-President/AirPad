@@ -159,11 +159,11 @@ enum SolarFlareTuningDefaults {
     // no desaturation so the prism reads vivid at peek.
     static let peekFlareOn: Bool              = true
     static let peekFlarePalette: String       = "Solar"
-    static let peekFlareStrength: Double      = 0.90
-    static let peekFlareDesat: Double         = 0.00
-    static let peekFlareMaskOpacity: Double   = 1.0
-    static let peekFlareColorA: String        = "Coral"
-    static let peekFlareColorB: String        = "Indigo"
+    static let peekFlareStrength: Double      = 0.68
+    static let peekFlareDesat: Double         = 0.38
+    static let peekFlareMaskOpacity: Double   = 0.68
+    static let peekFlareColorA: String        = "Klein"
+    static let peekFlareColorB: String        = "Coral"
 }
 
 // MARK: - Palette

@@ -27,7 +27,12 @@ struct LibrarianSurface: View {
     /// the proxy is the channel for `.floatingPanelScrollTracking` on
     /// inner scrollables so the panel's drag and the scroll content
     /// don't move under the same finger.
-    @ObservedObject var panelModel: LibrarianPanelStateModel
+    // @Observable (per-property tracking): the body re-evaluates only when a
+    // property it actually reads changes — `state` (≈3×/drag) — NOT the
+    // per-frame `progress.peekProgress`, which only the chrome leaves read.
+    // This is the root perf fix: the old `@ObservedObject` invalidated the
+    // whole body on ANY published change (peekProgress fires ~60×/sec).
+    let panelModel: LibrarianPanelStateModel
     let proxy: FloatingPanelProxy
 
     @Environment(CorpusStore.self) private var store
@@ -1982,7 +1987,9 @@ private struct StreamingCursorView: View {
 /// composite, NOT a rebuild. This keeps the SolarFlareMaterial blur + the chrome out of
 /// the per-frame path.
 private struct PeekFadeLayer<Content: View>: View {
-    @ObservedObject var progress: MorphProgressModel
+    // @Observable: reads `progress.peekProgress` in body, so ONLY this leaf
+    // re-evaluates per frame — the surface body holding the model does not.
+    let progress: MorphProgressModel
     let content: Content
     var body: some View {
         content.opacity(max(0, (progress.peekProgress - 0.5) / 0.5))
@@ -1993,7 +2000,8 @@ private struct PeekFadeLayer<Content: View>: View {
 /// view re-evaluates per frame; the parent body does not (it doesn't observe the morph
 /// model). Used by the morphing field, which genuinely needs the continuous value.
 private struct PeekProgressReader<V: View>: View {
-    @ObservedObject var progress: MorphProgressModel
+    // @Observable: only this isolated subtree re-evaluates per frame.
+    let progress: MorphProgressModel
     @ViewBuilder let build: (CGFloat) -> V
     var body: some View { build(progress.peekProgress) }
 }

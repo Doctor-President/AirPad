@@ -14,7 +14,7 @@ struct ContentView: View {
     /// Entry-mode transitions raise it to `.tip` on canvas surfaces and
     /// `.hidden` on dashboard / QuikCapture; user drag covers
     /// `.tip` ↔ `.half` ↔ `.full`.
-    @StateObject private var panelState = LibrarianPanelStateModel()
+    @State private var panelState = LibrarianPanelStateModel()
     private let panelLayout = LibrarianPanelLayout()
 
     var body: some View {

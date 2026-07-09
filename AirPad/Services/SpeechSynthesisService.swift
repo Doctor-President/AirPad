@@ -43,6 +43,14 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private var remoteCommandsConfigured = false
 
+    /// The utterance whose lifecycle owns the current state. Switching turns
+    /// stops the previous utterance, and `stopSpeaking` delivers `didCancel`
+    /// ASYNCHRONOUSLY — after `speak()` has already installed the new one. The
+    /// delegate compares against this so a stale cancel/finish can't clobber
+    /// the freshly-started utterance's state (the "won't pause after switching"
+    /// bug).
+    private var activeUtterance: AVSpeechUtterance?
+
     private override init() {
         super.init()
         synthesizer.delegate = self
@@ -206,6 +214,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         isSpeaking = true
         isPaused = false
         activeToken = token
+        activeUtterance = utterance
         configureRemoteCommandsIfNeeded()
         setNowPlaying(title: "AirPad")
         synthesizer.speak(utterance)
@@ -218,25 +227,32 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         isSpeaking = false
         isPaused = false
         activeToken = nil
+        activeUtterance = nil
         clearNowPlaying()
     }
 
-    // Delegate — reset state when speech ends naturally or is cancelled.
+    // Delegate — reset state when speech ends naturally or is cancelled, but
+    // ONLY for the currently-active utterance. A cancel delivered late for a
+    // superseded utterance (switching turns) must not reset the new one.
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer,
                                        didFinish utterance: AVSpeechUtterance) {
         Task { @MainActor in
+            guard utterance === activeUtterance else { return }
             isSpeaking = false
             isPaused = false
             activeToken = nil
+            activeUtterance = nil
             clearNowPlaying()
         }
     }
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer,
                                        didCancel utterance: AVSpeechUtterance) {
         Task { @MainActor in
+            guard utterance === activeUtterance else { return }
             isSpeaking = false
             isPaused = false
             activeToken = nil
+            activeUtterance = nil
             clearNowPlaying()
         }
     }

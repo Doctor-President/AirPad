@@ -126,6 +126,7 @@
 		8FCCD1C11E415D8FDC0322CA /* ZoomableImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
+		915B830CFFFC2611CD365776 /* ChatTranscript.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E377DA84FC9332E02C687FB /* ChatTranscript.swift */; };
 		918876676560C61205991A10 /* EditMapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */; };
 		920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1213E716A9E302D0B777EDD /* EntryCard.swift */; };
 		92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 496C87CE26D129958AA115EF /* EntryMigration.swift */; };
@@ -358,6 +359,7 @@
 		8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentQuickLookViewer.swift; sourceTree = "<group>"; };
 		8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewQueueSheet.swift; sourceTree = "<group>"; };
 		8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkAppendSheet.swift; sourceTree = "<group>"; };
+		8E377DA84FC9332E02C687FB /* ChatTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscript.swift; sourceTree = "<group>"; };
 		8E4F251A686080806C62E071 /* NodeItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItem.swift; sourceTree = "<group>"; };
 		8EA8C82636A7D9E2E115A203 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = System/Library/Frameworks/AVKit.framework; sourceTree = SDKROOT; };
 		8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -577,6 +579,7 @@
 			children = (
 				0C38EEC0DB9F051F85839CCE /* ChatSession.swift */,
 				3B63639E3606E8D188FB55AD /* ChatsListView.swift */,
+				8E377DA84FC9332E02C687FB /* ChatTranscript.swift */,
 				33412943BFC78174C4CB7437 /* ChatView.swift */,
 			);
 			path = Chat;
@@ -1081,6 +1084,7 @@
 				B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */,
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
 				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
+				915B830CFFFC2611CD365776 /* ChatTranscript.swift in Sources */,
 				766BF82341F128E5B35B7345 /* ChatView.swift in Sources */,
 				CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */,
 				98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */,

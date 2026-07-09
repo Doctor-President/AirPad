@@ -195,26 +195,17 @@ struct LibrarianSurface: View {
             seedScopeFromHostIfNeeded(librarian: librarian)
         }
         .onChange(of: panelModel.state) { _, newState in
-            // The keyboard belongs only at .full (promote-on-focus).
-            // Any exit — flick to half, drop to peek, duck to hidden —
-            // tears it down. Both @FocusState bindings get cleared, and
-            // the blunt resignFirstResponder catches cross-boundary
-            // cases where @FocusState alone has missed.
+            // The keyboard belongs only at .full (promote-on-focus). Any exit —
+            // flick to half, drop to peek, duck to hidden — tears it down. NOTE:
+            // this no longer clears `isViewingActiveChat` — the conversation now
+            // persists across half/full (Stage 3), so dragging to half keeps the
+            // transcript mounted (just resized). Exiting the chat back to home is
+            // an explicit action (Back pill / disposition ×).
             if newState != .full {
                 isInputFocused = false
                 isSearchFocused = false
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                 to: nil, from: nil, for: nil)
-                // Leaving .full leaves the chat — a drag-down is a
-                // deliberate exit, identical to Back. Clearing the flag
-                // here means re-entry requires an explicit action (pill
-                // tap or send); dragging back UP to full shows the home,
-                // never a silently re-mounted transcript (which sputtered
-                // mid-animation). `state` publishes settled detents only,
-                // so this can't misfire while raising TO full on entry:
-                // entry sets the flag then expandToFull, and the observer
-                // sees the settled .full → does nothing.
-                isViewingActiveChat = false
             }
         }
         .onChange(of: isInputFocused) { _, focused in
@@ -696,15 +687,20 @@ struct LibrarianSurface: View {
                     // expanded signal (peekProgress saturates at 1 for both
                     // half and full, so it can't distinguish them). Every
                     // other mode keeps the corpus pipeline transcript.
-                    if isViewingActiveChat && panelModel.state == .full {
-                        chatTranscriptView()
+                    // Shared ChatTranscript — the SAME component ChatView uses.
+                    // Gated on `isViewingActiveChat` ALONE (no longer on
+                    // `state == .full`), so the conversation now persists across
+                    // half AND full — dissolving the drop-to-half eviction and
+                    // the entry flash (both were artifacts of gating heavy
+                    // content to the settled `.full` detent, a perf workaround
+                    // Stage 2's invalidation fix made unnecessary). Composer
+                    // off — the Librarian's own Ask `inputRow` (below) is the
+                    // composer; ChatTranscript renders transcript + tail +
+                    // read-aloud + its own error banner. Host-agnostic: it reads
+                    // `ChatSession`, not the panel.
+                    if isViewingActiveChat {
+                        ChatTranscript(session: router.chat, showsComposer: false)
                             .frame(maxHeight: .infinity)
-                        // Endpoint/network failures surface here as a
-                        // transient banner above the input row — never as
-                        // an assistant bubble in the transcript.
-                        if let error = router.chat.lastError {
-                            chatErrorBanner(message: error)
-                        }
                     } else {
                         librarianHome(librarian: librarian)
                             .frame(maxHeight: .infinity)
@@ -770,7 +766,7 @@ struct LibrarianSurface: View {
             // stays the quickfix panel-collapse affordance. The old
             // `endSessionFooter` / End-session dialog remain dormant for a
             // separate dead-code cleanup pass.
-            if isViewingActiveChat && panelModel.state == .full {
+            if isViewingActiveChat {
                 backPill()
             }
         }
@@ -1317,56 +1313,6 @@ struct LibrarianSurface: View {
     /// fight over the same id.
     private static let chatTranscriptBottomAnchor = "_chat_transcript_bottom"
 
-    /// Ask-mode conversation pane, backed by the clean `router.chat`
-    /// (`ChatSession`) lane — no corpus passages, no citations. Renders
-    /// each committed message plus the in-flight tail, mirroring
-    /// `ChatView`'s scroll/stream grammar while reusing the Librarian's
-    /// own bubble styling (`transcriptQueryBubble` + `attributedMarkdown`).
-    /// Shown only while `isViewingActiveChat` is true — the empty /
-    /// first-open state now lives on `librarianHome`, so no tile fallback
-    /// here.
-    @ViewBuilder
-    private func chatTranscriptView() -> some View {
-        let chat = router.chat
-        ScrollViewReader { scrollProxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(chat.messages) { message in
-                        chatBubble(message)
-                            .id(message.id)
-                    }
-
-                    if chat.isStreaming {
-                        chatInflightTail()
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    Color.clear
-                        .frame(height: 1)
-                        .id(Self.chatTranscriptBottomAnchor)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .onChange(of: chat.messages.count) { _, _ in
-                withAnimation(.easeOut(duration: 0.25)) {
-                    scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
-                }
-            }
-            .onChange(of: chat.streamingText) { _, _ in
-                // Stream-follow: chase the tail per delta, no animation
-                // (token cadence is already smooth; animating per-delta
-                // stutters) — mirrors the pipeline transcript.
-                scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
-            }
-            .onAppear {
-                scrollProxy.scrollTo(Self.chatTranscriptBottomAnchor, anchor: .bottom)
-            }
-            .floatingPanelScrollTracking(proxy: proxy)
-        }
-    }
-
     /// Ask-mode Librarian home — the capability-tile launchpad (compressed
     /// to a single row) plus, when a conversation exists, the active-chat
     /// pill that jumps back into it. This is the landing surface when
@@ -1435,207 +1381,6 @@ struct LibrarianSurface: View {
         .padding(.vertical, 10)
         .background(Color.white.opacity(0.06))
         .clipShape(Capsule())
-    }
-
-    /// One committed chat message. User turns reuse the Librarian's
-    /// right-aligned query bubble; assistant turns reuse the same
-    /// inline-markdown body as the pipeline transcript (shared
-    /// `attributedMarkdown` cache).
-    @ViewBuilder
-    private func chatBubble(_ message: ChatSession.Message) -> some View {
-        switch message.role {
-        case .user:
-            transcriptQueryBubble(text: message.text)
-        case .assistant:
-            VStack(alignment: .leading, spacing: 10) {
-                Text(attributedMarkdown(message.text))
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .lineSpacing(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                // Per-turn read-aloud — every settled assistant turn is
-                // independently replayable (Claude's model). Not added to
-                // the in-flight tail; matches the old pipeline transcript.
-                chatReadAloudControl(message: message)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// Read-aloud control for a settled assistant chat turn. Re-wires the
-    /// existing `SpeechSynthesisService` (same glyphs, placement, and call
-    /// pattern the old Ask pipeline used in `transcriptResponseBody`) —
-    /// including its lock-screen / Now-Playing plumbing. The per-message
-    /// UUID is the speech token, so each turn's play/pause is independent.
-    @ViewBuilder
-    private func chatReadAloudControl(message: ChatSession.Message) -> some View {
-        if !message.text.isEmpty {
-            let token = message.id.uuidString
-            let isActive = speech.activeToken == token
-            let showPause = isActive && speech.isSpeaking && !speech.isPaused
-            let voiceSelection = Binding<String?>(
-                get: { speech.selectedVoiceIdentifier },
-                set: { speech.selectedVoiceIdentifier = $0 }
-            )
-            HStack(spacing: 14) {
-                Button {
-                    speech.toggle(token: token, text: message.text)
-                } label: {
-                    Image(systemName: showPause ? "pause" : "play")
-                        .font(.system(size: 22))
-                        .foregroundStyle(.white.opacity(0.6))
-                        .frame(width: 36, height: 36)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(showPause ? "Pause" : "Play")
-
-                Menu {
-                    Picker("Voice", selection: voiceSelection) {
-                        Text("Best available").tag(String?.none)
-                        ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
-                            Text(voiceLabel(v)).tag(Optional(v.identifier))
-                        }
-                    }
-                } label: {
-                    Image(systemName: "person.wave.2")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Choose voice")
-            }
-            .padding(.top, 2)
-        }
-    }
-
-    /// In-flight tail for the Ask chat lane. Mounted only while the
-    /// session is streaming. Pre-token → pulsing shimmer; mid-stream →
-    /// raw streamed text + blinking cursor (raw, not markdown, to avoid
-    /// re-parsing partial markdown per delta — same choice as the
-    /// pipeline's `inflightAnswerTail`).
-    @ViewBuilder
-    private func chatInflightTail() -> some View {
-        let chat = router.chat
-        if !chat.streamingText.isEmpty {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(chat.streamingText)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .lineSpacing(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-                StreamingCursorView()
-            }
-        } else {
-            ThinkingShimmerView()
-        }
-    }
-
-    /// Transient endpoint-failure banner for the Ask chat lane. Renders a
-    /// distinct, non-message error state (amber, Retry + dismiss) so a
-    /// failed send never lands in the transcript as an assistant bubble.
-    /// Retry re-sends the trailing user turn; × clears the banner.
-    @ViewBuilder
-    private func chatErrorBanner(message: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(Color(hexString: "E8820A"))
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.9))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Retry") {
-                Task { await router.chat.retryLastUserTurn() }
-            }
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color(hexString: "00BFFF"))
-            .buttonStyle(.plain)
-            .disabled(router.chat.isStreaming)
-            Button {
-                router.chat.clearError()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss error")
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color(hexString: "E8820A").opacity(0.12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(Color(hexString: "E8820A").opacity(0.35), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 20)
-        .padding(.top, 4)
-    }
-
-
-    @ViewBuilder
-    private func transcriptQueryBubble(text: String) -> some View {
-        HStack {
-            Spacer(minLength: 32)
-            Text(text)
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(.white)
-                .lineSpacing(3)
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(Color(hexString: "00BFFF").opacity(0.18))
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-        }
-    }
-
-
-    private func voiceLabel(_ v: AVSpeechSynthesisVoice) -> String {
-        let q: String
-        switch v.quality {
-        case .premium:  q = "Premium"
-        case .enhanced: q = "Enhanced"
-        default:        q = "Default"
-        }
-        return "\(v.name) — \(q)"
-    }
-
-
-    /// Cache of parsed markdown, keyed by the raw response text.
-    /// Committed exchange text is immutable, so a given string always
-    /// parses to the same AttributedString — caching it stops the
-    /// transcript from re-parsing every response on every drag frame
-    /// (peekProgress changes per-frame → body re-runs → transcript
-    /// rebuilds → this was re-parsing N essays at 60fps).
-    private static var markdownCache: [String: AttributedString] = [:]
-
-    private func attributedMarkdown(_ text: String) -> AttributedString {
-        if let cached = Self.markdownCache[text] { return cached }
-        let result: AttributedString
-        if let parsed = try? AttributedString(
-            markdown: text,
-            options: AttributedString.MarkdownParsingOptions(
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
-        ) {
-            result = parsed
-        } else {
-            result = AttributedString(text)
-        }
-        // Soft cap — sessions rarely exceed this many distinct
-        // responses; clear-all on overflow is fine (worst case a few
-        // re-parses, not a per-frame leak).
-        if Self.markdownCache.count > 200 {
-            Self.markdownCache.removeAll(keepingCapacity: true)
-        }
-        Self.markdownCache[text] = result
-        return result
     }
 
     @ViewBuilder
@@ -1939,45 +1684,6 @@ private struct SearchRelatedRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
-    }
-}
-
-/// Silent pre-token indicator. Shown from request-fired until the
-/// first streamed delta arrives. Pulses opacity so the user has
-/// continuous feedback that work is happening — distinct from the
-/// blinking cursor that takes over once tokens flow.
-private struct ThinkingShimmerView: View {
-    @State private var opacity: Double = 1.0
-
-    var body: some View {
-        Text("Thinking…")
-            .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.55))
-            .opacity(opacity)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    opacity = 0.25
-                }
-            }
-    }
-}
-
-/// Streaming cursor — quiet blinking caret rendered at the tail of
-/// the streamed text. Mounted only while `isStreaming && !streamingText.isEmpty`
-/// so it disappears the moment the stream completes.
-private struct StreamingCursorView: View {
-    @State private var visible: Bool = true
-
-    var body: some View {
-        Text("▋")
-            .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.55))
-            .opacity(visible ? 1.0 : 0.0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
-                    visible = false
-                }
-            }
     }
 }
 

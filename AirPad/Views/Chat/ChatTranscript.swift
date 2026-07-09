@@ -21,6 +21,12 @@ import AVFoundation
 struct ChatTranscript: View {
 
     let session: ChatSession
+    /// Whether to render the built-in composer. ChatView uses the default
+    /// (true). The Librarian passes false — it keeps its own distinctive Ask
+    /// field (sparkle glyph + ContextRing + cyan glow) as the composer and
+    /// reuses only the transcript / tail / read-aloud / error banner here.
+    /// A pure rendering flag — no host/presentation knowledge leaks in.
+    var showsComposer: Bool = true
 
     @State private var speech = SpeechSynthesisService.shared
     @State private var input: String = ""
@@ -39,8 +45,10 @@ struct ChatTranscript: View {
             if let error = session.lastError {
                 errorBanner(error)
             }
-            Divider().overlay(Color.white.opacity(0.08))
-            inputRow
+            if showsComposer {
+                Divider().overlay(Color.white.opacity(0.08))
+                inputRow
+            }
         }
         // Conversation identity changed (new chat / switched chat): drop the
         // half-typed composer text and re-arm bottom-follow for the new thread.
@@ -339,13 +347,15 @@ private struct StreamingTail: View {
             if revealedText.isEmpty && pendingText.isEmpty {
                 ThinkingShimmerView()
             } else {
+                // No trailing caret: the chunk fade-in already signals liveness,
+                // and a sibling cursor floats in no-man's-land beside the text
+                // rather than tracking the last line. Retired.
                 (Text(revealedText)
                     + Text(pendingText).foregroundStyle(.white.opacity(pendingOpacity)))
                     .font(.system(size: 15))
                     .foregroundStyle(.white)
                     .lineSpacing(5)
                     .textSelection(.enabled)
-                StreamingCursorView()
             }
             Spacer(minLength: 40)
         }
@@ -461,22 +471,6 @@ private struct ThinkingShimmerView: View {
             .onAppear {
                 withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
                     opacity = 0.25
-                }
-            }
-    }
-}
-
-/// Quiet blinking caret at the tail of the streamed text.
-private struct StreamingCursorView: View {
-    @State private var visible: Bool = true
-    var body: some View {
-        Text("▋")
-            .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.55))
-            .opacity(visible ? 1.0 : 0.0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
-                    visible = false
                 }
             }
     }

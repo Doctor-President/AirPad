@@ -1,14 +1,16 @@
 import SwiftUI
 import FloatingPanel
+import Observation
 
-/// Per-frame morph signal, split OUT of LibrarianPanelStateModel. That model is a
-/// classic ObservableObject — any @Published change invalidates every observing view,
-/// so a per-frame value on it rebuilds LibrarianSurface.body at 60fps during drag.
-/// Housing the per-frame value alone here means only the small subviews observing THIS
-/// re-evaluate per frame; the surface body (observing the big model) stays quiet.
+/// Per-frame morph signal. `@Observable` (per-property tracking) so a view that
+/// reads `peekProgress` re-evaluates per frame while a view that only holds the
+/// model reference does NOT. The whole panel model is now `@Observable` too, so
+/// this split is no longer load-bearing for isolation — but it's kept as the
+/// dedicated home for the continuous value the chrome leaves read.
 @MainActor
-final class MorphProgressModel: ObservableObject {
-    @Published var peekProgress: CGFloat = 0
+@Observable
+final class MorphProgressModel {
+    var peekProgress: CGFloat = 0
 }
 
 // MARK: - Layout
@@ -82,8 +84,9 @@ final class LibrarianPanelLayout: FloatingPanelLayout {
 /// weak handle the entry-mode wiring uses to drive the panel from outside
 /// the `.floatingPanel { proxy in … }` builder closure.
 @MainActor
-final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelControllerDelegate {
-    @Published var state: FloatingPanelState = .tip
+@Observable
+final class LibrarianPanelStateModel: NSObject, FloatingPanelControllerDelegate {
+    var state: FloatingPanelState = .tip
 
     /// True while the user is finger-dragging the panel OR FloatingPanel
     /// is animating the post-release attraction to a detent. The
@@ -93,7 +96,7 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// the drag if drawn live (Move 2 fix-pass A). `true` covers both
     /// the drag itself and the attraction so the chrome restore lines
     /// up with the panel coming to rest, not the finger lifting.
-    @Published var isDragging: Bool = false
+    var isDragging: Bool = false
 
     /// Continuous 0…1 morph signal: 0 = panel sitting at `.tip`,
     /// 1 = panel at `.half` (or above). Driven per-frame by
@@ -111,15 +114,15 @@ final class LibrarianPanelStateModel: NSObject, ObservableObject, FloatingPanelC
     /// Coarse reveal flag — true once dragged past the content-mount point (0.4). Flips
     /// only at the crossing, so the chrome's heavy subtree mounts on the boundary instead
     /// of being re-gated every frame. Replaces the surface's inline `p > 0.4` gate.
-    @Published var contentRevealed: Bool = false
+    var contentRevealed: Bool = false
 
     /// True while the panel is pinned at `.full` with its pan recognizer
     /// disabled. Drives the expanded header's collapse affordance.
     /// Cleared via `unlock(animated:)` (collapse-button tap) or
     /// `duck(animated:)`'s defensive `clearLock()` (forced-exit paths
     /// like Dashboard nav or capture overlay).
-    @Published var isLocked: Bool = false
-    weak var controller: FloatingPanelController?
+    var isLocked: Bool = false
+    @ObservationIgnored weak var controller: FloatingPanelController?
 
     nonisolated func floatingPanelDidChangeState(_ fpc: FloatingPanelController) {
         MainActor.assumeIsolated {

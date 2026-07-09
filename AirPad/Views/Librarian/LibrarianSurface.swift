@@ -361,10 +361,22 @@ struct LibrarianSurface: View {
                 .allowsHitTesting(false)
             }
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 19, weight: .regular))
-                    .foregroundStyle(mangoGrad)
-                    .opacity(iconOpacity)
+                // Neutral off-white at rest → Mango when expanded. The pill
+                // reads as glass + flare at peek (icon near-white), warming to
+                // the Search identity as it grows. Crossfade because
+                // foregroundStyle can't lerp a gradient; the existing opacity
+                // lerp rides on top.
+                ZStack {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .opacity(Double(1 - p))
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundStyle(mangoGrad)
+                        .opacity(Double(p))
+                }
+                .opacity(iconOpacity)
                 // The real Search TextField — binds to the same
                 // `librarian.searchText` that drives instant MATCHES /
                 // RELATED. Gated on `p > 0.5` so at peek the whole pill
@@ -411,7 +423,10 @@ struct LibrarianSurface: View {
                             Image(systemName: isHot ? "stop.fill" : "mic.fill")
                                 .font(.system(size: 19))
                                 .foregroundStyle(mangoGrad)
-                                .opacity(iconOpacity)
+                                // Absent at rest → revealed as the pill expands
+                                // (p 0.5→1). The resting pill is glass + "Search"
+                                // + flare only — no mic.
+                                .opacity(Double(max(0, min(1, (p - 0.5) / 0.5))))
                         }
                         .buttonStyle(.plain)
                         .allowsHitTesting(p > 0.5)
@@ -524,31 +539,6 @@ struct LibrarianSurface: View {
                 content.background(.regularMaterial, in: shape)
             }
         }
-    }
-
-    /// Mode icon + context ring composed as one unit so both surface
-    /// states (collapsed pill, expanded header) share the same hit
-    /// target and ring placement. Ring sits one pixel of breathing room
-    /// outside the icon frame; tap inside the ring still triggers
-    /// the parent action.
-    ///
-    /// `compact` shrinks the unit for inline placement at the leading
-    /// edge of the Ask input row (44pt ring / 36pt icon) after the
-    /// header-reclaim pass relocated the glyph there. Default (false)
-    /// keeps the 57pt / 48pt scale used by other callers.
-    @ViewBuilder
-    private func modeIconWithRing(librarian: LibrarianState, compact: Bool = false) -> some View {
-        let ringDiameter: CGFloat = compact ? 44 : 57
-        let iconFrame: CGFloat = compact ? 36 : 48
-        let iconSize: CGFloat = compact ? 18 : 24
-        ZStack {
-            ContextRing(fraction: librarian.contextFillFraction, diameter: ringDiameter)
-            Image(systemName: librarian.activeMode.sfSymbol)
-                .font(.system(size: iconSize, weight: .medium))
-                .foregroundStyle(.white)
-                .frame(width: iconFrame, height: iconFrame)
-        }
-        .frame(width: ringDiameter, height: ringDiameter)
     }
 
     // MARK: - Expanded chrome (born-in)
@@ -1096,7 +1086,9 @@ struct LibrarianSurface: View {
                 reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
                 value: isInputFocused
             )
-            .padding(.horizontal, 12)
+            // 14pt screen margins to match the Search field (width = geo−28 →
+            // 14 each side) so the two fields sit at the same width.
+            .padding(.horizontal, 14)
             .padding(.top, 14)
             .padding(.bottom, 10)
     }
@@ -1143,15 +1135,18 @@ struct LibrarianSurface: View {
         HStack(spacing: 8) {
             // Mode identity glyph (relocated from header in the
             // header-reclaim pass). Tap opens the mode dropdown
-            // popover, which now anchors to this inline placement.
-            // `compact` renders the ring at 44pt / icon at 36pt so it
-            // sits comfortably inside the Ask field's 48pt min-height
-            // band without dwarfing the TextField.
-            // Ask identity glyph. Ask is the only mode now, so this is a
-            // static glyph, not a mode switcher (the dropdown is retired).
-            modeIconWithRing(librarian: librarian, compact: true)
-                // 2pt leading nests the 44pt ring concentrically inside
-                // the capsule's left rounded end.
+            // Ask identity glyph — the feather (AirPadLogo), monochrome white,
+            // inheriting foregroundStyle (template asset). Static (Ask is the
+            // only mode); the mode dropdown + the ContextRing are retired. Sized
+            // up to ~40 (from 28) so the feather reads with comparable weight to
+            // the old sparkle in the ~44pt slot; leading 2 nests it in the
+            // capsule's left rounded end. Frame is the optical tunable.
+            Image("AirPadLogo")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 40, height: 40)
+                .foregroundStyle(.white)
                 .padding(.leading, 2)
 
             TextField("Ask", text: Binding(
@@ -1254,7 +1249,10 @@ struct LibrarianSurface: View {
             }
             .padding(.trailing, 10)
         }
-        .frame(minHeight: 48)
+        // Height parity with the Search field (morphingField expandedH = 52) so
+        // the two composers read as siblings. minHeight (not fixed) so Ask can
+        // still grow with multi-line input.
+        .frame(minHeight: 52)
         .background(Color.white.opacity(0.04))
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of

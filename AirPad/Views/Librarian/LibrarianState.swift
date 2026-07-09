@@ -28,7 +28,6 @@ final class LibrarianState {
         case ask
 
         var displayName: String { "Ask" }
-        var sfSymbol: String { "sparkles" }
     }
 
 

@@ -1147,7 +1147,11 @@ struct LibrarianSurface: View {
                 .scaledToFit()
                 .frame(width: 40, height: 40)
                 .foregroundStyle(.white)
-                .padding(.leading, 2)
+                // Equidistant: 12pt to the capsule's left edge (= this leading,
+                // since the capsule's widest point is at the feather's vertical
+                // center) matches the 12pt to "Ask" (HStack spacing 8 + the
+                // TextField's 4pt leading below).
+                .padding(.leading, 12)
 
             TextField("Ask", text: Binding(
                 get: { librarian.inputText },
@@ -1157,12 +1161,11 @@ struct LibrarianSurface: View {
                 .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(.white)
                 .tint(klein)
-                // Leading 14 (on top of the HStack's 8pt spacing) gives
-                // the "Ask" placeholder/text ~22pt of clearance from the
-                // glyph's ring — the prior `.horizontal, 8` had the text
-                // hugging the glyph. Trailing stays tight at 8 so the
-                // mic/send slot keeps its Messages-pattern compactness.
-                .padding(.leading, 14)
+                // Leading 4 (+ the HStack's 8pt spacing) = 12pt from the
+                // feather's frame to "Ask", matching the feather's 12pt gap to
+                // the field's left edge so the glyph sits equidistant. Trailing
+                // stays tight at 8 for the mic/send slot's compactness.
+                .padding(.leading, 4)
                 .padding(.trailing, 8)
                 .padding(.vertical, 12)
                 .lineLimit(1...4)

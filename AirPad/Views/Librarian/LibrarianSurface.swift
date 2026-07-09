@@ -664,98 +664,36 @@ struct LibrarianSurface: View {
             // subtrees so a drag tick stays cheap. `contentRevealed`
             // flips once at the crossing instead of being re-gated every
             // frame.
-            if panelModel.contentRevealed {
+            // POSTURE-PERSISTENT CHAT. When viewing a chat, ChatTranscript is
+            // mounted EXACTLY ONCE and stays mounted across ALL postures — peek
+            // included — so it is NEVER rebuilt on a posture change. This is the
+            // fix for the peek→half stall: the old `contentRevealed` gate
+            // unmounted the transcript at peek, so swiping up rebuilt the whole
+            // thing before the panel could move. Now the enclosing PeekFadeLayer
+            // hides it at peek (opacity 0) and disables its touches
+            // (allowsHitTesting(contentRevealed)); presentation changes by
+            // posture, never mount state.
+            if isViewingActiveChat && librarian.searchText.isEmpty {
+                // Bottom fade at half reads as a live conversation continuing
+                // below the fold (not a truncated document); solid at full.
+                ChatTranscript(session: router.chat, showsComposer: false)
+                    .frame(maxHeight: .infinity)
+                    .mask(transcriptPostureMask())
+                askComposer(librarian: librarian)
+            } else if panelModel.contentRevealed {
+                // Home / search are light — free to mount/unmount with the
+                // content-reveal gate (no rebuild-lag concern).
                 if !librarian.searchText.isEmpty {
-                    // Search takes over the main pane while the field has
-                    // content — instant MATCHES (C1) and RELATED (C2)
-                    // render in place of the mode pipeline's transcript.
-                    // Clearing the field restores the pipeline UI.
                     searchResultsView(librarian: librarian)
                         .frame(maxHeight: .infinity)
                 } else {
-                    // Conversation transcript (flexes), input row beneath
-                    // it — chat-app convention so new messages land near
-                    // the typing area. Ask routes to the clean ChatSession
-                    // lane (passage-free, durable per-turn persistence):
-                    // home (tile launchpad + active-chat pill) vs. the
-                    // active chat transcript. The transcript is gated on
-                    // BOTH `isViewingActiveChat` AND the expanded (.full)
-                    // posture — the invariant is transcript ⟺
-                    // (isViewingActiveChat && panel expanded), so at half
-                    // (or below) the home always shows, never the
-                    // transcript peeking. `state` is the authoritative
-                    // expanded signal (peekProgress saturates at 1 for both
-                    // half and full, so it can't distinguish them). Every
-                    // other mode keeps the corpus pipeline transcript.
-                    // Shared ChatTranscript — the SAME component ChatView uses.
-                    // Gated on `isViewingActiveChat` ALONE (no longer on
-                    // `state == .full`), so the conversation now persists across
-                    // half AND full — dissolving the drop-to-half eviction and
-                    // the entry flash (both were artifacts of gating heavy
-                    // content to the settled `.full` detent, a perf workaround
-                    // Stage 2's invalidation fix made unnecessary). Composer
-                    // off — the Librarian's own Ask `inputRow` (below) is the
-                    // composer; ChatTranscript renders transcript + tail +
-                    // read-aloud + its own error banner. Host-agnostic: it reads
-                    // `ChatSession`, not the panel.
-                    if isViewingActiveChat {
-                        ChatTranscript(session: router.chat, showsComposer: false)
-                            .frame(maxHeight: .infinity)
-                    } else {
-                        librarianHome(librarian: librarian)
-                            .frame(maxHeight: .infinity)
-                    }
-
-                    inputRow(librarian: librarian)
-                        // Klein → cyan field glow locked to the Ask
-                        // field's Capsule (matches `.clipShape(Capsule())`
-                        // inside `inputRow`). Mounted as `.background`
-                        // pre-padding so the stroked halo is
-                        // concentric with the capsule, not with the
-                        // padded slot. NO clip — outward bleed
-                        // radiates into the panel material when Ask
-                        // has focus. Ask overrides outer-pass width/
-                        // blur/opacity via `sf.askGlow*` (shorter
-                        // capsule in a busier area needs to radiate
-                        // harder than Search). Gated on `sf.bloomOn`.
-                        .background {
-                            if sfBloomOn {
-                                SolarFlareFieldGlow(
-                                    shape: Capsule(),
-                                    accent: Color(hexString: "1B59C2"),
-                                    secondary: Color(hexString: "00BFFF"),
-                                    isVisible: isInputFocused,
-                                    widthOverride: askGlowWidth,
-                                    blurOverride: askGlowBlur,
-                                    opacityOverride: askGlowOpacity
-                                )
-                            }
-                        }
-                        // Subtle Safari-style focus bounce — applied
-                        // OUTSIDE `.background` so the halo and the
-                        // field scale together. Resting 0.985, focus
-                        // 1.0 on a tight spring. Transform-only, no
-                        // layout work. Gated on reduceMotion.
-                        .scaleEffect(isInputFocused ? 1.0 : 0.985)
-                        .animation(
-                            reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
-                            value: isInputFocused
-                        )
-                        .padding(.horizontal, 12)
-                        // Top 6→14 adds breathing room above the Ask
-                        // field so the tile grid's bottom row no
-                        // longer collides with the glyph/capsule.
-                        // Bottom 14→10 drops the Ask field a few pts
-                        // closer to the panel bottom — frees more
-                        // vertical room above for the tiles.
-                        .padding(.top, 14)
-                        .padding(.bottom, 10)
+                    librarianHome(librarian: librarian)
+                        .frame(maxHeight: .infinity)
                 }
+                askComposer(librarian: librarian)
             } else {
-                // Hold the vertical flex so the perf-gated swap doesn't
-                // collapse the chrome's height while invisible — the
-                // field-bottom reserved slot stays aligned with the
-                // chips above it even before the gate flips.
+                // Peek with no active chat — hold the vertical flex so the
+                // perf-gated swap doesn't collapse the chrome height.
                 Spacer(minLength: 0)
             }
 
@@ -1127,6 +1065,61 @@ struct LibrarianSurface: View {
 
     /// Input row at the bottom of the chat pane. Lifted out of
     /// `expandedBody` so the transcript can sit above it as the
+    /// The Ask composer = `inputRow` plus its focus glow / bounce / padding.
+    /// Extracted so both the active-chat branch and the home/search branch mount
+    /// the identical composer (the Librarian's own Ask field — sparkle glyph +
+    /// ContextRing + cyan glow — stays the composer; ChatTranscript's built-in
+    /// composer is off via `showsComposer: false`).
+    @ViewBuilder
+    private func askComposer(librarian: LibrarianState) -> some View {
+        inputRow(librarian: librarian)
+            // Klein → cyan field glow locked to the Ask field's Capsule.
+            // `.background` pre-padding so the halo is concentric with the
+            // capsule; no clip so the bloom radiates. Gated on `sf.bloomOn`.
+            .background {
+                if sfBloomOn {
+                    SolarFlareFieldGlow(
+                        shape: Capsule(),
+                        accent: Color(hexString: "1B59C2"),
+                        secondary: Color(hexString: "00BFFF"),
+                        isVisible: isInputFocused,
+                        widthOverride: askGlowWidth,
+                        blurOverride: askGlowBlur,
+                        opacityOverride: askGlowOpacity
+                    )
+                }
+            }
+            // Safari-style focus bounce — outside `.background` so halo + field
+            // scale together. Transform-only; gated on reduceMotion.
+            .scaleEffect(isInputFocused ? 1.0 : 0.985)
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
+                value: isInputFocused
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
+    }
+
+    /// Posture-driven fade over the transcript. Bottom fade at `.half` so the
+    /// conversation reads as continuing below the composer; solid (no fade) at
+    /// `.full` and `.tip`. Reads DISCRETE `panelModel.state` only (Stage 2's
+    /// law) — the mask STEPS at the detent boundary, no continuous value enters
+    /// content. Compositor-side (`.mask`), so no relayout / per-frame cost.
+    /// PLACEHOLDER treatment — the real density/scale design is the chat
+    /// art-direction pass. `fadeStart` is the one tunable.
+    private func transcriptPostureMask() -> LinearGradient {
+        let fadeStart = 0.82   // fade over roughly the last ~18% above the input
+        let stops: [Gradient.Stop] = panelModel.state == .half
+            ? [Gradient.Stop(color: .black, location: 0),
+               Gradient.Stop(color: .black, location: fadeStart),
+               Gradient.Stop(color: .clear, location: 1.0)]
+            : [Gradient.Stop(color: .black, location: 0),
+               Gradient.Stop(color: .black, location: 1.0)]
+        return LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
+    }
+
+    /// The Ask input row — the panel's persistent bottom composer. The one
     /// flexing element — chat-app convention: history scrolls above,
     /// typing happens at the bottom near the keyboard.
     @ViewBuilder

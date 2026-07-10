@@ -133,8 +133,9 @@ struct ChatTranscript: View {
             HStack {
                 Spacer(minLength: 40)
                 Text(message.text)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
+                    .font(ChatTypography.body)
+                    .foregroundStyle(ChatTypography.userBubbleText)
+                    .lineSpacing(ChatTypography.bodyLine)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
@@ -351,10 +352,10 @@ private struct StreamingTail: View {
                 // and a sibling cursor floats in no-man's-land beside the text
                 // rather than tracking the last line. Retired.
                 (Text(revealedText)
-                    + Text(pendingText).foregroundStyle(.white.opacity(pendingOpacity)))
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .lineSpacing(5)
+                    + Text(pendingText).foregroundStyle(ChatTypography.bodyText.opacity(pendingOpacity)))
+                    .font(ChatTypography.body)
+                    .foregroundStyle(ChatTypography.bodyText)
+                    .lineSpacing(ChatTypography.bodyLine)
                     .textSelection(.enabled)
             }
             Spacer(minLength: 40)
@@ -429,9 +430,9 @@ private struct AssistantMarkdownText: View {
     let raw: String
     var body: some View {
         Text(Self.parse(raw))
-            .font(.system(size: 15))
-            .foregroundStyle(.white)
-            .lineSpacing(5)
+            .font(ChatTypography.body)
+            .foregroundStyle(ChatTypography.bodyText)
+            .lineSpacing(ChatTypography.bodyLine)
             .textSelection(.enabled)
     }
 

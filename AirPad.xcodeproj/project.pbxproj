@@ -58,6 +58,7 @@
 		348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */; };
 		35E9FE2824624E3B376D2C67 /* SubstrateCanvasLayoutAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */; };
 		35F092469148D4C98C2C1F7D /* UMAPSGD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 338373B19F63427D62FB1D74 /* UMAPSGD.swift */; };
+		360EE907B4E87BD67CBC4F78 /* ChatTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */; };
 		37C96334FF2E680609216C38 /* EntryVisualSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F9B499A6DE0C5C10644FF16 /* EntryVisualSettings.swift */; };
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
 		3E395C3D1D01816EA4255C62 /* Fraunces_72pt-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */; };
@@ -409,6 +410,7 @@
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
 		D86D98BB8BD1E493F884909C /* AirPad.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AirPad.icon; sourceTree = "<group>"; };
 		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
+		D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTypography.swift; sourceTree = "<group>"; };
 		D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMapSheet.swift; sourceTree = "<group>"; };
 		DA3C21B9BBF3AC6D802175E4 /* DocumentEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentEntryBody.swift; sourceTree = "<group>"; };
 		DB97C8C89A4E56E95903000D /* BentoLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BentoLayout.swift; sourceTree = "<group>"; };
@@ -578,6 +580,7 @@
 				0C38EEC0DB9F051F85839CCE /* ChatSession.swift */,
 				3B63639E3606E8D188FB55AD /* ChatsListView.swift */,
 				8E377DA84FC9332E02C687FB /* ChatTranscript.swift */,
+				D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */,
 				33412943BFC78174C4CB7437 /* ChatView.swift */,
 			);
 			path = Chat;
@@ -1082,6 +1085,7 @@
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
 				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
 				915B830CFFFC2611CD365776 /* ChatTranscript.swift in Sources */,
+				360EE907B4E87BD67CBC4F78 /* ChatTypography.swift in Sources */,
 				766BF82341F128E5B35B7345 /* ChatView.swift in Sources */,
 				CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */,
 				98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */,

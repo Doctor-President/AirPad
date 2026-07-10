@@ -371,10 +371,15 @@ private struct StreamingTail: View {
                 // settled bubble (3.4): greedy frame + 40pt trailing gutter,
                 // not an HStack Spacer, or the text reflows to a new width at
                 // commit.
-                VStack(alignment: .leading, spacing: ChatTypography.blockSpacing) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                         MarkdownBlockView(block: block)
                             .opacity(index == blocks.count - 1 ? pendingOpacity : 1)
+                            .padding(.top, BlockSpacing.topPad(
+                                index: index, blocks: blocks,
+                                listSpacing: ChatTypography.listSpacing,
+                                blockSpacing: ChatTypography.blockSpacing,
+                                headingSpaceBefore: ChatTypography.headingSpaceBefore))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

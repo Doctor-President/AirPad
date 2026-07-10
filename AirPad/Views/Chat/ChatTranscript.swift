@@ -145,10 +145,13 @@ struct ChatTranscript: View {
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    AssistantMarkdownText(raw: message.text)
-                    Spacer(minLength: 40)
-                }
+                // Block-laid-out markdown. Full width minus a 40pt right
+                // gutter (the block VStack is greedy — its bullet rows use
+                // maxWidth:.infinity — so it takes an explicit frame + trailing
+                // padding rather than an HStack Spacer, which it would fight).
+                MarkdownBlockText(raw: message.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 40)
                 // Per-turn read-aloud on settled assistant bubbles — each turn
                 // independently replayable via its per-message UUID token.
                 readAloudControl(message: message)
@@ -418,39 +421,6 @@ private struct StreamingTail: View {
         if isPinned() {
             proxy.scrollTo(anchor, anchor: .bottom)
         }
-    }
-}
-
-// MARK: - Assistant markdown
-
-/// Settled assistant bubble body — inline markdown, cached so a body re-eval
-/// (e.g. a pinned-state flip) doesn't re-parse. Committed text is immutable, so
-/// a given raw string always parses to the same AttributedString.
-private struct AssistantMarkdownText: View {
-    let raw: String
-    var body: some View {
-        Text(Self.parse(raw))
-            .font(ChatTypography.body)
-            .foregroundStyle(ChatTypography.bodyText)
-            .lineSpacing(ChatTypography.bodyLine)
-            .textSelection(.enabled)
-    }
-
-    private static var cache: [String: AttributedString] = [:]
-    private static func parse(_ raw: String) -> AttributedString {
-        if let cached = cache[raw] { return cached }
-        let result: AttributedString
-        if let attr = try? AttributedString(
-            markdown: raw,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            result = attr
-        } else {
-            result = AttributedString(raw)
-        }
-        if cache.count > 200 { cache.removeAll(keepingCapacity: true) }
-        cache[raw] = result
-        return result
     }
 }
 

@@ -315,9 +315,10 @@ struct ChatTranscript: View {
 /// partial remainder for the next newline. A time window is only a SAFETY VALVE
 /// so a long unbroken line still reveals progressively (deliberately long so it
 /// doesn't fragment prose into token slices). An idle flush reveals any
-/// remainder when the stream stops growing. Each revealed chunk fades in via a
-/// run-opacity animation; already-revealed text stays put. Plain text (not
-/// markdown) mid-stream — the settled bubble is markdown at commit.
+/// remainder when the stream stops growing. Each newly-revealed BLOCK fades in;
+/// already-revealed blocks stay put. The tail renders the SAME MarkdownBlock
+/// layout the settled bubble does — parsed from `revealedText + pendingText` in
+/// `commit()` and held in `@State` — so nothing reflows when the stream ends.
 ///
 /// Owns the pinned-only follow-scroll, driven on commit (chunk cadence).
 private struct StreamingTail: View {
@@ -331,8 +332,13 @@ private struct StreamingTail: View {
     @State private var revealedText: String = ""
     /// Newest revealed chunk, currently fading in.
     @State private var pendingText: String = ""
-    /// Animatable opacity of the pending chunk's run.
+    /// Animatable opacity of the newest (last) block.
     @State private var pendingOpacity: Double = 1
+    /// Parsed blocks of `revealedText + pendingText`. Written ONLY from
+    /// `commit(chunk:)` and the reset path — never in `body` (body re-evals
+    /// per token; parsing there would run the parser on the full response on
+    /// every token). Chunk commits are newline-gated, so the parse is cheap.
+    @State private var blocks: [MarkdownBlock] = []
     /// Wall-clock of the last reveal; `.distantPast` reveals the first chunk
     /// immediately.
     @State private var lastFlush: Date = .distantPast
@@ -347,21 +353,33 @@ private struct StreamingTail: View {
     private var displayedLength: Int { revealedText.count + pendingText.count }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        Group {
             if revealedText.isEmpty && pendingText.isEmpty {
-                ThinkingShimmerView()
+                // Pre-token indicator keeps its own leading layout — it is not
+                // text and does not need to match the block wrapper.
+                HStack(alignment: .top, spacing: 6) {
+                    ThinkingShimmerView()
+                    Spacer(minLength: 40)
+                }
             } else {
-                // No trailing caret: the chunk fade-in already signals liveness,
-                // and a sibling cursor floats in no-man's-land beside the text
-                // rather than tracking the last line. Retired.
-                (Text(revealedText)
-                    + Text(pendingText).foregroundStyle(ChatTypography.bodyText.opacity(pendingOpacity)))
-                    .font(ChatTypography.body)
-                    .foregroundStyle(ChatTypography.bodyText)
-                    .lineSpacing(ChatTypography.bodyLine)
-                    .textSelection(.enabled)
+                // Render the SAME blocks the settled bubble renders (parsed in
+                // commit(), held in @State) so nothing reflows at commit. Only
+                // the newest block carries the fade. Key on OFFSET — a block's
+                // only identity is position, so two identical bullets don't
+                // collapse mid-stream. No trailing caret: the block fade-in
+                // already signals liveness (retired). Wrapper MATCHES the
+                // settled bubble (3.4): greedy frame + 40pt trailing gutter,
+                // not an HStack Spacer, or the text reflows to a new width at
+                // commit.
+                VStack(alignment: .leading, spacing: ChatTypography.blockSpacing) {
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                        MarkdownBlockView(block: block)
+                            .opacity(index == blocks.count - 1 ? pendingOpacity : 1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 40)
             }
-            Spacer(minLength: 40)
         }
         .onChange(of: session.streamingText) { _, newValue in
             reveal(from: newValue)
@@ -384,6 +402,7 @@ private struct StreamingTail: View {
         if full.isEmpty {
             revealedText = ""
             pendingText = ""
+            blocks = []
             pendingOpacity = 1
             lastFlush = .distantPast
             return
@@ -408,15 +427,27 @@ private struct StreamingTail: View {
         commit(chunk: undisplayed)
     }
 
-    /// Promote the previous pending chunk, fade in the new one, and follow the
-    /// bottom if the user is pinned there.
+    /// Promote the previous pending chunk, re-parse the full displayed text
+    /// into blocks, fade in the newest block ONLY when a block boundary was
+    /// crossed, and follow the bottom if the user is pinned there.
     private func commit(chunk: String) {
         revealedText += pendingText
         pendingText = chunk
-        pendingOpacity = 0
         lastFlush = Date()
-        withAnimation(.easeOut(duration: Self.fadeDuration)) {
-            pendingOpacity = 1
+
+        // Parse the CONCATENATION, never the two strings separately: the
+        // revealed/pending split is a character boundary, not a block one, so
+        // parsing apart would split one paragraph into two blocks with a seam.
+        let newBlocks = MarkdownBlockParser.parse(revealedText + pendingText)
+        // Fade off BLOCK COUNT, not chunk arrival: a chunk that only extends
+        // the current last block must not re-fade text the user is reading.
+        let gainedBlock = newBlocks.count > blocks.count
+        blocks = newBlocks
+        if gainedBlock {
+            pendingOpacity = 0
+            withAnimation(.easeOut(duration: Self.fadeDuration)) {
+                pendingOpacity = 1
+            }
         }
         if isPinned() {
             proxy.scrollTo(anchor, anchor: .bottom)

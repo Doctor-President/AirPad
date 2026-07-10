@@ -5,24 +5,33 @@ import SwiftUI
 /// font size — every chat text site reads from here. Color tokens are hex
 /// literals only (T is colorblind; hex is the verifiable source of truth).
 enum ChatTypography {
-    // Body. Bumped 15 -> 17 to match iOS system chat density.
-    static let body        = Font.system(size: 17)
-    static let bodyLine    : CGFloat = 6      // lineSpacing
+    // PostScript names — verified from the TTF name tables (nameID 6),
+    // not the filenames. Both faces live in family "Source Serif 4", so
+    // inline `**bold**` / `*italic*` resolve to the real faces via trait.
+    private static let serif     = "SourceSerif4-Regular"
+    private static let serifBold = "SourceSerif4-Bold"
 
-    // Block markdown scale (used by COMMIT 2).
-    static let h1          = Font.system(size: 22, weight: .semibold)
-    static let h2          = Font.system(size: 19, weight: .semibold)
-    static let h3          = Font.system(size: 17, weight: .semibold)
-    static let code        = Font.system(size: 15, design: .monospaced)
+    // Serif reads optically SMALLER than sans at equal point size.
+    // 17 -> 18 is a correction, not an increase.
+    static let body     = Font.custom(serif, size: 18, relativeTo: .body)
+    static let bodyLine : CGFloat = 7    // was 6; serif wants more air
 
-    // Ancillary
-    static let thinking    = Font.system(size: 14)
-    static let footerIcon  = Font.system(size: 16)
+    static let h1 = Font.custom(serifBold, size: 24, relativeTo: .title2)
+    static let h2 = Font.custom(serifBold, size: 21, relativeTo: .title3)
+    static let h3 = Font.custom(serifBold, size: 18, relativeTo: .headline)
+
+    // Code stays MONOSPACED SYSTEM. A serif code block is illegible.
+    static let code = Font.system(size: 15, design: .monospaced)
+
+    static let thinking = Font.custom(serif, size: 15, relativeTo: .footnote)
+
+    // Footer icons are SF Symbols. System font. Unchanged.
+    static let footerIcon = Font.system(size: 16)
 
     // Spacing
-    static let blockSpacing    : CGFloat = 14   // between markdown blocks
-    static let bulletIndent    : CGFloat = 20   // hanging indent
-    static let bulletGap       : CGFloat = 8
+    static let blockSpacing : CGFloat = 16   // was 14; serif wants more
+    static let bulletIndent : CGFloat = 20
+    static let bulletGap    : CGFloat = 8
 
     // COLOR TOKENS — hex literals only. Do not substitute named colors.
     // Body text moves OFF pure white. This is deliberate; #FFFFFF at

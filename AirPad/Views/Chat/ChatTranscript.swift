@@ -133,9 +133,9 @@ struct ChatTranscript: View {
             HStack {
                 Spacer(minLength: 40)
                 Text(message.text)
-                    .font(ChatTypography.body)
+                    .font(ChatTypography.userBody)
                     .foregroundStyle(ChatTypography.userBubbleText)
-                    .lineSpacing(ChatTypography.bodyLine)
+                    .lineSpacing(ChatTypography.userLine)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(

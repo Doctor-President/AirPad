@@ -59,9 +59,10 @@ enum ModelRouter {
     /// Streaming text generation. Yields incremental string deltas as they
     /// arrive. For Ollama this is real SSE streaming via `URLSession.bytes`
     /// — the per-chunk clock dissolves the silent 60s timeout that plagues
-    /// the one-shot `generate(...)` path. For Foundation Model, which is
-    /// on-device and fast, the full response is yielded as a single chunk
-    /// so call sites can use one code path for both providers.
+    /// the one-shot `generate(...)` path. For Foundation Model this is
+    /// `LanguageModelSession.streamResponse(to:)`, whose cumulative snapshots
+    /// are converted to deltas in `streamFoundationModel` so both providers
+    /// present the identical delta contract to call sites.
     static func generateStreaming(
         systemPrompt: String,
         userPrompt: String
@@ -71,11 +72,14 @@ enum ModelRouter {
                 do {
                     switch active {
                     case .foundationModel:
-                        let result = try await generateFoundationModel(
+                        guard #available(iOS 26.0, *) else {
+                            throw RouterError.foundationModelUnavailable
+                        }
+                        try await streamFoundationModel(
                             systemPrompt: systemPrompt,
-                            userPrompt: userPrompt
+                            userPrompt: userPrompt,
+                            continuation: continuation
                         )
-                        continuation.yield(result)
                         continuation.finish()
                     case .ollama(let endpoint):
                         try await streamOllama(
@@ -134,6 +138,47 @@ enum ModelRouter {
             ? userPrompt
             : "\(systemPrompt)\n\n\(userPrompt)"
         return try await session.respond(to: combined).content
+    }
+
+    /// Streaming sibling of `generateFoundationModel`. `LanguageModelSession`
+    /// exposes `streamResponse(to:)`, which for a `String` output yields a
+    /// `ResponseStream<String>` whose element is a `Snapshot` carrying
+    /// `.content: String` — a CUMULATIVE view of the whole response so far,
+    /// NOT a delta. We convert to deltas at THIS boundary so every call site
+    /// sees the same delta contract the Ollama path already provides
+    /// (`ChatSession.send` does `streamingText += delta`); a snapshot must
+    /// never leak upward or it duplicates exponentially.
+    @available(iOS 26.0, *)
+    private static func streamFoundationModel(
+        systemPrompt: String,
+        userPrompt: String,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws {
+        guard SystemLanguageModel.default.isAvailable else {
+            throw RouterError.foundationModelUnavailable
+        }
+        let session = LanguageModelSession()
+        let combined = systemPrompt.isEmpty
+            ? userPrompt
+            : "\(systemPrompt)\n\n\(userPrompt)"
+
+        // Snapshots are CUMULATIVE. Convert to deltas via suffix-diff.
+        var emitted = ""
+        for try await snapshot in session.streamResponse(to: combined) {
+            let full = snapshot.content
+            guard full.count > emitted.count else { continue }
+            guard full.hasPrefix(emitted) else {
+                // Model revised earlier text — suffix-diff is invalid. Don't
+                // silently patch: yield the tail so nothing is lost, but flag
+                // it loudly so this surfaces during device verify.
+                print("[ModelRouter] FM snapshot NOT append-only. Stop.")
+                continuation.yield(String(full.dropFirst(emitted.count)))
+                emitted = full
+                continue
+            }
+            continuation.yield(String(full.dropFirst(emitted.count)))
+            emitted = full
+        }
     }
 
     // MARK: - Ollama

@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit   // UIPasteboard — footer copy + user-bubble long-press copy
 
 /// Host-agnostic chat component. Renders ONE conversation end to end —
 /// transcript + isolated streaming tail + per-turn read-aloud + error banner +
@@ -35,6 +36,10 @@ struct ChatTranscript: View {
     /// Assigned ONLY on change (below) so scroll geometry callbacks don't churn
     /// this body (and re-parse settled bubbles) on every frame.
     @State private var isPinnedToBottom = true
+    /// Per-message copy confirmation — the footer copy icon shows a checkmark
+    /// for ~1.2s on the message whose id matches, then clears (mirrors
+    /// SolarFlareTuningPanel.justCopied).
+    @State private var copiedMessageID: UUID?
 
     private static let tailAnchor = "__chat_transcript_tail__"
     private static let bottomFollowThreshold: CGFloat = 80
@@ -200,6 +205,40 @@ struct ChatTranscript: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Choose voice")
+
+                // Copy the assistant turn's plain text; icon confirms for ~1.2s.
+                Button {
+                    UIPasteboard.general.string = message.text
+                    copiedMessageID = message.id
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(1200))
+                        if copiedMessageID == message.id { copiedMessageID = nil }
+                    }
+                } label: {
+                    Image(systemName: copiedMessageID == message.id ? "checkmark" : "doc.on.doc")
+                        .font(ChatTypography.footerIcon)
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy message")
+
+                // Regenerate — LAST assistant turn only; disabled mid-stream.
+                if message.id == session.messages.last?.id {
+                    Button {
+                        Task { await session.regenerateLast() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(ChatTypography.footerIcon)
+                            .foregroundStyle(ChatTypography.secondaryText)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(session.isStreaming)
+                    .accessibilityLabel("Regenerate response")
+                }
             }
             .padding(.top, 2)
         }

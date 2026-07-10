@@ -157,6 +157,22 @@ final class ChatSession {
         await send(last.text)
     }
 
+    /// Re-run the most recent exchange. Pops the trailing assistant turn and
+    /// the user turn beneath it, then re-sends that user text through the
+    /// normal path (send() re-appends the user message). No-op mid-stream or
+    /// if the transcript doesn't end in an assistant turn. Does NOT reset
+    /// `didGenerateTitle` — the chat is already titled and send()'s title
+    /// hook is a no-op once that guard is set, so regenerate never re-titles.
+    func regenerateLast() async {
+        guard !isStreaming else { return }
+        guard messages.count >= 2,
+              messages.last?.role == .assistant,
+              messages[messages.count - 2].role == .user else { return }
+        messages.removeLast()               // assistant
+        let userText = messages.removeLast().text
+        await send(userText)
+    }
+
     /// Render the prior transcript + the new user turn as a single text
     /// blob. Provider-agnostic — works on FM (one chunk) and Ollama (SSE)
     /// identically. No passages, no retrieval, no citations.

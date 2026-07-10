@@ -144,6 +144,52 @@ enum MarkdownBlockParser {
     }
 }
 
+// MARK: - Contextual spacing
+
+/// Space ABOVE each block. `VStack(spacing:)` applies one value to every gap
+/// and can't see neighbouring KINDS, so containers use `spacing: 0` and pad
+/// each block's top with this. ONE implementation, called from BOTH the
+/// settled bubble (`MarkdownBlockText`) and the stream tail (`StreamingTail`)
+/// — if the two diverge, spacing shifts at the instant the stream commits,
+/// the exact reflow class COMMIT 3 removed. Do not copy-paste it.
+enum BlockSpacing {
+    /// Zero for the first block — a `.padding(.top,)` does NOT collapse like
+    /// a CSS margin, so a non-zero first pad would add a phantom leading gap.
+    static func topPad(index: Int, blocks: [MarkdownBlock],
+                       listSpacing: CGFloat, blockSpacing: CGFloat,
+                       headingSpaceBefore: CGFloat) -> CGFloat {
+        guard index > 0 else { return 0 }
+        let prev = blocks[index - 1]
+        let curr = blocks[index]
+
+        // Adjacent list items of the SAME kind hug.
+        if isListItem(prev), isListItem(curr), sameListKind(prev, curr) {
+            return listSpacing
+        }
+        // Headings get extra air above them (on top of blockSpacing).
+        if case .heading = curr {
+            return blockSpacing + headingSpaceBefore
+        }
+        return blockSpacing
+    }
+
+    private static func isListItem(_ b: MarkdownBlock) -> Bool {
+        if case .bullet = b { return true }
+        if case .numbered = b { return true }
+        return false
+    }
+
+    /// bullet↔bullet and numbered↔numbered hug. bullet↔numbered does NOT —
+    /// switching marker style is a semantic break.
+    private static func sameListKind(_ a: MarkdownBlock, _ b: MarkdownBlock) -> Bool {
+        switch (a, b) {
+        case (.bullet, .bullet):     return true
+        case (.numbered, .numbered): return true
+        default:                     return false
+        }
+    }
+}
+
 // MARK: - Rendering
 
 /// Renders ONE block. Inline markdown inside the block goes through
@@ -201,6 +247,8 @@ struct MarkdownBlockView: View {
     /// glyph) and numbered markers of differing widths still line up. The
     /// marker uses the SERIF body font so it sits at the text's baseline
     /// and stroke weight — a system glyph beside serif text reads wrong.
+    /// KEEP the fixed-width frame — it is the only thing aligning `1.` vs
+    /// `10.`; only the width is tuned.
     private func listRow(marker: String, text: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: ChatTypography.bulletGap) {
             Text(marker)
@@ -242,12 +290,25 @@ struct MarkdownBlockText: View {
     let raw: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ChatTypography.blockSpacing) {
+        // Settled bubble: raw is immutable committed text, so parsing here
+        // (cached) is cheap and body rarely re-evals. Bind once — topPad and
+        // the ForEach both need the array.
+        let blocks = Self.parse(raw)
+        // Contextual spacing: VStack(spacing:) can't vary per-gap, so the
+        // container is spacing 0 and each block carries its own top pad via
+        // the shared BlockSpacing resolver — identical logic in the stream
+        // tail (StreamingTail) so spacing doesn't shift at commit.
+        VStack(alignment: .leading, spacing: 0) {
             // Key on OFFSET: a block is a value with no identity beyond
             // position, so duplicate bullets must not collide. Index is
             // stable for immutable committed text.
-            ForEach(Array(Self.parse(raw).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 MarkdownBlockView(block: block)
+                    .padding(.top, BlockSpacing.topPad(
+                        index: index, blocks: blocks,
+                        listSpacing: ChatTypography.listSpacing,
+                        blockSpacing: ChatTypography.blockSpacing,
+                        headingSpaceBefore: ChatTypography.headingSpaceBefore))
             }
         }
     }

@@ -103,7 +103,12 @@ struct ChatTranscript: View {
                 geo.contentSize.height - geo.visibleRect.maxY
             } action: { _, distanceFromBottom in
                 let pinned = distanceFromBottom <= Self.bottomFollowThreshold
-                if pinned != isPinnedToBottom { isPinnedToBottom = pinned }
+                // Keep the guard — it stops per-frame body churn during a
+                // pinned stream. Animate so the scroll-to-latest arrow fades
+                // in/out rather than snapping.
+                if pinned != isPinnedToBottom {
+                    withAnimation(.easeOut(duration: 0.18)) { isPinnedToBottom = pinned }
+                }
             }
             .onChange(of: session.messages.count) { oldCount, newCount in
                 // New user turn → reveal the query + START of the response near
@@ -126,6 +131,47 @@ struct ChatTranscript: View {
             .onAppear {
                 if let last = session.messages.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
+                }
+            }
+            // Bottom scroll-edge fade — always on, both hosts, all postures.
+            // On the ScrollView ONLY (the composer lives outside it and stays
+            // solid). 0.94 is the tunable.
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.94),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+            // Scroll-to-latest arrow — applied AFTER the mask so it never
+            // fades. Uses the existing isPinnedToBottom state (no new tracking).
+            .overlay(alignment: .bottom) {
+                if !isPinnedToBottom {
+                    Button {
+                        // Branch the whole call — the tail anchor is a String
+                        // and a message id is a UUID, which can't share one
+                        // ternary argument.
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            if session.isStreaming {
+                                proxy.scrollTo(Self.tailAnchor, anchor: .bottom)
+                            } else if let last = session.messages.last {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(ChatTypography.bodyText)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 12)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
         }

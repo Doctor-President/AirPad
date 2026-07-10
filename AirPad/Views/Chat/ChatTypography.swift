@@ -14,7 +14,13 @@ enum ChatTypography {
     // Serif reads optically SMALLER than sans at equal point size.
     // 17 -> 18 is a correction, not an increase.
     static let body     = Font.custom(serif, size: 18, relativeTo: .body)
-    static let bodyLine : CGFloat = 7    // was 6; serif wants more air
+    static let bodyLine : CGFloat = 4    // Source Serif's built-in leading is
+                                         // generous; 4 keeps bullet wraps as
+                                         // one thought (was 7, too airy at 18pt)
+
+    // User bubble speaks in the app's voice (SF), not the model's serif.
+    static let userBody = Font.system(size: 17)
+    static let userLine : CGFloat = 3
 
     static let h1 = Font.custom(serifBold, size: 24, relativeTo: .title2)
     static let h2 = Font.custom(serifBold, size: 21, relativeTo: .title3)

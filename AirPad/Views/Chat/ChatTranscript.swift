@@ -508,24 +508,44 @@ private struct StreamingTail: View {
     }
 }
 
-// MARK: - Streaming indicators (canonical home; Librarian dedups here in step 3)
-//
-// `private` for now: LibrarianSurface still has its own file-private copies, and
-// a module-internal type here would collide with them ("invalid redeclaration").
-// Step 3 promotes these to internal and deletes the Librarian duplicates.
+// MARK: - Streaming indicators
 
-/// Silent pre-token indicator — pulsing "Thinking…" from request-fired until
-/// the first streamed delta arrives.
+// `private` and the sole copy: LibrarianSurface adopted the shared
+// ChatTranscript component, so it renders this indicator too — there is no
+// Librarian duplicate to keep in sync (the old "promote in step 3" note is
+// obsolete).
+
+/// Silent pre-token indicator — a highlight sweeps L→R across "Thinking…"
+/// from request-fired until the first streamed delta arrives. Reduce Motion:
+/// static text, no overlay, no animation (NOT a fallback opacity pulse).
 private struct ThinkingShimmerView: View {
-    @State private var opacity: Double = 1.0
+    @State private var phase: CGFloat = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Text("Thinking…")
-            .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.55))
-            .opacity(opacity)
+            .font(ChatTypography.thinking)
+            .foregroundStyle(ChatTypography.secondaryText)
+            .overlay {
+                if !reduceMotion {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: Color(hexString: "F5F3F0").opacity(0.9), location: 0.5),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                    .frame(width: 90)
+                    .offset(x: phase * 160)
+                    .blendMode(.plusLighter)
+                }
+            }
+            .mask(Text("Thinking…").font(ChatTypography.thinking))
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    opacity = 0.25
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+                    phase = 1
                 }
             }
     }

@@ -147,6 +147,15 @@ struct ChatTranscript: View {
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color(hexString: "00BFFF").opacity(0.18))
                     )
+                    // On the bubble composite (its textSelection is off), so the
+                    // long-press has no selection gesture to fight.
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = message.text
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 10) {

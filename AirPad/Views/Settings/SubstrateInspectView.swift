@@ -59,6 +59,8 @@ struct SubstrateInspectView: View {
     @State private var entryDeletionSelfTestInProgress: Bool = false
     @State private var clipboardRouterSelfTestResult: String? = nil
     @State private var clipboardRouterSelfTestInProgress: Bool = false
+    @State private var cardParitySelfTestResult: String? = nil
+    @State private var cardParitySelfTestInProgress: Bool = false
     @State private var exportInProgress: Bool = false
     @State private var exportResult: ExportResult? = nil
     @State private var exportError: String? = nil
@@ -682,6 +684,33 @@ struct SubstrateInspectView: View {
             .buttonStyle(.plain)
             .disabled(clipboardRouterSelfTestInProgress)
             if let r = clipboardRouterSelfTestResult {
+                Text(r)
+                    .font(.caption2)
+                    .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                guard !cardParitySelfTestInProgress else { return }
+                cardParitySelfTestInProgress = true
+                Task {
+                    let r = await CardEmbeddingParityTest.run()
+                    await MainActor.run {
+                        cardParitySelfTestResult = r
+                        cardParitySelfTestInProgress = false
+                    }
+                }
+            } label: {
+                Text(cardParitySelfTestInProgress ? "Running card-embedding parity…" : "Run card-embedding parity (BGE)")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(cardParitySelfTestInProgress)
+            if let r = cardParitySelfTestResult {
                 Text(r)
                     .font(.caption2)
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))

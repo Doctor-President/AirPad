@@ -3374,7 +3374,14 @@ final class CorpusStore {
 
         guard var updated = nodes.first(where: { $0.id == nodeID }) else { return }
 
-        updated.title   = result.title
+        // ws-card-catalog step 1 — FM-respect gate on title, mirroring the
+        // summary gate below. The FM may only rewrite the title when the user
+        // hasn't taken ownership (`titleSource == nil` for legacy /
+        // never-processed, or `.model`). A `.user` title is left untouched.
+        if updated.titleSource == nil || updated.titleSource == .model {
+            updated.title = result.title
+            updated.titleSource = .model
+        }
         // entry-system-and-fold Commit 6 — FM-respect gate on summary.
         // The FM may only rewrite the summary when the user hasn't
         // taken ownership of it (`summarySource == nil` for legacy /
@@ -3383,17 +3390,14 @@ final class CorpusStore {
         // deliberately cleared the summary (`.user`), the FM write is
         // skipped entirely — including over an empty string, since
         // emptying is a deliberate state. Mirrors `primaryTag`'s
-        // user-beats-model logic. Scope is summary only; `title` and
-        // `mood` keep their existing write semantics.
+        // user-beats-model logic.
         if updated.summarySource == nil || updated.summarySource == .model {
             updated.summary = result.summary
             updated.summarySource = .model
         }
-        updated.mood    = result.mood
-        if let domain = result.domain {
-            updated.domain          = domain
-            updated.domainConfirmed = false
-        }
+        // ws-card-catalog step 1 — capture no longer classifies: mood and
+        // domain are no longer applied here. The Node fields remain for decode
+        // tolerance of historical node.json (no migration, no writes).
         // SB126 Stage 2 — persist deterministic-prefilter embedding and the
         // FM's neighborhood guess. Both are no-ops on the legacy path.
         if useCorpusAware {
@@ -3406,19 +3410,13 @@ final class CorpusStore {
             }
         }
 
-        var existingTagNames: [String] = []
-        var newTagNames: [String] = []
-        for name in result.tags {
-            if let storedTag = currentTags.first(where: { $0.name.lowercased() == name.lowercased() }) {
-                existingTagNames.append(storedTag.name)  // use stored name to match tagColorMap keys exactly
-            } else {
-                newTagNames.append(name)
-            }
-        }
-        updated.tags = existingTagNames
-        for name in existingTagNames where updated.tagSources[name] == nil {
-            updated.tagSources[name] = TagOrigin(source: .model)
-        }
+        // ws-card-catalog step 1 — capture never classifies. The former
+        // tag-application block (result.tags → existingTagNames/newTagNames,
+        // `updated.tags`, `tagSources` writes, and the TagSuggestionContext
+        // emission below) is removed entirely. This also closes the tag-clobber
+        // hole by construction: a voice-append re-run can no longer overwrite a
+        // node's tags. Tier-2 tags move to a deferred reflection pass (step 5).
+        // Manual tag-add in the Detail View (TagEditorSheet) is untouched.
         updated.needsAIProcessing = false
 
         // SB139 Stage 1 — substrate pipeline runs alongside the tag pipeline.
@@ -3430,29 +3428,10 @@ final class CorpusStore {
         }
         await updateNode(updated)
 
-        if !newTagNames.isEmpty {
-            if suppressTagSheet {
-                // Batch-import path: auto-create new tags with neutral color, apply silently.
-                for name in newTagNames {
-                    let tag = Tag(
-                        id: UUID(),
-                        name: name,
-                        colorHex: Tag.neutralColorHex,
-                        createdAt: Date(),
-                        useCount: 1
-                    )
-                    await addTag(tag)
-                }
-                await applyTags(newTagNames, toNodeID: nodeID, source: .model)
-                print("[AI] Silent tag apply for \(nodeID): \(newTagNames)")
-            } else {
-                pendingTagSuggestions = TagSuggestionContext(
-                    nodeID: nodeID,
-                    newTagNames: newTagNames,
-                    existingTagNames: existingTagNames
-                )
-            }
-        }
+        // ws-card-catalog step 1 — with no FM tags produced, the capture-time
+        // TagCreationSheet path (pendingTagSuggestions) is unreachable; its
+        // emission is removed. `suppressTagSheet` still gates the substrate
+        // thread refresh below.
 
         // SB139 Stage 2 — single-capture path refreshes substrate-driven
         // thread candidates now that this node's substrate is current. The

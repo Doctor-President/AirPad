@@ -209,6 +209,14 @@ struct Node: Codable, Identifiable, Hashable {
     /// on next run); the first FM write stamps `.model`.
     var summarySource: TagSource?
 
+    /// ws-card-catalog step 1 — authorship provenance for `title`, mirroring
+    /// `summarySource` exactly. When `.user`, `processNodeWithAI` must leave the
+    /// title alone; when `nil` (legacy / never-processed) or `.model`, the FM may
+    /// rewrite and stamp `.model`. User-driven edits in
+    /// `NodeDetailView.saveIfChanged` stamp `.user`. Legacy nodes decode as `nil`
+    /// (FM eligible on next run); additive, no schema-version bump.
+    var titleSource: TagSource?
+
     /// hero-image v1 — relative path (`items/<id>.<ext>`) of the image
     /// the user picked as this node's hero banner, or `nil` when the
     /// hero falls back to the morphing gradient. Same handle the rest
@@ -246,6 +254,7 @@ struct Node: Codable, Identifiable, Hashable {
         case foldIndex = "fold_index"
         case descriptionOnCard = "description_on_card"
         case summarySource = "summary_source"
+        case titleSource = "title_source"
         case coverImageRelativePath = "cover_image_relative_path"
     }
 
@@ -292,6 +301,7 @@ struct Node: Codable, Identifiable, Hashable {
         foldIndex: Int = 0,
         descriptionOnCard: Bool = true,
         summarySource: TagSource? = nil,
+        titleSource: TagSource? = nil,
         coverImageRelativePath: String? = nil
     ) {
         self.id                          = id
@@ -331,6 +341,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.foldIndex                   = foldIndex
         self.descriptionOnCard           = descriptionOnCard
         self.summarySource               = summarySource
+        self.titleSource                 = titleSource
         self.coverImageRelativePath      = coverImageRelativePath
     }
 }
@@ -377,6 +388,7 @@ extension Node {
         foldIndex                  = try c.decodeIfPresent(Int.self,      forKey: .foldIndex) ?? 0
         descriptionOnCard          = try c.decodeIfPresent(Bool.self,     forKey: .descriptionOnCard) ?? true
         summarySource              = try c.decodeIfPresent(TagSource.self, forKey: .summarySource)
+        titleSource                = try c.decodeIfPresent(TagSource.self, forKey: .titleSource)
         coverImageRelativePath     = try c.decodeIfPresent(String.self,   forKey: .coverImageRelativePath) ?? nil
     }
 }

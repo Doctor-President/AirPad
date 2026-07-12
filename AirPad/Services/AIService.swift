@@ -44,15 +44,6 @@ struct NodeAIResult {
 
     @Guide(description: "One to two sentence summary capturing the idea's core essence.")
     var summary: String
-
-    @Guide(description: "Tag names from the provided vocabulary that are genuinely relevant to this content. Return an empty array if no existing tag clearly applies — do not force a match. Return at most 5 tags. Prefer broad domain tags from the vocabulary over highly specific descriptors.")
-    var tags: [String]
-
-    @Guide(description: "Emotional tone — exactly one word from this fixed set: curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.")
-    var mood: String
-
-    @Guide(description: "Domain classification — exactly one value from: Recipe, Legal, Medical, Nutrition, Dream, Travel, Work, Learning, Family, Art/Project. Use an empty string if none clearly apply.")
-    var domain: String
 }
 
 /// SB126 Stage 2 — output of the corpus-aware `processNode` FM call. Mirrors
@@ -186,24 +177,19 @@ struct TagDigest {
 @available(iOS 26.0, *)
 actor AIService {
 
+    /// ws-card-catalog step 1 — capture no longer classifies. This legacy path
+    /// produces title + summary only; tags/mood/domain were removed from both the
+    /// prompt and the structured result (`NodeAIResult`). Tier-2 tag assignment
+    /// moves to a deferred reflection pass (step 5). `tagVocabulary` is retained
+    /// for signature stability with the corpus-aware sibling but is no longer read.
     func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutput? {
         guard SystemLanguageModel.default.isAvailable else { return nil }
 
         let content = extractContent(from: node)
         guard !content.isEmpty else { return nil }
 
-        let vocabLine: String
-        if tagVocabulary.isEmpty {
-            vocabLine = "Tag vocabulary: (empty — create 1 to 3 concise domain-level tag names based on the content. Prefer broad categories over specific descriptors.)"
-        } else {
-            vocabLine = "Tag vocabulary: " + tagVocabulary.map { $0.name }.joined(separator: ", ")
-        }
-
         let prompt = """
-        Analyze this captured idea.
-        \(vocabLine)
-        Only suggest tags from the vocabulary if they are genuinely relevant to this content. \
-        If no existing tags apply, return an empty tag list. Do not force a match.
+        Analyze this captured idea and produce a concise title and summary.
 
         Idea:
         \(content)
@@ -217,9 +203,9 @@ actor AIService {
             return NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
-                tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
-                mood:    r.mood.isEmpty ? nil : r.mood,
-                domain:  r.domain.isEmpty ? nil : r.domain,
+                tags:    [],
+                mood:    nil,
+                domain:  nil,
                 neighborhoodID: nil
             )
         } catch {

@@ -1324,7 +1324,14 @@ struct NodeDetailView: View {
         guard let node else { return }
         var updated = node
         var changed = false
-        if updated.title != editedTitle { updated.title = editedTitle; changed = true }
+        if updated.title != editedTitle {
+            updated.title = editedTitle
+            // ws-card-catalog step 1 — user-stamp the title so the FM-respect
+            // gate in `processNodeWithAI` leaves it alone on subsequent runs.
+            // Mirrors the summary stamp below.
+            updated.titleSource = .user
+            changed = true
+        }
         if updated.summary != editedSummary {
             updated.summary = editedSummary
             // entry-system-and-fold Commit 6 — user-stamp the summary

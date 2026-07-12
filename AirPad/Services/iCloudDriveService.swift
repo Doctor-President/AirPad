@@ -125,6 +125,31 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode(NodeBlockIndex.self, from: data)
     }
 
+    // MARK: - Catalog card sidecar
+
+    /// ws-card-catalog step 2a — per-node catalog-card sidecar at
+    /// `nodes/<nodeID>/card.json`. Derived data (regenerable from node content).
+    /// Lives inside the node's directory so `deleteNode` (which removes the whole
+    /// directory) auto-cleans it; no symmetric delete method is needed. Mirrors
+    /// `saveBlockIndex` exactly.
+    func saveCard(_ card: CatalogCard, forNodeID nodeID: String) throws {
+        let root = try requireRoot()
+        let nodeDir = root.appendingPathComponent("nodes/\(nodeID)")
+        try FileManager.default.createDirectory(at: nodeDir, withIntermediateDirectories: true)
+        let data = try JSONEncoder.airPad.encode(card)
+        try data.write(to: nodeDir.appendingPathComponent("card.json"), options: .atomic)
+    }
+
+    /// Returns nil when the sidecar is absent — callers treat that as "no card
+    /// yet". Mirrors `loadBlockIndex`.
+    func loadCard(forNodeID nodeID: String) throws -> CatalogCard? {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("nodes/\(nodeID)/card.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode(CatalogCard.self, from: data)
+    }
+
     // MARK: - Media files
 
     /// Copies a media file (audio, image, video) into the node's `items/` subdirectory.

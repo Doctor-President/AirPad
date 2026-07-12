@@ -497,6 +497,18 @@ final class CorpusStore {
         try? await service.loadBlockIndex(forNodeID: nodeID)
     }
 
+    /// ws-card-catalog step 2a — funneled read/write for the per-node catalog
+    /// card sidecar, mirroring `blockIndex(forNodeID:)`. The storage actor stays
+    /// private; card access flows through these entry points. No call sites yet
+    /// beyond the accessors — the write path lands in a later step.
+    private func card(forNodeID nodeID: String) async -> CatalogCard? {
+        try? await service.loadCard(forNodeID: nodeID)
+    }
+
+    private func saveCard(_ card: CatalogCard) async {
+        try? await service.saveCard(card, forNodeID: card.nodeID)
+    }
+
     /// Suggestions surfaced by the Ghost Query Field. Built from the corpus summary if present,
     /// with a fixed fallback list so the field is never empty (e.g., on a fresh install).
     var ghostQuerySuggestions: [String] {

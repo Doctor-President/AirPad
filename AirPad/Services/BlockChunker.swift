@@ -48,11 +48,31 @@ enum BlockChunker {
     /// brief's range.
     static let voiceFloorChars: Int = 700
 
+    /// ws-card-catalog step 3a — chunk-quality floor. A block must carry at
+    /// least this many real (letter/digit) characters after trimming to be
+    /// embedded. Screens out the degenerate blocks that polluted RELATED under
+    /// the raw-cosine regime: punctuation/whitespace-only remnants (a bare `"-"`
+    /// bullet), and short OG-fragment noise (`"TikTok · nasir"` = 11 real chars).
+    /// It also bounds `mergeShort`'s "keep the trailing remnant" rule — a
+    /// remnant survives only when it clears this floor.
+    static let minRealChars: Int = 12
+
+    /// True when `text` has ≥ `minRealChars` letters/digits. Early-exits.
+    static func hasQualitySignal(_ text: String) -> Bool {
+        var real = 0
+        for ch in text where ch.isLetter || ch.isNumber {
+            real += 1
+            if real >= minRealChars { return true }
+        }
+        return false
+    }
+
     /// Walks `node.items` in declaration order and concatenates per-item
     /// chunks. Items with no extractable text contribute nothing — silent
-    /// skip rather than empty blocks.
+    /// skip rather than empty blocks. Sub-`minRealChars` (junk) blocks are
+    /// dropped by the quality gate.
     static func chunk(_ node: Node) -> [BlockChunkSpec] {
-        node.items.flatMap { chunk(item: $0) }
+        node.items.flatMap { chunk(item: $0) }.filter { hasQualitySignal($0.text) }
     }
 
     static func chunk(item: NodeItem) -> [BlockChunkSpec] {

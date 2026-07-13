@@ -486,10 +486,65 @@ final class CorpusStore {
     /// scope into `topK` post-filter would let a narrow collection lose
     /// every top corpus match, so we filter the candidate IDs upstream
     /// and let `topK` count in-scope hits.
+    // MARK: - Retrieval relevance (ws-card-catalog step 3c)
+
+    /// Block matches below this cosine are dropped; when ALL fall below it,
+    /// RELATED/Ask show the honest "nothing close" state. Conservative start
+    /// (BGE real matches sit ~0.5–0.75) — 3d tunes on device.
+    static let minRelevanceScore: Float = 0.35
+
+    /// Breadth for the (future) card re-rank. NOT a hard candidate filter — see
+    /// `cardNarrowedCandidates`.
+    static let cardCandidateM: Int = 40
+
+    /// Raw cosine for 384-dim BGE (unit-normalized) card/query vectors.
+    nonisolated private static func cosine384(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for i in 0..<a.count { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
+        let denom = (na * nb).squareRoot()
+        return denom > 0 ? dot / denom : 0
+    }
+
+    /// Card-tier (BGE gist) ranking of `nodeIDs` for `qvec`. **Kept for a future
+    /// scale-driven re-rank — deliberately NOT wired as a hard candidate filter.**
+    ///
+    /// Why not a filter: at current corpus size the block scan over all nodes is
+    /// already cheap and correct, and hard card-narrowing measurably regresses
+    /// recall — a node whose *gist* doesn't match the query but which holds a
+    /// matching *passage* ranks low by card yet high by block (e.g. "The Book of
+    /// Enoch" is card-rank 168/183 for "color" but has a 0.675 color passage).
+    /// When corpora reach the scale where a full block scan hurts, this can become
+    /// a re-rank/boost signal or a *generous* pre-filter, not a top-M cut.
+    ///
+    /// No-card policy (for whenever it's used): nodes without a usable card vector
+    /// (the ~no-gist nodes, or cards not yet embedded) are ALWAYS kept — a card
+    /// can't rank them, so they must not be silently excluded from block search;
+    /// and when NO node has a card vector at all, it falls back to the full input.
+    private func cardNarrowedCandidates(queryVector qvec: [Float], within nodeIDs: [String]) async -> [String] {
+        var scored: [(id: String, score: Float)] = []
+        var noCard: [String] = []
+        for id in nodeIDs {
+            guard let card = await card(forNodeID: id),
+                  let emb = card.embedding, emb.count == qvec.count else {
+                noCard.append(id)
+                continue
+            }
+            scored.append((id, Self.cosine384(qvec, emb)))
+        }
+        guard !scored.isEmpty else { return nodeIDs }
+        let top = scored.sorted { $0.score > $1.score }.prefix(Self.cardCandidateM).map(\.id)
+        return top + noCard
+    }
+
     func findRelevantNodes(query: String, scope: CanvasScope = .corpus, topK: Int = 5) async -> [String] {
+        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
+        // Block search over ALL in-scope nodes — no card pre-filter (see
+        // `cardNarrowedCandidates`: it regresses recall for passage-bearing nodes
+        // whose gist doesn't match the query).
         let candidateIDs = nodes(in: scope).map { $0.id }
         return await blockEmbedding.findRelevantNodeIDs(
-            query: query,
+            queryVector: qvec,
             candidateNodeIDs: candidateIDs,
             topK: topK
         )
@@ -501,12 +556,16 @@ final class CorpusStore {
     /// chips so the response and the citation set come from one
     /// retrieval pass. Same scoping policy as `findRelevantNodes`.
     func findRelevantBlockMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
+        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
         let candidateIDs = nodes(in: scope).map { $0.id }
-        return await blockEmbedding.findRelevantBlocks(
-            query: query,
+        let matches = await blockEmbedding.findRelevantBlocks(
+            queryVector: qvec,
             candidateNodeIDs: candidateIDs,
             topK: topK
         )
+        // Threshold: below-bar matches dropped → empty result surfaces the
+        // "nothing close" / no-citations state honestly.
+        return matches.filter { $0.score >= Self.minRelevanceScore }
     }
 
     /// SB139 Stage 4c2 — load the block-embedding sidecar for a node so
@@ -3806,20 +3865,20 @@ final class CorpusStore {
 
     // MARK: - Block-level retrieval
 
-    /// Stage-2 block retrieval proxy. Exposes the privately-owned
-    /// `BlockEmbeddingService` to call sites (e.g., Librarian instant
-    /// search) without leaking the service itself — same pattern as
-    /// `saveAndEnqueue` funneling all writes through the store. Passes
-    /// the full node-ID set as candidates; tighter Stage-1 narrowing
-    /// can layer on later without changing this signature.
+    /// Librarian instant-RELATED entry point. Block search over the whole corpus
+    /// (no card pre-filter — see `cardNarrowedCandidates`), with sub-threshold
+    /// matches dropped so a query with nothing close returns [] → the UI's
+    /// "nothing close" state.
     @available(iOS 17.0, *)
     func findRelevantBlocks(query: String, topK: Int = 10) async -> [BlockMatch] {
+        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
         let candidateIDs = nodes.map { $0.id }
-        return await blockEmbedding.findRelevantBlocks(
-            query: query,
+        let matches = await blockEmbedding.findRelevantBlocks(
+            queryVector: qvec,
             candidateNodeIDs: candidateIDs,
             topK: topK
         )
+        return matches.filter { $0.score >= Self.minRelevanceScore }
     }
 
     // MARK: - Block embedding backfill (C5)

@@ -644,7 +644,17 @@ final class LibrarianState {
 
     private func runAskPipeline(query: String, store: CorpusStore) async {
         await runCompactionIfNeeded()
-        let allMatches = await store.findRelevantBlockMatches(query: query, scope: selectedScope, topK: 8)
+        var allMatches = await store.findRelevantBlockMatches(query: query, scope: selectedScope, topK: 8)
+        // ws-card-catalog step 3c — corpus fallback: a collection-scoped Ask that
+        // finds NOTHING in-scope would otherwise answer ungrounded even when the
+        // corpus can answer it (e.g. "what is AirPad" while scoped to a collection
+        // that lacks the AirPad notes). Retry once at .corpus. Only fires on an
+        // empty scoped result, so intentional collection-scoped Ask is preserved
+        // when it has content; the fallback matches flow through the existing
+        // citation build unchanged (chips + grounding both reflect it).
+        if allMatches.isEmpty, selectedScope != .corpus {
+            allMatches = await store.findRelevantBlockMatches(query: query, scope: .corpus, topK: 8)
+        }
         let citations = Self.trimToCharBudget(allMatches, budget: Self.askPassageCharBudget)
         if citations.count < allMatches.count {
             print("[Librarian] Ask: trimmed citations \(allMatches.count) → \(citations.count) to fit \(Self.askPassageCharBudget)-char budget")

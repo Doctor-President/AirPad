@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import NaturalLanguage
 import Observation
@@ -308,6 +309,20 @@ final class CorpusStore {
     /// Card worked, Map didn't) — decisions.md 2026-07-06.
     private var enrichmentTasks: [String: Task<Void, Never>] = [:]
 
+    /// ws-card-catalog step 2c — debounced per-node catalog-card refresh+embed
+    /// tasks. Keyed by nodeID; re-arming cancels the prior task so rapid edits
+    /// coalesce, exactly like `enrichmentTasks` and the block-rebuild enqueue.
+    private var cardRefreshTasks: [String: Task<Void, Never>] = [:]
+
+    /// ws-card-catalog step 2c — the one-shot post-launch catalog backfill.
+    /// Foreground-idle (`.utility`, spawned off the launch path); the ~2.5s
+    /// embedder load happens lazily inside it. Resumable by construction, so a
+    /// cancelled/relaunched pass just re-runs the presence/hash/version checks.
+    private var catalogBackfillTask: Task<Void, Never>?
+
+    /// Wall-clock duration of the last catalog backfill, for the dev readout.
+    private(set) var lastCatalogBackfillDuration: TimeInterval? = nil
+
     /// Nodes after applying the active corpus-scope filter and sort order.
     var filteredNodes: [Node] {
         applyActiveFilter(to: nodes, scope: .corpus)
@@ -450,6 +465,11 @@ final class CorpusStore {
     private func saveAndEnqueue(_ node: Node) async throws {
         try await service.saveNode(node)
         blockEmbedding.enqueueRebuild(node: node)
+        // ws-card-catalog step 2c — card write-through. Debounced per-node so
+        // rapid edits coalesce under one refresh+embed, mirroring the block
+        // rebuild above. The card sidecar is derived data; this never blocks the
+        // node save (it's scheduled, not awaited).
+        scheduleCardRefresh(nodeID: node.id)
     }
 
     /// Librarian Navigate-mode entry point. Hands the query off to the
@@ -546,6 +566,9 @@ final class CorpusStore {
         iCloudUnavailable = fallback
         guard available else { return }
         await load()
+        // ws-card-catalog step 2c — kick the catalog backfill after corpus load,
+        // off the launch path (foreground-idle, low priority). Not awaited.
+        armCatalogBackfill()
     }
 
     // MARK: - Load
@@ -801,8 +824,12 @@ final class CorpusStore {
     func findOrCreateTodayJournalNode() async -> Node? {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
+        // ws-card-catalog Change C — match on `isJournalEntry`, NOT `journalDate`
+        // alone. `journalDate` marks Journal-*collection* membership, so a note
+        // merely filed into Journal would otherwise hijack this prompt (and, being
+        // more recent, win). The day's real entry is the one THIS function created.
         if let existing = nodes.first(where: { node in
-            guard let d = node.journalDate else { return false }
+            guard node.isJournalEntry, let d = node.journalDate else { return false }
             return cal.isDate(d, inSameDayAs: today)
         }) {
             return existing
@@ -819,6 +846,7 @@ final class CorpusStore {
             summary: "",
             tags: [],
             journalDate: today,
+            isJournalEntry: true,
             entrySchemaVersion: 1
         )
         await addNode(node, position: .zero)
@@ -861,6 +889,20 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Update error: \(error)")
         }
+    }
+
+    /// Race-safe node write: read the node FRESH at call time, apply `body` in
+    /// place, persist. `body` is synchronous, so there is no suspension between
+    /// the read and the write — no caller can hold a stale whole-node snapshot
+    /// (incl. `.items`) across an `await` and clobber a concurrent writer. This
+    /// is the funnel for every field-scoped mutation; whole-node `updateNode`
+    /// stays for callers that legitimately replace the entire node (create/import).
+    /// No-op if the node is gone.
+    func mutateNode(id: String, _ body: (inout Node) -> Void) async {
+        guard let idx = nodes.firstIndex(where: { $0.id == id }) else { return }
+        var node = nodes[idx]
+        body(&node)
+        await updateNode(node)
     }
 
     // MARK: - Backlinks (user connections)
@@ -1014,21 +1056,26 @@ final class CorpusStore {
     /// Bumps the item's `updatedAt` alongside the node's — the per-entry
     /// timestamp field shipped in Stage 3.1a commit (a) and is now live.
     func updateTextItem(itemID: String, newContent: String, nodeID: String) async {
-        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
-        var updated = nodes[nodeIdx]
-        guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
-              updated.items[itemIdx].type == .text,
-              updated.items[itemIdx].content != newContent else { return }
-        // Reap inline-image items whose tokens were removed from the note (e.g.
-        // the user backspaced the image) so they don't resurface as orphaned
-        // gallery cards.
-        let removedImageIDs = Set(MarkdownCodec.referencedImageItemIDs(in: updated.items[itemIdx].content ?? ""))
-            .subtracting(MarkdownCodec.referencedImageItemIDs(in: newContent))
-        let now = Date()
-        updated.items[itemIdx].content = newContent
-        updated.items[itemIdx].updatedAt = now
-        updated.updatedAt = now
-        await updateNode(updated)
+        // Race-safe: read fresh + apply inside mutateNode so a concurrent whole-
+        // node writer (saveIfChanged, enrichment) can't clobber this body edit.
+        var removedImageIDs: Set<String> = []
+        var didChange = false
+        await mutateNode(id: nodeID) { updated in
+            guard let itemIdx = updated.items.firstIndex(where: { $0.id == itemID }),
+                  updated.items[itemIdx].type == .text,
+                  updated.items[itemIdx].content != newContent else { return }
+            // Reap inline-image items whose tokens were removed from the note (e.g.
+            // the user backspaced the image) so they don't resurface as orphaned
+            // gallery cards.
+            removedImageIDs = Set(MarkdownCodec.referencedImageItemIDs(in: updated.items[itemIdx].content ?? ""))
+                .subtracting(MarkdownCodec.referencedImageItemIDs(in: newContent))
+            let now = Date()
+            updated.items[itemIdx].content = newContent
+            updated.items[itemIdx].updatedAt = now
+            updated.updatedAt = now
+            didChange = true
+        }
+        guard didChange else { return }
         if !removedImageIDs.isEmpty {
             await reapInlineImages(removedImageIDs, nodeID: nodeID)
         }
@@ -1057,16 +1104,193 @@ final class CorpusStore {
             defer { self.enrichmentTasks[nodeID] = nil }
             guard let node = self.nodes.first(where: { $0.id == nodeID }) else { return }
             let title = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = node.summary.trimmingCharacters(in: .whitespacesAndNewlines)
             let content = node.items.compactMap { item -> String? in
                 item.type == .text ? item.content : item.transcript
             }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard title.isEmpty, !content.isEmpty else {
-                print("[Enrich] skip node=\(nodeID) titleEmpty=\(title.isEmpty) contentLen=\(content.count)")
+            // ws-card-catalog step 1.1 — per-field need check instead of the old
+            // `title.isEmpty`-only gate. Fire when there's content AND any authored
+            // output is still missing: title, summary, or a substrate output
+            // (substrateSummary / folksonomy). The old gate skipped enrichment for
+            // a QuikCapture that had a user title, so summary + folksonomy never
+            // authored. The per-field titleSource/summarySource gates inside
+            // processNodeWithAI still protect user-authored text, and a fully
+            // filled node makes `needs` false — steady state doesn't re-fire.
+            let substrateMissing = (node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                || (node.folksonomy?.isEmpty ?? true)
+            let needs = title.isEmpty || summary.isEmpty || substrateMissing
+            guard needs, !content.isEmpty else {
+                print("[Enrich] skip node=\(nodeID) needs=\(needs) contentLen=\(content.count)")
                 return
             }
-            print("[Enrich] firing node=\(nodeID) contentLen=\(content.count)")
+            print("[Enrich] firing node=\(nodeID) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) substrateMissing=\(substrateMissing) contentLen=\(content.count)")
             await self.processNodeWithAI(nodeID: nodeID, suppressTagSheet: true)
         }
+    }
+
+    // MARK: - ws-card-catalog step 2c — catalog derivation / embed / backfill
+
+    /// Derivation (not authoring): the embedded card text is gist-only,
+    /// `substrateSummary ?? summary`. Empty string when neither is present.
+    private func gist(for node: Node) -> String {
+        let substrate = (node.substrateSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !substrate.isEmpty { return substrate }
+        return node.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// SHA256 hex of the node's extracted content — the card freshness key.
+    private func cardContentHash(for node: Node) -> String {
+        let digest = SHA256.hash(data: Data(extractNodeContent(node).utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Build a fresh card from a node. Nil when no gist is derivable.
+    private func buildCard(for node: Node) -> CatalogCard? {
+        let g = gist(for: node)
+        guard !g.isEmpty else { return nil }
+        let now = Date()
+        return CatalogCard(
+            nodeID: node.id,
+            gist: g,
+            gistSource: .model,
+            contentHash: cardContentHash(for: node),
+            cardTextVersion: 1,
+            embeddingVersion: 0,
+            embedding: nil,
+            createdAt: now,
+            updatedAt: now
+        )
+    }
+
+    /// Reconcile a node's card sidecar with its current content. Pure
+    /// derivation — never touches AIService/substrate. Hybrid authorship:
+    /// a `.user` gist always wins and is preserved on content drift.
+    func refreshCard(forNodeID nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let newHash = cardContentHash(for: node)
+
+        guard let existing = await card(forNodeID: nodeID) else {
+            // (a) no card + gist derivable → build + save.
+            if let card = buildCard(for: node) { await saveCard(card) }
+            return
+        }
+
+        // (b) hash unchanged → no gist/hash work. Embedding freshness is
+        // `embedCardIfNeeded`'s job, so nothing to do here.
+        guard existing.contentHash != newHash else { return }
+
+        var updated = existing
+        updated.contentHash = newHash
+        updated.updatedAt = Date()
+        if existing.gistSource == .user {
+            // (d) keep the user gist; update hash only; embedding stays valid.
+            // (Surfacing a now-stale user gist is step 6's job, not 2c's.)
+            await saveCard(updated)
+            return
+        }
+        // (c) model gist + hash changed → re-derive. If the gist is no longer
+        // derivable (content emptied), keep the old gist but refresh the hash.
+        let g = gist(for: node)
+        if !g.isEmpty {
+            updated.gist = g
+            updated.gistSource = .model
+            updated.embedding = nil          // old vector is stale for the new gist
+            updated.embeddingVersion = 0     // → re-embed on the next pass
+        }
+        await saveCard(updated)
+    }
+
+    /// Embed a card's gist when its stored vector is stale (version behind or
+    /// absent). Actor-safe and never blocks a save: the embed hop can suspend
+    /// for the lazy model load, so the card is re-read before writing to avoid
+    /// clobbering a concurrent refresh.
+    func embedCardIfNeeded(forNodeID nodeID: String) async {
+        guard let current = await card(forNodeID: nodeID),
+              current.embeddingVersion < CardEmbeddingService.currentEmbeddingVersion else { return }
+        let g = current.gist.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !g.isEmpty else { return }
+        guard let vector = await CardEmbeddingService.shared.embed(g) else { return }
+        guard var fresh = await card(forNodeID: nodeID),
+              fresh.embeddingVersion < CardEmbeddingService.currentEmbeddingVersion,
+              fresh.gist == current.gist else { return }
+        fresh.embedding = vector
+        fresh.embeddingVersion = CardEmbeddingService.currentEmbeddingVersion
+        fresh.updatedAt = Date()
+        await saveCard(fresh)
+    }
+
+    /// Debounced per-node card write-through: refresh derivation then embed.
+    /// Cancel+re-arm coalesces rapid edits, mirroring `enrichmentTasks`.
+    private func scheduleCardRefresh(nodeID: String) {
+        cardRefreshTasks[nodeID]?.cancel()
+        cardRefreshTasks[nodeID] = Task(priority: .utility) { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard let self, !Task.isCancelled else { return }
+            defer { self.cardRefreshTasks[nodeID] = nil }
+            await self.refreshCard(forNodeID: nodeID)
+            await self.embedCardIfNeeded(forNodeID: nodeID)
+        }
+    }
+
+    /// Arm the one-shot post-launch backfill off the launch path.
+    private func armCatalogBackfill() {
+        catalogBackfillTask?.cancel()
+        catalogBackfillTask = Task(priority: .utility) { @MainActor [weak self] in
+            // Brief settle so first paint isn't contended; the embedder loads
+            // lazily inside `backfillCatalog`, never on the launch path.
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            await self.backfillCatalog()
+        }
+    }
+
+    /// One-shot, resumable backfill over all nodes: refresh + embed each card.
+    /// Idempotent (presence/hash/version checks make re-runs no-ops), so no
+    /// completion flag is needed. Yields between nodes to stay idle-friendly.
+    func backfillCatalog() async {
+        let start = Date()
+        let ids = nodes.map(\.id)
+        var built = 0, skippedNoGist = 0, reEmbedded = 0
+        for id in ids {
+            if Task.isCancelled { break }
+            let had = await card(forNodeID: id) != nil
+            await refreshCard(forNodeID: id)
+            guard let after = await card(forNodeID: id) else {
+                if let node = nodes.first(where: { $0.id == id }), gist(for: node).isEmpty {
+                    skippedNoGist += 1
+                }
+                continue
+            }
+            if !had { built += 1 }
+            let versionBefore = after.embeddingVersion
+            await embedCardIfNeeded(forNodeID: id)
+            if let post = await card(forNodeID: id), post.embeddingVersion > versionBefore {
+                reEmbedded += 1
+            }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let duration = Date().timeIntervalSince(start)
+        lastCatalogBackfillDuration = duration
+        print("[CatalogBackfill] built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration))s")
+    }
+
+    /// Dev readout: catalog coverage across the live corpus. Loads each sidecar,
+    /// so it's I/O-heavy — for the inspect view only.
+    func catalogStatusSummary() async -> String {
+        var present = 0, noGist = 0, stale = 0, embedded = 0
+        for node in nodes {
+            if let card = await card(forNodeID: node.id) {
+                present += 1
+                if card.contentHash != cardContentHash(for: node) { stale += 1 }
+                if card.embedding != nil, card.embeddingVersion >= CardEmbeddingService.currentEmbeddingVersion {
+                    embedded += 1
+                }
+            } else if gist(for: node).isEmpty {
+                noGist += 1
+            }
+        }
+        let dur = lastCatalogBackfillDuration.map { String(format: "%.1fs", $0) } ?? "—"
+        return "cards \(present)/\(nodes.count) · no-gist \(noGist) · stale \(stale) · embedded \(embedded) · last backfill \(dur)"
     }
 
     // MARK: - Entry-primitive actions (Stage 3.1a commit (b))
@@ -3365,8 +3589,9 @@ final class CorpusStore {
             aiResult = await aiSvc.processNode(node, tagVocabulary: currentTags)
         }
         guard let result = aiResult else {
-            // AI unavailable — apply a fallback title from raw content so the node isn't blank
-            if var n = nodes.first(where: { $0.id == nodeID }) {
+            // AI unavailable — apply a fallback title from raw content so the node
+            // isn't blank. Race-safe read-modify-write; never touches `.items`.
+            await mutateNode(id: nodeID) { n in
                 let fallback = n.items.compactMap { item -> String? in
                     switch item.type {
                     case .text:          return item.content
@@ -3379,66 +3604,65 @@ final class CorpusStore {
                     n.title = String(fallback.prefix(40))
                 }
                 n.needsAIProcessing = false
-                await updateNode(n)
             }
             return
         }
 
-        guard var updated = nodes.first(where: { $0.id == nodeID }) else { return }
-
-        // ws-card-catalog step 1 — FM-respect gate on title, mirroring the
-        // summary gate below. The FM may only rewrite the title when the user
-        // hasn't taken ownership (`titleSource == nil` for legacy /
-        // never-processed, or `.model`). A `.user` title is left untouched.
-        if updated.titleSource == nil || updated.titleSource == .model {
-            updated.title = result.title
-            updated.titleSource = .model
-        }
-        // entry-system-and-fold Commit 6 — FM-respect gate on summary.
-        // The FM may only rewrite the summary when the user hasn't
-        // taken ownership of it (`summarySource == nil` for legacy /
-        // never-processed, or `.model` for an FM-owned summary the
-        // user hasn't touched). When the user has edited or
-        // deliberately cleared the summary (`.user`), the FM write is
-        // skipped entirely — including over an empty string, since
-        // emptying is a deliberate state. Mirrors `primaryTag`'s
-        // user-beats-model logic.
-        if updated.summarySource == nil || updated.summarySource == .model {
-            updated.summary = result.summary
-            updated.summarySource = .model
-        }
-        // ws-card-catalog step 1 — capture no longer classifies: mood and
-        // domain are no longer applied here. The Node fields remain for decode
-        // tolerance of historical node.json (no migration, no writes).
-        // SB126 Stage 2 — persist deterministic-prefilter embedding and the
-        // FM's neighborhood guess. Both are no-ops on the legacy path.
-        if useCorpusAware {
-            if let nodeEmbedding {
-                updated.contentEmbedding = nodeEmbedding
-            }
-            if let fmNeighborhood = result.neighborhoodID,
-               corpusIndex.neighborhoods[fmNeighborhood] != nil {
-                updated.fmSuggestedNeighborhoodID = fmNeighborhood
-            }
-        }
-
-        // ws-card-catalog step 1 — capture never classifies. The former
-        // tag-application block (result.tags → existingTagNames/newTagNames,
-        // `updated.tags`, `tagSources` writes, and the TagSuggestionContext
-        // emission below) is removed entirely. This also closes the tag-clobber
-        // hole by construction: a voice-append re-run can no longer overwrite a
-        // node's tags. Tier-2 tags move to a deferred reflection pass (step 5).
-        // Manual tag-add in the Detail View (TagEditorSheet) is untouched.
-        updated.needsAIProcessing = false
-
-        // SB139 Stage 1 — substrate pipeline runs alongside the tag pipeline.
-        // Single FM call producing summary + folksonomy, then three embeddings
-        // via NLContextualEmbedding. Bundled into the same updateNode write so
-        // capture lands one save with everything.
+        // ws-card-catalog Change A — the FM/substrate write is the worst clobber
+        // offender: its snapshot was previously taken BEFORE two multi-second FM
+        // calls and blind-written afterward, erasing any body edit that landed in
+        // that window. Fix: run the substrate FM on a throwaway `working` copy
+        // (it only needs a Node for content extraction + to receive the substrate
+        // fields), then persist via `mutateNode` — a FRESH read — re-applying ONLY
+        // the FM-authored fields, with the source gates re-checked against the
+        // fresh node. `.items` and every user-owned field come from the fresh read.
+        guard var working = nodes.first(where: { $0.id == nodeID }) else { return }
         if FeatureFlags.substrateOnCapture {
-            await runSubstratePipeline(on: &updated, aiSvc: aiSvc)
+            // SB139 Stage 1 — one FM call → summary + folksonomy, then three
+            // NLContextualEmbedding vectors. Mutates only substrate fields.
+            await runSubstratePipeline(on: &working, aiSvc: aiSvc)
         }
-        await updateNode(updated)
+
+        await mutateNode(id: nodeID) { n in
+            // FM-respect gate on title (step 1): FM writes only when the user
+            // hasn't taken ownership. Re-checked against the FRESH node, so a
+            // user edit during the FM window wins.
+            if n.titleSource == nil || n.titleSource == .model {
+                n.title = result.title
+                n.titleSource = .model
+            }
+            // FM-respect gate on summary (Commit 6): same user-beats-model rule;
+            // a `.user` summary (including a deliberately empty one) is untouched.
+            if n.summarySource == nil || n.summarySource == .model {
+                n.summary = result.summary
+                n.summarySource = .model
+            }
+            // SB126 Stage 2 — deterministic-prefilter embedding + FM neighborhood
+            // guess. No-ops on the legacy path. (mood/domain/tags no longer
+            // applied — step 1.)
+            if useCorpusAware {
+                if let nodeEmbedding {
+                    n.contentEmbedding = nodeEmbedding
+                }
+                if let fmNeighborhood = result.neighborhoodID,
+                   corpusIndex.neighborhoods[fmNeighborhood] != nil {
+                    n.fmSuggestedNeighborhoodID = fmNeighborhood
+                }
+            }
+            // SB139 Stage 1 — copy the substrate outputs computed on `working`
+            // onto the fresh node (the only fields runSubstratePipeline authors).
+            if FeatureFlags.substrateOnCapture {
+                n.substrateSummary = working.substrateSummary
+                n.folksonomy = working.folksonomy
+                n.summaryEmbedding = working.summaryEmbedding
+                n.folksonomyEmbedding = working.folksonomyEmbedding
+                n.contextualContentEmbedding = working.contextualContentEmbedding
+                n.embeddingVersion = working.embeddingVersion
+                n.embeddingFailureReason = working.embeddingFailureReason
+                n.fmErrorDetail = working.fmErrorDetail
+            }
+            n.needsAIProcessing = false
+        }
 
         // ws-card-catalog step 1 — with no FM tags produced, the capture-time
         // TagCreationSheet path (pendingTagSuggestions) is unreachable; its

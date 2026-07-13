@@ -238,6 +238,24 @@ final class LibrarianState {
     /// store's natural order (recency-favored). Case-insensitive
     /// substring; trims whitespace so trailing-space typing doesn't
     /// drop matches.
+    /// ws-librarian-perf Part 1 — debounced wrapper around `updateSearchMatches`.
+    /// The substring scan is O(nodes) on the main actor; running it on every
+    /// keystroke was a typing-path cost. Empty query clears immediately (no
+    /// lingering stale matches); otherwise debounce 120ms.
+    private var searchMatchesTask: Task<Void, Never>?
+    func scheduleSearchMatches(store: CorpusStore) {
+        searchMatchesTask?.cancel()
+        if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            searchMatches = []
+            return
+        }
+        searchMatchesTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            if Task.isCancelled { return }
+            self?.updateSearchMatches(store: store)
+        }
+    }
+
     func updateSearchMatches(store: CorpusStore) {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {

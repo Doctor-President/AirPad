@@ -838,11 +838,14 @@ struct NodeDetailView: View {
 
     private func addMembership(collectionID: String) {
         if collectionID == NodeCollection.journalID {
-            guard let current = node else { return }
-            var updated = current
-            updated.journalDate = Calendar.current.startOfDay(for: Date())
-            updated.updatedAt = Date()
-            Task { await store.updateNode(updated) }
+            // ws-card-catalog Change A — mutateNode so a Journal-membership toggle
+            // can't blind-overwrite `.items` with a stale snapshot.
+            Task {
+                await store.mutateNode(id: nodeID) { n in
+                    n.journalDate = Calendar.current.startOfDay(for: Date())
+                    n.updatedAt = Date()
+                }
+            }
         } else {
             Task { await store.addNodes(ids: [nodeID], toCollection: collectionID) }
         }
@@ -851,11 +854,12 @@ struct NodeDetailView: View {
 
     private func removeMembership(id: String) {
         if id == NodeCollection.journalID {
-            guard let current = node else { return }
-            var updated = current
-            updated.journalDate = nil
-            updated.updatedAt = Date()
-            Task { await store.updateNode(updated) }
+            Task {
+                await store.mutateNode(id: nodeID) { n in
+                    n.journalDate = nil
+                    n.updatedAt = Date()
+                }
+            }
         } else {
             Task { await store.removeNodes(ids: [nodeID], fromCollection: id) }
         }
@@ -1322,40 +1326,35 @@ struct NodeDetailView: View {
 
     private func saveIfChanged() {
         guard let node else { return }
-        var updated = node
-        var changed = false
-        if updated.title != editedTitle {
-            updated.title = editedTitle
-            // ws-card-catalog step 1 — user-stamp the title so the FM-respect
-            // gate in `processNodeWithAI` leaves it alone on subsequent runs.
-            // Mirrors the summary stamp below.
-            updated.titleSource = .user
-            changed = true
-        }
-        if updated.summary != editedSummary {
-            updated.summary = editedSummary
-            // entry-system-and-fold Commit 6 — user-stamp the summary
-            // so the FM-respect gate in `processNodeWithAI` leaves it
-            // alone on subsequent runs. Covers clearing too: emptying
-            // is a deliberate state, so an empty `editedSummary`
-            // arriving here also stamps `.user` (the outer `guard
-            // changed` already short-circuits the no-op case).
-            updated.summarySource = .user
-            changed = true
-        }
-        if updated.tags != editedTags {
-            updated.tags = editedTags
-            // User-edited tags carry .user provenance; drop sources for removed tags.
-            let editedSet = Set(editedTags)
-            for name in editedTags { updated.tagSources[name] = TagOrigin(source: .user) }
-            for name in updated.tagSources.keys where !editedSet.contains(name) {
-                updated.tagSources.removeValue(forKey: name)
+        let nodeID = node.id
+        let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
+        // Compare against the FRESHEST node so an unedited close stays a no-op.
+        guard let fresh = store.nodes.first(where: { $0.id == nodeID }) else { return }
+        let titleChanged = fresh.title != newTitle
+        let summaryChanged = fresh.summary != newSummary
+        let tagsChanged = fresh.tags != newTags
+        guard titleChanged || summaryChanged || tagsChanged else { return }
+        // ws-card-catalog Change A — write via mutateNode (fresh read-modify-write)
+        // so this title/summary/tags save never blind-overwrites `.items` with a
+        // stale snapshot. Source-stamp semantics unchanged:
+        //  - title/summary stamp `.user` (Commit 6 / step 1); clearing summary is
+        //    a deliberate `.user` state (the change guard already skips no-ops).
+        //  - tags carry `.user` provenance; sources for removed tags are dropped.
+        Task {
+            await store.mutateNode(id: nodeID) { n in
+                if titleChanged { n.title = newTitle; n.titleSource = .user }
+                if summaryChanged { n.summary = newSummary; n.summarySource = .user }
+                if tagsChanged {
+                    n.tags = newTags
+                    let editedSet = Set(newTags)
+                    for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
+                    for name in n.tagSources.keys where !editedSet.contains(name) {
+                        n.tagSources.removeValue(forKey: name)
+                    }
+                }
+                n.updatedAt = Date()
             }
-            changed = true
         }
-        guard changed else { return }
-        updated.updatedAt = Date()
-        Task { await store.updateNode(updated) }
     }
 }
 

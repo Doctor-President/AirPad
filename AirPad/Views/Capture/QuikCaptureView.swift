@@ -413,6 +413,13 @@ struct QuikCaptureView: View {
     /// "Done" exit: the node is already persisted; leave capture mode and
     /// route to Recents where the freshly-captured node sits on top.
     private func doneCapture() {
+        // ws-card-catalog Change B — flush the live editor BEFORE teardown.
+        // The note body only reaches the store on the editor's end-of-editing;
+        // Done previously tore the view down before that fired, so a body typed
+        // and immediately Done-ed was never persisted. Resigning first responder
+        // fires `textViewDidEndEditing` synchronously → `updateTextItem` (via
+        // mutateNode) commits the body; then we route.
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
         router.isCapturing = false
         router.captureNodeID = nil
         router.captureDraftHasText = false
@@ -507,11 +514,15 @@ struct QuikCaptureView: View {
 
     private func addMembership(collectionID: String) {
         if collectionID == NodeCollection.journalID {
-            guard let current = node else { return }
-            var updated = current
-            updated.journalDate = Calendar.current.startOfDay(for: Date())
-            updated.updatedAt = Date()
-            Task { await store.updateNode(updated) }
+            guard let id = nodeID else { return }
+            // ws-card-catalog Change A — mutateNode so toggling Journal membership
+            // can't clobber a concurrent body/title write with a stale snapshot.
+            Task {
+                await store.mutateNode(id: id) { n in
+                    n.journalDate = Calendar.current.startOfDay(for: Date())
+                    n.updatedAt = Date()
+                }
+            }
         } else if let id = nodeID {
             Task { await store.addNodes(ids: [id], toCollection: collectionID) }
         }
@@ -520,11 +531,13 @@ struct QuikCaptureView: View {
 
     private func removeMembership(id: String) {
         if id == NodeCollection.journalID {
-            guard let current = node else { return }
-            var updated = current
-            updated.journalDate = nil
-            updated.updatedAt = Date()
-            Task { await store.updateNode(updated) }
+            guard let nid = nodeID else { return }
+            Task {
+                await store.mutateNode(id: nid) { n in
+                    n.journalDate = nil
+                    n.updatedAt = Date()
+                }
+            }
         } else if let nodeID {
             Task { await store.removeNodes(ids: [nodeID], fromCollection: id) }
         }
@@ -827,26 +840,33 @@ struct QuikCaptureView: View {
 
     private func saveIfChanged() {
         guard let node else { return }
-        var updated = node
-        var changed = false
-        if updated.title != editedTitle { updated.title = editedTitle; changed = true }
-        if updated.summary != editedSummary {
-            updated.summary = editedSummary
-            updated.summarySource = .user
-            changed = true
-        }
-        if updated.tags != editedTags {
-            updated.tags = editedTags
-            let editedSet = Set(editedTags)
-            for name in editedTags { updated.tagSources[name] = TagOrigin(source: .user) }
-            for name in updated.tagSources.keys where !editedSet.contains(name) {
-                updated.tagSources.removeValue(forKey: name)
+        let nodeID = node.id
+        let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
+        // Compare against the FRESHEST node so an unedited close stays a no-op.
+        guard let fresh = store.nodes.first(where: { $0.id == nodeID }) else { return }
+        let titleChanged = fresh.title != newTitle
+        let summaryChanged = fresh.summary != newSummary
+        let tagsChanged = fresh.tags != newTags
+        guard titleChanged || summaryChanged || tagsChanged else { return }
+        // ws-card-catalog Change A — write via mutateNode (fresh read-modify-write)
+        // so this title/summary/tags save can't blind-overwrite `.items` with a
+        // stale snapshot and erase the note body typed just before Done.
+        // titleSource/summarySource stamps unchanged from step 1.
+        Task {
+            await store.mutateNode(id: nodeID) { n in
+                if titleChanged { n.title = newTitle; n.titleSource = .user }
+                if summaryChanged { n.summary = newSummary; n.summarySource = .user }
+                if tagsChanged {
+                    n.tags = newTags
+                    let editedSet = Set(newTags)
+                    for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
+                    for name in n.tagSources.keys where !editedSet.contains(name) {
+                        n.tagSources.removeValue(forKey: name)
+                    }
+                }
+                n.updatedAt = Date()
             }
-            changed = true
         }
-        guard changed else { return }
-        updated.updatedAt = Date()
-        Task { await store.updateNode(updated) }
     }
 }
 

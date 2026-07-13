@@ -85,6 +85,14 @@ struct Node: Codable, Identifiable, Hashable {
     /// in the custom decoder means existing nodes silently decode as `nil` —
     /// no schema-version bump required.
     var journalDate: Date?
+    /// Durable identity for THE day's journal entry, distinct from Journal-
+    /// *collection* membership (which is `journalDate` alone). Set true only when
+    /// `findOrCreateTodayJournalNode` creates the day's entry; a note merely filed
+    /// into the Journal collection has `journalDate` but `isJournalEntry == false`,
+    /// so it no longer hijacks the "What's on your mind today" prompt. Additive,
+    /// decode-tolerant (`?? false`) — same pattern as `foldIndex`/`titleSource`;
+    /// no migration (no historical node has it; the next tap creates today's).
+    var isJournalEntry: Bool
     /// Dashboard Stage 3 — IDs of user collections this node belongs to.
     /// Corpus is implicit (every node) and Journal is derived from
     /// `journalDate`, so neither appears in this array. Stored as a plain
@@ -235,6 +243,7 @@ struct Node: Codable, Identifiable, Hashable {
         case needsAIProcessing = "needs_ai_processing"
         case needsReview = "needs_review"
         case journalDate = "journal_date"
+        case isJournalEntry = "is_journal_entry"
         case collectionIDs = "collection_ids"
         case connections
         case tagSources = "tag_sources"
@@ -282,6 +291,7 @@ struct Node: Codable, Identifiable, Hashable {
         needsAIProcessing: Bool = false,
         needsReview: Bool = false,
         journalDate: Date? = nil,
+        isJournalEntry: Bool = false,
         collectionIDs: [String] = [],
         connections: [NodeConnection] = [],
         source: String? = nil,
@@ -322,6 +332,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.needsAIProcessing           = needsAIProcessing
         self.needsReview                 = needsReview
         self.journalDate                 = journalDate
+        self.isJournalEntry              = isJournalEntry
         self.collectionIDs               = collectionIDs
         self.connections                 = connections
         self.source                      = source
@@ -369,6 +380,7 @@ extension Node {
         needsAIProcessing         = try c.decodeIfPresent(Bool.self,      forKey: .needsAIProcessing) ?? false
         needsReview               = try c.decodeIfPresent(Bool.self,      forKey: .needsReview) ?? false
         journalDate               = try c.decodeIfPresent(Date.self,      forKey: .journalDate)
+        isJournalEntry            = try c.decodeIfPresent(Bool.self,      forKey: .isJournalEntry) ?? false
         collectionIDs             = try c.decodeIfPresent([String].self,  forKey: .collectionIDs) ?? []
         connections               = try c.decodeIfPresent([NodeConnection].self, forKey: .connections) ?? []
         source                    = try c.decodeIfPresent(String.self,    forKey: .source)

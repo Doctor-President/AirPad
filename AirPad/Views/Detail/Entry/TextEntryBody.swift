@@ -48,11 +48,15 @@ struct TextEntryBody: View {
         RichTextEditor(
             text: $editingText,
             onEndEditing: {
-                guard editingText != (item.content ?? "") else { return }
+                // ws-card-catalog Change B — capture the text synchronously here
+                // so a Done/dismiss that tears the view down before this Task runs
+                // still persists the right body (the @State may be gone by then).
+                let text = editingText
+                guard text != (item.content ?? "") else { return }
                 Task {
                     await store.updateTextItem(
                         itemID: item.id,
-                        newContent: editingText,
+                        newContent: text,
                         nodeID: nodeID
                     )
                 }

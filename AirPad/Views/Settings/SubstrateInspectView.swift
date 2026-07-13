@@ -61,6 +61,9 @@ struct SubstrateInspectView: View {
     @State private var clipboardRouterSelfTestInProgress: Bool = false
     @State private var cardParitySelfTestResult: String? = nil
     @State private var cardParitySelfTestInProgress: Bool = false
+    @State private var catalogStatusResult: String? = nil
+    @State private var catalogStatusInProgress: Bool = false
+    @State private var catalogBackfillInProgress: Bool = false
     @State private var exportInProgress: Bool = false
     @State private var exportResult: ExportResult? = nil
     @State private var exportError: String? = nil
@@ -714,6 +717,56 @@ struct SubstrateInspectView: View {
                 Text(r)
                     .font(.caption2)
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            // ws-card-catalog step 2c — catalog coverage readout + manual backfill.
+            Button {
+                guard !catalogStatusInProgress else { return }
+                catalogStatusInProgress = true
+                Task {
+                    let r = await store.catalogStatusSummary()
+                    await MainActor.run {
+                        catalogStatusResult = r
+                        catalogStatusInProgress = false
+                    }
+                }
+            } label: {
+                Text(catalogStatusInProgress ? "Reading catalog status…" : "Catalog status")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(catalogStatusInProgress)
+            Button {
+                guard !catalogBackfillInProgress else { return }
+                catalogBackfillInProgress = true
+                Task {
+                    await store.backfillCatalog()
+                    let r = await store.catalogStatusSummary()
+                    await MainActor.run {
+                        catalogStatusResult = r
+                        catalogBackfillInProgress = false
+                    }
+                }
+            } label: {
+                Text(catalogBackfillInProgress ? "Running catalog backfill…" : "Run catalog backfill")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(catalogBackfillInProgress)
+            if let r = catalogStatusResult {
+                Text(r)
+                    .font(.caption2)
+                    .foregroundStyle(.green.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

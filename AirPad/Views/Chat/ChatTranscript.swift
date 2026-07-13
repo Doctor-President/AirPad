@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import UIKit   // UIPasteboard — footer copy + user-bubble long-press copy
 
 /// Host-agnostic chat component. Renders ONE conversation end to end —
 /// transcript + isolated streaming tail + per-turn read-aloud + error banner +
@@ -35,6 +36,10 @@ struct ChatTranscript: View {
     /// Assigned ONLY on change (below) so scroll geometry callbacks don't churn
     /// this body (and re-parse settled bubbles) on every frame.
     @State private var isPinnedToBottom = true
+    /// Per-message copy confirmation — the footer copy icon shows a checkmark
+    /// for ~1.2s on the message whose id matches, then clears (mirrors
+    /// SolarFlareTuningPanel.justCopied).
+    @State private var copiedMessageID: UUID?
 
     private static let tailAnchor = "__chat_transcript_tail__"
     private static let bottomFollowThreshold: CGFloat = 80
@@ -98,7 +103,12 @@ struct ChatTranscript: View {
                 geo.contentSize.height - geo.visibleRect.maxY
             } action: { _, distanceFromBottom in
                 let pinned = distanceFromBottom <= Self.bottomFollowThreshold
-                if pinned != isPinnedToBottom { isPinnedToBottom = pinned }
+                // Keep the guard — it stops per-frame body churn during a
+                // pinned stream. Animate so the scroll-to-latest arrow fades
+                // in/out rather than snapping.
+                if pinned != isPinnedToBottom {
+                    withAnimation(.easeOut(duration: 0.18)) { isPinnedToBottom = pinned }
+                }
             }
             .onChange(of: session.messages.count) { oldCount, newCount in
                 // New user turn → reveal the query + START of the response near
@@ -123,6 +133,47 @@ struct ChatTranscript: View {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
+            // Bottom scroll-edge fade — always on, both hosts, all postures.
+            // On the ScrollView ONLY (the composer lives outside it and stays
+            // solid). 0.94 is the tunable.
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.94),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
+            )
+            // Scroll-to-latest arrow — applied AFTER the mask so it never
+            // fades. Uses the existing isPinnedToBottom state (no new tracking).
+            .overlay(alignment: .bottom) {
+                if !isPinnedToBottom {
+                    Button {
+                        // Branch the whole call — the tail anchor is a String
+                        // and a message id is a UUID, which can't share one
+                        // ternary argument.
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            if session.isStreaming {
+                                proxy.scrollTo(Self.tailAnchor, anchor: .bottom)
+                            } else if let last = session.messages.last {
+                                proxy.scrollTo(last.id, anchor: .bottom)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(ChatTypography.bodyText)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 12)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
         }
     }
 
@@ -133,21 +184,34 @@ struct ChatTranscript: View {
             HStack {
                 Spacer(minLength: 40)
                 Text(message.text)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
+                    .font(ChatTypography.userBody)
+                    .foregroundStyle(ChatTypography.userBubbleText)
+                    .lineSpacing(ChatTypography.userLine)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
                             .fill(Color(hexString: "00BFFF").opacity(0.18))
                     )
+                    // On the bubble composite (its textSelection is off), so the
+                    // long-press has no selection gesture to fight.
+                    .contextMenu {
+                        Button {
+                            UIPasteboard.general.string = message.text
+                        } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }
+                    }
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    AssistantMarkdownText(raw: message.text)
-                    Spacer(minLength: 40)
-                }
+                // Block-laid-out markdown. Full width minus a 40pt right
+                // gutter (the block VStack is greedy — its bullet rows use
+                // maxWidth:.infinity — so it takes an explicit frame + trailing
+                // padding rather than an HStack Spacer, which it would fight).
+                MarkdownBlockText(raw: message.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 40)
                 // Per-turn read-aloud on settled assistant bubbles — each turn
                 // independently replayable via its per-message UUID token.
                 readAloudControl(message: message)
@@ -196,6 +260,40 @@ struct ChatTranscript: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Choose voice")
+
+                // Copy the assistant turn's plain text; icon confirms for ~1.2s.
+                Button {
+                    UIPasteboard.general.string = message.text
+                    copiedMessageID = message.id
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .milliseconds(1200))
+                        if copiedMessageID == message.id { copiedMessageID = nil }
+                    }
+                } label: {
+                    Image(systemName: copiedMessageID == message.id ? "checkmark" : "doc.on.doc")
+                        .font(ChatTypography.footerIcon)
+                        .foregroundStyle(ChatTypography.secondaryText)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Copy message")
+
+                // Regenerate — LAST assistant turn only; disabled mid-stream.
+                if message.id == session.messages.last?.id {
+                    Button {
+                        Task { await session.regenerateLast() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(ChatTypography.footerIcon)
+                            .foregroundStyle(ChatTypography.secondaryText)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(session.isStreaming)
+                    .accessibilityLabel("Regenerate response")
+                }
             }
             .padding(.top, 2)
         }
@@ -311,9 +409,10 @@ struct ChatTranscript: View {
 /// partial remainder for the next newline. A time window is only a SAFETY VALVE
 /// so a long unbroken line still reveals progressively (deliberately long so it
 /// doesn't fragment prose into token slices). An idle flush reveals any
-/// remainder when the stream stops growing. Each revealed chunk fades in via a
-/// run-opacity animation; already-revealed text stays put. Plain text (not
-/// markdown) mid-stream — the settled bubble is markdown at commit.
+/// remainder when the stream stops growing. Each newly-revealed BLOCK fades in;
+/// already-revealed blocks stay put. The tail renders the SAME MarkdownBlock
+/// layout the settled bubble does — parsed from `revealedText + pendingText` in
+/// `commit()` and held in `@State` — so nothing reflows when the stream ends.
 ///
 /// Owns the pinned-only follow-scroll, driven on commit (chunk cadence).
 private struct StreamingTail: View {
@@ -327,8 +426,13 @@ private struct StreamingTail: View {
     @State private var revealedText: String = ""
     /// Newest revealed chunk, currently fading in.
     @State private var pendingText: String = ""
-    /// Animatable opacity of the pending chunk's run.
+    /// Animatable opacity of the newest (last) block.
     @State private var pendingOpacity: Double = 1
+    /// Parsed blocks of `revealedText + pendingText`. Written ONLY from
+    /// `commit(chunk:)` and the reset path — never in `body` (body re-evals
+    /// per token; parsing there would run the parser on the full response on
+    /// every token). Chunk commits are newline-gated, so the parse is cheap.
+    @State private var blocks: [MarkdownBlock] = []
     /// Wall-clock of the last reveal; `.distantPast` reveals the first chunk
     /// immediately.
     @State private var lastFlush: Date = .distantPast
@@ -343,21 +447,38 @@ private struct StreamingTail: View {
     private var displayedLength: Int { revealedText.count + pendingText.count }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        Group {
             if revealedText.isEmpty && pendingText.isEmpty {
-                ThinkingShimmerView()
+                // Pre-token indicator keeps its own leading layout — it is not
+                // text and does not need to match the block wrapper.
+                HStack(alignment: .top, spacing: 6) {
+                    ThinkingShimmerView()
+                    Spacer(minLength: 40)
+                }
             } else {
-                // No trailing caret: the chunk fade-in already signals liveness,
-                // and a sibling cursor floats in no-man's-land beside the text
-                // rather than tracking the last line. Retired.
-                (Text(revealedText)
-                    + Text(pendingText).foregroundStyle(.white.opacity(pendingOpacity)))
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white)
-                    .lineSpacing(5)
-                    .textSelection(.enabled)
+                // Render the SAME blocks the settled bubble renders (parsed in
+                // commit(), held in @State) so nothing reflows at commit. Only
+                // the newest block carries the fade. Key on OFFSET — a block's
+                // only identity is position, so two identical bullets don't
+                // collapse mid-stream. No trailing caret: the block fade-in
+                // already signals liveness (retired). Wrapper MATCHES the
+                // settled bubble (3.4): greedy frame + 40pt trailing gutter,
+                // not an HStack Spacer, or the text reflows to a new width at
+                // commit.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                        MarkdownBlockView(block: block)
+                            .opacity(index == blocks.count - 1 ? pendingOpacity : 1)
+                            .padding(.top, BlockSpacing.topPad(
+                                index: index, blocks: blocks,
+                                listSpacing: ChatTypography.listSpacing,
+                                blockSpacing: ChatTypography.blockSpacing,
+                                headingSpaceBefore: ChatTypography.headingSpaceBefore))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, 40)
             }
-            Spacer(minLength: 40)
         }
         .onChange(of: session.streamingText) { _, newValue in
             reveal(from: newValue)
@@ -380,6 +501,7 @@ private struct StreamingTail: View {
         if full.isEmpty {
             revealedText = ""
             pendingText = ""
+            blocks = []
             pendingOpacity = 1
             lastFlush = .distantPast
             return
@@ -404,15 +526,27 @@ private struct StreamingTail: View {
         commit(chunk: undisplayed)
     }
 
-    /// Promote the previous pending chunk, fade in the new one, and follow the
-    /// bottom if the user is pinned there.
+    /// Promote the previous pending chunk, re-parse the full displayed text
+    /// into blocks, fade in the newest block ONLY when a block boundary was
+    /// crossed, and follow the bottom if the user is pinned there.
     private func commit(chunk: String) {
         revealedText += pendingText
         pendingText = chunk
-        pendingOpacity = 0
         lastFlush = Date()
-        withAnimation(.easeOut(duration: Self.fadeDuration)) {
-            pendingOpacity = 1
+
+        // Parse the CONCATENATION, never the two strings separately: the
+        // revealed/pending split is a character boundary, not a block one, so
+        // parsing apart would split one paragraph into two blocks with a seam.
+        let newBlocks = MarkdownBlockParser.parse(revealedText + pendingText)
+        // Fade off BLOCK COUNT, not chunk arrival: a chunk that only extends
+        // the current last block must not re-fade text the user is reading.
+        let gainedBlock = newBlocks.count > blocks.count
+        blocks = newBlocks
+        if gainedBlock {
+            pendingOpacity = 0
+            withAnimation(.easeOut(duration: Self.fadeDuration)) {
+                pendingOpacity = 1
+            }
         }
         if isPinned() {
             proxy.scrollTo(anchor, anchor: .bottom)
@@ -420,57 +554,44 @@ private struct StreamingTail: View {
     }
 }
 
-// MARK: - Assistant markdown
+// MARK: - Streaming indicators
 
-/// Settled assistant bubble body — inline markdown, cached so a body re-eval
-/// (e.g. a pinned-state flip) doesn't re-parse. Committed text is immutable, so
-/// a given raw string always parses to the same AttributedString.
-private struct AssistantMarkdownText: View {
-    let raw: String
-    var body: some View {
-        Text(Self.parse(raw))
-            .font(.system(size: 15))
-            .foregroundStyle(.white)
-            .lineSpacing(5)
-            .textSelection(.enabled)
-    }
+// `private` and the sole copy: LibrarianSurface adopted the shared
+// ChatTranscript component, so it renders this indicator too — there is no
+// Librarian duplicate to keep in sync (the old "promote in step 3" note is
+// obsolete).
 
-    private static var cache: [String: AttributedString] = [:]
-    private static func parse(_ raw: String) -> AttributedString {
-        if let cached = cache[raw] { return cached }
-        let result: AttributedString
-        if let attr = try? AttributedString(
-            markdown: raw,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            result = attr
-        } else {
-            result = AttributedString(raw)
-        }
-        if cache.count > 200 { cache.removeAll(keepingCapacity: true) }
-        cache[raw] = result
-        return result
-    }
-}
-
-// MARK: - Streaming indicators (canonical home; Librarian dedups here in step 3)
-//
-// `private` for now: LibrarianSurface still has its own file-private copies, and
-// a module-internal type here would collide with them ("invalid redeclaration").
-// Step 3 promotes these to internal and deletes the Librarian duplicates.
-
-/// Silent pre-token indicator — pulsing "Thinking…" from request-fired until
-/// the first streamed delta arrives.
+/// Silent pre-token indicator — a highlight sweeps L→R across "Thinking…"
+/// from request-fired until the first streamed delta arrives. Reduce Motion:
+/// static text, no overlay, no animation (NOT a fallback opacity pulse).
 private struct ThinkingShimmerView: View {
-    @State private var opacity: Double = 1.0
+    @State private var phase: CGFloat = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         Text("Thinking…")
-            .font(.system(size: 13))
-            .foregroundStyle(.white.opacity(0.55))
-            .opacity(opacity)
+            .font(ChatTypography.thinking)
+            .foregroundStyle(ChatTypography.secondaryText)
+            .overlay {
+                if !reduceMotion {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: Color(hexString: "F5F3F0").opacity(0.9), location: 0.5),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                    .frame(width: 90)
+                    .offset(x: phase * 160)
+                    .blendMode(.plusLighter)
+                }
+            }
+            .mask(Text("Thinking…").font(ChatTypography.thinking))
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    opacity = 0.25
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+                    phase = 1
                 }
             }
     }

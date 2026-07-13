@@ -664,11 +664,12 @@ struct LibrarianSurface: View {
             // (allowsHitTesting(contentRevealed)); presentation changes by
             // posture, never mount state.
             if isViewingActiveChat && librarian.searchText.isEmpty {
-                // Bottom fade at half reads as a live conversation continuing
-                // below the fold (not a truncated document); solid at full.
+                // ChatTranscript owns its own bottom scroll-edge fade at every
+                // posture now (chat art-direction pass), so the panel no longer
+                // masks it — the placeholder posture mask would have faded out
+                // the transcript's footer buttons and scroll-to-latest arrow.
                 ChatTranscript(session: router.chat, showsComposer: false)
                     .frame(maxHeight: .infinity)
-                    .mask(transcriptPostureMask())
                 askComposer(librarian: librarian)
             } else if panelModel.contentRevealed {
                 // Home / search are light — free to mount/unmount with the
@@ -1098,24 +1099,6 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 14)
             .padding(.top, 14)
             .padding(.bottom, 10)
-    }
-
-    /// Posture-driven fade over the transcript. Bottom fade at `.half` so the
-    /// conversation reads as continuing below the composer; solid (no fade) at
-    /// `.full` and `.tip`. Reads DISCRETE `panelModel.state` only (Stage 2's
-    /// law) — the mask STEPS at the detent boundary, no continuous value enters
-    /// content. Compositor-side (`.mask`), so no relayout / per-frame cost.
-    /// PLACEHOLDER treatment — the real density/scale design is the chat
-    /// art-direction pass. `fadeStart` is the one tunable.
-    private func transcriptPostureMask() -> LinearGradient {
-        let fadeStart = 0.82   // fade over roughly the last ~18% above the input
-        let stops: [Gradient.Stop] = panelModel.state == .half
-            ? [Gradient.Stop(color: .black, location: 0),
-               Gradient.Stop(color: .black, location: fadeStart),
-               Gradient.Stop(color: .clear, location: 1.0)]
-            : [Gradient.Stop(color: .black, location: 0),
-               Gradient.Stop(color: .black, location: 1.0)]
-        return LinearGradient(stops: stops, startPoint: .top, endPoint: .bottom)
     }
 
     /// The Ask input row — the panel's persistent bottom composer. The one

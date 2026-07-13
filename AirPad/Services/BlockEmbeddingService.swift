@@ -171,7 +171,18 @@ final class BlockEmbeddingService {
         // re-embedded blocks. BGE is unit-normalized, so scoring is RAW cosine —
         // the NLContextual mean-centering crutch does not carry to BGE.
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
+        return await findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateNodeIDs, topK: topK)
+    }
 
+    /// step 3c — pre-embedded-query variant. The two-tier store funnel embeds the
+    /// query once (for the card Stage-1) and passes the vector straight through to
+    /// this Stage-2 block pass, so a search does a single BGE inference.
+    func findRelevantBlocks(
+        queryVector qvec: [Float],
+        candidateNodeIDs: [String],
+        topK: Int = 50
+    ) async -> [BlockMatch] {
+        guard !qvec.isEmpty else { return [] }
         // Gather block indices (storage-actor I/O), then score OFF the main actor
         // so the vector pass never blocks typing/drag. The `count == qvec.count`
         // filter in the scorer drops any stale v1 (512-dim) block that a rebuild
@@ -227,7 +238,16 @@ final class BlockEmbeddingService {
     ) async -> [String] {
         // ws-card-catalog step 3a — BGE query embed (same 384-dim space as blocks).
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
+        return await findRelevantNodeIDs(queryVector: qvec, candidateNodeIDs: candidateNodeIDs, topK: topK)
+    }
 
+    /// step 3c — pre-embedded-query variant (single embed shared with card Stage-1).
+    func findRelevantNodeIDs(
+        queryVector qvec: [Float],
+        candidateNodeIDs: [String],
+        topK: Int = 5
+    ) async -> [String] {
+        guard !qvec.isEmpty else { return [] }
         // Gather then score off the main actor (see findRelevantBlocks).
         var snapshot: [(nodeID: String, blocks: [NodeBlock])] = []
         for nodeID in candidateNodeIDs {

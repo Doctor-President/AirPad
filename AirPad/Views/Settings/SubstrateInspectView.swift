@@ -65,6 +65,8 @@ struct SubstrateInspectView: View {
     @State private var catalogStatusResult: String? = nil
     @State private var catalogStatusInProgress: Bool = false
     @State private var catalogBackfillInProgress: Bool = false
+    @State private var blockStatusResult: String? = nil
+    @State private var blockStatusInProgress: Bool = false
     @State private var exportInProgress: Bool = false
     @State private var exportResult: ExportResult? = nil
     @State private var exportError: String? = nil
@@ -526,14 +528,14 @@ struct SubstrateInspectView: View {
         return VStack(alignment: .leading, spacing: 8) {
             sectionHeader("Block embeddings")
             HStack(spacing: 8) {
-                Text("Walks every node and rebuilds the per-node `blocks.json` sidecar. Idempotent — embeddings are reused on hash match.")
+                Text("Re-embeds every node's `blocks.json` on BGE-micro-v2 (384-dim, v2) + the chunk-quality gate. Idempotent — v2 embeddings are reused on hash match. Run once to migrate the v1 (512-dim) corpus.")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.4))
                 Spacer(minLength: 0)
                 Button {
                     Task { await store.backfillBlockEmbeddings() }
                 } label: {
-                    Text(inFlight ? "Running…" : "Run")
+                    Text(inFlight ? "Running…" : "Run block backfill (BGE)")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -545,14 +547,37 @@ struct SubstrateInspectView: View {
                 .disabled(inFlight)
             }
             if let s = state {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(blockProgressLine(s))
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
-                    Text("rebuilt=\(s.rebuilt) skipped_embedder=\(s.skippedEmbedder)")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.35))
+                Text(blockProgressLine(s))
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            // ws-card-catalog step 3b — coverage readout at the current version.
+            Button {
+                guard !blockStatusInProgress else { return }
+                blockStatusInProgress = true
+                Task {
+                    let r = await store.blockStatusSummary()
+                    await MainActor.run {
+                        blockStatusResult = r
+                        blockStatusInProgress = false
+                    }
                 }
+            } label: {
+                Text(blockStatusInProgress ? "Reading block status…" : "Block status")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(blockStatusInProgress)
+            if let r = blockStatusResult {
+                Text(r)
+                    .font(.caption2)
+                    .foregroundStyle(.green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

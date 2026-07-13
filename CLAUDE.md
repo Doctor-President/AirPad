@@ -24,6 +24,10 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - Flow: implement → paste `git diff` → T builds via Xcode GUI and verifies on device → T confirms → **then** you commit via CLI, **then you push** (`git push`). One commit per task/phase.
 - A landed commit is "committed, pending verification" — never "shipped" or "working" until T says so. Push only follows a verified, committed change.
 
+## Branch topology (non-negotiable)
+- A device-verified arc **merges to `main` when it closes.** "Pushed to its own branch" is **not** done — an unmerged branch means the next arc, if branched from `main`, silently lacks it (this is exactly how the chat arc went missing from the whole card-catalog line for a weekend).
+- **New branches are created FROM `main`.** Before `git checkout -b`, run `git branch --show-current` and confirm you're on `main` (or pass `main` explicitly *and* know why). Branching off `main` while another feature branch is checked out is the trap: you inherit `main`, not the branch you're looking at.
+
 ## Scope discipline
 - Smallest reversible change that satisfies the task. One commit per task/brief.
 - Don't refactor or "improve" adjacent code unless asked.

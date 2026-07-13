@@ -30,8 +30,10 @@ struct NodeBlock: Codable, Equatable {
     /// vectors — keeping it here avoids a second round-trip to re-chunk.
     let text: String
 
-    /// `NLContextualEmbedding(.english)` mean-pooled, dim 512. Mutable so
-    /// rebuild can replace in place without struct re-creation.
+    /// Block embedding. v2 (ws-card-catalog step 3a) = BGE-micro-v2, dim 384,
+    /// unit-normalized. v1 (legacy) = `NLContextualEmbedding` mean-pooled, dim
+    /// 512 — those are stale at `embedderVersion == 1` and re-embed on rebuild.
+    /// Mutable so rebuild can replace in place without struct re-creation.
     var embedding: [Float]
 
     /// SHA-256 of `text`. Invalidation signal: rebuild compares this against

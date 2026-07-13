@@ -1,19 +1,19 @@
 import Foundation
 
 /// Owns per-node block-level embeddings. Chunks via `BlockChunker`, embeds
-/// via `SubstrateService.shared.embed` (single shared `NLContextualEmbedding`
-/// instance — no second embedder), persists to the per-node sidecar at
-/// `nodes/<nodeID>/blocks.json`.
+/// via `CardEmbeddingService` (BGE-micro-v2, 384-dim, unit-normalized —
+/// ws-card-catalog step 3a; was `NLContextualEmbedding` at v1), persists to the
+/// per-node sidecar at `nodes/<nodeID>/blocks.json`. Block retrieval scores raw
+/// cosine — BGE needs no mean-centering.
 ///
 /// **Lifecycle:** owned by `CorpusStore` alongside `iCloudDriveService` and
 /// `LayoutService`. Not a singleton — the storage actor is the only
 /// dependency that needs threading through, and `CorpusStore` already holds
 /// the canonical instance.
 ///
-/// **Threading:** `@MainActor` to match `SubstrateService` and `CorpusStore`
-/// (and because `NLContextualEmbedding.embed` is itself main-bound). Yields
-/// 5ms between embeds inside `rebuild` so a many-block node doesn't stall the
-/// UI — same cooperative cadence as `CorpusStore.backfillContentEmbeddings`.
+/// **Threading:** `@MainActor` to match `CorpusStore`. The actual BGE inference
+/// runs off-main on the `CardEmbeddingService` actor; `rebuild` still yields 5ms
+/// between embeds so a many-block node's main-actor orchestration stays smooth.
 @available(iOS 17.0, *)
 @MainActor
 final class BlockEmbeddingService {
@@ -21,7 +21,9 @@ final class BlockEmbeddingService {
     /// Bump on any change to chunker shape, embedder identity, or pooling
     /// strategy. `rebuild` ignores cached blocks at older versions so a
     /// version bump is sufficient to force re-embed on the next pass.
-    static let currentEmbedderVersion: Int = 1
+    /// v1 = NLContextualEmbedding (512-dim). v2 = BGE-micro-v2 (384-dim,
+    /// unit-normalized) via `CardEmbeddingService` — ws-card-catalog step 3a.
+    static let currentEmbedderVersion: Int = 2
 
     /// Window the debounced enqueue waits before firing. Coalesces rapid
     /// edits (e.g., per-keystroke autosave bursts) into a single rebuild.
@@ -73,11 +75,12 @@ final class BlockEmbeddingService {
     /// Orphans (blocks whose key no longer appears in fresh chunks) are
     /// dropped — the sidecar is regenerated from the new spec list.
     func rebuild(node: Node) async {
-        let substrate = SubstrateService.shared
-        guard await substrate.ensureLoaded() else {
-            print("[BlockEmbedding] embedder unavailable; skipping node=\(node.id)")
-            return
-        }
+        // ws-card-catalog step 3a — blocks now embed on BGE-micro-v2 (384-dim,
+        // unit-normalized) via the shared CardEmbeddingService actor, NOT
+        // NLContextualEmbedding. The embedder lazy-loads on first use inside the
+        // actor (off the main thread); a nil return means unavailable/failed and
+        // the block is skipped, same contract as before.
+        let embedder = CardEmbeddingService.shared
 
         let specs = BlockChunker.chunk(node)
 
@@ -118,7 +121,7 @@ final class BlockEmbeddingService {
                 reused += 1
                 continue
             }
-            guard let vec = substrate.embed(spec.text), !vec.isEmpty else {
+            guard let vec = await embedder.embed(spec.text), !vec.isEmpty else {
                 skipped += 1
                 continue
             }
@@ -163,13 +166,16 @@ final class BlockEmbeddingService {
         candidateNodeIDs: [String],
         topK: Int = 50
     ) async -> [BlockMatch] {
-        let substrate = SubstrateService.shared
-        guard await substrate.ensureLoaded(),
-              let qvec = substrate.embed(query),
-              !qvec.isEmpty else { return [] }
+        // ws-card-catalog step 3a — the query embeds on BGE (via
+        // CardEmbeddingService) so it lives in the SAME 384-dim space as the
+        // re-embedded blocks. BGE is unit-normalized, so scoring is RAW cosine —
+        // the NLContextual mean-centering crutch does not carry to BGE.
+        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
 
         // Gather block indices (storage-actor I/O), then score OFF the main actor
-        // so the vector pass never blocks typing/drag. Ranking semantics unchanged.
+        // so the vector pass never blocks typing/drag. The `count == qvec.count`
+        // filter in the scorer drops any stale v1 (512-dim) block that a rebuild
+        // hasn't caught yet.
         var snapshot: [(nodeID: String, blocks: [NodeBlock])] = []
         for nodeID in candidateNodeIDs {
             do {
@@ -179,31 +185,24 @@ final class BlockEmbeddingService {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        // Snapshot the corpus content-channel mean so the off-main pass can
-        // apply the SAME read-time centering as pairSimilarity (ws-related-
-        // scoring). Block vectors are raw NLContextualEmbedding of content, so
-        // `contentMean` is the matching channel.
-        let contentMean = substrate.contentMean
-        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, mean: contentMean, topK: topK)
+        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
     }
 
-    /// Off-main-actor block scoring. Runs the (mean-centered) cosine pass in a
-    /// detached task so the main thread stays free during Librarian typing/drag.
+    /// Off-main-actor block scoring. Runs the raw-cosine pass in a detached task
+    /// so the main thread stays free during Librarian typing/drag.
     nonisolated private static func scoreBlocksOffMain(
         qvec: [Float],
         snapshot: [(nodeID: String, blocks: [NodeBlock])],
-        mean: [Float]?,
         topK: Int
     ) async -> [BlockMatch] {
         await Task.detached(priority: .userInitiated) {
             var scored: [BlockMatch] = []
             for (nodeID, blocks) in snapshot {
                 for block in blocks where block.embedding.count == qvec.count {
-                    let score = SubstrateService.centeredCosine(qvec, block.embedding, mean: mean) ?? 0
                     scored.append(BlockMatch(
                         block: block,
                         nodeID: nodeID,
-                        score: Float(score)
+                        score: cosine(qvec, block.embedding)
                     ))
                 }
             }
@@ -226,10 +225,8 @@ final class BlockEmbeddingService {
         candidateNodeIDs: [String],
         topK: Int = 5
     ) async -> [String] {
-        let substrate = SubstrateService.shared
-        guard await substrate.ensureLoaded(),
-              let qvec = substrate.embed(query),
-              !qvec.isEmpty else { return [] }
+        // ws-card-catalog step 3a — BGE query embed (same 384-dim space as blocks).
+        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
 
         // Gather then score off the main actor (see findRelevantBlocks).
         var snapshot: [(nodeID: String, blocks: [NodeBlock])] = []
@@ -241,15 +238,13 @@ final class BlockEmbeddingService {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        let contentMean = substrate.contentMean
-        return await Self.scoreNodesOffMain(qvec: qvec, snapshot: snapshot, mean: contentMean, topK: topK)
+        return await Self.scoreNodesOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
     }
 
-    /// Off-main-actor node scoring (best-block per node), mean-centered.
+    /// Off-main-actor node scoring (best-block per node), raw cosine.
     nonisolated private static func scoreNodesOffMain(
         qvec: [Float],
         snapshot: [(nodeID: String, blocks: [NodeBlock])],
-        mean: [Float]?,
         topK: Int
     ) async -> [String] {
         await Task.detached(priority: .userInitiated) {
@@ -257,7 +252,7 @@ final class BlockEmbeddingService {
             for (nodeID, blocks) in snapshot {
                 var bestScore: Float = -.infinity
                 for block in blocks where block.embedding.count == qvec.count {
-                    let s = Float(SubstrateService.centeredCosine(qvec, block.embedding, mean: mean) ?? 0)
+                    let s = cosine(qvec, block.embedding)
                     if s > bestScore { bestScore = s }
                 }
                 if bestScore > -.infinity {
@@ -274,8 +269,21 @@ final class BlockEmbeddingService {
     private static func reuseKey(itemID: String, sourceHash: String) -> String {
         "\(itemID)|\(sourceHash)"
     }
-    // Block scoring now reuses `SubstrateService.centeredCosine` (mean-centered,
-    // ws-related-scoring) instead of a local raw cosine — one centering, one
-    // implementation. The old `Accelerate` raw cosine was removed with its last
-    // caller.
+
+    /// Raw cosine similarity. Correct for BGE vectors (unit-normalized, so this
+    /// is effectively their dot product); no mean-centering — that was an
+    /// NLContextualEmbedding-anisotropy crutch and does not apply to BGE
+    /// (ws-card-catalog step 3a). `nonisolated` so the scoring pass runs off the
+    /// main actor.
+    nonisolated private static func cosine(_ a: [Float], _ b: [Float]) -> Float {
+        guard a.count == b.count, !a.isEmpty else { return 0 }
+        var dot: Float = 0, na: Float = 0, nb: Float = 0
+        for i in 0..<a.count {
+            dot += a[i] * b[i]
+            na += a[i] * a[i]
+            nb += b[i] * b[i]
+        }
+        let denom = (na * nb).squareRoot()
+        return denom > 0 ? dot / denom : 0
+    }
 }

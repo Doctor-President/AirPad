@@ -726,7 +726,10 @@ struct LibrarianSurface: View {
             }
         }
         .onChange(of: librarian.searchText) { oldValue, newValue in
-            librarian.updateSearchMatches(store: store)
+            // ws-librarian-perf Part 1 — debounce the O(nodes) substring scan
+            // (was running on every keystroke). Semantic search is already
+            // debounced inside kickOffSemanticSearch.
+            librarian.scheduleSearchMatches(store: store)
             librarian.kickOffSemanticSearch(store: store)
             // First non-empty character → promote to full so the
             // results pane has the most room. The focus-driven promote
@@ -967,9 +970,13 @@ struct LibrarianSurface: View {
     /// keystroke and frame don't surface stale rows.
     @ViewBuilder
     private func searchResultsView(librarian: LibrarianState) -> some View {
-        let matchNodes: [Node] = librarian.searchMatches.compactMap { id in
-            store.nodes.first(where: { $0.id == id })
-        }
+        // ws-librarian-perf Part 1 — resolve IDs via an O(1) dictionary built once,
+        // not `store.nodes.first(where:)` per row (was O(rows × nodes)).
+        let byID: [String: Node] = Dictionary(
+            store.nodes.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let matchNodes: [Node] = librarian.searchMatches.compactMap { byID[$0] }
         let related = librarian.searchRelated
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -1010,7 +1017,7 @@ struct LibrarianSurface: View {
                 .padding(.top, !matchNodes.isEmpty ? 8 : 4)
 
                 ForEach(related) { rel in
-                    if let node = store.nodes.first(where: { $0.id == rel.nodeID }) {
+                    if let node = byID[rel.nodeID] {
                         Button {
                             openNode(rel.nodeID)
                         } label: {

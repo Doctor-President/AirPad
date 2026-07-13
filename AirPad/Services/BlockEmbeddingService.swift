@@ -169,23 +169,41 @@ final class BlockEmbeddingService {
               let qvec = substrate.embed(query),
               !qvec.isEmpty else { return [] }
 
-        var scored: [BlockMatch] = []
+        // Gather block indices (storage-actor I/O), then score OFF the main actor
+        // so the vector pass never blocks typing/drag. Ranking semantics unchanged.
+        var snapshot: [(nodeID: String, blocks: [NodeBlock])] = []
         for nodeID in candidateNodeIDs {
             do {
                 guard let index = try await storage.loadBlockIndex(forNodeID: nodeID) else { continue }
-                for block in index.blocks where block.embedding.count == qvec.count {
-                    scored.append(BlockMatch(
-                        block: block,
-                        nodeID: nodeID,
-                        score: Self.cosine(qvec, block.embedding)
-                    ))
-                }
+                snapshot.append((nodeID, index.blocks))
             } catch {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        scored.sort { $0.score > $1.score }
-        return Array(scored.prefix(topK))
+        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
+    }
+
+    /// Off-main-actor block scoring. Runs the cosine pass in a detached task so
+    /// the main thread stays free during Librarian typing/drag.
+    nonisolated private static func scoreBlocksOffMain(
+        qvec: [Float],
+        snapshot: [(nodeID: String, blocks: [NodeBlock])],
+        topK: Int
+    ) async -> [BlockMatch] {
+        await Task.detached(priority: .userInitiated) {
+            var scored: [BlockMatch] = []
+            for (nodeID, blocks) in snapshot {
+                for block in blocks where block.embedding.count == qvec.count {
+                    scored.append(BlockMatch(
+                        block: block,
+                        nodeID: nodeID,
+                        score: cosine(qvec, block.embedding)
+                    ))
+                }
+            }
+            scored.sort { $0.score > $1.score }
+            return Array(scored.prefix(topK))
+        }.value
     }
 
     /// Navigate-mode retrieval — ranks nodes by their best-scoring block.
@@ -207,24 +225,40 @@ final class BlockEmbeddingService {
               let qvec = substrate.embed(query),
               !qvec.isEmpty else { return [] }
 
-        var nodeScores: [(nodeID: String, score: Float)] = []
+        // Gather then score off the main actor (see findRelevantBlocks).
+        var snapshot: [(nodeID: String, blocks: [NodeBlock])] = []
         for nodeID in candidateNodeIDs {
             do {
                 guard let index = try await storage.loadBlockIndex(forNodeID: nodeID) else { continue }
+                snapshot.append((nodeID, index.blocks))
+            } catch {
+                print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
+            }
+        }
+        return await Self.scoreNodesOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
+    }
+
+    /// Off-main-actor node scoring (best-block per node).
+    nonisolated private static func scoreNodesOffMain(
+        qvec: [Float],
+        snapshot: [(nodeID: String, blocks: [NodeBlock])],
+        topK: Int
+    ) async -> [String] {
+        await Task.detached(priority: .userInitiated) {
+            var nodeScores: [(nodeID: String, score: Float)] = []
+            for (nodeID, blocks) in snapshot {
                 var bestScore: Float = -.infinity
-                for block in index.blocks where block.embedding.count == qvec.count {
-                    let s = Self.cosine(qvec, block.embedding)
+                for block in blocks where block.embedding.count == qvec.count {
+                    let s = cosine(qvec, block.embedding)
                     if s > bestScore { bestScore = s }
                 }
                 if bestScore > -.infinity {
                     nodeScores.append((nodeID, bestScore))
                 }
-            } catch {
-                print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
-        }
-        nodeScores.sort { $0.score > $1.score }
-        return Array(nodeScores.prefix(topK)).map { $0.nodeID }
+            nodeScores.sort { $0.score > $1.score }
+            return Array(nodeScores.prefix(topK)).map { $0.nodeID }
+        }.value
     }
 
     // MARK: - Helpers
@@ -237,7 +271,9 @@ final class BlockEmbeddingService {
     /// `vDSP_svesq` for the sum-of-squares norms. At 512-dim × 1000 blocks
     /// the full pass is sub-millisecond — ANN indexing (HNSW etc.) would be
     /// premature until corpora reach 10K+ blocks.
-    private static func cosine(_ a: [Float], _ b: [Float]) -> Float {
+    // `nonisolated` so the scoring pass can run on a background executor off the
+    // main actor (ws-librarian-perf Part 1) — pure math, no actor state.
+    nonisolated private static func cosine(_ a: [Float], _ b: [Float]) -> Float {
         precondition(a.count == b.count, "cosine: dimension mismatch")
         let n = vDSP_Length(a.count)
         var dot: Float = 0

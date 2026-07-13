@@ -1235,10 +1235,11 @@ final class CorpusStore {
     /// Arm the one-shot post-launch backfill off the launch path.
     private func armCatalogBackfill() {
         catalogBackfillTask?.cancel()
-        catalogBackfillTask = Task(priority: .utility) { @MainActor [weak self] in
-            // Brief settle so first paint isn't contended; the embedder loads
-            // lazily inside `backfillCatalog`, never on the launch path.
-            try? await Task.sleep(for: .seconds(2))
+        // ws-librarian-perf Part 2 — `.background` so the scheduler defers this
+        // under UI load, and a longer settle so it doesn't overlap the first
+        // interaction window. `backfillCatalog` also yields generously per node.
+        catalogBackfillTask = Task(priority: .background) { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
             guard let self, !Task.isCancelled else { return }
             await self.backfillCatalog()
         }
@@ -1267,7 +1268,11 @@ final class CorpusStore {
             if let post = await card(forNodeID: id), post.embeddingVersion > versionBefore {
                 reEmbedded += 1
             }
-            try? await Task.sleep(nanoseconds: 5_000_000)
+            // ws-librarian-perf Part 2 — larger inter-node yield spreads the
+            // per-node main-actor continuations + iCloud round-trips over a wider
+            // window so they rarely land inside a 60fps panel-drag frame. The
+            // backfill is one-shot/idle-time, so a slower pace is free.
+            try? await Task.sleep(nanoseconds: 40_000_000)
         }
         let duration = Date().timeIntervalSince(start)
         lastCatalogBackfillDuration = duration

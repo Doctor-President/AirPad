@@ -323,6 +323,10 @@ final class CorpusStore {
     /// Wall-clock duration of the last catalog backfill, for the dev readout.
     private(set) var lastCatalogBackfillDuration: TimeInterval? = nil
 
+    /// ws-card-catalog step 3b — wall-clock duration of the last block-embedding
+    /// backfill (BGE v2 re-embed), for the dev readout.
+    private(set) var lastBlockBackfillDuration: TimeInterval? = nil
+
     /// Nodes after applying the active corpus-scope filter and sort order.
     var filteredNodes: [Node] {
         applyActiveFilter(to: nodes, scope: .corpus)
@@ -3831,6 +3835,7 @@ final class CorpusStore {
     /// doesn't lock the main thread between sidecar writes.
     @available(iOS 17.0, *)
     func backfillBlockEmbeddings() async {
+        let start = Date()
         let total = nodes.count
         backfillingBlocks = BackfillBlockEmbeddingState(
             total: total,
@@ -3843,25 +3848,20 @@ final class CorpusStore {
             backfillingBlocks = BackfillBlockEmbeddingState(
                 total: 0, current: 0, rebuilt: 0, skippedEmbedder: 0, done: true
             )
+            lastBlockBackfillDuration = 0
             print("[BlockBackfill] Complete: nothing to do")
             return
         }
 
-        let embedderLoaded = await SubstrateService.shared.ensureLoaded()
-        if !embedderLoaded {
-            print("[BlockBackfill] embedder unavailable; marking all skipped")
-            backfillingBlocks = BackfillBlockEmbeddingState(
-                total: total,
-                current: total,
-                rebuilt: 0,
-                skippedEmbedder: total,
-                done: true
-            )
-            return
-        }
-
+        // ws-card-catalog step 3b — `rebuild` now embeds on BGE (via the
+        // CardEmbeddingService actor, which lazy-loads its model off-main), NOT
+        // NLContextualEmbedding — so the old substrate `ensureLoaded` gate is
+        // gone. Per-block embed failures are skipped inside `rebuild`. Idempotent
+        // + resumable: the (itemID, sourceHash) reuse map + v2 version check make
+        // a re-run a near-no-op, so no completion flag is needed.
         var rebuilt = 0
         for (idx, node) in nodes.enumerated() {
+            if Task.isCancelled { break }
             await blockEmbedding.rebuild(node: node)
             rebuilt += 1
             backfillingBlocks = BackfillBlockEmbeddingState(
@@ -3874,7 +3874,9 @@ final class CorpusStore {
             try? await Task.sleep(nanoseconds: 5_000_000)
         }
 
-        print("[BlockBackfill] Complete: \(total) nodes, \(rebuilt) rebuilt")
+        let duration = Date().timeIntervalSince(start)
+        lastBlockBackfillDuration = duration
+        print("[BlockBackfill] Complete: \(total) nodes, \(rebuilt) rebuilt, dur=\(String(format: "%.1f", duration))s")
         backfillingBlocks = BackfillBlockEmbeddingState(
             total: total,
             current: total,
@@ -3882,6 +3884,26 @@ final class CorpusStore {
             skippedEmbedder: 0,
             done: true
         )
+    }
+
+    /// ws-card-catalog step 3b — dev readout of block-embedding coverage at the
+    /// current embedder version (BGE v2). Loads each sidecar, so it's I/O-heavy —
+    /// for the inspect view only.
+    @available(iOS 17.0, *)
+    func blockStatusSummary() async -> String {
+        let total = nodes.count
+        var nodesWithV2 = 0
+        var totalV2Blocks = 0
+        var zeroBlockNodes = 0
+        for node in nodes {
+            let blocks = (await blockIndex(forNodeID: node.id))?.blocks ?? []
+            let v2 = blocks.filter { $0.embedderVersion == BlockEmbeddingService.currentEmbedderVersion }
+            if !v2.isEmpty { nodesWithV2 += 1 }
+            totalV2Blocks += v2.count
+            if blocks.isEmpty { zeroBlockNodes += 1 }
+        }
+        let dur = lastBlockBackfillDuration.map { String(format: "%.1fs", $0) } ?? "—"
+        return "nodes \(nodesWithV2)/\(total) v2 · \(totalV2Blocks) v2 blocks · \(zeroBlockNodes) zero-block · last backfill \(dur)"
     }
 
     // MARK: - SB139 Stage 1 — substrate pipeline

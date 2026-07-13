@@ -314,38 +314,34 @@ final class SubstrateService {
     }
 
     /// Apply mean-centering at read time (subtract mean from each side), then
-    /// cosine. Returns nil when either input is nil/empty/dimension-mismatched.
-    /// `mean` may be nil → treat as zero-vector (raw cosine).
+    /// cosine. Delegates to the shared `nonisolated static` implementation so the
+    /// off-main block-scoring path reuses the EXACT same centering — no second
+    /// implementation. Returns nil for nil/empty/dimension-mismatched inputs.
     private func centeredCosine(_ a: [Float]?, _ b: [Float]?, mean: [Float]?) -> Double? {
-        guard let a, let b, !a.isEmpty, a.count == b.count else { return nil }
+        guard let a, let b else { return nil }
+        return Self.centeredCosine(a, b, mean: mean)
+    }
+
+    /// Shared centering + cosine, exposed `nonisolated static` so the off-main
+    /// Librarian block-scoring path (`BlockEmbeddingService`) reuses the SAME
+    /// read-time centering `pairSimilarity` applies against the corpus mean,
+    /// instead of the raw, anisotropy-blind cosine it used before
+    /// (ws-related-scoring). `mean` nil or dimension-mismatched → treated as a
+    /// zero vector (i.e. raw cosine) rather than crashing.
+    nonisolated static func centeredCosine(_ a: [Float], _ b: [Float], mean: [Float]?) -> Double? {
+        guard !a.isEmpty, a.count == b.count else { return nil }
         let dim = a.count
-        if let mean, mean.count != dim {
-            // Dimension mismatch (e.g. mean stale across an embedder bump).
-            // Fall through to raw cosine — better than crashing.
-            return rawCosine(a, b)
-        }
+        let useMean = (mean?.count == dim) ? mean : nil
         var dot = 0.0
         var na = 0.0
         var nb = 0.0
         for i in 0..<dim {
-            let m = mean.map { Double($0[i]) } ?? 0.0
+            let m = useMean.map { Double($0[i]) } ?? 0.0
             let x = Double(a[i]) - m
             let y = Double(b[i]) - m
             dot += x * y
             na += x * x
             nb += y * y
-        }
-        let denom = na.squareRoot() * nb.squareRoot()
-        return denom > 0 ? dot / denom : nil
-    }
-
-    private func rawCosine(_ a: [Float], _ b: [Float]) -> Double? {
-        guard a.count == b.count, !a.isEmpty else { return nil }
-        var dot = 0.0; var na = 0.0; var nb = 0.0
-        for i in 0..<a.count {
-            let x = Double(a[i])
-            let y = Double(b[i])
-            dot += x * y; na += x * x; nb += y * y
         }
         let denom = na.squareRoot() * nb.squareRoot()
         return denom > 0 ? dot / denom : nil

@@ -1,5 +1,4 @@
 import Foundation
-import Accelerate
 
 /// Owns per-node block-level embeddings. Chunks via `BlockChunker`, embeds
 /// via `SubstrateService.shared.embed` (single shared `NLContextualEmbedding`
@@ -180,24 +179,31 @@ final class BlockEmbeddingService {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
+        // Snapshot the corpus content-channel mean so the off-main pass can
+        // apply the SAME read-time centering as pairSimilarity (ws-related-
+        // scoring). Block vectors are raw NLContextualEmbedding of content, so
+        // `contentMean` is the matching channel.
+        let contentMean = substrate.contentMean
+        return await Self.scoreBlocksOffMain(qvec: qvec, snapshot: snapshot, mean: contentMean, topK: topK)
     }
 
-    /// Off-main-actor block scoring. Runs the cosine pass in a detached task so
-    /// the main thread stays free during Librarian typing/drag.
+    /// Off-main-actor block scoring. Runs the (mean-centered) cosine pass in a
+    /// detached task so the main thread stays free during Librarian typing/drag.
     nonisolated private static func scoreBlocksOffMain(
         qvec: [Float],
         snapshot: [(nodeID: String, blocks: [NodeBlock])],
+        mean: [Float]?,
         topK: Int
     ) async -> [BlockMatch] {
         await Task.detached(priority: .userInitiated) {
             var scored: [BlockMatch] = []
             for (nodeID, blocks) in snapshot {
                 for block in blocks where block.embedding.count == qvec.count {
+                    let score = SubstrateService.centeredCosine(qvec, block.embedding, mean: mean) ?? 0
                     scored.append(BlockMatch(
                         block: block,
                         nodeID: nodeID,
-                        score: cosine(qvec, block.embedding)
+                        score: Float(score)
                     ))
                 }
             }
@@ -235,13 +241,15 @@ final class BlockEmbeddingService {
                 print("[BlockEmbedding] load sidecar error node=\(nodeID): \(error)")
             }
         }
-        return await Self.scoreNodesOffMain(qvec: qvec, snapshot: snapshot, topK: topK)
+        let contentMean = substrate.contentMean
+        return await Self.scoreNodesOffMain(qvec: qvec, snapshot: snapshot, mean: contentMean, topK: topK)
     }
 
-    /// Off-main-actor node scoring (best-block per node).
+    /// Off-main-actor node scoring (best-block per node), mean-centered.
     nonisolated private static func scoreNodesOffMain(
         qvec: [Float],
         snapshot: [(nodeID: String, blocks: [NodeBlock])],
+        mean: [Float]?,
         topK: Int
     ) async -> [String] {
         await Task.detached(priority: .userInitiated) {
@@ -249,7 +257,7 @@ final class BlockEmbeddingService {
             for (nodeID, blocks) in snapshot {
                 var bestScore: Float = -.infinity
                 for block in blocks where block.embedding.count == qvec.count {
-                    let s = cosine(qvec, block.embedding)
+                    let s = Float(SubstrateService.centeredCosine(qvec, block.embedding, mean: mean) ?? 0)
                     if s > bestScore { bestScore = s }
                 }
                 if bestScore > -.infinity {
@@ -266,27 +274,8 @@ final class BlockEmbeddingService {
     private static func reuseKey(itemID: String, sourceHash: String) -> String {
         "\(itemID)|\(sourceHash)"
     }
-
-    /// Cosine similarity via `Accelerate`. `vDSP_dotpr` for the dot product,
-    /// `vDSP_svesq` for the sum-of-squares norms. At 512-dim × 1000 blocks
-    /// the full pass is sub-millisecond — ANN indexing (HNSW etc.) would be
-    /// premature until corpora reach 10K+ blocks.
-    // `nonisolated` so the scoring pass can run on a background executor off the
-    // main actor (ws-librarian-perf Part 1) — pure math, no actor state.
-    nonisolated private static func cosine(_ a: [Float], _ b: [Float]) -> Float {
-        precondition(a.count == b.count, "cosine: dimension mismatch")
-        let n = vDSP_Length(a.count)
-        var dot: Float = 0
-        var sumA: Float = 0
-        var sumB: Float = 0
-        a.withUnsafeBufferPointer { ap in
-            b.withUnsafeBufferPointer { bp in
-                vDSP_dotpr(ap.baseAddress!, 1, bp.baseAddress!, 1, &dot, n)
-                vDSP_svesq(ap.baseAddress!, 1, &sumA, n)
-                vDSP_svesq(bp.baseAddress!, 1, &sumB, n)
-            }
-        }
-        let denom = sqrt(sumA * sumB)
-        return denom > 0 ? dot / denom : 0
-    }
+    // Block scoring now reuses `SubstrateService.centeredCosine` (mean-centered,
+    // ws-related-scoring) instead of a local raw cosine — one centering, one
+    // implementation. The old `Accelerate` raw cosine was removed with its last
+    // caller.
 }

@@ -311,10 +311,29 @@ final class LibrarianState {
             if Task.isCancelled { return }
             guard let self else { return }
             self.searchRelated = matches.map { match in
-                SearchRelated(
+                // ws-related-scoring Change 2 — snippet floor + fallback (display
+                // only; the match/ranking is unchanged). A degenerate matched
+                // block (e.g. a bare "-" bullet, or a sub-20-char / punctuation-
+                // only fragment) renders as a blank/dash body, so fall back to the
+                // node's summary for the row text.
+                let blockText = match.block.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let isDegenerate = blockText.count < 20
+                    || !blockText.contains(where: { $0.isLetter || $0.isNumber })
+                let snippet: String
+                if isDegenerate,
+                   let node = store.nodes.first(where: { $0.id == match.nodeID }) {
+                    let summary = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    snippet = summary.isEmpty
+                        ? Self.pullQuote(from: match.block.text, query: query)
+                        : summary
+                } else {
+                    snippet = Self.pullQuote(from: match.block.text, query: query)
+                }
+                return SearchRelated(
                     id: match.block.blockID,
                     nodeID: match.nodeID,
-                    snippet: Self.pullQuote(from: match.block.text, query: query),
+                    snippet: snippet,
                     score: match.score
                 )
             }

@@ -668,7 +668,7 @@ struct LibrarianSurface: View {
                 // posture now (chat art-direction pass), so the panel no longer
                 // masks it — the placeholder posture mask would have faded out
                 // the transcript's footer buttons and scroll-to-latest arrow.
-                ChatTranscript(session: router.chat, showsComposer: false)
+                ChatTranscript(session: router.chat, showsComposer: false, onOpenNode: openNode)
                     .frame(maxHeight: .infinity)
                 askComposer(librarian: librarian)
             } else if panelModel.contentRevealed {

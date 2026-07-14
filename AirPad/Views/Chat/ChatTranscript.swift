@@ -253,9 +253,12 @@ struct ChatTranscript: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(citations) { c in
                             HStack(alignment: .top, spacing: 8) {
-                                Text("[\(c.index)]")
-                                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                                    .foregroundStyle(.white.opacity(0.4))
+                                // Footer marker: solid ENCIRCLED number (the
+                                // destination), distinct from the light inline
+                                // superscript. Monochrome. No brackets.
+                                Image(systemName: CitationReference.footerSymbolName(c.index))
+                                    .font(.system(size: 15))
+                                    .foregroundStyle(.white.opacity(0.55))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(c.title)
                                         .font(.system(size: 13, weight: .medium))

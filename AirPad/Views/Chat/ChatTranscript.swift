@@ -28,6 +28,11 @@ struct ChatTranscript: View {
     /// reuses only the transcript / tail / read-aloud / error banner here.
     /// A pure rendering flag — no host/presentation knowledge leaks in.
     var showsComposer: Bool = true
+    /// Piece 2 — tap a citation (inline superscript OR footer circle) to open its
+    /// source node. The host supplies this (the Librarian wires `openNode`);
+    /// ChatView leaves it nil so citations only expand/collapse. Both renderings
+    /// route through this ONE closure.
+    var onOpenNode: ((String) -> Void)? = nil
 
     @State private var speech = SpeechSynthesisService.shared
     @State private var input: String = ""
@@ -221,6 +226,18 @@ struct ChatTranscript: View {
                 // independently replayable via its per-message UUID token.
                 readAloudControl(message: message)
             }
+            // Piece 2 — inline superscript taps arrive as `airpad-citation://n`
+            // links. Resolve n against THIS turn's citations → source node →
+            // onOpenNode (same closure the footer circles use). Non-citation
+            // links fall through to the system handler.
+            .environment(\.openURL, OpenURLAction { url in
+                if let n = CitationReference.index(from: url),
+                   let nodeID = message.citations?.first(where: { $0.index == n })?.nodeID {
+                    onOpenNode?(nodeID)
+                    return .handled
+                }
+                return .systemAction
+            })
         }
     }
 
@@ -229,6 +246,14 @@ struct ChatTranscript: View {
     @ViewBuilder
     private func citationFooter(message: ChatSession.Message) -> some View {
         if let citations = message.citations, !citations.isEmpty {
+            // Citations are stored PER-BLOCK (each inline [n] carries its own
+            // nodeID) so inline taps resolve. The footer, though, lists SOURCES —
+            // dedup by node (first occurrence wins its circle number) so two
+            // passages from one node read as one source, not two.
+            let sources: [ChatSession.Message.Citation] = {
+                var seen = Set<String>()
+                return citations.filter { seen.insert($0.nodeID).inserted }
+            }()
             let isExpanded = expandedCitations.contains(message.id)
             VStack(alignment: .leading, spacing: 8) {
                 Button {
@@ -236,8 +261,9 @@ struct ChatTranscript: View {
                     else { expandedCitations.insert(message.id) }
                 } label: {
                     HStack(spacing: 6) {
-                        // Tapping only expands/collapses — no navigation (Piece 2).
-                        Text("◇ \(citations.count) source\(citations.count == 1 ? "" : "s")")
+                        // Tapping the header only expands/collapses. Navigation
+                        // lives on the individual source rows (Piece 2).
+                        Text("◇ \(sources.count) source\(sources.count == 1 ? "" : "s")")
                             .font(.system(size: 13, weight: .medium))
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10, weight: .semibold))
@@ -247,28 +273,40 @@ struct ChatTranscript: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isExpanded ? "Hide sources" : "Show \(citations.count) sources")
+                .accessibilityLabel(isExpanded ? "Hide sources" : "Show \(sources.count) sources")
 
                 if isExpanded {
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(citations) { c in
-                            HStack(alignment: .top, spacing: 8) {
-                                // Footer marker: solid ENCIRCLED number (the
-                                // destination), distinct from the light inline
-                                // superscript. Monochrome. No brackets.
-                                Image(systemName: CitationReference.footerSymbolName(c.index))
-                                    .font(.system(size: 15))
-                                    .foregroundStyle(.white.opacity(0.55))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(c.title)
-                                        .font(.system(size: 13, weight: .medium))
-                                        .foregroundStyle(.white.opacity(0.75))
-                                    Text(c.snippet)
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.white.opacity(0.45))
-                                        .lineLimit(2)
+                        ForEach(sources) { c in
+                            // Piece 2 — tapping a source row opens its node,
+                            // identical to tapping the inline superscript. Both
+                            // route through onOpenNode. No-op when the host
+                            // didn't supply one (ChatView).
+                            Button {
+                                onOpenNode?(c.nodeID)
+                            } label: {
+                                HStack(alignment: .top, spacing: 8) {
+                                    // Footer marker: solid ENCIRCLED number (the
+                                    // destination), distinct from the light inline
+                                    // superscript. Monochrome. No brackets.
+                                    Image(systemName: CitationReference.footerSymbolName(c.index))
+                                        .font(.system(size: 15))
+                                        .foregroundStyle(.white.opacity(0.55))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(c.title)
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(.white.opacity(0.75))
+                                        Text(c.snippet)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.white.opacity(0.45))
+                                            .lineLimit(2)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityHint(onOpenNode == nil ? "" : "Opens \(c.title)")
                         }
                     }
                     .padding(.leading, 2)

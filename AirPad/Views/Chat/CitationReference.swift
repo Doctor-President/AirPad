@@ -11,11 +11,23 @@ import SwiftUI
 /// chips inherit a unified color only after that arc).
 enum CitationReference {
 
+    /// URL scheme carried by the inline superscript's `.link`. Piece 2 routes
+    /// taps: `ChatTranscript` intercepts these via `openURL` and resolves the
+    /// index against the turn's citations → `openNode`.
+    static let scheme = "airpad-citation"
+    static func url(forIndex index: Int) -> URL? { URL(string: "\(scheme)://\(index)") }
+    /// Parses the `[n]` index back out of a citation link URL. Nil for any other URL.
+    static func index(from url: URL) -> Int? {
+        guard url.scheme == scheme else { return nil }
+        return Int(url.host ?? "")
+    }
+
     /// Rewrites the model's `[n]` tokens in already-rendered assistant prose into
     /// superscript numerals (brackets dropped, ~0.7× body, baseline-raised, same
-    /// Source Serif). Done at render time — the model is never asked to emit
-    /// superscript. Mutates in place; safe to call on any inline AttributedString
-    /// (a no-op when there are no `[n]` tokens, so OPEN answers are untouched).
+    /// Source Serif). Each becomes a `.link` to `airpad-citation://n` so the tap
+    /// routes through `openURL` (Piece 2) — but stays MONOCHROME via an explicit
+    /// foreground that overrides the default link tint. Done at render time — the
+    /// model never emits superscript. No-op when there are no `[n]` tokens.
     static func styleInlineMarkers(in attr: inout AttributedString) {
         while true {
             let plain = String(attr.characters)
@@ -28,6 +40,10 @@ enum CitationReference {
             var superscript = AttributedString(number)
             superscript.font = ChatTypography.inlineCitationSuperscript
             superscript.baselineOffset = ChatTypography.inlineCitationBaselineOffset
+            superscript.foregroundColor = ChatTypography.bodyText   // monochrome, over link tint
+            if let n = Int(number), let link = url(forIndex: n) {
+                superscript.link = link
+            }
             attr.replaceSubrange(range, with: superscript)
         }
     }

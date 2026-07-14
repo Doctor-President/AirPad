@@ -447,19 +447,15 @@ final class LibrarianState {
         await chat.send(displayText: query, modelText: modelText, systemPrompt: system, citations: chips)
     }
 
-    /// Node-deduped citation chips from the ordered cited passages: one chip per
-    /// source NODE, keeping its lowest `[n]` (a note cited via multiple passages
-    /// shows once). Ordered by `[n]`, which matches the prompt's passage numbering.
+    /// Per-passage citations, `index` = the `[n]` the prompt/model uses. Stored
+    /// PER-BLOCK (not node-deduped) so an inline `[n]` tap can resolve its exact
+    /// node — the footer dedups by node for display (Piece 2). Ordered by `[n]`.
     private static func citationChips(from cited: [BlockMatch], store: CorpusStore) -> [ChatSession.Message.Citation] {
-        var seen = Set<String>()
-        var chips: [ChatSession.Message.Citation] = []
-        for (i, match) in cited.enumerated() {
-            guard seen.insert(match.nodeID).inserted else { continue }
+        cited.enumerated().map { i, match in
             let title = store.nodes.first { $0.id == match.nodeID }?.title ?? "Untitled"
             let snippet = String(match.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
-            chips.append(.init(index: i + 1, nodeID: match.nodeID, title: title, snippet: snippet))
+            return .init(index: i + 1, nodeID: match.nodeID, title: title, snippet: snippet)
         }
-        return chips
     }
 
     /// Grounded-mode system prompt — forces the user's OWN passages over the

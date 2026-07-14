@@ -703,9 +703,11 @@ final class LibrarianState {
     // ws-card-catalog Ask hybrid — the old grounded pipeline (executeQuery →
     // runAskPipeline) was orphaned when the Ask button was rewired to the
     // ChatSession lane; retrieval was replaced by `groundedSend` above (the one
-    // live Ask path). A few of that pipeline's helpers (buildAskUserPrompt,
-    // appendExchange, buildHistoryBlock) are now unreferenced and can be swept in
-    // a follow-up cleanup.
+    // live Ask path). Its prompt builders (buildAskUserPrompt, buildHistoryBlock)
+    // are now deleted. `appendExchange` (the sessionHistory writer) and the
+    // compaction path are LEFT: they're the data source for the still-live
+    // session-save UI (`saveSessionAsNode`/`clearSession`), currently dormant
+    // because nothing calls `appendExchange` — re-wire or retire is a product call.
 
     /// Standing system prompt for Ask. Composed of the optional user-set
     /// personal voice (c7) followed by the baseline steering.
@@ -749,52 +751,6 @@ final class LibrarianState {
             let title = store.nodes.first { $0.id == match.nodeID }?.title ?? "Untitled"
             return "[\(idx + 1)] From \"\(title)\":\n\(match.block.text)"
         }.joined(separator: "\n\n---\n\n")
-    }
-
-    private func buildAskUserPrompt(query: String, context: String, hasCitations: Bool) -> String {
-        let historyBlock = buildHistoryBlock()
-        if hasCitations {
-            return """
-            \(historyBlock)Relevant passages from the user's corpus:
-
-            \(context)
-
-            Question: \(query)
-
-            Answer in 2-4 paragraphs. Reference passages inline with their bracket numbers when relevant. Stay specific to the passages above — don't invent content. Do not append a References, Sources, or Citations section — stop after the prose answer.
-            """
-        }
-        return """
-        \(historyBlock)Question: \(query)
-
-        The user's corpus has nothing semantically close to this query. Answer briefly (2-3 sentences) and let them know you didn't find specific source material.
-        """
-    }
-
-    /// Composes the session-memory preamble that rides ahead of the
-    /// retrieval passages and current question. Emits one of three
-    /// shapes (empty / summary-only / summary+recent / recent-only)
-    /// and always ends with a trailing blank line so it concatenates
-    /// cleanly into the rest of the prompt. Skipped entirely when
-    /// there's no history *and* no compacted summary — keeps the
-    /// first-turn prompt identical to pre-c6c so single-shot use
-    /// doesn't regress.
-    private func buildHistoryBlock() -> String {
-        let hasSummary = compactedSummary?.isEmpty == false
-        let hasRecent = !sessionHistory.isEmpty
-        guard hasSummary || hasRecent else { return "" }
-
-        var parts: [String] = []
-        if let summary = compactedSummary, !summary.isEmpty {
-            parts.append("Earlier in this session (compacted summary of \(compactedExchangeCount) turn\(compactedExchangeCount == 1 ? "" : "s")):\n\(summary)")
-        }
-        if hasRecent {
-            let recent = sessionHistory.map { ex in
-                "Q: \(ex.query)\nA: \(ex.responseText)"
-            }.joined(separator: "\n---\n")
-            parts.append("Recent turns in this session:\n\(recent)")
-        }
-        return parts.joined(separator: "\n\n") + "\n\n"
     }
 
     /// Compaction pass — fires before an LLM call when the running

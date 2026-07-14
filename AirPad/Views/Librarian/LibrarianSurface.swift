@@ -1190,16 +1190,17 @@ struct LibrarianSurface: View {
                         if dictation.isListening && dictation.activeToken == "ask" {
                             dictation.stop()
                         }
-                        // Clean ChatSession lane. send() appends the user
-                        // message itself + auto-persists per turn, so just hand
-                        // off the text and clear the field. Sending enters the
-                        // active chat from home: raise to full so the transcript
-                        // is visible per the expanded-posture invariant.
+                        // Retrieval-informed Ask hybrid: LibrarianState.groundedSend
+                        // retrieves + builds the (grounded / open / partial) prompt,
+                        // then hands the composed turn to the ChatSession lane (which
+                        // owns the transcript + persistence). Clear the field and raise
+                        // to full so the transcript is visible per the expanded-posture
+                        // invariant.
                         let text = librarian.inputText
                         librarian.inputText = ""
                         isViewingActiveChat = true
                         panelModel.expandToFull(animated: true)
-                        Task { await router.chat.send(text) }
+                        Task { await librarian.groundedSend(query: text, store: store, chat: router.chat) }
                     } label: {
                         let enabled = sendIsEnabled(librarian: librarian)
                         Image(systemName: "arrow.up.circle.fill")

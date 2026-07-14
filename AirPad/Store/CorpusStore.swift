@@ -555,17 +555,32 @@ final class CorpusStore {
     /// context from these and surfaces the same matches as citation
     /// chips so the response and the citation set come from one
     /// retrieval pass. Same scoping policy as `findRelevantNodes`.
-    func findRelevantBlockMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
+    /// Ask retrieval — RAW sorted block matches for the query. The caller
+    /// (LibrarianState.groundedSend) keys the answering MODE on the top score vs
+    /// `minRelevanceScore`: strong → grounded+cite, weak → open + related, none →
+    /// open. Returned unfiltered so the caller can tell "weak" from "none".
+    ///
+    /// Corpus fallback: a collection-scoped Ask with no above-threshold hit in
+    /// scope retries at `.corpus`, so a corpus-answerable question ("what is
+    /// AirPad" while scoped to a collection lacking the AirPad notes) still grounds.
+    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
-        let candidateIDs = nodes(in: scope).map { $0.id }
-        let matches = await blockEmbedding.findRelevantBlocks(
+        var matches = await blockEmbedding.findRelevantBlocks(
             queryVector: qvec,
-            candidateNodeIDs: candidateIDs,
+            candidateNodeIDs: nodes(in: scope).map { $0.id },
             topK: topK
         )
-        // Threshold: below-bar matches dropped → empty result surfaces the
-        // "nothing close" / no-citations state honestly.
-        return matches.filter { $0.score >= Self.minRelevanceScore }
+        if scope != .corpus, (matches.first?.score ?? 0) < Self.minRelevanceScore {
+            let corpusMatches = await blockEmbedding.findRelevantBlocks(
+                queryVector: qvec,
+                candidateNodeIDs: nodes.map { $0.id },
+                topK: topK
+            )
+            if (corpusMatches.first?.score ?? 0) >= Self.minRelevanceScore {
+                matches = corpusMatches
+            }
+        }
+        return matches
     }
 
     /// SB139 Stage 4c2 — load the block-embedding sidecar for a node so

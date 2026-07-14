@@ -392,23 +392,63 @@ final class LibrarianState {
     /// legacy classify → respond pipeline absorbed from `CorpusQuerySheet`
     /// until each lands its own. Store is injected at call site because
     /// LibrarianState doesn't own a reference.
-    func executeQuery(store: CorpusStore) async {
-        let query = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Live Ask entry — retrieval-INFORMED hybrid (never gated, no classifier).
+    /// ALWAYS retrieves; the retrieval STRENGTH picks the answering mode:
+    ///  - strong (top score ≥ `minRelevanceScore`) → GROUNDED: the user's passages
+    ///    are authoritative, model cites [1] [2].
+    ///  - weak (hits present but below the bar) → OPEN answer + related notes.
+    ///  - none → OPEN: a normal helpful answer, no "nothing in corpus" wall.
+    /// LibrarianState owns retrieval + prompt construction; the composed turn is
+    /// handed to the dumb `ChatSession` streaming lane (which owns the transcript).
+    func groundedSend(query rawQuery: String, store: CorpusStore, chat: ChatSession) async {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
 
-        // Snapshot the query for the transcript's in-flight bubble,
-        // then clear the input field — chat-app convention so the
-        // user can immediately type a follow-up without manually
-        // clearing what they just sent.
-        pendingQuery = query
-        inputText = ""
-        isLoading = true
-        response = nil
+        let matches = await store.askMatches(query: query, scope: selectedScope, topK: 8)
+        let strong = matches.filter { $0.score >= CorpusStore.minRelevanceScore }
 
-        await runAskPipeline(query: query, store: store)
+        let modelText: String
+        let system: String
+        if !strong.isEmpty {
+            // GROUNDED — passages authoritative.
+            let citations = Self.trimToCharBudget(strong, budget: Self.askPassageCharBudget)
+            let context = buildAskContext(citations: citations, store: store)
+            modelText = """
+            Relevant passages from the user's own notes:
 
-        pendingQuery = nil
+            \(context)
+
+            Question: \(query)
+
+            Answer using these passages as the source of truth. Cite inline with [1] [2].
+            """
+            system = Self.groundedSystemPrompt
+        } else if !matches.isEmpty {
+            // PARTIAL — answer openly, surface loosely-related notes.
+            let related = Self.trimToCharBudget(Array(matches.prefix(3)), budget: Self.askPassageCharBudget)
+            let context = buildAskContext(citations: related, store: store)
+            modelText = """
+            Question: \(query)
+
+            Answer this directly and helpfully. The user's notes don't strongly cover it, but these passages are loosely related — mention them only if genuinely relevant, cited [1] [2]:
+
+            \(context)
+            """
+            system = ChatSession.systemPrompt
+        } else {
+            // OPEN — nothing close; a normal helpful answer, no refusal.
+            modelText = query
+            system = ChatSession.systemPrompt
+        }
+
+        await chat.send(displayText: query, modelText: modelText, systemPrompt: system)
     }
+
+    /// Grounded-mode system prompt — forces the user's OWN passages over the
+    /// model's priors. Written to be robust for both Qwen and on-device FM.
+    private static let groundedSystemPrompt = """
+    You are answering from the user's OWN notes. The numbered passages in the prompt are the source of truth about the user's world — treat them as authoritative over your prior knowledge. If they define a term, use THEIR definition, not a generic one. Ground every claim in the passages and cite them inline with bracket numbers like [1] [2]. If the passages don't cover part of the question, say so briefly rather than inventing. Do not append a References, Sources, or Citations section — stop after the prose answer.
+    """
 
 
     /// Ask mode — block-embedding retrieval feeds the prompt context,
@@ -642,63 +682,12 @@ final class LibrarianState {
         return result
     }
 
-    private func runAskPipeline(query: String, store: CorpusStore) async {
-        await runCompactionIfNeeded()
-        var allMatches = await store.findRelevantBlockMatches(query: query, scope: selectedScope, topK: 8)
-        // ws-card-catalog step 3c — corpus fallback: a collection-scoped Ask that
-        // finds NOTHING in-scope would otherwise answer ungrounded even when the
-        // corpus can answer it (e.g. "what is AirPad" while scoped to a collection
-        // that lacks the AirPad notes). Retry once at .corpus. Only fires on an
-        // empty scoped result, so intentional collection-scoped Ask is preserved
-        // when it has content; the fallback matches flow through the existing
-        // citation build unchanged (chips + grounding both reflect it).
-        if allMatches.isEmpty, selectedScope != .corpus {
-            allMatches = await store.findRelevantBlockMatches(query: query, scope: .corpus, topK: 8)
-        }
-        let citations = Self.trimToCharBudget(allMatches, budget: Self.askPassageCharBudget)
-        if citations.count < allMatches.count {
-            print("[Librarian] Ask: trimmed citations \(allMatches.count) → \(citations.count) to fit \(Self.askPassageCharBudget)-char budget")
-        }
-        let context = buildAskContext(citations: citations, store: store)
-        let userPrompt = buildAskUserPrompt(query: query, context: context, hasCitations: !citations.isEmpty)
-
-        let provider = ModelRouter.active.displayName
-        isStreaming = true
-        streamingText = ""
-        do {
-            let stream = ModelRouter.generateStreaming(
-                systemPrompt: askSystemPrompt,
-                userPrompt: userPrompt
-            )
-            for try await delta in stream {
-                streamingText += delta
-            }
-            let text = streamingText
-            streamingText = ""
-            isStreaming = false
-            response = .ask(text: text, citations: citations, provider: provider)
-            var seen = Set<String>()
-            let citedNodeIDs = citations.compactMap { match -> String? in
-                seen.insert(match.nodeID).inserted ? match.nodeID : nil
-            }
-            appendExchange(
-                mode: .ask,
-                scope: selectedScope,
-                query: query,
-                responseText: text,
-                citationNodeIDs: citedNodeIDs
-            )
-        } catch let error as ModelRouter.RouterError {
-            streamingText = ""
-            isStreaming = false
-            response = .error(error.errorDescription ?? "Couldn't reach the model.")
-        } catch {
-            streamingText = ""
-            isStreaming = false
-            response = .error("Something went wrong. Try again.")
-        }
-        isLoading = false
-    }
+    // ws-card-catalog Ask hybrid — the old grounded pipeline (executeQuery →
+    // runAskPipeline) was orphaned when the Ask button was rewired to the
+    // ChatSession lane; retrieval was replaced by `groundedSend` above (the one
+    // live Ask path). A few of that pipeline's helpers (buildAskUserPrompt,
+    // appendExchange, buildHistoryBlock) are now unreferenced and can be swept in
+    // a follow-up cleanup.
 
     /// Standing system prompt for Ask. Composed of the optional user-set
     /// personal voice (c7) followed by the baseline steering.

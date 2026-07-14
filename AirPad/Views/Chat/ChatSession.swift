@@ -92,20 +92,30 @@ final class ChatSession {
     /// `streamingText`, then commits.
     func send(_ raw: String) async {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isStreaming else { return }
+        guard !trimmed.isEmpty else { return }
+        await send(displayText: trimmed, modelText: trimmed, systemPrompt: Self.systemPrompt)
+    }
+
+    /// Streams a caller-composed turn. `displayText` is the transcript bubble;
+    /// `modelText` is the current-turn text handed to the model (woven with prior
+    /// turns by `buildPrompt`); `systemPrompt` steers it. ChatSession stays a dumb
+    /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
+    /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
+    func send(displayText: String, modelText: String, systemPrompt: String) async {
+        guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
         lastError = nil
-        messages.append(Message(role: .user, text: trimmed))
+        messages.append(Message(role: .user, text: displayText))
         pendingUser = nil
         isStreaming = true
         streamingText = ""
 
-        let prompt = buildPrompt(current: trimmed)
+        let prompt = buildPrompt(current: modelText)
 
         do {
             for try await delta in ModelRouter.generateStreaming(
-                systemPrompt: Self.systemPrompt,
+                systemPrompt: systemPrompt,
                 userPrompt: prompt
             ) {
                 streamingText += delta

@@ -40,6 +40,9 @@ struct ChatTranscript: View {
     /// for ~1.2s on the message whose id matches, then clears (mirrors
     /// SolarFlareTuningPanel.justCopied).
     @State private var copiedMessageID: UUID?
+    /// Piece 1 — assistant turns whose citation footer is expanded. Collapsed by
+    /// default (Claude-style); tapping toggles. No navigation yet (Piece 2).
+    @State private var expandedCitations: Set<UUID> = []
 
     private static let tailAnchor = "__chat_transcript_tail__"
     private static let bottomFollowThreshold: CGFloat = 80
@@ -212,10 +215,63 @@ struct ChatTranscript: View {
                 MarkdownBlockText(raw: message.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.trailing, 40)
+                // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
+                citationFooter(message: message)
                 // Per-turn read-aloud on settled assistant bubbles — each turn
                 // independently replayable via its per-message UUID token.
                 readAloudControl(message: message)
             }
+        }
+    }
+
+    // MARK: - Citation footer (Piece 1 — collapsible grounded sources)
+
+    @ViewBuilder
+    private func citationFooter(message: ChatSession.Message) -> some View {
+        if let citations = message.citations, !citations.isEmpty {
+            let isExpanded = expandedCitations.contains(message.id)
+            VStack(alignment: .leading, spacing: 8) {
+                Button {
+                    if isExpanded { expandedCitations.remove(message.id) }
+                    else { expandedCitations.insert(message.id) }
+                } label: {
+                    HStack(spacing: 6) {
+                        // Tapping only expands/collapses — no navigation (Piece 2).
+                        Text("◇ \(citations.count) source\(citations.count == 1 ? "" : "s")")
+                            .font(.system(size: 13, weight: .medium))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    }
+                    .foregroundStyle(.white.opacity(0.5))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "Hide sources" : "Show \(citations.count) sources")
+
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(citations) { c in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text("[\(c.index)]")
+                                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.4))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundStyle(.white.opacity(0.75))
+                                    Text(c.snippet)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.white.opacity(0.45))
+                                        .lineLimit(2)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.leading, 2)
+                }
+            }
+            .padding(.top, 2)
         }
     }
 

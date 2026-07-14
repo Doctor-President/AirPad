@@ -409,10 +409,12 @@ final class LibrarianState {
 
         let modelText: String
         let system: String
+        // Only GROUNDED turns carry citation chips; OPEN/partial pass nil.
+        var chips: [ChatSession.Message.Citation]? = nil
         if !strong.isEmpty {
             // GROUNDED — passages authoritative.
-            let citations = Self.trimToCharBudget(strong, budget: Self.askPassageCharBudget)
-            let context = buildAskContext(citations: citations, store: store)
+            let cited = Self.trimToCharBudget(strong, budget: Self.askPassageCharBudget)
+            let context = buildAskContext(citations: cited, store: store)
             modelText = """
             Relevant passages from the user's own notes:
 
@@ -423,6 +425,7 @@ final class LibrarianState {
             Answer using these passages as the source of truth. Cite inline with [1] [2].
             """
             system = Self.groundedSystemPrompt
+            chips = Self.citationChips(from: cited, store: store)
         } else if !matches.isEmpty {
             // PARTIAL — answer openly, surface loosely-related notes.
             let related = Self.trimToCharBudget(Array(matches.prefix(3)), budget: Self.askPassageCharBudget)
@@ -441,7 +444,22 @@ final class LibrarianState {
             system = ChatSession.systemPrompt
         }
 
-        await chat.send(displayText: query, modelText: modelText, systemPrompt: system)
+        await chat.send(displayText: query, modelText: modelText, systemPrompt: system, citations: chips)
+    }
+
+    /// Node-deduped citation chips from the ordered cited passages: one chip per
+    /// source NODE, keeping its lowest `[n]` (a note cited via multiple passages
+    /// shows once). Ordered by `[n]`, which matches the prompt's passage numbering.
+    private static func citationChips(from cited: [BlockMatch], store: CorpusStore) -> [ChatSession.Message.Citation] {
+        var seen = Set<String>()
+        var chips: [ChatSession.Message.Citation] = []
+        for (i, match) in cited.enumerated() {
+            guard seen.insert(match.nodeID).inserted else { continue }
+            let title = store.nodes.first { $0.id == match.nodeID }?.title ?? "Untitled"
+            let snippet = String(match.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+            chips.append(.init(index: i + 1, nodeID: match.nodeID, title: title, snippet: snippet))
+        }
+        return chips
     }
 
     /// Grounded-mode system prompt — forces the user's OWN passages over the

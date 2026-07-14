@@ -13,14 +13,31 @@ final class ChatSession {
 
     struct Message: Identifiable, Hashable, Codable {
         enum Role: String, Codable { case user, assistant }
+
+        /// A grounded-answer source: one cited passage, `index` = its `[n]` in the
+        /// prompt's numbered passages. Piece 1 restores these as collapsible chips.
+        struct Citation: Codable, Hashable, Identifiable {
+            let index: Int
+            let nodeID: String
+            let title: String
+            let snippet: String
+            var id: Int { index }
+        }
+
         let id: UUID
         let role: Role
         var text: String
+        /// Grounded-Ask citations for an assistant turn. Nil for user turns,
+        /// OPEN/partial answers, and plain chat. Optional → synthesized Codable
+        /// uses decodeIfPresent, so legacy transcripts decode with `nil`
+        /// (mirrors `Node.titleSource` / `isJournalEntry`).
+        var citations: [Citation]?
 
-        init(id: UUID = UUID(), role: Role, text: String) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil) {
             self.id = id
             self.role = role
             self.text = text
+            self.citations = citations
         }
     }
 
@@ -101,7 +118,7 @@ final class ChatSession {
     /// turns by `buildPrompt`); `systemPrompt` steers it. ChatSession stays a dumb
     /// lane — it appends the bubble, streams, and persists; it does NOT retrieve
     /// or build the grounded prompt (LibrarianState owns that — step 3/Ask hybrid).
-    func send(displayText: String, modelText: String, systemPrompt: String) async {
+    func send(displayText: String, modelText: String, systemPrompt: String, citations: [Message.Citation]? = nil) async {
         guard !displayText.isEmpty, !isStreaming else { return }
 
         // New attempt clears any prior transient failure banner.
@@ -122,7 +139,7 @@ final class ChatSession {
             }
             let finalText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !finalText.isEmpty {
-                messages.append(Message(role: .assistant, text: finalText))
+                messages.append(Message(role: .assistant, text: finalText, citations: citations))
             }
         } catch {
             // Endpoint / network / discovery failure. Surface it as a

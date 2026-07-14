@@ -268,7 +268,7 @@ struct MarkdownBlockView: View {
     private static var cache: [String: AttributedString] = [:]
     private static func inline(_ raw: String) -> AttributedString {
         if let cached = cache[raw] { return cached }
-        let result: AttributedString
+        var result: AttributedString
         if let attr = try? AttributedString(
             markdown: raw,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
@@ -277,6 +277,9 @@ struct MarkdownBlockView: View {
         } else {
             result = AttributedString(raw)
         }
+        // Piece 1.5 — render the model's [n] citation tokens as serif superscript
+        // numerals (a no-op when there are none, so non-citation text is untouched).
+        CitationReference.styleInlineMarkers(in: &result)
         if cache.count > 200 { cache.removeAll(keepingCapacity: true) }
         cache[raw] = result
         return result

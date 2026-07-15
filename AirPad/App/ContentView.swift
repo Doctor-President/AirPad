@@ -105,6 +105,11 @@ struct ContentView: View {
                 }
         }
         .floatingPanelLayout(panelLayout)
+        // BUG 5 — snappy detent spring. Overrides the library default
+        // springResponseTime (0.4, a ~1.6s critically-damped crawl half→full)
+        // with a shorter response. Applies to every programmatic move and the
+        // drag-release settle; morph-preserving (see LibrarianPanelBehavior).
+        .floatingPanelBehavior(LibrarianPanelBehavior())
         // Content tracks each detent's bounds instead of being laid out once
         // at full height and slid down (the .static default). Under .static,
         // the surface stays full-detent-tall and translates for shorter

@@ -77,6 +77,33 @@ final class LibrarianPanelLayout: FloatingPanelLayout {
     func backdropAlpha(for state: FloatingPanelState) -> CGFloat { 0.0 }
 }
 
+// MARK: - Behavior
+
+/// Snappy detent animation (BUG 5). Every programmatic detent move
+/// (`move(to:)` — expandToFull / expandToHalf / dropToHalf / raiseToPeek /
+/// lock / unlock) AND the drag-release attraction run FloatingPanel's numeric
+/// spring, whose ONLY timing input is `springResponseTime`. At the library
+/// default (0.4) the panel crept to its anchor on a long critically-damped
+/// tail — instrumentation measured half→full at ~1.6s of smooth, un-starved
+/// travel (mount was ~4ms and innocent; it was purely the animation duration).
+///
+/// Programmatic moves have velocity 0, which the library ALWAYS runs
+/// critically damped (per `FloatingPanelBehavior` docs, `springDecelerationRate`
+/// is ignored below velocity 300), so response time is the only lever — and
+/// it's the morph-safe one: the numeric spring keeps emitting per-frame
+/// `floatingPanelDidMove`, so the pill↔field morph is untouched. (A delegate
+/// `animatorForMovingTo:` UIViewPropertyAnimator would be snappier but only
+/// fires at completion → it would SNAP the morph on peek transitions.)
+///
+/// TUNABLE — lower = snappier. `detentResponse` is the single knob.
+final class LibrarianPanelBehavior: FloatingPanelDefaultBehavior {
+    /// Detent settle time. Library default is 0.4 (≈1.6s perceived tail);
+    /// 0.15 targets the ~0.4s snappy range. Dial down for faster / up if the
+    /// short transitions (→peek) feel too abrupt.
+    static let detentResponse: CGFloat = 0.15
+    override var springResponseTime: CGFloat { Self.detentResponse }
+}
+
 // MARK: - State observer
 
 /// Delegate → observable bridge. `state` mirrors the controller's live

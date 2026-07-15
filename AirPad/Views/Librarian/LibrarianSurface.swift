@@ -1333,9 +1333,13 @@ struct LibrarianSurface: View {
             Button {
                 // Resume the chat: raise to full so the transcript shows
                 // (transcript ⟺ isViewingActiveChat && expanded), never a
-                // blank half.
-                isViewingActiveChat = true
+                // blank half. BUG 5 (A) — flip the mount-gate one runloop tick
+                // LATER so ChatTranscript mounts after the spring starts, not
+                // during it. (Instrumentation proved the mount is ~4ms and not
+                // the cause; the crawl was the spring DURATION — fixed in
+                // LibrarianPanelBehavior. Kept because it's correct + harmless.)
                 panelModel.expandToFull(animated: true)
+                Task { @MainActor in isViewingActiveChat = true }
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "bubble.left.and.bubble.right.fill")

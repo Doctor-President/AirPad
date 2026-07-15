@@ -14,6 +14,7 @@ schemes:
         AirPad: all
     run:
       config: Release
+      debugEnabled: false
     test:
       config: Debug
     profile:

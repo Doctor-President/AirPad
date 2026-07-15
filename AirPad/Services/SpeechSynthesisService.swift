@@ -130,7 +130,8 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     /// Drives the picker. Premium/enhanced surface at the top so the
     /// user sees the good ones first (and notices if they only have
     /// the robotic default — prompting a download).
-    static var availableVoices: [AVSpeechSynthesisVoice] {
+    /// Resolved once and cached — voice list doesn't change mid-run.
+    static let availableVoices: [AVSpeechSynthesisVoice] = {
         let prefix = String(Locale.current.identifier.prefix(2))
         return AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix(prefix) }
@@ -140,7 +141,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
                 }
                 return a.name < b.name
             }
-    }
+    }()
 
     /// The voice speak() actually uses: explicit user choice if set +
     /// still installed, else bestVoice.

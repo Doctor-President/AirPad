@@ -7,8 +7,17 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - Companion (the planning Claude) writes briefs; you implement them. T verifies on device.
 
 ## Build & run
-- `xcodebuild` is **broken** on the current toolchain (Xcode 26.5 beta). Do not use it to build or to judge success — its output is unreliable.
-- The only valid build is **Build & Run from the Xcode GUI**, run by T. You implement; T builds. Never claim a build "passes" or "compiles" — you cannot build, so you cannot know.
+- **You can build.** Toolchain is stable Xcode 26.6 (GA) at `/Applications/Xcode.app`. Use a
+  per-command `DEVELOPER_DIR` prefix — never a global `xcode-select` flip:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project AirPad.xcodeproj -scheme AirPad -destination 'generic/platform=iOS' -configuration Release build 2>&1 | grep -E "error:|BUILD"`
+- TestFlight: `scripts/testflight_upload.sh` (archives Release, exports, uploads via altool;
+  build number auto-uniqued from the timestamp).
+- **A green build is NOT a verified change. This is the rule that matters.** Never write
+  "shipped", "working", "fixed", or "done" because a build succeeded. A build proves it
+  compiles — nothing more. T verifies on device; only T's explicit confirmation makes a change
+  verified. (This file previously said "you cannot build, so you cannot know." The toolchain
+  claim was true of the 26.5 beta only. The epistemics survive the toolchain: compiling is not
+  knowing.)
 
 ## Project structure (XcodeGen)
 - `project.yml` is the source of truth. `AirPad.xcodeproj/project.pbxproj` is **generated**.
@@ -21,7 +30,7 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 
 ## Commit / verify handshake
 - You manage git yourself, via the **CLI** (not Xcode's git UI), proactively — **but hold every commit until T has device-verified that change/phase.** Committing ahead of verification is the standing failure mode; don't.
-- Flow: implement → paste `git diff` → T builds via Xcode GUI and verifies on device → T confirms → **then** you commit via CLI, **then you push** (`git push`). One commit per task/phase.
+- Flow: implement → paste `git diff` → build (you headlessly, or T via Xcode GUI, or TestFlight) → **T verifies on device** → T confirms → **then** you commit via CLI, **then you push** (`git push`). One commit per task/phase. Who runs the build is incidental; T's device verification is not.
 - A landed commit is "committed, pending verification" — never "shipped" or "working" until T says so. Push only follows a verified, committed change.
 
 ## Branch topology (non-negotiable)
@@ -31,6 +40,35 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 ## Scope discipline
 - Smallest reversible change that satisfies the task. One commit per task/brief.
 - Don't refactor or "improve" adjacent code unless asked.
+
+## SwiftUI body discipline — nothing blocking in `body`
+- **Never call a system-enumeration or XPC-backed API from inside a SwiftUI `body`.** They
+  **block rather than spin**, so a default Time Profiler cannot see them, and they cost whole
+  seconds of dropped frames. Suspects: `AVSpeechSynthesisVoice.speechVoices()`,
+  `AVCaptureDevice.devices()`, font enumeration, photo-library queries, file-system probes —
+  anything crossing an XPC boundary.
+- Resolve once into a `static let`, or prefetch off-main at service init, and read the cache
+  from `body`. BUG 5 (2026-07-14): `SpeechSynthesisService.availableVoices` was a computed
+  `static var` read once per message per body eval → 782ms of main-thread `semaphore_wait`
+  per panel resize.
+- **When you cache something because "X doesn't change at runtime," check every neighbour that
+  depends on the same X.** In BUG 5, `bestVoice` was correctly cached as a `static let` with
+  exactly that comment — thirty lines below the uncached property that caused the bug.
+
+## Profiling (Instruments)
+- **Time Profiler has TWO blind spots. Both have already cost a full session.**
+  1. **Blocked threads.** It samples RUNNING threads only. With `record-waiting-threads="0"`
+     (the default) a main thread blocked 782ms produces **zero samples**. An innocent-looking
+     Time Profiler is NOT an exoneration — it is a fork: spinning → Time Profiler has it;
+     blocked → only the `thread-state` schema has it.
+  2. **Render-server cost.** Offscreen composites run in another process; they are not in your
+     app's samples at all.
+- **Prefer the CLI over the Instruments GUI.** `xcrun xctrace export --input <trace> --toc`,
+  then xpath the schemas. Confirmed present and useful: `thread-state`, `context-switch`,
+  `hitches`, `potential-hangs`, `time-profile` (symbolicated), `syscall`. BUG 5 was found this
+  way in one pass, after the GUI produced nothing across an evening.
+- **A tall frame is what is RUNNING, not what is CAUSAL.** Always diff a working case against
+  a broken case. Never name the tallest symbol in a single window.
 
 ## Colors (T is colorblind)
 - Use hex literals only in code (e.g. Klein Blue `#1B59C2`, Mango `#E8820A`, Electric Cyan `#00BFFF`). Hex exists for code verifiability.

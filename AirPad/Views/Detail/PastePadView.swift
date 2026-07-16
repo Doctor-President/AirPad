@@ -91,7 +91,7 @@ struct PastePadView: View {
         HStack(spacing: 10) {
             Image(systemName: "doc.on.clipboard")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white.opacity(isPrimed ? Shimmer.baseOpacity : 0.35))
+                .foregroundStyle(DetailPalette.ink.opacity(isPrimed ? Shimmer.baseOpacity : 0.35))
 
             label
         }
@@ -163,11 +163,11 @@ struct PastePadView: View {
                 ZStack {
                     Text(text)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(Shimmer.baseOpacity))
+                        .foregroundStyle(DetailPalette.ink.opacity(Shimmer.baseOpacity))
 
                     Text(text)
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white.opacity(Shimmer.peakOpacity))
+                        .foregroundStyle(DetailPalette.ink.opacity(Shimmer.peakOpacity))
                         .mask {
                             GeometryReader { geo in
                                 LinearGradient(
@@ -191,7 +191,7 @@ struct PastePadView: View {
         } else {
             Text(text)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(DetailPalette.ink.opacity(0.4))
                 .lineLimit(1)
         }
     }
@@ -269,9 +269,9 @@ struct PastePadView: View {
         let center = -bandHalf + (1 + Shimmer.bandWidth) * phase
         return LinearGradient(
             colors: [
-                Color.white.opacity(Shimmer.baseOpacity),
-                Color.white.opacity(Shimmer.peakOpacity),
-                Color.white.opacity(Shimmer.baseOpacity)
+                DetailPalette.ink.opacity(Shimmer.baseOpacity),
+                DetailPalette.ink.opacity(Shimmer.peakOpacity),
+                DetailPalette.ink.opacity(Shimmer.baseOpacity)
             ],
             startPoint: UnitPoint(x: center - bandHalf, y: 0.5),
             endPoint: UnitPoint(x: center + bandHalf, y: 0.5)

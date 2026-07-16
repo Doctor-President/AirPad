@@ -15,7 +15,7 @@ struct VoiceEntryBody: View {
             if let transcript = item.transcript, !transcript.isEmpty {
                 Text(transcript)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
                     .padding(.horizontal, 12)
             }
         }

@@ -74,8 +74,12 @@ struct TextEntryBody: View {
         .padding(.horizontal, 22)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Matched-tone fill, clipped to the rounded panel.
-        .background(Color(NoteTypography.background))
+        // ws-dark-light-mode — the raised note panel fill. Dark #1A1A1A
+        // (identical to the matched-tone ground); light a hair brighter/warmer
+        // than the ground so it lifts by luminance (transmissive). The note
+        // TEXT stays on NoteTypography (adaptive, preserved) — only the panel
+        // surface is themed here.
+        .background(DetailPalette.bgElevated)
         .clipShape(RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous))
         // Top-edge rim light: brightest along the upper edge, fading down the
         // sides, so the panel reads as catching ambient light from above. On a
@@ -92,7 +96,10 @@ struct TextEntryBody: View {
                 )
         )
         // Soft drop shadow lifts the panel off the matched-gray ground.
-        .shadow(color: .black.opacity(Panel.shadowOpacity),
+        // ws-dark-light-mode — shadow strength is themed: dark black@0.35
+        // (identical), light a soft diffused shadow (no hard edge — "cloud
+        // cover is a reprieve"). Radius/offset unchanged.
+        .shadow(color: DetailPalette.panelShadow,
                 radius: Panel.shadowRadius, x: 0, y: Panel.shadowY)
         // Insert-image affordance: a small photos picker in the panel's top-right
         // (empty corner on a left-aligned note). Picking inserts the image inline

@@ -107,7 +107,7 @@ struct RelatedNodesSection: View {
     private func channelHeader(_ text: String, secondary: Bool) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(secondary ? 0.3 : 0.45))
+            .foregroundStyle(DetailPalette.ink.opacity(secondary ? 0.3 : 0.45))
             .textCase(.uppercase)
             .tracking(0.8)
     }
@@ -120,11 +120,11 @@ struct RelatedNodesSection: View {
                 HStack(spacing: 10) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(DetailPalette.ink.opacity(0.4))
                         .frame(width: 22)
                     Text(BacklinkLabels.title(node))
                         .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(DetailPalette.ink.opacity(0.7))
                         .lineLimit(1)
                     Spacer(minLength: 8)
                 }
@@ -148,7 +148,7 @@ struct RelatedNodesSection: View {
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.02), in: RoundedRectangle(cornerRadius: 12))
+        .background(DetailPalette.ink.opacity(0.02), in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// Derive the top substrate candidates at view time — genuine proposals
@@ -177,25 +177,25 @@ struct RelatedNodesSection: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(BacklinkLabels.title(target))
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(DetailPalette.ink)
                     .lineLimit(1)
                 // Entry-level qualifier, when the edge points at a specific entry.
                 if let entryID = conn.entryID,
                    let entry = target.items.first(where: { $0.id == entryID }) {
                     Text(BacklinkLabels.entry(entry))
                         .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(DetailPalette.ink.opacity(0.5))
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(DetailPalette.ink.opacity(0.3))
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+        .background(DetailPalette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
     }
 }

@@ -1872,8 +1872,12 @@ enum MarkdownCodec {
     private static let checklistAttachmentYOffset: CGFloat = -5
 
     /// Builds the SF-Symbol-backed `NSTextAttachment` for a checklist item.
-    /// The image is tinted white via `.alwaysOriginal` rendering so it ignores
-    /// downstream text-color inheritance and stays legible on the dark BG.
+    /// Tinted with `.label` (the body text color) via `.alwaysOriginal`, so the
+    /// glyph matches the note text in both themes — white in dark (identical to
+    /// before), near-black on cream (ws-dark-light-mode). NOTE: `.alwaysOriginal`
+    /// bakes the resolved color at build time, so the glyph re-resolves on the
+    /// next decode/appear, not live on an in-place appearance flip (acceptable:
+    /// set the mode, then open the note).
     static func makeChecklistAttachment(checked: Bool) -> NSTextAttachment {
         let attachment = NSTextAttachment()
         let symbolName = checked ? "checkmark.circle.fill" : "circle"
@@ -1883,7 +1887,7 @@ enum MarkdownCodec {
             scale: .medium
         )
         let image = UIImage(systemName: symbolName, withConfiguration: config)?
-            .withTintColor(.white, renderingMode: .alwaysOriginal)
+            .withTintColor(.label, renderingMode: .alwaysOriginal)
         attachment.image = image
         if let size = image?.size {
             attachment.bounds = CGRect(
@@ -1905,7 +1909,7 @@ enum MarkdownCodec {
         let range = NSRange(location: 0, length: mut.length)
         mut.addAttribute(.airpadChecklistGlyph, value: checked ? 1 : 0, range: range)
         mut.addAttribute(.font, value: UIFont.preferredFont(forTextStyle: .body), range: range)
-        mut.addAttribute(.foregroundColor, value: UIColor.white, range: range)
+        mut.addAttribute(.foregroundColor, value: UIColor.label, range: range)
         return mut
     }
 

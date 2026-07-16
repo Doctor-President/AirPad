@@ -68,10 +68,10 @@ struct GalleryItemTile: View {
                 }
             } else {
                 Rectangle()
-                    .fill(Color.white.opacity(0.08))
+                    .fill(DetailPalette.ink.opacity(0.08))
                     .overlay {
                         Image(systemName: galleryItem.mediaType == .video ? "video" : "photo")
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(DetailPalette.ink.opacity(0.3))
                     }
             }
         }

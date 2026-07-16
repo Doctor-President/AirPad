@@ -17,15 +17,15 @@ struct ImageEntryBody: View {
                 AsyncImageFromURL(url: url)
             } else {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(DetailPalette.ink.opacity(0.08))
                     .frame(height: 200)
-                    .overlay(Image(systemName: "photo").foregroundStyle(.white.opacity(0.3)))
+                    .overlay(Image(systemName: "photo").foregroundStyle(DetailPalette.ink.opacity(0.3)))
                     .onAppear { loadImageURL() }
             }
             if let description = item.description, !description.isEmpty {
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }
         }

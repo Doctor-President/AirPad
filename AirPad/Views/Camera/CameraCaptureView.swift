@@ -80,7 +80,12 @@ struct CameraCaptureView: View {
             }
         }
         .presentationBackground(.black)
-        .presentationDetents([.medium])
+        // ws-dark-light-mode — full-height (no `.medium` detent). The medium
+        // detent bought nothing here (a mostly-empty field with two buttons)
+        // and, in Cucumber Water, it revealed the parchment detail view behind,
+        // which iOS's system sheet dim muddied to olive. Full-height covers the
+        // presenter entirely → no visible system scrim, dark byte-identical.
+        // (The sheet's own black bg is still batch-deferred with the modals.)
     }
 
     // MARK: - Camera permission

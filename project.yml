@@ -29,6 +29,22 @@ settings:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: 8XM4B5F42Y
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+    # Default build-number "floor" for CFBundleVersion. Both Info.plists set
+    # CFBundleVersion to $(CURRENT_PROJECT_VERSION); this is the ONLY place that
+    # gives the variable a value for builds that don't pass it on the command
+    # line — i.e. every Xcode GUI Build & Run. Without it the variable expands to
+    # EMPTY, and an empty CFBundleVersion is TOLERATED on the host app but FATAL
+    # on the app extension: -[MIAppExtensionBundle validateBundleMetadataWithError:]
+    # rejects the local install with MIInstallerErrorDomain 33 /
+    # MissingBundleVersion (appexes are validated more strictly than the host,
+    # which is why only AirPadShare.appex tripped). That was the 429c54d
+    # regression — it pinned CFBundleVersion but never gave the variable a floor.
+    # DO NOT DELETE as redundant.
+    # testflight_upload.sh passes CURRENT_PROJECT_VERSION=<build> on the xcodebuild
+    # command line; command-line build settings override this default, so
+    # TestFlight uploads still get their unique number and this "1" is used only
+    # by local GUI/dev builds (which never upload).
+    CURRENT_PROJECT_VERSION: "1"
 
 packages:
   FloatingPanel:
@@ -72,6 +88,16 @@ targets:
       path: AirPad/Info.plist
       properties:
         CFBundleDisplayName: AirPad
+        # Build number MUST come from CURRENT_PROJECT_VERSION, not xcodegen's
+        # default of "1". Without this, every `xcodegen generate` rewrites
+        # Info.plist with CFBundleVersion=1, and the testflight script's
+        # `-CURRENT_PROJECT_VERSION <n>` can't override a literal → uploads
+        # ship build "1" and App Store Connect silently rejects them as
+        # duplicates (they "never land"). $(CURRENT_PROJECT_VERSION) makes the
+        # script's number (AIRPAD_BUILD_NUMBER or the timestamp default) win.
+        # The variable's default "floor" lives in the project-level settings.base
+        # (see the note there) — keep this a variable, never a literal.
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UIAppFonts:
           - Lato-Regular.ttf
           - Lato-Bold.ttf
@@ -157,6 +183,14 @@ targets:
       path: AirPadShare/Info.plist
       properties:
         CFBundleDisplayName: AirPad Share
+        # Must match the host app's version (App Store validation). Same fix as
+        # the app target — pin to CURRENT_PROJECT_VERSION, not xcodegen's "1".
+        # CRITICAL: this appex is validated MORE STRICTLY than the host app — an
+        # empty CFBundleVersion is tolerated on the app but FATAL here
+        # (MIInstallerErrorDomain 33 / MissingBundleVersion at install time). The
+        # variable therefore MUST keep a default floor in the project-level
+        # settings.base; without it, Xcode GUI Build & Run can't install.
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # Export compliance — mirror the main app; only exempt encryption.
         ITSAppUsesNonExemptEncryption: false
         NSExtension:

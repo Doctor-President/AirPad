@@ -83,6 +83,7 @@
 		52D3D753240395AD3A873749 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */; };
 		536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */; };
 		55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48DBCBFAFA7298D82C3BB0FF /* FilterState.swift */; };
+		55AF08E612C32C9F3EBBA73C /* DisplayEditMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1794E183AE4B40A9C89EAAC6 /* DisplayEditMode.swift */; };
 		56061A0335E2973DF52243F1 /* NodeGridTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */; };
 		5681223387D04D1716AB1020 /* SourceSerif4-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */; };
 		588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */; };
@@ -276,6 +277,7 @@
 		1418C24367159079E8597E6C /* RelatedNodesSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatedNodesSection.swift; sourceTree = "<group>"; };
 		14E0A70C721C874921860A43 /* HDBSCANSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANSelfTest.swift; sourceTree = "<group>"; };
 		1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusPhysicsScene.swift; sourceTree = "<group>"; };
+		1794E183AE4B40A9C89EAAC6 /* DisplayEditMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayEditMode.swift; sourceTree = "<group>"; };
 		1866B7173FCC4A9B1AE81AF1 /* Node.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Node.swift; sourceTree = "<group>"; };
 		187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryReorderController.swift; sourceTree = "<group>"; };
 		18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagEditorSheet.swift; sourceTree = "<group>"; };
@@ -629,6 +631,7 @@
 				78F427DEA33E32FCD9973ADD /* Backlink */,
 				BC83C0C59C50DAD4C160BC1C /* Entry */,
 				9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */,
+				1794E183AE4B40A9C89EAAC6 /* DisplayEditMode.swift */,
 				187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
 				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
@@ -1149,6 +1152,7 @@
 				989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */,
 				02A14D3596D8C515D5585893 /* DashboardLavaLamp.swift in Sources */,
 				52D3D753240395AD3A873749 /* DashboardView.swift in Sources */,
+				55AF08E612C32C9F3EBBA73C /* DisplayEditMode.swift in Sources */,
 				D920C62968AB09FDDB9124A4 /* DocumentEntryBody.swift in Sources */,
 				CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */,
 				8D93AB74B120515EE87D5A07 /* DocumentGalleryBody.swift in Sources */,

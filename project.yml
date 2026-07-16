@@ -72,6 +72,14 @@ targets:
       path: AirPad/Info.plist
       properties:
         CFBundleDisplayName: AirPad
+        # Build number MUST come from CURRENT_PROJECT_VERSION, not xcodegen's
+        # default of "1". Without this, every `xcodegen generate` rewrites
+        # Info.plist with CFBundleVersion=1, and the testflight script's
+        # `-CURRENT_PROJECT_VERSION <n>` can't override a literal → uploads
+        # ship build "1" and App Store Connect silently rejects them as
+        # duplicates (they "never land"). $(CURRENT_PROJECT_VERSION) makes the
+        # script's number (AIRPAD_BUILD_NUMBER or the timestamp default) win.
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UIAppFonts:
           - Lato-Regular.ttf
           - Lato-Bold.ttf
@@ -157,6 +165,9 @@ targets:
       path: AirPadShare/Info.plist
       properties:
         CFBundleDisplayName: AirPad Share
+        # Must match the host app's version (App Store validation). Same fix as
+        # the app target — pin to CURRENT_PROJECT_VERSION, not xcodegen's "1".
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # Export compliance — mirror the main app; only exempt encryption.
         ITSAppUsesNonExemptEncryption: false
         NSExtension:

@@ -38,6 +38,10 @@ struct EntryCard: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(EntryReorderController.self) private var reorder
+    /// ws-display-edit-mode — injected by `NodeDetailView`. Drives whether
+    /// this card's header chrome (title / timestamp / ellipsis) shows and
+    /// whether the reorder long-press is live.
+    @Environment(\.displayEditMode) private var displayEditMode
 
     /// Stage 4.4 — dev-only runtime visual settings (corner radius, body
     /// treatment, typography). The singleton is `@Observable`, so SwiftUI
@@ -83,8 +87,13 @@ struct EntryCard: View {
     /// Force-collapsed during reorder mode so every card renders as a
     /// uniform-height title row, which is what the controller's slotPitch
     /// math assumes. Restored to user-set expansion when reorder exits.
+    ///
+    /// ws-display-edit-mode — Display reads every entry open: there's no
+    /// chevron to expand a collapsed entry, and the node should read as a
+    /// continuous document.
     private var effectiveExpansion: Bool {
-        reorder.isReorderActive ? false : isExpanded
+        if displayEditMode.isDisplay { return true }
+        return reorder.isReorderActive ? false : isExpanded
     }
 
     /// True when this card sits inside the promoted "card view" region
@@ -120,6 +129,11 @@ struct EntryCard: View {
             // The hairline below (added by `NodeDetailView`) and the
             // fold-boundary divider (also added by `NodeDetailView`)
             // both sit at the outer view layer, not the row body.
+            // ws-display-edit-mode — the whole header row (display name,
+            // per-section timestamp, ellipsis menu, chevron) is Edit-only
+            // chrome. In Display it hides so the body reads as a document
+            // section. Entry titles aren't removed, just gated by mode.
+            if !displayEditMode.isDisplay {
             EntryTitleRow(
                 displayName: displayName,
                 timestamp: item.updatedAt ?? item.createdAt,
@@ -155,10 +169,13 @@ struct EntryCard: View {
                     : nil,
                 isNote: item.type == .text
             )
+            .transition(.opacity)
+            }
 
             if effectiveExpansion {
                 bodyView
-                    .padding(.top, 8)
+                    // No header above the body in Display → no gap needed.
+                    .padding(.top, displayEditMode.isDisplay ? 0 : 8)
             }
         }
         .padding(.horizontal, 12)
@@ -176,6 +193,11 @@ struct EntryCard: View {
             // are still the full row because `.background` sizes to its
             // parent.
             ZStack {
+                // ws-display-edit-mode — reorder is an Edit-only workspace
+                // gesture; its slotPitch math assumes uniform collapsed rows,
+                // which Display (headerless, all-open) breaks. Recognizer is
+                // omitted entirely in Display.
+                if !displayEditMode.isDisplay {
                 LongPressDragRecognizer(
                     onLift: { touchY in
                         reorder.lift(itemID: item.id, snapshotIDs: snapshotIDs)
@@ -284,6 +306,7 @@ struct EntryCard: View {
                     },
                     scrollDeltaProvider: { reorder.scrollDelta }
                 )
+                }
             }
         }
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)

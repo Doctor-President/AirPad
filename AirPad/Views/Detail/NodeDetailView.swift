@@ -109,6 +109,15 @@ struct NodeDetailView: View {
         Task { await store.deleteNode(id: nodeID) }
     }
 
+    // ws-display-edit-mode — global Caps-Lock session state (false = Edit,
+    // the launch default). Untyped nodes flip this directly; typed nodes use
+    // `localModeOverride` instead so their toggle never touches the global.
+    @AppStorage("airpad.detail.displayMode.isDisplay") private var globalIsDisplay = false
+    /// ws-display-edit-mode — per-view override seat for the typed-node
+    /// exception (dormant until a node-level type exists). Nil = follow the
+    /// resolved default (global state, or Display for a typed node).
+    @State private var localModeOverride: DisplayEditMode? = nil
+
     // Editable fields (mirrored from node, written back on disappear)
     @State private var editedTitle = ""
     @State private var editedSummary = ""
@@ -504,7 +513,13 @@ struct NodeDetailView: View {
                 // with the pasted content. Multi-item is a no-op
                 // pending C4. Empty content can't reach this callback
                 // (PastePadView gates the tap on isPrimed).
-                PastePadView(onPaste: handlePastedContent)
+                //
+                // ws-display-edit-mode — Paste Pad is an authoring affordance;
+                // it recedes in Display so the node reads as a document.
+                if !resolvedMode(node).isDisplay {
+                    PastePadView(onPaste: handlePastedContent)
+                        .transition(.opacity)
+                }
 
                 // Trailing spacer so the last entry isn't tucked under the
                 // floating "+" button. 80pt clears the 56pt button + 24pt
@@ -540,7 +555,10 @@ struct NodeDetailView: View {
             // RichTextEditor body via accessory toolbar). Stage 3.1b also
             // hides it during reorder mode — no new entries while
             // restructuring.
-            if !keyboardVisible && !reorderController.isReorderActive {
+            // ws-display-edit-mode — the "+" is a pure authoring affordance,
+            // hidden in Display so the node reads as a document not a workspace.
+            if !keyboardVisible && !reorderController.isReorderActive
+                && !resolvedMode(node).isDisplay {
                 floatingAddButton
                     .padding(.trailing, 24)
                     // Lift above the persistent Librarian peek pill so the
@@ -624,6 +642,25 @@ struct NodeDetailView: View {
                         .modifier(InteractiveGlassCapsule())
                 }
             } else {
+                // ws-display-edit-mode — the mode toggle sits left of the
+                // node ••• menu. It shows the DESTINATION action: an eye in
+                // Edit (tap → Display / read), a pencil in Display (tap →
+                // Edit). Hidden during capture (that surface is forced Edit).
+                // Icon + size are first-pass and tunable on device.
+                if !isCaptureMode {
+                    Button {
+                        toggleMode(node)
+                    } label: {
+                        Image(systemName: resolvedMode(node).isDisplay ? "square.and.pencil" : "eye")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .frame(width: 56, height: 56)
+                            // ws-glass-effect-hit-region — interactive glass
+                            // swallows taps without an explicit content shape.
+                            .contentShape(Circle())
+                            .modifier(InteractiveGlassCircle())
+                    }
+                }
                 Menu {
                     Button {} label: {
                         Label("Share / Export", systemImage: "square.and.arrow.up")
@@ -726,6 +763,9 @@ struct NodeDetailView: View {
             }
         }
         .environment(reorderController)
+        // ws-display-edit-mode — the resolved mode propagates down to every
+        // EntryCard, which gates its header/timestamp/ellipsis chrome on it.
+        .environment(\.displayEditMode, resolvedMode(node))
         // hero-empty-picker (H1, revised) — Photos + node-images picker.
         // Lives on `content`'s chain (not body) because it needs `node`
         // in scope; the body-level sheets operate on state that doesn't
@@ -970,6 +1010,44 @@ struct NodeDetailView: View {
     /// on stale state.
     private var hasRating: Bool {
         node?.items.contains { $0.type == .rating } ?? false
+    }
+
+    // MARK: - Display / Edit mode (ws-display-edit-mode)
+
+    /// Whether this node is a "typed" node (Recipe / Film / Review / Book /
+    /// Collectable, from ws-intelligent-link-scraping). Typed nodes open in
+    /// Display by default and treat the toggle as a per-node override. No
+    /// node-level type exists in the model yet, so this is always false today
+    /// — when the type lands, returning true here activates the
+    /// Display-default + local-override path below without further wiring.
+    private func isTyped(_ node: Node) -> Bool {
+        false
+    }
+
+    /// The resolved mode driving this detail view. Capture is always Edit (you
+    /// can't author into receded chrome); otherwise an explicit per-view
+    /// override wins, typed nodes default to Display, and untyped nodes follow
+    /// the global Caps-Lock state.
+    private func resolvedMode(_ node: Node) -> DisplayEditMode {
+        if isCaptureMode { return .edit }
+        if let localModeOverride { return localModeOverride }
+        if isTyped(node) { return .display }
+        return globalIsDisplay ? .display : .edit
+    }
+
+    /// Toggle action for the top-chrome control. Untyped nodes flip the global
+    /// Caps-Lock state (and clear any stale override); typed nodes set a local
+    /// override only, leaving the global untouched.
+    private func toggleMode(_ node: Node) {
+        let target: DisplayEditMode = resolvedMode(node).isDisplay ? .edit : .display
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if isTyped(node) {
+                localModeOverride = target
+            } else {
+                globalIsDisplay = target.isDisplay
+                localModeOverride = nil
+            }
+        }
     }
 
     // MARK: - Document capture helpers

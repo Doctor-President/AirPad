@@ -837,11 +837,11 @@ struct CanvasView: View {
             // falls back to truth when off.
             //
             // Radii are inflated from geometric → visual before PBD sees
-            // them. `CorpusPhysicsScene` renders nodes as deformed blob
-            // paths (16-point perimeter at `radius × (1 + displacement)`,
-            // `displacementAmplitude = 0.15`) with a 1 pt centered stroke,
-            // so the rendered extent exceeds the geometric radius by up
-            // to 15% + ~0.5 pt. PBD's collision model is a circle of the
+            // them. `CorpusPhysicsScene` renders nodes as circles with a
+            // 1 pt centered stroke (the per-frame blob deformation was
+            // retired — Level 1), so the rendered extent exceeds the
+            // geometric radius by ~0.5 pt of stroke. PBD's collision model
+            // is a circle of the
             // radius it's given; feeding visual radii lets `minGap` keep
             // its honest meaning ("breathing room between visible edges").
             //

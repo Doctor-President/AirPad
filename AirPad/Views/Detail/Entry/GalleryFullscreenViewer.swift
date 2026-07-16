@@ -239,6 +239,13 @@ struct GalleryFullscreenViewer: View {
                 }
             }
         }
+        // ws-dark-light-mode — the media viewer is a LIGHTBOX, not an app
+        // surface. Its background is the user's arbitrary photo/video, so its
+        // chrome's contrast is against unknown imagery, not the palette — it
+        // must NOT follow the app theme. Pin it dark in BOTH modes (permanent
+        // dark scrim `Color.black` above + permanent light chrome, Apple-Photos
+        // style) so the bottom action bar never renders as a light frosted bar.
+        .preferredColorScheme(.dark)
         // Modal native player for video posters. AVPlayerViewController
         // gets the entire screen — its own transport, fullscreen, and PiP
         // surfaces all light up; nothing in the AirPad pager competes for

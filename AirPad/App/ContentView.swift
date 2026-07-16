@@ -92,6 +92,31 @@ struct ContentView: View {
                     // containerView, `backgroundColor` is the UIView itself.
                     proxy.controller.surfaceView.appearance.backgroundColor = .clear
                     proxy.controller.surfaceView.backgroundColor = .clear
+                    // ws-dark-light-mode — remove FloatingPanel's default
+                    // surface drop-shadow (`SurfaceAppearance.shadows =
+                    // [Shadow()]`). It's invisible on the #1A1A1A dark ground
+                    // but reads as a faint line at the surface's top edge on
+                    // cream — the hairline above the peek pill. Not
+                    // load-bearing (no visible lift in dark).
+                    //
+                    // ⚠️ Must REPLACE the appearance object, not mutate
+                    // `appearance.shadows` in place. `SurfaceAppearance` is a
+                    // class, and the `SurfaceView.appearance` didSet — the only
+                    // thing that rebuilds the shadow sublayers — fires only on
+                    // whole-object assignment. A nested `appearance.shadows =
+                    // []` never rebuilds them, and `updateShadow()` (per
+                    // layoutSubviews) only configures PRESENT shadows, never
+                    // clears an already-drawn one. So reassigning the object is
+                    // what actually removes it (measured from SurfaceView.swift;
+                    // a prior nested-mutation attempt was a no-op). Durable
+                    // across detents: the library never reassigns `appearance`,
+                    // and the only other `shadowLayers` rebuild is init-only
+                    // (`addSubViews`). Reassigning the SAME object still fires
+                    // didSet (Swift runs it on every assignment) and preserves
+                    // the `.clear` backgroundColor set above.
+                    let clearedAppearance = proxy.controller.surfaceView.appearance
+                    clearedAppearance.shadows = []
+                    proxy.controller.surfaceView.appearance = clearedAppearance
                     // First-render alignment with the current entry mode.
                     // SwiftUI's `.onChange` doesn't fire for the initial
                     // value reliably across the panel-mount boundary, so

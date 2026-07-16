@@ -40,7 +40,7 @@ struct DocumentViewModeToggle: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white.opacity(isActive ? 0.95 : 0.4))
+                .foregroundStyle(DetailPalette.ink.opacity(isActive ? 0.95 : 0.4))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }

@@ -55,7 +55,7 @@ struct DocumentGalleryTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.white.opacity(0.04))
+        .background(DetailPalette.ink.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture { Task { await openInQuickLook() } }
@@ -72,7 +72,7 @@ struct DocumentGalleryTile: View {
 
     private var thumbnailBlock: some View {
         ZStack {
-            Rectangle().fill(Color.white.opacity(0.06))
+            Rectangle().fill(DetailPalette.ink.opacity(0.06))
             if let img = thumbnail {
                 Image(uiImage: img)
                     .resizable()
@@ -82,7 +82,7 @@ struct DocumentGalleryTile: View {
             } else {
                 Image(systemName: documentIconName)
                     .font(.title)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(DetailPalette.ink.opacity(0.35))
             }
         }
         .frame(height: Self.thumbnailHeight)
@@ -202,13 +202,13 @@ struct DocumentGalleryTile: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(displayTitle)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(DetailPalette.ink)
                 .lineLimit(2)
                 .multilineTextAlignment(.leading)
             if let metricsLine {
                 Text(metricsLine)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
                     .lineLimit(1)
             }
         }

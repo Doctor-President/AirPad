@@ -146,6 +146,7 @@
 		9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
+		95EE6C9EE4C9E510E48A41B6 /* DetailPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = B61C4157481C23E9FB7A3F5E /* DetailPalette.swift */; };
 		9787E9E6519D8AE627C866E3 /* SubstrateBagLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AB3E0DAA09EAAB03B140BC7 /* SubstrateBagLayout.swift */; };
 		97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD4733E2421E070A68925125 /* BatchParser.swift */; };
 		9864B2ADA60C6630DA0223AC /* NodeItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E4F251A686080806C62E071 /* NodeItem.swift */; };
@@ -406,6 +407,7 @@
 		B05B92C729C4833EC93C3A4A /* LibrarianState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianState.swift; sourceTree = "<group>"; };
 		B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlobFieldView.swift; sourceTree = "<group>"; };
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
+		B61C4157481C23E9FB7A3F5E /* DetailPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailPalette.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
 		B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Regular.ttf"; sourceTree = "<group>"; };
 		B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateWhitening.swift; sourceTree = "<group>"; };
@@ -631,6 +633,7 @@
 				78F427DEA33E32FCD9973ADD /* Backlink */,
 				BC83C0C59C50DAD4C160BC1C /* Entry */,
 				9640DF6602CDCA4B2689C33C /* AutoScrollDriver.swift */,
+				B61C4157481C23E9FB7A3F5E /* DetailPalette.swift */,
 				1794E183AE4B40A9C89EAAC6 /* DisplayEditMode.swift */,
 				187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
@@ -1152,6 +1155,7 @@
 				989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */,
 				02A14D3596D8C515D5585893 /* DashboardLavaLamp.swift in Sources */,
 				52D3D753240395AD3A873749 /* DashboardView.swift in Sources */,
+				95EE6C9EE4C9E510E48A41B6 /* DetailPalette.swift in Sources */,
 				55AF08E612C32C9F3EBBA73C /* DisplayEditMode.swift in Sources */,
 				D920C62968AB09FDDB9124A4 /* DocumentEntryBody.swift in Sources */,
 				CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */,

@@ -20,15 +20,15 @@ struct VideoEntryBody: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(DetailPalette.ink.opacity(0.08))
                     .frame(height: 200)
-                    .overlay(Image(systemName: "video").foregroundStyle(.white.opacity(0.3)))
+                    .overlay(Image(systemName: "video").foregroundStyle(DetailPalette.ink.opacity(0.3)))
                     .onAppear { loadImageURL() }
             }
             if let transcript = item.transcript, !transcript.isEmpty {
                 Text(transcript)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }
         }

@@ -197,27 +197,27 @@ struct OGPreviewView: View {
                 if let title = effectiveTitle, !title.isEmpty {
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
                 if let description = effectiveDescription, !description.isEmpty {
                     Text(description)
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(.primary.opacity(0.55))
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
                 }
                 if let siteName = effectiveSiteName, !siteName.isEmpty {
                     Text(siteName)
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(.primary.opacity(0.4))
                         .lineLimit(1)
                 }
             }
             .padding(imagePresent ? 10 : 0)
         }
-        .background(imagePresent ? Color.white.opacity(0.04) : Color.clear)
+        .background(imagePresent ? Color.primary.opacity(0.04) : Color.clear)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -232,11 +232,11 @@ struct OGPreviewView: View {
                     .clipped()
             } else {
                 RoundedRectangle(cornerRadius: 0)
-                    .fill(Color.white.opacity(0.06))
+                    .fill(Color.primary.opacity(0.06))
                     .frame(height: 160)
                     .overlay(
                         Image(systemName: "photo")
-                            .foregroundStyle(.white.opacity(0.25))
+                            .foregroundStyle(.primary.opacity(0.25))
                     )
             }
         }

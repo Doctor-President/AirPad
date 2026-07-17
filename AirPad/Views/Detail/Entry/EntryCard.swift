@@ -68,11 +68,6 @@ struct EntryCard: View {
         self._isExpanded = State(initialValue: item.isExpanded ?? true)
     }
 
-    /// Vertical padding around a `.text` (note) entry header — tightened from
-    /// the default 12 so the note body + PastePad sit higher (T's capture-area
-    /// feel). Tunable. Other entry types keep 12.
-    private static let noteHeaderVerticalPadding: CGFloat = 4
-
     private var displayName: String {
         // The note primitive shows "Note" as its default label. View-only — the
         // stored type/schema is unchanged, and migrated notes may carry the old
@@ -181,7 +176,7 @@ struct EntryCard: View {
         .padding(.horizontal, 12)
         // Note headers tighten the vertical padding so the body + PastePad sit
         // higher; other entry types keep the original 12.
-        .padding(.vertical, item.type == .text ? Self.noteHeaderVerticalPadding : 12)
+        .padding(.vertical, item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding)
         .background {
             // Long-press recognizer lives in the background slot so foreground
             // interactive widgets (chevron, menu, text editors, waveform

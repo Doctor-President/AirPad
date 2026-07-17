@@ -106,7 +106,7 @@ struct ScrubberSpike: View {
                 let isActive = region.id == activeRegionID
                 Text(region.label)
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(isActive ? 0.95 : 0.45))
+                    .foregroundStyle(AppearancePalette.ink.opacity(isActive ? 0.95 : 0.45))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -121,7 +121,7 @@ struct ScrubberSpike: View {
             ForEach(0..<max(tickCount, 1), id: \.self) { i in
                 let isMajor = i % 5 == 0
                 Capsule()
-                    .fill(.white.opacity(isMajor ? 0.45 : 0.22))
+                    .fill(AppearancePalette.ink.opacity(isMajor ? 0.45 : 0.22))
                     .frame(width: isMajor ? 10 : 6, height: isMajor ? 2 : 1)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }

@@ -658,12 +658,12 @@ private struct DensityPill: View {
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(columnCount == value ? Color.white : Color.white.opacity(0.55))
+                .foregroundStyle(columnCount == value ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.55))
                 .frame(width: 52, height: 40)
                 .contentShape(Rectangle())
                 .background {
                     if columnCount == value {
-                        Capsule().fill(Color.white.opacity(0.15))
+                        Capsule().fill(AppearancePalette.ink.opacity(0.15))
                     }
                 }
         }
@@ -817,11 +817,11 @@ private struct ImportProgressBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             ProgressView()
-                .tint(.white)
+                .tint(AppearancePalette.ink)
                 .scaleEffect(0.75)
             Text("Importing \(total) ideas… (\(current)/\(total) processed)")
                 .font(.caption.weight(.medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
@@ -840,7 +840,7 @@ private struct iCloudUnavailableBanner: View {
             Text("iCloud unavailable — saving locally")
                 .font(.caption)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(AppearancePalette.ink)
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
@@ -858,19 +858,19 @@ private struct SelectionHeader: View {
         HStack(alignment: .center) {
             Text(count == 0 ? "Select items" : "\(count) selected")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color(white: 0.18))
+                .background(AppearancePalette.bgElevated)
                 .clipShape(Capsule())
             Spacer()
             Button(action: onDone) {
                 Text("Done")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color(white: 0.18))
+                    .background(AppearancePalette.bgElevated)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -917,11 +917,11 @@ private struct BatchActionBar: View {
                     Text("Tag")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
-                .background(Color(white: 0.18))
+                .background(AppearancePalette.bgElevated)
                 .clipShape(Capsule())
             }
             .disabled(count == 0)
@@ -965,11 +965,11 @@ private struct BatchActionBar: View {
             } label: {
                 Text("Organize")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity)
-                    .background(Color(white: 0.18))
+                    .background(AppearancePalette.bgElevated)
                     .clipShape(Capsule())
             }
             .disabled(count == 0)

@@ -38,9 +38,10 @@ enum BackgroundGridNode {
 
     /// Build the shape and shader. Caller adds it as a child of cameraNode
     /// at low zPosition, and resizes it via `resize(_:to:)` on scene size change.
-    /// Defaults are the shipped list-grid values (1.5 / 0.25 / 50 / 5 / 3); the
-    /// Map passes its own baked literals (0.5 dot / 83 period) at construction
-    /// and drives per-mode dot color + opacity live via `setDotAppearance`.
+    /// Both mount sites now pass explicit geometry — the Map and the list/grid
+    /// `BackgroundGridView` both run 0.5 dot / 83 period — and drive per-mode dot
+    /// color + opacity live via `setDotAppearance`. The 1.5 / 0.25 / 50 defaults
+    /// are an unused fallback, kept for any future no-arg mount.
     static func makeShape(viewportSize: CGSize, fillTexture: SKTexture,
                           dotSizePx: Float = 1.5,
                           dotOpacity: Float = 0.25,
@@ -126,10 +127,10 @@ enum BackgroundGridNode {
             // Three layers, ratio 5: p1 (period) sits near the 60px visibility
             // peak at xScale=1, so the look is dominated by the p1 layer, with
             // p0 = p1/ratio fading in on zoom in and p2 = p1*ratio on zoom out.
-            // dotBasePx / baseOpac / period are UNIFORMS baked at makeShape: the
-            // Map bakes 0.5 / (per-mode 0.18 dark · 0.47 light) / 83; the 4
-            // shared list grids keep 1.5 / 0.25 / 50. p0/p1/p2 stay ratio-5
-            // nested off the period.
+            // dotBasePx / baseOpac / period are UNIFORMS set per mount site: both
+            // the Map and the list/grid BackgroundGridView run 0.5 / 83 with
+            // per-mode opacity (0.18 dark · 0.47 light) pushed via setDotAppearance.
+            // p0/p1/p2 stay ratio-5 nested off the period.
             //
             // The translating value-noise field was REMOVED (bake-and-delete):
             // dots are steady, no radius breathing / luma shimmer and no u_time

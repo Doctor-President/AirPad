@@ -117,7 +117,7 @@ struct NodeListView: View {
                     if let label = section.label {
                         Text(label)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                             .textCase(.uppercase)
                             .tracking(0.8)
                     }
@@ -136,10 +136,10 @@ struct NodeListView: View {
         VStack(spacing: 8) {
             Text("Nothing here yet")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             Text("Capture something to get started.")
                 .font(.system(size: 14))
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -156,7 +156,7 @@ struct NodeListView: View {
         } label: {
             Image(systemName: "arrow.up.arrow.down")
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .frame(width: 44, height: 44)
                 .background(.ultraThinMaterial, in: Circle())
         }

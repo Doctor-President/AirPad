@@ -1520,10 +1520,12 @@ final class CorpusStore {
         // Removing an above-fold item shrinks the card-view region by one;
         // the boundary must follow so items at higher indices don't slip
         // into the zone. Clamped at 0 so the field can never go negative.
-        let wasAboveFold = itemIdx < updated.foldIndex
+        // fold-auto-default — only an AUTHORED fold shifts on delete; AUTO
+        // (nil) recomputes on render, so leave it nil.
+        let wasAboveFold = updated.foldIndex.map { itemIdx < $0 } ?? false
         updated.items.remove(at: itemIdx)
         if wasAboveFold {
-            updated.foldIndex = max(0, updated.foldIndex - 1)
+            updated.foldIndex = updated.foldIndex.map { max(0, $0 - 1) }
         }
         updated.updatedAt = Date()
         await updateNode(updated)
@@ -2447,7 +2449,8 @@ final class CorpusStore {
         )
         var updated = nodes[nodeIdx]
         updated.items.insert(item, at: 0)
-        updated.foldIndex = min(updated.items.count, updated.foldIndex + 1)
+        // fold-auto-default — bump only an AUTHORED fold; AUTO stays nil.
+        updated.foldIndex = updated.foldIndex.map { min(updated.items.count, $0 + 1) }
         updated.updatedAt = now
         await updateNode(updated)
     }
@@ -2475,21 +2478,25 @@ final class CorpusStore {
         let atomicCount = node.items.lazy.filter { $0.type.isAtomic }.count
 
         if alreadyOrdered {
-            // Already partitioned correctly; just clamp `foldIndex` so
-            // it never sits inside the atomic prefix (atomics are
-            // always card-visible — out of the fold scheme).
-            node.foldIndex = max(atomicCount, min(node.items.count, node.foldIndex))
+            // Already partitioned correctly; clamp an AUTHORED fold so it never
+            // sits inside the atomic prefix (atomics are always card-visible).
+            // AUTO (nil) is left alone — fold-auto-default.
+            if let f = node.foldIndex {
+                node.foldIndex = max(atomicCount, min(node.items.count, f))
+            }
             return
         }
 
-        // Map raw → new: atomics first, payload after, each group in
-        // original order. Then translate `foldIndex` by counting how
-        // many payload items were originally above the fold.
-        let aboveFoldPayload = node.items.prefix(node.foldIndex).filter { !$0.type.isAtomic }.count
+        // Map raw → new: atomics first, payload after, each group in original
+        // order. Then translate an AUTHORED `foldIndex` by counting how many
+        // payload items were originally above the fold; AUTO (nil) stays nil.
+        let aboveFoldPayload = node.foldIndex.map {
+            node.items.prefix($0).filter { !$0.type.isAtomic }.count
+        }
         let atomics = node.items.filter { $0.type.isAtomic }
         let payload = node.items.filter { !$0.type.isAtomic }
         node.items = atomics + payload
-        node.foldIndex = atomics.count + aboveFoldPayload
+        node.foldIndex = aboveFoldPayload.map { atomics.count + $0 }
     }
 
     /// Stage 4.8 — updates the value of a `.rating` entry in place,

@@ -46,19 +46,10 @@ struct CanvasView: View {
     @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
     @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
 
-    // ws-dark-light-mode — Map background, dialable via MapTuning. These reads
-    // make the SwiftUI background recompute live when the tuner changes. Off →
-    // the shipped #07070A in dark (T: "should be a dark grey") / cream in light.
+    // ws-dark-light-mode — Map background flips with the interface style:
+    // #111115 dark / #F4EFE3 light (the detail-view ground). Baked (Map tuner
+    // gone); colorScheme drives the live SwiftUI recompute on appearance flip.
     @Environment(\.colorScheme) private var mapColorScheme
-    @AppStorage(MapTuningKey.on) private var mapTunerOn = MapTuningDefaults.on
-    @AppStorage(MapTuningKey.bgDarkHex) private var mapBgDark = MapTuningDefaults.bgDarkHex
-    @AppStorage(MapTuningKey.bgLightHex) private var mapBgLight = MapTuningDefaults.bgLightHex
-    #if DEBUG
-    // Map tuner — label live re-raster (debounced) + measure hook. DEBUG-only.
-    @AppStorage(MapTuningKey.labelFont) private var mapLabelFontRaw = MapTuningDefaults.labelFont
-    @AppStorage(MapTuningKey.labelMaxSize) private var mapLabelMaxSize = MapTuningDefaults.labelMaxSize
-    @State private var labelReRasterTask: Task<Void, Never>?
-    #endif
     private var mapWeights: TagTerritoryLayout.SignalWeights {
         .init(collection: wCollection, anchor: wAnchor, language: wLanguage, backlink: wBacklink)
     }
@@ -380,23 +371,9 @@ struct CanvasView: View {
             }
     }
 
-    #if DEBUG
-    /// Debounced label re-rasterize — coalesces slider drags so we don't rebuild
-    /// every label texture on every tick (each is a 6× raster). 200ms after the
-    /// last change, refresh all labels to the current font / max-size.
-    private func scheduleLabelReRaster() {
-        labelReRasterTask?.cancel()
-        labelReRasterTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(200))
-            guard !Task.isCancelled else { return }
-            scene.reRasterizeLabels()
-        }
-    }
-    #endif
-
     private var canvasZStack: some View {
         ZStack(alignment: .bottomTrailing) {
-            Color(MapTuning.backgroundColor(dark: mapColorScheme == .dark))
+            AppearancePalette.mapBackground(dark: mapColorScheme == .dark)
                 .ignoresSafeArea()
 
             SpriteView(
@@ -407,13 +384,6 @@ struct CanvasView: View {
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
             .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
-            #if DEBUG
-            .onChange(of: mapLabelFontRaw) { scheduleLabelReRaster() }
-            .onChange(of: mapLabelMaxSize) { scheduleLabelReRaster() }
-            .onReceive(NotificationCenter.default.publisher(for: .mapTunerMeasureLabels)) { _ in
-                scene.measureLabelCost()
-            }
-            #endif
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()

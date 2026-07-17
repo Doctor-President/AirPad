@@ -88,10 +88,10 @@ struct NodeGridView: View {
         guard nodes.count > 15 else { return nil }
         switch store.filterState(for: scope).sortOrder {
         case .alphabetical:
-            let regions = ScrubberSpike.alphabeticalRegions(for: nodes)
+            let regions = AlphabetScrubber.alphabeticalRegions(for: nodes)
             return regions.isEmpty ? nil : .discrete(regions)
         case .recency:
-            guard let timeline = ScrubberSpike.recencyTimeline(for: nodes) else { return nil }
+            guard let timeline = AlphabetScrubber.recencyTimeline(for: nodes) else { return nil }
             return .continuous(timeline)
         case .thematic:
             return nil
@@ -248,7 +248,7 @@ struct NodeGridView: View {
     @ViewBuilder
     private func scrubberOverlay(proxy: ScrollViewProxy) -> some View {
         if let mode = scrubberMode {
-            ScrubberSpike(
+            AlphabetScrubber(
                 mode: mode,
                 scrollTo: { id in
                     withAnimation { proxy.scrollTo(id, anchor: .top) }

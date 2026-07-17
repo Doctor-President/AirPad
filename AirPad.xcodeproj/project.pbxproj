@@ -75,6 +75,7 @@
 		4AA3817844E35B02AC0C24F1 /* CardEmbeddingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA68215D2065B3D02251352C /* CardEmbeddingService.swift */; };
 		4AE2D248C48ADBF459F1048D /* BlobFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */; };
 		4B9B295B512914F6DF2CEE86 /* DocumentGalleryTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 495540C7C08695DEA4B137D3 /* DocumentGalleryTile.swift */; };
+		4B9C908546B44C7D1416ADAB /* AlphabetScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */; };
 		4D418B5B931D8B8170E67A3A /* Lato-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */; };
 		505E0F8BA9D6E93F476B35C0 /* LinkViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 770199F6D56D0EDB0BCA874A /* LinkViewModeToggle.swift */; };
 		50C127660FA44B5A72487C59 /* BlobField.metal in Sources */ = {isa = PBXBuildFile; fileRef = BD12D156A4CBC12E872BDEC7 /* BlobField.metal */; };
@@ -184,7 +185,6 @@
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
 		B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */; };
-		B5CD7B271CCE42EB8336C61A /* AlphabetScrubberSpike.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0334ED7E2A6715FA41EFFA09 /* AlphabetScrubberSpike.swift */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
@@ -261,7 +261,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		0334ED7E2A6715FA41EFFA09 /* AlphabetScrubberSpike.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubberSpike.swift; sourceTree = "<group>"; };
 		03D5CDD92B068C0BDB141317 /* DocumentGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentGalleryBody.swift; sourceTree = "<group>"; };
 		03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelProcessingIndicator.swift; sourceTree = "<group>"; };
 		04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentExtractionService.swift; sourceTree = "<group>"; };
@@ -398,6 +397,7 @@
 		9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Regular.ttf"; sourceTree = "<group>"; };
 		A1213E716A9E302D0B777EDD /* EntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryCard.swift; sourceTree = "<group>"; };
 		A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingParityTest.swift; sourceTree = "<group>"; };
+		A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubber.swift; sourceTree = "<group>"; };
 		A9247083C950538B08FD4D00 /* RenameCollectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameCollectionSheet.swift; sourceTree = "<group>"; };
 		AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateService.swift; sourceTree = "<group>"; };
 		ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridNode.swift; sourceTree = "<group>"; };
@@ -544,7 +544,7 @@
 		2BB717D4AE953E9CFCD7C90A /* Grid */ = {
 			isa = PBXGroup;
 			children = (
-				0334ED7E2A6715FA41EFFA09 /* AlphabetScrubberSpike.swift */,
+				A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */,
 				F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */,
 				62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */,
 				E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */,
@@ -1103,7 +1103,7 @@
 			files = (
 				D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */,
 				2249B0A6466ACB02E03C2E41 /* AirPadApp.swift in Sources */,
-				B5CD7B271CCE42EB8336C61A /* AlphabetScrubberSpike.swift in Sources */,
+				4B9C908546B44C7D1416ADAB /* AlphabetScrubber.swift in Sources */,
 				D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */,
 				C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */,
 				3687E0F23E8567FA598FD175 /* AppearancePalette.swift in Sources */,

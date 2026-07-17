@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Spike — vertical fast-scroll rail for sorted grids.
+/// Vertical fast-scroll rail for sorted grids.
 /// Two flavors via `ScrubMode`:
 ///   - `.discrete` (alphabetical): one labelled row per first-letter
 ///     bucket; tap-region maps finger-Y to the nearest bucket.
@@ -8,8 +8,8 @@ import SwiftUI
 ///     finger-Y is lerped between newest and oldest dates, drag
 ///     velocity picks day/week/month/year resolution, and the bloom
 ///     shows the human-readable snapped date.
-/// Throwaway. Static factories build modes from a node list.
-struct ScrubberSpike: View {
+/// Static factories build modes from a node list.
+struct AlphabetScrubber: View {
     let mode: ScrubMode
     let scrollTo: (String) -> Void
     /// Fires on the FIRST onChanged of each gesture (the scrub-begin moment).
@@ -321,7 +321,7 @@ private enum ScrubResolution {
 
 // MARK: - Mode factories
 
-extension ScrubberSpike {
+extension AlphabetScrubber {
     /// Distinct first-letter buckets, in the order they appear in the
     /// already-alphabetically-sorted node list. Non-letter first chars
     /// bucket under "#".

@@ -20,6 +20,7 @@ struct NodeGridView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var zoomNamespace
 
     var scope: CanvasScope = .corpus
@@ -100,7 +101,7 @@ struct NodeGridView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack(alignment: .bottomTrailing) {
-                Color.black.ignoresSafeArea()
+                AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
                 BackgroundGridView()
                     .ignoresSafeArea()
                     .allowsHitTesting(false)

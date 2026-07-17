@@ -22,6 +22,7 @@ struct CoverFlowView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var zoomNamespace
 
     var scope: CanvasScope = .corpus
@@ -78,7 +79,7 @@ struct CoverFlowView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             ZStack {
-                Color.black.ignoresSafeArea()
+                AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
                 BackgroundGridView()
                     .ignoresSafeArea()
                     .allowsHitTesting(false)

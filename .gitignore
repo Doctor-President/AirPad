@@ -27,6 +27,12 @@ corpus_index.pre-*.json
 .build/
 Package.resolved
 
+# Python bytecode (scripts/ helpers)
+scripts/__pycache__/
+
+# Local experiment spikes — not part of the shipping app
+spikes/
+
 # TestFlight / App Store Connect secrets — NEVER commit
 *.p8
 .testflight.env

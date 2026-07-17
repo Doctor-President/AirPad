@@ -87,11 +87,15 @@ struct CanvasChrome: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.black)
+                // ws-dark-light-mode item 2 — capture "+". Dark byte-identical
+                // (onInk #000000 glyph on ink #FFFFFF circle == the old
+                // .black-on-.white); light = a cream glyph cut out of a dark
+                // ink circle so it reads on cream. T art-directs (surface 6).
+                .foregroundStyle(AppearancePalette.onInk)
                 .frame(width: 60, height: 60)
-                .background(Color.white)
+                .background(AppearancePalette.ink)
                 .clipShape(Circle())
-                .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                .shadow(color: AppearancePalette.panelShadow, radius: 12, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -392,7 +396,10 @@ struct CanvasChrome: View {
                 } label: {
                     Image(systemName: "sun.max")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
+                        // ws-dark-light-mode item 2 — DEBUG trigger stays reachable
+                        // on cream so T can open the tuner in light mode. ink @0.45
+                        // (dark #FFFFFF == the old .white@0.45).
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -433,7 +440,8 @@ struct CanvasChrome: View {
                 } label: {
                     Image(systemName: "map")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
+                        // ws-dark-light-mode item 2 — DEBUG trigger, ink @0.45 (dark == .white@0.45).
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -457,7 +465,9 @@ private struct DashboardBackButton: View {
         Button(action: action) {
             Image(systemName: "chevron.left")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                // ws-dark-light-mode item 2 — dark #FFFFFF == .white (identical);
+                // light = ink blue-black so it reads on the adaptive chromeSurface.
+                .foregroundStyle(AppearancePalette.ink)
                 .frame(width: 48, height: 48)
                 .contentShape(Circle())
                 .chromeSurface(Circle())
@@ -500,7 +510,8 @@ private struct ChromeBar: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: weightSize, weight: .semibold))
-                .foregroundStyle(.white)
+                // ws-dark-light-mode item 2 — ink (dark #FFFFFF == .white).
+                .foregroundStyle(AppearancePalette.ink)
                 .frame(width: 48, height: 48)
                 .contentShape(Rectangle())
         }
@@ -583,7 +594,8 @@ private struct ViewPill: View {
                     .font(.system(size: 10, weight: .bold))
                     .opacity(0.6)
             }
-            .foregroundStyle(.white)
+            // ws-dark-light-mode item 2 — the "Map"/view pill. ink (dark #FFFFFF == .white).
+            .foregroundStyle(AppearancePalette.ink)
             .frame(height: 36)
             .padding(.horizontal, 14)
             .contentShape(Capsule())
@@ -632,7 +644,8 @@ private struct SortMenu: View {
         } label: {
             Image(systemName: state.sortOrder.icon)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white)
+                // ws-dark-light-mode item 2 — sort trigger. ink (dark #FFFFFF == .white).
+                .foregroundStyle(AppearancePalette.ink)
                 .frame(height: 40)
                 .padding(.horizontal, 14)
                 .contentShape(Capsule())

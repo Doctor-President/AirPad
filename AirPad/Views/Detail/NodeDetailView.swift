@@ -465,18 +465,11 @@ struct NodeDetailView: View {
                             // doesn't also show as a standalone gallery card.
                             EmptyView()
                         } else {
-                        // 1pt hairline as a bottom overlay on every row
-                        // except the last so the gap between entries
-                        // reads as a divider without adding layout
-                        // height. The fold boundary is marked by an
-                        // in-flow labeled divider rendered conditionally
-                        // after the last above-fold payload entry (see
-                        // `FoldDivider` below). The divider is
-                        // suppressed during reorder so the list stays
-                        // uniform; its appear/disappear is animated so
-                        // the reflow doesn't snap. Single ForEach is
-                        // preserved — the divider is a conditional
-                        // adornment at the boundary, not a split.
+                        // 1pt hairline as a bottom overlay on every row except
+                        // the last so the gap between entries reads as a divider
+                        // without adding layout height. (The fold-boundary
+                        // divider was removed — fold is AUTO by default now; the
+                        // per-entry ••• still authors card visibility.)
                         EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot,
                                   onBacklink: { backlinkSource = BacklinkSource(id: item.id) })
                             .id(item.id)
@@ -488,18 +481,10 @@ struct NodeDetailView: View {
                                         .allowsHitTesting(false)
                                 }
                             }
-
-                        if !reorderController.isReorderActive
-                            && node.effectiveFoldIndex > atomicCount
-                            && rawIndex == node.effectiveFoldIndex - 1 {
-                            FoldDivider()
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
                         }
                     }
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
-                .animation(.easeInOut(duration: 0.22), value: node.foldIndex)
 
                 // Backlinks v1 — Related Nodes (user channel). Renders nothing
                 // when the node has no connections. System-suggestion channel is
@@ -2531,40 +2516,6 @@ private struct HeroPickerCell: View {
         }.value
         guard let decoded else { return }
         image = decoded
-    }
-}
-
-// MARK: - Fold divider (Stage 4.8)
-
-/// In-flow labeled rule rendered after the last above-fold entry. Replaces
-/// the earlier "CARD VIEW" pill: a horizontal hairline broken in the
-/// middle by a quiet caption ("↑ card-visible entries ↑") that points
-/// upward at the entries promoted to the canvas card view. Quiet,
-/// de-emphasized — its job is to read as a soft boundary marker, not a
-/// header. Hex literals throughout.
-///
-/// This view appears only when `foldIndex > 0` and is suppressed during
-/// reorder (handled by the call site so entry list stays uniform and
-/// `slotPitch` (92) holds). The call site wraps the transition in
-/// `.animation(:value: isReorderActive)` so the reflow when the divider
-/// pops in/out animates smoothly instead of snapping.
-private struct FoldDivider: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            Rectangle()
-                .fill(AppearancePalette.ink.opacity(0.14))
-                .frame(height: 1)
-            Text("↑ card-visible entries ↑")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-                .fixedSize()
-            Rectangle()
-                .fill(AppearancePalette.ink.opacity(0.14))
-                .frame(height: 1)
-        }
-        .padding(.vertical, 4)
-        .allowsHitTesting(false)
     }
 }
 

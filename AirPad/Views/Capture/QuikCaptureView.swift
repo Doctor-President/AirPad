@@ -13,7 +13,7 @@ import ImageIO
 /// and its helpers; only shared LEAF components (NodeGradientLayer,
 /// EntryCard, PastePadView, the capture sheets, etc.) are reused. The
 /// private-to-NodeDetailView helpers this presentation needs
-/// (HeroImageBanner, AttributesSection, FoldDivider, the chips) are copied
+/// (HeroImageBanner, AttributesSection, the chips) are copied
 /// in below as file-private structs.
 struct QuikCaptureView: View {
 
@@ -302,18 +302,10 @@ struct QuikCaptureView: View {
                                         .allowsHitTesting(false)
                                 }
                             }
-
-                        if !reorderController.isReorderActive
-                            && node.effectiveFoldIndex > atomicCount
-                            && rawIndex == node.effectiveFoldIndex - 1 {
-                            QuikCaptureFoldDivider()
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                        }
                         }
                     }
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
-                .animation(.easeInOut(duration: 0.22), value: node.foldIndex)
 
                 // Paste Pad wired to per-type routing.
                 PastePadView(onPaste: handlePastedContent)
@@ -937,26 +929,6 @@ private struct QuikCaptureTagChip: View {
 }
 
 // MARK: - Fold divider (copied from NodeDetailView; private there)
-
-private struct QuikCaptureFoldDivider: View {
-    var body: some View {
-        HStack(spacing: 10) {
-            Rectangle()
-                .fill(Color(hexString: "FFFFFF").opacity(0.14))
-                .frame(height: 1)
-            Text("↑ card-visible entries ↑")
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.45))
-                .fixedSize()
-            Rectangle()
-                .fill(Color(hexString: "FFFFFF").opacity(0.14))
-                .frame(height: 1)
-        }
-        .padding(.vertical, 4)
-        .allowsHitTesting(false)
-    }
-}
 
 // MARK: - Attributes section (copied from NodeDetailView; private there)
 

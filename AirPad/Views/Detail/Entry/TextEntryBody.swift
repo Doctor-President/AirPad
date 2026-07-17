@@ -79,7 +79,7 @@ struct TextEntryBody: View {
         // than the ground so it lifts by luminance (transmissive). The note
         // TEXT stays on NoteTypography (adaptive, preserved) — only the panel
         // surface is themed here.
-        .background(DetailPalette.bgElevated)
+        .background(AppearancePalette.bgElevated)
         .clipShape(RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous))
         // Top-edge rim light: brightest along the upper edge, fading down the
         // sides, so the panel reads as catching ambient light from above. On a
@@ -99,7 +99,7 @@ struct TextEntryBody: View {
         // ws-dark-light-mode — shadow strength is themed: dark black@0.35
         // (identical), light a soft diffused shadow (no hard edge — "cloud
         // cover is a reprieve"). Radius/offset unchanged.
-        .shadow(color: DetailPalette.panelShadow,
+        .shadow(color: AppearancePalette.panelShadow,
                 radius: Panel.shadowRadius, x: 0, y: Panel.shadowY)
         // Insert-image affordance: a small photos picker in the panel's top-right
         // (empty corner on a left-aligned note). Picking inserts the image inline

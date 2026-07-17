@@ -217,6 +217,8 @@ final class EntryVisualSettings {
     var interCardSpacing: CGFloat { didSet { persistShared() } }
     var titleRowHeight: CGFloat { didSet { persistShared() } }
     var heroMaxHeight: CGFloat { didSet { persistShared() } }
+    var cardVerticalPadding: CGFloat { didSet { persistShared() } }
+    var noteVerticalPadding: CGFloat { didSet { persistShared() } }
     var stroke: StrokeSettings { didSet { persistStroke() } }
     /// Floating summon button visibility. Toggled off via the hide-eye
     /// inside the panel; only restored by uninstall/reinstall.
@@ -267,6 +269,17 @@ final class EntryVisualSettings {
     /// fill to the cap, so lowering it is the lever for "the hero is too large."
     static let defaultHeroMaxHeight: CGFloat = 420
     static let heroMaxHeightRange: ClosedRange<CGFloat> = 240...560
+    /// EntryCard title-zone vertical padding (`EntryCard:184`) — TYPE-CONDITIONAL
+    /// today: 4pt for `.text` (notes), 12pt for every other entry — which is why
+    /// Gallery breathes more than Bio, and why the title-row-height slider
+    /// couldn't reach it (that dial drives EntryTitleRow's row height, a
+    /// different lever). TWO dials so the panel touches BOTH branches. Defaults
+    /// == the current literals. The 4 was deliberate (T's capture-area feel);
+    /// whether the two should rhyme is T's call on the dial, NOT unified here.
+    static let defaultCardVerticalPadding: CGFloat = 12
+    static let defaultNoteVerticalPadding: CGFloat = 4
+    static let cardVerticalPaddingRange: ClosedRange<CGFloat> = 4...24
+    static let noteVerticalPaddingRange: ClosedRange<CGFloat> = 0...24
 
     // MARK: - Persistence
 
@@ -276,6 +289,8 @@ final class EntryVisualSettings {
         static let interCardSpacing = "entryVisualDevPanel.interCardSpacing"
         static let titleRowHeight   = "entryVisualDevPanel.titleRowHeight"
         static let heroMaxHeight    = "entryVisualDevPanel.heroMaxHeight"
+        static let cardVerticalPadding = "entryVisualDevPanel.cardVerticalPadding"
+        static let noteVerticalPadding = "entryVisualDevPanel.noteVerticalPadding"
         static let buttonVisible    = "entryVisualDevPanel.buttonVisible"
         static let stroke           = "entryVisualDevPanel.stroke"
         static func role(_ r: Role) -> String { "entryVisualDevPanel.role.\(r.rawValue)" }
@@ -305,6 +320,13 @@ final class EntryVisualSettings {
 
         let storedHeroMax = d.double(forKey: Keys.heroMaxHeight)
         heroMaxHeight = storedHeroMax > 0 ? CGFloat(storedHeroMax) : Self.defaultHeroMaxHeight
+
+        // Object-presence (not `> 0`) so a dialed 0 persists — noteVerticalPadding's
+        // range includes 0.
+        cardVerticalPadding = d.object(forKey: Keys.cardVerticalPadding) != nil
+            ? CGFloat(d.double(forKey: Keys.cardVerticalPadding)) : Self.defaultCardVerticalPadding
+        noteVerticalPadding = d.object(forKey: Keys.noteVerticalPadding) != nil
+            ? CGFloat(d.double(forKey: Keys.noteVerticalPadding)) : Self.defaultNoteVerticalPadding
 
         // Default visible. Object-typed read so the absence of the key
         // (first launch) defaults to `true` rather than `false`.
@@ -336,6 +358,8 @@ final class EntryVisualSettings {
         interCardSpacing = Self.defaultInterCardSpacing
         titleRowHeight   = Self.defaultTitleRowHeight
         heroMaxHeight    = Self.defaultHeroMaxHeight
+        cardVerticalPadding = Self.defaultCardVerticalPadding
+        noteVerticalPadding = Self.defaultNoteVerticalPadding
         buttonVisible    = false
         nodeTitle        = Role.nodeTitle.defaultSettings
         nodeSummary      = Role.nodeSummary.defaultSettings
@@ -361,6 +385,8 @@ final class EntryVisualSettings {
         d.set(Double(interCardSpacing),  forKey: Keys.interCardSpacing)
         d.set(Double(titleRowHeight),    forKey: Keys.titleRowHeight)
         d.set(Double(heroMaxHeight),     forKey: Keys.heroMaxHeight)
+        d.set(Double(cardVerticalPadding), forKey: Keys.cardVerticalPadding)
+        d.set(Double(noteVerticalPadding), forKey: Keys.noteVerticalPadding)
         #endif
     }
 

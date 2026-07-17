@@ -77,6 +77,8 @@ private struct EntryVisualDevPanelSheet: View {
                     Divider().background(Color.white.opacity(0.12))
                     heroMaxHeightSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
+                    titleZonePaddingSection(settings: settings)
+                    Divider().background(Color.white.opacity(0.12))
                     strokeSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
                     hideEyeRow
@@ -330,6 +332,44 @@ private struct EntryVisualDevPanelSheet: View {
             in: Double(EntryVisualSettings.heroMaxHeightRange.lowerBound)
                 ... Double(EntryVisualSettings.heroMaxHeightRange.upperBound),
             step: 10
+        )
+        .tint(.white.opacity(0.6))
+    }
+
+    /// Detail-View pass — EntryCard title-zone vertical padding, BOTH type
+    /// branches (`EntryCard:184`): card default 12, note default 4. Two dials
+    /// because the padding is type-conditional and no single slider reached it
+    /// (the title-row-height dial drives a different lever). T decides on the
+    /// dial whether the two should rhyme; not unified here.
+    @ViewBuilder
+    private func titleZonePaddingSection(settings: EntryVisualSettings) -> some View {
+        sectionRowHeader(
+            "Title v-padding · card",
+            value: String(format: "%.0fpt", settings.cardVerticalPadding)
+        )
+        Slider(
+            value: Binding(
+                get: { Double(settings.cardVerticalPadding) },
+                set: { settings.cardVerticalPadding = CGFloat($0.rounded()) }
+            ),
+            in: Double(EntryVisualSettings.cardVerticalPaddingRange.lowerBound)
+                ... Double(EntryVisualSettings.cardVerticalPaddingRange.upperBound),
+            step: 1
+        )
+        .tint(.white.opacity(0.6))
+
+        sectionRowHeader(
+            "Title v-padding · note",
+            value: String(format: "%.0fpt", settings.noteVerticalPadding)
+        )
+        Slider(
+            value: Binding(
+                get: { Double(settings.noteVerticalPadding) },
+                set: { settings.noteVerticalPadding = CGFloat($0.rounded()) }
+            ),
+            in: Double(EntryVisualSettings.noteVerticalPaddingRange.lowerBound)
+                ... Double(EntryVisualSettings.noteVerticalPaddingRange.upperBound),
+            step: 1
         )
         .tint(.white.opacity(0.6))
     }

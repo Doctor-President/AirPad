@@ -39,9 +39,17 @@ struct ContentView: View {
             // inside the canvas's NavigationStack), and QuikCapture.
             // Self-deletes in commit 3 of Stage 4.4 along with
             // `EntryVisualDevPanel` and `EntryVisualSettings`.
+            //
+            // DEBUG-only: in Release the panel never instantiates, so it stops
+            // shipping — its 25 white-on-parchment sites leave the Release light
+            // surface (no Cucumber Water sweep needed), and no user can dial the
+            // Detail View. The UserDefaults READ path is separately gated in
+            // EntryVisualSettings so Release renders the in-code defaults.
+            #if DEBUG
             .overlay(alignment: .topTrailing) {
                 EntryVisualDevPanelHost()
             }
+            #endif
         }
         // Chats list sheet — shared by the Dashboard header bubble and
         // the Librarian "Chats" tile via `router.showChatsList`. Mounted

@@ -897,6 +897,7 @@ final class CorpusPhysicsScene: SKScene {
                                             dotSizePx: MapTuning.dotSizePx,
                                             dotOpacity: MapTuning.dotOpacity,
                                             period: MapTuning.dotPeriod,
+                                            ratio: MapTuning.dotRatio,
                                             lodLevels: Float(MapTuning.dotLevels))
             // ws-dark-light-mode item 3 — push the per-theme dot color. Default
             // white in dark = byte-identical; light = a cool graphite so the
@@ -1014,6 +1015,12 @@ final class CorpusPhysicsScene: SKScene {
             // Phase 1: Compute continuous-function targets for all nodes
             var targetPositions: [String: CGPoint] = [:]
             var targetScales: [String: CGFloat] = [:]
+            // Live node-size scale (Map tuner). Read ONCE per frame — in Release
+            // MapTuning.isOn is a compile-time false, so this is the shipped 1.0
+            // with zero UserDefaults access. Folded into targetScale below so it
+            // rides the existing gravity/focal lerp: live, no re-layout,
+            // positions untouched (nodes grow/shrink about their own centre).
+            let nodeSizeScale = MapTuning.nodeSizeScale
 
             for (nodeID, _) in nodeSprites {
                 guard let restingPos = nodeRestingPositions[nodeID],
@@ -1062,7 +1069,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
 
                 targetPositions[nodeID] = targetPos
-                targetScales[nodeID] = targetScale
+                targetScales[nodeID] = targetScale * nodeSizeScale
             }
 
             // Phase 1.1 — Strand scale override. Strand members render at a
@@ -2792,6 +2799,48 @@ final class CorpusPhysicsScene: SKScene {
         }
         return CorpusPhysicsScene.mapLabelFont(size: size)
     }
+
+    #if DEBUG
+    // MARK: - Map tuner: live label re-raster + cost measurement
+
+    /// Re-rasterize EVERY node's title sprite with the current MapTuning font /
+    /// max-size. Called only when a label dial changes (debounced by the caller)
+    /// — never on the render hot path. Returns count + resident texture bytes +
+    /// elapsed, so the tuner can report the SDF-migration numbers.
+    @discardableResult
+    func reRasterizeLabels() -> (count: Int, bytes: Int, seconds: Double) {
+        let renderScale: CGFloat = 6.0
+        var count = 0, bytes = 0
+        let start = DispatchTime.now()
+        for (nodeID, shape) in nodeSprites {
+            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+                  let fullTitle = sprite.userData?["fullTitle"] as? String,
+                  let radius = nodeIntrinsicRadii[nodeID] else { continue }
+            let side = radius * 1.4
+            let titleFont = fittedTitleFont(fullTitle, boxWidth: side)
+            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
+            sprite.texture = rasterizeSquareText(title: fullTitle, summary: nil, side: side,
+                                                 titleFont: titleFont, summaryFont: titleFont,
+                                                 renderScale: renderScale, fillColor: fillColor)
+            sprite.size = CGSize(width: side, height: side)
+            count += 1
+            let px = Int((side * renderScale).rounded())
+            bytes += px * px * 4   // RGBA8
+        }
+        let seconds = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
+        return (count, bytes, seconds)
+    }
+
+    /// Logs the two numbers for the SDF-text decision: resident label-texture
+    /// memory + full re-raster time, measured on-device against the live corpus.
+    /// (Also refreshes every label to the current dials as a side effect.)
+    func measureLabelCost() {
+        let r = reRasterizeLabels()
+        let mb = Double(r.bytes) / 1_048_576
+        print(String(format: "[MapTuner] labels=%d · resident≈%.1f MB (6× oversample) · full re-raster=%.1f ms (%.2f ms/label)",
+                     r.count, mb, r.seconds * 1000, r.count > 0 ? r.seconds * 1000 / Double(r.count) : 0))
+    }
+    #endif
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
         // Rasterize in the node's ACTUAL display box (radius × 1.4), not a fixed

@@ -215,6 +215,8 @@ final class EntryVisualSettings {
     var bodyTreatment: BodyTreatment { didSet { persistShared() } }
     var cornerRadius: CGFloat { didSet { persistShared() } }
     var interCardSpacing: CGFloat { didSet { persistShared() } }
+    var titleRowHeight: CGFloat { didSet { persistShared() } }
+    var heroMaxHeight: CGFloat { didSet { persistShared() } }
     var stroke: StrokeSettings { didSet { persistStroke() } }
     /// Floating summon button visibility. Toggled off via the hide-eye
     /// inside the panel; only restored by uninstall/reinstall.
@@ -254,12 +256,26 @@ final class EntryVisualSettings {
     static let cornerRadiusRange: ClosedRange<CGFloat> = 12...32
     static let interCardSpacingRange: ClosedRange<CGFloat> = 4...32
 
+    // Detail-View pass (2026-07) — title-zone + hero levers. Defaults == the
+    // current hardcoded literals, so each dial is a no-op until T moves it.
+    /// EntryTitleRow's fixed non-note row height (`:632`/`:682`) — the dominant
+    /// title-zone-height lever per that row's own comment. Notes keep 34pt.
+    static let defaultTitleRowHeight: CGFloat = 44
+    static let titleRowHeightRange: ClosedRange<CGFloat> = 28...56
+    /// HeroImageBanner visible-height CAP (`:2721`, was a hardcoded 420). The
+    /// image hero cover-crops to `max(200, min(cap, width/aspect))`; portraits
+    /// fill to the cap, so lowering it is the lever for "the hero is too large."
+    static let defaultHeroMaxHeight: CGFloat = 420
+    static let heroMaxHeightRange: ClosedRange<CGFloat> = 240...560
+
     // MARK: - Persistence
 
     private enum Keys {
         static let bodyTreatment    = "entryVisualDevPanel.bodyTreatment"
         static let cornerRadius     = "entryVisualDevPanel.cornerRadius"
         static let interCardSpacing = "entryVisualDevPanel.interCardSpacing"
+        static let titleRowHeight   = "entryVisualDevPanel.titleRowHeight"
+        static let heroMaxHeight    = "entryVisualDevPanel.heroMaxHeight"
         static let buttonVisible    = "entryVisualDevPanel.buttonVisible"
         static let stroke           = "entryVisualDevPanel.stroke"
         static func role(_ r: Role) -> String { "entryVisualDevPanel.role.\(r.rawValue)" }
@@ -283,6 +299,12 @@ final class EntryVisualSettings {
 
         let storedSpacing = d.double(forKey: Keys.interCardSpacing)
         interCardSpacing = storedSpacing > 0 ? CGFloat(storedSpacing) : Self.defaultInterCardSpacing
+
+        let storedTitleRow = d.double(forKey: Keys.titleRowHeight)
+        titleRowHeight = storedTitleRow > 0 ? CGFloat(storedTitleRow) : Self.defaultTitleRowHeight
+
+        let storedHeroMax = d.double(forKey: Keys.heroMaxHeight)
+        heroMaxHeight = storedHeroMax > 0 ? CGFloat(storedHeroMax) : Self.defaultHeroMaxHeight
 
         // Default visible. Object-typed read so the absence of the key
         // (first launch) defaults to `true` rather than `false`.
@@ -312,6 +334,8 @@ final class EntryVisualSettings {
         bodyTreatment    = Self.defaultBodyTreatment
         cornerRadius     = Self.defaultCornerRadius
         interCardSpacing = Self.defaultInterCardSpacing
+        titleRowHeight   = Self.defaultTitleRowHeight
+        heroMaxHeight    = Self.defaultHeroMaxHeight
         buttonVisible    = false
         nodeTitle        = Role.nodeTitle.defaultSettings
         nodeSummary      = Role.nodeSummary.defaultSettings
@@ -335,6 +359,8 @@ final class EntryVisualSettings {
         d.set(bodyTreatment.rawValue,    forKey: Keys.bodyTreatment)
         d.set(Double(cornerRadius),      forKey: Keys.cornerRadius)
         d.set(Double(interCardSpacing),  forKey: Keys.interCardSpacing)
+        d.set(Double(titleRowHeight),    forKey: Keys.titleRowHeight)
+        d.set(Double(heroMaxHeight),     forKey: Keys.heroMaxHeight)
         #endif
     }
 

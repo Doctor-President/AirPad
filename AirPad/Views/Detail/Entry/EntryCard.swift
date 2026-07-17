@@ -615,6 +615,10 @@ private struct EntryTitleRow: View {
     /// slop for a tighter capture area. Row grows past this if the text needs it.
     private static let noteRowHeight: CGFloat = 34
 
+    /// Detail-View pass — non-note title-row height, dialed via the dev panel
+    /// (default 44 = the prior literal). Notes keep the tighter 34pt row.
+    @State private var visualSettings = EntryVisualSettings.shared
+
     var body: some View {
         HStack(spacing: 8) {
             // Chevron-only Button with a generous 44pt tap target. Expanding
@@ -629,7 +633,7 @@ private struct EntryTitleRow: View {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.6))
-                    .frame(width: 44, height: isNote ? Self.noteRowHeight : 44)
+                    .frame(width: 44, height: isNote ? Self.noteRowHeight : visualSettings.titleRowHeight)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -679,7 +683,7 @@ private struct EntryTitleRow: View {
                     .frame(width: 32, height: 32)
             }
         }
-        .frame(minHeight: isNote ? Self.noteRowHeight : 44)
+        .frame(minHeight: isNote ? Self.noteRowHeight : visualSettings.titleRowHeight)
     }
 
     /// Muted relative timestamp shown under the display name. Sized one step

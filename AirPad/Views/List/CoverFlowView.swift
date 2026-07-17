@@ -267,7 +267,7 @@ struct CoverFlowView: View {
                 } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -279,7 +279,7 @@ struct CoverFlowView: View {
                 } label: {
                     Image(systemName: "textformat.size")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }

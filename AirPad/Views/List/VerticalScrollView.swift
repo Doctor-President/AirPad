@@ -156,7 +156,7 @@ struct VerticalScrollView: View {
                 } label: {
                     Image(systemName: "textformat.size")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         .frame(width: 28, height: 28)
                         .contentShape(Rectangle())
                 }
@@ -331,12 +331,12 @@ private struct NodeCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(node.title.isEmpty ? "Untitled" : node.title)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
 
                 Text(node.summary.isEmpty ? "—" : node.summary)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .lineLimit(2)
 
                 Spacer(minLength: 0)
@@ -346,7 +346,7 @@ private struct NodeCard: View {
                     Spacer()
                     Text(relativeTimestamp(node.createdAt))
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.38))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.38))
                 }
             }
             .padding(.horizontal, 16)
@@ -429,7 +429,7 @@ private struct NodeCardItemCounts: View {
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
             .font(.caption)
-            .foregroundStyle(.white.opacity(0.48))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.48))
     }
 }
 

@@ -328,16 +328,11 @@ final class CorpusPhysicsScene: SKScene {
         UIFont.systemFont(ofSize: size, weight: .semibold, width: .condensed)
     }
 
-    /// ws-dark-light-mode — resting-label font, dialable via MapTuning. Default
-    /// is `.condensed` (== `condensedLabelFont`, byte-identical when the tuner
-    /// is off). Diagnosis: the pre-`1fc49b8` "denser, better-fitting" labels T
-    /// remembers were Source Serif 4 Bold (`.serif`); `.sans` is non-condensed SF.
+    /// Resting-label font — baked to non-condensed SF semibold (`.sans`), T's
+    /// device-verified pick from the Map tuner (reverses the old SF Condensed
+    /// default). The tuner's condensed / serif options are gone with it.
     static func mapLabelFont(size: CGFloat) -> UIFont {
-        switch MapTuning.labelFont {
-        case .condensed: return condensedLabelFont(size: size)
-        case .sans:      return UIFont.systemFont(ofSize: size, weight: .semibold)
-        case .serif:     return serifFont(size: size, weight: .bold)
-        }
+        UIFont.systemFont(ofSize: size, weight: .semibold)
     }
 
     /// Source Serif 4 — the app's editorial serif (note editor default, SB121).
@@ -841,7 +836,12 @@ final class CorpusPhysicsScene: SKScene {
         // reconstructs world coordinates from camera uniforms; pan and zoom
         // are entirely handled by the shader's coordinate math.
         let viewportSize = view.bounds.size
-        let grid = BackgroundGridNode.makeShape(viewportSize: viewportSize, fillTexture: whiteUVTexture)
+        // Map dot geometry, baked (bake-and-delete of the Map tuner): 0.5px dots
+        // on an 83pt period. dotOpacity here is the dark seed (0.18) — the
+        // per-frame block below drives the real per-mode value (0.18 dark ·
+        // 0.47 light) + dot color from the view's trait.
+        let grid = BackgroundGridNode.makeShape(viewportSize: viewportSize, fillTexture: whiteUVTexture,
+                                                dotSizePx: 0.5, dotOpacity: 0.18, period: 83)
         cameraNode.addChild(grid)
         gridNode = grid
 
@@ -891,21 +891,15 @@ final class CorpusPhysicsScene: SKScene {
             BackgroundGridNode.update(grid,
                                       cameraPosition: cameraNode.position,
                                       cameraScale: cameraNode.xScale)
-            // ws-dark-light-mode — push the Map dot dials live (no-op vs the
-            // makeShape defaults when the tuner is off; list grids never get this).
-            BackgroundGridNode.setDotParams(grid,
-                                            dotSizePx: MapTuning.dotSizePx,
-                                            dotOpacity: MapTuning.dotOpacity,
-                                            period: MapTuning.dotPeriod,
-                                            ratio: MapTuning.dotRatio,
-                                            lodLevels: Float(MapTuning.dotLevels))
-            // ws-dark-light-mode item 3 — push the per-theme dot color. Default
-            // white in dark = byte-identical; light = a cool graphite so the
-            // dots read on cream. Resolved from the view's trait so it tracks
-            // the same appearance the SwiftUI canvas background flips on.
+            // ws-dark-light-mode — push the per-theme dot color + opacity. Dark:
+            // white dots @0.18. Light: a cool graphite @0.47 so the dots read on
+            // cream. Resolved from the view's trait so it tracks the same
+            // appearance the SwiftUI canvas background flips on. (Dot geometry is
+            // baked at construction; the tuner is gone.)
             let dotDark = view?.traitCollection.userInterfaceStyle != .light
             let dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
-            BackgroundGridNode.setDotColor(grid, r: dot.r, g: dot.g, b: dot.b)
+            BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b,
+                                                opacity: AppearancePalette.mapGridDotOpacity(dark: dotDark))
         }
 
 
@@ -1015,12 +1009,6 @@ final class CorpusPhysicsScene: SKScene {
             // Phase 1: Compute continuous-function targets for all nodes
             var targetPositions: [String: CGPoint] = [:]
             var targetScales: [String: CGFloat] = [:]
-            // Live node-size scale (Map tuner). Read ONCE per frame — in Release
-            // MapTuning.isOn is a compile-time false, so this is the shipped 1.0
-            // with zero UserDefaults access. Folded into targetScale below so it
-            // rides the existing gravity/focal lerp: live, no re-layout,
-            // positions untouched (nodes grow/shrink about their own centre).
-            let nodeSizeScale = MapTuning.nodeSizeScale
 
             for (nodeID, _) in nodeSprites {
                 guard let restingPos = nodeRestingPositions[nodeID],
@@ -1069,7 +1057,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
 
                 targetPositions[nodeID] = targetPos
-                targetScales[nodeID] = targetScale * nodeSizeScale
+                targetScales[nodeID] = targetScale
             }
 
             // Phase 1.1 — Strand scale override. Strand members render at a
@@ -2780,13 +2768,13 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    /// Resting-label font — condensed SF (NOT the serif; see `condensedLabelFont`),
-    /// scaled to the node's box (≈ side/6, floored 8pt, capped 18pt), then
+    /// Resting-label font — non-condensed SF semibold (see `mapLabelFont`),
+    /// scaled to the node's box (≈ side/6, floored 8pt, capped 28pt), then
     /// FIT-THEN-SHRINK: step the size down until the whole title fits the two-line
     /// box, so truncation only kicks in when even the 8pt floor won't hold it.
     private func fittedTitleFont(_ text: String, boxWidth: CGFloat) -> UIFont {
         let floorSize: CGFloat = 8
-        let maxSize = min(MapTuning.labelMaxSize, max(floorSize, boxWidth / 6))
+        let maxSize = min(28, max(floorSize, boxWidth / 6))
         var size = maxSize
         while size > floorSize {
             let f = CorpusPhysicsScene.mapLabelFont(size: size)
@@ -2799,48 +2787,6 @@ final class CorpusPhysicsScene: SKScene {
         }
         return CorpusPhysicsScene.mapLabelFont(size: size)
     }
-
-    #if DEBUG
-    // MARK: - Map tuner: live label re-raster + cost measurement
-
-    /// Re-rasterize EVERY node's title sprite with the current MapTuning font /
-    /// max-size. Called only when a label dial changes (debounced by the caller)
-    /// — never on the render hot path. Returns count + resident texture bytes +
-    /// elapsed, so the tuner can report the SDF-migration numbers.
-    @discardableResult
-    func reRasterizeLabels() -> (count: Int, bytes: Int, seconds: Double) {
-        let renderScale: CGFloat = 6.0
-        var count = 0, bytes = 0
-        let start = DispatchTime.now()
-        for (nodeID, shape) in nodeSprites {
-            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-                  let fullTitle = sprite.userData?["fullTitle"] as? String,
-                  let radius = nodeIntrinsicRadii[nodeID] else { continue }
-            let side = radius * 1.4
-            let titleFont = fittedTitleFont(fullTitle, boxWidth: side)
-            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            sprite.texture = rasterizeSquareText(title: fullTitle, summary: nil, side: side,
-                                                 titleFont: titleFont, summaryFont: titleFont,
-                                                 renderScale: renderScale, fillColor: fillColor)
-            sprite.size = CGSize(width: side, height: side)
-            count += 1
-            let px = Int((side * renderScale).rounded())
-            bytes += px * px * 4   // RGBA8
-        }
-        let seconds = Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
-        return (count, bytes, seconds)
-    }
-
-    /// Logs the two numbers for the SDF-text decision: resident label-texture
-    /// memory + full re-raster time, measured on-device against the live corpus.
-    /// (Also refreshes every label to the current dials as a side effect.)
-    func measureLabelCost() {
-        let r = reRasterizeLabels()
-        let mb = Double(r.bytes) / 1_048_576
-        print(String(format: "[MapTuner] labels=%d · resident≈%.1f MB (6× oversample) · full re-raster=%.1f ms (%.2f ms/label)",
-                     r.count, mb, r.seconds * 1000, r.count > 0 ? r.seconds * 1000 / Double(r.count) : 0))
-    }
-    #endif
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
         // Rasterize in the node's ACTUAL display box (radius × 1.4), not a fixed
@@ -2911,11 +2857,10 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func bubbleRadius(for node: Node) -> CGFloat {
-        // Base diameter 60pt (radius 30), +8pt diameter per additional item, max diameter 120pt
-        // ws-dark-light-mode — dialable via MapTuning (defaults 30/4/60 →
-        // byte-identical when the tuner is off); applies on the next layout.
-        let extra = CGFloat(max(0, node.items.count - 1)) * MapTuning.nodePerItem
-        return min(MapTuning.nodeBaseRadius + extra, MapTuning.nodeRadiusCap)
+        // Base diameter 60pt (radius 30), +8pt diameter per additional item (radius
+        // +4), max diameter 120pt (radius 60). Shipped values, baked (Map tuner gone).
+        let extra = CGFloat(max(0, node.items.count - 1)) * 4
+        return min(30 + extra, 60)
     }
 
     /// Hides the focal node's SpriteKit sprite so the SwiftUI gradient overlay in

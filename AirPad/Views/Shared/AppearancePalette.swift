@@ -116,4 +116,23 @@ enum AppearancePalette {
         let (r, g, b) = rgb(dark ? "FFFFFF" : "2E3A40")
         return (Float(r), Float(g), Float(b))
     }
+
+    /// Map dot-matrix dot OPACITY for the `BackgroundGridNode` shader
+    /// (`u_dot_opacity` — the peak dot alpha at xScale=1). Was a single shipped
+    /// constant (0.25); now per-mode, T-dialed: dark `0.18` (a quieter dot on
+    /// the near-black ground) / light `0.47` (dots need more presence to read
+    /// on cream). Pushed live from the Map's per-frame trait resolution
+    /// alongside `mapGridDotRGB`.
+    static func mapGridDotOpacity(dark: Bool) -> Float {
+        dark ? 0.18 : 0.47
+    }
+
+    /// The Map canvas background. Dark: `#111115` (T's dialed near-black — a
+    /// hair warmer/lighter than the old `#07070A` Void). Light: `#F4EFE3`, the
+    /// same parchment ground as the detail view (`bgBase`). Resolved by the
+    /// caller's `colorScheme`, so the SwiftUI fill recomputes on appearance flip.
+    static func mapBackground(dark: Bool) -> Color {
+        let (r, g, b) = rgb(dark ? "111115" : "F4EFE3")
+        return Color(red: Double(r), green: Double(g), blue: Double(b))
+    }
 }

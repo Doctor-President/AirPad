@@ -118,7 +118,6 @@
 		7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */; };
 		7F1400E0F8FC4DC57AFA78B0 /* Fraunces_72pt-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */; };
 		80929F37D80B349FBF52A58E /* NodeConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */; };
-		8141786254958D300F8B749E /* MapTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383DD2091673DA6F42724EEF /* MapTuning.swift */; };
 		82A241AC4B5BE28AC0C44FCE /* UMAPTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */; };
 		82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */; };
 		84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F8312336CC2A7C1C2763EF /* SelectionService.swift */; };
@@ -308,7 +307,6 @@
 		36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageView.swift; sourceTree = "<group>"; };
 		376265F2CCAF46EDE2216E54 /* NodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeBlock.swift; sourceTree = "<group>"; };
 		37F96F01949F13EC35528775 /* CardTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardTuning.swift; sourceTree = "<group>"; };
-		383DD2091673DA6F42724EEF /* MapTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapTuning.swift; sourceTree = "<group>"; };
 		38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusIndex.swift; sourceTree = "<group>"; };
 		38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NeighborhoodService.swift; sourceTree = "<group>"; };
 		39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipboardContentRouter.swift; sourceTree = "<group>"; };
@@ -526,7 +524,6 @@
 				1652D343DDB50759748BDE8F /* CorpusPhysicsScene.swift */,
 				D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */,
 				F009B8D59EF84BA40BB5B4A6 /* EmptyStateOverlay.swift */,
-				383DD2091673DA6F42724EEF /* MapTuning.swift */,
 				03E923FC9841272766621A1B /* ModelProcessingIndicator.swift */,
 			);
 			path = Canvas;
@@ -1206,7 +1203,6 @@
 				505E0F8BA9D6E93F476B35C0 /* LinkViewModeToggle.swift in Sources */,
 				A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */,
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
-				8141786254958D300F8B749E /* MapTuning.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,
 				0D0F9BF7BDE19BC6BF4E9A29 /* MarkdownBlockParserSelfTest.swift in Sources */,
 				B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */,

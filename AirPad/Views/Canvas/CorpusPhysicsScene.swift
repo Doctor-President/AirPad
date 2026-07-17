@@ -898,6 +898,13 @@ final class CorpusPhysicsScene: SKScene {
                                             dotOpacity: MapTuning.dotOpacity,
                                             period: MapTuning.dotPeriod,
                                             lodLevels: Float(MapTuning.dotLevels))
+            // ws-dark-light-mode item 3 — push the per-theme dot color. Default
+            // white in dark = byte-identical; light = a cool graphite so the
+            // dots read on cream. Resolved from the view's trait so it tracks
+            // the same appearance the SwiftUI canvas background flips on.
+            let dotDark = view?.traitCollection.userInterfaceStyle != .light
+            let dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
+            BackgroundGridNode.setDotColor(grid, r: dot.r, g: dot.g, b: dot.b)
         }
 
 

@@ -79,6 +79,17 @@ enum BackgroundGridNode {
         }
     }
 
+    /// Push the per-theme dot color into an existing grid's shader (live theme
+    /// flip). Default white is baked into the makeShape uniforms, so list-view
+    /// grids that never call this stay byte-identical; only the Map pushes a
+    /// light-mode tint (ws-dark-light-mode item 3).
+    static func setDotColor(_ shape: SKShapeNode, r: Float, g: Float, b: Float) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms where u.name == "u_dot_color" {
+            u.vectorFloat3Value = vector_float3(r, g, b)
+        }
+    }
+
     /// Resize when the viewport changes (e.g. orientation).
     static func resize(_ shape: SKShapeNode, to size: CGSize) {
         let half = CGSize(width: size.width / 2, height: size.height / 2)
@@ -224,8 +235,11 @@ enum BackgroundGridNode {
             float coverage = max(c1, max(c0g, c2g));
             float alpha    = clamp(coverage * baseOpac, 0.0, 1.0);
 
-            // Premultiplied output (white dots).
-            gl_FragColor = vec4(alpha, alpha, alpha, alpha);
+            // Premultiplied output. u_dot_color is the per-theme dot tint
+            // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
+            // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
+            // graphite so the dots read on cream (ws-dark-light-mode item 3).
+            gl_FragColor = vec4(u_dot_color * alpha, alpha);
         }
         """
 
@@ -238,7 +252,8 @@ enum BackgroundGridNode {
             SKUniform(name: "u_dot_base_px", float: dotSizePx),
             SKUniform(name: "u_dot_opacity", float: dotOpacity),
             SKUniform(name: "u_period1",     float: period),
-            SKUniform(name: "u_lod_levels",  float: lodLevels)
+            SKUniform(name: "u_lod_levels",  float: lodLevels),
+            SKUniform(name: "u_dot_color",   vectorFloat3: vector_float3(1, 1, 1))
         ]
         return shader
     }

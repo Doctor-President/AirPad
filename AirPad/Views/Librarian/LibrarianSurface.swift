@@ -267,7 +267,12 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func dragGrabber(librarian: LibrarianState) -> some View {
         Capsule()
-            .fill(Color.white.opacity(0.22))
+            // ws-dark-light-mode item 2 — peek-pill grabber. ink @0.22 (dark
+            // #FFFFFF == the old .white@0.22, byte-identical); light = a faint
+            // ink blue-black so the handle reads on the light glass. Only the
+            // handle is converted here — full Librarian-panel theming is
+            // surface 5 (gated on the canvas render-cost item).
+            .fill(AppearancePalette.ink.opacity(0.22))
             .frame(width: 38, height: 5)
             .frame(height: 22)
             .frame(maxWidth: .infinity)

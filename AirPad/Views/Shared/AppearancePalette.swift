@@ -1,37 +1,41 @@
 import SwiftUI
 import UIKit
 
-/// ws-dark-light-mode — detail-view-scoped semantic color tokens (STEP 1/2 of
-/// the appearance arc). Two themes resolve through one trait-keyed layer:
+/// ws-dark-light-mode — the app-level appearance token layer. The two
+/// "rooms" (SB17) resolve through one trait-keyed layer; each theme's hex is
+/// authored from its own physics ("light is sourced, not applied" — SB15),
+/// never a luminance flip:
 ///
 /// - **Solar Flare (dark):** the values already shipped, EXTRACTED verbatim.
-///   Every dark value equals what the detail view used before this token layer
-///   (`#FFFFFF` chrome on the `#1A1A1A` ground), so the view reads BYTE-IDENTICAL
-///   in dark — that is the correctness check for this refactor.
+///   Every dark value equals what surfaces used before this token layer
+///   (`#FFFFFF` chrome on the `#1A1A1A` ground), so they read BYTE-IDENTICAL
+///   in dark — that is the correctness check for every conversion to this layer.
 /// - **Cucumber Water (light):** a first-pass inverted-thermal palette — warm
 ///   parchment base, cool blue-black ink, a brighter-warmer elevated panel.
 ///   T judges and art-directs these hex values on device; they are a starting
 ///   point, not final.
 ///
-/// Scoped to the detail view + its entry cards ONLY (the pattern test, not an
-/// app-wide unification). `NoteTypography` is deliberately NOT touched — it is a
-/// preserved type-role construct and already adaptive; the note *text* still
-/// resolves through it. Typography/metrics (`EntryVisualSettings` type roles)
-/// are untouched here too — this layer is color only.
+/// PROMOTED from `DetailPalette` (2026-07-16): the detail view was the pattern
+/// test (surface 1, shipped `367126a`); it passed, so the same tokens now serve
+/// the rest of the app (Map chrome, node cards, Dashboard, Librarian, capture
+/// "+"). The token ROLES are unchanged — only the scope grew. `NoteTypography`
+/// is still deliberately NOT touched (a preserved, already-adaptive type-role
+/// construct; the note *text* resolves through it). Typography/metrics
+/// (`EntryVisualSettings` type roles) are untouched too — this layer is color
+/// only.
 ///
 /// The `UIColor { trait }` pattern mirrors the one `NoteTypography` already
 /// proved: hex is authored per-theme in code (T reads hex, not swatches; he is
-/// colorblind), and the value flips on `userInterfaceStyle`. Never a luminance
-/// flip — each theme's hex is chosen from its own physics.
+/// colorblind), and the value flips on `userInterfaceStyle`.
 ///
 /// Token → 07-01 `--bg-*` mapping:
-///   `bgBase`     → `--bg-base`     (the detail ground)
-///   `bgElevated` → `--bg-elevated` (the raised note panel)
+///   `bgBase`     → `--bg-base`     (the base ground of a surface)
+///   `bgElevated` → `--bg-elevated` (a raised panel/card)
 ///   `--bg-surface` is expressed as `ink`-tint translucent fills (chips /
-///     controls / hairlines) rather than a distinct opaque token — the detail
-///     view's fills are translucent tints over the ground, and baking them
-///     opaque would perturb the dark look this refactor must preserve.
-enum DetailPalette {
+///     controls / hairlines) rather than a distinct opaque token — fills are
+///     translucent tints over the ground, and baking them opaque would perturb
+///     the dark look this layer must preserve.
+enum AppearancePalette {
 
     // MARK: - Hex helpers
 
@@ -90,4 +94,26 @@ enum DetailPalette {
     /// a reprieve").
     static let panelShadow = dynamic(dark: "000000", darkAlpha: 0.35,
                                      light: "000000", lightAlpha: 0.10)
+
+    /// Foreground for a glyph placed ON an `ink`-filled SOLID (the capture "+":
+    /// an `ink` circle with this glyph cut out of it). Dark: pure `#000000` —
+    /// byte-identical to the shipped `.black` plus on the `.white` circle
+    /// (`ink` dark is `#FFFFFF`). Light: parchment `#F4EFE3` so the glyph reads
+    /// as cut out of the dark `ink` circle on cream. Surface 6's "+" has no
+    /// designed treatment yet (Solar Flare's white-on-dark was a default, not a
+    /// decision) — this is a plausible, high-contrast first pass; T art-directs.
+    static let onInk = dynamic(dark: "000000", light: "F4EFE3")
+
+    /// Map dot-matrix dot color for the `BackgroundGridNode` shader
+    /// (`u_dot_color`), which needs raw sRGB floats, not a SwiftUI `Color`.
+    /// Dark `#FFFFFF` == the shipped white dots — byte-identical, since the
+    /// shader outputs `u_dot_color * alpha` premultiplied and `(1,1,1)`
+    /// reproduces the old `vec4(alpha,alpha,alpha,alpha)`. Light: a cool
+    /// graphite so the dots read as SB03's "barely-there dot impressions …
+    /// visible but not assertive" on parchment. This is only the hue/luma floor
+    /// — the exact PRESENCE is T's to dial via the tuner's dot-opacity slider.
+    static func mapGridDotRGB(dark: Bool) -> (r: Float, g: Float, b: Float) {
+        let (r, g, b) = rgb(dark ? "FFFFFF" : "2E3A40")
+        return (Float(r), Float(g), Float(b))
+    }
 }

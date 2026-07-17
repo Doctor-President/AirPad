@@ -72,7 +72,7 @@ struct GalleryBody: View {
             if let description = item.description, !description.isEmpty {
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }
 

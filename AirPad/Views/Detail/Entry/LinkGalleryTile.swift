@@ -56,7 +56,7 @@ struct LinkGalleryTile: View {
                 bareBody
             }
         }
-        .background(DetailPalette.ink.opacity(0.04))
+        .background(AppearancePalette.ink.opacity(0.04))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture { if let url = URL(string: linkItem.url) { openURL(url) } }
@@ -126,7 +126,7 @@ struct LinkGalleryTile: View {
         VStack(alignment: .leading, spacing: 4) {
             Image(systemName: "link")
                 .font(.title3)
-                .foregroundStyle(DetailPalette.ink.opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Text(linkItem.url)
                 .font(.caption)
                 .foregroundStyle(.blue)
@@ -164,27 +164,27 @@ struct LinkGalleryTile: View {
             if let title = linkItem.title, !title.isEmpty {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(DetailPalette.ink)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             if let description = linkItem.description, !description.isEmpty {
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
             }
             if let siteName = linkItem.siteName, !siteName.isEmpty {
                 Text(siteName)
                     .font(.caption2)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(1)
             }
             if let wordCount = linkItem.snapshotWordCount, wordCount > 0 {
                 Text("\(wordCount.formatted()) words saved")
                     .font(.caption2)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(1)
             }
         }
@@ -201,11 +201,11 @@ struct LinkGalleryTile: View {
                     .clipped()
             } else {
                 Rectangle()
-                    .fill(DetailPalette.ink.opacity(0.06))
+                    .fill(AppearancePalette.ink.opacity(0.06))
                     .frame(height: 100)
                     .overlay(
                         Image(systemName: "photo")
-                            .foregroundStyle(DetailPalette.ink.opacity(0.25))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.25))
                     )
             }
         }
@@ -227,7 +227,7 @@ struct LinkGalleryTile: View {
     /// brief async load so the slot never collapses or flickers empty.
     private var faviconBlock: some View {
         ZStack {
-            Rectangle().fill(DetailPalette.ink.opacity(0.06))
+            Rectangle().fill(AppearancePalette.ink.opacity(0.06))
             if let img = faviconImage {
                 Image(uiImage: img)
                     .resizable()
@@ -236,7 +236,7 @@ struct LinkGalleryTile: View {
             } else {
                 Image(systemName: "globe")
                     .font(.title)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.3))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             }
         }
         .frame(height: 100)

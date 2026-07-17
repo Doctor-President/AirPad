@@ -77,12 +77,12 @@ struct SingleMediaBody: View {
             if let description = item.description, !description.isEmpty {
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             } else if let transcript = item.transcript, !transcript.isEmpty {
                 Text(transcript)
                     .font(.caption)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .padding(.horizontal, 4)
             }
 
@@ -144,10 +144,10 @@ struct SingleMediaBody: View {
             // refactor might route an empty entry here directly — keep the
             // local fallback so this view never renders an undefined state.
             RoundedRectangle(cornerRadius: 12)
-                .fill(DetailPalette.ink.opacity(0.06))
+                .fill(AppearancePalette.ink.opacity(0.06))
                 .frame(height: 120)
                 .overlay(Image(systemName: "photo.on.rectangle.angled")
-                    .foregroundStyle(DetailPalette.ink.opacity(0.35)))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35)))
         }
     }
 
@@ -159,9 +159,9 @@ struct SingleMediaBody: View {
                 .onTapGesture { viewerStart = GalleryViewerStart(index: 0) }
         } else {
             RoundedRectangle(cornerRadius: 12)
-                .fill(DetailPalette.ink.opacity(0.08))
+                .fill(AppearancePalette.ink.opacity(0.08))
                 .frame(height: 200)
-                .overlay(Image(systemName: "photo").foregroundStyle(DetailPalette.ink.opacity(0.3)))
+                .overlay(Image(systemName: "photo").foregroundStyle(AppearancePalette.ink.opacity(0.3)))
                 .onAppear { loadMediaURL() }
         }
     }
@@ -193,9 +193,9 @@ struct SingleMediaBody: View {
                     }
             } else {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(DetailPalette.ink.opacity(0.08))
+                    .fill(AppearancePalette.ink.opacity(0.08))
                     .frame(height: 220)
-                    .overlay(Image(systemName: "video").foregroundStyle(DetailPalette.ink.opacity(0.3)))
+                    .overlay(Image(systemName: "video").foregroundStyle(AppearancePalette.ink.opacity(0.3)))
                     .onAppear { loadMediaURL() }
             }
         }

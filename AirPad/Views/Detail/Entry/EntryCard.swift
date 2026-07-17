@@ -539,7 +539,7 @@ private struct NoteReadAloudButton: View {
         } label: {
             Image(systemName: isThisPlaying ? "pause.fill" : "speaker.wave.2.fill")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(DetailPalette.ink.opacity(isThisPlaying ? 0.9 : 0.6))
+                .foregroundStyle(AppearancePalette.ink.opacity(isThisPlaying ? 0.9 : 0.6))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())
         }
@@ -628,7 +628,7 @@ private struct EntryTitleRow: View {
             Button(action: onToggle) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(DetailPalette.ink.opacity(reorderActive ? 0.25 : 0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.6))
                     .frame(width: 44, height: isNote ? Self.noteRowHeight : 44)
                     .contentShape(Rectangle())
             }
@@ -638,7 +638,7 @@ private struct EntryTitleRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(displayName)
                     .font(titleFont)
-                    .foregroundStyle(DetailPalette.ink)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 timestampLabel
             }
@@ -668,14 +668,14 @@ private struct EntryTitleRow: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
             } else {
                 Image(systemName: "line.3.horizontal")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(width: 32, height: 32)
             }
         }
@@ -690,10 +690,10 @@ private struct EntryTitleRow: View {
     private var timestampLabel: some View {
         Text(timestamp, style: .relative)
             .font(timestampFont)
-            .foregroundStyle(DetailPalette.ink.opacity(0.4))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         + Text(" ago")
             .font(timestampFont)
-            .foregroundStyle(DetailPalette.ink.opacity(0.4))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
     }
 }
 
@@ -704,16 +704,16 @@ private struct EntryTitleRow: View {
 private struct EmptyMediaPlaceholder: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 12)
-            .fill(DetailPalette.ink.opacity(0.06))
+            .fill(AppearancePalette.ink.opacity(0.06))
             .frame(height: 120)
             .overlay {
                 VStack(spacing: 6) {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.title3)
-                        .foregroundStyle(DetailPalette.ink.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     Text("No media")
                         .font(.caption)
-                        .foregroundStyle(DetailPalette.ink.opacity(0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 }
             }
     }

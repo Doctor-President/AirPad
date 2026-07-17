@@ -199,7 +199,7 @@ struct NodeDetailView: View {
                 content(node: node)
             } else {
                 Text("Node not found")
-                    .foregroundStyle(DetailPalette.ink.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.black)
             }
@@ -377,8 +377,8 @@ struct NodeDetailView: View {
                 // mirrors the prior `.title2.weight(.bold)` exactly.
                 TextField("Title", text: $editedTitle, axis: .vertical)
                     .font(visualSettings.nodeTitle.resolvedFont())
-                    .foregroundStyle(DetailPalette.ink)
-                    .tint(DetailPalette.ink)
+                    .foregroundStyle(AppearancePalette.ink)
+                    .tint(AppearancePalette.ink)
                     .focused($focusedField)
 
                 // Summary — Stage 4.4 addendum 1a-i: Node Summary role.
@@ -386,8 +386,8 @@ struct NodeDetailView: View {
                 if !editedSummary.isEmpty || node.summary.isEmpty {
                     TextField("Summary", text: $editedSummary, axis: .vertical)
                         .font(visualSettings.nodeSummary.resolvedFont())
-                        .foregroundStyle(DetailPalette.ink.opacity(0.75))
-                        .tint(DetailPalette.ink)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                        .tint(AppearancePalette.ink)
                         .focused($focusedField)
                 }
 
@@ -399,7 +399,7 @@ struct NodeDetailView: View {
                 // Tags
                 tagsRow
 
-                Divider().background(DetailPalette.ink.opacity(0.12))
+                Divider().background(AppearancePalette.ink.opacity(0.12))
 
                 // Items — Stage 3.1a commit (b): every entry is rendered as
                 // an `EntryCard` regardless of type. Per-type rendering lives
@@ -483,7 +483,7 @@ struct NodeDetailView: View {
                             .overlay(alignment: .bottom) {
                                 if rawIndex < node.items.count - 1 {
                                     Rectangle()
-                                        .fill(DetailPalette.ink.opacity(0.08))
+                                        .fill(AppearancePalette.ink.opacity(0.08))
                                         .frame(height: 1)
                                         .allowsHitTesting(false)
                                 }
@@ -593,7 +593,7 @@ struct NodeDetailView: View {
         // (`NoteTypography.background` — #1A1A1A dark / white light, adaptive),
         // so the raised note panel separates from the ground by light (shadow +
         // rim), not colour. Replaces the fixed near-black #070709.
-        .background { DetailPalette.bgBase.ignoresSafeArea() }
+        .background { AppearancePalette.bgBase.ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
         .onAppear {
             guard let focusEntryID else { return }
@@ -631,7 +631,7 @@ struct NodeDetailView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.85))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                     .frame(width: 56, height: 56)
                     .modifier(InteractiveGlassCircle())
             }
@@ -646,7 +646,7 @@ struct NodeDetailView: View {
                 } label: {
                     Text("Done")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(DetailPalette.ink)
+                        .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 20)
                         .frame(height: 56)
                         .modifier(InteractiveGlassCapsule())
@@ -660,7 +660,7 @@ struct NodeDetailView: View {
                 } label: {
                     Image(systemName: appearanceIcon)
                         .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(DetailPalette.ink.opacity(0.85))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                         .frame(width: 56, height: 56)
                         .contentShape(Circle())
                         .modifier(InteractiveGlassCircle())
@@ -676,7 +676,7 @@ struct NodeDetailView: View {
                     } label: {
                         Image(systemName: resolvedMode(node).isDisplay ? "square.and.pencil" : "eye")
                             .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(DetailPalette.ink.opacity(0.85))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             .frame(width: 56, height: 56)
                             // ws-glass-effect-hit-region — interactive glass
                             // swallows taps without an explicit content shape.
@@ -749,7 +749,7 @@ struct NodeDetailView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(DetailPalette.ink.opacity(0.85))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                         .frame(width: 56, height: 56)
                         .modifier(InteractiveGlassCircle())
                 }
@@ -868,10 +868,10 @@ struct NodeDetailView: View {
                 } label: {
                     Label("Add to collection", systemImage: "plus")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(DetailPalette.ink.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(DetailPalette.ink.opacity(0.08))
+                        .background(AppearancePalette.ink.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
             }
@@ -953,10 +953,10 @@ struct NodeDetailView: View {
                 } label: {
                     Label("Add tag", systemImage: "plus")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(DetailPalette.ink.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(DetailPalette.ink.opacity(0.08))
+                        .background(AppearancePalette.ink.opacity(0.08))
                         .clipShape(Capsule())
                 }
             }
@@ -1507,22 +1507,22 @@ private struct CollectionChip: View {
         HStack(spacing: 4) {
             Image(systemName: "folder")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             Text(name)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(DetailPalette.ink)
+                .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(DetailPalette.ink.opacity(0.12))
+        .background(AppearancePalette.ink.opacity(0.12))
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .stroke(DetailPalette.ink.opacity(0.25), lineWidth: 1)
+                .stroke(AppearancePalette.ink.opacity(0.25), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 7))
     }
@@ -1546,11 +1546,11 @@ private struct TagChip: View {
         HStack(spacing: 4) {
             Text(name)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(DetailPalette.ink)
+                .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
         }
         .padding(.horizontal, 10)
@@ -1586,13 +1586,13 @@ struct VoiceWaveformPlayer: View {
             if let duration = item.durationSeconds {
                 Text(formatDuration(duration))
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .monospacedDigit()
                     .frame(minWidth: 40, alignment: .trailing)
             }
         }
         .padding(12)
-        .background(DetailPalette.ink.opacity(0.07))
+        .background(AppearancePalette.ink.opacity(0.07))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .task {
             await load()
@@ -1618,7 +1618,7 @@ struct VoiceWaveformPlayer: View {
     private var waveformVisual: some View {
         if peaks.isEmpty {
             RoundedRectangle(cornerRadius: 1.5)
-                .fill(DetailPalette.ink.opacity(0.18))
+                .fill(AppearancePalette.ink.opacity(0.18))
                 .frame(height: 2)
         } else {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0,
@@ -1790,7 +1790,7 @@ private struct WaveformBars: View {
             let minBarHeight: CGFloat = 3
             let progressThreshold = progress * Double(barCount)
             let kleinBlue = Color(hexString: "1B59C2")
-            let rest = DetailPalette.ink.opacity(0.30)
+            let rest = AppearancePalette.ink.opacity(0.30)
 
             HStack(alignment: .center, spacing: spacing) {
                 ForEach(0..<barCount, id: \.self) { i in
@@ -1952,9 +1952,9 @@ struct AsyncImageFromURL: View {
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.08))
+                    .fill(AppearancePalette.ink.opacity(0.08))
                     .frame(height: 200)
-                    .overlay(ProgressView().tint(.white))
+                    .overlay(ProgressView().tint(AppearancePalette.ink))
             }
         }
         .onAppear {
@@ -1987,7 +1987,7 @@ private struct MetaNodeBanner: View {
                     .foregroundStyle(.purple.opacity(0.8))
                 Text("Thread node")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .textCase(.uppercase)
                     .tracking(0.5)
             }
@@ -1997,15 +1997,15 @@ private struct MetaNodeBanner: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Connected from")
                         .font(.caption)
-                        .foregroundStyle(DetailPalette.ink.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     ForEach(sources) { source in
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(DetailPalette.ink.opacity(0.2))
+                                .fill(AppearancePalette.ink.opacity(0.2))
                                 .frame(width: 5, height: 5)
                             Text(source.title)
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                                 .lineLimit(1)
                         }
                     }
@@ -2127,7 +2127,7 @@ private struct AttributesSection: View {
             Text("ATTRIBUTES")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .tracking(0.6)
-                .foregroundStyle(DetailPalette.ink.opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Spacer(minLength: 0)
             if !addable.isEmpty {
                 Menu {
@@ -2148,7 +2148,7 @@ private struct AttributesSection: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(DetailPalette.ink.opacity(0.55))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -2197,7 +2197,7 @@ private struct RatingAttributeRow: View {
         HStack(spacing: 12) {
             Text(item.type.defaultDisplayName)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(DetailPalette.ink)
+                .foregroundStyle(AppearancePalette.ink)
 
             stars
                 .accessibilityElement()
@@ -2211,7 +2211,7 @@ private struct RatingAttributeRow: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -2230,7 +2230,7 @@ private struct RatingAttributeRow: View {
                     .foregroundStyle(
                         filled
                             ? Color(hexString: "FACC15")
-                            : DetailPalette.ink.opacity(0.25)
+                            : AppearancePalette.ink.opacity(0.25)
                     )
             }
         }
@@ -2552,15 +2552,15 @@ private struct FoldDivider: View {
     var body: some View {
         HStack(spacing: 10) {
             Rectangle()
-                .fill(DetailPalette.ink.opacity(0.14))
+                .fill(AppearancePalette.ink.opacity(0.14))
                 .frame(height: 1)
             Text("↑ card-visible entries ↑")
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .tracking(0.6)
-                .foregroundStyle(DetailPalette.ink.opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .fixedSize()
             Rectangle()
-                .fill(DetailPalette.ink.opacity(0.14))
+                .fill(AppearancePalette.ink.opacity(0.14))
                 .frame(height: 1)
         }
         .padding(.vertical, 4)

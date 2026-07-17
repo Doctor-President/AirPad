@@ -112,7 +112,7 @@ struct DocumentEntryBody: View {
 
     private var previewBlock: some View {
         ZStack {
-            Rectangle().fill(DetailPalette.ink.opacity(0.06))
+            Rectangle().fill(AppearancePalette.ink.opacity(0.06))
             if let img = thumbnail {
                 Image(uiImage: img)
                     .resizable()
@@ -122,7 +122,7 @@ struct DocumentEntryBody: View {
             } else {
                 Image(systemName: documentIconName)
                     .font(.largeTitle)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
         }
         .frame(height: Self.thumbnailHeight)
@@ -144,17 +144,17 @@ struct DocumentEntryBody: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(displayTitle)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(DetailPalette.ink)
+                .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(2)
             if let metricsLine {
                 Text(metricsLine)
                     .font(.caption)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(1)
             } else if let description = item.description {
                 Text(description)
                     .font(.caption)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(2)
             }
         }

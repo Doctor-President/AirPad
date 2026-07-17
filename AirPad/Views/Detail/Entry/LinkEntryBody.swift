@@ -69,7 +69,7 @@ struct LinkEntryBody: View {
             if let wordCount = snapshotLinkItem?.snapshotWordCount, wordCount > 0 {
                 Text("\(wordCount.formatted()) words saved")
                     .font(.caption2)
-                    .foregroundStyle(DetailPalette.ink.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(1)
                     .padding(.horizontal, 4)
             }

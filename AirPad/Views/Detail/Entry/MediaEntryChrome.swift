@@ -39,9 +39,9 @@ struct MediaEntryChrome<Trailing: View>: View {
             Button(action: onAdd) {
                 Image(systemName: "plus")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(DetailPalette.ink.opacity(0.75))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .frame(width: 32, height: 32)
-                    .background(DetailPalette.ink.opacity(0.08))
+                    .background(AppearancePalette.ink.opacity(0.08))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)

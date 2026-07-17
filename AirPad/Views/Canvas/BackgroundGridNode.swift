@@ -43,6 +43,7 @@ enum BackgroundGridNode {
                           dotSizePx: Float = Float(MapTuningDefaults.dotSizePx),
                           dotOpacity: Float = Float(MapTuningDefaults.dotOpacity),
                           period: Float = Float(MapTuningDefaults.dotPeriod),
+                          ratio: Float = Float(MapTuningDefaults.dotRatio),
                           lodLevels: Float = Float(MapTuningDefaults.dotLevels)) -> SKShapeNode {
         let half = CGSize(width: viewportSize.width / 2, height: viewportSize.height / 2)
         let rect = CGRect(x: -half.width, y: -half.height,
@@ -58,7 +59,7 @@ enum BackgroundGridNode {
         shape.blendMode = .alpha
         shape.fillShader = makeShader(viewportSize: viewportSize,
                                       dotSizePx: dotSizePx, dotOpacity: dotOpacity,
-                                      period: period, lodLevels: lodLevels)
+                                      period: period, ratio: ratio, lodLevels: lodLevels)
         return shape
     }
 
@@ -66,13 +67,14 @@ enum BackgroundGridNode {
     /// tuning). Called from the Map's per-frame update; list surfaces never
     /// call it, so they keep the makeShape defaults (byte-identical).
     static func setDotParams(_ shape: SKShapeNode, dotSizePx: Float, dotOpacity: Float,
-                             period: Float, lodLevels: Float) {
+                             period: Float, ratio: Float, lodLevels: Float) {
         guard let uniforms = shape.fillShader?.uniforms else { return }
         for u in uniforms {
             switch u.name {
             case "u_dot_base_px": u.floatValue = dotSizePx
             case "u_dot_opacity": u.floatValue = dotOpacity
             case "u_period1":     u.floatValue = period
+            case "u_ratio":       u.floatValue = ratio
             case "u_lod_levels":  u.floatValue = lodLevels
             default: break
             }
@@ -105,7 +107,7 @@ enum BackgroundGridNode {
 
     private static func makeShader(viewportSize: CGSize,
                                    dotSizePx: Float, dotOpacity: Float,
-                                   period: Float, lodLevels: Float) -> SKShader {
+                                   period: Float, ratio: Float, lodLevels: Float) -> SKShader {
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
 
@@ -185,8 +187,8 @@ enum BackgroundGridNode {
             float feather  = 0.75 * u_camera_scale;       // edge softness in world units
 
             float p1 = u_period1;
-            float p0 = p1 / 5.0;
-            float p2 = p1 * 5.0;
+            float p0 = p1 / u_ratio;   // finer lattice — u_ratio dots per cell edge (tunable)
+            float p2 = p1 * u_ratio;   // coarser lattice
 
             float a0 = levelOpacity(p0 / u_camera_scale, targetPx);
             float a1 = levelOpacity(p1 / u_camera_scale, targetPx);
@@ -252,6 +254,7 @@ enum BackgroundGridNode {
             SKUniform(name: "u_dot_base_px", float: dotSizePx),
             SKUniform(name: "u_dot_opacity", float: dotOpacity),
             SKUniform(name: "u_period1",     float: period),
+            SKUniform(name: "u_ratio",       float: ratio),
             SKUniform(name: "u_lod_levels",  float: lodLevels),
             SKUniform(name: "u_dot_color",   vectorFloat3: vector_float3(1, 1, 1))
         ]

@@ -18,20 +18,22 @@ import UIKit
 
 enum MapTuningKey {
     static let on            = "map.tuner.on"            // master gate — off = defaults, tuner ignored
-    // Background
-    static let bgDarkName     = "map.bg.darkName"
-    static let bgLightName     = "map.bg.lightName"
+    // Background — custom RGB hex (the color picker writes these)
+    static let bgDarkHex      = "map.bg.darkHex"         // #07070A shipped
+    static let bgLightHex     = "map.bg.lightHex"        // #F4EFE3 shipped
     // Dot matrix
     static let dotSizePx      = "map.dot.sizePx"         // BackgroundGridNode dotBasePx (1.5)
     static let dotOpacity     = "map.dot.opacity"        // baseOpac (0.25)
     static let dotPeriod      = "map.dot.period"         // p1 dominant period (50)
+    static let dotRatio       = "map.dot.ratio"          // lattice nest ratio N → N×N dots per cell (5 = 25)
     static let dotLevels      = "map.dot.levels"         // recursion: 1 / 2 / 3 (default 3)
     // Node
     static let nodeBaseRadius = "map.node.baseRadius"    // bubbleRadius base (30)
     static let nodePerItem    = "map.node.perItem"       // +radius per item (4)
     static let nodeRadiusCap  = "map.node.radiusCap"     // cap (60)
-    static let nodeRingSpacing = "map.node.ringSpacing"  // TagTerritoryLayout.nodeRingSpacing (82)
-    static let territoryRadius = "map.node.territoryRadius" // territoryRingRadius (720)
+    static let nodeRingSpacing = "map.node.ringSpacing"  // TagTerritoryLayout.nodeRingSpacing (82) — LAYOUT, not in tuner
+    static let territoryRadius = "map.node.territoryRadius" // territoryRingRadius (720) — LAYOUT, not in tuner
+    static let nodeSizeScale  = "map.node.sizeScale"     // live draw-scale × on node sprites (1.0)
     // Label
     static let labelFont      = "map.label.font"         // segmented: condensed / sans / serif
     static let labelMaxSize   = "map.label.maxSize"      // fittedTitleFont ceiling (18)
@@ -41,17 +43,19 @@ enum MapTuningKey {
 
 enum MapTuningDefaults {
     static let on = false
-    static let bgDarkName  = "Void"          // #07070A — the shipped canvas base
-    static let bgLightName = "Cream"          // #F4EFE3 — Cucumber Water first pass
+    static let bgDarkHex   = "07070A"        // shipped canvas base (Void)
+    static let bgLightHex  = "F4EFE3"        // Cucumber Water first pass (Cream)
     static let dotSizePx: Double   = 1.5
     static let dotOpacity: Double  = 0.25
     static let dotPeriod: Double   = 50
+    static let dotRatio: Double    = 5        // 5×5 = 25 dots per cell — the shipped ratio-5 nesting
     static let dotLevels: Int      = 3
     static let nodeBaseRadius: Double = 30
     static let nodePerItem: Double    = 4
     static let nodeRadiusCap: Double  = 60
     static let nodeRingSpacing: Double = 82
     static let territoryRadius: Double = 720
+    static let nodeSizeScale: Double = 1.0    // shipped size (no scale)
     static let labelFont = "Condensed"        // current: SF condensed semibold
     static let labelMaxSize: Double = 18
 }
@@ -124,12 +128,11 @@ enum MapTuning {
         return v
     }
 
-    // Background — resolves the named color for the current interface style.
+    // Background — resolves the custom RGB hex for the current interface style.
     static func backgroundColor(dark: Bool) -> UIColor {
-        let name = dark
-            ? str(MapTuningKey.bgDarkName, MapTuningDefaults.bgDarkName)
-            : str(MapTuningKey.bgLightName, MapTuningDefaults.bgLightName)
-        let hex = MapNamedColor(rawValue: name)?.hex ?? (dark ? "07070A" : "F4EFE3")
+        let hex = dark
+            ? str(MapTuningKey.bgDarkHex, MapTuningDefaults.bgDarkHex)
+            : str(MapTuningKey.bgLightHex, MapTuningDefaults.bgLightHex)
         return UIColor(Color(hexString: hex))
     }
 
@@ -137,6 +140,7 @@ enum MapTuning {
     static var dotSizePx: Float  { Float(dbl(MapTuningKey.dotSizePx, MapTuningDefaults.dotSizePx)) }
     static var dotOpacity: Float { Float(dbl(MapTuningKey.dotOpacity, MapTuningDefaults.dotOpacity)) }
     static var dotPeriod: Float  { Float(dbl(MapTuningKey.dotPeriod, MapTuningDefaults.dotPeriod)) }
+    static var dotRatio: Float   { Float(dbl(MapTuningKey.dotRatio, MapTuningDefaults.dotRatio)) }
     static var dotLevels: Int    { int(MapTuningKey.dotLevels, MapTuningDefaults.dotLevels) }
 
     // Node
@@ -145,6 +149,7 @@ enum MapTuning {
     static var nodeRadiusCap: CGFloat  { CGFloat(dbl(MapTuningKey.nodeRadiusCap, MapTuningDefaults.nodeRadiusCap)) }
     static var nodeRingSpacing: CGFloat { CGFloat(dbl(MapTuningKey.nodeRingSpacing, MapTuningDefaults.nodeRingSpacing)) }
     static var territoryRadius: CGFloat { CGFloat(dbl(MapTuningKey.territoryRadius, MapTuningDefaults.territoryRadius)) }
+    static var nodeSizeScale: CGFloat  { CGFloat(dbl(MapTuningKey.nodeSizeScale, MapTuningDefaults.nodeSizeScale)) }
 
     // Label
     static var labelFont: MapLabelFont {
@@ -156,23 +161,27 @@ enum MapTuning {
 // MARK: - Panel (DEBUG only)
 
 #if DEBUG
+/// Posted by the tuner's "Measure label cost" button; `CanvasView` observes it
+/// and calls the scene's `measureLabelCost()` (prints resident label-texture
+/// memory + full re-raster time — the SDF-migration numbers).
+extension Notification.Name {
+    static let mapTunerMeasureLabels = Notification.Name("mapTunerMeasureLabels")
+}
+
 /// Floating, draggable Map tuner. Mount inside `CanvasChrome`'s DEBUG block.
 struct MapTuningPanel: View {
     @Binding var isPresented: Bool
     @Binding var position: CGSize
 
     @AppStorage(MapTuningKey.on) private var on = MapTuningDefaults.on
-    @AppStorage(MapTuningKey.bgDarkName) private var bgDark = MapTuningDefaults.bgDarkName
-    @AppStorage(MapTuningKey.bgLightName) private var bgLight = MapTuningDefaults.bgLightName
+    @AppStorage(MapTuningKey.bgDarkHex) private var bgDarkHex = MapTuningDefaults.bgDarkHex
+    @AppStorage(MapTuningKey.bgLightHex) private var bgLightHex = MapTuningDefaults.bgLightHex
     @AppStorage(MapTuningKey.dotSizePx) private var dotSize = MapTuningDefaults.dotSizePx
     @AppStorage(MapTuningKey.dotOpacity) private var dotOpacity = MapTuningDefaults.dotOpacity
     @AppStorage(MapTuningKey.dotPeriod) private var dotPeriod = MapTuningDefaults.dotPeriod
+    @AppStorage(MapTuningKey.dotRatio) private var dotRatio = MapTuningDefaults.dotRatio
     @AppStorage(MapTuningKey.dotLevels) private var dotLevels = MapTuningDefaults.dotLevels
-    @AppStorage(MapTuningKey.nodeBaseRadius) private var nodeBase = MapTuningDefaults.nodeBaseRadius
-    @AppStorage(MapTuningKey.nodePerItem) private var nodePerItem = MapTuningDefaults.nodePerItem
-    @AppStorage(MapTuningKey.nodeRadiusCap) private var nodeCap = MapTuningDefaults.nodeRadiusCap
-    @AppStorage(MapTuningKey.nodeRingSpacing) private var ringSpacing = MapTuningDefaults.nodeRingSpacing
-    @AppStorage(MapTuningKey.territoryRadius) private var territoryRadius = MapTuningDefaults.territoryRadius
+    @AppStorage(MapTuningKey.nodeSizeScale) private var nodeSizeScale = MapTuningDefaults.nodeSizeScale
     @AppStorage(MapTuningKey.labelFont) private var labelFont = MapTuningDefaults.labelFont
     @AppStorage(MapTuningKey.labelMaxSize) private var labelMaxSize = MapTuningDefaults.labelMaxSize
 
@@ -184,30 +193,32 @@ struct MapTuningPanel: View {
                     Toggle("Tuner ON (off = shipped defaults)", isOn: $on)
                         .font(.caption.weight(.semibold))
 
-                    section("Background")
-                    namePicker("Dark (Solar Flare)", $bgDark, dark: true)
-                    namePicker("Light (Cucumber Water)", $bgLight, dark: false)
+                    section("Background — RGB picker (hex shown for verification)")
+                    colorRow("Dark (Solar Flare)", $bgDarkHex, presets: [.pureBlack, .voidBlue, .darkGrey, .slate])
+                    colorRow("Light (Cucumber Water)", $bgLightHex, presets: [.cream, .paper, .white])
 
                     section("Dot matrix — T: “recursive dot matrix is too much”")
                     slider("Dot size (px)", $dotSize, 0.4...4, 0.1)
                     slider("Dot opacity", $dotOpacity, 0.0...0.6, 0.01)
                     slider("Spacing / period", $dotPeriod, 20...160, 1)
+                    slider("Subdivision N (N×N per cell — 5 = 25)", $dotRatio, 2...8, 1)
                     stepper("Recursion levels (1 = off)", $dotLevels, 1...3)
 
-                    section("Node scale + spacing — T: “spacing feels vast”")
-                    slider("Base radius", $nodeBase, 12...60, 1)
-                    slider("Per-item growth", $nodePerItem, 0...12, 0.5)
-                    slider("Radius cap", $nodeCap, 30...140, 1)
-                    slider("Ring spacing (nodeRingSpacing)", $ringSpacing, 30...160, 1)
-                    slider("Territory radius", $territoryRadius, 300...1200, 10)
+                    section("Node size — LIVE ×  (spacing/territory are layout — not tunable here)")
+                    slider("Node size ×  (>1 may overlap — positions are fixed)", $nodeSizeScale, 0.5...2.0, 0.05)
 
                     section("Label — T: condensed → wants the denser ‘before’")
                     fontPicker
                     slider("Max font size", $labelMaxSize, 10...28, 1)
 
-                    Button("Copy values") { copyValues() }
-                        .font(.caption.weight(.semibold))
-                        .padding(.top, 4)
+                    HStack(spacing: 12) {
+                        Button("Copy values") { copyValues() }
+                        Button("Measure label cost") {
+                            NotificationCenter.default.post(name: .mapTunerMeasureLabels, object: nil)
+                        }
+                    }
+                    .font(.caption.weight(.semibold))
+                    .padding(.top, 4)
                 }
                 .padding(12)
             }
@@ -260,18 +271,41 @@ struct MapTuningPanel: View {
         }.disabled(!on)
     }
 
-    private func namePicker(_ label: String, _ v: Binding<String>, dark: Bool) -> some View {
-        let opts = MapNamedColor.allCases.filter { c in
-            dark ? ["Pure Black", "Void", "Dark Grey", "Slate"].contains(c.rawValue)
-                 : ["Cream", "Paper", "White"].contains(c.rawValue)
+    /// RGB color row: a system `ColorPicker` (its sheet has RGB sliders + a hex
+    /// field) + a monospace hex readout — T is colorblind and reads/enters hex,
+    /// never a swatch — + a quick preset menu that writes the hex.
+    private func colorRow(_ label: String, _ hex: Binding<String>, presets: [MapNamedColor]) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(label).font(.caption2)
+                Spacer()
+                Text("#\(hex.wrappedValue)").font(.caption2.monospaced()).foregroundStyle(.white.opacity(0.7))
+                ColorPicker("", selection: colorBinding(hex), supportsOpacity: false)
+                    .labelsHidden().frame(width: 28).disabled(!on)
+            }
+            Menu {
+                ForEach(presets, id: \.hex) { c in
+                    Button("\(c.rawValue)  #\(c.hex)") { hex.wrappedValue = c.hex }
+                }
+            } label: {
+                HStack(spacing: 3) { Image(systemName: "eyedropper.halffull"); Text("presets") }
+                    .font(.caption2).foregroundStyle(.white.opacity(0.6))
+            }.disabled(!on)
         }
-        return HStack {
-            Text(label).font(.caption2)
-            Spacer()
-            Picker(label, selection: v) {
-                ForEach(opts, id: \.rawValue) { Text("\($0.rawValue) #\($0.hex)").tag($0.rawValue) }
-            }.pickerStyle(.menu).disabled(!on)
-        }
+    }
+
+    /// Bridges the hex `@AppStorage` to `ColorPicker`'s `Binding<Color>`.
+    private func colorBinding(_ hex: Binding<String>) -> Binding<Color> {
+        Binding(get: { Color(hexString: hex.wrappedValue) },
+                set: { hex.wrappedValue = Self.hex6(from: $0) })
+    }
+
+    /// SwiftUI `Color` → 6-digit sRGB hex (no `#`).
+    private static func hex6(from color: Color) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+        func ch(_ v: CGFloat) -> Int { min(255, max(0, Int((v * 255).rounded()))) }
+        return String(format: "%02X%02X%02X", ch(r), ch(g), ch(b))
     }
 
     private var fontPicker: some View {
@@ -283,10 +317,9 @@ struct MapTuningPanel: View {
     private func copyValues() {
         UIPasteboard.general.string = """
         map.tuner.on: \(on)
-        bg.dark: \(bgDark)  bg.light: \(bgLight)
-        dot.size: \(dotSize)  dot.opacity: \(dotOpacity)  dot.period: \(dotPeriod)  dot.levels: \(dotLevels)
-        node.base: \(nodeBase)  node.perItem: \(nodePerItem)  node.cap: \(nodeCap)
-        node.ringSpacing: \(ringSpacing)  territoryRadius: \(territoryRadius)
+        bg.darkHex: #\(bgDarkHex)  bg.lightHex: #\(bgLightHex)
+        dot.size: \(dotSize)  dot.opacity: \(dotOpacity)  dot.period: \(dotPeriod)  dot.ratio: \(dotRatio)  dot.levels: \(dotLevels)
+        node.sizeScale: \(nodeSizeScale)
         label.font: \(labelFont)  label.maxSize: \(labelMaxSize)
         """
     }

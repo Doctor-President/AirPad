@@ -219,7 +219,11 @@ final class EntryVisualSettings {
     /// Floating summon button visibility. Toggled off via the hide-eye
     /// inside the panel; only restored by uninstall/reinstall.
     var buttonVisible: Bool {
-        didSet { UserDefaults.standard.set(buttonVisible, forKey: Keys.buttonVisible) }
+        didSet {
+            #if DEBUG
+            UserDefaults.standard.set(buttonVisible, forKey: Keys.buttonVisible)
+            #endif
+        }
     }
 
     var nodeTitle: TypeRoleSettings        { didSet { persistRole(.nodeTitle) } }
@@ -262,6 +266,9 @@ final class EntryVisualSettings {
     }
 
     private init() {
+        #if DEBUG
+        // DEBUG: the dev panel exists, so pull T's dialed values from
+        // UserDefaults (each falls through to the in-code default when absent).
         let d = UserDefaults.standard
 
         // BodyTreatment: legacy "Liquid glass" raw value from commit 1 no
@@ -296,6 +303,22 @@ final class EntryVisualSettings {
         } else {
             stroke = Self.defaultStroke
         }
+        #else
+        // RELEASE: no panel ships (mount is #if DEBUG), so ignore UserDefaults
+        // entirely and render from the in-code defaults with ZERO UserDefaults
+        // access (ws-chat-lane / MapTuning.isOn scar). The Detail View then
+        // renders identically every launch — this is what kills T's reinstall
+        // drift, even before the bake to AirPadTypeScale / EntryCardMetrics.
+        bodyTreatment    = Self.defaultBodyTreatment
+        cornerRadius     = Self.defaultCornerRadius
+        interCardSpacing = Self.defaultInterCardSpacing
+        buttonVisible    = false
+        nodeTitle        = Role.nodeTitle.defaultSettings
+        nodeSummary      = Role.nodeSummary.defaultSettings
+        sectionTitle     = Role.sectionTitle.defaultSettings
+        sectionTimestamp = Role.sectionTimestamp.defaultSettings
+        stroke           = Self.defaultStroke
+        #endif
     }
 
     private static func loadRole(_ role: Role, defaults d: UserDefaults) -> TypeRoleSettings? {
@@ -303,25 +326,34 @@ final class EntryVisualSettings {
         return try? JSONDecoder().decode(TypeRoleSettings.self, from: data)
     }
 
+    // All writes are #if DEBUG — in Release the setters are only reachable
+    // from the (DEBUG-only) panel, but gating the bodies too makes the
+    // "zero UserDefaults access in Release" guarantee airtight.
     private func persistShared() {
+        #if DEBUG
         let d = UserDefaults.standard
         d.set(bodyTreatment.rawValue,    forKey: Keys.bodyTreatment)
         d.set(Double(cornerRadius),      forKey: Keys.cornerRadius)
         d.set(Double(interCardSpacing),  forKey: Keys.interCardSpacing)
+        #endif
     }
 
     private func persistRole(_ role: Role) {
+        #if DEBUG
         let s = self.settings(for: role)
         if let data = try? JSONEncoder().encode(s) {
             UserDefaults.standard.set(data, forKey: Keys.role(role))
         }
         logFontFamilyOnceIfNeeded(for: s.family)
+        #endif
     }
 
     private func persistStroke() {
+        #if DEBUG
         if let data = try? JSONEncoder().encode(stroke) {
             UserDefaults.standard.set(data, forKey: Keys.stroke)
         }
+        #endif
     }
 
     // MARK: - Font diagnostic

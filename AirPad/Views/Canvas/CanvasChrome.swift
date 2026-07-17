@@ -50,6 +50,10 @@ struct CanvasChrome: View {
     /// survives close/re-open within a session — same pattern as
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
+    // ws-dark-light-mode — Map tuner (background · dot matrix · node scale/
+    // spacing · label font). Same mount pattern as the Solar Flare tuner.
+    @State private var showMapTuningPanel = false
+    @State private var mapTuningPanelOffset: CGSize = .zero
     #endif
 
     private var filterState: FilterState {
@@ -321,6 +325,13 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            mapTuningTrigger
+            if showMapTuningPanel {
+                MapTuningPanel(isPresented: $showMapTuningPanel, position: $mapTuningPanelOffset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, 120)
+                    .allowsHitTesting(true)
+            }
             #endif
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
@@ -410,6 +421,29 @@ struct CanvasChrome: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(true)
+    }
+
+    /// ws-dark-light-mode — Map tuner trigger (🗺). Top-leading, below the
+    /// Solar Flare ☀︎, above the tile ⚙. Faint; tap toggles the Map tuner.
+    private var mapTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showMapTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "map")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 140)
+        .padding(.leading, 10)
     }
     #endif
 }

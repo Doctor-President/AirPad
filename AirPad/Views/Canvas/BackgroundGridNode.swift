@@ -39,7 +39,11 @@ enum BackgroundGridNode {
 
     /// Build the shape and shader. Caller adds it as a child of cameraNode
     /// at low zPosition, and resizes it via `resize(_:to:)` on scene size change.
-    static func makeShape(viewportSize: CGSize, fillTexture: SKTexture) -> SKShapeNode {
+    static func makeShape(viewportSize: CGSize, fillTexture: SKTexture,
+                          dotSizePx: Float = Float(MapTuningDefaults.dotSizePx),
+                          dotOpacity: Float = Float(MapTuningDefaults.dotOpacity),
+                          period: Float = Float(MapTuningDefaults.dotPeriod),
+                          lodLevels: Float = Float(MapTuningDefaults.dotLevels)) -> SKShapeNode {
         let half = CGSize(width: viewportSize.width / 2, height: viewportSize.height / 2)
         let rect = CGRect(x: -half.width, y: -half.height,
                           width: viewportSize.width, height: viewportSize.height)
@@ -52,8 +56,27 @@ enum BackgroundGridNode {
         shape.fillTexture = fillTexture
         shape.alpha = 1.0
         shape.blendMode = .alpha
-        shape.fillShader = makeShader(viewportSize: viewportSize)
+        shape.fillShader = makeShader(viewportSize: viewportSize,
+                                      dotSizePx: dotSizePx, dotOpacity: dotOpacity,
+                                      period: period, lodLevels: lodLevels)
         return shape
+    }
+
+    /// Push MapTuning dot params into an existing grid's shader uniforms (live
+    /// tuning). Called from the Map's per-frame update; list surfaces never
+    /// call it, so they keep the makeShape defaults (byte-identical).
+    static func setDotParams(_ shape: SKShapeNode, dotSizePx: Float, dotOpacity: Float,
+                             period: Float, lodLevels: Float) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_dot_base_px": u.floatValue = dotSizePx
+            case "u_dot_opacity": u.floatValue = dotOpacity
+            case "u_period1":     u.floatValue = period
+            case "u_lod_levels":  u.floatValue = lodLevels
+            default: break
+            }
+        }
     }
 
     /// Resize when the viewport changes (e.g. orientation).
@@ -69,7 +92,9 @@ enum BackgroundGridNode {
         }
     }
 
-    private static func makeShader(viewportSize: CGSize) -> SKShader {
+    private static func makeShader(viewportSize: CGSize,
+                                   dotSizePx: Float, dotOpacity: Float,
+                                   period: Float, lodLevels: Float) -> SKShader {
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
 
@@ -135,19 +160,22 @@ enum BackgroundGridNode {
             // Three layers, ratio 5: p1=50 sits near the 60px visibility peak
             // at xScale=1, so default look is dominated by the 50-world-point
             // layer with p0=10 fading in on zoom in and p2=250 on zoom out.
+            // ws-dark-light-mode — dotBasePx / baseOpac / period are UNIFORMS
+            // (MapTuning dials); defaults 1.5 / 0.25 / 50 keep the 4 shared list
+            // grids byte-identical. p0/p1/p2 stay ratio-5 nested off the period.
             const float targetPx   = 60.0;
-            const float dotBasePx  = 1.5;   // peak dot radius, screen pixels
+            float dotBasePx  = u_dot_base_px;   // peak dot radius, screen pixels
             const float dotModPx   = 0.8;   // breathing amplitude, screen pixels
             const float lumaInten  = 0.74;  // luma shimmer depth
-            const float baseOpac   = 0.25;  // peak dot alpha at xScale=1
+            float baseOpac   = u_dot_opacity;  // peak dot alpha at xScale=1
 
             float baseR    = dotBasePx * u_camera_scale;  // world units
             float modR     = dotModPx  * u_camera_scale;
             float feather  = 0.75 * u_camera_scale;       // edge softness in world units
 
-            float p0 = 10.0;
-            float p1 = 50.0;
-            float p2 = 250.0;
+            float p1 = u_period1;
+            float p0 = p1 / 5.0;
+            float p2 = p1 * 5.0;
 
             float a0 = levelOpacity(p0 / u_camera_scale, targetPx);
             float a1 = levelOpacity(p1 / u_camera_scale, targetPx);
@@ -189,7 +217,11 @@ enum BackgroundGridNode {
             float luma2     = 1.0 + (n2 - 0.5) * 2.0 * lumaInten;
             float c2        = (1.0 - smoothstep(0.0, feather, d2)) * a2 * luma2;
 
-            float coverage = max(c0, max(c1, c2));
+            // Recursion gate (MapTuning): levels 1 = c1 only (no recursion),
+            // 2 = + coarse, 3 = all. T: "the recursive dot matrix is too much."
+            float c0g = c0 * step(2.5, u_lod_levels);
+            float c2g = c2 * step(1.5, u_lod_levels);
+            float coverage = max(c1, max(c0g, c2g));
             float alpha    = clamp(coverage * baseOpac, 0.0, 1.0);
 
             // Premultiplied output (white dots).
@@ -202,7 +234,11 @@ enum BackgroundGridNode {
             SKUniform(name: "u_camera_position", vectorFloat2: vector_float2(0, 0)),
             SKUniform(name: "u_camera_scale",    float: 1.0),
             SKUniform(name: "u_viewport_size",   vectorFloat2: vector_float2(Float(viewportSize.width),
-                                                                              Float(viewportSize.height)))
+                                                                              Float(viewportSize.height))),
+            SKUniform(name: "u_dot_base_px", float: dotSizePx),
+            SKUniform(name: "u_dot_opacity", float: dotOpacity),
+            SKUniform(name: "u_period1",     float: period),
+            SKUniform(name: "u_lod_levels",  float: lodLevels)
         ]
         return shader
     }

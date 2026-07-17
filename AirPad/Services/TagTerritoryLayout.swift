@@ -19,8 +19,12 @@ import Foundation
 @MainActor
 enum TagTerritoryLayout {
 
-    private static let territoryRingRadius: CGFloat = 720
-    private static let nodeRingSpacing: CGFloat = 82
+    // ws-dark-light-mode — the "vast spacing" dials (hand-set in aec54b2, never
+    // tuned). MapTuning defaults == 720/82 → byte-identical when off; applies on
+    // the next layout. (Before aec54b2 the density came from a different engine —
+    // SubstrateBagLayout MDS — not these values. See the report.)
+    private static var territoryRingRadius: CGFloat { MapTuning.territoryRadius }
+    private static var nodeRingSpacing: CGFloat { MapTuning.nodeRingSpacing }
     private static let unanchoredThreshold: Double = 0.12
 
     struct Territory {

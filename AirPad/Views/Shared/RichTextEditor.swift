@@ -1613,6 +1613,19 @@ final class RichTextEditorState {
 struct RichTextToolbar: View {
     @Bindable var state: RichTextEditorState
 
+    /// ws-dark-light-mode — the formatting toolbar is a UIKit
+    /// `inputAccessoryView` (SwiftUI hosted in a `UIHostingController`), so it
+    /// sits OUTSIDE the SwiftUI render tree and every render-tree/directory
+    /// sweep missed it. The capsule adapts: dark = the prior `Color(white:
+    /// 0.12)` (byte-identical), light = a soft light pill so the bar reads on
+    /// cream. Buttons/separators use `.primary` (adaptive; dark = white =
+    /// identical). System color, not `AppearancePalette` — this is a Shared view.
+    private static let toolbarFill = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 0.12, alpha: 1)
+            : UIColor(white: 0.90, alpha: 1)
+    })
+
     var body: some View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1644,7 +1657,7 @@ struct RichTextToolbar: View {
         }
         .frame(height: 48)
         .background(
-            Capsule(style: .continuous).fill(Color(white: 0.12))
+            Capsule(style: .continuous).fill(Self.toolbarFill)
         )
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1673,15 +1686,15 @@ struct RichTextToolbar: View {
             Image(systemName: "textformat")
                 .font(.system(size: 16, weight: .medium))
                 .frame(width: 36, height: 36)
-                .foregroundStyle(active ? Color.white : Color.white.opacity(0.75))
-                .background(active ? Color.white.opacity(0.18) : Color.clear)
+                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.75))
+                .background(active ? Color.primary.opacity(0.18) : Color.clear)
                 .clipShape(Capsule(style: .continuous))
         }
     }
 
     private var separator: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.12))
+            .fill(Color.primary.opacity(0.12))
             .frame(width: 1, height: 22)
             .padding(.horizontal, 4)
     }
@@ -1696,8 +1709,8 @@ struct RichTextToolbar: View {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .medium))
                 .frame(width: 36, height: 36)
-                .foregroundStyle(enabled ? (active ? Color.white : Color.white.opacity(0.75)) : Color.white.opacity(0.3))
-                .background(active ? Color.white.opacity(0.18) : Color.clear)
+                .foregroundStyle(enabled ? (active ? Color.primary : Color.primary.opacity(0.75)) : Color.primary.opacity(0.3))
+                .background(active ? Color.primary.opacity(0.18) : Color.clear)
                 .clipShape(Capsule(style: .continuous))
         }
         .disabled(!enabled)
@@ -1762,7 +1775,7 @@ final class RichTextUIView: UITextView {
     private func setupPlaceholder() {
         placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
         placeholderLabel.font = font
-        placeholderLabel.textColor = UIColor.white.withAlphaComponent(0.35)
+        placeholderLabel.textColor = UIColor.label.withAlphaComponent(0.35)
         placeholderLabel.numberOfLines = 0
         placeholderLabel.isUserInteractionEnabled = false
         addSubview(placeholderLabel)

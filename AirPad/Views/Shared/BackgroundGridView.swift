@@ -27,7 +27,13 @@ struct BackgroundGridView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.allowsTransparency = true
         view.isOpaque = false
-        view.preferredFramesPerSecond = 120
+        // Static grid (noise stripped in c17484a — no per-frame content), so it
+        // does not need 120fps. 10fps repaints resize + trait flip within ~100ms
+        // (imperceptible, and inside the ~0.35s system appearance cross-fade)
+        // while cutting idle GPU ~12×. Not paused: a permanently paused SKView
+        // wouldn't render the resize/flip uniform pushes at all — the repaint on
+        // those two events is exactly what must survive.
+        view.preferredFramesPerSecond = 10
 
         let initialSize = CGSize(width: max(1, view.bounds.width),
                                  height: max(1, view.bounds.height))

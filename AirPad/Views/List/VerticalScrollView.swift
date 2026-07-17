@@ -20,6 +20,7 @@ struct VerticalScrollView: View {
     @Environment(CorpusStore.self) private var store
     @Environment(SelectionService.self) private var selection
     @Environment(AppRouter.self) private var router
+    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var zoomNamespace
     @State private var navigationPath = NavigationPath()
     /// Node ID currently sitting at the top of the navigation stack
@@ -62,7 +63,7 @@ struct VerticalScrollView: View {
         GeometryReader { geo in
             NavigationStack(path: $navigationPath) {
                 ZStack(alignment: .bottomTrailing) {
-                    Color.black.ignoresSafeArea()
+                    AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea()
                     BackgroundGridView()
                         .ignoresSafeArea()
                         .allowsHitTesting(false)

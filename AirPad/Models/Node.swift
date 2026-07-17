@@ -186,14 +186,25 @@ struct Node: Codable, Identifiable, Hashable {
     /// migration; the corpus is never bulk-walked at launch.
     var entrySchemaVersion: Int
 
-    /// Stored boundary within `items` separating promoted "card view"
-    /// entries (indices `0..<foldIndex`) from below-fold entries
-    /// (`foldIndex..<count`). 0 means nothing promoted — every entry sits
-    /// below the fold. Additive; legacy nodes decode as 0, same pattern
-    /// as `collectionIDs`. No schema-version bump — `?? 0` IS the
-    /// migration. Store-side invariants (clamp-on-delete,
-    /// new-captures-below-fold, `setFoldIndex`) land in a later commit.
-    var foldIndex: Int
+    /// Stored boundary within `items` separating card-visible entries
+    /// (indices `0..<foldIndex`) from below-fold entries (`foldIndex..<count`).
+    ///
+    /// **`nil` = AUTO** (fold-auto-default): the card renders atomics, then
+    /// payload in order, as many as fit (`NodeCardView.fitPayloads`). This is
+    /// the app's authorship rule (decisions.md 2026-07-06): the system fills
+    /// empty fields, never overwrites authored ones — an unauthored fold is an
+    /// invitation, and the ••• "Show/Remove from card" action is what authors
+    /// it. **Non-nil = user-authored**, honored exactly. Read through
+    /// `effectiveFoldIndex` (nil → all payload eligible); index-shifting
+    /// mutations preserve nil. Decode-tolerant (`decodeIfPresent`, foresight
+    /// rule 2026-06-14); legacy `fold_index: 0` migrates to nil (see decode).
+    var foldIndex: Int?
+
+    /// Fold boundary resolved for READS: `nil` (AUTO) → `items.count`, so all
+    /// payload is eligible and `NodeCardView.fitPayloads` shows as-many-as-fit;
+    /// authored values pass through unchanged. Mutations that shift indices keep
+    /// `foldIndex` itself optional (they don't materialize AUTO).
+    var effectiveFoldIndex: Int { foldIndex ?? items.count }
 
     /// entry-system-and-fold Commit 6 — visibility flag for whether the
     /// node's `summary` renders on the card-view surface. Pure
@@ -308,7 +319,7 @@ struct Node: Codable, Identifiable, Hashable {
         substrateCoord2D: SubstrateCoord2D? = nil,
         substrateLayoutVersion: Int = 0,
         entrySchemaVersion: Int = 0,
-        foldIndex: Int = 0,
+        foldIndex: Int? = nil,
         descriptionOnCard: Bool = true,
         summarySource: TagSource? = nil,
         titleSource: TagSource? = nil,
@@ -397,7 +408,14 @@ extension Node {
         substrateCoord2D           = try c.decodeIfPresent(SubstrateCoord2D.self, forKey: .substrateCoord2D)
         substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
         entrySchemaVersion         = try c.decodeIfPresent(Int.self,      forKey: .entrySchemaVersion) ?? 0
-        foldIndex                  = try c.decodeIfPresent(Int.self,      forKey: .foldIndex) ?? 0
+        // fold-auto-default — migrate legacy `fold_index: 0` (and absent) to
+        // nil = AUTO. A stored 0 meant "authored empty" under the old scheme,
+        // which now reads as sparse. T's call (pre-V1, one user): treat ALL 0s
+        // as nil; don't build the untouched-vs-deliberately-cleared distinction
+        // (0 is also reachable via "Remove from card" on an atomic-less node,
+        // so the two are indistinguishable on disk anyway).
+        let rawFoldIndex           = try c.decodeIfPresent(Int.self,      forKey: .foldIndex)
+        foldIndex                  = (rawFoldIndex == 0) ? nil : rawFoldIndex
         descriptionOnCard          = try c.decodeIfPresent(Bool.self,     forKey: .descriptionOnCard) ?? true
         summarySource              = try c.decodeIfPresent(TagSource.self, forKey: .summarySource)
         titleSource                = try c.decodeIfPresent(TagSource.self, forKey: .titleSource)

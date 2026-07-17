@@ -252,7 +252,7 @@ struct NodeCardView: View {
         // with foldIndex=0 but has atomics — keeps slicing safe.
         let atomics = Array(node.items.prefix(while: { $0.type.isAtomic }))
         let atomicCount = atomics.count
-        let foldIdx = min(max(node.foldIndex, atomicCount), node.items.count)
+        let foldIdx = min(max(node.effectiveFoldIndex, atomicCount), node.items.count)
         let payloads = Array(node.items[atomicCount..<foldIdx])
         let hasFoldedPayload = !payloads.isEmpty
 

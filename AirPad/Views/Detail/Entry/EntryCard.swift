@@ -103,7 +103,7 @@ struct EntryCard: View {
     /// after a promote/demote mutation.
     private var isAboveFold: Bool {
         guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return false }
-        return index < node.foldIndex
+        return index < node.effectiveFoldIndex
     }
 
     /// Stage 4.8 — count of atomic items at the front of `node.items`.
@@ -253,7 +253,7 @@ struct EntryCard: View {
                             return
                         }
                         let prefix = atomicCount
-                        let payloadFold = preNode.foldIndex - prefix
+                        let payloadFold = preNode.effectiveFoldIndex - prefix
                         let foldDelta: Int
                         if from >= payloadFold && to < payloadFold {
                             foldDelta = 1   // below → above (promote)
@@ -286,7 +286,7 @@ struct EntryCard: View {
                         // entangled with the fold.
                         let latest: Node
                         if foldDelta != 0 {
-                            let rawFold = preNode.foldIndex + foldDelta
+                            let rawFold = preNode.effectiveFoldIndex + foldDelta
                             let clamped = max(prefix, rawFold)
                             latest = store.setFoldIndex(clamped, nodeID: nodeID) ?? moved
                         } else {
@@ -461,7 +461,7 @@ struct EntryCard: View {
     /// boundary updates, flashing the card briefly in the wrong zone.
     private func togglePromote() {
         guard let node = store.nodes.first(where: { $0.id == nodeID }) else { return }
-        let currentFold = node.foldIndex
+        let currentFold = node.effectiveFoldIndex
         let above = index < currentFold
         let target = above ? currentFold - 1 : currentFold
         let newFold = above ? currentFold - 1 : currentFold + 1

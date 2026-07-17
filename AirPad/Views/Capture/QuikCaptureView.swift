@@ -304,8 +304,8 @@ struct QuikCaptureView: View {
                             }
 
                         if !reorderController.isReorderActive
-                            && node.foldIndex > atomicCount
-                            && rawIndex == node.foldIndex - 1 {
+                            && node.effectiveFoldIndex > atomicCount
+                            && rawIndex == node.effectiveFoldIndex - 1 {
                             QuikCaptureFoldDivider()
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }

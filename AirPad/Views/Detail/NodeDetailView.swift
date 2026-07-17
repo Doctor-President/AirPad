@@ -2714,11 +2714,14 @@ private struct HeroImageBanner: View {
 
     @State private var image: UIImage? = nil
     @State private var aspect: CGFloat? = nil
+    /// Detail-View pass — hero visible-height cap, dialed via the dev panel
+    /// (default 420 = the prior literal). Gradient fallback keeps its fixed 200.
+    @State private var visualSettings = EntryVisualSettings.shared
 
     var body: some View {
         Group {
             if let image, let aspect {
-                let visibleHeight = max(200, min(420, width / max(aspect, 0.01)))
+                let visibleHeight = max(200, min(visualSettings.heroMaxHeight, width / max(aspect, 0.01)))
                 let totalHeight = visibleHeight + topInset
                 Image(uiImage: image)
                     .resizable()
@@ -2767,7 +2770,7 @@ private struct HeroImageBanner: View {
             // composites without resampling. Decode stays off the main
             // thread; the placeholder gradient bridges the gap.
             let scale = UIScreen.main.scale
-            let maxPixel = Int(max(width, 420) * scale)
+            let maxPixel = Int(max(width, visualSettings.heroMaxHeight) * scale)
             let decoded: (UIImage, CGFloat)? = await Task.detached(priority: .userInitiated) {
                 guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
                 let opts: [CFString: Any] = [

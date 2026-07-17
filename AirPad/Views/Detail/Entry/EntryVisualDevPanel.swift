@@ -73,6 +73,10 @@ private struct EntryVisualDevPanelSheet: View {
                     Divider().background(Color.white.opacity(0.12))
                     interCardSpacingSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
+                    titleRowHeightSection(settings: settings)
+                    Divider().background(Color.white.opacity(0.12))
+                    heroMaxHeightSection(settings: settings)
+                    Divider().background(Color.white.opacity(0.12))
                     strokeSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
                     hideEyeRow
@@ -284,6 +288,48 @@ private struct EntryVisualDevPanelSheet: View {
             in: Double(EntryVisualSettings.interCardSpacingRange.lowerBound)
                 ... Double(EntryVisualSettings.interCardSpacingRange.upperBound),
             step: 1
+        )
+        .tint(.white.opacity(0.6))
+    }
+
+    /// Detail-View pass — title-zone height. Dials `EntryTitleRow`'s fixed
+    /// non-note row (default 44 = the prior literal; notes keep their 34pt row).
+    /// Below 44 tightens the title zone at the cost of the chevron's tap slop.
+    @ViewBuilder
+    private func titleRowHeightSection(settings: EntryVisualSettings) -> some View {
+        sectionRowHeader(
+            "Title-row height",
+            value: String(format: "%.0fpt", settings.titleRowHeight)
+        )
+        Slider(
+            value: Binding(
+                get: { Double(settings.titleRowHeight) },
+                set: { settings.titleRowHeight = CGFloat($0.rounded()) }
+            ),
+            in: Double(EntryVisualSettings.titleRowHeightRange.lowerBound)
+                ... Double(EntryVisualSettings.titleRowHeightRange.upperBound),
+            step: 1
+        )
+        .tint(.white.opacity(0.6))
+    }
+
+    /// Detail-View pass — image-hero visible-height CAP (default 420 = the prior
+    /// literal). Caps how much screen a tall/portrait cover image eats before
+    /// the title. Gradient heroes have no aspect and keep their fixed 200pt.
+    @ViewBuilder
+    private func heroMaxHeightSection(settings: EntryVisualSettings) -> some View {
+        sectionRowHeader(
+            "Hero max height",
+            value: String(format: "%.0fpt", settings.heroMaxHeight)
+        )
+        Slider(
+            value: Binding(
+                get: { Double(settings.heroMaxHeight) },
+                set: { settings.heroMaxHeight = CGFloat($0.rounded()) }
+            ),
+            in: Double(EntryVisualSettings.heroMaxHeightRange.lowerBound)
+                ... Double(EntryVisualSettings.heroMaxHeightRange.upperBound),
+            step: 10
         )
         .tint(.white.opacity(0.6))
     }

@@ -219,6 +219,12 @@ final class EntryVisualSettings {
     var heroMaxHeight: CGFloat { didSet { persistShared() } }
     var cardVerticalPadding: CGFloat { didSet { persistShared() } }
     var noteVerticalPadding: CGFloat { didSet { persistShared() } }
+    var titleToSummary: CGFloat { didSet { persistShared() } }
+    var summaryToChips: CGFloat { didSet { persistShared() } }
+    var chipRowGap: CGFloat { didSet { persistShared() } }
+    var chipsToDivider: CGFloat { didSet { persistShared() } }
+    var dividerToEntries: CGFloat { didSet { persistShared() } }
+    var entriesToRelated: CGFloat { didSet { persistShared() } }
     var stroke: StrokeSettings { didSet { persistStroke() } }
     /// Floating summon button visibility. Toggled off via the hide-eye
     /// inside the panel; only restored by uninstall/reinstall.
@@ -281,6 +287,14 @@ final class EntryVisualSettings {
     static let cardVerticalPaddingRange: ClosedRange<CGFloat> = 4...24
     static let noteVerticalPaddingRange: ClosedRange<CGFloat> = 0...24
 
+    /// Detail-View outer rhythm (NodeDetailView content VStack) — SIX per-gap
+    /// dials that break up the single `spacing: 24`. Every default == 24, so
+    /// spacing:0 + these gap-before paddings is BYTE-IDENTICAL until T moves a
+    /// slider (padding.top-per-member == VStack spacing semantics, vanishing
+    /// members included). Range includes 0 → read via object-presence.
+    static let defaultMetadataGap: CGFloat = 24
+    static let metadataGapRange: ClosedRange<CGFloat> = 0...48
+
     // MARK: - Persistence
 
     private enum Keys {
@@ -291,6 +305,12 @@ final class EntryVisualSettings {
         static let heroMaxHeight    = "entryVisualDevPanel.heroMaxHeight"
         static let cardVerticalPadding = "entryVisualDevPanel.cardVerticalPadding"
         static let noteVerticalPadding = "entryVisualDevPanel.noteVerticalPadding"
+        static let titleToSummary   = "entryVisualDevPanel.gap.titleToSummary"
+        static let summaryToChips   = "entryVisualDevPanel.gap.summaryToChips"
+        static let chipRowGap       = "entryVisualDevPanel.gap.chipRowGap"
+        static let chipsToDivider   = "entryVisualDevPanel.gap.chipsToDivider"
+        static let dividerToEntries = "entryVisualDevPanel.gap.dividerToEntries"
+        static let entriesToRelated = "entryVisualDevPanel.gap.entriesToRelated"
         static let buttonVisible    = "entryVisualDevPanel.buttonVisible"
         static let stroke           = "entryVisualDevPanel.stroke"
         static func role(_ r: Role) -> String { "entryVisualDevPanel.role.\(r.rawValue)" }
@@ -328,6 +348,17 @@ final class EntryVisualSettings {
         noteVerticalPadding = d.object(forKey: Keys.noteVerticalPadding) != nil
             ? CGFloat(d.double(forKey: Keys.noteVerticalPadding)) : Self.defaultNoteVerticalPadding
 
+        // Detail-View outer rhythm — object-presence (range includes 0).
+        func gap(_ key: String) -> CGFloat {
+            d.object(forKey: key) != nil ? CGFloat(d.double(forKey: key)) : Self.defaultMetadataGap
+        }
+        titleToSummary   = gap(Keys.titleToSummary)
+        summaryToChips   = gap(Keys.summaryToChips)
+        chipRowGap       = gap(Keys.chipRowGap)
+        chipsToDivider   = gap(Keys.chipsToDivider)
+        dividerToEntries = gap(Keys.dividerToEntries)
+        entriesToRelated = gap(Keys.entriesToRelated)
+
         // Default visible. Object-typed read so the absence of the key
         // (first launch) defaults to `true` rather than `false`.
         buttonVisible = (d.object(forKey: Keys.buttonVisible) as? Bool) ?? true
@@ -360,6 +391,12 @@ final class EntryVisualSettings {
         heroMaxHeight    = Self.defaultHeroMaxHeight
         cardVerticalPadding = Self.defaultCardVerticalPadding
         noteVerticalPadding = Self.defaultNoteVerticalPadding
+        titleToSummary   = Self.defaultMetadataGap
+        summaryToChips   = Self.defaultMetadataGap
+        chipRowGap       = Self.defaultMetadataGap
+        chipsToDivider   = Self.defaultMetadataGap
+        dividerToEntries = Self.defaultMetadataGap
+        entriesToRelated = Self.defaultMetadataGap
         buttonVisible    = false
         nodeTitle        = Role.nodeTitle.defaultSettings
         nodeSummary      = Role.nodeSummary.defaultSettings
@@ -387,6 +424,12 @@ final class EntryVisualSettings {
         d.set(Double(heroMaxHeight),     forKey: Keys.heroMaxHeight)
         d.set(Double(cardVerticalPadding), forKey: Keys.cardVerticalPadding)
         d.set(Double(noteVerticalPadding), forKey: Keys.noteVerticalPadding)
+        d.set(Double(titleToSummary),   forKey: Keys.titleToSummary)
+        d.set(Double(summaryToChips),   forKey: Keys.summaryToChips)
+        d.set(Double(chipRowGap),       forKey: Keys.chipRowGap)
+        d.set(Double(chipsToDivider),   forKey: Keys.chipsToDivider)
+        d.set(Double(dividerToEntries), forKey: Keys.dividerToEntries)
+        d.set(Double(entriesToRelated), forKey: Keys.entriesToRelated)
         #endif
     }
 

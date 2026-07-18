@@ -79,6 +79,8 @@ private struct EntryVisualDevPanelSheet: View {
                     Divider().background(Color.white.opacity(0.12))
                     titleZonePaddingSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
+                    metadataGapsSection(settings: settings)
+                    Divider().background(Color.white.opacity(0.12))
                     strokeSection(settings: settings)
                     Divider().background(Color.white.opacity(0.12))
                     hideEyeRow
@@ -369,6 +371,35 @@ private struct EntryVisualDevPanelSheet: View {
             ),
             in: Double(EntryVisualSettings.noteVerticalPaddingRange.lowerBound)
                 ... Double(EntryVisualSettings.noteVerticalPaddingRange.upperBound),
+            step: 1
+        )
+        .tint(.white.opacity(0.6))
+    }
+
+    /// Detail-View pass — the Detail View's outer metadata rhythm as SIX
+    /// per-gap dials (NodeDetailView content VStack). All default 24, so the
+    /// spacing:0 rewrite is byte-identical until T moves one.
+    @ViewBuilder
+    private func metadataGapsSection(settings: EntryVisualSettings) -> some View {
+        sectionHeader("Detail metadata gaps")
+        gapRow("Title → Summary",    Binding(get: { settings.titleToSummary },   set: { settings.titleToSummary = $0 }))
+        gapRow("Summary → chips",    Binding(get: { settings.summaryToChips },   set: { settings.summaryToChips = $0 }))
+        gapRow("Collections → Tags", Binding(get: { settings.chipRowGap },       set: { settings.chipRowGap = $0 }))
+        gapRow("Chips → Divider",    Binding(get: { settings.chipsToDivider },   set: { settings.chipsToDivider = $0 }))
+        gapRow("Divider → Entries",  Binding(get: { settings.dividerToEntries }, set: { settings.dividerToEntries = $0 }))
+        gapRow("Entries → Related",  Binding(get: { settings.entriesToRelated }, set: { settings.entriesToRelated = $0 }))
+    }
+
+    @ViewBuilder
+    private func gapRow(_ label: String, _ binding: Binding<CGFloat>) -> some View {
+        sectionRowHeader(label, value: String(format: "%.0fpt", binding.wrappedValue))
+        Slider(
+            value: Binding(
+                get: { Double(binding.wrappedValue) },
+                set: { binding.wrappedValue = CGFloat($0.rounded()) }
+            ),
+            in: Double(EntryVisualSettings.metadataGapRange.lowerBound)
+                ... Double(EntryVisualSettings.metadataGapRange.upperBound),
             step: 1
         )
         .tint(.white.opacity(0.6))

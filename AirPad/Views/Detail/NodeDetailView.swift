@@ -371,7 +371,15 @@ struct NodeDetailView: View {
         ScrollView {
             VStack(spacing: 0) {
                 heroZone(node: node, topInset: topInset, width: proxy.size.width)
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 0) {
+                // Detail-View outer rhythm — spacing:0 + explicit per-gap padding
+                // (gap-before), each default 24 so this is BYTE-IDENTICAL to the
+                // old `spacing: 24` until T dials one. The gap-before padding
+                // lives ON each member (inside any `if`), so a hidden member
+                // drops its gap exactly as VStack did — no double gaps. The
+                // always-present (possibly empty) entries VStack keeps its
+                // gap-before + Related's, mirroring VStack spacing on BOTH sides
+                // of a zero-height member. Tail past Related is fixed 24.
                 // Title — Stage 4.4 addendum 1a-i: font sourced from the
                 // Node Title role in the dev-panel type scale. Default
                 // mirrors the prior `.title2.weight(.bold)` exactly.
@@ -389,17 +397,21 @@ struct NodeDetailView: View {
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                         .tint(AppearancePalette.ink)
                         .focused($focusedField)
+                        .padding(.top, visualSettings.titleToSummary)
                 }
 
                 // Collections (membership chips above tags, mirrors
                 // tags-row layout but uses rounded-rect chips to read
                 // distinct from the capsule tag pills).
                 collectionsRow(node: node)
+                    .padding(.top, visualSettings.summaryToChips)
 
                 // Tags
                 tagsRow
+                    .padding(.top, visualSettings.chipRowGap)
 
                 Divider().background(AppearancePalette.ink.opacity(0.12))
+                    .padding(.top, visualSettings.chipsToDivider)
 
                 // Items — Stage 3.1a commit (b): every entry is rendered as
                 // an `EntryCard` regardless of type. Per-type rendering lives
@@ -454,6 +466,7 @@ struct NodeDetailView: View {
                 // inside the section.
                 if atomicCount > 0 {
                     AttributesSection(nodeID: nodeID)
+                        .padding(.top, visualSettings.dividerToEntries)
                 }
 
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
@@ -485,15 +498,18 @@ struct NodeDetailView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
+                .padding(.top, visualSettings.dividerToEntries)
 
                 // Backlinks v1 — Related Nodes (user channel). Renders nothing
                 // when the node has no connections. System-suggestion channel is
                 // a later phase.
                 RelatedNodesSection(nodeID: nodeID)
+                    .padding(.top, visualSettings.entriesToRelated)
 
                 // Meta-node provenance + promotion
                 if node.isMeta {
                     MetaNodeBanner(nodeID: nodeID, showPromoteConfirmation: $showPromoteConfirmation)
+                        .padding(.top, 24)   // tail past Related — fixed, not dialed
                 }
 
                 // Stage 4.7 C3 — Paste Pad wired to per-type routing.
@@ -514,12 +530,14 @@ struct NodeDetailView: View {
                 if !resolvedMode(node).isDisplay {
                     PastePadView(onPaste: handlePastedContent)
                         .transition(.opacity)
+                        .padding(.top, 24)   // tail past Related — fixed, not dialed
                 }
 
                 // Trailing spacer so the last entry isn't tucked under the
                 // floating "+" button. 80pt clears the 56pt button + 24pt
                 // bottom inset with a small breathing margin.
                 Spacer(minLength: 80)
+                    .padding(.top, 24)   // tail past Related — fixed, not dialed
 
                 // Stage 3.1b — invisible sentinel that introspects up to
                 // the enclosing UIScrollView and drives auto-scroll while
@@ -538,6 +556,7 @@ struct NodeDetailView: View {
                 )
                 .frame(width: 1, height: 1)
                 .allowsHitTesting(false)
+                .padding(.top, 24)   // tail past Related — fixed, not dialed
             }
             .padding(20)
             .dismissKeyboardOnTapOutside()

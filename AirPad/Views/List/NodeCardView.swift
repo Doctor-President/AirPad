@@ -40,11 +40,20 @@ struct NodeCardView: View {
     /// init call shape at existing sites.
     var presentation: CardPresentation = .carousel
 
-    // CardTuning dials (DEBUG-tunable, live in all builds at defaults so
-    // Release is pixel-identical). Keyed per presentation; wired in `init`.
+    // CardTuning dials. DEBUG: live @AppStorage — the DEBUG-only CardTuningPanel
+    // (CoverFlow / VerticalScroll) dials them. RELEASE: plain constants set to
+    // CardTuningDefaults with ZERO UserDefaults access (mirrors 725a646), so a
+    // device carrying stale Debug-dialed keys no longer drifts on reinstall, and
+    // a fresh install is unchanged (it always fell through to these defaults).
+    #if DEBUG
     @AppStorage private var heroFraction: Double
     @AppStorage private var fontScale: Double
     @AppStorage private var textOpacity: Double
+    #else
+    private let heroFraction: Double
+    private let fontScale: Double
+    private let textOpacity: Double
+    #endif
 
     private var hero: CGFloat { CGFloat(heroFraction) }
     private var fs: CGFloat { CGFloat(fontScale) }
@@ -61,12 +70,18 @@ struct NodeCardView: View {
         self.isPicked = isPicked
         self.animateEntry = animateEntry
         self.presentation = presentation
+        #if DEBUG
         _heroFraction = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .heroZone),
                                    CardTuningKey.key(presentation, .heroZone))
         _fontScale = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .fontScale),
                                 CardTuningKey.key(presentation, .fontScale))
         _textOpacity = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .textOpacity),
                                   CardTuningKey.key(presentation, .textOpacity))
+        #else
+        heroFraction = CardTuningDefaults.value(presentation, .heroZone)
+        fontScale    = CardTuningDefaults.value(presentation, .fontScale)
+        textOpacity  = CardTuningDefaults.value(presentation, .textOpacity)
+        #endif
     }
 
     @Environment(CorpusStore.self) private var store

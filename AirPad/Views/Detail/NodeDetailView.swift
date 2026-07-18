@@ -410,9 +410,6 @@ struct NodeDetailView: View {
                 tagsRow
                     .padding(.top, visualSettings.chipRowGap)
 
-                Divider().background(AppearancePalette.ink.opacity(0.12))
-                    .padding(.top, visualSettings.chipsToDivider)
-
                 // Items — Stage 3.1a commit (b): every entry is rendered as
                 // an `EntryCard` regardless of type. Per-type rendering lives
                 // in `Views/Detail/Entry/*EntryBody.swift`. Stage 3.1b: each
@@ -458,12 +455,11 @@ struct NodeDetailView: View {
 
                 // Stage 4.8 Commit B — pinned Attributes section.
                 // Renders only when the node has ≥1 atomic entry; zero
-                // atomics → section absent entirely. Sits between the
-                // tags hairline and the payload list (the "dead zone"
-                // called out in the Commit A handoff §3 — the section
-                // filling it is that fix). One hairline above (the
-                // existing tags Divider) is enough; no extra rule
-                // inside the section.
+                // atomics → section absent entirely. Sits between the tags
+                // row and the payload list (the "dead zone" called out in the
+                // Commit A handoff §3 — the section filling it is that fix).
+                // No rule above or inside the section (the tags→content
+                // divider was removed 2026-07-18).
                 if atomicCount > 0 {
                     AttributesSection(nodeID: nodeID)
                         .padding(.top, visualSettings.dividerToEntries)

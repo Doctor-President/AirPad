@@ -77,11 +77,13 @@ enum CardTuningKey {
 enum CardTuningDefaults {
     // Baked from T's on-device tuning pass. Carousel opacity + spacing and
     // vertical font + opacity landed at their originals; the rest moved.
+    // 2026-07-17: carousel height 1.48→1.49 and heroZone 0.31→0.40 baked from
+    // T's device (his last two device-verified moves).
     static func value(_ p: CardPresentation, _ d: CardDial) -> Double {
         switch (p, d) {
-        case (.carousel, .height):      return 1.48
+        case (.carousel, .height):      return 1.49
         case (.vertical, .height):      return 1.22
-        case (.carousel, .heroZone):    return 0.31
+        case (.carousel, .heroZone):    return 0.40
         case (.vertical, .heroZone):    return 0.39
         case (.carousel, .fontScale):   return 0.90
         case (.vertical, .fontScale):   return 1.00

@@ -163,24 +163,22 @@ final class EntryVisualSettings {
             }
         }
 
-        /// Defaults reproduce the pre-1a-i production look: the panel
-        /// opens at "no change" so toggling between roles is the only way
-        /// to introduce drift.
+        /// Baked from T's device-verified panel values (2026-07-17). These are
+        /// what Release renders (panel is DEBUG-only; reads gated at 725a646).
         var defaultSettings: TypeRoleSettings {
             switch self {
             case .nodeTitle:
-                // `NodeDetailView.swift:205` — `.title2.weight(.bold)`
-                // ≈ 22pt bold.
-                return TypeRoleSettings(family: .sfPro, size: 22, weight: .bold)
+                return TypeRoleSettings(family: .fraunces, size: 35, weight: .bold)
             case .nodeSummary:
-                // `NodeDetailView.swift:213` — `.body` = 17pt regular.
-                return TypeRoleSettings(family: .sfPro, size: 17, weight: .regular)
+                return TypeRoleSettings(family: .fraunces, size: 17, weight: .regular)
             case .sectionTitle:
-                // `EntryCard.swift:361` — `.subheadline.weight(.semibold)`
-                // = 15pt semibold.
-                return TypeRoleSettings(family: .sfPro, size: 15, weight: .semibold)
+                // T picked Fraunces + "Semibold", but Fraunces ships Regular +
+                // Bold only, so semibold clamps to the Bold file → it RENDERS
+                // Bold (the weight T approved). Baked as `.bold` to encode the
+                // actual render; `.semibold` is identical for Fraunces.
+                return TypeRoleSettings(family: .fraunces, size: 20, weight: .bold)
             case .sectionTimestamp:
-                // `EntryCard.swift:403` — `.caption2` = 11pt regular.
+                // Unchanged from production: SF Pro 11 Regular.
                 return TypeRoleSettings(family: .sfPro, size: 11, weight: .regular)
             }
         }
@@ -253,11 +251,10 @@ final class EntryVisualSettings {
     // MARK: - Production defaults (mirrored from current code)
 
     static let defaultBodyTreatment: BodyTreatment = .semiOpacity
-    /// Matches `EntryCard.swift:148` — `cornerRadius: 12`.
-    static let defaultCornerRadius: CGFloat = 12
-    /// Stage 4.4 commit 1 nested cards in their own VStack so this slider
-    /// only affects card-to-card distance.
-    static let defaultInterCardSpacing: CGFloat = 24
+    /// Baked from T's device (2026-07-17): 32 (was 12, `EntryCard.swift:148`).
+    static let defaultCornerRadius: CGFloat = 32
+    /// Card-to-card distance. Baked from T's device (2026-07-17): 4 (was 24).
+    static let defaultInterCardSpacing: CGFloat = 4
 
     // MARK: - Slider ranges (locked with T on 2026-05-19)
 
@@ -268,31 +265,31 @@ final class EntryVisualSettings {
     // current hardcoded literals, so each dial is a no-op until T moves it.
     /// EntryTitleRow's fixed non-note row height (`:632`/`:682`) — the dominant
     /// title-zone-height lever per that row's own comment. Notes keep 34pt.
-    static let defaultTitleRowHeight: CGFloat = 44
+    static let defaultTitleRowHeight: CGFloat = 39   // baked from T's device (was 44)
     static let titleRowHeightRange: ClosedRange<CGFloat> = 28...56
     /// HeroImageBanner visible-height CAP (`:2721`, was a hardcoded 420). The
     /// image hero cover-crops to `max(200, min(cap, width/aspect))`; portraits
     /// fill to the cap, so lowering it is the lever for "the hero is too large."
-    static let defaultHeroMaxHeight: CGFloat = 420
+    static let defaultHeroMaxHeight: CGFloat = 240   // baked (was 420); == range floor — T wants smaller, see report
     static let heroMaxHeightRange: ClosedRange<CGFloat> = 240...560
-    /// EntryCard title-zone vertical padding (`EntryCard:184`) — TYPE-CONDITIONAL
-    /// today: 4pt for `.text` (notes), 12pt for every other entry — which is why
-    /// Gallery breathes more than Bio, and why the title-row-height slider
-    /// couldn't reach it (that dial drives EntryTitleRow's row height, a
-    /// different lever). TWO dials so the panel touches BOTH branches. Defaults
-    /// == the current literals. The 4 was deliberate (T's capture-area feel);
-    /// whether the two should rhyme is T's call on the dial, NOT unified here.
+    /// EntryCard title-zone vertical padding (`EntryCard:184`), two branches:
+    /// card (non-note) + note. T UNIFIED them on device (2026-07-17): both 12
+    /// (note was 4). The type-conditional split at EntryCard:184 is now 12/12.
     static let defaultCardVerticalPadding: CGFloat = 12
-    static let defaultNoteVerticalPadding: CGFloat = 4
+    static let defaultNoteVerticalPadding: CGFloat = 12
     static let cardVerticalPaddingRange: ClosedRange<CGFloat> = 4...24
     static let noteVerticalPaddingRange: ClosedRange<CGFloat> = 0...24
 
     /// Detail-View outer rhythm (NodeDetailView content VStack) — SIX per-gap
-    /// dials that break up the single `spacing: 24`. Every default == 24, so
-    /// spacing:0 + these gap-before paddings is BYTE-IDENTICAL until T moves a
-    /// slider (padding.top-per-member == VStack spacing semantics, vanishing
-    /// members included). Range includes 0 → read via object-presence.
-    static let defaultMetadataGap: CGFloat = 24
+    /// dials that replaced the single `spacing: 24`. Baked from T's device
+    /// (2026-07-17); divider→entries + entries→related kept 24 deliberately.
+    /// Range includes 0 → read via object-presence.
+    static let defaultTitleToSummary: CGFloat = 6
+    static let defaultSummaryToChips: CGFloat = 15
+    static let defaultChipRowGap: CGFloat = 11
+    static let defaultChipsToDivider: CGFloat = 0
+    static let defaultDividerToEntries: CGFloat = 24
+    static let defaultEntriesToRelated: CGFloat = 24
     static let metadataGapRange: ClosedRange<CGFloat> = 0...48
 
     // MARK: - Persistence
@@ -349,15 +346,15 @@ final class EntryVisualSettings {
             ? CGFloat(d.double(forKey: Keys.noteVerticalPadding)) : Self.defaultNoteVerticalPadding
 
         // Detail-View outer rhythm — object-presence (range includes 0).
-        func gap(_ key: String) -> CGFloat {
-            d.object(forKey: key) != nil ? CGFloat(d.double(forKey: key)) : Self.defaultMetadataGap
+        func gap(_ key: String, _ def: CGFloat) -> CGFloat {
+            d.object(forKey: key) != nil ? CGFloat(d.double(forKey: key)) : def
         }
-        titleToSummary   = gap(Keys.titleToSummary)
-        summaryToChips   = gap(Keys.summaryToChips)
-        chipRowGap       = gap(Keys.chipRowGap)
-        chipsToDivider   = gap(Keys.chipsToDivider)
-        dividerToEntries = gap(Keys.dividerToEntries)
-        entriesToRelated = gap(Keys.entriesToRelated)
+        titleToSummary   = gap(Keys.titleToSummary,   Self.defaultTitleToSummary)
+        summaryToChips   = gap(Keys.summaryToChips,   Self.defaultSummaryToChips)
+        chipRowGap       = gap(Keys.chipRowGap,       Self.defaultChipRowGap)
+        chipsToDivider   = gap(Keys.chipsToDivider,   Self.defaultChipsToDivider)
+        dividerToEntries = gap(Keys.dividerToEntries, Self.defaultDividerToEntries)
+        entriesToRelated = gap(Keys.entriesToRelated, Self.defaultEntriesToRelated)
 
         // Default visible. Object-typed read so the absence of the key
         // (first launch) defaults to `true` rather than `false`.
@@ -391,12 +388,12 @@ final class EntryVisualSettings {
         heroMaxHeight    = Self.defaultHeroMaxHeight
         cardVerticalPadding = Self.defaultCardVerticalPadding
         noteVerticalPadding = Self.defaultNoteVerticalPadding
-        titleToSummary   = Self.defaultMetadataGap
-        summaryToChips   = Self.defaultMetadataGap
-        chipRowGap       = Self.defaultMetadataGap
-        chipsToDivider   = Self.defaultMetadataGap
-        dividerToEntries = Self.defaultMetadataGap
-        entriesToRelated = Self.defaultMetadataGap
+        titleToSummary   = Self.defaultTitleToSummary
+        summaryToChips   = Self.defaultSummaryToChips
+        chipRowGap       = Self.defaultChipRowGap
+        chipsToDivider   = Self.defaultChipsToDivider
+        dividerToEntries = Self.defaultDividerToEntries
+        entriesToRelated = Self.defaultEntriesToRelated
         buttonVisible    = false
         nodeTitle        = Role.nodeTitle.defaultSettings
         nodeSummary      = Role.nodeSummary.defaultSettings

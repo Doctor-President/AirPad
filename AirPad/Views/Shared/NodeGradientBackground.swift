@@ -84,6 +84,23 @@ struct NodeGradientLayer: View {
 
     @State private var phase: Double = Double.random(in: 0...100)
 
+    /// Effective appearance — the SAME mechanism the shipped map/chrome theming
+    /// uses (`AppearancePalette.mapBackground(dark: colorScheme == .dark)`). Dark
+    /// routes to the byte-identical Solar Flare recipe; light routes to the
+    /// transmissive Cucumber Water path below.
+    @Environment(\.colorScheme) private var colorScheme
+
+    // Cucumber Water (light) — BAKED. Tom's device-verified values from the
+    // (now-deleted) DEBUG tuner. Single source in BOTH configs — no @AppStorage,
+    // no live dial, no UserDefaults read (a stale `cucumber.*` key left on a dev
+    // device is inert; nothing reads it, so it can't drift — the NodeCardView
+    // gating precedent). Read ONLY by `lightBody`; the dark path never touches
+    // them, so Solar Flare stays byte-identical.
+    private static let cwTransferMode: BlendMode = .plusDarker   // was: transfer-mode picker
+    private static let cwBaseLightness: Double = 0.98            // parchment #F4EFE3 × this
+    private static let cwPigmentStrength: Double = 1.00          // pigment-layer opacity
+    private static let cwParchmentHex = "F4EFE3"
+
     private static let circleColors: [(String, String, String)] = [
         ("9B6FE8", "F5C5A3", "E36B4E"),
         ("5B8FFF", "A78BFA", "F472B6"),
@@ -180,12 +197,66 @@ struct NodeGradientLayer: View {
     }
 
     var body: some View {
+        if colorScheme == .dark {
+            darkBody
+        } else {
+            lightBody
+        }
+    }
+
+    /// Solar Flare (dark) — the shipped recipe, byte-identical to main
+    /// (`51ba4ae`): dark base + color blobs (source-over) + radial inner-glow
+    /// (overlay) + optional vignette (multiply). Reads NONE of the Cucumber dials.
+    private var darkBody: some View {
         ZStack {
             gradientFill
             radialGlow.blendMode(.overlay)
             if vignette > 0 {
                 vignetteLayer
             }
+        }
+    }
+
+    /// Cucumber Water (light) — TRANSMISSIVE. Parchment base + the SAME color-blob
+    /// field composited OVER it with the baked `.plusDarker` transfer blend at the
+    /// baked pigment strength (Tom's device-verified values). The dark radial-glow
+    /// and vignette are dropped — on cream they blow the rim out / dirty the
+    /// corners; the parchment + ink layer carry the read instead.
+    /// `compositingGroup` isolates the blend so it composites against the
+    /// parchment, not the map ground behind the card.
+    private var lightBody: some View {
+        ZStack {
+            parchmentBase
+            pigmentField
+                .opacity(Self.cwPigmentStrength)
+                .blendMode(Self.cwTransferMode)
+        }
+        .compositingGroup()
+    }
+
+    /// Parchment ground for the light path — `#F4EFE3` scaled by the baked
+    /// `cwBaseLightness`. Opaque, so the pigment blend composites against paper.
+    private var parchmentBase: some View {
+        let (r, g, b) = Self.rgb(Self.cwParchmentHex)
+        let l = Self.cwBaseLightness
+        return Color(red: min(1, r * l), green: min(1, g * l), blue: min(1, b * l))
+    }
+
+    /// The color-pigment blobs ALONE (no base behind them) — the same GPU field
+    /// the dark path uses, returned bare so `lightBody` can slot a blend mode
+    /// between it and the parchment. Transparent between blobs (the shader emits
+    /// premultiplied source-over), so the blend leaves bare paper untouched.
+    @ViewBuilder
+    private var pigmentField: some View {
+        let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
+        let size: CGFloat = 180 * circleScale
+        if undulation > 0 {
+            BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
+                          animated: animated)
+        } else {
+            BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
+                          animated: animated,
+                          anchor: anchor)
         }
     }
 

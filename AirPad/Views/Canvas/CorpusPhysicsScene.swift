@@ -266,7 +266,9 @@ final class CorpusPhysicsScene: SKScene {
     // MARK: - Private state
 
     private var cameraNode = SKCameraNode()
-    private var nodeSprites: [String: SKShapeNode] = [:]
+    // SKNode (not SKShapeNode) — unfocused orbs are SKSpriteNodes (shared-shader
+    // substrate). Holds ONLY makeShape orbs; über nodes live in `uberNodeSprites`.
+    private var nodeSprites: [String: SKNode] = [:]
     var uberNodeSprites: [String: SKShapeNode] = [:]  // Accessed by CanvasView for drill-down
     private var positionMap: [String: CanvasPosition] = [:]
 
@@ -883,6 +885,14 @@ final class CorpusPhysicsScene: SKScene {
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
+
+        #if DEBUG
+        // Synthetic-corpus batching measurement (SPRMeasure launch arg). Runs only
+        // in the dedicated SPRMeasureView host, never the normal app.
+        if UserDefaults.standard.bool(forKey: "SPRMeasure") {
+            runSPRMeasure()
+        }
+        #endif
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
@@ -894,6 +904,10 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+
+        #if DEBUG
+        sprTickFPS(currentTime)
+        #endif
 
         refreshGrazeTuning()  // pull live Graze dials into cached properties
 
@@ -2077,7 +2091,12 @@ final class CorpusPhysicsScene: SKScene {
 
     private func updateNodeSprite(_ node: Node) {
         guard let shape = nodeSprites[node.id] else { return }
-        shape.fillColor = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
+        // Re-color the sprite orb's fill attribute (opaque re-color — no light
+        // dilution here, matching the prior behavior).
+        let fill = bubbleColor(for: node).withAlphaComponent(node.isMeta ? 0.55 : 1.0)
+        if let s = shape as? SKSpriteNode {
+            s.setValue(SKAttributeValue(vectorFloat4: Self.rgbaVec(fill)), forAttribute: "a_node_color")
+        }
 
         // Update cached neighborhoodID
         if shape.userData == nil {
@@ -2163,7 +2182,7 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Add newcomer halo to a sprite.
-    private func addNewcomerHalo(to sprite: SKShapeNode, radius: CGFloat) {
+    private func addNewcomerHalo(to sprite: SKNode, radius: CGFloat) {
         let haloRadius = radius + 12
         let halo = SKShapeNode(circleOfRadius: haloRadius)
         halo.strokeColor = UIColor.white.withAlphaComponent(0.5)
@@ -2390,7 +2409,7 @@ final class CorpusPhysicsScene: SKScene {
         let maxRepulsionImpulse: CGFloat = 3.0
 
         // Group nodes by neighborhoodID to calculate centroids
-        var neighborhoodGroups: [String: [SKShapeNode]] = [:]
+        var neighborhoodGroups: [String: [SKNode]] = [:]
         for (_, sprite) in nodeSprites {
             guard let _neighborhoodID = sprite.userData?["neighborhoodID"] as? String else { continue }
             neighborhoodGroups[_neighborhoodID, default: []].append(sprite)
@@ -2582,30 +2601,30 @@ final class CorpusPhysicsScene: SKScene {
     ///   at the dialed blend/strength; the near-invisible white stroke → low-alpha
     ///   ink. Never touches `shape.alpha` or `fillShader`, so focal/dimmed state
     ///   (set by `setFocalShader`) is preserved.
-    private func styleUnfocusedOrb(_ shape: SKShapeNode,
+    private func styleUnfocusedOrb(_ node: SKNode,
                                    baseFill: UIColor,
                                    isMeta: Bool,
                                    isLight: Bool) {
-        // Fill — dilute in light so the parchment shows through the orb.
+        // Fill/stroke → per-node attributes on the shared-shader sprite orb.
         let metaAlpha: CGFloat = isMeta ? 0.55 : 1.0
         let fillAlpha = isLight ? metaAlpha * Self.cwPigment : metaAlpha
-        shape.fillColor = baseFill.withAlphaComponent(fillAlpha)
+        let fill = baseFill.withAlphaComponent(fillAlpha)
+        // Meta keeps its soft-purple rim in both rooms (reads on cream); only the
+        // near-invisible white@0.12 non-meta stroke flips to ink.
+        let stroke: UIColor = isMeta
+            ? UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
+            : (isLight ? Self.lightInk.withAlphaComponent(Self.cwStrokeInk)
+                       : UIColor.white.withAlphaComponent(0.12))
+        let lineWidth: CGFloat = isMeta ? 1.5 : 1.0
 
-        // Stroke — meta keeps its soft-purple rim in both rooms (it reads on
-        // cream); only the near-invisible white@0.12 non-meta stroke flips to ink.
-        if isMeta {
-            shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
-            shape.lineWidth = 1.5
-        } else {
-            shape.strokeColor = isLight
-                ? Self.lightInk.withAlphaComponent(Self.cwStrokeInk)
-                : UIColor.white.withAlphaComponent(0.12)
-            shape.lineWidth = 1
+        if let sprite = node as? SKSpriteNode {
+            setOrbSpriteAttributes(sprite, fill: fill, stroke: stroke,
+                                   lineWidth: lineWidth, radius: sprite.size.width / 2)
         }
 
         // Diagonal wash child — deepen the node's own hue in light (screen 0.10);
         // black diagonal in dark (byte-identical Solar Flare).
-        if let wash = shape.childNode(withName: "wash") as? SKSpriteNode {
+        if let wash = node.childNode(withName: "wash") as? SKSpriteNode {
             if isLight {
                 wash.texture = nodeWashLightTexture
                 wash.colorBlendFactor = 1.0         // replace texture rgb with the hue shade
@@ -2638,34 +2657,161 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    // MARK: - Sprite orb substrate (the sole unfocused-orb render path)
+
+    /// ONE shared SKShader for every unfocused orb (created once, reused; NOT
+    /// per-instance — that's the über anti-pattern that breaks batching). Renders
+    /// an anti-aliased filled-circle SDF + inner stroke ring, colored PER NODE via
+    /// SKAttributes (a_node_color / a_stroke_color / a_geom). Shared shader + shared
+    /// texture + per-node attributes + `.ignoresSiblingOrder` collapse the orb fills
+    /// to a handful of draws (sim-measured 2804→5; device-verified identical).
+    private lazy var orbSpriteShader: SKShader = {
+        let src = """
+        void main() {
+            vec2 p = v_tex_coord - vec2(0.5);
+            float d = length(p);
+            float R = 0.5;
+            float aa = a_geom.y;          // ~1px feather (uv)
+            float sw = a_geom.x;          // stroke width (uv)
+            float disc = 1.0 - smoothstep(R - aa, R, d);
+            float ring = clamp(smoothstep(R - sw - aa, R - sw, d) - smoothstep(R - aa, R, d), 0.0, 1.0);
+            vec4 fillC = a_node_color;
+            vec4 strokeC = a_stroke_color;
+            float fa = disc * fillC.a;
+            float sa = ring * strokeC.a;
+            float outA = sa + fa * (1.0 - sa);
+            vec3 outRGB = strokeC.rgb * sa + fillC.rgb * fa * (1.0 - sa);  // premultiplied, stroke over fill
+            gl_FragColor = vec4(outRGB, outA);
+        }
+        """
+        let shader = SKShader(source: src)
+        shader.attributes = [
+            SKAttribute(name: "a_node_color", type: .vectorFloat4),
+            SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
+            SKAttribute(name: "a_geom", type: .vectorFloat2)
+        ]
+        return shader
+    }()
+
+    private static func rgbaVec(_ c: UIColor) -> vector_float4 {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return vector_float4(Float(r), Float(g), Float(b), Float(a))
+    }
+
+    /// Push per-node fill/stroke into the shared sprite shader via attributes.
+    /// `sw`/`aa` are in uv (sprite spans size=2·radius → 1px = 1/(2·radius) uv).
+    private func setOrbSpriteAttributes(_ sprite: SKSpriteNode, fill: UIColor,
+                                        stroke: UIColor, lineWidth: CGFloat, radius: CGFloat) {
+        sprite.setValue(SKAttributeValue(vectorFloat4: Self.rgbaVec(fill)), forAttribute: "a_node_color")
+        sprite.setValue(SKAttributeValue(vectorFloat4: Self.rgbaVec(stroke)), forAttribute: "a_stroke_color")
+        let denom = Float(max(1, radius * 2))
+        sprite.setValue(SKAttributeValue(vectorFloat2: vector_float2(Float(lineWidth) / denom, 1.0 / denom)),
+                        forAttribute: "a_geom")
+    }
+
+    // MARK: - SPR measurement harness (DEBUG — synthetic corpus, Simulator-runnable)
+    // Draw count is a CPU-side scene-graph fact (identical Sim vs device), so the
+    // batching gate is settleable off-device. There's no public API for the GPU
+    // draw count, so `draws` is read from the SKView HUD in a screenshot; nodes +
+    // fps are logged. Reusable for any future node-perf spike.
+
+    #if DEBUG
+    private var sprLastUpdateTime: TimeInterval = 0
+    private var sprSmoothedFPS: Double = 0
+
+    /// Feed one frame delta into the smoothed fps (called from `update`).
+    func sprTickFPS(_ currentTime: TimeInterval) {
+        if sprLastUpdateTime > 0 {
+            let dt = currentTime - sprLastUpdateTime
+            if dt > 0 { sprSmoothedFPS = sprSmoothedFPS == 0 ? 1.0 / dt : sprSmoothedFPS * 0.9 + (1.0 / dt) * 0.1 }
+        }
+        sprLastUpdateTime = currentTime
+    }
+
+    /// Clearly-tagged counters line for CC to grep. `draws` is read from the HUD.
+    func logSPRMeasure() {
+        print(String(format: "[SPRMEASURE] nodes=%d fps=%.1f (draws: read from HUD in screenshot)",
+                     nodeSprites.count, sprSmoothedFPS))
+    }
+
+    /// Data-independent synthetic corpus — `count` real orbs via `makeShape` (shared
+    /// shader + wash child + z-order), each a DISTINCT hue (so per-node color
+    /// delivery is eyeballable). Static (no physics) + inside the camera frame so
+    /// nothing is culled. Reusable for future node-perf / EFFECT spikes.
+    func injectSyntheticCorpus(count: Int) {
+        cameraNode.position = .zero
+        cameraNode.setScale(1.0)
+        for (_, orb) in nodeSprites { orb.removeFromParent() }
+        nodeSprites.removeAll()
+        let hues: [CGFloat] = [0.0, 0.08, 0.16, 0.33, 0.5, 0.6, 0.75, 0.9]  // very distinct
+        let halfW = (view?.bounds.width ?? 393) * 0.46
+        let halfH = (view?.bounds.height ?? 852) * 0.46
+        for i in 0..<count {
+            let id = "synth-\(i)"
+            let radius = CGFloat.random(in: 16...40)
+            let color = UIColor(hue: hues[i % hues.count], saturation: 0.78, brightness: 0.92, alpha: 1)
+            let orb = makeShape(radius: radius, fillColor: color, isMeta: false, nodeID: id)
+            orb.name = "node:\(id)"
+            orb.position = CGPoint(x: CGFloat.random(in: -halfW...halfW),
+                                   y: CGFloat.random(in: -halfH...halfH))
+            addChild(orb)
+            nodeSprites[id] = orb
+        }
+    }
+
+    /// `-SPRMeasure` entry (from `didMove`). Injects the synthetic corpus, then logs
+    /// the READY marker after a few frames. `-SPRLight ON/OFF` forces the pushed
+    /// `appearanceIsLight` for a controlled light/dark render (absent → sim trait).
+    func runSPRMeasure() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self else { return }
+            switch UserDefaults.standard.string(forKey: "SPRLight")?.uppercased() {
+            case "ON":  self.appearanceIsLight = true
+            case "OFF": self.appearanceIsLight = false
+            default:    self.appearanceIsLight = (self.view?.traitCollection.userInterfaceStyle == .light)
+            }
+            self.injectSyntheticCorpus(count: 700)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                guard let self else { return }
+                self.logSPRMeasure()
+                print("[SPRMEASURE] READY light=\(self.appearanceIsLight)")
+            }
+        }
+    }
+    #endif
+
     // MARK: - Helpers
 
+    /// The unfocused orb — an SKSpriteNode running the shared SDF `orbSpriteShader`
+    /// (filled circle + inner stroke ring, per-node color via SKAttributes) plus the
+    /// diagonal wash child. This is the SOLE orb render path (promoted from the
+    /// SKShapeNode spike). Über keeps its own `makeUberNodeShape` (SKShapeNode).
+    /// Physics/label/name are attached by `addNodeSprite` (SKNode).
     private func makeShape(
         radius: CGFloat,
         fillColor: UIColor,
         isMeta: Bool = false,
         nodeID: String
-    ) -> SKShapeNode {
-        // ws-map — deformation retired (Level 1); nodes are circles.
-        let shape = SKShapeNode(circleOfRadius: radius)
-        shape.zPosition = 1
+    ) -> SKNode {
+        let sprite = SKSpriteNode(texture: whiteUVTexture)  // texture → valid v_tex_coord
+        sprite.size = CGSize(width: radius * 2, height: radius * 2)
+        sprite.zPosition = 1
+        sprite.shader = orbSpriteShader
 
-        // Subtle diagonal wash — reads as a soft gradient of the node's own shade
-        // (not a flat disc). Child sprite → independent of the fill / focal shader
-        // pipeline; hidden automatically when the parent goes alpha-0 focal. The
-        // fill/stroke/wash appearance (dark Solar Flare vs light Cucumber Water) is
-        // applied by styleUnfocusedOrb below, and re-applied on flip / dial change.
+        // Diagonal wash child (z above the fill, below the title). Hidden
+        // automatically when the parent goes alpha-0 focal.
         let wash = SKSpriteNode(texture: nodeWashTexture)
         wash.size = CGSize(width: radius * 2, height: radius * 2)
-        wash.zPosition = 0.5                 // above the fill, below the title (z=2)
+        wash.zPosition = 0.5
         wash.name = "wash"
-        shape.addChild(wash)
+        sprite.addChild(wash)
 
-        // Unfocused nodes render flat tag color — the gradient shader is applied on
-        // engagement via setFocalShader(to:) and cleared on disengagement.
-        styleUnfocusedOrb(shape, baseFill: fillColor, isMeta: isMeta,
+        // Fill/stroke/wash appearance (dark Solar Flare vs light Cucumber Water),
+        // re-applied on appearance flip via restyleUnfocusedOrbs().
+        styleUnfocusedOrb(sprite, baseFill: fillColor, isMeta: isMeta,
                           isLight: currentIsLight)
-        return shape
+        return sprite
     }
 
     /// Create Über-node shape with GLSL gradient shader using child colors.
@@ -3011,19 +3157,18 @@ final class CorpusPhysicsScene: SKScene {
         // active `SKAction.fadeAlpha` keeps interpolating each frame toward the
         // dim target and clobbers the instant alpha assignment below, letting
         // the focal's solid fill bleed through behind the SwiftUI gradient.
+        // Orbs are SKSpriteNodes with the shared orb shader — focal-hide is just
+        // alpha=0 (keep the shader; don't clear it). Focal visual is the SwiftUI
+        // overlay. (über is a separate dict, unaffected.)
         if let oldID = focalShaderID, oldID != nodeID,
            let oldShape = nodeSprites[oldID] {
             oldShape.removeAction(forKey: Self.strandDimActionKey)
-            oldShape.fillShader = nil
-            oldShape.fillTexture = nil
             oldShape.alpha = 1
             dimmedSpriteIDs.remove(oldID)
         }
         if let newID = nodeID, newID != focalShaderID,
            let newShape = nodeSprites[newID] {
             newShape.removeAction(forKey: Self.strandDimActionKey)
-            newShape.fillShader = nil
-            newShape.fillTexture = nil
             newShape.alpha = 0
             dimmedSpriteIDs.remove(newID)
         }

@@ -4,6 +4,7 @@
 // Preserves the struct's interface and selection chrome.
 
 import SwiftUI
+import UIKit
 
 // Non-optional Color hex initializer for palette colors
 extension Color {
@@ -91,11 +92,43 @@ struct NodeCardView: View {
         store.nodes.first(where: { $0.id == nodeID }) ?? fallbackNode
     }
 
-    // Warm-cream ink palette — every text element draws from this.
-    private static let inkTitle = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.98)
-    private static let inkDeck  = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.86)
-    private static let inkMeta  = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.68)
-    private static let hairline = Color(red: 1.0, green: 0.925, blue: 0.804).opacity(0.22)
+    // Ink palette — trait-dynamic so text reads in BOTH rooms. Dark reproduces
+    // the shipped warm-cream VERBATIM (byte-identical to Solar Flare); light
+    // sources from the shipped light ink (AppearancePalette.ink, #232A2E) so
+    // titles/decks/meta read on Cucumber-Water parchment. Same opacities either
+    // way — the ink flip is coupled plumbing, not a judged knob. Built via a
+    // trait UIColor (the AppearancePalette convention); the dark UIColor is the
+    // exact SwiftUI cream round-tripped through UIColor so dark stays identical.
+    private static let cream     = Color(red: 1.0, green: 0.976, blue: 0.941)
+    private static let creamHair = Color(red: 1.0, green: 0.925, blue: 0.804)
+    private static let inkLight: UIColor =
+        UIColor(AppearancePalette.ink).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+
+    private static func ink(_ darkOpaque: Color, _ alpha: CGFloat) -> Color {
+        let dark = UIColor(darkOpaque).withAlphaComponent(alpha)
+        let light = inkLight.withAlphaComponent(alpha)
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+
+    private static let inkTitle = ink(cream, 0.98)
+    private static let inkDeck  = ink(cream, 0.86)
+    private static let inkMeta  = ink(cream, 0.68)
+    private static let hairline = ink(creamHair, 0.22)
+
+    // Legibility shadow behind ink. Dark: black (the shipped scrim substitute —
+    // byte-identical). Light: a soft WHITE halo so type separates from the
+    // multiplied mid-tone pigment without smearing dark onto parchment.
+    private static let inkShadow = Color(UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor.black : UIColor.white
+    })
+
+    // Traveling-scrim ink. Dark: black (identical) — darkens the type bands over
+    // the bright gradient. Light: clear — a dark scrim pools as dirty bands on
+    // parchment; ink + halo carry legibility instead.
+    private static let scrimInk = Color(UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor.black : UIColor.clear
+    })
+
     private static let cornerRadius: CGFloat = 30
 
     // R6 — raised-panel float cue, copied from the Note panel's rim treatment
@@ -220,10 +253,10 @@ struct NodeCardView: View {
     private var travelingScrim: some View {
         LinearGradient(
             stops: [
-                .init(color: Color.black.opacity(0.42), location: 0.0),
-                .init(color: Color.clear,               location: 0.20),
-                .init(color: Color.clear,               location: 0.80),
-                .init(color: Color.black.opacity(0.52), location: 1.0)
+                .init(color: Self.scrimInk.opacity(0.42), location: 0.0),
+                .init(color: Color.clear,                 location: 0.20),
+                .init(color: Color.clear,                 location: 0.80),
+                .init(color: Self.scrimInk.opacity(0.52), location: 1.0)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -291,7 +324,7 @@ struct NodeCardView: View {
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
             }
-            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+            .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
 
             Rectangle()
                 .fill(Self.hairline)
@@ -304,7 +337,7 @@ struct NodeCardView: View {
                 .font(.system(size: 23 * fs, weight: .bold, design: .serif))
                 .tracking(-0.35)
                 .foregroundColor(Self.inkTitle)
-                .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+                .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -317,7 +350,7 @@ struct NodeCardView: View {
                         .font(.system(size: 14 * fs, design: .serif))
                         .italic()
                         .foregroundColor(Self.inkDeck)
-                        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                        .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
                         .lineSpacing(3)
                         .lineLimit(3)
                         .padding(.top, 8)
@@ -391,7 +424,7 @@ struct NodeCardView: View {
                     .font(.system(size: 10 * fs, weight: .medium, design: .serif))
                     .tracking(2.0)
                     .foregroundColor(Self.inkMeta)
-                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
                     .lineLimit(1)
             }
         }
@@ -425,7 +458,7 @@ struct NodeCardView: View {
             }
             Spacer(minLength: 0)
         }
-        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+        .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
     }
 
     @ViewBuilder
@@ -491,7 +524,7 @@ struct NodeCardView: View {
             Spacer(minLength: 0)
         }
         .foregroundColor(Self.inkMeta)
-        .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+        .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
     }
 
     private func overflowLine(_ count: Int) -> some View {
@@ -499,7 +532,7 @@ struct NodeCardView: View {
             .font(.system(size: 11, design: .serif))
             .italic()
             .foregroundColor(Self.inkMeta.opacity(0.85))
-            .shadow(color: .black.opacity(0.35), radius: 2, x: 0, y: 1)
+            .shadow(color: Self.inkShadow.opacity(0.35), radius: 2, x: 0, y: 1)
     }
 
     /// Horizontal scrollable thumbnail strip for a promoted `.imageVideo`
@@ -599,7 +632,7 @@ struct NodeCardView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+            .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
             if let transcript {
                 fitLinesText(
                     transcript,
@@ -692,7 +725,7 @@ struct NodeCardView: View {
             }()
             styled
                 .foregroundColor(color)
-                .shadow(color: .black.opacity(shadowOpacity), radius: 2, x: 0, y: 1)
+                .shadow(color: Self.inkShadow.opacity(shadowOpacity), radius: 2, x: 0, y: 1)
                 .lineLimit(maxLines)
                 .truncationMode(.tail)
                 .lineSpacing(lineSpacing)

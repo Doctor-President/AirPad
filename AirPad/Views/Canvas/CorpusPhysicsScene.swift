@@ -280,11 +280,10 @@ final class CorpusPhysicsScene: SKScene {
     /// node's original (substrate/neighborhood) color.
     func applyTerritoryColors(_ colors: [String: UIColor]) {
         territoryColors = colors
-        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        for (id, sprite) in nodeSprites {
-            guard let node = byID[id] else { continue }
-            sprite.fillColor = bubbleColor(for: node)
-        }
+        // Re-tint through the unfocused-orb styler so the light-mode fill dilution
+        // + hue wash stay in sync with the new fill. DARK is byte-identical — the
+        // styler reproduces the shipped opaque fill + white@0.12 stroke + black wash.
+        restyleUnfocusedOrbs()
     }
 
     /// Designed, distinct territory palette (colorblind-considered qualitative
@@ -406,6 +405,30 @@ final class CorpusPhysicsScene: SKScene {
                                         colors: colors, locations: [0, 1]) else { return }
             // Top-leading (clear) → bottom-trailing (dark). UIKit y-down, so start
             // top-left, end bottom-right = the requested diagonal.
+            c.drawLinearGradient(grad,
+                                 start: .zero,
+                                 end: CGPoint(x: size.width, y: size.height),
+                                 options: [])
+        }
+        return SKTexture(image: img)
+    }()
+
+    /// Light-mode ("Cucumber Water") wash ramp — the same circle-masked diagonal
+    /// as `nodeWashTexture` but a FULL 0→1 alpha ramp. The per-node hue is applied
+    /// via the wash sprite's `colorBlendFactor`/`color` (so only the alpha SHAPE
+    /// matters here), and the wash-strength dial scales the sprite alpha over it —
+    /// giving real depth range instead of the dark texture's fixed 0.38 ceiling.
+    private lazy var nodeWashLightTexture: SKTexture = {
+        let size = CGSize(width: 128, height: 128)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let img = renderer.image { ctx in
+            let c = ctx.cgContext
+            c.addEllipse(in: CGRect(origin: .zero, size: size))
+            c.clip()
+            let colors = [UIColor.black.withAlphaComponent(0).cgColor,
+                          UIColor.black.withAlphaComponent(1.0).cgColor] as CFArray
+            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                        colors: colors, locations: [0, 1]) else { return }
             c.drawLinearGradient(grad,
                                  start: .zero,
                                  end: CGPoint(x: size.width, y: size.height),
@@ -651,6 +674,12 @@ final class CorpusPhysicsScene: SKScene {
     private var momentumEligible: Bool = false
 
     private var currentFocalNodeID: String? = nil
+
+    /// Last appearance applied to the unfocused orbs, so `update` re-themes them
+    /// only when the trait actually flips (light ↔ dark), not every frame. nil
+    /// until the first tick (which forces an initial apply once the SKView trait
+    /// is available; a no-op if no sprites exist yet — `makeShape` themes those).
+    private var lastAppearanceIsLight: Bool? = nil
     /// The most recent focal node, kept around through preCollapse and
     /// disengaging so syncFocalToCanvasState can continue bridging its
     /// shrinking position and diameter to the SwiftUI gradient overlay while
@@ -900,6 +929,15 @@ final class CorpusPhysicsScene: SKScene {
             let dot = AppearancePalette.mapGridDotRGB(dark: dotDark)
             BackgroundGridNode.setDotAppearance(grid, r: dot.r, g: dot.g, b: dot.b,
                                                 opacity: AppearancePalette.mapGridDotOpacity(dark: dotDark))
+        }
+
+        // Re-theme unfocused orbs when the appearance flips (light ↔ dark). Fires
+        // only on an actual trait change (guarded by lastAppearanceIsLight), not
+        // per frame — the DEBUG dial path re-themes separately via CanvasView.
+        let orbIsLight = view?.traitCollection.userInterfaceStyle == .light
+        if orbIsLight != lastAppearanceIsLight {
+            lastAppearanceIsLight = orbIsLight
+            restyleUnfocusedOrbs()
         }
 
 
@@ -2496,6 +2534,105 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    // MARK: - Unfocused-orb appearance (Solar Flare dark / Cucumber Water light)
+
+    /// Light-mode ink for the orb stroke — the shipped light `AppearancePalette.ink`
+    /// (`#232A2E`) resolved to a concrete UIColor (the scene is not SwiftUI, so it
+    /// can't read the trait-dynamic Color directly).
+    private static let lightInk: UIColor =
+        UIColor(AppearancePalette.ink).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+
+    /// Whether the map is currently in light mode — resolved from the SKView trait,
+    /// the same signal the grid dots track in `update`.
+    private var currentIsLight: Bool {
+        view?.traitCollection.userInterfaceStyle == .light
+    }
+
+    // Baked Cucumber Water (light) unfocused-orb wash — Tom's device-locked
+    // values (the DEBUG tuner is retired). Single source in both configs; dark
+    // reads none of these, so Solar Flare stays byte-identical.
+    private static let cwPigment: CGFloat = 0.60          // fill dilution (parchment through)
+    private static let cwWashStrength: CGFloat = 0.10     // diagonal hue-wash sprite alpha
+    private static let cwWashBlend: SKBlendMode = .screen // wash composite
+    private static let cwStrokeInk: CGFloat = 0.35        // ink stroke alpha
+
+    /// A deeper, slightly richer shade of the node's OWN hue — the pigment the
+    /// light wash pools into (instead of black): same hue, lower brightness,
+    /// nudged saturation.
+    private func washHueShade(_ base: UIColor) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard base.getHue(&h, saturation: &s, brightness: &b, alpha: &a) else { return base }
+        return UIColor(hue: h,
+                       saturation: min(1.0, s * 1.15),
+                       brightness: max(0.0, b * 0.55),
+                       alpha: 1.0)
+    }
+
+    /// Apply the unfocused-orb treatment to `shape` for `baseFill`.
+    /// - DARK (Solar Flare): opaque fill (meta `0.55`) + black diagonal wash
+    ///   (`.alpha`) + white@0.12 stroke — byte-identical to the shipped look.
+    /// - LIGHT (Cucumber Water): fill diluted to `tuning.pigment` so the parchment
+    ///   map ground shows through (pigment thinned into paper); the wash sprite
+    ///   pools a translucent shade of the node's OWN hue (via `colorBlendFactor`)
+    ///   at the dialed blend/strength; the near-invisible white stroke → low-alpha
+    ///   ink. Never touches `shape.alpha` or `fillShader`, so focal/dimmed state
+    ///   (set by `setFocalShader`) is preserved.
+    private func styleUnfocusedOrb(_ shape: SKShapeNode,
+                                   baseFill: UIColor,
+                                   isMeta: Bool,
+                                   isLight: Bool) {
+        // Fill — dilute in light so the parchment shows through the orb.
+        let metaAlpha: CGFloat = isMeta ? 0.55 : 1.0
+        let fillAlpha = isLight ? metaAlpha * Self.cwPigment : metaAlpha
+        shape.fillColor = baseFill.withAlphaComponent(fillAlpha)
+
+        // Stroke — meta keeps its soft-purple rim in both rooms (it reads on
+        // cream); only the near-invisible white@0.12 non-meta stroke flips to ink.
+        if isMeta {
+            shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
+            shape.lineWidth = 1.5
+        } else {
+            shape.strokeColor = isLight
+                ? Self.lightInk.withAlphaComponent(Self.cwStrokeInk)
+                : UIColor.white.withAlphaComponent(0.12)
+            shape.lineWidth = 1
+        }
+
+        // Diagonal wash child — deepen the node's own hue in light (screen 0.10);
+        // black diagonal in dark (byte-identical Solar Flare).
+        if let wash = shape.childNode(withName: "wash") as? SKSpriteNode {
+            if isLight {
+                wash.texture = nodeWashLightTexture
+                wash.colorBlendFactor = 1.0         // replace texture rgb with the hue shade
+                wash.color = washHueShade(baseFill)
+                wash.blendMode = Self.cwWashBlend
+                wash.alpha = Self.cwWashStrength
+            } else {
+                // Solar Flare — the shipped wash: black diagonal, source-over, full.
+                wash.texture = nodeWashTexture
+                wash.colorBlendFactor = 0.0
+                wash.color = .white                 // ignored at colorBlendFactor 0
+                wash.blendMode = .alpha
+                wash.alpha = 1.0
+            }
+        }
+    }
+
+    /// Re-apply the unfocused-orb treatment to every on-screen orb — called on
+    /// appearance flip (from `update`, when the trait changes). Resolves the trait
+    /// ONCE, then loops. Focal nodes are safe to include — `styleUnfocusedOrb`
+    /// leaves `shape.alpha` (0 while focal) untouched, so they stay hidden and pick
+    /// up the current theme on disengagement.
+    func restyleUnfocusedOrbs() {
+        let isLight = currentIsLight
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for (id, shape) in nodeSprites {
+            guard let node = byID[id] else { continue }
+            styleUnfocusedOrb(shape, baseFill: bubbleColor(for: node), isMeta: node.isMeta,
+                              isLight: isLight)
+        }
+    }
+
     // MARK: - Helpers
 
     private func makeShape(
@@ -2506,30 +2643,23 @@ final class CorpusPhysicsScene: SKScene {
     ) -> SKShapeNode {
         // ws-map — deformation retired (Level 1); nodes are circles.
         let shape = SKShapeNode(circleOfRadius: radius)
-        shape.fillColor = isMeta ? fillColor.withAlphaComponent(0.55) : fillColor
         shape.zPosition = 1
 
-        if isMeta {
-            shape.strokeColor = UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
-            shape.lineWidth = 1.5
-        } else {
-            shape.strokeColor = UIColor.white.withAlphaComponent(0.12)
-            shape.lineWidth = 1
-            // Unfocused nodes render flat tag color — gradient shader is applied on
-            // engagement via setFocalShader(to:) and cleared on disengagement.
-
-        }
-
-        // Subtle diagonal wash — darkens the bottom-trailing diagonal of the
-        // node's own fill, so each unengaged node reads as a soft gradient of its
-        // shade (not a flat disc). Child sprite → independent of the fill / focal
-        // shader pipeline; hidden automatically when the parent goes alpha-0 focal.
+        // Subtle diagonal wash — reads as a soft gradient of the node's own shade
+        // (not a flat disc). Child sprite → independent of the fill / focal shader
+        // pipeline; hidden automatically when the parent goes alpha-0 focal. The
+        // fill/stroke/wash appearance (dark Solar Flare vs light Cucumber Water) is
+        // applied by styleUnfocusedOrb below, and re-applied on flip / dial change.
         let wash = SKSpriteNode(texture: nodeWashTexture)
         wash.size = CGSize(width: radius * 2, height: radius * 2)
         wash.zPosition = 0.5                 // above the fill, below the title (z=2)
         wash.name = "wash"
         shape.addChild(wash)
 
+        // Unfocused nodes render flat tag color — the gradient shader is applied on
+        // engagement via setFocalShader(to:) and cleared on disengagement.
+        styleUnfocusedOrb(shape, baseFill: fillColor, isMeta: isMeta,
+                          isLight: currentIsLight)
         return shape
     }
 

@@ -1376,12 +1376,18 @@ private struct TerritoryLabelLayer: View {
 private struct TerritoryLabelPill: View {
     let text: String
     let colorHex: String
+    /// Same theme accessor the rest of the canvas chrome uses. Dark keeps the
+    /// shipped white; light darkens the text to the detail-view ink so it reads
+    /// on cream (this pill was missed by the canvas white-sweep).
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Text(text.uppercased())
             .font(.custom("SourceSerif4-Bold", size: 15))
             .tracking(1.5)
-            .foregroundStyle(.white.opacity(0.95))
+            // Dark (Solar Flare): byte-identical white@0.95. Light (Cucumber
+            // Water): AppearancePalette.ink — the same token the detail view uses.
+            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.95) : AppearancePalette.ink)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .frame(minHeight: 30)

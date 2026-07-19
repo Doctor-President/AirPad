@@ -213,7 +213,7 @@ struct QuikCaptureView: View {
                         withAnimation(.easeInOut(duration: 0.2)) { keyboardVisible = false }
                     }
             } else {
-                Color(NoteTypography.background).ignoresSafeArea()
+                AppearancePalette.bgBase.ignoresSafeArea()
             }
         }
         .task {
@@ -243,16 +243,16 @@ struct QuikCaptureView: View {
                 // Title
                 TextField("Title", text: $editedTitle, axis: .vertical)
                     .font(visualSettings.nodeTitle.resolvedFont())
-                    .foregroundStyle(.white)
-                    .tint(.white)
+                    .foregroundStyle(AppearancePalette.ink)
+                    .tint(AppearancePalette.ink)
                     .focused($focusedField)
 
                 // Summary
                 if !editedSummary.isEmpty || node.summary.isEmpty {
                     TextField("Summary", text: $editedSummary, axis: .vertical)
                         .font(visualSettings.nodeSummary.resolvedFont())
-                        .foregroundStyle(.white.opacity(0.75))
-                        .tint(.white)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                        .tint(AppearancePalette.ink)
                         .focused($focusedField)
                 }
 
@@ -262,7 +262,7 @@ struct QuikCaptureView: View {
                 // Tags
                 tagsRow
 
-                Divider().background(Color.white.opacity(0.12))
+                Divider().background(AppearancePalette.ink.opacity(0.12))
 
                 // Items — every entry is rendered as an `EntryCard`. Each
                 // card needs its index + a snapshot of sibling IDs so the
@@ -297,7 +297,7 @@ struct QuikCaptureView: View {
                             .overlay(alignment: .bottom) {
                                 if rawIndex < node.items.count - 1 {
                                     Rectangle()
-                                        .fill(Color(hexString: "FFFFFF").opacity(0.08))
+                                        .fill(AppearancePalette.ink.opacity(0.08))
                                         .frame(height: 1)
                                         .allowsHitTesting(false)
                                 }
@@ -339,7 +339,7 @@ struct QuikCaptureView: View {
             captureChrome(node: node)
         }
         // Matched-gray detail surface: same warm tone as the note panel.
-        .background { Color(NoteTypography.background).ignoresSafeArea() }
+        .background { AppearancePalette.bgBase.ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
         } // close ZStack
         } // close GeometryReader
@@ -372,10 +372,10 @@ struct QuikCaptureView: View {
             } label: {
                 Text(hasContent ? "Done" : "Cancel")
                     .font(.headline)
-                    .foregroundStyle(hasContent ? .black : .white)
+                    .foregroundStyle(hasContent ? AppearancePalette.onInk : AppearancePalette.ink)
                     .padding(.horizontal, 18)
                     .frame(height: 44)
-                    .background(hasContent ? Color.white : Color.white.opacity(0.14), in: Capsule())
+                    .background(hasContent ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.14), in: Capsule())
             }
             .buttonStyle(.plain)
             .animation(.easeInOut(duration: 0.2), value: hasContent)
@@ -392,9 +392,9 @@ struct QuikCaptureView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .frame(width: CaptureChrome.buttonSize, height: CaptureChrome.buttonSize)
-                .background(Color.white.opacity(0.12), in: Circle())
+                .background(AppearancePalette.ink.opacity(0.12), in: Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -477,10 +477,10 @@ struct QuikCaptureView: View {
                 } label: {
                     Label("Add to collection", systemImage: "plus")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08))
+                        .background(AppearancePalette.ink.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 7))
                 }
             }
@@ -560,10 +560,10 @@ struct QuikCaptureView: View {
                 } label: {
                     Label("Add tag", systemImage: "plus")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(Color.white.opacity(0.08))
+                        .background(AppearancePalette.ink.opacity(0.08))
                         .clipShape(Capsule())
                 }
             }
@@ -874,22 +874,22 @@ private struct QuikCaptureCollectionChip: View {
         HStack(spacing: 4) {
             Image(systemName: "folder")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             Text(name)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
-        .background(Color.white.opacity(0.12))
+        .background(AppearancePalette.ink.opacity(0.12))
         .overlay(
             RoundedRectangle(cornerRadius: 7)
-                .stroke(Color.white.opacity(0.25), lineWidth: 1)
+                .stroke(AppearancePalette.ink.opacity(0.25), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 7))
     }
@@ -913,11 +913,11 @@ private struct QuikCaptureTagChip: View {
         HStack(spacing: 4) {
             Text(name)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             }
         }
         .padding(.horizontal, 10)
@@ -986,7 +986,7 @@ private struct QuikCaptureAttributesSection: View {
             Text("ATTRIBUTES")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .tracking(0.6)
-                .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Spacer(minLength: 0)
             if !addable.isEmpty {
                 Menu {
@@ -999,7 +999,7 @@ private struct QuikCaptureAttributesSection: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(hexString: "FFFFFF").opacity(0.55))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
@@ -1037,7 +1037,7 @@ private struct QuikCaptureRatingAttributeRow: View {
         HStack(spacing: 12) {
             Text(item.type.defaultDisplayName)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
 
             stars
                 .accessibilityElement()
@@ -1051,7 +1051,7 @@ private struct QuikCaptureRatingAttributeRow: View {
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .frame(width: 32, height: 32)
                     .contentShape(Rectangle())
             }
@@ -1070,7 +1070,7 @@ private struct QuikCaptureRatingAttributeRow: View {
                     .foregroundStyle(
                         filled
                             ? Color(hexString: "FACC15")
-                            : Color(hexString: "FFFFFF").opacity(0.25)
+                            : AppearancePalette.ink.opacity(0.25)
                     )
             }
         }

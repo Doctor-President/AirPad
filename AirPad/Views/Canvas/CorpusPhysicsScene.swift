@@ -2760,6 +2760,33 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Label-fit test spread — a 3×3 grid of TITLED orbs (short / long-multiword /
+    /// single-long-word) at diameters 60/90/120, so mid-word truncation is
+    /// eyeballable. Reached via `-SPRMeasure YES -SPRLabels YES`.
+    func injectLabelTestSpread() {
+        cameraNode.position = .zero
+        cameraNode.setScale(1.0)
+        for (_, orb) in nodeSprites { orb.removeFromParent() }
+        nodeSprites.removeAll()
+        let titles = ["Notes", "The Long Multi Word Title", "Geometric"]
+        let radii: [CGFloat] = [30, 45, 60]   // diameters 60 / 90 / 120
+        let colX: [CGFloat] = [-130, 0, 130]
+        let rowY: [CGFloat] = [280, 0, -280]
+        var i = 0
+        for (r, radius) in radii.enumerated() {
+            for (c, title) in titles.enumerated() {
+                let id = "lbl-\(i)"; i += 1
+                let fill = UIColor(hue: CGFloat(c) / 3.0, saturation: 0.45, brightness: 0.9, alpha: 1)
+                let orb = makeShape(radius: radius, fillColor: fill, isMeta: false, nodeID: id)
+                orb.name = "node:\(id)"
+                orb.addChild(makeTitleSprite(text: title, radius: radius, fillColor: fill))
+                orb.position = CGPoint(x: colX[c], y: rowY[r])
+                addChild(orb)
+                nodeSprites[id] = orb
+            }
+        }
+    }
+
     /// `-SPRMeasure` entry (from `didMove`). Injects the synthetic corpus, then logs
     /// the READY marker after a few frames. `-SPRLight ON/OFF` forces the pushed
     /// `appearanceIsLight` for a controlled light/dark render (absent → sim trait).
@@ -2771,7 +2798,11 @@ final class CorpusPhysicsScene: SKScene {
             case "OFF": self.appearanceIsLight = false
             default:    self.appearanceIsLight = (self.view?.traitCollection.userInterfaceStyle == .light)
             }
-            self.injectSyntheticCorpus(count: 700)
+            if UserDefaults.standard.bool(forKey: "SPRLabels") {
+                self.injectLabelTestSpread()
+            } else {
+                self.injectSyntheticCorpus(count: 700)
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                 guard let self else { return }
                 self.logSPRMeasure()
@@ -2877,7 +2908,8 @@ final class CorpusPhysicsScene: SKScene {
         titleFont: UIFont,
         summaryFont: UIFont,
         renderScale: CGFloat,
-        fillColor: UIColor
+        fillColor: UIColor,
+        titleWrap: NSLineBreakMode = .byWordWrapping   // resolveTitle owns the fit; no mid-word cut
     ) -> SKTexture {
         let textWidth = side  // padding inside the square
         // Luminance-aware ink + soft halo, from the node's OWN fill — so the
@@ -2886,10 +2918,10 @@ final class CorpusPhysicsScene: SKScene {
         // Ink-flip only — luminance-aware color, no baked halo (the NSShadow
         // muddied minified text). Clean minification comes from texture mipmaps.
         let (ink, _) = legibleInk(over: fillColor)
-        func styled(_ text: String, _ font: UIFont) -> NSAttributedString {
+        func styled(_ text: String, _ font: UIFont, _ lineBreak: NSLineBreakMode) -> NSAttributedString {
             let para = NSMutableParagraphStyle()
             para.alignment = .center
-            para.lineBreakMode = .byTruncatingTail
+            para.lineBreakMode = lineBreak
             return NSAttributedString(string: text, attributes: [
                 .font: font,
                 .foregroundColor: ink,
@@ -2897,12 +2929,14 @@ final class CorpusPhysicsScene: SKScene {
             ])
         }
 
-        // Title label
+        // Title label — wrap mode chosen by resolveTitle (word-boundary; the tier
+        // loop already guaranteed the fit, so nothing is truncated mid-word here).
+        let maxLines = LabelTuning.maxLines
         let titleLabel = UILabel()
-        titleLabel.attributedText = styled(title, titleFont)
-        titleLabel.numberOfLines = 2
-        titleLabel.lineBreakMode = .byTruncatingTail
-        let titleMaxHeight = titleFont.lineHeight * 2 + 4
+        titleLabel.attributedText = styled(title, titleFont, titleWrap)
+        titleLabel.numberOfLines = maxLines
+        titleLabel.lineBreakMode = titleWrap
+        let titleMaxHeight = titleFont.lineHeight * CGFloat(maxLines) + 4
         titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleMaxHeight)
         let titleFit = titleLabel.sizeThatFits(CGSize(width: textWidth, height: titleMaxHeight))
         let titleHeight = min(titleFit.height, titleMaxHeight)
@@ -2914,7 +2948,7 @@ final class CorpusPhysicsScene: SKScene {
         var summaryHeight: CGFloat = 0
         if let summary, !summary.isEmpty {
             let s = UILabel()
-            s.attributedText = styled(summary, summaryFont)
+            s.attributedText = styled(summary, summaryFont, .byTruncatingTail)
             s.numberOfLines = 4
             s.lineBreakMode = .byTruncatingTail
             let sMaxHeight = summaryFont.lineHeight * 4 + 4
@@ -3049,24 +3083,81 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    /// Resting-label font — non-condensed SF semibold (see `mapLabelFont`),
-    /// scaled to the node's box (≈ side/6, floored 8pt, capped 28pt), then
-    /// FIT-THEN-SHRINK: step the size down until the whole title fits the two-line
-    /// box, so truncation only kicks in when even the 8pt floor won't hold it.
-    private func fittedTitleFont(_ text: String, boxWidth: CGFloat) -> UIFont {
-        let floorSize: CGFloat = 8
-        let maxSize = min(28, max(floorSize, boxWidth / 6))
-        var size = maxSize
-        while size > floorSize {
-            let f = CorpusPhysicsScene.mapLabelFont(size: size)
-            let bounds = (text as NSString).boundingRect(
-                with: CGSize(width: boxWidth, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: f], context: nil)
-            if bounds.height <= f.lineHeight * 2 + 1 { break }   // fits in ≤2 lines
-            size -= 1
+    /// Node-label tier DIAL (taste — T tunes on device). Tier font sizes = box ×
+    /// fraction, clamped to [floor, cap]. DEBUG reads UserDefaults (`map.label.*`,
+    /// set by a device-pass panel); Release uses the baked defaults with ZERO
+    /// UserDefaults access (the NodeCardView release-gate pattern). Sensible
+    /// defaults; exact values are what T dials at the checkpoint.
+    enum LabelTuning {
+        static let defaultLargeFrac: CGFloat = 1.0 / 6.0
+        static let defaultMedFrac:   CGFloat = 1.0 / 8.0
+        static let defaultSmallFrac: CGFloat = 1.0 / 10.5
+        static let defaultFloor:     CGFloat = 8
+        static let defaultMaxLines:  Int = 2
+        static let cap: CGFloat = 28   // absolute point ceiling
+
+        #if DEBUG
+        private static func frac(_ key: String, _ def: CGFloat) -> CGFloat {
+            (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
         }
-        return CorpusPhysicsScene.mapLabelFont(size: size)
+        static var largeFrac: CGFloat { frac("map.label.largeFrac", defaultLargeFrac) }
+        static var medFrac:   CGFloat { frac("map.label.medFrac", defaultMedFrac) }
+        static var smallFrac: CGFloat { frac("map.label.smallFrac", defaultSmallFrac) }
+        static var floor:     CGFloat { frac("map.label.floor", defaultFloor) }
+        static var maxLines:  Int { (UserDefaults.standard.object(forKey: "map.label.maxLines") as? Int) ?? defaultMaxLines }
+        #else
+        static var largeFrac: CGFloat { defaultLargeFrac }
+        static var medFrac:   CGFloat { defaultMedFrac }
+        static var smallFrac: CGFloat { defaultSmallFrac }
+        static var floor:     CGFloat { defaultFloor }
+        static var maxLines:  Int { defaultMaxLines }
+        #endif
+
+        /// The 3 tier point sizes for a `box`-wide label, largest → smallest.
+        static func tierSizes(box: CGFloat) -> [CGFloat] {
+            [largeFrac, medFrac, smallFrac].map { min(cap, max(floor, box * $0)) }
+        }
+    }
+
+    /// Resolve a node title into (font, renderText, wrapMode) with DISCRETE tiers
+    /// and NO mid-word truncation. Tries the tier fonts LARGEST→smallest,
+    /// word-wrapping the whole title into `box × maxLines`; returns the FIRST tier
+    /// at which it fits with zero truncation (font steps DOWN rather than cutting).
+    /// If even the smallest tier overflows: smallest tier + a WORD-boundary ellipsis
+    /// (multi-word) or char-wrap of the whole word (single unbreakable word — every
+    /// letter shown, no mid-word cut). Cache-safe: labels rasterize fresh per call.
+    private func resolveTitle(_ text: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode) {
+        let maxLines = LabelTuning.maxLines
+        let wordPara = NSMutableParagraphStyle()
+        wordPara.lineBreakMode = .byWordWrapping
+        func fits(_ s: String, _ f: UIFont) -> Bool {
+            let b = (s as NSString).boundingRect(
+                with: CGSize(width: box, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: f, .paragraphStyle: wordPara], context: nil)
+            // width check catches a single word wider than the box (byWordWrapping
+            // can't break it); height check catches multi-line overflow.
+            return b.width <= box + 0.5 && b.height <= f.lineHeight * CGFloat(maxLines) + 1
+        }
+        let tiers = LabelTuning.tierSizes(box: box)
+        for size in tiers {
+            let f = CorpusPhysicsScene.mapLabelFont(size: size)
+            if fits(text, f) { return (f, text, .byWordWrapping) }
+        }
+        // Overflow — render at the smallest tier.
+        let f = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
+        let words = text.split(separator: " ", omittingEmptySubsequences: true)
+        if words.count <= 1 {
+            // Single (unbreakable) word — char-wrap the WHOLE word across lines.
+            return (f, text, .byCharWrapping)
+        }
+        // Multi-word — drop trailing words until it fits, then append an ellipsis.
+        var acc: [Substring] = []
+        for w in words {
+            if fits((acc + [w]).joined(separator: " ") + "…", f) { acc.append(w) } else { break }
+        }
+        if acc.isEmpty { return (f, String(words[0]), .byCharWrapping) }
+        return (f, acc.joined(separator: " ") + "…", .byWordWrapping)
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
@@ -3075,15 +3166,16 @@ final class CorpusPhysicsScene: SKScene {
         // on-screen size per node (1:1), instead of being wrapped for 84pt and
         // squished on small nodes.
         let side = radius * 1.4
-        let titleFont = fittedTitleFont(text, boxWidth: side)
+        let (titleFont, renderTitle, titleWrap) = resolveTitle(text, box: side)
         let texture = rasterizeSquareText(
-            title: text,
+            title: renderTitle,
             summary: nil,
             side: side,
             titleFont: titleFont,
             summaryFont: titleFont,
             renderScale: 6.0,
-            fillColor: fillColor
+            fillColor: fillColor,
+            titleWrap: titleWrap
         )
         let sprite = SKSpriteNode(texture: texture)
         sprite.position = .zero
@@ -3120,17 +3212,18 @@ final class CorpusPhysicsScene: SKScene {
         else { return }
 
         let side = radius * 1.4
-        let titleFont = fittedTitleFont(fullTitle, boxWidth: side)
+        let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
 
         let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
         let texture = rasterizeSquareText(
-            title: fullTitle,
+            title: renderTitle,
             summary: nil,
             side: side,
             titleFont: titleFont,
             summaryFont: titleFont,
             renderScale: 6.0,
-            fillColor: fillColor
+            fillColor: fillColor,
+            titleWrap: titleWrap
         )
         sprite.texture = texture
         sprite.size = CGSize(width: side, height: side)

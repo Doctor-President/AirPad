@@ -151,6 +151,12 @@ struct CanvasView: View {
 
     var body: some View {
         canvasWithLateObservers
+            // Live theme flip → push the authoritative colorScheme into the scene
+            // (the orb-desync fix). Placed on `body` — a light chunk — so the
+            // observer chains stay within the type-checker's budget.
+            .onChange(of: mapColorScheme) { _, newScheme in
+                scene.appearanceIsLight = (newScheme == .light)
+            }
     }
 
     // Body observers are split across two computed properties purely to keep
@@ -161,6 +167,10 @@ struct CanvasView: View {
             canvasStack
         }
         .onAppear {
+            // Push the authoritative light/dark into the scene so the orbs stop
+            // reading it through a nil-prone `view?.traitCollection` (dropped
+            // transmission on Analyze re-formation). Same signal as AppearancePalette.
+            scene.appearanceIsLight = (mapColorScheme == .light)
             scene.canvasState = canvasState
             scene.selection = selection
             store.canvasState = canvasState

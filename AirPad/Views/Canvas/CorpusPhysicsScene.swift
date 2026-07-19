@@ -2542,11 +2542,16 @@ final class CorpusPhysicsScene: SKScene {
     private static let lightInk: UIColor =
         UIColor(AppearancePalette.ink).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
 
-    /// Whether the map is currently in light mode — resolved from the SKView trait,
-    /// the same signal the grid dots track in `update`.
-    private var currentIsLight: Bool {
-        view?.traitCollection.userInterfaceStyle == .light
+    /// Authoritative light/dark — PUSHED from SwiftUI's `@Environment(\.colorScheme)`
+    /// by CanvasView (the same signal that drives AppearancePalette; never nil).
+    /// Was read as `view?.traitCollection.userInterfaceStyle == .light`, but `view?`
+    /// resolves nil during a re-formation re-render (Analyze / idle) → false → orbs
+    /// took the DARK branch and lost transmission. A pushed bool can't be nil.
+    /// Restyles on an actual flip so live theme changes still take.
+    var appearanceIsLight: Bool = true {
+        didSet { if oldValue != appearanceIsLight { restyleUnfocusedOrbs() } }
     }
+    private var currentIsLight: Bool { appearanceIsLight }
 
     // Baked Cucumber Water (light) unfocused-orb wash — Tom's device-locked
     // values (the DEBUG tuner is retired). Single source in both configs; dark

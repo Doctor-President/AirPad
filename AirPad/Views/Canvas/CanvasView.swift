@@ -46,6 +46,16 @@ struct CanvasView: View {
     @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
     @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
 
+    /// SKView HUD (draw-call count / fps / nodes) for node-perf spikes. DEBUG only;
+    /// empty in Release.
+    private var mapDebugOptions: SpriteView.DebugOptions {
+        #if DEBUG
+        return [.showsFPS, .showsDrawCount, .showsNodeCount]
+        #else
+        return []
+        #endif
+    }
+
     // ws-dark-light-mode — Map background flips with the interface style:
     // #111115 dark / #F4EFE3 light (the detail-view ground). Baked (Map tuner
     // gone); colorScheme drives the live SwiftUI recompute on appearance flip.
@@ -389,7 +399,8 @@ struct CanvasView: View {
             SpriteView(
                 scene: scene,
                 preferredFramesPerSecond: 120,
-                options: [.allowsTransparency, .ignoresSiblingOrder]
+                options: [.allowsTransparency, .ignoresSiblingOrder],
+                debugOptions: mapDebugOptions
             )
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)

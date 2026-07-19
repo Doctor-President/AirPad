@@ -50,6 +50,7 @@ struct CanvasChrome: View {
     /// survives close/re-open within a session — same pattern as
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
+
     #endif
 
     private var filterState: FilterState {

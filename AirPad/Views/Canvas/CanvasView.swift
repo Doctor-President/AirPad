@@ -533,6 +533,11 @@ struct CanvasView: View {
                 // place. Frame + corner interpolate circle → 5:7 card; the bubble
                 // crossfades out as the card fades in. Release runs it back.
                 let m = canvasState.focalMorph
+                // This overlay is now a COMMITTED card (tap-driven cardedNodeID),
+                // not a transient graze — so it catches taps (card→detail + X) once
+                // mostly morphed. During the dismiss fade cardedNodeID is nil → the
+                // card stops catching taps and empty taps pass through to the scene.
+                let isCarded = (canvasState.cardedNodeID == id)
                 let cardH = finalDiameter * 1.4          // 5:7 portrait
                 let w = diameter + (finalDiameter - diameter) * m
                 let h = diameter + (cardH - diameter) * m
@@ -585,20 +590,48 @@ struct CanvasView: View {
                     .frame(width: w, height: h)
                     .clipShape(RoundedRectangle(cornerRadius: corner))
                     .opacity(1 - m)
+                    .allowsHitTesting(false)   // bubble never eats taps
 
                     // CARD — the node's real face (same type voice), fading in as
                     // the bubble morphs. Built only while morphing (m>0), so a fast
                     // graze that never settles never instantiates the card.
                     if m > 0.001 {
-                        NodeCardView(nodeID: id, fallbackNode: node, animateEntry: false)
-                            .frame(width: w, height: h)
-                            .opacity(m)
-                            .allowsHitTesting(false)
+                        ZStack(alignment: .topTrailing) {
+                            NodeCardView(nodeID: id, fallbackNode: node, animateEntry: false)
+                                .frame(width: w, height: h)
+                                // CARD → DETAIL: tapping the presented card pushes
+                                // NodeDetailView (reuses the working pendingNavigation
+                                // path) and clears the card.
+                                .contentShape(RoundedRectangle(cornerRadius: cardCorner))
+                                .onTapGesture {
+                                    canvasState.pendingNavigationNodeID = id  // → NodeDetailView
+                                    canvasState.cardedNodeID = nil
+                                }
+                            // DISMISS X (upper-right) → back to browse.
+                            if isCarded && m > 0.5 {
+                                Button {
+                                    canvasState.cardedNodeID = nil
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 26))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, .black.opacity(0.35))
+                                        .padding(10)
+                                        .contentShape(Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .transition(.opacity)
+                            }
+                        }
+                        .frame(width: w, height: h)
+                        .opacity(m)
+                        // Only the committed, mostly-morphed card is interactive; a
+                        // transient/fading overlay lets taps reach the scene beneath.
+                        .allowsHitTesting(isCarded && m > 0.5)
                     }
                 }
                 .position(canvasState.focalNodeScreenPosition)
                 .opacity(isFading ? 0 : 1)
-                .allowsHitTesting(false)
                 .ignoresSafeArea()
                 // Single crossfade in/out — no scale/bounce.
                 .transition(.opacity)

@@ -1,4 +1,7 @@
 import SwiftUI
+#if DEBUG
+import UIKit
+#endif
 
 /// Full canvas surface — body switcher (5 view modes) + overlay chrome
 /// (top row, selection header, batch bar, banners) + chrome-driven sheets
@@ -50,6 +53,12 @@ struct CanvasChrome: View {
     /// survives close/re-open within a session — same pattern as
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
+
+    /// Node-label tier dial (device pass). Separate floating widget from the
+    /// Solar Flare tuner; writes map.label.* and posts .mapLabelTuningChanged
+    /// so the scene re-rasters live. Delete with the tuner once tiers are baked.
+    @State private var showMapLabelTuningPanel = false
+    @State private var mapLabelTuningPanelOffset: CGSize = .zero
 
     #endif
 
@@ -326,6 +335,10 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            mapLabelTuningTrigger
+            if showMapLabelTuningPanel {
+                floatingMapLabelTuningPanel
+            }
             #endif
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
@@ -413,6 +426,42 @@ struct CanvasChrome: View {
             SolarFlareTuningPanel(
                 isPresented: $showSolarFlareTuningPanel,
                 position: $solarFlareTuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+
+    /// Node-label tier-dial trigger. `textformat.size` icon, sits just below the
+    /// Solar Flare sun so the two dev triggers stack in the top-left gutter.
+    private var mapLabelTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showMapLabelTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 134)   // one 28pt row + gap below the sun trigger (top 100)
+        .padding(.leading, 10)
+    }
+
+    private var floatingMapLabelTuningPanel: some View {
+        VStack {
+            Spacer()
+            MapLabelTuningPanel(
+                isPresented: $showMapLabelTuningPanel,
+                position: $mapLabelTuningPanelOffset
             )
             .padding(.bottom, 80)
         }
@@ -1005,3 +1054,161 @@ private extension View {
         }
     }
 }
+
+// MARK: - Node-label tier tuner (DEBUG)
+
+#if DEBUG
+/// Floating tuner for the node-label size tiers — the device-pass "taste"
+/// dial for the fit-to-orb mechanism. Writes `map.label.*` (the same keys
+/// `CorpusPhysicsScene.LabelTuning` reads) and posts `.mapLabelTuningChanged`
+/// on every edit so the scene re-rasters resting labels live. Defaults are
+/// pulled from `LabelTuning` so the sliders open on exactly what renders.
+/// Copy button dumps the dialed values for baking. Delete this + the trigger
+/// mount once the tiers are baked into `LabelTuning`'s `default*` constants.
+struct MapLabelTuningPanel: View {
+    @Binding var isPresented: Bool
+    @Binding var position: CGSize
+
+    @AppStorage("map.label.largeFrac") private var largeFrac: Double = Double(CorpusPhysicsScene.LabelTuning.defaultLargeFrac)
+    @AppStorage("map.label.medFrac")   private var medFrac: Double   = Double(CorpusPhysicsScene.LabelTuning.defaultMedFrac)
+    @AppStorage("map.label.smallFrac") private var smallFrac: Double = Double(CorpusPhysicsScene.LabelTuning.defaultSmallFrac)
+    @AppStorage("map.label.floor")     private var floor: Double     = Double(CorpusPhysicsScene.LabelTuning.defaultFloor)
+    @AppStorage("map.label.maxLines")  private var maxLines: Int     = CorpusPhysicsScene.LabelTuning.defaultMaxLines
+
+    @GestureState private var dragTranslation: CGSize = .zero
+    @State private var justCopied = false
+
+    private static let widgetWidth: CGFloat = 300
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            // Tiers are tried largest → smallest; the label takes the first that
+            // fits with no truncation. So large ≥ med ≥ small is the intended
+            // ordering (the ranges overlap so T can invert to experiment).
+            sliderRow(label: "large", value: $largeFrac, range: 0.08...0.30, step: 0.005)
+            sliderRow(label: "med",   value: $medFrac,   range: 0.06...0.25, step: 0.005)
+            sliderRow(label: "small", value: $smallFrac, range: 0.05...0.20, step: 0.005)
+            sliderRow(label: "floor", value: $floor,     range: 5...16,      step: 0.5)
+
+            HStack(spacing: 8) {
+                Text("lines")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 48, alignment: .leading)
+                    .foregroundStyle(.secondary)
+                Picker("lines", selection: $maxLines) {
+                    Text("2").tag(2)
+                    Text("3").tag(3)
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .padding(12)
+        .frame(width: Self.widgetWidth)
+        .modifier(MapLabelWidgetSurface())
+        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 6)
+        .offset(x: position.width + dragTranslation.width,
+                y: position.height + dragTranslation.height)
+        // Any edit re-rasters resting labels live. Combined so the observer
+        // chain stays small (a single composite key over the four Doubles +
+        // one for maxLines).
+        .onChange(of: [largeFrac, medFrac, smallFrac, floor]) { _, _ in Self.bump() }
+        .onChange(of: maxLines) { _, _ in Self.bump() }
+    }
+
+    private static func bump() {
+        NotificationCenter.default.post(name: .mapLabelTuningChanged, object: nil)
+    }
+
+    private var header: some View {
+        ZStack {
+            Capsule()
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 36, height: 5)
+            HStack(spacing: 4) {
+                Text("Label tiers")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button { copyValues() } label: {
+                    Image(systemName: justCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(justCopied ? Color.green : .secondary)
+                        .contentShape(Rectangle())
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                Button { isPresented = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 17))
+                        .foregroundStyle(.secondary)
+                        .contentShape(Rectangle())
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(height: 28)
+        .contentShape(Rectangle())
+        // Drag ONLY on the header so it doesn't fight the sliders' gestures.
+        .gesture(
+            DragGesture()
+                .updating($dragTranslation) { value, state, _ in state = value.translation }
+                .onEnded { value in
+                    position.width  += value.translation.width
+                    position.height += value.translation.height
+                }
+        )
+    }
+
+    @ViewBuilder
+    private func sliderRow(label: String,
+                           value: Binding<Double>,
+                           range: ClosedRange<Double>,
+                           step: Double) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 48, alignment: .leading)
+                .foregroundStyle(.secondary)
+            Slider(value: value, in: range, step: step)
+            Text(String(format: "%.3f", value.wrappedValue))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 48, alignment: .trailing)
+        }
+    }
+
+    /// Dump the dialed tiers so they can be baked into `LabelTuning.default*`.
+    private func copyValues() {
+        let lines = [
+            "map_label_tiers:",
+            "  largeFrac: \(String(format: "%.4f", largeFrac))   # 1/\(String(format: "%.1f", largeFrac > 0 ? 1/largeFrac : 0))",
+            "  medFrac:   \(String(format: "%.4f", medFrac))   # 1/\(String(format: "%.1f", medFrac > 0 ? 1/medFrac : 0))",
+            "  smallFrac: \(String(format: "%.4f", smallFrac))   # 1/\(String(format: "%.1f", smallFrac > 0 ? 1/smallFrac : 0))",
+            "  floor:     \(String(format: "%.1f", floor))",
+            "  maxLines:  \(maxLines)"
+        ]
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        justCopied = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1200))
+            justCopied = false
+        }
+    }
+}
+
+/// Liquid Glass on 26+, `.thinMaterial` fallback — mirrors the Solar Flare
+/// tuner's surface so the two dev widgets read as one chrome family.
+private struct MapLabelWidgetSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content.background(.thinMaterial, in: shape)
+        }
+    }
+}
+#endif

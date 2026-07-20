@@ -2,6 +2,15 @@ import SpriteKit
 import UIKit
 import simd
 
+#if DEBUG
+extension Notification.Name {
+    /// Posted by the DEBUG `MapLabelTuningPanel` on every slider change; the
+    /// scene observes it (added in `didMove`) and calls `restyleLabels()` so the
+    /// node-label tier dial updates live on device. DEBUG-only.
+    static let mapLabelTuningChanged = Notification.Name("map.label.tuningChanged")
+}
+#endif
+
 /// The SpriteKit physics canvas that renders nodes as floating bubbles.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
 final class CorpusPhysicsScene: SKScene {
@@ -881,6 +890,17 @@ final class CorpusPhysicsScene: SKScene {
         physicsBody = SKPhysicsBody(edgeLoopFrom: boundary)
 
         view.isMultipleTouchEnabled = true
+
+        #if DEBUG
+        // Device-pass node-label tier dial: re-raster every resting label when
+        // the floating tuner writes new map.label.* values (mechanism-only in
+        // Release; this observer + restyleLabels are DEBUG). De-dup the observer
+        // in case didMove ever re-fires on the persistent scene.
+        NotificationCenter.default.removeObserver(self, name: .mapLabelTuningChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleLabelTuningChanged),
+            name: .mapLabelTuningChanged, object: nil)
+        #endif
 
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
@@ -3229,6 +3249,33 @@ final class CorpusPhysicsScene: SKScene {
         sprite.size = CGSize(width: side, height: side)
         sprite.userData?["isFocal"] = false
     }
+
+    #if DEBUG
+    @objc private func handleLabelTuningChanged() { restyleLabels() }
+
+    /// Re-raster every resting node label from the CURRENT LabelTuning values so
+    /// the device-pass tier dial (the floating `MapLabelTuningPanel`) shows live.
+    /// Mirrors `swapToNonFocalTexture`'s raster path; skips focal sprites (they
+    /// re-raster on release, which already reads the live tuning). DEBUG-only —
+    /// nothing calls this in Release, where the baked defaults render once.
+    func restyleLabels() {
+        for (nodeID, shape) in nodeSprites {
+            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+                  (sprite.userData?["isFocal"] as? Bool) != true,
+                  let fullTitle = sprite.userData?["fullTitle"] as? String,
+                  let radius = nodeIntrinsicRadii[nodeID]
+            else { continue }
+            let side = radius * 1.4
+            let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
+            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
+            sprite.texture = rasterizeSquareText(
+                title: renderTitle, summary: nil, side: side,
+                titleFont: titleFont, summaryFont: titleFont,
+                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap)
+            sprite.size = CGSize(width: side, height: side)
+        }
+    }
+    #endif
 
     private func bubbleRadius(for node: Node) -> CGFloat {
         // Base diameter 60pt (radius 30), +8pt diameter per additional item (radius

@@ -1083,6 +1083,7 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.lens.zoomOut")    private var lensZoomOut: Double   = Double(CorpusPhysicsScene.LensTuning.defaultZoomOut)
     @AppStorage("map.lens.minShrink")  private var lensMinShrink: Double = Double(CorpusPhysicsScene.LensTuning.defaultMinShrink)
     @AppStorage("map.lens.labelLOD")   private var lensLabelLOD: Double  = Double(CorpusPhysicsScene.LensTuning.defaultLabelLOD)
+    @AppStorage("map.lens.cornerMin")  private var lensCornerMin: Double = Double(CorpusPhysicsScene.LensTuning.defaultCornerMin)
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
@@ -1125,6 +1126,10 @@ struct MapLabelTuningPanel: View {
             sliderRow(label: "zoomOut", value: $lensZoomOut,   range: 1.5...4.0, step: 0.05)
             sliderRow(label: "shrink",  value: $lensMinShrink, range: 0.2...1.0, step: 0.01)
             sliderRow(label: "LOD",     value: $lensLabelLOD,  range: 8...60,    step: 1)
+            // Circle→rounded-square morph: 0.5 = circle (zoomed out), cornerMin =
+            // rounded square (zoomed in). Too small → grid of tiles; too large → no
+            // width gain. Morph band = the zoomIn/zoomOut above.
+            sliderRow(label: "corner",  value: $lensCornerMin, range: 0.05...0.5, step: 0.01)
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1138,7 +1143,7 @@ struct MapLabelTuningPanel: View {
         .onChange(of: [largeFrac, medFrac, smallFrac, floor]) { _, _ in Self.bump() }
         .onChange(of: maxLines) { _, _ in Self.bump() }
         // Lens dials: bump() forces the scene to re-apply the idle ramp + LOD live.
-        .onChange(of: [lensZoomIn, lensZoomOut, lensMinShrink, lensLabelLOD]) { _, _ in Self.bump() }
+        .onChange(of: [lensZoomIn, lensZoomOut, lensMinShrink, lensLabelLOD, lensCornerMin]) { _, _ in Self.bump() }
     }
 
     private static func bump() {
@@ -1217,7 +1222,8 @@ struct MapLabelTuningPanel: View {
             "  lens.zoomIn:    \(String(format: "%.2f", lensZoomIn))",
             "  lens.zoomOut:   \(String(format: "%.2f", lensZoomOut))",
             "  lens.minShrink: \(String(format: "%.2f", lensMinShrink))",
-            "  lens.labelLOD:  \(String(format: "%.0f", lensLabelLOD))"
+            "  lens.labelLOD:  \(String(format: "%.0f", lensLabelLOD))",
+            "  lens.cornerMin: \(String(format: "%.2f", lensCornerMin))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

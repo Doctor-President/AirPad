@@ -297,6 +297,20 @@ final class CorpusPhysicsScene: SKScene {
         return t * t * (3 - 2 * t)
     }
 
+    /// Global `u_corner_radius` for the current zoom, on the SAME band as the scale
+    /// ramp: zoomed in (≤ zoomIn) → cornerMin (rounded-square text box); zoomed out
+    /// (≥ zoomOut) → 0.5 (circle, shape-reading); smoothstep between. Set once per
+    /// frame on the shared shader → all orbs morph together, still one batch.
+    private func cornerRadiusForZoom(_ cameraScale: CGFloat) -> CGFloat {
+        let zin = LensTuning.zoomIn, zout = LensTuning.zoomOut
+        let cmin = LensTuning.cornerMin
+        if cameraScale <= zin { return cmin }
+        if cameraScale >= zout { return 0.5 }
+        let t = (cameraScale - zin) / max(zout - zin, 0.0001)
+        let smooth = t * t * (3 - 2 * t)
+        return cmin + (0.5 - cmin) * smooth
+    }
+
     /// IDLE-only: re-scale every resting orb by the zoom ramp and fade titles below
     /// the on-screen LOD threshold. No-op unless `cameraScale` changed (or a forced
     /// re-apply via `lastRampCameraScale = -1`). NEVER moves a node or calls the
@@ -998,6 +1012,12 @@ final class CorpusPhysicsScene: SKScene {
 
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
+
+        // Lens: drive the circle→rounded-square morph off cameraScale (one global
+        // uniform on the shared orb shader — every orb morphs together, still one
+        // batch). Independent of engagement (the shape reads at any state).
+        orbSpriteShader.uniforms.first(where: { $0.name == "u_corner_radius" })?
+            .floatValue = Float(cornerRadiusForZoom(cameraNode.xScale))
 
         // AT18.1.9: push camera state into the grid shader. The grid shape is
         // camera-parented (fixed screen position); the shader handles pan and
@@ -2739,9 +2759,20 @@ final class CorpusPhysicsScene: SKScene {
     /// to a handful of draws (sim-measured 2804→5; device-verified identical).
     private lazy var orbSpriteShader: SKShader = {
         let src = """
+        // Lens: circle → rounded-square morph via one uniform. sdRoundBox is a true
+        // signed distance (0 at edge, negative inside); `+ 0.5` shifts it so the
+        // edge lands at d = R = 0.5, identical to the old `length(p)` when
+        // u_corner_radius == 0.5 (that IS a circle). So the fill/stroke smoothstep
+        // on d is UNCHANGED and the stroke ring (an inset of the same field)
+        // follows the shape automatically. u_corner_radius is a global uniform →
+        // one value for every orb → still batches.
+        float sdRoundBox(vec2 p, vec2 b, float r) {
+            vec2 q = abs(p) - b + r;
+            return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
+        }
         void main() {
             vec2 p = v_tex_coord - vec2(0.5);
-            float d = length(p);
+            float d = sdRoundBox(p, vec2(0.5), u_corner_radius) + 0.5;
             float R = 0.5;
             float aa = a_geom.y;          // ~1px feather (uv)
             float sw = a_geom.x;          // stroke width (uv)
@@ -2762,6 +2793,9 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
             SKAttribute(name: "a_geom", type: .vectorFloat2)
         ]
+        // 0.5 = circle (edge at radius 0.5) … cornerMin = rounded square. Driven
+        // per-frame from cameraScale in `update`; global → batches.
+        shader.uniforms = [SKUniform(name: "u_corner_radius", float: 0.5)]
         return shader
     }()
 
@@ -3246,6 +3280,14 @@ final class CorpusPhysicsScene: SKScene {
         static let defaultZoomOut: CGFloat = 2.5      // ≥ this cameraScale → minShrink
         static let defaultMinShrink: CGFloat = 0.55   // airiest idle scale (zoomed out)
         static let defaultLabelLOD: CGFloat = 26      // on-screen pt diameter to START showing a title
+        // Circle→rounded-square morph (SDF corner radius in uv, 0.5 = circle).
+        // Zoomed in → cornerMin (rounded-square text box); zoomed out → 0.5 (circle
+        // shape-reading), on the SAME zoomIn/zoomOut band as the scale ramp.
+        static let defaultCornerMin: CGFloat = 0.20
+        /// Label box as a fraction of diameter. The rounded-square usable width is
+        /// wider than the circle-inscribed ~1.4, so titles fit whole / at bigger
+        /// tiers (labels only show zoomed-in = the morphed state).
+        static let labelBoxFactor: CGFloat = 1.8
         #if DEBUG
         private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
             (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
@@ -3254,11 +3296,13 @@ final class CorpusPhysicsScene: SKScene {
         static var zoomOut: CGFloat   { d("map.lens.zoomOut", defaultZoomOut) }
         static var minShrink: CGFloat { d("map.lens.minShrink", defaultMinShrink) }
         static var labelLOD: CGFloat  { d("map.lens.labelLOD", defaultLabelLOD) }
+        static var cornerMin: CGFloat { d("map.lens.cornerMin", defaultCornerMin) }
         #else
         static var zoomIn: CGFloat    { defaultZoomIn }
         static var zoomOut: CGFloat   { defaultZoomOut }
         static var minShrink: CGFloat { defaultMinShrink }
         static var labelLOD: CGFloat  { defaultLabelLOD }
+        static var cornerMin: CGFloat { defaultCornerMin }
         #endif
     }
 
@@ -3304,11 +3348,11 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
-        // Rasterize in the node's ACTUAL display box (radius × 1.4), not a fixed
-        // 84pt canvas scaled down — so the title lays out + renders at its real
-        // on-screen size per node (1:1), instead of being wrapped for 84pt and
-        // squished on small nodes.
-        let side = radius * 1.4
+        // Rasterize in the node's ACTUAL display box (radius × labelBoxFactor —
+        // the rounded-square usable width, wider than the circle-inscribed 1.4),
+        // not a fixed 84pt canvas scaled down — so the title lays out + renders at
+        // its real on-screen size per node (1:1), not wrapped for 84pt.
+        let side = radius * LensTuning.labelBoxFactor
         let (titleFont, renderTitle, titleWrap) = resolveTitle(text, box: side)
         let texture = rasterizeSquareText(
             title: renderTitle,
@@ -3354,7 +3398,7 @@ final class CorpusPhysicsScene: SKScene {
               let radius = nodeIntrinsicRadii[nodeID]
         else { return }
 
-        let side = radius * 1.4
+        let side = radius * LensTuning.labelBoxFactor
         let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
 
         let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
@@ -3433,7 +3477,7 @@ final class CorpusPhysicsScene: SKScene {
                   let fullTitle = sprite.userData?["fullTitle"] as? String,
                   let radius = nodeIntrinsicRadii[nodeID]
             else { continue }
-            let side = radius * 1.4
+            let side = radius * LensTuning.labelBoxFactor
             let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
             let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
             sprite.texture = rasterizeSquareText(

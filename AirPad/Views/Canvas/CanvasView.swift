@@ -167,6 +167,16 @@ struct CanvasView: View {
             .onChange(of: mapColorScheme) { _, newScheme in
                 scene.appearanceIsLight = (newScheme == .light)
             }
+            #if DEBUG
+            // Orb-size dial (device pass): grow the orbs in-scene, then re-form the
+            // layout with the same-scaled radii so orbs re-space with no overlap
+            // (positions WILL change — the algorithmic re-settle). A ViewModifier
+            // owns the @AppStorage + observer so this stays off body's type-check budget.
+            .modifier(OrbSizeDialObserver(scene: scene) {
+                formTerritories(nodes: store.visibleNodes(in: scope), trigger: "orb-size")
+                syncScene(nodes: store.visibleNodes(in: scope))
+            })
+            #endif
     }
 
     // Body observers are split across two computed properties purely to keep
@@ -764,7 +774,10 @@ struct CanvasView: View {
                 let extra = CGFloat(max(0, node.items.count - 1)) * 4.0
                 geometric = min(30.0 + extra, 60.0)
             }
-            out[node.id] = geometric * 1.15 + 0.5
+            // ×OrbTuning.sizeScale (default 1.0) so the layout spaces grown orbs
+            // proportionally — same scale the scene applies to the visual radius,
+            // keeping spacing coupled to size. Layout math unchanged; only its input.
+            out[node.id] = (geometric * 1.15 + 0.5) * CorpusPhysicsScene.OrbTuning.sizeScale
         }
         return out
     }
@@ -914,7 +927,9 @@ struct CanvasView: View {
                     } else {
                         geometric = 24
                     }
-                    visualRadii[id] = geometric * 1.15 + 0.5
+                    // ×OrbTuning.sizeScale — mirror mapLayoutRadii so the substrate
+                    // relaxation re-spaces grown orbs too (same scale as the visual).
+                    visualRadii[id] = (geometric * 1.15 + 0.5) * CorpusPhysicsScene.OrbTuning.sizeScale
                 }
                 SubstrateLayoutService.shared.ensureRelaxation(
                     truthPositions: mergedTruth,
@@ -1419,4 +1434,25 @@ private struct TerritoryLabelPill: View {
             .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
     }
 }
+
+#if DEBUG
+/// Watches `map.orbSizeScale` (written by the orb-size slider in
+/// `MapLabelTuningPanel`) and, on change, grows every orb in-scene
+/// (`restyleOrbSizes`) then runs the caller's re-form closure — re-derive the
+/// territory layout with the same-scaled radii + resync, so orbs re-space with
+/// no overlap. Isolated as a ViewModifier so its @AppStorage + onChange live off
+/// `CanvasView.body`'s type-checker budget. Delete with the orb-size dial.
+private struct OrbSizeDialObserver: ViewModifier {
+    let scene: CorpusPhysicsScene
+    let reForm: () -> Void
+    @AppStorage("map.orbSizeScale") private var orbSizeScale: Double = 1.0
+
+    func body(content: Content) -> some View {
+        content.onChange(of: orbSizeScale) { _, _ in
+            scene.restyleOrbSizes()
+            reForm()
+        }
+    }
+}
+#endif
 

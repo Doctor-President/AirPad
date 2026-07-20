@@ -2055,15 +2055,7 @@ final class CorpusPhysicsScene: SKScene {
             shape.addChild(spark)
         }
 
-        let body = SKPhysicsBody(circleOfRadius: radius)
-        body.linearDamping = 0.6
-        body.angularDamping = 0.8
-        body.friction = 0.1
-        body.restitution = 0.25
-        body.mass = CGFloat(max(0.5, Float(radius / 30)))
-        body.allowsRotation = false
-        body.isDynamic = false  // Resting state: no continuous physics
-        shape.physicsBody = body
+        shape.physicsBody = Self.configuredOrbBody(radius: radius)
 
         // Position: stored layout or random near center
         let finalPosition = storedPosition(for: node.id)
@@ -2769,7 +2761,9 @@ final class CorpusPhysicsScene: SKScene {
         let halfH = (view?.bounds.height ?? 852) * 0.46
         for i in 0..<count {
             let id = "synth-\(i)"
-            let radius = CGFloat.random(in: 16...40)
+            // ×OrbTuning.sizeScale so `-SPROrbScale` grows the synthetic orbs — lets
+            // CC sim-verify bigger orbs still batch (draws) + hold 60fps.
+            let radius = CGFloat.random(in: 16...40) * OrbTuning.sizeScale
             let color = UIColor(hue: hues[i % hues.count], saturation: 0.78, brightness: 0.92, alpha: 1)
             let orb = makeShape(radius: radius, fillColor: color, isMeta: false, nodeID: id)
             orb.name = "node:\(id)"
@@ -2817,6 +2811,11 @@ final class CorpusPhysicsScene: SKScene {
             case "ON":  self.appearanceIsLight = true
             case "OFF": self.appearanceIsLight = false
             default:    self.appearanceIsLight = (self.view?.traitCollection.userInterfaceStyle == .light)
+            }
+            // `-SPROrbScale 1.5` → write map.orbSizeScale as a real Double so
+            // OrbTuning.sizeScale (and thus the synthetic radii) pick it up.
+            if let s = UserDefaults.standard.string(forKey: "SPROrbScale"), let v = Double(s) {
+                UserDefaults.standard.set(v, forKey: "map.orbSizeScale")
             }
             if UserDefaults.standard.bool(forKey: "SPRLabels") {
                 self.injectLabelTestSpread()
@@ -3139,6 +3138,25 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Orb-size DIAL (taste — T dials on device). A single multiplier applied to
+    /// the whole `bubbleRadius` (base + per-item extra + cap) so every orb grows
+    /// proportionally. radius drives the sprite, label box, AND physics body, so
+    /// the visual + physics stay coupled; the same scale feeds CanvasView's
+    /// layout-radii so `SubstrateLayoutService` / `TagTerritoryLayout` re-space
+    /// the grown orbs with no overlap (the layout math is untouched — only its
+    /// radii inputs scale). DEBUG reads `map.orbSizeScale`; Release bakes 1.0 with
+    /// ZERO UserDefaults access (the NodeCardView release-gate pattern).
+    enum OrbTuning {
+        static let defaultSizeScale: CGFloat = 1.0
+        #if DEBUG
+        static var sizeScale: CGFloat {
+            (UserDefaults.standard.object(forKey: "map.orbSizeScale") as? Double).map { CGFloat($0) } ?? defaultSizeScale
+        }
+        #else
+        static var sizeScale: CGFloat { defaultSizeScale }
+        #endif
+    }
+
     /// Resolve a node title into (font, renderText, wrapMode) with DISCRETE tiers
     /// and NO mid-word truncation. Tries the tier fonts LARGEST→smallest,
     /// word-wrapping the whole title into `box × maxLines`; returns the FIRST tier
@@ -3250,8 +3268,50 @@ final class CorpusPhysicsScene: SKScene {
         sprite.userData?["isFocal"] = false
     }
 
+    /// The resting orb physics body for a given radius — extracted so a live
+    /// resize (`restyleOrbSizes`) rebuilds an IDENTICAL body (SKPhysicsBody radius
+    /// is immutable, so growing means a fresh body). Static: mass derives only
+    /// from radius. `isDynamic = false` — resting layout is algorithmic, not
+    /// physics-settled; the body is kept coupled for hit-testing + future use.
+    private static func configuredOrbBody(radius: CGFloat) -> SKPhysicsBody {
+        let body = SKPhysicsBody(circleOfRadius: radius)
+        body.linearDamping = 0.6
+        body.angularDamping = 0.8
+        body.friction = 0.1
+        body.restitution = 0.25
+        body.mass = CGFloat(max(0.5, Float(radius / 30)))
+        body.allowsRotation = false
+        body.isDynamic = false
+        return body
+    }
+
     #if DEBUG
     @objc private func handleLabelTuningChanged() { restyleLabels() }
+
+    /// Live-apply `OrbTuning.sizeScale` to every resting orb: recompute radius,
+    /// resize the sprite + wash child, re-set the SDF stroke/feather geometry
+    /// (a_geom is radius-derived), swap in a fresh physics body, and re-raster the
+    /// label (its box + tier fonts key off radius). Visual + body only — the
+    /// no-overlap RE-SPACING is CanvasView's job (it re-forms the layout with the
+    /// same-scaled radii). DEBUG-only; Release renders the baked 1.0 once.
+    func restyleOrbSizes() {
+        for node in currentNodes {
+            guard let orb = nodeSprites[node.id] as? SKSpriteNode else { continue }
+            let radius = nodeRadii[node.id] ?? bubbleRadius(for: node)
+            nodeIntrinsicRadii[node.id] = radius
+            orb.userData?["radius"] = radius
+            orb.size = CGSize(width: radius * 2, height: radius * 2)
+            if let wash = orb.childNode(withName: "wash") as? SKSpriteNode {
+                wash.size = CGSize(width: radius * 2, height: radius * 2)
+            }
+            // Re-derive a_geom (stroke width + feather are in uv = f(radius)) and
+            // re-apply fill/stroke/wash for the current appearance.
+            styleUnfocusedOrb(orb, baseFill: bubbleColor(for: node),
+                              isMeta: node.isMeta, isLight: currentIsLight)
+            orb.physicsBody = Self.configuredOrbBody(radius: radius)
+        }
+        restyleLabels()   // label box + tier fonts follow the new radius
+    }
 
     /// Re-raster every resting node label from the CURRENT LabelTuning values so
     /// the device-pass tier dial (the floating `MapLabelTuningPanel`) shows live.
@@ -3280,8 +3340,10 @@ final class CorpusPhysicsScene: SKScene {
     private func bubbleRadius(for node: Node) -> CGFloat {
         // Base diameter 60pt (radius 30), +8pt diameter per additional item (radius
         // +4), max diameter 120pt (radius 60). Shipped values, baked (Map tuner gone).
+        // `OrbTuning.sizeScale` (default 1.0) multiplies base + extra + cap uniformly
+        // so every orb grows proportionally; min(a,b)·s == min(a·s, b·s) for s>0.
         let extra = CGFloat(max(0, node.items.count - 1)) * 4
-        return min(30 + extra, 60)
+        return min(30 + extra, 60) * OrbTuning.sizeScale
     }
 
     /// Hides the focal node's SpriteKit sprite so the SwiftUI gradient overlay in

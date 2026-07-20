@@ -1074,6 +1074,9 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.label.smallFrac") private var smallFrac: Double = Double(CorpusPhysicsScene.LabelTuning.defaultSmallFrac)
     @AppStorage("map.label.floor")     private var floor: Double     = Double(CorpusPhysicsScene.LabelTuning.defaultFloor)
     @AppStorage("map.label.maxLines")  private var maxLines: Int     = CorpusPhysicsScene.LabelTuning.defaultMaxLines
+    // Orb-size dial. Writing this is observed by CanvasView (OrbSizeDialObserver),
+    // which grows the orbs + re-forms the layout — no notification needed here.
+    @AppStorage("map.orbSizeScale")    private var orbSizeScale: Double = Double(CorpusPhysicsScene.OrbTuning.defaultSizeScale)
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
@@ -1102,6 +1105,11 @@ struct MapLabelTuningPanel: View {
                 }
                 .pickerStyle(.segmented)
             }
+
+            // Orb size — grows every orb (sprite + body + label) and re-forms the
+            // layout so neighbors re-space with no overlap (positions WILL move).
+            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
+            sliderRow(label: "orb ×", value: $orbSizeScale, range: 1.0...1.6, step: 0.02)
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1187,7 +1195,8 @@ struct MapLabelTuningPanel: View {
             "  medFrac:   \(String(format: "%.4f", medFrac))   # 1/\(String(format: "%.1f", medFrac > 0 ? 1/medFrac : 0))",
             "  smallFrac: \(String(format: "%.4f", smallFrac))   # 1/\(String(format: "%.1f", smallFrac > 0 ? 1/smallFrac : 0))",
             "  floor:     \(String(format: "%.1f", floor))",
-            "  maxLines:  \(maxLines)"
+            "  maxLines:  \(maxLines)",
+            "  orbSizeScale: \(String(format: "%.2f", orbSizeScale))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

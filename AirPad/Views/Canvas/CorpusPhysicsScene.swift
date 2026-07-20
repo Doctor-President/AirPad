@@ -272,6 +272,58 @@ final class CorpusPhysicsScene: SKScene {
         computeCharacteristicSpacing()
     }
 
+    // MARK: - Lens (a): global zoom-ramp on idle orb scale + label LOD
+
+    /// Last `cameraNode.xScale` the idle ramp was applied at. `-1` forces a
+    /// re-apply on the next idle frame (used on entering idle + on a DEBUG dial).
+    private var lastRampCameraScale: CGFloat = -1
+
+    /// Global zoom → idle-scale multiplier ∈ [minShrink, 1.0]. `cameraNode.xScale`
+    /// is 1.0 at rest and LARGER when zoomed OUT (SpriteKit camera). Zoomed in
+    /// (≤ zoomIn) → 1.0 (orbs at the `OrbTuning.sizeScale` max); zoomed out
+    /// (≥ zoomOut) → minShrink (airy); smoothstep between. Pure scalar of zoom.
+    private func zoomRampScale(_ cameraScale: CGFloat) -> CGFloat {
+        let zin = LensTuning.zoomIn, zout = LensTuning.zoomOut
+        if cameraScale <= zin { return 1.0 }
+        if cameraScale >= zout { return LensTuning.minShrink }
+        let t = (cameraScale - zin) / max(zout - zin, 0.0001)
+        let smooth = t * t * (3 - 2 * t)                      // smoothstep 0→1
+        return 1.0 + (LensTuning.minShrink - 1.0) * smooth    // lerp 1.0 → minShrink
+    }
+
+    /// Clamped smoothstep, for the label LOD fade band.
+    private func smoothstepClamp(_ e0: CGFloat, _ e1: CGFloat, _ x: CGFloat) -> CGFloat {
+        let t = min(max((x - e0) / max(e1 - e0, 0.0001), 0), 1)
+        return t * t * (3 - 2 * t)
+    }
+
+    /// IDLE-only: re-scale every resting orb by the zoom ramp and fade titles below
+    /// the on-screen LOD threshold. No-op unless `cameraScale` changed (or a forced
+    /// re-apply via `lastRampCameraScale = -1`). NEVER moves a node or calls the
+    /// layout — pure `sprite.setScale` + title alpha, so positions/radii are
+    /// untouched (the shrink is overlap-proof because spacing stays at the max).
+    /// Skips while engaged — the lens owns scale then (its baseline carries the
+    /// same ramp, so the outer field doesn't pop).
+    private func applyIdleZoomRamp() {
+        guard case .idle = engagementState else { return }
+        let cameraScale = cameraNode.xScale
+        if abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
+        lastRampCameraScale = cameraScale
+        let ramp = zoomRampScale(cameraScale)
+        let lod = LensTuning.labelLOD
+        let fadeHi = lod * 1.5
+        for (nodeID, sprite) in nodeSprites {
+            let resting = nodeRestingScales[nodeID] ?? 1.0
+            sprite.setScale(resting * ramp)
+            guard let intrinsic = nodeIntrinsicRadii[nodeID],
+                  let title = sprite.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode
+            else { continue }
+            // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
+            let onScreen = (intrinsic * 2) * (resting * ramp) / max(cameraScale, 0.0001)
+            title.alpha = smoothstepClamp(lod, fadeHi, onScreen)
+        }
+    }
+
     // MARK: - Private state
 
     private var cameraNode = SKCameraNode()
@@ -1121,7 +1173,11 @@ final class CorpusPhysicsScene: SKScene {
                 // The 0.005 epsilon catches anything within ~10% of the baseline screen-fraction.
                 let baselineEpsilon: CGFloat = 0.005
                 if targetScreenFraction <= baselineScreenFraction + baselineEpsilon {
-                    targetScale = 1.0
+                    // Lens (a): the plateau baseline is the idle zoom-ramp, NOT a flat
+                    // 1.0 — so engaging while zoomed out keeps the outer field at the
+                    // same airy scale as idle (no pop). Near-focal amplification (else
+                    // branch) is screen-space and unchanged.
+                    targetScale = zoomRampScale(cameraScale)
                 } else {
                     let targetScreenDiameter = targetScreenFraction * screenWidth
                     let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
@@ -1391,7 +1447,10 @@ final class CorpusPhysicsScene: SKScene {
 
             for (nodeID, sprite) in nodeSprites {
                 guard let targetPos = nodeRestingPositions[nodeID],
-                      let targetScale = nodeRestingScales[nodeID] else { continue }
+                      let restingScale = nodeRestingScales[nodeID] else { continue }
+                // Lens (a): disengage returns to the RAMPED idle scale, so releasing
+                // while zoomed out lands on the airy size (no pop back to full max).
+                let targetScale = restingScale * zoomRampScale(cameraNode.xScale)
 
                 // Lerp toward canonical resting state (the layout's target fingerprint).
                 let currentPos = sprite.position
@@ -1424,6 +1483,7 @@ final class CorpusPhysicsScene: SKScene {
             // to skip every node and instantly transition without animating.
             if allPositionsConverged && allScalesConverged {
                 engagementState = .idle
+                lastRampCameraScale = -1   // Lens (a): force an idle ramp + LOD re-apply on re-entry
                 focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
                 preCollapseStartScales.removeAll()  // SB94: clean up
                 lingerFocalNodeID = nil
@@ -1441,7 +1501,7 @@ final class CorpusPhysicsScene: SKScene {
             }
 
         case .idle:
-            break
+            applyIdleZoomRamp()   // Lens (a): re-scale + LOD only when cameraScale changed
         }
 
         syncFocalToCanvasState()
@@ -2771,6 +2831,8 @@ final class CorpusPhysicsScene: SKScene {
                                    y: CGFloat.random(in: -halfH...halfH))
             addChild(orb)
             nodeSprites[id] = orb
+            nodeIntrinsicRadii[id] = radius   // for the lens zoom-ramp + label LOD
+            nodeRestingScales[id] = 1.0
         }
     }
 
@@ -2797,6 +2859,8 @@ final class CorpusPhysicsScene: SKScene {
                 orb.position = CGPoint(x: colX[c], y: rowY[r])
                 addChild(orb)
                 nodeSprites[id] = orb
+                nodeIntrinsicRadii[id] = radius   // for the lens zoom-ramp + label LOD
+                nodeRestingScales[id] = 1.0
             }
         }
     }
@@ -2822,9 +2886,22 @@ final class CorpusPhysicsScene: SKScene {
             } else {
                 self.injectSyntheticCorpus(count: 700)
             }
+            // `-SPRZoom 3.0` → programmatically zoom the camera so CC can verify the
+            // Lens (a) idle ramp: idle orbs shrink, labels cull, positions unchanged.
+            if let z = UserDefaults.standard.string(forKey: "SPRZoom"), let zs = Double(z) {
+                self.cameraNode.setScale(CGFloat(zs))
+                self.applyIdleZoomRamp()
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                 guard let self else { return }
                 self.logSPRMeasure()
+                // Lens sample: cameraScale, computed ramp, and a sample orb's applied
+                // xScale + position (position must be identical across zoom levels —
+                // proof no layout/relaxation fired).
+                let cs = self.cameraNode.xScale
+                if let (id, s) = self.nodeSprites.first {
+                    print("[SPRLENS] cameraScale=\(String(format: "%.3f", cs)) ramp=\(String(format: "%.3f", self.zoomRampScale(cs))) node=\(id) xScale=\(String(format: "%.3f", s.xScale)) pos=(\(String(format: "%.1f", s.position.x)),\(String(format: "%.1f", s.position.y)))")
+                }
                 print("[SPRMEASURE] READY light=\(self.appearanceIsLight)")
             }
         }
@@ -3157,6 +3234,34 @@ final class CorpusPhysicsScene: SKScene {
         #endif
     }
 
+    /// Lens (a) — global zoom-ramp DIAL (taste — T dials on device). Shrinks IDLE
+    /// orbs from their `OrbTuning.sizeScale` max as the camera zooms OUT (larger
+    /// `cameraNode.xScale`) for airier structure, and culls titles below an
+    /// on-screen size. VISUAL scalar of zoom only — never touches layout radii or
+    /// physics bodies (those stay spaced-for-max, which is what makes the shrink
+    /// overlap-proof). DEBUG reads `map.lens.*`; Release bakes the defaults with
+    /// ZERO UserDefaults access (the NodeCardView release-gate pattern).
+    enum LensTuning {
+        static let defaultZoomIn: CGFloat = 1.0       // ≤ this cameraScale → full max (1.0)
+        static let defaultZoomOut: CGFloat = 2.5      // ≥ this cameraScale → minShrink
+        static let defaultMinShrink: CGFloat = 0.55   // airiest idle scale (zoomed out)
+        static let defaultLabelLOD: CGFloat = 26      // on-screen pt diameter to START showing a title
+        #if DEBUG
+        private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
+            (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
+        }
+        static var zoomIn: CGFloat    { d("map.lens.zoomIn", defaultZoomIn) }
+        static var zoomOut: CGFloat   { d("map.lens.zoomOut", defaultZoomOut) }
+        static var minShrink: CGFloat { d("map.lens.minShrink", defaultMinShrink) }
+        static var labelLOD: CGFloat  { d("map.lens.labelLOD", defaultLabelLOD) }
+        #else
+        static var zoomIn: CGFloat    { defaultZoomIn }
+        static var zoomOut: CGFloat   { defaultZoomOut }
+        static var minShrink: CGFloat { defaultMinShrink }
+        static var labelLOD: CGFloat  { defaultLabelLOD }
+        #endif
+    }
+
     /// Resolve a node title into (font, renderText, wrapMode) with DISCRETE tiers
     /// and NO mid-word truncation. Tries the tier fonts LARGEST→smallest,
     /// word-wrapping the whole title into `box × maxLines`; returns the FIRST tier
@@ -3286,7 +3391,10 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     #if DEBUG
-    @objc private func handleLabelTuningChanged() { restyleLabels() }
+    @objc private func handleLabelTuningChanged() {
+        restyleLabels()
+        lastRampCameraScale = -1   // Lens (a): a lens dial changed the ramp/LOD → re-apply next idle frame
+    }
 
     /// Live-apply `OrbTuning.sizeScale` to every resting orb: recompute radius,
     /// resize the sprite + wash child, re-set the SDF stroke/feather geometry
@@ -3670,6 +3778,7 @@ final class CorpusPhysicsScene: SKScene {
                 let factor = prev / dist
                 let newScale = (cameraNode.xScale * factor).clamped(to: 0.25...4.0)
                 cameraNode.setScale(newScale)
+                applyIdleZoomRamp()   // Lens (a): shrink idle orbs + LOD live with the pinch (no-op if engaged)
             }
             lastPinchDistance = dist
         }

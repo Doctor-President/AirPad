@@ -1077,6 +1077,12 @@ struct MapLabelTuningPanel: View {
     // Orb-size dial. Writing this is observed by CanvasView (OrbSizeDialObserver),
     // which grows the orbs + re-forms the layout — no notification needed here.
     @AppStorage("map.orbSizeScale")    private var orbSizeScale: Double = Double(CorpusPhysicsScene.OrbTuning.defaultSizeScale)
+    // Lens (a) — global zoom-ramp. Read live per-frame by the scene; a bump()
+    // forces an idle re-apply so dialing updates without needing to zoom.
+    @AppStorage("map.lens.zoomIn")     private var lensZoomIn: Double    = Double(CorpusPhysicsScene.LensTuning.defaultZoomIn)
+    @AppStorage("map.lens.zoomOut")    private var lensZoomOut: Double   = Double(CorpusPhysicsScene.LensTuning.defaultZoomOut)
+    @AppStorage("map.lens.minShrink")  private var lensMinShrink: Double = Double(CorpusPhysicsScene.LensTuning.defaultMinShrink)
+    @AppStorage("map.lens.labelLOD")   private var lensLabelLOD: Double  = Double(CorpusPhysicsScene.LensTuning.defaultLabelLOD)
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
@@ -1110,6 +1116,15 @@ struct MapLabelTuningPanel: View {
             // layout so neighbors re-space with no overlap (positions WILL move).
             Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
             sliderRow(label: "orb ×", value: $orbSizeScale, range: 1.0...1.6, step: 0.02)
+
+            // Lens (a) — zoom-ramp: idle orbs shrink from the orb-× max as you zoom
+            // OUT (cameraScale ↑ zoomIn→zoomOut), down to `shrink`; titles cull below
+            // `LOD` on-screen pt. VISUAL only — never re-spaces the layout.
+            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
+            sliderRow(label: "zoomIn",  value: $lensZoomIn,    range: 0.5...2.0, step: 0.05)
+            sliderRow(label: "zoomOut", value: $lensZoomOut,   range: 1.5...4.0, step: 0.05)
+            sliderRow(label: "shrink",  value: $lensMinShrink, range: 0.2...1.0, step: 0.01)
+            sliderRow(label: "LOD",     value: $lensLabelLOD,  range: 8...60,    step: 1)
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1122,6 +1137,8 @@ struct MapLabelTuningPanel: View {
         // one for maxLines).
         .onChange(of: [largeFrac, medFrac, smallFrac, floor]) { _, _ in Self.bump() }
         .onChange(of: maxLines) { _, _ in Self.bump() }
+        // Lens dials: bump() forces the scene to re-apply the idle ramp + LOD live.
+        .onChange(of: [lensZoomIn, lensZoomOut, lensMinShrink, lensLabelLOD]) { _, _ in Self.bump() }
     }
 
     private static func bump() {
@@ -1196,7 +1213,11 @@ struct MapLabelTuningPanel: View {
             "  smallFrac: \(String(format: "%.4f", smallFrac))   # 1/\(String(format: "%.1f", smallFrac > 0 ? 1/smallFrac : 0))",
             "  floor:     \(String(format: "%.1f", floor))",
             "  maxLines:  \(maxLines)",
-            "  orbSizeScale: \(String(format: "%.2f", orbSizeScale))"
+            "  orbSizeScale: \(String(format: "%.2f", orbSizeScale))",
+            "  lens.zoomIn:    \(String(format: "%.2f", lensZoomIn))",
+            "  lens.zoomOut:   \(String(format: "%.2f", lensZoomOut))",
+            "  lens.minShrink: \(String(format: "%.2f", lensMinShrink))",
+            "  lens.labelLOD:  \(String(format: "%.0f", lensLabelLOD))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

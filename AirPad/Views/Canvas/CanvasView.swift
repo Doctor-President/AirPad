@@ -604,7 +604,8 @@ struct CanvasView: View {
                                 // path) and clears the card.
                                 .contentShape(RoundedRectangle(cornerRadius: cardCorner))
                                 .onTapGesture {
-                                    canvasState.pendingNavigationNodeID = id  // → NodeDetailView
+                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    canvasState.pendingNavigationNodeID = id  // → NodeDetailView (verified route)
                                     canvasState.cardedNodeID = nil
                                 }
                             // DISMISS X (upper-right) → back to browse.

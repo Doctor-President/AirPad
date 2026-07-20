@@ -1084,6 +1084,11 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.lens.minShrink")  private var lensMinShrink: Double = Double(CorpusPhysicsScene.LensTuning.defaultMinShrink)
     @AppStorage("map.lens.labelLOD")   private var lensLabelLOD: Double  = Double(CorpusPhysicsScene.LensTuning.defaultLabelLOD)
     @AppStorage("map.lens.cornerMin")  private var lensCornerMin: Double = Double(CorpusPhysicsScene.LensTuning.defaultCornerMin)
+    // Viewport-centered annulus (T's primary browse-feel dial). Read per-frame by
+    // the scene's applyOrbScales; no bump needed (the pass runs every frame).
+    @AppStorage("map.annulus.amplitude")     private var annAmplitude: Double = Double(CorpusPhysicsScene.AnnulusTuning.defaultAmplitude)
+    @AppStorage("map.annulus.zoomThreshold") private var annZoom: Double      = Double(CorpusPhysicsScene.AnnulusTuning.defaultZoomThreshold)
+    @AppStorage("map.annulus.radius")        private var annRadius: Double     = Double(CorpusPhysicsScene.AnnulusTuning.defaultRadius)
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
@@ -1130,6 +1135,13 @@ struct MapLabelTuningPanel: View {
             // rounded square (zoomed in). Too small → grid of tiles; too large → no
             // width gain. Morph band = the zoomIn/zoomOut above.
             sliderRow(label: "corner",  value: $lensCornerMin, range: 0.05...0.5, step: 0.01)
+
+            // Annulus — gentle viewport-centered magnify (browse feel). amp = center
+            // bump; zoomTh = on when cameraScale below it; radius = falloff band (pt).
+            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
+            sliderRow(label: "ann amp",  value: $annAmplitude, range: 0.0...1.2,  step: 0.02)
+            sliderRow(label: "ann zoom", value: $annZoom,      range: 0.5...2.5,  step: 0.05)
+            sliderRow(label: "ann rad",  value: $annRadius,    range: 80...500,   step: 10)
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1223,7 +1235,10 @@ struct MapLabelTuningPanel: View {
             "  lens.zoomOut:   \(String(format: "%.2f", lensZoomOut))",
             "  lens.minShrink: \(String(format: "%.2f", lensMinShrink))",
             "  lens.labelLOD:  \(String(format: "%.0f", lensLabelLOD))",
-            "  lens.cornerMin: \(String(format: "%.2f", lensCornerMin))"
+            "  lens.cornerMin: \(String(format: "%.2f", lensCornerMin))",
+            "  annulus.amplitude:     \(String(format: "%.2f", annAmplitude))",
+            "  annulus.zoomThreshold: \(String(format: "%.2f", annZoom))",
+            "  annulus.radius:        \(String(format: "%.0f", annRadius))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

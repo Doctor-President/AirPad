@@ -311,29 +311,47 @@ final class CorpusPhysicsScene: SKScene {
         return cmin + (0.5 - cmin) * smooth
     }
 
-    /// IDLE-only: re-scale every resting orb by the zoom ramp and fade titles below
-    /// the on-screen LOD threshold. No-op unless `cameraScale` changed (or a forced
-    /// re-apply via `lastRampCameraScale = -1`). NEVER moves a node or calls the
-    /// layout — pure `sprite.setScale` + title alpha, so positions/radii are
-    /// untouched (the shrink is overlap-proof because spacing stays at the max).
-    /// Skips while engaged — the lens owns scale then (its baseline carries the
-    /// same ramp, so the outer field doesn't pop).
-    private func applyIdleZoomRamp() {
-        guard case .idle = engagementState else { return }
+    /// Gentle center-magnify: `1 + amplitude` at the viewport center, smoothstep
+    /// falloff to `1.0` by `radius` (screen-pt band width). `dist` is scene-space;
+    /// `/cameraScale` makes the band a consistent SCREEN size across zoom.
+    private func annulusAmplify(_ dist: CGFloat, cameraScale: CGFloat) -> CGFloat {
+        let screenDist = dist / max(cameraScale, 0.0001)
+        let t = min(screenDist / max(AnnulusTuning.radius, 1), 1)   // 0 center → 1 edge
+        let falloff = 1 - (t * t * (3 - 2 * t))                     // 1 center → 0 edge
+        return 1 + AnnulusTuning.amplitude * falloff
+    }
+
+    /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp(cameraScale)
+    /// × annulusAmplify(dist to viewport center)`. The annulus magnifies nodes near
+    /// SCREEN CENTER (off `cameraNode.position`) when zoomed in — a gentle magnifying
+    /// band, positions HELD (no compression, no engagement machine). Zoomed out
+    /// (≥ `annulusZoomThreshold`) the annulus is OFF and this early-outs on unchanged
+    /// zoom (overview stays calm). Both multipliers layer cleanly. NEVER moves a node.
+    private func applyOrbScales() {
         let cameraScale = cameraNode.xScale
-        if abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
-        lastRampCameraScale = cameraScale
         let ramp = zoomRampScale(cameraScale)
+        let annulusOn = cameraScale < AnnulusTuning.zoomThreshold
+        // Annulus ON → re-run every frame (camera.position pans → magnify center
+        // shifts). OFF → only when the zoom actually changed (cheap idle path).
+        if !annulusOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
+        lastRampCameraScale = cameraScale
+        let camPos = cameraNode.position
         let lod = LensTuning.labelLOD
         let fadeHi = lod * 1.5
         for (nodeID, sprite) in nodeSprites {
             let resting = nodeRestingScales[nodeID] ?? 1.0
-            sprite.setScale(resting * ramp)
+            var scale = resting * ramp
+            if annulusOn {
+                let dx = sprite.position.x - camPos.x
+                let dy = sprite.position.y - camPos.y
+                scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale)
+            }
+            sprite.setScale(scale)
             guard let intrinsic = nodeIntrinsicRadii[nodeID],
                   let title = sprite.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode
             else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
-            let onScreen = (intrinsic * 2) * (resting * ramp) / max(cameraScale, 0.0001)
+            let onScreen = (intrinsic * 2) * scale / max(cameraScale, 0.0001)
             title.alpha = smoothstepClamp(lod, fadeHi, onScreen)
         }
     }
@@ -665,7 +683,6 @@ final class CorpusPhysicsScene: SKScene {
     private var gestureState: GestureState = .idle
     private let dragThreshold: CGFloat = 10.0
     private let panMultiplier: CGFloat = 1.5
-    private let focalZPosition: CGFloat = 1000
 
     // SB83c: Momentum scrolling on pan release.
     // Samples are screen-space touch positions; velocity is screen px/frame.
@@ -679,8 +696,6 @@ final class CorpusPhysicsScene: SKScene {
     // SB83d: True for any tapCandidate → honeycomb transition (idle navigation OR grace-exit pan).
     private var momentumEligible: Bool = false
 
-    private var currentFocalNodeID: String? = nil
-
     // MARK: - Tap-driven card presentation (browse ≠ commit)
     /// The card currently being PRESENTED. Tracks `canvasState.cardedNodeID` and
     /// lingers through the dismiss/hop morph so the overlay follows the orb.
@@ -689,7 +704,12 @@ final class CorpusPhysicsScene: SKScene {
     /// frame in `updateCardPresentation`. Drives `focalScaleProgress`/`focalMorph`.
     private var cardProgress: CGFloat = 0
     /// Per-frame lerp for the card morph (tap → card grow / dismiss shrink).
-    private let cardMorphLerp: CGFloat = 0.22
+    private let cardMorphLerp: CGFloat = 0.18
+    /// Orb→card cross-fade band: the tapped orb holds full alpha until `Start`,
+    /// then fades to 0 by `End` as the SwiftUI card face fades IN — so the orb
+    /// INFLATES into the card (no instant pop).
+    private let cardFadeStart: CGFloat = 0.15
+    private let cardFadeEnd: CGFloat = 0.70
 
     /// Last appearance applied to the unfocused orbs, so `update` re-themes them
     /// only when the trait actually flips (light ↔ dark), not every frame. nil
@@ -700,26 +720,11 @@ final class CorpusPhysicsScene: SKScene {
     /// disengaging so syncFocalToCanvasState can continue bridging its
     /// shrinking position and diameter to the SwiftUI gradient overlay while
     /// the overlay's opacity fades to 0. Cleared at disengaging → idle.
-    private var lingerFocalNodeID: String? = nil
     /// Node currently rendering with the gradient shader (focal render state).
     /// Mutated only via `setFocalShader(to:)`.
     private var focalShaderID: String? = nil
     // SB96: Selection haptic for focal changes during engagement
-    private let focalChangeHaptic = UISelectionFeedbackGenerator()
     private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
-    private var savedFocalZPositions: [String: CGFloat] = [:]
-
-    // Engagement state (SB80b: hex grid + scale lens)
-    // Browse ≠ commit re-wire: the sticky grace/preCollapse sub-machine is gone.
-    // Graze amplifies (engaging → engaged) and lift always → disengaging (relax).
-    private enum EngagementState {
-        case idle
-        case engaging(focal: String)
-        case engaged(focal: String)
-        case disengaging
-    }
-
-    private var engagementState: EngagementState = .idle
 
     /// Strand ring-target positions in the undistorted (substrate-resting)
     /// frame, keyed by neighbor nodeID. Populated on engaged-state entry +
@@ -752,15 +757,6 @@ final class CorpusPhysicsScene: SKScene {
     /// ring is never occluded by a dimmed sibling.
     private var savedStrandZPositions: [String: CGFloat] = [:]
     private static let strandZPosition: CGFloat = 500
-
-    /// SB83g: True only during active engagement states. Focal-tracking during pan/disengage
-    /// would otherwise mutate `currentFocalNodeID` and cause spurious grace entry on lift.
-    private var isInActiveEngagement: Bool {
-        switch engagementState {
-        case .engaging, .engaged: return true
-        case .idle, .disengaging: return false
-        }
-    }
 
     /// Canonical resting fingerprint — target positions from the algorithmic layout.
     /// Captured at sprite creation, on layout recompute, and persists across engagement cycles.
@@ -797,7 +793,6 @@ final class CorpusPhysicsScene: SKScene {
     // Lerp factors (preserved from SB80b)
     private let engagementLerp: CGFloat = 0.12
     private let steadyStateLerp: CGFloat = 0.20
-    private let cameraFollowLerp: CGFloat = 0.10
 
     // SB92: Bounded-band relaxation for dense-region overlap cleanup
     private let relaxationBandWorldRadius: CGFloat = 480.0     // SB94: wider band at zoom-out — was 320
@@ -811,7 +806,6 @@ final class CorpusPhysicsScene: SKScene {
     private var hysteresisThreshold: CGFloat = 20.0
 
     // SB92: Track per-focal-switch lerp ramp window
-    private var focalSwitchTimestamp: TimeInterval? = nil
     private var focalSwitchSlowLerpDuration: TimeInterval = 0.15
 
     /// UserDefaults keys for the Graze tuning dials (shared with the SwiftUI
@@ -992,423 +986,10 @@ final class CorpusPhysicsScene: SKScene {
             updateNewcomerHalos(currentTime: currentTime)
         }
 
-        // Honeycomb gesture state updates
-        switch gestureState {
-        case .honeycomb(_, _) where isInActiveEngagement:
-            // SB83g: Only track focal during active engagement. Pan/disengage gestures
-            // must not mutate currentFocalNodeID — that would cause spurious grace on lift.
-            // Track focal node (nearest to camera center) with hysteresis
-            let newFocalID = findNearestNodeToCamera()
-            if newFocalID != currentFocalNodeID {
-                // Focal changed - capture old focal before updating
-                let oldFocalID = currentFocalNodeID
-
-                if let oldFocalID = oldFocalID, let oldSprite = nodeSprites[oldFocalID] {
-                    // Restore original zPosition
-                    if let savedZ = savedFocalZPositions[oldFocalID] {
-                        oldSprite.zPosition = savedZ
-                        savedFocalZPositions.removeValue(forKey: oldFocalID)
-                    }
-                }
-
-                // Browse decouple: currentFocalNodeID is now just the ANNULUS CENTER
-                // for the sigmoid amplification — no `setFocalShader` (no alpha-0),
-                // no card. The grazed orb scales up but stays a visible orb; the card
-                // is tap-driven (`cardedNodeID`).
-                currentFocalNodeID = newFocalID
-
-                if let newFocalID = newFocalID, let newSprite = nodeSprites[newFocalID] {
-                    // Save original zPosition before lifting
-                    savedFocalZPositions[newFocalID] = newSprite.zPosition
-                    newSprite.zPosition = focalZPosition
-
-                    print("[Honeycomb] Focal: \(oldFocalID ?? "nil") → \(newFocalID)")
-                    focalChangeHaptic.selectionChanged()  // SB96
-                    focalChangeHaptic.prepare()             // SB96: re-prepare for next tick
-
-                    // SB97.1: Swap textures — old focal back to non-focal, new focal to focal
-                    if let oldFocalID = oldFocalID {
-                        swapToNonFocalTexture(nodeID: oldFocalID)
-                    }
-                    swapToFocalTexture(nodeID: newFocalID)
-
-                    // SB92: Mark focal-switch timestamp for lerp ramp
-                    focalSwitchTimestamp = currentTime
-
-                    // Update engagement state to new focal. Strand targets
-                    // recompute when the engagement state machine sees the
-                    // focal switch in its own branch — kept off this gesture
-                    // path so the recompute trigger has a single source.
-                    if case .engaged = engagementState {
-                        engagementState = .engaged(focal: newFocalID)
-                    } else if case .engaging = engagementState {
-                        engagementState = .engaging(focal: newFocalID)
-                    }
-                }
-            }
-
-        default:
-            break
-        }
-
-        // Engagement state machine: runs independently every frame (SB80b-fix2)
-        switch engagementState {
-        case .engaging(let focalID), .engaged(let focalID):
-            guard let focalRestingPos = nodeRestingPositions[focalID],
-                  let view = view else { break }
-
-            // Strand targets: recompute on initial entry and on focal switch.
-            // Single trigger point covers idle→engaging, engaging→engaged
-            // (focalID is preserved across that transition), and mid-engagement
-            // focal switches that reassign engagementState directly. Flag-off
-            // is handled inside recomputeStrandTargets — clearing the dict.
-            if focalID != lastStrandFocalID {
-                recomputeStrandTargets(focalID: focalID, screenWidth: view.bounds.width)
-                lastStrandFocalID = focalID
-            }
-
-            // Determine lerp factor based on state
-            let lerpFactor: CGFloat
-            if case .engaging = engagementState {
-                lerpFactor = engagementLerp
-            } else {
-                if let switchTime = focalSwitchTimestamp,
-                   currentTime - switchTime < focalSwitchSlowLerpDuration {
-                    // SB92: Slow lerp briefly after a focal switch
-                    lerpFactor = engagementLerp
-                } else {
-                    lerpFactor = steadyStateLerp
-                }
-            }
-
-            // Track convergence for state transition
-            var allPositionsConverged = true
-            var allScalesConverged = true
-
-            let screenWidth = view.bounds.width
-            let cameraScale = cameraNode.xScale
-
-            // Phase 1: Compute continuous-function targets for all nodes
-            var targetPositions: [String: CGPoint] = [:]
-            var targetScales: [String: CGFloat] = [:]
-
-            for (nodeID, _) in nodeSprites {
-                guard let restingPos = nodeRestingPositions[nodeID],
-                      let intrinsicRadius = nodeIntrinsicRadii[nodeID],
-                      intrinsicRadius > 0 else { continue }
-
-                // Target position: fingerprint resting position pushed radially outward
-                // from focal to make room for the focal's enlarged size.
-                // Strand-ring members override with an undistorted ring slot —
-                // strands sit outside the lens. PBD relaxation below resolves
-                // any non-overlap against the override target.
-                let targetPos: CGPoint
-                if let ringTarget = strandTargets[nodeID] {
-                    targetPos = ringTarget
-                } else {
-                    targetPos = applyRadialCompression(
-                        nodePos: restingPos,
-                        focalPos: focalRestingPos,
-                        strength: positionCompressionStrength,
-                        falloff: positionCompressionFalloff
-                    )
-                }
-
-                // Target scale: screen-space sigmoid → world-space, divided by stable intrinsic.
-                // `intrinsicRadius` is captured at sprite creation and never updated, so
-                // positive feedback (lerp → frame.width → larger target) cannot accumulate.
-                let dxWorld = restingPos.x - focalRestingPos.x
-                let dyWorld = restingPos.y - focalRestingPos.y
-                let worldDist = hypot(dxWorld, dyWorld)
-                // SB93: Multiply by cameraScale so the amplified zone covers a consistent
-                // screen-space radius around focal at any camera zoom level.
-                let normalizedDist = (worldDist * cameraScale) / characteristicSpacing
-                let targetScreenFraction = screenFractionForNormalizedDistance(normalizedDist)
-
-                let targetScale: CGFloat
-                // SB93: If the sigmoid has plateaued at baseline, use intrinsic scale (1.0)
-                // so the outer field shrinks/grows naturally with the camera.
-                // The 0.005 epsilon catches anything within ~10% of the baseline screen-fraction.
-                let baselineEpsilon: CGFloat = 0.005
-                if targetScreenFraction <= baselineScreenFraction + baselineEpsilon {
-                    // Lens (a): the plateau baseline is the idle zoom-ramp, NOT a flat
-                    // 1.0 — so engaging while zoomed out keeps the outer field at the
-                    // same airy scale as idle (no pop). Near-focal amplification (else
-                    // branch) is screen-space and unchanged.
-                    targetScale = zoomRampScale(cameraScale)
-                } else {
-                    let targetScreenDiameter = targetScreenFraction * screenWidth
-                    let targetWorldRadius = (targetScreenDiameter / 2.0) * cameraScale
-                    targetScale = targetWorldRadius / intrinsicRadius
-                }
-
-                targetPositions[nodeID] = targetPos
-                targetScales[nodeID] = targetScale
-            }
-
-            // Phase 1.1 — Strand scale override. Strand members render at a
-            // fraction of the focal's screen-space scale, so they read as
-            // elevated against the dimmed corpus and stay sized consistently
-            // across zoom levels (the focal already uses screen-space sigmoid
-            // scaling, so multiplying its scale carries that property through).
-            // Relative intrinsic sizing among strands is preserved — applying
-            // the same scale multiplier to different intrinsic radii produces
-            // proportionally different world sizes. Floored at resting scale
-            // so a strand is never smaller than its plain corpus form.
-            if !strandTargets.isEmpty, let focalScale = targetScales[focalID] {
-                let strandMultiplier = StrandService.focalScaleMultiplier
-                for strandID in strandTargets.keys {
-                    guard targetScales[strandID] != nil else { continue }
-                    let restingScale = nodeRestingScales[strandID] ?? 1.0
-                    targetScales[strandID] = max(restingScale, strandMultiplier * focalScale)
-                }
-            }
-
-            // Phase 1.5 — SB92: Bounded-band relaxation
-            // Resolve overlaps in the band near focal. Far periphery is excluded
-            // because compression falloff has died out and overlaps are rare.
-            var relaxationSet: [String] = [focalID]
-            for nodeID in nodeSprites.keys where nodeID != focalID {
-                // SOLIDITY LAW: every body near focal is physical — strand-ring
-                // members included — so radius-aware repulsion resolves any
-                // overlap between a ring slot and a lens-compressed neighbor.
-                // The ring target stays the attractor (reset each frame in
-                // Phase 1); PBD only nudges on a real overlap, then it returns.
-                if strandTargets[nodeID] != nil {
-                    relaxationSet.append(nodeID)
-                    continue
-                }
-                guard let restingPos = nodeRestingPositions[nodeID] else { continue }
-                let dx = restingPos.x - focalRestingPos.x
-                let dy = restingPos.y - focalRestingPos.y
-                let worldDist = hypot(dx, dy)
-                // SB93: Scale-aware relaxation band — covers a consistent screen-space region
-                // regardless of camera zoom. At zoom-out, expands in world-space to match the
-                // larger world-area visible on screen near focal; at zoom-in, contracts.
-                let effectiveRelaxationBand = relaxationBandWorldRadius / max(cameraScale, 0.1)
-                if worldDist < effectiveRelaxationBand {
-                    relaxationSet.append(nodeID)
-                }
-            }
-
-            // MORPH-TO-CARD solidity: once the focal morphs toward its card face,
-            // its collision footprint becomes the card's 5:7 rounded rect (taller
-            // than wide), so the crowd yields to the card's REAL shape instead of a
-            // circle. 0 while it's still a bubble → the circle path below runs.
-            let focalMorph = morphAmount(focalScaleProgress(for: focalID, isActive: true))
-            let cardAspect: CGFloat = 1.4   // 5:7 portrait (height / width)
-
-            for _ in 0..<relaxationPasses {
-                var anyOverlap = false
-                for i in 0..<relaxationSet.count {
-                    let idA = relaxationSet[i]
-                    guard let posA = targetPositions[idA],
-                          let scaleA = targetScales[idA],
-                          let intrinsicA = nodeIntrinsicRadii[idA] else { continue }
-                    let radA = intrinsicA * scaleA
-
-                    for j in (i + 1)..<relaxationSet.count {
-                        let idB = relaxationSet[j]
-                        guard let posB = targetPositions[idB],
-                              let scaleB = targetScales[idB],
-                              let intrinsicB = nodeIntrinsicRadii[idB] else { continue }
-                        let radB = intrinsicB * scaleB
-
-                        let aIsFocal = (idA == focalID)
-                        let bIsFocal = (idB == focalID)
-
-                        // SB94: Scale-aware breathing gap. Constant world-space gap shrinks to invisibility at zoom-out
-                        // (6pt world × 0.25 cameraScale = 1.5pt screen). Divide by cameraScale so screen-space gap stays consistent.
-                        let effectiveBreathingGap = relaxationBreathingGap / max(cameraScale, 0.1)
-
-                        if (aIsFocal || bIsFocal) && focalMorph > 0.01 {
-                            // Card AABB footprint — focal stays put; the other node
-                            // yields out along its least-penetration axis.
-                            let focalPos = aIsFocal ? posA : posB
-                            let otherID  = aIsFocal ? idB : idA
-                            let otherPos = aIsFocal ? posB : posA
-                            let focalR   = aIsFocal ? radA : radB
-                            let otherR   = aIsFocal ? radB : radA
-                            let halfW = focalR + otherR + effectiveBreathingGap
-                            let halfH = focalR * (1 + (cardAspect - 1) * focalMorph) + otherR + effectiveBreathingGap
-                            let ddx = otherPos.x - focalPos.x
-                            let ddy = otherPos.y - focalPos.y
-                            let ox = halfW - abs(ddx)
-                            let oy = halfH - abs(ddy)
-                            if ox > 0 && oy > 0 {
-                                anyOverlap = true
-                                if ox <= oy {
-                                    let s: CGFloat = ddx >= 0 ? 1 : -1
-                                    targetPositions[otherID] = CGPoint(x: otherPos.x + s * ox, y: otherPos.y)
-                                } else {
-                                    let s: CGFloat = ddy >= 0 ? 1 : -1
-                                    targetPositions[otherID] = CGPoint(x: otherPos.x, y: otherPos.y + s * oy)
-                                }
-                            }
-                            continue
-                        }
-
-                        let required = radA + radB + effectiveBreathingGap
-                        let dx = posB.x - posA.x
-                        let dy = posB.y - posA.y
-                        let actual = hypot(dx, dy)
-
-                        if actual < required {
-                            anyOverlap = true
-                            let deficit = required - actual
-                            let dirX: CGFloat
-                            let dirY: CGFloat
-                            if actual < 0.001 {
-                                dirX = 1.0
-                                dirY = 0.0
-                            } else {
-                                dirX = dx / actual
-                                dirY = dy / actual
-                            }
-
-                            if aIsFocal {
-                                targetPositions[idB] = CGPoint(
-                                    x: posB.x + dirX * deficit,
-                                    y: posB.y + dirY * deficit
-                                )
-                            } else if bIsFocal {
-                                targetPositions[idA] = CGPoint(
-                                    x: posA.x - dirX * deficit,
-                                    y: posA.y - dirY * deficit
-                                )
-                            } else {
-                                let half = deficit / 2.0
-                                targetPositions[idA] = CGPoint(
-                                    x: posA.x - dirX * half,
-                                    y: posA.y - dirY * half
-                                )
-                                targetPositions[idB] = CGPoint(
-                                    x: posB.x + dirX * half,
-                                    y: posB.y + dirY * half
-                                )
-                            }
-                        }
-                    }
-                }
-                if !anyOverlap { break }
-            }
-
-            // Phase 3: Lerp toward targets and check convergence.
-            // Alpha is no longer touched here — strand dimming runs via SKAction
-            // at state transitions (see `applyStrandDimming` / `clearStrandDimming`).
-            // Per-frame alpha writes here raced with `setFocalShader` and let the
-            // focal's solid fill leak through behind the SwiftUI gradient overlay.
-            for (nodeID, sprite) in nodeSprites {
-                guard let targetPos = targetPositions[nodeID],
-                      let targetScale = targetScales[nodeID] else { continue }
-
-                // Lerp position
-                let currentPos = sprite.position
-                let dx = targetPos.x - currentPos.x
-                let dy = targetPos.y - currentPos.y
-                let lerpedPos = CGPoint(
-                    x: currentPos.x + dx * lerpFactor,
-                    y: currentPos.y + dy * lerpFactor
-                )
-                sprite.position = lerpedPos
-
-                // Check position convergence
-                if hypot(dx, dy) > positionMatchTolerance {
-                    allPositionsConverged = false
-                }
-
-                // Lerp scale
-                let currentScale = sprite.xScale
-                let scaleDiff = targetScale - currentScale
-                let lerpedScale = currentScale + scaleDiff * lerpFactor
-                sprite.setScale(lerpedScale)
-
-                // Check scale convergence
-                if abs(scaleDiff) > scaleMatchTolerance {
-                    allScalesConverged = false
-                }
-
-            }
-
-            // Camera follow (engaged state only, not during engaging).
-            // Focal stays at its own resting position — applyRadialCompression is a no-op
-            // when nodePos == focalPos, so the focal's target equals its fingerprint pos.
-            if case .engaged = engagementState {
-                let camDx = focalRestingPos.x - cameraNode.position.x
-                let camDy = focalRestingPos.y - cameraNode.position.y
-                cameraNode.position = CGPoint(
-                    x: cameraNode.position.x + camDx * cameraFollowLerp,
-                    y: cameraNode.position.y + camDy * cameraFollowLerp
-                )
-            }
-
-            // State transition: engaging → engaged
-            if case .engaging = engagementState, allPositionsConverged && allScalesConverged {
-                engagementState = .engaged(focal: focalID)
-                print("[Honeycomb] State: engaging → engaged")
-            }
-
-        case .disengaging:
-            var allPositionsConverged = true
-            var allScalesConverged = true
-
-            for (nodeID, sprite) in nodeSprites {
-                guard let targetPos = nodeRestingPositions[nodeID],
-                      let restingScale = nodeRestingScales[nodeID] else { continue }
-                // Lens (a): disengage returns to the RAMPED idle scale, so releasing
-                // while zoomed out lands on the airy size (no pop back to full max).
-                let targetScale = restingScale * zoomRampScale(cameraNode.xScale)
-
-                // Lerp toward canonical resting state (the layout's target fingerprint).
-                let currentPos = sprite.position
-                let dx = targetPos.x - currentPos.x
-                let dy = targetPos.y - currentPos.y
-                let lerpedPos = CGPoint(
-                    x: currentPos.x + dx * engagementLerp,
-                    y: currentPos.y + dy * engagementLerp
-                )
-                sprite.position = lerpedPos
-
-                if hypot(dx, dy) > positionMatchTolerance {
-                    allPositionsConverged = false
-                }
-
-                let currentScale = sprite.xScale
-                let scaleDiff = targetScale - currentScale
-                let lerpedScale = currentScale + scaleDiff * engagementLerp
-                sprite.setScale(lerpedScale)
-
-                if abs(scaleDiff) > scaleMatchTolerance {
-                    allScalesConverged = false
-                }
-
-            }
-
-            // State transition: disengaging → idle.
-            // Do NOT clear nodeRestingPositions / nodeRestingScales — those are canonical
-            // and persist across engagement cycles. Clearing them caused the next disengage
-            // to skip every node and instantly transition without animating.
-            if allPositionsConverged && allScalesConverged {
-                engagementState = .idle
-                lastRampCameraScale = -1   // Lens (a): force an idle ramp + LOD re-apply on re-entry
-                focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
-                lingerFocalNodeID = nil
-
-                // SB97.1: Restore non-focal texture on any node still in focal state
-                for (nodeID, shape) in nodeSprites {
-                    if let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-                       let isFocal = sprite.userData?["isFocal"] as? Bool,
-                       isFocal {
-                        swapToNonFocalTexture(nodeID: nodeID)
-                    }
-                }
-
-                print("[Honeycomb] State: disengaging → idle")
-            }
-
-        case .idle:
-            applyIdleZoomRamp()   // Lens (a): re-scale + LOD only when cameraScale changed
-        }
+        // Per-frame orb scale: zoom ramp (lens a) × viewport-centered annulus.
+        // The focal-engagement machine is RETIRED — magnify in place off the camera
+        // center, positions HOLD, no compression, no grace/focal/engaged.
+        applyOrbScales()
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
@@ -1444,21 +1025,28 @@ final class CorpusPhysicsScene: SKScene {
     /// user drags. Runs from `update(_:)`, which SpriteKit invokes on the main
     /// thread; the dispatch is for @MainActor isolation only.
     /// Update the tap-driven card morph, then bridge it to the SwiftUI overlay.
-    /// Browse (graze) never drives this — only `canvasState.cardedNodeID` does.
-    /// A clean tap sets `cardedNodeID` → the card grows; tap-empty / X clears it →
-    /// the card shrinks; tapping another orb reassigns it → the card hops (progress
-    /// stays up, `setFocalShader` re-points the alpha-0, so no teardown flash).
+    /// Browse never drives this — only `canvasState.cardedNodeID` does. Tap →
+    /// `cardedNodeID` set → the orb INFLATES into the card (its alpha cross-fades to
+    /// the SwiftUI card face mid-morph). Tap-empty / X clears it → shrink. Tapping
+    /// another orb reassigns it → the card hops (progress stays up → no teardown).
     private func updateCardPresentation() {
         let carded = canvasState?.cardedNodeID
-        if let carded, carded != activeCardID || focalShaderID != carded {
-            setFocalShader(to: carded)   // alpha-0 the carded orb; restore the previous
+        // Hop / dismiss: restore the previously-carded orb to full alpha.
+        if carded != activeCardID {
+            if let prev = activeCardID, let s = nodeSprites[prev] { s.alpha = 1 }
             activeCardID = carded
         }
         let target: CGFloat = (carded != nil) ? 1 : 0
         cardProgress += (target - cardProgress) * cardMorphLerp
         if target == 0 && cardProgress < 0.01 {
             cardProgress = 0
-            if activeCardID != nil { setFocalShader(to: nil); activeCardID = nil }
+            if let prev = activeCardID, let s = nodeSprites[prev] { s.alpha = 1 }
+            activeCardID = nil
+        }
+        // MORPH-INFLATE: fade the tapped orb out as the card face fades IN (not
+        // instant at tap), so there's always a visible shape (orb → bubble → card).
+        if let id = activeCardID, let sprite = nodeSprites[id] {
+            sprite.alpha = 1 - smoothstepClamp(cardFadeStart, cardFadeEnd, cardProgress)
         }
         syncFocalToCanvasState()
     }
@@ -1704,42 +1292,7 @@ final class CorpusPhysicsScene: SKScene {
         nodeIDToPersistentClusterID = out
     }
 
-    /// Sigmoid scale falloff: focal large, smooth taper, asymptotic to baseline.
-    /// Input is euclidean distance from focal divided by `characteristicSpacing`.
-    /// Returns: target screen-space diameter as fraction of screen width.
-    private func screenFractionForNormalizedDistance(_ x: CGFloat) -> CGFloat {
-        // Logistic sigmoid: 1 at x=0, smoothly transitions to 0 as x grows past midpoint
-        let sigmoid = 1.0 / (1.0 + exp(scaleSigmoidSteepness * (x - scaleSigmoidMidpoint)))
-        // Map sigmoid output to range [baselineScreenFraction, focalScreenFraction]
-        return baselineScreenFraction + (focalScreenFraction - baselineScreenFraction) * sigmoid
-    }
 
-    /// Push the node radially outward from focal so the focal's enlarged size has
-    /// breathing room. Compression is exponential in normalized distance — close
-    /// neighbors get pushed most, distant nodes barely move.
-    private func applyRadialCompression(
-        nodePos: CGPoint,
-        focalPos: CGPoint,
-        strength: CGFloat,
-        falloff: CGFloat
-    ) -> CGPoint {
-        let dxWorld = nodePos.x - focalPos.x
-        let dyWorld = nodePos.y - focalPos.y
-        let worldDist = hypot(dxWorld, dyWorld)
-        guard worldDist > 0.001 else { return nodePos }
-
-        let normalizedDist = worldDist / characteristicSpacing
-        let compressionFactor = strength * exp(-normalizedDist / falloff)
-        let pushWorldDist = characteristicSpacing * compressionFactor
-
-        let dirX = dxWorld / worldDist
-        let dirY = dyWorld / worldDist
-
-        return CGPoint(
-            x: nodePos.x + dirX * pushWorldDist,
-            y: nodePos.y + dirY * pushWorldDist
-        )
-    }
 
     // MARK: - Strand ring targets  ·  ⚠️ DORMANT (retired 2026-07-06)
     //
@@ -1956,56 +1509,6 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Honeycomb helpers
 
-    /// Find the node nearest to the camera center with hysteresis.
-    ///
-    /// Ranks by each node's TRUE HOME (`nodeRestingPositions`), NOT its displaced
-    /// sprite position. During engagement the parting crowd pushes neighbour
-    /// sprites radially outward; ranking by displaced positions moved switch
-    /// targets away from the finger, so focus jittered and drifted off the node
-    /// under the user's thumb. Resting homes are stable, so the focus decision
-    /// tracks where the finger actually is — the crowd parts without changing who
-    /// the finger is over. (Falls back to the sprite position pre-layout.)
-    private func findNearestNodeToCamera() -> String? {
-        let cameraCenter = cameraNode.position
-
-        func homeDistance(_ nodeID: String) -> CGFloat {
-            let home = nodeRestingPositions[nodeID] ?? nodeSprites[nodeID]?.position ?? cameraCenter
-            let dx = home.x - cameraCenter.x
-            let dy = home.y - cameraCenter.y
-            return sqrt(dx * dx + dy * dy)
-        }
-
-        var nearestID: String? = nil
-        var nearestDistance: CGFloat = .infinity
-        for (nodeID, _) in nodeSprites {
-            let distance = homeDistance(nodeID)
-            if distance < nearestDistance {
-                nearestDistance = distance
-                nearestID = nodeID
-            }
-        }
-
-        // Apply hysteresis if there's a current focal
-        if let currentID = currentFocalNodeID, nodeSprites[currentID] != nil {
-            let currentDistance = homeDistance(currentID)
-
-            // SB92: Scale-aware hysteresis for consistent screen-space behavior across zoom
-            let effectiveHysteresis = hysteresisThreshold / max(cameraNode.xScale, 0.1)
-
-            if let candidate = nearestID,
-               candidate != currentID,
-               nearestDistance < currentDistance - effectiveHysteresis {
-                // New candidate is closer by more than effective hysteresis — switch
-                return candidate
-            } else {
-                // Stay with current focal
-                return currentID
-            }
-        } else {
-            // No current focal — take the nearest
-            return nearestID
-        }
-    }
 
     // MARK: - Node sprites
 
@@ -2848,7 +2351,7 @@ final class CorpusPhysicsScene: SKScene {
             // Lens (a) idle ramp: idle orbs shrink, labels cull, positions unchanged.
             if let z = UserDefaults.standard.string(forKey: "SPRZoom"), let zs = Double(z) {
                 self.cameraNode.setScale(CGFloat(zs))
-                self.applyIdleZoomRamp()
+                self.applyOrbScales()
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
                 guard let self else { return }
@@ -3223,6 +2726,30 @@ final class CorpusPhysicsScene: SKScene {
         #endif
     }
 
+    /// Viewport-centered continuous-annulus DIAL (taste — T's primary browse-feel
+    /// dial). Gentle magnification near SCREEN CENTER when zoomed in; positions
+    /// hold. `amplitude` = center orb bump (1+amp); `zoomThreshold` = annulus ON
+    /// when cameraScale < this (overview stays calm above it); `radius` = screen-pt
+    /// falloff band width. DEBUG reads `map.annulus.*`; Release bakes gentle
+    /// defaults with ZERO UserDefaults access.
+    enum AnnulusTuning {
+        static let defaultAmplitude: CGFloat = 0.35       // center ~35% bigger — gentle, never one-node-huge
+        static let defaultZoomThreshold: CGFloat = 1.2    // ON when cameraScale < this (zoomed in)
+        static let defaultRadius: CGFloat = 220           // screen-pt falloff radius (band width)
+        #if DEBUG
+        private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
+            (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
+        }
+        static var amplitude: CGFloat     { d("map.annulus.amplitude", defaultAmplitude) }
+        static var zoomThreshold: CGFloat { d("map.annulus.zoomThreshold", defaultZoomThreshold) }
+        static var radius: CGFloat        { d("map.annulus.radius", defaultRadius) }
+        #else
+        static var amplitude: CGFloat     { defaultAmplitude }
+        static var zoomThreshold: CGFloat { defaultZoomThreshold }
+        static var radius: CGFloat        { defaultRadius }
+        #endif
+    }
+
     /// Resolve a node title into (font, renderText, wrapMode) with DISCRETE tiers
     /// and NO mid-word truncation. Tries the tier fonts LARGEST→smallest,
     /// word-wrapping the whole title into `box × maxLines`; returns the FIRST tier
@@ -3578,22 +3105,19 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
-                    // Browse: a drag always starts fresh honeycomb amplification on
-                    // the nearest node (no grace resume — that sub-machine is gone).
-                    let focalID = findNearestNodeToCamera() ?? ""
-                    engagementState = .engaging(focal: focalID)
-                    focalChangeHaptic.prepare()  // SB96
-                    print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
+                    // Browse = PAN only now (the engagement machine is retired; the
+                    // annulus magnifies off camera.position every frame). RE-GRAZE
+                    // DISMISS: starting a pan clears any open card.
+                    if canvasState?.cardedNodeID != nil {
+                        DispatchQueue.main.async { [weak self] in self?.canvasState?.cardedNodeID = nil }
+                    }
 
-                    // Transition to honeycomb mode
+                    // Transition to pan (honeycomb) mode
                     gestureState = .honeycomb(
                         initialPosition: initialPosition,
                         lastPanPosition: current
                     )
-
-                    // SB83d: Any tapCandidate → honeycomb transition is pan-eligible
-                    // (idle navigation OR grace-resume pan).
-                    momentumEligible = true
+                    momentumEligible = true   // pan → coast-eligible
                 }
 
             case .honeycomb(let initialPosition, let lastPanPosition):
@@ -3634,7 +3158,7 @@ final class CorpusPhysicsScene: SKScene {
                 let factor = prev / dist
                 let newScale = (cameraNode.xScale * factor).clamped(to: 0.25...4.0)
                 cameraNode.setScale(newScale)
-                applyIdleZoomRamp()   // Lens (a): shrink idle orbs + LOD live with the pinch (no-op if engaged)
+                applyOrbScales()   // annulus + zoom ramp live with the pinch
             }
             lastPinchDistance = dist
         }
@@ -3651,13 +3175,9 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        // Grace-period tap detection lives in touchesBegan (touch-down for immediate response).
-        // Lifts during grace with no preceding drag are no-ops here.
-
-        // Honeycomb lift ALWAYS disengages (relax) — no grace stickiness; browse
-        // amplification is transient. Momentum/coast is preserved (launched from
-        // the windowed velocity). No `setFocalShader` here: graze never set one
-        // (the card owns its alpha-0 via updateCardPresentation).
+        // Pan lift: launch momentum/coast from the windowed velocity, then idle.
+        // Nothing to disengage — the annulus is persistent (per-frame off
+        // camera.position), so nothing snaps back.
         if case .honeycomb(_, _) = gestureState {
             if let first = panSamples.first, let last = panSamples.last, momentumEligible {
                 let dt = last.time - first.time
@@ -3671,15 +3191,7 @@ final class CorpusPhysicsScene: SKScene {
             }
             panSamples.removeAll()
             momentumEligible = false
-
-            print("[Honeycomb] Lift → disengaging (relax)")
-            engagementState = .disengaging
             gestureState = .idle
-            currentFocalNodeID = nil
-            strandTargets.removeAll()
-            lastStrandFocalID = nil
-            clearStrandDimming()
-            restoreStrandZPositions()
             return
         }
 
@@ -3755,31 +3267,7 @@ final class CorpusPhysicsScene: SKScene {
         for touch in touches { activeTouches.removeValue(forKey: touch) }
         lastPinchDistance = nil
         tapStartInfo = nil
-
-        // Clean up honeycomb state
-        if case .honeycomb(_, _) = gestureState {
-            // Transition to disengaging
-            engagementState = .disengaging
-            strandTargets.removeAll()
-            lastStrandFocalID = nil
-            clearStrandDimming()
-            restoreStrandZPositions()
-
-            if let focalID = currentFocalNodeID, let focalSprite = nodeSprites[focalID] {
-                let scaleDown = SKAction.scale(to: 1.0, duration: 0.3)
-                scaleDown.timingMode = .easeOut
-                focalSprite.run(scaleDown)
-
-                // Restore original zPosition
-                if let savedZ = savedFocalZPositions[focalID] {
-                    focalSprite.zPosition = savedZ
-                    savedFocalZPositions.removeValue(forKey: focalID)
-                }
-                lingerFocalNodeID = focalID
-            }
-            currentFocalNodeID = nil   // graze annulus center; the card owns its own alpha-0
-        }
-        gestureState = .idle
+        gestureState = .idle   // nothing to disengage — the annulus is per-frame
     }
 }
 

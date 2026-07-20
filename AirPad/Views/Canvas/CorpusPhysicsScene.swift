@@ -464,55 +464,9 @@ final class CorpusPhysicsScene: SKScene {
         return SKTexture(image: img)
     }()
 
-    /// Shared diagonal wash — a circle-masked ramp from clear (top-leading) to
-    /// translucent black (bottom-trailing), used as a child sprite over every
-    /// node so each carries a subtle DIAGONAL gradient of its own shade (light →
-    /// darker of the same hue). One texture for all nodes; circle mask keeps it
-    /// inside the blob so no square corners spill. GPU-cheap (one texture sample).
-    private lazy var nodeWashTexture: SKTexture = {
-        let size = CGSize(width: 128, height: 128)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let img = renderer.image { ctx in
-            let c = ctx.cgContext
-            c.addEllipse(in: CGRect(origin: .zero, size: size))
-            c.clip()
-            let colors = [UIColor.black.withAlphaComponent(0).cgColor,
-                          UIColor.black.withAlphaComponent(0.38).cgColor] as CFArray
-            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: colors, locations: [0, 1]) else { return }
-            // Top-leading (clear) → bottom-trailing (dark). UIKit y-down, so start
-            // top-left, end bottom-right = the requested diagonal.
-            c.drawLinearGradient(grad,
-                                 start: .zero,
-                                 end: CGPoint(x: size.width, y: size.height),
-                                 options: [])
-        }
-        return SKTexture(image: img)
-    }()
-
-    /// Light-mode ("Cucumber Water") wash ramp — the same circle-masked diagonal
-    /// as `nodeWashTexture` but a FULL 0→1 alpha ramp. The per-node hue is applied
-    /// via the wash sprite's `colorBlendFactor`/`color` (so only the alpha SHAPE
-    /// matters here), and the wash-strength dial scales the sprite alpha over it —
-    /// giving real depth range instead of the dark texture's fixed 0.38 ceiling.
-    private lazy var nodeWashLightTexture: SKTexture = {
-        let size = CGSize(width: 128, height: 128)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let img = renderer.image { ctx in
-            let c = ctx.cgContext
-            c.addEllipse(in: CGRect(origin: .zero, size: size))
-            c.clip()
-            let colors = [UIColor.black.withAlphaComponent(0).cgColor,
-                          UIColor.black.withAlphaComponent(1.0).cgColor] as CFArray
-            guard let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                                        colors: colors, locations: [0, 1]) else { return }
-            c.drawLinearGradient(grad,
-                                 start: .zero,
-                                 end: CGPoint(x: size.width, y: size.height),
-                                 options: [])
-        }
-        return SKTexture(image: img)
-    }()
+    // (nodeWashTexture / nodeWashLightTexture deleted — the diagonal wash is now a
+    //  shader term in orbSpriteShader (a_wash + u_wash_is_light), so it shares the
+    //  rounded-box SDF and morphs with the fill instead of being a circular child.)
 
     /// Gradient shader matching blob.jsx lines 45-50, with inner glow layer
     private lazy var nodeFillShader: SKShader = {
@@ -1018,6 +972,9 @@ final class CorpusPhysicsScene: SKScene {
         // batch). Independent of engagement (the shape reads at any state).
         orbSpriteShader.uniforms.first(where: { $0.name == "u_corner_radius" })?
             .floatValue = Float(cornerRadiusForZoom(cameraNode.xScale))
+        // Wash composite mode (global): light screen-deepen vs dark darken.
+        orbSpriteShader.uniforms.first(where: { $0.name == "u_wash_is_light" })?
+            .floatValue = currentIsLight ? 1.0 : 0.0
 
         // AT18.1.9: push camera state into the grid shader. The grid shape is
         // camera-parented (fixed screen position); the shader handles pan and
@@ -2668,9 +2625,9 @@ final class CorpusPhysicsScene: SKScene {
     // values (the DEBUG tuner is retired). Single source in both configs; dark
     // reads none of these, so Solar Flare stays byte-identical.
     private static let cwPigment: CGFloat = 0.60          // fill dilution (parchment through)
-    private static let cwWashStrength: CGFloat = 0.10     // diagonal hue-wash sprite alpha
-    private static let cwWashBlend: SKBlendMode = .screen // wash composite
+    private static let cwWashStrength: CGFloat = 0.10     // diagonal hue-wash peak (light, screen)
     private static let cwStrokeInk: CGFloat = 0.35        // ink stroke alpha
+    private static let cwWashDark: CGFloat = 0.38         // diagonal black-wash peak (dark, darken)
 
     /// A deeper, slightly richer shade of the node's OWN hue — the pigment the
     /// light wash pools into (instead of black): same hue, lower brightness,
@@ -2684,14 +2641,15 @@ final class CorpusPhysicsScene: SKScene {
                        alpha: 1.0)
     }
 
-    /// Apply the unfocused-orb treatment to `shape` for `baseFill`.
-    /// - DARK (Solar Flare): opaque fill (meta `0.55`) + black diagonal wash
-    ///   (`.alpha`) + white@0.12 stroke — byte-identical to the shipped look.
-    /// - LIGHT (Cucumber Water): fill diluted to `tuning.pigment` so the parchment
-    ///   map ground shows through (pigment thinned into paper); the wash sprite
-    ///   pools a translucent shade of the node's OWN hue (via `colorBlendFactor`)
-    ///   at the dialed blend/strength; the near-invisible white stroke → low-alpha
-    ///   ink. Never touches `shape.alpha` or `fillShader`, so focal/dimmed state
+    /// Apply the unfocused-orb treatment to `shape` for `baseFill`. Fill / stroke /
+    /// wash all ride per-node attributes on the shared shader (the wash is a shader
+    /// term now, not a child sprite).
+    /// - DARK (Solar Flare): opaque fill (meta `0.55`) + black diagonal darken
+    ///   (peak 0.38) + white@0.12 stroke — byte-identical to the shipped look.
+    /// - LIGHT (Cucumber Water): fill diluted to `cwPigment` so the parchment map
+    ///   ground shows through; the wash screen-deepens the node's OWN hue
+    ///   (`washHueShade`, peak `cwWashStrength`); near-invisible white stroke →
+    ///   low-alpha ink. Never touches `shape.alpha`, so focal/dimmed state
     ///   (set by `setFocalShader`) is preserved.
     private func styleUnfocusedOrb(_ node: SKNode,
                                    baseFill: UIColor,
@@ -2709,28 +2667,18 @@ final class CorpusPhysicsScene: SKScene {
                        : UIColor.white.withAlphaComponent(0.12))
         let lineWidth: CGFloat = isMeta ? 1.5 : 1.0
 
+        // Diagonal wash, now a shader term (was a circular child sprite): light
+        // deepens the node's OWN hue (screen, peak 0.10); dark darkens toward black
+        // (peak 0.38). Shipped values preserved; u_wash_is_light (set per-frame in
+        // `update`) selects the composite. Shared with the fill's rounded-box SDF, so
+        // it morphs as one shape — no circle-in-square.
+        let washColor: UIColor = isLight ? washHueShade(baseFill) : .black
+        let washStrength: CGFloat = isLight ? Self.cwWashStrength : Self.cwWashDark
+
         if let sprite = node as? SKSpriteNode {
             setOrbSpriteAttributes(sprite, fill: fill, stroke: stroke,
-                                   lineWidth: lineWidth, radius: sprite.size.width / 2)
-        }
-
-        // Diagonal wash child — deepen the node's own hue in light (screen 0.10);
-        // black diagonal in dark (byte-identical Solar Flare).
-        if let wash = node.childNode(withName: "wash") as? SKSpriteNode {
-            if isLight {
-                wash.texture = nodeWashLightTexture
-                wash.colorBlendFactor = 1.0         // replace texture rgb with the hue shade
-                wash.color = washHueShade(baseFill)
-                wash.blendMode = Self.cwWashBlend
-                wash.alpha = Self.cwWashStrength
-            } else {
-                // Solar Flare — the shipped wash: black diagonal, source-over, full.
-                wash.texture = nodeWashTexture
-                wash.colorBlendFactor = 0.0
-                wash.color = .white                 // ignored at colorBlendFactor 0
-                wash.blendMode = .alpha
-                wash.alpha = 1.0
-            }
+                                   lineWidth: lineWidth, radius: sprite.size.width / 2,
+                                   wash: washColor, washStrength: washStrength)
         }
     }
 
@@ -2780,10 +2728,28 @@ final class CorpusPhysicsScene: SKScene {
             float ring = clamp(smoothstep(R - sw - aa, R - sw, d) - smoothstep(R - aa, R, d), 0.0, 1.0);
             vec4 fillC = a_node_color;
             vec4 strokeC = a_stroke_color;
+
+            // Diagonal hue-wash, folded IN so it shares this SDF and morphs as ONE
+            // shape (was a separate circular child sprite → circle-in-square). Ramp:
+            // clear at top-leading (v_tex_coord 0,1) → deep at bottom-trailing (1,0),
+            // matching the retired nodeWashTexture direction. Applied to the fill →
+            // gated by `disc` → follows the rounded-box corners. a_wash.rgb = pigment
+            // (light: hue shade; dark: black), a_wash.a = peak strength; u_wash_is_light
+            // picks screen-deepen (Cucumber Water) vs darken (Solar Flare).
+            float washT = clamp((v_tex_coord.x - v_tex_coord.y + 1.0) * 0.5, 0.0, 1.0);
+            float wS = a_wash.a * washT;
+            vec3 fillRGB = fillC.rgb;
+            if (u_wash_is_light > 0.5) {
+                vec3 screenTerm = 1.0 - (1.0 - fillRGB) * (1.0 - a_wash.rgb);
+                fillRGB = mix(fillRGB, screenTerm, wS);
+            } else {
+                fillRGB = fillRGB * (1.0 - wS);   // darken toward black
+            }
+
             float fa = disc * fillC.a;
             float sa = ring * strokeC.a;
             float outA = sa + fa * (1.0 - sa);
-            vec3 outRGB = strokeC.rgb * sa + fillC.rgb * fa * (1.0 - sa);  // premultiplied, stroke over fill
+            vec3 outRGB = strokeC.rgb * sa + fillRGB * fa * (1.0 - sa);  // premultiplied, stroke over washed fill
             gl_FragColor = vec4(outRGB, outA);
         }
         """
@@ -2791,11 +2757,16 @@ final class CorpusPhysicsScene: SKScene {
         shader.attributes = [
             SKAttribute(name: "a_node_color", type: .vectorFloat4),
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
-            SKAttribute(name: "a_geom", type: .vectorFloat2)
+            SKAttribute(name: "a_geom", type: .vectorFloat2),
+            SKAttribute(name: "a_wash", type: .vectorFloat4)   // rgb = wash pigment, a = peak strength
         ]
-        // 0.5 = circle (edge at radius 0.5) … cornerMin = rounded square. Driven
-        // per-frame from cameraScale in `update`; global → batches.
-        shader.uniforms = [SKUniform(name: "u_corner_radius", float: 0.5)]
+        // u_corner_radius: 0.5 = circle … cornerMin = rounded square (per-frame from
+        // cameraScale). u_wash_is_light: 1 = light screen-deepen, 0 = dark darken.
+        // Both global → the orb sprites still collapse to one batch.
+        shader.uniforms = [
+            SKUniform(name: "u_corner_radius", float: 0.5),
+            SKUniform(name: "u_wash_is_light", float: 1.0)
+        ]
         return shader
     }()
 
@@ -2808,12 +2779,16 @@ final class CorpusPhysicsScene: SKScene {
     /// Push per-node fill/stroke into the shared sprite shader via attributes.
     /// `sw`/`aa` are in uv (sprite spans size=2·radius → 1px = 1/(2·radius) uv).
     private func setOrbSpriteAttributes(_ sprite: SKSpriteNode, fill: UIColor,
-                                        stroke: UIColor, lineWidth: CGFloat, radius: CGFloat) {
+                                        stroke: UIColor, lineWidth: CGFloat, radius: CGFloat,
+                                        wash: UIColor, washStrength: CGFloat) {
         sprite.setValue(SKAttributeValue(vectorFloat4: Self.rgbaVec(fill)), forAttribute: "a_node_color")
         sprite.setValue(SKAttributeValue(vectorFloat4: Self.rgbaVec(stroke)), forAttribute: "a_stroke_color")
         let denom = Float(max(1, radius * 2))
         sprite.setValue(SKAttributeValue(vectorFloat2: vector_float2(Float(lineWidth) / denom, 1.0 / denom)),
                         forAttribute: "a_geom")
+        let w = Self.rgbaVec(wash)   // straight rgb; alpha overridden by the wash peak strength
+        sprite.setValue(SKAttributeValue(vectorFloat4: vector_float4(w.x, w.y, w.z, Float(washStrength))),
+                        forAttribute: "a_wash")
     }
 
     // MARK: - SPR measurement harness (DEBUG — synthetic corpus, Simulator-runnable)
@@ -2842,7 +2817,7 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Data-independent synthetic corpus — `count` real orbs via `makeShape` (shared
-    /// shader + wash child + z-order), each a DISTINCT hue (so per-node color
+    /// shader, wash folded in), each a DISTINCT hue (so per-node color
     /// delivery is eyeballable). Static (no physics) + inside the camera frame so
     /// nothing is culled. Reusable for future node-perf / EFFECT spikes.
     func injectSyntheticCorpus(count: Int) {
@@ -2944,11 +2919,12 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Helpers
 
-    /// The unfocused orb — an SKSpriteNode running the shared SDF `orbSpriteShader`
-    /// (filled circle + inner stroke ring, per-node color via SKAttributes) plus the
-    /// diagonal wash child. This is the SOLE orb render path (promoted from the
-    /// SKShapeNode spike). Über keeps its own `makeUberNodeShape` (SKShapeNode).
-    /// Physics/label/name are attached by `addNodeSprite` (SKNode).
+    /// The unfocused orb — ONE SKSpriteNode running the shared SDF `orbSpriteShader`
+    /// (rounded-box fill + inner stroke ring + diagonal hue-wash, all per-node via
+    /// SKAttributes). One sprite, one shape — the wash is shader-internal now, so it
+    /// morphs with the fill. SOLE orb render path (promoted from the SKShapeNode
+    /// spike). Über keeps its own `makeUberNodeShape`. Physics/label/name attached
+    /// by `addNodeSprite`.
     private func makeShape(
         radius: CGFloat,
         fillColor: UIColor,
@@ -2959,14 +2935,6 @@ final class CorpusPhysicsScene: SKScene {
         sprite.size = CGSize(width: radius * 2, height: radius * 2)
         sprite.zPosition = 1
         sprite.shader = orbSpriteShader
-
-        // Diagonal wash child (z above the fill, below the title). Hidden
-        // automatically when the parent goes alpha-0 focal.
-        let wash = SKSpriteNode(texture: nodeWashTexture)
-        wash.size = CGSize(width: radius * 2, height: radius * 2)
-        wash.zPosition = 0.5
-        wash.name = "wash"
-        sprite.addChild(wash)
 
         // Fill/stroke/wash appearance (dark Solar Flare vs light Cucumber Water),
         // re-applied on appearance flip via restyleUnfocusedOrbs().
@@ -3441,7 +3409,7 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Live-apply `OrbTuning.sizeScale` to every resting orb: recompute radius,
-    /// resize the sprite + wash child, re-set the SDF stroke/feather geometry
+    /// resize the sprite, re-set the SDF stroke/feather geometry
     /// (a_geom is radius-derived), swap in a fresh physics body, and re-raster the
     /// label (its box + tier fonts key off radius). Visual + body only — the
     /// no-overlap RE-SPACING is CanvasView's job (it re-forms the layout with the
@@ -3453,9 +3421,6 @@ final class CorpusPhysicsScene: SKScene {
             nodeIntrinsicRadii[node.id] = radius
             orb.userData?["radius"] = radius
             orb.size = CGSize(width: radius * 2, height: radius * 2)
-            if let wash = orb.childNode(withName: "wash") as? SKSpriteNode {
-                wash.size = CGSize(width: radius * 2, height: radius * 2)
-            }
             // Re-derive a_geom (stroke width + feather are in uv = f(radius)) and
             // re-apply fill/stroke/wash for the current appearance.
             styleUnfocusedOrb(orb, baseFill: bubbleColor(for: node),

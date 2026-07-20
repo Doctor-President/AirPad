@@ -654,19 +654,8 @@ final class CorpusPhysicsScene: SKScene {
     private var lastTapTime: TimeInterval = 0
     private var lastTapLocation: CGPoint = .zero
 
-    // SB83b: Grace-period double-tap tracking (single tap arms, second tap within window opens detail)
-    private let doubleTapWindow: TimeInterval = 0.35
-    private var lastGraceTapTime: TimeInterval = 0
-    private var lastGraceTapNodeID: String? = nil
-
-    // SB95.1: Set when a touch-down during grace lands on a node. Allows the touch to be
-    // treated as a tap candidate (so a follow-up drag can resume engagement) while still
-    // suppressing the default tap-on-node handler in touchesEnded so the grace-tap
-    // double-tap-to-drill pattern stays intact.
-    private var graceTapOnNodeSuppressLift: Bool = false
-
-    // Honeycomb gesture state machine.
-    // Note: grace period lives on `engagementState` only (single source of truth).
+    // Honeycomb gesture state machine. Browse ≠ commit: no grace sub-machine —
+    // a drag is browse (honeycomb), a clean lift is a tap (commit → card).
     private enum GestureState {
         case idle
         case tapCandidate(initialPosition: CGPoint, startTime: TimeInterval)
@@ -675,20 +664,6 @@ final class CorpusPhysicsScene: SKScene {
 
     private var gestureState: GestureState = .idle
     private let dragThreshold: CGFloat = 10.0
-    // honeycomb-grazing-friction: shortened 1.0 → 0.5. Long enough to absorb
-    // an accidental micro-lift, short enough that a deliberate release no
-    // longer feels like quicksand.
-    private let gracePeriodDuration: TimeInterval = 0.5
-    // honeycomb-grazing-friction: if windowed finger speed at lift meets this
-    // (screen px/sec), the lift was a graze-through, not a settle — skip grace
-    // and disengage immediately. Tunable from device without a rebuild.
-    private let decisiveGrazeVelocity: CGFloat = 600.0
-    // honeycomb-grazing-friction: during gracePeriod, if a fresh touch-down
-    // translates this far (screen pt) before settling into honeycomb, the user
-    // is moving toward a different node — switch focal to the touch's nearest
-    // node instead of resuming the lingering one. Below threshold = small
-    // recovery move; resume old focal as before. Tunable from device.
-    private let decisiveGrazeTranslation: CGFloat = 60.0
     private let panMultiplier: CGFloat = 1.5
     private let focalZPosition: CGFloat = 1000
 
@@ -706,12 +681,22 @@ final class CorpusPhysicsScene: SKScene {
 
     private var currentFocalNodeID: String? = nil
 
+    // MARK: - Tap-driven card presentation (browse ≠ commit)
+    /// The card currently being PRESENTED. Tracks `canvasState.cardedNodeID` and
+    /// lingers through the dismiss/hop morph so the overlay follows the orb.
+    private var activeCardID: String? = nil
+    /// Card morph clock (0 = no card, 1 = full card), eased toward the target each
+    /// frame in `updateCardPresentation`. Drives `focalScaleProgress`/`focalMorph`.
+    private var cardProgress: CGFloat = 0
+    /// Per-frame lerp for the card morph (tap → card grow / dismiss shrink).
+    private let cardMorphLerp: CGFloat = 0.22
+
     /// Last appearance applied to the unfocused orbs, so `update` re-themes them
     /// only when the trait actually flips (light ↔ dark), not every frame. nil
     /// until the first tick (which forces an initial apply once the SKView trait
     /// is available; a no-op if no sprites exist yet — `makeShape` themes those).
     private var lastAppearanceIsLight: Bool? = nil
-    /// The most recent focal node, kept around through preCollapse and
+    /// The most recent graze focal node, kept around through
     /// disengaging so syncFocalToCanvasState can continue bridging its
     /// shrinking position and diameter to the SwiftUI gradient overlay while
     /// the overlay's opacity fades to 0. Cleared at disengaging → idle.
@@ -725,12 +710,12 @@ final class CorpusPhysicsScene: SKScene {
     private var savedFocalZPositions: [String: CGFloat] = [:]
 
     // Engagement state (SB80b: hex grid + scale lens)
+    // Browse ≠ commit re-wire: the sticky grace/preCollapse sub-machine is gone.
+    // Graze amplifies (engaging → engaged) and lift always → disengaging (relax).
     private enum EngagementState {
         case idle
         case engaging(focal: String)
         case engaged(focal: String)
-        case gracePeriod(focal: String, expiresAt: TimeInterval)
-        case preCollapse(focal: String, startTime: TimeInterval)  // SB94: new
         case disengaging
     }
 
@@ -738,13 +723,13 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Strand ring-target positions in the undistorted (substrate-resting)
     /// frame, keyed by neighbor nodeID. Populated on engaged-state entry +
-    /// focal switch; cleared on `preCollapse` / honeycomb teardown. Bypasses
+    /// focal switch; cleared on honeycomb teardown. Bypasses
     /// the engaged-branch radial-compression target for any node in the dict.
     private var strandTargets: [String: CGPoint] = [:]
 
     /// Focal whose strand targets are currently in `strandTargets`. Used to
     /// detect focal-switch within engaged state and recompute the ring. nil
-    /// when no ring is active (idle / preCollapse / disengaging).
+    /// when no ring is active (idle / disengaging).
     private var lastStrandFocalID: String? = nil
 
     /// IDs of sprites currently faded to `StrandService.dimAlpha` via SKAction.
@@ -772,7 +757,7 @@ final class CorpusPhysicsScene: SKScene {
     /// would otherwise mutate `currentFocalNodeID` and cause spurious grace entry on lift.
     private var isInActiveEngagement: Bool {
         switch engagementState {
-        case .engaging, .engaged, .gracePeriod, .preCollapse: return true
+        case .engaging, .engaged: return true
         case .idle, .disengaging: return false
         }
     }
@@ -818,13 +803,6 @@ final class CorpusPhysicsScene: SKScene {
     private let relaxationBandWorldRadius: CGFloat = 480.0     // SB94: wider band at zoom-out — was 320
     private let relaxationPasses: Int = 8                       // SB94: more headroom for convergence — was 5
     private let relaxationBreathingGap: CGFloat = 6.0           // World-space baseline (made scale-aware below)
-
-    // SB94: Pre-collapse phase — focal/amplified nodes relax slightly before full disengagement
-    private let preCollapseDuration: TimeInterval = 0.18
-    private let preCollapseScaleFactor: CGFloat = 0.92  // 8% scale-down
-    private let preCollapseAmplifiedThreshold: CGFloat = 1.2  // Only nodes currently scaled > 1.2× resting participate
-    // SB94: Starting scales for nodes participating in pre-collapse, captured at gracePeriod→preCollapse transition
-    private var preCollapseStartScales: [String: CGFloat] = [:]
 
     // Convergence tolerances (preserved)
     private let positionMatchTolerance: CGFloat = 2.0
@@ -1033,8 +1011,11 @@ final class CorpusPhysicsScene: SKScene {
                     }
                 }
 
+                // Browse decouple: currentFocalNodeID is now just the ANNULUS CENTER
+                // for the sigmoid amplification — no `setFocalShader` (no alpha-0),
+                // no card. The grazed orb scales up but stays a visible orb; the card
+                // is tap-driven (`cardedNodeID`).
                 currentFocalNodeID = newFocalID
-                setFocalShader(to: newFocalID)
 
                 if let newFocalID = newFocalID, let newSprite = nodeSprites[newFocalID] {
                     // Save original zPosition before lifting
@@ -1367,57 +1348,6 @@ final class CorpusPhysicsScene: SKScene {
                 print("[Honeycomb] State: engaging → engaged")
             }
 
-        case .gracePeriod(let focalID, let expiresAt):
-            // During grace: lens stays frozen at engaged target state.
-            // engagementState owns grace expiry — gestureState no longer mirrors this.
-            if currentTime >= expiresAt {
-                print("[Honeycomb] State: gracePeriod → preCollapse")
-
-                if let focalSprite = nodeSprites[focalID] {
-                    if let savedZ = savedFocalZPositions[focalID] {
-                        focalSprite.zPosition = savedZ
-                        savedFocalZPositions.removeValue(forKey: focalID)
-                    }
-                }
-
-                // SB94: Capture starting scales for amplified nodes only — these are the ones that will pre-collapse
-                preCollapseStartScales.removeAll()
-                for (nodeID, sprite) in nodeSprites {
-                    guard let restingScale = nodeRestingScales[nodeID] else { continue }
-                    let currentScale = sprite.xScale
-                    let amplifiedRatio = currentScale / max(restingScale, 0.001)
-                    if amplifiedRatio > preCollapseAmplifiedThreshold {
-                        preCollapseStartScales[nodeID] = currentScale
-                    }
-                }
-
-                engagementState = .preCollapse(focal: focalID, startTime: currentTime)
-                lingerFocalNodeID = focalID
-                currentFocalNodeID = nil
-                setFocalShader(to: nil)
-                strandTargets.removeAll()
-                lastStrandFocalID = nil
-                clearStrandDimming()
-                restoreStrandZPositions()
-            }
-
-        case .preCollapse(_, let startTime):
-            let elapsed = currentTime - startTime
-            let progress = min(elapsed / preCollapseDuration, 1.0)
-            let easedProgress = progress * progress * (3 - 2 * progress)  // smoothstep
-
-            for (nodeID, sprite) in nodeSprites {
-                guard let startingScale = preCollapseStartScales[nodeID] else { continue }
-                let targetScale = startingScale * preCollapseScaleFactor
-                let currentTargetScale = startingScale + (targetScale - startingScale) * easedProgress
-                sprite.setScale(currentTargetScale)
-            }
-
-            if progress >= 1.0 {
-                print("[Honeycomb] State: preCollapse → disengaging")
-                engagementState = .disengaging
-            }
-
         case .disengaging:
             var allPositionsConverged = true
             var allScalesConverged = true
@@ -1462,7 +1392,6 @@ final class CorpusPhysicsScene: SKScene {
                 engagementState = .idle
                 lastRampCameraScale = -1   // Lens (a): force an idle ramp + LOD re-apply on re-entry
                 focalSwitchTimestamp = nil  // SB92: Clean up focal-switch tracking
-                preCollapseStartScales.removeAll()  // SB94: clean up
                 lingerFocalNodeID = nil
 
                 // SB97.1: Restore non-focal texture on any node still in focal state
@@ -1481,7 +1410,7 @@ final class CorpusPhysicsScene: SKScene {
             applyIdleZoomRamp()   // Lens (a): re-scale + LOD only when cameraScale changed
         }
 
-        syncFocalToCanvasState()
+        updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
         syncTerritoryLabelsToCanvasState()
 
@@ -1514,12 +1443,33 @@ final class CorpusPhysicsScene: SKScene {
     /// CanvasState every frame so the SwiftUI gradient overlay can track it as the
     /// user drags. Runs from `update(_:)`, which SpriteKit invokes on the main
     /// thread; the dispatch is for @MainActor isolation only.
+    /// Update the tap-driven card morph, then bridge it to the SwiftUI overlay.
+    /// Browse (graze) never drives this — only `canvasState.cardedNodeID` does.
+    /// A clean tap sets `cardedNodeID` → the card grows; tap-empty / X clears it →
+    /// the card shrinks; tapping another orb reassigns it → the card hops (progress
+    /// stays up, `setFocalShader` re-points the alpha-0, so no teardown flash).
+    private func updateCardPresentation() {
+        let carded = canvasState?.cardedNodeID
+        if let carded, carded != activeCardID || focalShaderID != carded {
+            setFocalShader(to: carded)   // alpha-0 the carded orb; restore the previous
+            activeCardID = carded
+        }
+        let target: CGFloat = (carded != nil) ? 1 : 0
+        cardProgress += (target - cardProgress) * cardMorphLerp
+        if target == 0 && cardProgress < 0.01 {
+            cardProgress = 0
+            if activeCardID != nil { setFocalShader(to: nil); activeCardID = nil }
+        }
+        syncFocalToCanvasState()
+    }
+
+    /// Bridge the presented card (`activeCardID` + `cardProgress`) to the SwiftUI
+    /// overlay each frame. Card-driven now (was graze-driven): `currentFocalNodeID`
+    /// stays a scene-internal ANNULUS CENTER and no longer reaches CanvasState here.
     private func syncFocalToCanvasState() {
         guard let view = self.view else { return }
-        // Prefer the active focal id; fall back to the lingering one so the
-        // SwiftUI overlay can keep tracking the sprite as it shrinks back.
-        let isActive = currentFocalNodeID != nil
-        let trackedID = currentFocalNodeID ?? lingerFocalNodeID
+        let isActive = canvasState?.cardedNodeID != nil
+        let trackedID = activeCardID
 
         if let trackedID, let sprite = nodeSprites[trackedID] {
             let centerScene = sprite.position
@@ -1543,9 +1493,8 @@ final class CorpusPhysicsScene: SKScene {
                 canvasState?.focalNodeScreenPosition = centerView
                 canvasState?.focalNodeDiameter = diameterView
                 canvasState?.focalNodeFinalDiameter = view.bounds.width * focalScreenFraction
-                let progress = focalScaleProgress(for: trackedID, isActive: isActive)
-                canvasState?.focalScaleProgress = progress
-                canvasState?.focalMorph = morphAmount(progress)
+                canvasState?.focalScaleProgress = cardProgress
+                canvasState?.focalMorph = morphAmount(cardProgress)
                 if let focalNode = currentNodes.first(where: { $0.id == trackedID }) {
                     canvasState?.focalNodeShadeHex = hexString(bubbleColor(for: focalNode))
                 }
@@ -1903,7 +1852,7 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Fades every dimmed sprite back to full opacity. Called at engagement
-    /// teardown (preCollapse / disengage / touch-cancelled).
+    /// teardown (disengage / touch-cancelled).
     private func clearStrandDimming() {
         guard !dimmedSpriteIDs.isEmpty else { return }
         let duration = Self.strandDimDuration
@@ -3594,57 +3543,9 @@ final class CorpusPhysicsScene: SKScene {
             let screenPoint = touch.location(in: view)
             tapStartInfo = (screenPoint: screenPoint, time: CACurrentMediaTime())
 
-            // Grace-period tap detection (touch-down for immediate response).
-            // engagementState is the single source of truth for grace.
-            if case .gracePeriod(let focalID, _) = engagementState {
-                let scenePoint = convertPoint(fromView: screenPoint)
-
-                // Permissive sprite-walk: any node hit registers a grace tap.
-                if let shape = nodeSprites.values.first(where: { $0.contains(scenePoint) }),
-                   let name = shape.name,
-                   name.hasPrefix("node:") {
-                    let tappedNodeID = String(name.dropFirst(5))
-                    let now = CACurrentMediaTime()
-                    let isDoubleTap = (tappedNodeID == lastGraceTapNodeID) &&
-                                      (now - lastGraceTapTime < doubleTapWindow)
-
-                    if isDoubleTap {
-                        print("[Honeycomb] Grace double-tap on node \(tappedNodeID) → detail")
-                        navHaptic.impactOccurred()
-                        DispatchQueue.main.async { [weak self] in
-                            self?.canvasState?.pendingNavigationNodeID = tappedNodeID
-                        }
-                        lastGraceTapNodeID = nil
-                        lastGraceTapTime = 0
-                        // Double-tap drilled in — no need to suppress lift handling, the
-                        // navigation has already been queued.
-                        graceTapOnNodeSuppressLift = false
-                    } else {
-                        print("[Honeycomb] Grace tap on node \(tappedNodeID) (awaiting second tap)")
-                        lastGraceTapNodeID = tappedNodeID
-                        lastGraceTapTime = now
-                        // SB95.1: If the user lifts cleanly, suppress the default tap-on-node
-                        // handler in touchesEnded so we don't fight the grace double-tap pattern.
-                        graceTapOnNodeSuppressLift = true
-                    }
-
-                    // Stay in .gracePeriod with a fresh expiry so the second tap stays in window.
-                    let newExpiresAt = now + gracePeriodDuration
-                    engagementState = .gracePeriod(focal: focalID, expiresAt: newExpiresAt)
-
-                    // SB95.1: Do NOT return early. Fall through to start a tapCandidate so that a
-                    // follow-up drag during this grace window can promote to honeycomb and trigger
-                    // the SB95 drag-resume path.
-                } else {
-                    // Empty-space tap during grace: fall through to tapCandidate so a follow-up
-                    // drag can trigger the drag-during-grace re-engagement path.
-                    graceTapOnNodeSuppressLift = false
-                }
-            } else {
-                graceTapOnNodeSuppressLift = false
-            }
-
-            // Start tap candidate
+            // Browse ≠ commit: no grace sub-machine. Every touch-down just starts a
+            // tap candidate; a drag promotes to honeycomb (browse), a clean lift
+            // taps (commit → card). The card itself is a SwiftUI overlay.
             gestureState = .tapCandidate(
                 initialPosition: screenPoint,
                 startTime: CACurrentMediaTime()
@@ -3677,66 +3578,12 @@ final class CorpusPhysicsScene: SKScene {
                 let distance = sqrt(dx * dx + dy * dy)
 
                 if distance > dragThreshold {
-                    // SB95.1: User is dragging — the touch is no longer a tap, so suppression no longer applies.
-                    graceTapOnNodeSuppressLift = false
-                    // SB95: Drag during grace RESUMES engagement instead of collapsing it.
-                    // Lens scaffolding stays up, currentFocalNodeID is preserved, focal-tracking
-                    // in update() takes over next frame. The user experiences continuous engagement
-                    // across lift→re-touch→drag within the grace window.
-                    //
-                    // Otherwise (idle), engage the nearest node as the new focal.
-                    if case .gracePeriod(let graceFocal, _) = engagementState {
-                        // honeycomb-grazing-friction: a fresh touch + decisive
-                        // drag during grace means the user is moving toward a
-                        // different node, not recovering the same engagement.
-                        // Switch focal to the touch-point's nearest node so the
-                        // lingering focal releases as the new one engages.
-                        var resumeFocalID = graceFocal
-                        if distance > decisiveGrazeTranslation {
-                            let scenePoint = self.convertPoint(fromView: current)
-                            var bestID: String? = nil
-                            var bestDistSq: CGFloat = .infinity
-                            for (id, sprite) in nodeSprites {
-                                let ndx = sprite.position.x - scenePoint.x
-                                let ndy = sprite.position.y - scenePoint.y
-                                let dSq = ndx * ndx + ndy * ndy
-                                if dSq < bestDistSq {
-                                    bestDistSq = dSq
-                                    bestID = id
-                                }
-                            }
-                            if let candidate = bestID { resumeFocalID = candidate }
-                        }
-
-                        if resumeFocalID != graceFocal,
-                           let newSprite = nodeSprites[resumeFocalID] {
-                            if let oldSprite = nodeSprites[graceFocal],
-                               let savedZ = savedFocalZPositions[graceFocal] {
-                                oldSprite.zPosition = savedZ
-                                savedFocalZPositions.removeValue(forKey: graceFocal)
-                            }
-                            swapToNonFocalTexture(nodeID: graceFocal)
-
-                            savedFocalZPositions[resumeFocalID] = newSprite.zPosition
-                            newSprite.zPosition = focalZPosition
-                            currentFocalNodeID = resumeFocalID
-                            setFocalShader(to: resumeFocalID)
-                            swapToFocalTexture(nodeID: resumeFocalID)
-                            focalSwitchTimestamp = CACurrentMediaTime()
-                            focalChangeHaptic.selectionChanged()
-                            focalChangeHaptic.prepare()
-                            print("[Honeycomb] Decisive grace move (dist=\(Int(distance))pt) — focal: \(graceFocal) → \(resumeFocalID)")
-                        } else {
-                            focalChangeHaptic.prepare()  // SB96
-                            print("[Honeycomb] State: gracePeriod → engaged (drag resume)")
-                        }
-                        engagementState = .engaged(focal: resumeFocalID)
-                    } else {
-                        let focalID = findNearestNodeToCamera() ?? ""
-                        engagementState = .engaging(focal: focalID)
-                        focalChangeHaptic.prepare()  // SB96
-                        print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
-                    }
+                    // Browse: a drag always starts fresh honeycomb amplification on
+                    // the nearest node (no grace resume — that sub-machine is gone).
+                    let focalID = findNearestNodeToCamera() ?? ""
+                    engagementState = .engaging(focal: focalID)
+                    focalChangeHaptic.prepare()  // SB96
+                    print("[Honeycomb] State: idle → engaging(focal: \(focalID))")
 
                     // Transition to honeycomb mode
                     gestureState = .honeycomb(
@@ -3807,59 +3654,32 @@ final class CorpusPhysicsScene: SKScene {
         // Grace-period tap detection lives in touchesBegan (touch-down for immediate response).
         // Lifts during grace with no preceding drag are no-ops here.
 
-        // Honeycomb: handle lift from honeycomb mode (SB80b-fix2: grace on every release)
+        // Honeycomb lift ALWAYS disengages (relax) — no grace stickiness; browse
+        // amplification is transient. Momentum/coast is preserved (launched from
+        // the windowed velocity). No `setFocalShader` here: graze never set one
+        // (the card owns its alpha-0 via updateCardPresentation).
         if case .honeycomb(_, _) = gestureState {
-            // SB83d: Launch coast from windowed velocity. Eligibility is set at the
-            // tapCandidate→honeycomb transition (always true for pan gestures).
-            // honeycomb-grazing-friction: also compute lift speed (independent of
-            // momentumEligible) to decide whether this lift was a decisive graze.
-            var liftSpeedPerSec: CGFloat = 0
-            if let first = panSamples.first, let last = panSamples.last {
+            if let first = panSamples.first, let last = panSamples.last, momentumEligible {
                 let dt = last.time - first.time
                 if dt > 0 {
-                    let vxPerSec = (last.position.x - first.position.x) / CGFloat(dt)
-                    let vyPerSec = (last.position.y - first.position.y) / CGFloat(dt)
-                    liftSpeedPerSec = hypot(vxPerSec, vyPerSec)
-                    if momentumEligible {
-                        let vxPerFrame = vxPerSec / 60.0
-                        let vyPerFrame = vyPerSec / 60.0
-                        if hypot(vxPerFrame, vyPerFrame) >= coastLaunchThreshold {
-                            coastVelocity = CGPoint(x: vxPerFrame, y: vyPerFrame)
-                        }
+                    let vxPerFrame = ((last.position.x - first.position.x) / CGFloat(dt)) / 60.0
+                    let vyPerFrame = ((last.position.y - first.position.y) / CGFloat(dt)) / 60.0
+                    if hypot(vxPerFrame, vyPerFrame) >= coastLaunchThreshold {
+                        coastVelocity = CGPoint(x: vxPerFrame, y: vyPerFrame)
                     }
                 }
             }
             panSamples.removeAll()
             momentumEligible = false
 
-            let liftIsDecisiveGraze = liftSpeedPerSec >= decisiveGrazeVelocity
-
-            if let focalID = currentFocalNodeID, !liftIsDecisiveGraze {
-                print("[Honeycomb] Grace period entered for \(focalID)")
-
-                // Enter grace period — owned by engagementState only. gestureState returns
-                // to idle so the next touchesBegan starts a fresh tap candidate.
-                let expiresAt = CACurrentMediaTime() + gracePeriodDuration
-                engagementState = .gracePeriod(focal: focalID, expiresAt: expiresAt)
-                gestureState = .idle
-            } else {
-                // honeycomb-grazing-friction: decisive-graze lift OR no focal —
-                // disengage immediately. Movement at lift = unambiguous graze
-                // signal; grace would only feel like the surface "holding on."
-                if liftIsDecisiveGraze, let focalID = currentFocalNodeID {
-                    print("[Honeycomb] Decisive graze lift (v=\(Int(liftSpeedPerSec)) px/s, focal=\(focalID)) → disengaging")
-                } else {
-                    print("[Honeycomb] State: engaged → disengaging")
-                }
-                engagementState = .disengaging
-                gestureState = .idle
-                currentFocalNodeID = nil
-                setFocalShader(to: nil)
-                strandTargets.removeAll()
-                lastStrandFocalID = nil
-                clearStrandDimming()
-                restoreStrandZPositions()
-            }
+            print("[Honeycomb] Lift → disengaging (relax)")
+            engagementState = .disengaging
+            gestureState = .idle
+            currentFocalNodeID = nil
+            strandTargets.removeAll()
+            lastStrandFocalID = nil
+            clearStrandDimming()
+            restoreStrandZPositions()
             return
         }
 
@@ -3892,7 +3712,7 @@ final class CorpusPhysicsScene: SKScene {
                   name.hasPrefix("node:") {
             let nodeID = String(name.dropFirst(5))
 
-            // Selection mode: tap toggles, does not open detail.
+            // Selection mode: tap toggles, does not commit a card.
             if selection?.isActive == true {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
@@ -3900,21 +3720,15 @@ final class CorpusPhysicsScene: SKScene {
                     let nowPicked = self.selection?.isSelected(nodeID) ?? false
                     self.applySelectionOutline(nodeID: nodeID, isSelected: nowPicked)
                 }
-                graceTapOnNodeSuppressLift = false
                 return
             }
 
-            // SB95.1: If this lift is the clean release of a grace-tap-on-node, the grace-tap
-            // logic in touchesBegan already handled it (set lastGraceTapNodeID, refreshed expiry).
-            // Suppress the default selectedNodeID side effect to avoid fighting the grace
-            // double-tap-to-drill pattern.
-            if graceTapOnNodeSuppressLift {
-                graceTapOnNodeSuppressLift = false
-            } else {
-                // Single-tap on node: open NodeDetailView
-                DispatchQueue.main.async { [weak self] in
-                    self?.canvasState?.selectedNodeID = nodeID
-                }
+            // COMMIT: a clean tap on an orb morphs its CARD up. Reassigning while a
+            // card is already up is a free NEIGHBOR-HOP (the morph re-points to the
+            // new orb — no teardown). Card→detail + X live in the SwiftUI overlay.
+            navHaptic.impactOccurred()
+            DispatchQueue.main.async { [weak self] in
+                self?.canvasState?.cardedNodeID = nodeID
             }
 
         } else {
@@ -3928,8 +3742,9 @@ final class CorpusPhysicsScene: SKScene {
                 // Single tap: reset zoom (preserved for legacy zoom states)
                 resetZoom()
             } else {
-                // Single tap on empty: dismiss any open detail (preserved)
+                // DISMISS: tap empty → clear the card (and any open detail selection).
                 DispatchQueue.main.async { [weak self] in
+                    self?.canvasState?.cardedNodeID = nil
                     self?.canvasState?.selectedNodeID = nil
                 }
             }
@@ -3940,7 +3755,6 @@ final class CorpusPhysicsScene: SKScene {
         for touch in touches { activeTouches.removeValue(forKey: touch) }
         lastPinchDistance = nil
         tapStartInfo = nil
-        graceTapOnNodeSuppressLift = false
 
         // Clean up honeycomb state
         if case .honeycomb(_, _) = gestureState {
@@ -3963,9 +3777,7 @@ final class CorpusPhysicsScene: SKScene {
                 }
                 lingerFocalNodeID = focalID
             }
-            currentFocalNodeID = nil
-            setFocalShader(to: nil)
-            preCollapseStartScales.removeAll()  // SB94
+            currentFocalNodeID = nil   // graze annulus center; the card owns its own alpha-0
         }
         gestureState = .idle
     }

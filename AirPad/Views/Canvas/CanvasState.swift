@@ -69,6 +69,13 @@ final class CanvasState {
     /// Node ID to push to detail view via navigationPath (set by grace tap).
     var pendingNavigationNodeID: String? = nil
 
+    /// ID of the node whose CARD is presented — set by a clean COMMITTING tap on
+    /// an orb, cleared by tapping empty or the card's X. Drives the focal card
+    /// overlay: the scene reads it each frame and eases the bubble→card morph
+    /// (`focalScaleProgress`/`focalMorph`). Browse (graze) never sets it — only a
+    /// tap does. Tapping another orb while carded reassigns it (neighbor-hop).
+    var cardedNodeID: String? = nil
+
     /// Per-persistent-cluster bag centroid in **screen-space points**,
     /// written each scene tick by `CorpusPhysicsScene.syncClusterCentroidsToCanvasState`.
     /// The SwiftUI `clusterLabelOverlay` reads this to position the

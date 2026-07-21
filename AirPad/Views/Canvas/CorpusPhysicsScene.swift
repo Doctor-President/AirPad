@@ -2,6 +2,17 @@ import SpriteKit
 import UIKit
 import simd
 
+#if DEBUG
+extension Notification.Name {
+    /// Type arc #1 DEBUG tuner (`MapTypeTuningPanel`) posts this on any
+    /// allCaps/hyphenation/tracking edit; the scene observes it (added in
+    /// `didMove`) and calls `restyleLabels()` so T sees type changes live.
+    /// Baked + deleted at arc end. Kept off CanvasView's `body` type-check budget
+    /// (Notification path, not an @AppStorage onChange on the canvas).
+    static let mapTypeTuningChanged = Notification.Name("map.type.tuningChanged")
+}
+#endif
+
 /// Curated haptic ESCALATIONS for the browse→commit→detail→release loop. Weight
 /// tracks commitment: graze tick (lightest) → tap-orb→card (firmer grab) → card→
 /// detail (heaviest, arrival) → swipe-release (soft, "let go"). The `active` set
@@ -1054,6 +1065,12 @@ final class CorpusPhysicsScene: SKScene {
         if UserDefaults.standard.bool(forKey: "SPRMeasure") {
             runSPRMeasure()
         }
+        // Type arc #1 DEBUG tuner — re-raster resting labels live on edit. De-dup
+        // the observer (didMove can run more than once across a scene's life).
+        NotificationCenter.default.removeObserver(self, name: .mapTypeTuningChanged, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleTypeTuningChanged),
+            name: .mapTypeTuningChanged, object: nil)
         #endif
     }
 
@@ -2634,22 +2651,30 @@ final class CorpusPhysicsScene: SKScene {
         // Ink-flip only — luminance-aware color, no baked halo (the NSShadow
         // muddied minified text). Clean minification comes from texture mipmaps.
         let (ink, _) = legibleInk(over: fillColor)
-        func styled(_ text: String, _ font: UIFont, _ lineBreak: NSLineBreakMode) -> NSAttributedString {
+        func styled(_ text: String, _ font: UIFont, _ lineBreak: NSLineBreakMode,
+                    hyphenate: Bool = false, kern: CGFloat = 0) -> NSAttributedString {
             let para = NSMutableParagraphStyle()
             para.alignment = .center
             para.lineBreakMode = lineBreak
-            return NSAttributedString(string: text, attributes: [
+            // Title-only: hyphenation + tracking (Type arc #1). Must match the
+            // resolveTitle fit paragraph so the fit predicted this exact render.
+            if hyphenate { para.hyphenationFactor = 1.0 }
+            var attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: ink,
                 .paragraphStyle: para,
-            ])
+            ]
+            if kern != 0 { attrs[.kern] = kern }
+            return NSAttributedString(string: text, attributes: attrs)
         }
 
         // Title label — wrap mode chosen by resolveTitle (word-boundary; the tier
         // loop already guaranteed the fit, so nothing is truncated mid-word here).
         let maxLines = LabelTuning.maxLines
         let titleLabel = UILabel()
-        titleLabel.attributedText = styled(title, titleFont, titleWrap)
+        titleLabel.attributedText = styled(title, titleFont, titleWrap,
+                                           hyphenate: TypeTuning.hyphenation,
+                                           kern: TypeTuning.tracking)
         titleLabel.numberOfLines = maxLines
         titleLabel.lineBreakMode = titleWrap
         let titleMaxHeight = titleFont.lineHeight * CGFloat(maxLines) + 4
@@ -2816,6 +2841,35 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Type arc #1 — node-title typography. DEBUG reads UserDefaults (dialed via
+    /// the `MapTypeTuningPanel` `textformat` tuner, `#selector` posts
+    /// `.mapTypeTuningChanged` → `restyleLabels()`); Release bakes the held
+    /// defaults with ZERO UserDefaults access (the shipped release-gate pattern).
+    /// `hyphenation` is the OBJECTIVE win (default ON — long words break at
+    /// syllable points instead of char-snapping). `allCaps` + `tracking` are T's
+    /// device TASTE call (the "shouty at AIRPAD-scale?" A/B); baked false/0.4 until
+    /// T decides, then this whole enum collapses to plain `static let` at arc end.
+    enum TypeTuning {
+        #if DEBUG
+        /// ALL-CAPS uppercasing of node titles. Default OFF (current mixed-case).
+        static var allCaps: Bool { UserDefaults.standard.bool(forKey: "type.allCaps") }
+        /// Syllable hyphenation. Default ON (nil → true) — the objective win.
+        static var hyphenation: Bool {
+            UserDefaults.standard.object(forKey: "type.hyphenation") == nil
+                ? true : UserDefaults.standard.bool(forKey: "type.hyphenation")
+        }
+        /// Letter tracking (`.kern`, points). Default 0.4 (nil → 0.4).
+        static var tracking: CGFloat {
+            UserDefaults.standard.object(forKey: "type.tracking") == nil
+                ? 0.4 : CGFloat(UserDefaults.standard.double(forKey: "type.tracking"))
+        }
+        #else
+        static let allCaps: Bool = false        // TASTE — pending T's device A/B
+        static let hyphenation: Bool = true      // OBJECTIVE — ships on
+        static let tracking: CGFloat = 0.4
+        #endif
+    }
+
     /// Orb-size multiplier — BAKED 1.00 (T's device-final). Applied to the whole
     /// `bubbleRadius`; radius drives sprite + label box + physics body + CanvasView's
     /// layout-radii. Literal, zero UserDefaults → Debug == Release.
@@ -2875,17 +2929,27 @@ final class CorpusPhysicsScene: SKScene {
     /// If even the smallest tier overflows: smallest tier + a WORD-boundary ellipsis
     /// (multi-word) or char-wrap of the whole word (single unbreakable word — every
     /// letter shown, no mid-word cut). Cache-safe: labels rasterize fresh per call.
-    private func resolveTitle(_ text: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode) {
+    private func resolveTitle(_ rawText: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode) {
+        // ALL-CAPS is applied FIRST so every downstream measurement + the returned
+        // renderText operate on the uppercased string (caps are ~10-15% wider — the
+        // fit MUST know). resolveTitle owns the fit; the caller renders `text` verbatim.
+        let text = TypeTuning.allCaps ? rawText.uppercased() : rawText
         let maxLines = LabelTuning.maxLines
         let wordPara = NSMutableParagraphStyle()
         wordPara.lineBreakMode = .byWordWrapping
+        // Syllable hyphenation — must MATCH rasterizeSquareText's title paragraph so
+        // fit predicts render. `.kern` too: tracking widens the render, so the fit
+        // includes it or long titles would overflow the box the fit just cleared.
+        wordPara.hyphenationFactor = TypeTuning.hyphenation ? 1.0 : 0.0
+        let kern = TypeTuning.tracking
         func fits(_ s: String, _ f: UIFont) -> Bool {
             let b = (s as NSString).boundingRect(
                 with: CGSize(width: box, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: f, .paragraphStyle: wordPara], context: nil)
+                attributes: [.font: f, .paragraphStyle: wordPara, .kern: kern], context: nil)
             // width check catches a single word wider than the box (byWordWrapping
-            // can't break it); height check catches multi-line overflow.
+            // can't break it — but hyphenation now breaks most long words first);
+            // height check catches multi-line overflow.
             return b.width <= box + 0.5 && b.height <= f.lineHeight * CGFloat(maxLines) + 1
         }
         let tiers = LabelTuning.tierSizes(box: box)
@@ -2978,6 +3042,35 @@ final class CorpusPhysicsScene: SKScene {
         sprite.size = CGSize(width: side, height: side)
         sprite.userData?["isFocal"] = false
     }
+
+    #if DEBUG
+    /// Type arc #1 DEBUG re-raster — the `MapTypeTuningPanel` posts
+    /// `.mapTypeTuningChanged` on any allCaps/hyphenation/tracking edit; re-raster
+    /// every resting (non-focal) label from current `TypeTuning` so T sees it live.
+    /// Mirrors `swapToNonFocalTexture`'s raster path; skips the focal (its title is
+    /// the SwiftUI overlay). Baked + deleted at arc end.
+    @objc private func handleTypeTuningChanged() {
+        restyleLabels()
+    }
+
+    func restyleLabels() {
+        for (nodeID, shape) in nodeSprites {
+            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+                  (sprite.userData?["isFocal"] as? Bool) != true,
+                  let fullTitle = sprite.userData?["fullTitle"] as? String,
+                  let radius = nodeIntrinsicRadii[nodeID]
+            else { continue }
+            let side = radius * LensTuning.labelBoxFactor
+            let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
+            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
+            sprite.texture = rasterizeSquareText(
+                title: renderTitle, summary: nil, side: side,
+                titleFont: titleFont, summaryFont: titleFont,
+                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap)
+            sprite.size = CGSize(width: side, height: side)
+        }
+    }
+    #endif
 
     /// The resting orb physics body for a given radius — extracted so a rebuild
     /// produces an IDENTICAL body (SKPhysicsBody radius is immutable, so a fresh

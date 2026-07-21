@@ -1061,14 +1061,14 @@ private extension View {
 }
 
 #if DEBUG
-// MARK: - Type arc #1 tuner (DEBUG)
+// MARK: - Type tuner (DEBUG)
 
-/// Minimal type tuner for Type arc #1: all-caps · hyphenation · tracking. Mirrors
+/// Minimal type tuner: font (arc #2) · all-caps · hyphenation · tracking. Mirrors
 /// the SolarFlare widget's chrome (header drag / copy / close, glass surface).
 /// Writes `type.*` UserDefaults (read by `CorpusPhysicsScene.TypeTuning`) and posts
 /// `.mapTypeTuningChanged` on any edit so the scene re-rasters resting labels live.
-/// @AppStorage defaults MATCH `TypeTuning`'s DEBUG nil-defaults (false/true/0.4) so
-/// the controls open on exactly what renders. Baked + deleted at arc end.
+/// @AppStorage defaults MATCH `TypeTuning`'s DEBUG nil-defaults (SF/false/true/0.4)
+/// so the controls open on exactly what renders. Baked + deleted at arc end.
 struct MapTypeTuningPanel: View {
     @Binding var isPresented: Bool
     @Binding var position: CGSize
@@ -1076,14 +1076,21 @@ struct MapTypeTuningPanel: View {
     @AppStorage("type.allCaps") private var allCaps: Bool = false
     @AppStorage("type.hyphenation") private var hyphenation: Bool = true
     @AppStorage("type.tracking") private var tracking: Double = 0.4
+    @AppStorage("type.font") private var fontChoice: String = MapLabelFont.sfSemibold.rawValue
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
-    private static let widgetWidth: CGFloat = 280
+    private static let widgetWidth: CGFloat = 320
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            Picker("font", selection: $fontChoice) {
+                ForEach(MapLabelFont.allCases, id: \.rawValue) { f in
+                    Text(f.pickerLabel).tag(f.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
             HStack(spacing: 6) {
                 toggle("ALL CAPS", isOn: $allCaps)
                 toggle("hyphen", isOn: $hyphenation)
@@ -1097,6 +1104,7 @@ struct MapTypeTuningPanel: View {
         .offset(x: position.width + dragTranslation.width,
                 y: position.height + dragTranslation.height)
         // Edits post to the scene (kept off CanvasView.body) → live re-raster.
+        .onChange(of: fontChoice) { _, _ in notifyChanged() }
         .onChange(of: allCaps) { _, _ in notifyChanged() }
         .onChange(of: hyphenation) { _, _ in notifyChanged() }
         .onChange(of: tracking) { _, _ in notifyChanged() }
@@ -1168,6 +1176,7 @@ struct MapTypeTuningPanel: View {
     private func copyValues() {
         let lines = [
             "type:",
+            "  font:        \(fontChoice)",
             "  allCaps:     \(allCaps)",
             "  hyphenation: \(hyphenation)",
             "  tracking:    \(String(format: "%.1f", tracking))",

@@ -324,7 +324,7 @@ final class CorpusPhysicsScene: SKScene {
 
     /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp × annulus
     /// Amplify(dist to viewport center)`, magnifying nodes near SCREEN CENTER as the
-    /// zoom BLOOM envelope (0→1 across zoomThreshold…fullZoom) opens — no hard on/off
+    /// zoom BLOOM envelope (0→1 across onset…fullZoom) opens — no hard on/off
     /// lurch. Off (envelope 0) → early-out on unchanged zoom. NEVER moves a node.
     private func applyOrbScales() {
         let cameraScale = cameraNode.xScale
@@ -369,7 +369,7 @@ final class CorpusPhysicsScene: SKScene {
     /// The PBD is recomputed FROM restingPos each frame (a pure function of the
     /// camera, no feedback), then the sprite damped-lerps toward it (anti-jitter).
     /// When a node's amplification fades (leaves the band) its target → restingPos,
-    /// so it settles home. Off above `zoomThreshold` → everything lerps home.
+    /// so it settles home. Envelope 0 (above onset) → everything lerps home.
     private func applyBandRelaxation() {
         let cameraScale = cameraNode.xScale
         let envelope = AnnulusTuning.envelope(cameraScale)
@@ -458,7 +458,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         let now = CACurrentMediaTime()
         if now - lastAnnulusHapticTime > annulusHapticThrottle {
-            annulusHaptic.impactOccurred(intensity: 0.5)
+            annulusHaptic.impactOccurred()   // full-strength heavy tick
             annulusHaptic.prepare()
             lastAnnulusHapticTime = now
         }
@@ -835,9 +835,9 @@ final class CorpusPhysicsScene: SKScene {
     private var cardCamStart: CGPoint? = nil
     private var cardCamTarget: CGPoint? = nil
 
-    // Annulus browse tick (re-keyed SB96 haptic) — light impact as the most-
+    // Annulus browse tick (re-keyed SB96 haptic) — HEAVY punchy impact as the most-
     // amplified node changes; throttled so fast pans don't machine-gun it.
-    private let annulusHaptic = UIImpactFeedbackGenerator(style: .light)
+    private let annulusHaptic = UIImpactFeedbackGenerator(style: .heavy)
     private var annulusNearestID: String? = nil
     private var lastAnnulusHapticTime: TimeInterval = 0
     private let annulusHapticThrottle: TimeInterval = 0.05
@@ -2881,28 +2881,31 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Viewport-centered continuous-annulus DIAL (taste — T's primary browse-feel
     /// dial). Gentle magnification near SCREEN CENTER when zoomed in; positions
-    /// hold. `amplitude` = center orb bump (1+amp); `zoomThreshold` = annulus ON
-    /// when cameraScale < this (overview stays calm above it); `radius` = screen-pt
-    /// falloff band width. DEBUG reads `map.annulus.*`; Release bakes gentle
-    /// defaults with ZERO UserDefaults access.
+    /// hold. `amplitude` = center orb bump (1+amp); `onset`/`rampWidth` = where the
+    /// bloom starts + how steeply it reaches full; `radius` = screen-pt falloff band
+    /// width. DEBUG reads `map.annulus.*`; Release bakes gentle defaults, zero UD.
     enum AnnulusTuning {
         static let defaultAmplitude: CGFloat = 0.35       // center ~35% bigger — gentle, never one-node-huge
-        static let defaultZoomThreshold: CGFloat = 1.2    // envelope ONSET (=0): annulus starts blooming below this
-        static let defaultFullZoom: CGFloat = 0.7         // envelope FULL (=1): fully zoomed in (fullZoom < zoomThreshold)
+        // ONSET + RAMP WIDTH — independent envelope controls. onset = the cameraScale
+        // where the annulus BEGINS activating (envelope leaves 0); rampWidth = the
+        // cameraScale SPAN it takes to reach full (smaller = steeper bloom). Moving
+        // onset shifts WHERE it starts; moving rampWidth changes ONLY the steepness.
+        static let defaultOnset: CGFloat = 2.20           // T's device value
+        static let defaultRampWidth: CGFloat = 1.50       // T's fullZoom 0.70 → 2.20 − 0.70 = 1.50
         static let defaultRadius: CGFloat = 220           // screen-pt falloff radius (band width)
         // Pairwise push-apart (transient) so enlarged band nodes don't overlap.
         static let defaultRelaxPasses: Int = 4            // per-frame PBD passes (continuous → fewer than the old 8)
         static let defaultBreathingGap: CGFloat = 6       // world-space extra spacing between scaled radii
         static let defaultRelaxLerp: CGFloat = 0.22       // damped approach to the relaxed target (anti-jitter)
-        static let defaultHapticOn: Bool = true           // subtle tick as the most-amplified node changes
+        static let defaultHapticOn: Bool = true           // heavy tick as the most-amplified node changes
         static let maxBand: Int = 56                      // PERF CAP: only the N most-central nodes relax (O(N²·passes))
         #if DEBUG
         private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
             (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
         }
         static var amplitude: CGFloat     { d("map.annulus.amplitude", defaultAmplitude) }
-        static var zoomThreshold: CGFloat { d("map.annulus.zoomThreshold", defaultZoomThreshold) }
-        static var fullZoom: CGFloat      { d("map.annulus.fullZoom", defaultFullZoom) }
+        static var onset: CGFloat         { d("map.annulus.onset", defaultOnset) }
+        static var rampWidth: CGFloat     { d("map.annulus.rampWidth", defaultRampWidth) }
         static var radius: CGFloat        { d("map.annulus.radius", defaultRadius) }
         static var relaxPasses: Int       { (UserDefaults.standard.object(forKey: "map.annulus.relaxPasses") as? Int) ?? defaultRelaxPasses }
         static var breathingGap: CGFloat  { d("map.annulus.breathingGap", defaultBreathingGap) }
@@ -2910,8 +2913,8 @@ final class CorpusPhysicsScene: SKScene {
         static var hapticOn: Bool         { (UserDefaults.standard.object(forKey: "map.annulus.hapticOn") as? Bool) ?? defaultHapticOn }
         #else
         static var amplitude: CGFloat     { defaultAmplitude }
-        static var zoomThreshold: CGFloat { defaultZoomThreshold }
-        static var fullZoom: CGFloat      { defaultFullZoom }
+        static var onset: CGFloat         { defaultOnset }
+        static var rampWidth: CGFloat     { defaultRampWidth }
         static var radius: CGFloat        { defaultRadius }
         static var relaxPasses: Int       { defaultRelaxPasses }
         static var breathingGap: CGFloat  { defaultBreathingGap }
@@ -2919,14 +2922,17 @@ final class CorpusPhysicsScene: SKScene {
         static var hapticOn: Bool         { defaultHapticOn }
         #endif
 
-        /// Bloom-in envelope 0→1 as the camera zooms IN across [zoomThreshold …
-        /// fullZoom]. One envelope drives BOTH amplify + relaxation so they wake
-        /// together (no hard on/off lurch). 0 = annulus is a full no-op.
+        /// Full-bloom cameraScale (more zoomed in than onset), derived from the ramp.
+        static var fullZoom: CGFloat { onset - rampWidth }
+
+        /// Bloom-in envelope 0→1 as the camera zooms IN across [onset … fullZoom].
+        /// One envelope drives BOTH amplify + relaxation so they wake together (no
+        /// hard on/off lurch). 0 at onset, 1 at fullZoom. 0 = annulus is a full no-op.
         static func envelope(_ cameraScale: CGFloat) -> CGFloat {
-            let onset = zoomThreshold, full = fullZoom
-            if cameraScale >= onset { return 0 }
+            let on = onset, full = fullZoom
+            if cameraScale >= on { return 0 }
             if cameraScale <= full { return 1 }
-            let t = (onset - cameraScale) / max(onset - full, 0.0001)
+            let t = (on - cameraScale) / max(on - full, 0.0001)
             return t * t * (3 - 2 * t)   // smoothstep
         }
     }

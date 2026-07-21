@@ -1091,6 +1091,9 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.annulus.radius")        private var annRadius: Double     = Double(CorpusPhysicsScene.AnnulusTuning.defaultRadius)
     @AppStorage("map.annulus.breathingGap")  private var annGap: Double        = Double(CorpusPhysicsScene.AnnulusTuning.defaultBreathingGap)
     @AppStorage("map.annulus.relaxPasses")   private var annPasses: Int        = CorpusPhysicsScene.AnnulusTuning.defaultRelaxPasses
+    @AppStorage("map.annulus.fullZoom")      private var annFullZoom: Double   = Double(CorpusPhysicsScene.AnnulusTuning.defaultFullZoom)
+    @AppStorage("map.annulus.hapticOn")      private var annHaptic: Bool       = CorpusPhysicsScene.AnnulusTuning.defaultHapticOn
+    @AppStorage("map.card.morphLerp")        private var cardLerp: Double      = Double(CorpusPhysicsScene.defaultCardMorphLerp)
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
@@ -1143,6 +1146,9 @@ struct MapLabelTuningPanel: View {
             Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
             sliderRow(label: "ann amp",  value: $annAmplitude, range: 0.0...1.2,  step: 0.02)
             sliderRow(label: "ann zoom", value: $annZoom,      range: 0.5...2.5,  step: 0.05)
+            // Bloom band: fullZoom (envelope=1) must be < ann zoom (onset). Wider gap
+            // = more gradual wake-up (no on/off lurch).
+            sliderRow(label: "ann full", value: $annFullZoom,  range: 0.3...1.2,  step: 0.05)
             sliderRow(label: "ann rad",  value: $annRadius,    range: 80...500,   step: 10)
             // Push-apart firmness: gap = extra spacing between scaled radii; passes =
             // per-frame PBD iterations (0 = positions hold; higher = firmer/pricier).
@@ -1157,6 +1163,11 @@ struct MapLabelTuningPanel: View {
                 }
                 .pickerStyle(.segmented)
             }
+            Toggle(isOn: $annHaptic) {
+                Text("ann haptic").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+            }
+            // Card inflate speed (lower = more graceful escalation, kills the snap).
+            sliderRow(label: "card lerp", value: $cardLerp, range: 0.06...0.30, step: 0.01)
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1255,7 +1266,10 @@ struct MapLabelTuningPanel: View {
             "  annulus.zoomThreshold: \(String(format: "%.2f", annZoom))",
             "  annulus.radius:        \(String(format: "%.0f", annRadius))",
             "  annulus.breathingGap:  \(String(format: "%.0f", annGap))",
-            "  annulus.relaxPasses:   \(annPasses)"
+            "  annulus.relaxPasses:   \(annPasses)",
+            "  annulus.fullZoom:      \(String(format: "%.2f", annFullZoom))",
+            "  annulus.hapticOn:      \(annHaptic)",
+            "  card.morphLerp:        \(String(format: "%.2f", cardLerp))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

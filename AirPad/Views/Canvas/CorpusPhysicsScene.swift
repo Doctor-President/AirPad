@@ -311,26 +311,26 @@ final class CorpusPhysicsScene: SKScene {
         return cmin + (0.5 - cmin) * smooth
     }
 
-    /// Gentle center-magnify: `1 + amplitude` at the viewport center, smoothstep
-    /// falloff to `1.0` by `radius` (screen-pt band width). `dist` is scene-space;
-    /// `/cameraScale` makes the band a consistent SCREEN size across zoom.
-    private func annulusAmplify(_ dist: CGFloat, cameraScale: CGFloat) -> CGFloat {
+    /// Gentle center-magnify: `1 + amplitude·envelope` at the viewport center,
+    /// smoothstep falloff to `1.0` by `radius` (screen-pt band width). `dist` is
+    /// scene-space; `/cameraScale` makes the band a consistent SCREEN size. The
+    /// `envelope` (0→1, the zoom bloom) scales the bump so on/off is gradual.
+    private func annulusAmplify(_ dist: CGFloat, cameraScale: CGFloat, envelope: CGFloat) -> CGFloat {
         let screenDist = dist / max(cameraScale, 0.0001)
         let t = min(screenDist / max(AnnulusTuning.radius, 1), 1)   // 0 center → 1 edge
         let falloff = 1 - (t * t * (3 - 2 * t))                     // 1 center → 0 edge
-        return 1 + AnnulusTuning.amplitude * falloff
+        return 1 + AnnulusTuning.amplitude * falloff * envelope
     }
 
-    /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp(cameraScale)
-    /// × annulusAmplify(dist to viewport center)`. The annulus magnifies nodes near
-    /// SCREEN CENTER (off `cameraNode.position`) when zoomed in — a gentle magnifying
-    /// band, positions HELD (no compression, no engagement machine). Zoomed out
-    /// (≥ `annulusZoomThreshold`) the annulus is OFF and this early-outs on unchanged
-    /// zoom (overview stays calm). Both multipliers layer cleanly. NEVER moves a node.
+    /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp × annulus
+    /// Amplify(dist to viewport center)`, magnifying nodes near SCREEN CENTER as the
+    /// zoom BLOOM envelope (0→1 across zoomThreshold…fullZoom) opens — no hard on/off
+    /// lurch. Off (envelope 0) → early-out on unchanged zoom. NEVER moves a node.
     private func applyOrbScales() {
         let cameraScale = cameraNode.xScale
         let ramp = zoomRampScale(cameraScale)
-        let annulusOn = cameraScale < AnnulusTuning.zoomThreshold
+        let envelope = AnnulusTuning.envelope(cameraScale)
+        let annulusOn = envelope > 0.001
         // Annulus ON → re-run every frame (camera.position pans → magnify center
         // shifts). OFF → only when the zoom actually changed (cheap idle path).
         if !annulusOn && abs(cameraScale - lastRampCameraScale) < 0.0005 { return }
@@ -347,7 +347,11 @@ final class CorpusPhysicsScene: SKScene {
                 let home = nodeRestingPositions[nodeID] ?? sprite.position
                 let dx = home.x - camPos.x
                 let dy = home.y - camPos.y
-                scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale)
+                // Double-bump damp: as the committing node's card inflates, fade its
+                // annulus contribution so it doesn't amplify THEN morph (two bumps).
+                var env = envelope
+                if nodeID == activeCardID { env *= 1 - smoothstepClamp(0.3, 0.6, cardProgress) }
+                scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
             }
             sprite.setScale(scale)
             guard let intrinsic = nodeIntrinsicRadii[nodeID],
@@ -368,6 +372,7 @@ final class CorpusPhysicsScene: SKScene {
     /// so it settles home. Off above `zoomThreshold` → everything lerps home.
     private func applyBandRelaxation() {
         let cameraScale = cameraNode.xScale
+        let envelope = AnnulusTuning.envelope(cameraScale)
         let lerp = AnnulusTuning.relaxLerp
         // Damped move of a sprite toward `target`; skips sub-pixel noise.
         func ease(_ id: String, _ target: CGPoint) {
@@ -377,9 +382,10 @@ final class CorpusPhysicsScene: SKScene {
             sprite.position = CGPoint(x: sprite.position.x + dx * lerp, y: sprite.position.y + dy * lerp)
         }
 
-        guard cameraScale < AnnulusTuning.zoomThreshold else {
-            // Annulus off → relax every displaced node back home.
+        guard envelope > 0.001 else {
+            // Envelope closed → relax every displaced node back home; drop the haptic key.
             for (id, _) in nodeSprites { if let h = nodeRestingPositions[id] { ease(id, h) } }
+            annulusNearestID = nil
             return
         }
 
@@ -387,16 +393,21 @@ final class CorpusPhysicsScene: SKScene {
         let camPos = cameraNode.position
         // Band = nodes meaningfully amplified (by their HOME distance to center),
         // CAPPED to the `maxBand` closest to center (the ones that actually overlap)
-        // so the per-frame PBD stays O(maxBand²·passes) at any corpus size.
+        // so the per-frame PBD stays O(maxBand²·passes) at any corpus size. Also track
+        // the nearest-to-center node (most amplified) for the haptic tick.
         var band: [(id: String, dist: CGFloat, r: CGFloat, home: CGPoint)] = []
+        var nearestID: String? = nil
+        var nearestDist: CGFloat = .infinity
         for (id, _) in nodeSprites {
             guard let home = nodeRestingPositions[id], let intrinsic = nodeIntrinsicRadii[id] else { continue }
             let dist = hypot(home.x - camPos.x, home.y - camPos.y)
-            let amp = annulusAmplify(dist, cameraScale: cameraScale)
+            if dist < nearestDist { nearestDist = dist; nearestID = id }
+            let amp = annulusAmplify(dist, cameraScale: cameraScale, envelope: envelope)
             if amp > 1.02 {
                 band.append((id, dist, intrinsic * (nodeRestingScales[id] ?? 1) * ramp * amp, home))
             }
         }
+        fireAnnulusHaptic(nearestID)
         if band.count > AnnulusTuning.maxBand {
             band.sort { $0.dist < $1.dist }
             band.removeLast(band.count - AnnulusTuning.maxBand)
@@ -425,12 +436,33 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
         }
-        // Ease band nodes toward the relaxed offset; everyone else eases home.
+        // Ease band nodes toward the ENVELOPE-scaled relaxed offset (so push-apart
+        // blooms in with the magnify); everyone else eases home.
         let bandSet = Set(ids)
         for (id, _) in nodeSprites {
-            if bandSet.contains(id) { ease(id, pos[id]!) }
-            else if let h = nodeRestingPositions[id] { ease(id, h) }
+            if bandSet.contains(id), let home = nodeRestingPositions[id] {
+                let r = pos[id]!
+                ease(id, CGPoint(x: home.x + (r.x - home.x) * envelope,
+                                 y: home.y + (r.y - home.y) * envelope))
+            } else if let h = nodeRestingPositions[id] { ease(id, h) }
         }
+    }
+
+    /// Subtle browse tick: fire a light impact when the most-amplified node (nearest
+    /// to the viewport center) CHANGES as the user pans, throttled so fast pans don't
+    /// machine-gun it. Re-keyed from the retired SB96 focal-change haptic.
+    private func fireAnnulusHaptic(_ nearestID: String?) {
+        guard AnnulusTuning.hapticOn, let nearestID, nearestID != annulusNearestID else {
+            if let nearestID { annulusNearestID = nearestID }
+            return
+        }
+        let now = CACurrentMediaTime()
+        if now - lastAnnulusHapticTime > annulusHapticThrottle {
+            annulusHaptic.impactOccurred(intensity: 0.5)
+            annulusHaptic.prepare()
+            lastAnnulusHapticTime = now
+        }
+        annulusNearestID = nearestID
     }
 
     // MARK: - Private state
@@ -780,13 +812,35 @@ final class CorpusPhysicsScene: SKScene {
     /// Card morph clock (0 = no card, 1 = full card), eased toward the target each
     /// frame in `updateCardPresentation`. Drives `focalScaleProgress`/`focalMorph`.
     private var cardProgress: CGFloat = 0
-    /// Per-frame lerp for the card morph (tap → card grow / dismiss shrink).
-    private let cardMorphLerp: CGFloat = 0.18
+    /// Per-frame lerp for the card morph (tap → grow / dismiss). Lower = a more
+    /// graceful inflate. Dialable (DEBUG) so T can tune the escalation speed.
+    static let defaultCardMorphLerp: CGFloat = 0.14
+    #if DEBUG
+    private var cardMorphLerp: CGFloat {
+        (UserDefaults.standard.object(forKey: "map.card.morphLerp") as? Double).map { CGFloat($0) } ?? Self.defaultCardMorphLerp
+    }
+    #else
+    private let cardMorphLerp: CGFloat = defaultCardMorphLerp
+    #endif
     /// Orb→card cross-fade band: the tapped orb holds full alpha until `Start`,
     /// then fades to 0 by `End` as the SwiftUI card face fades IN — so the orb
     /// INFLATES into the card (no instant pop).
     private let cardFadeStart: CGFloat = 0.15
     private let cardFadeEnd: CGFloat = 0.70
+    /// On a node CHANGE, cardProgress dips to this so the morph visibly re-lerps
+    /// from the new orb — neighbor-hop / re-tap inflates like a first tap (no pop).
+    private let cardHopDip: CGFloat = 0.15
+    /// Camera recenter-on-commit (pan only): glide `cameraNode.position` from the
+    /// snapshot at commit to the tapped node's home on the SAME cardProgress clock.
+    private var cardCamStart: CGPoint? = nil
+    private var cardCamTarget: CGPoint? = nil
+
+    // Annulus browse tick (re-keyed SB96 haptic) — light impact as the most-
+    // amplified node changes; throttled so fast pans don't machine-gun it.
+    private let annulusHaptic = UIImpactFeedbackGenerator(style: .light)
+    private var annulusNearestID: String? = nil
+    private var lastAnnulusHapticTime: TimeInterval = 0
+    private let annulusHapticThrottle: TimeInterval = 0.05
 
     /// Last appearance applied to the unfocused orbs, so `update` re-themes them
     /// only when the trait actually flips (light ↔ dark), not every frame. nil
@@ -1110,9 +1164,20 @@ final class CorpusPhysicsScene: SKScene {
     /// another orb reassigns it → the card hops (progress stays up → no teardown).
     private func updateCardPresentation() {
         let carded = canvasState?.cardedNodeID
-        // Hop / dismiss: restore the previously-carded orb to full alpha.
         if carded != activeCardID {
             if let prev = activeCardID, let s = nodeSprites[prev] { s.alpha = 1 }
+            // COMMIT / NEIGHBOR-HOP: dip the morph so it visibly re-lerps from the new
+            // orb (every commit inflates the same way — no full-progress re-point pop),
+            // and snapshot the camera glide toward the new node (pan only). DISMISS
+            // (carded == nil) leaves cardProgress + camera alone.
+            if let id = carded {
+                cardProgress = min(cardProgress, cardHopDip)
+                cardCamStart = cameraNode.position
+                cardCamTarget = nodeRestingPositions[id] ?? nodeSprites[id]?.position
+                coastVelocity = .zero   // cancel any pan-coast momentum in flight
+            } else {
+                cardCamStart = nil; cardCamTarget = nil
+            }
             activeCardID = carded
         }
         let target: CGFloat = (carded != nil) ? 1 : 0
@@ -1122,10 +1187,17 @@ final class CorpusPhysicsScene: SKScene {
             if let prev = activeCardID, let s = nodeSprites[prev] { s.alpha = 1 }
             activeCardID = nil
         }
-        // MORPH-INFLATE: fade the tapped orb out as the card face fades IN (not
-        // instant at tap), so there's always a visible shape (orb → bubble → card).
+        // MORPH-INFLATE: fade the tapped orb out as the card face fades IN.
         if let id = activeCardID, let sprite = nodeSprites[id] {
             sprite.alpha = 1 - smoothstepClamp(cardFadeStart, cardFadeEnd, cardProgress)
+        }
+        // RECENTER on the SAME clock as the morph (pan only — never touch xScale).
+        // The annulus (centered on camera.position) follows the glide, so the node
+        // amplifies as it reaches center, then the card takes over.
+        if let start = cardCamStart, let dest = cardCamTarget, activeCardID != nil {
+            let e = cardProgress * cardProgress * (3 - 2 * cardProgress)   // smoothstep
+            cameraNode.position = CGPoint(x: start.x + (dest.x - start.x) * e,
+                                          y: start.y + (dest.y - start.y) * e)
         }
         syncFocalToCanvasState()
     }
@@ -2815,12 +2887,14 @@ final class CorpusPhysicsScene: SKScene {
     /// defaults with ZERO UserDefaults access.
     enum AnnulusTuning {
         static let defaultAmplitude: CGFloat = 0.35       // center ~35% bigger — gentle, never one-node-huge
-        static let defaultZoomThreshold: CGFloat = 1.2    // ON when cameraScale < this (zoomed in)
+        static let defaultZoomThreshold: CGFloat = 1.2    // envelope ONSET (=0): annulus starts blooming below this
+        static let defaultFullZoom: CGFloat = 0.7         // envelope FULL (=1): fully zoomed in (fullZoom < zoomThreshold)
         static let defaultRadius: CGFloat = 220           // screen-pt falloff radius (band width)
         // Pairwise push-apart (transient) so enlarged band nodes don't overlap.
         static let defaultRelaxPasses: Int = 4            // per-frame PBD passes (continuous → fewer than the old 8)
         static let defaultBreathingGap: CGFloat = 6       // world-space extra spacing between scaled radii
         static let defaultRelaxLerp: CGFloat = 0.22       // damped approach to the relaxed target (anti-jitter)
+        static let defaultHapticOn: Bool = true           // subtle tick as the most-amplified node changes
         static let maxBand: Int = 56                      // PERF CAP: only the N most-central nodes relax (O(N²·passes))
         #if DEBUG
         private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
@@ -2828,18 +2902,33 @@ final class CorpusPhysicsScene: SKScene {
         }
         static var amplitude: CGFloat     { d("map.annulus.amplitude", defaultAmplitude) }
         static var zoomThreshold: CGFloat { d("map.annulus.zoomThreshold", defaultZoomThreshold) }
+        static var fullZoom: CGFloat      { d("map.annulus.fullZoom", defaultFullZoom) }
         static var radius: CGFloat        { d("map.annulus.radius", defaultRadius) }
         static var relaxPasses: Int       { (UserDefaults.standard.object(forKey: "map.annulus.relaxPasses") as? Int) ?? defaultRelaxPasses }
         static var breathingGap: CGFloat  { d("map.annulus.breathingGap", defaultBreathingGap) }
         static var relaxLerp: CGFloat     { d("map.annulus.relaxLerp", defaultRelaxLerp) }
+        static var hapticOn: Bool         { (UserDefaults.standard.object(forKey: "map.annulus.hapticOn") as? Bool) ?? defaultHapticOn }
         #else
         static var amplitude: CGFloat     { defaultAmplitude }
         static var zoomThreshold: CGFloat { defaultZoomThreshold }
+        static var fullZoom: CGFloat      { defaultFullZoom }
         static var radius: CGFloat        { defaultRadius }
         static var relaxPasses: Int       { defaultRelaxPasses }
         static var breathingGap: CGFloat  { defaultBreathingGap }
         static var relaxLerp: CGFloat     { defaultRelaxLerp }
+        static var hapticOn: Bool         { defaultHapticOn }
         #endif
+
+        /// Bloom-in envelope 0→1 as the camera zooms IN across [zoomThreshold …
+        /// fullZoom]. One envelope drives BOTH amplify + relaxation so they wake
+        /// together (no hard on/off lurch). 0 = annulus is a full no-op.
+        static func envelope(_ cameraScale: CGFloat) -> CGFloat {
+            let onset = zoomThreshold, full = fullZoom
+            if cameraScale >= onset { return 0 }
+            if cameraScale <= full { return 1 }
+            let t = (onset - cameraScale) / max(onset - full, 0.0001)
+            return t * t * (3 - 2 * t)   // smoothstep
+        }
     }
 
     /// Resolve a node title into (font, renderText, wrapMode) with DISCRETE tiers
@@ -3210,6 +3299,7 @@ final class CorpusPhysicsScene: SKScene {
                         lastPanPosition: current
                     )
                     momentumEligible = true   // pan → coast-eligible
+                    annulusHaptic.prepare()   // warm the browse-tick generator
                 }
 
             case .honeycomb(let initialPosition, let lastPanPosition):

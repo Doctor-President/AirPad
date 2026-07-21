@@ -54,6 +54,11 @@ struct CanvasChrome: View {
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
 
+    /// DEBUG-only — Dark-mode orb POP tuner (5 dimensionality levers). Mounted here
+    /// for the same reason as the ☀︎; baked + deleted at arc end.
+    @State private var showDarkOrbTuningPanel = false
+    @State private var darkOrbTuningPanelOffset: CGSize = .zero
+
     #endif
 
     private var filterState: FilterState {
@@ -329,6 +334,10 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            darkOrbTuningTrigger
+            if showDarkOrbTuningPanel {
+                floatingDarkOrbTuningPanel
+            }
             #endif
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
@@ -416,6 +425,44 @@ struct CanvasChrome: View {
             SolarFlareTuningPanel(
                 isPresented: $showSolarFlareTuningPanel,
                 position: $solarFlareTuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+
+    // MARK: - Dark-mode orb POP tuning (DEBUG)
+
+    /// Tiny orb-pop icon, stacked below the Solar Flare ☀︎ (top: 100 → 134). Tap
+    /// shows/hides the floating dark-orb tuner. Baked + deleted at arc end.
+    private var darkOrbTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showDarkOrbTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "circle.lefthalf.filled.righthalf.striped.horizontal")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 134)
+        .padding(.leading, 10)
+    }
+
+    private var floatingDarkOrbTuningPanel: some View {
+        VStack {
+            Spacer()
+            DarkOrbTuningPanel(
+                isPresented: $showDarkOrbTuningPanel,
+                position: $darkOrbTuningPanelOffset
             )
             .padding(.bottom, 80)
         }
@@ -1008,3 +1055,150 @@ private extension View {
         }
     }
 }
+
+#if DEBUG
+// MARK: - Dark-mode orb POP tuner (DEBUG)
+
+/// Dials the 5 dark-mode dimensionality levers (`DarkOrbTuning` / `orbSpriteShader`
+/// uniforms). Writes `dark.*` UserDefaults and posts `.darkOrbTuningChanged` on any
+/// edit → scene `updateDarkOrbUniforms()` re-sets the shared uniforms live (all orbs
+/// at once). @AppStorage defaults MATCH DarkOrbTuning's DEBUG nil-defaults (the
+/// starting mix). Baked + deleted at arc end.
+struct DarkOrbTuningPanel: View {
+    @Binding var isPresented: Bool
+    @Binding var position: CGSize
+
+    @AppStorage("dark.sat") private var sat: Double = 1.3
+    @AppStorage("dark.val") private var val: Double = 1.15
+    @AppStorage("dark.rim") private var rim: Double = 0.5
+    @AppStorage("dark.rimWidth") private var rimWidth: Double = 0.12
+    @AppStorage("dark.sphere") private var sphere: Double = 0.4
+    @AppStorage("dark.lightDirX") private var lightDirX: Double = -0.6
+    @AppStorage("dark.lightDirY") private var lightDirY: Double = 0.8
+    @AppStorage("dark.spec") private var spec: Double = 0.15
+    @AppStorage("dark.specSize") private var specSize: Double = 0.18
+    @AppStorage("dark.glow") private var glow: Double = 0.0
+
+    @GestureState private var dragTranslation: CGSize = .zero
+    @State private var justCopied = false
+    private static let widgetWidth: CGFloat = 300
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    sliderRow("sat",     $sat,      0.5...2.5, 0.05)
+                    sliderRow("val",     $val,      0.5...2.0, 0.05)
+                    sliderRow("rim",     $rim,      0...2,     0.05)
+                    sliderRow("rim W",   $rimWidth, 0.02...0.4, 0.01)
+                    sliderRow("sphere",  $sphere,   0...1.5,   0.05)
+                    sliderRow("light x", $lightDirX, -1...1,   0.05)
+                    sliderRow("light y", $lightDirY, -1...1,   0.05)
+                    sliderRow("spec",    $spec,     0...1,     0.02)
+                    sliderRow("spec sz", $specSize, 0.02...0.5, 0.01)
+                    sliderRow("glow",    $glow,     0...1,     0.02)
+                }
+            }
+            .frame(maxHeight: 300)
+        }
+        .padding(12)
+        .frame(width: Self.widgetWidth)
+        .modifier(DarkOrbWidgetSurface())
+        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 6)
+        .offset(x: position.width + dragTranslation.width,
+                y: position.height + dragTranslation.height)
+        .onChange(of: sat)       { _, _ in notifyChanged() }
+        .onChange(of: val)       { _, _ in notifyChanged() }
+        .onChange(of: rim)       { _, _ in notifyChanged() }
+        .onChange(of: rimWidth)  { _, _ in notifyChanged() }
+        .onChange(of: sphere)    { _, _ in notifyChanged() }
+        .onChange(of: lightDirX) { _, _ in notifyChanged() }
+        .onChange(of: lightDirY) { _, _ in notifyChanged() }
+        .onChange(of: spec)      { _, _ in notifyChanged() }
+        .onChange(of: specSize)  { _, _ in notifyChanged() }
+        .onChange(of: glow)      { _, _ in notifyChanged() }
+    }
+
+    private func notifyChanged() {
+        NotificationCenter.default.post(name: .darkOrbTuningChanged, object: nil)
+    }
+
+    private var header: some View {
+        ZStack {
+            Capsule().fill(Color.secondary.opacity(0.45)).frame(width: 36, height: 5)
+            HStack(spacing: 4) {
+                Text("Dark Orb").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Button { copyValues() } label: {
+                    Image(systemName: justCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(justCopied ? Color.green : .secondary)
+                        .contentShape(Rectangle()).frame(width: 28, height: 28)
+                }.buttonStyle(.plain)
+                Button { isPresented = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 17)).foregroundStyle(.secondary)
+                        .contentShape(Rectangle()).frame(width: 28, height: 28)
+                }.buttonStyle(.plain)
+            }
+        }
+        .frame(height: 28)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture()
+                .updating($dragTranslation) { value, state, _ in state = value.translation }
+                .onEnded { value in
+                    position.width += value.translation.width
+                    position.height += value.translation.height
+                }
+        )
+    }
+
+    private func sliderRow(_ label: String, _ value: Binding<Double>,
+                           _ range: ClosedRange<Double>, _ step: Double) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.system(.caption, design: .monospaced))
+                .frame(width: 52, alignment: .leading).foregroundStyle(.secondary)
+            Slider(value: value, in: range, step: step)
+            Text(String(format: "%.2f", value.wrappedValue))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary).frame(width: 40, alignment: .trailing)
+        }
+    }
+
+    private func copyValues() {
+        let lines = [
+            "dark_orb:",
+            "  sat:       \(String(format: "%.2f", sat))",
+            "  val:       \(String(format: "%.2f", val))",
+            "  rim:       \(String(format: "%.2f", rim))",
+            "  rimWidth:  \(String(format: "%.2f", rimWidth))",
+            "  sphere:    \(String(format: "%.2f", sphere))",
+            "  lightDirX: \(String(format: "%.2f", lightDirX))",
+            "  lightDirY: \(String(format: "%.2f", lightDirY))",
+            "  spec:      \(String(format: "%.2f", spec))",
+            "  specSize:  \(String(format: "%.2f", specSize))",
+            "  glow:      \(String(format: "%.2f", glow))",
+        ]
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        justCopied = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1200))
+            justCopied = false
+        }
+    }
+}
+
+private struct DarkOrbWidgetSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content.background(.thinMaterial, in: shape)
+        }
+    }
+}
+#endif

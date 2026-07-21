@@ -29,6 +29,8 @@ struct CanvasView: View {
     @State private var currentDetailNodeID: String? = nil
     @State private var localTagSuggestions: TagSuggestionContext? = nil
     @State private var isDismissing = false
+    /// Swipe-down-to-dismiss follow-finger offset for the presented card (0 = at rest).
+    @State private var cardDragY: CGFloat = 0
 
     /// SB139 Stage 4c2 commit E — cluster identity being renamed by the
     /// user via long-press → "Rename" on a cluster label badge. Drives
@@ -596,6 +598,9 @@ struct CanvasView: View {
                     // the bubble morphs. Built only while morphing (m>0), so a fast
                     // graze that never settles never instantiates the card.
                     if m > 0.001 {
+                        // Swipe-down-to-dismiss: follow-finger offset + fade/scale.
+                        let dismissDistance: CGFloat = 240
+                        let dragFrac = min(cardDragY / dismissDistance, 1)
                         ZStack(alignment: .topTrailing) {
                             NodeCardView(nodeID: id, fallbackNode: node, animateEntry: false)
                                 .frame(width: w, height: h)
@@ -604,7 +609,7 @@ struct CanvasView: View {
                                 // path) and clears the card.
                                 .contentShape(RoundedRectangle(cornerRadius: cardCorner))
                                 .onTapGesture {
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                    MapHaptics.detail()   // the set's arrival tick
                                     canvasState.pendingNavigationNodeID = id  // → NodeDetailView (verified route)
                                     canvasState.cardedNodeID = nil
                                 }
@@ -625,10 +630,32 @@ struct CanvasView: View {
                             }
                         }
                         .frame(width: w, height: h)
-                        .opacity(m)
+                        .scaleEffect(1 - dragFrac * 0.12)
+                        .offset(y: cardDragY)
+                        .opacity(m * (1 - dragFrac * 0.6))
                         // Only the committed, mostly-morphed card is interactive; a
                         // transient/fading overlay lets taps reach the scene beneath.
                         .allowsHitTesting(isCarded && m > 0.5)
+                        // SWIPE DOWN — follow-finger, threshold/flick-commit else spring
+                        // back. DOWN-ONLY (damp up + lateral) so it never fights the
+                        // canvas pan/pinch below. A third dismiss path beside X + tap-away.
+                        .gesture(
+                            DragGesture(minimumDistance: 8)
+                                .onChanged { value in
+                                    cardDragY = max(0, value.translation.height)
+                                }
+                                .onEnded { value in
+                                    let dy = max(0, value.translation.height)
+                                    let flick = value.predictedEndTranslation.height > 360
+                                    if isCarded && (dy > 120 || flick) {
+                                        MapHaptics.release()   // soft "let go"
+                                        withAnimation(.easeOut(duration: 0.22)) { cardDragY = dismissDistance * 1.6 }
+                                        canvasState.cardedNodeID = nil
+                                    } else {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) { cardDragY = 0 }
+                                    }
+                                }
+                        )
                     }
                 }
                 .position(canvasState.focalNodeScreenPosition)
@@ -639,6 +666,11 @@ struct CanvasView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: isFading)
+        // Reset the swipe offset when a NEW card commits/hops (not on dismiss — a
+        // swipe-commit sets cardedNodeID nil and needs its slide-out animation intact).
+        .onChange(of: canvasState.cardedNodeID) { _, newID in
+            if newID != nil { cardDragY = 0 }
+        }
     }
 
     @ViewBuilder

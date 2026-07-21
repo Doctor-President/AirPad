@@ -1095,6 +1095,9 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.annulus.hapticOn")        private var annHaptic: Bool      = CorpusPhysicsScene.AnnulusTuning.defaultHapticOn
     @AppStorage("map.annulus.hapticIntensity") private var annHapticInt: Double = Double(CorpusPhysicsScene.AnnulusTuning.defaultHapticIntensity)
     @AppStorage("map.annulus.hapticCentrality") private var annHapticCentral: Bool = CorpusPhysicsScene.AnnulusTuning.defaultHapticCentrality
+    // Curated haptic escalation set (0=A impact ladder / 1=B selection+notif / 2=C gentle).
+    // Cycles all 4 events (graze/commit/detail/release) so T auditions the relationship.
+    @AppStorage("map.haptic.set")              private var hapticSet: Int       = 0
     @AppStorage("map.card.morphLerp")        private var cardLerp: Double      = Double(CorpusPhysicsScene.defaultCardMorphLerp)
 
     // Collapsible-section expand state (persisted). Default: only Annulus open.
@@ -1142,6 +1145,15 @@ struct MapLabelTuningPanel: View {
                         sliderRow(label: "haptic amt",  value: $annHapticInt, range: 0.0...1.0, step: 0.05)
                         // ON → tick also tracks centrality (harder dead-center).
                         Toggle(isOn: $annHapticCentral) { rowLabel("h central") }
+                        // Curated escalation set — cycles ALL 4 events so you audition
+                        // the relationship (graze < tap < detail in heft; soft release).
+                        HStack(spacing: 6) {
+                            rowLabel("haptic set")
+                            Picker("set", selection: $hapticSet) {
+                                Text("A").tag(0); Text("B").tag(1); Text("C").tag(2)
+                            }
+                            .pickerStyle(.segmented)
+                        }
                         sliderRow(label: "card lerp",   value: $cardLerp,     range: 0.06...0.30, step: 0.01)
                     }
                 }
@@ -1291,6 +1303,7 @@ struct MapLabelTuningPanel: View {
             "  annulus.hapticOn:      \(annHaptic)",
             "  annulus.hapticIntensity: \(String(format: "%.2f", annHapticInt))",
             "  annulus.hapticCentrality: \(annHapticCentral)",
+            "  haptic.set:            \(["A", "B", "C"][min(max(hapticSet, 0), 2)])",
             "  card.morphLerp:        \(String(format: "%.2f", cardLerp))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")

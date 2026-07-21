@@ -653,20 +653,30 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     /// Type arc #2 — insert U+00AD soft hyphens at the current locale's hyphenation
-    /// points. UILabel breaks at these under `.byWordWrapping` and renders a VISIBLE
-    /// hyphen, reliably and EVEN when the text is later uppercased — iOS's automatic
-    /// `hyphenationFactor` is skipped for all-caps runs and is finicky under
-    /// `.byCharWrapping`; explicit soft hyphens are always honored. Computed on the
-    /// given (original-case) string so the dictionary recognizes the word; the caller
-    /// uppercases afterward (U+00AD is case-neutral). Returns the input unchanged if
-    /// hyphenation is unavailable or the word has no break points (the char-wrap net
-    /// then applies). Indices are UTF-16; node titles are effectively ASCII so the
-    /// Character-array insert lines up (a rare mismatch is cosmetic, never a crash).
+    /// points, PER WORD. UILabel breaks at these under `.byWordWrapping` and renders a
+    /// VISIBLE hyphen, reliably and EVEN when the text is later uppercased — iOS's
+    /// automatic `hyphenationFactor` is skipped for all-caps runs and is finicky under
+    /// `.byCharWrapping`; explicit soft hyphens are always honored. Each whitespace
+    /// token is hyphenated independently: `CFStringGetHyphenationLocationBeforeIndex`
+    /// walks backward and STOPS at the first space, so a whole-title call only breaks
+    /// the last word — split first. Computed on the given (original-case) string so
+    /// the dictionary recognizes the words; the caller uppercases afterward (U+00AD is
+    /// case-neutral). Returns the input unchanged if hyphenation is unavailable (e.g.
+    /// the Simulator, which lacks the dictionary) or no word has break points.
     static func softHyphenated(_ s: String) -> String {
-        guard s.count > 4 else { return s }
-        let locale = CFLocaleCopyCurrent()
-        guard CFStringIsHyphenationAvailableForLocale(locale) else { return s }
-        let cf = s as CFString
+        guard let locale = CFLocaleCopyCurrent() as CFLocale?,
+              CFStringIsHyphenationAvailableForLocale(locale) else { return s }
+        return s.split(separator: " ", omittingEmptySubsequences: true)
+            .map { softHyphenatedWord(String($0), locale) }
+            .joined(separator: " ")
+    }
+
+    /// Soft-hyphenate ONE word (no spaces). Indices are UTF-16; node titles are
+    /// effectively ASCII so the Character-array insert lines up (a rare mismatch is
+    /// cosmetic, never a crash).
+    private static func softHyphenatedWord(_ w: String, _ locale: CFLocale) -> String {
+        guard w.count > 4 else { return w }
+        let cf = w as CFString
         let len = CFStringGetLength(cf)
         var locs: [Int] = []
         var probe = len
@@ -676,8 +686,8 @@ final class CorpusPhysicsScene: SKScene {
             locs.append(loc)
             probe = loc
         }
-        guard !locs.isEmpty else { return s }
-        var chars = Array(s)
+        guard !locs.isEmpty else { return w }
+        var chars = Array(w)
         for loc in locs.sorted(by: >) where loc <= chars.count {
             chars.insert("\u{00AD}", at: loc)
         }
@@ -2576,12 +2586,13 @@ final class CorpusPhysicsScene: SKScene {
         // clean WORD-WRAP, no hyphens, the reorder win); col B = multi-word wrap
         // baseline; col C = an unbreakable long single word (forces PASS-2 syllable
         // hyphenation, the last resort).
-        // Type arc #2 test set: col A = RIDESHARE-class (two longish words — must
-        // WORD-WRAP clean, no hyphens, the reorder win); col B = multi-word wrap
-        // baseline; col C = a long single word (hyphenates at syllables ON DEVICE via
-        // soft hyphens — the Simulator lacks the runtime hyphenation dictionary, so
-        // in-sim it char-wraps; the render path itself is soft-hyphen-verified).
-        let titles = ["Rideshare Revolution", "The Long Multi Word Title", "Constitutional"]
+        // Type arc #2 test set (maps to the device-verify examples): col A =
+        // RIDESHARE-class (two words that each fit alone → clean WORD-WRAP, no
+        // char-break, the reorder win — sim-visible); col B = multi-word with a WIDE
+        // word ("Distribution" → on device "…DISTRIBU-TION"); col C = a long single
+        // word ("ISOMOR-PHISM"). Hyphenation of B/C is DEVICE-only (the Simulator
+        // lacks the runtime hyphenation dictionary → in-sim they char-wrap, EXPECTED).
+        let titles = ["Rideshare Revolution", "Geometric Distribution", "Isomorphism"]
         let radii: [CGFloat] = [30, 45, 60]   // diameters 60 / 90 / 120
         let colX: [CGFloat] = [-130, 0, 130]
         let rowY: [CGFloat] = [280, 0, -280]
@@ -3019,70 +3030,86 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Resolve a node title into (font, renderText, wrapMode, hyphenate) with
     /// DISCRETE tiers, NO mid-word truncation, and hyphenation as a LAST RESORT
-    /// (Type arc #2). PASS 1 steps the tier fonts LARGEST→smallest looking for a
-    /// clean WORD-WRAP (no hyphens) within maxLines — so "RIDESHARE REVOLUTION"
-    /// drops to a clean 2-line tier instead of hyphenating at a bigger one. PASS 2
-    /// fires only when NO tier word-wraps (a single word wider than the box even at
-    /// floor): `softHyphenated` inserts U+00AD at the locale's syllable points and
-    /// the render breaks there with a VISIBLE hyphen ("CONSTITU-TIONAL"), in caps or
-    /// mixed case (auto-insertion needs the device hyphenation dictionary — the
-    /// Simulator lacks it, so in-sim this path char-wraps). Absolute last nets
-    /// unchanged (word-boundary ellipsis / whole-word char-wrap). Cache-safe: labels
-    /// rasterize fresh per call. The `hyphenate` flag stays wired for the render but
-    /// PASS 2 uses soft hyphens (reliable across case), so it is passed false.
+    /// (Type arc #2, corrected). Three passes, tiers LARGEST→smallest each:
+    ///  • PASS 1 — CLEAN word-wrap: the title wraps within maxLines AND no single word
+    ///    is wider than the box. The per-word test is the fix: `.byWordWrapping`
+    ///    boundingRect silently CHAR-BREAKS an over-wide word to fit and reports a
+    ///    success, so a width-only check let over-wide titles skip hyphenation
+    ///    entirely. "RIDESHARE REVOLUTION" still clean-fits (both words fit alone).
+    ///  • PASS 2 — HYPHENATE any title: `softHyphenated` inserts U+00AD in every
+    ///    hyphenatable word; the first tier where the hyphenated title word-wraps
+    ///    within maxLines wins, breaking at a VISIBLE hyphen ("ISOMOR-PHISM",
+    ///    "…DISTRIBU-TION"). Auto-insertion needs the device hyphenation dictionary —
+    ///    the Simulator lacks it (`softHyphenated` returns the input unchanged), so
+    ///    in-sim this path is skipped and it falls to PASS 3's char-wrap (EXPECTED).
+    ///  • PASS 3 — genuinely-too-long / no break points: drop trailing words + a
+    ///    word-boundary ellipsis (multi-word), or char-wrap the lone word.
+    /// Cache-safe: labels rasterize fresh per call. `hyphenate` stays wired for the
+    /// render but soft hyphens carry the break, so it is passed false.
     private func resolveTitle(_ rawText: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode, hyphenate: Bool) {
         // ALL-CAPS first so every downstream measurement + the returned renderText
         // operate on the uppercased string (caps are ~10-15% wider — the fit knows).
         let text = TypeTuning.allCaps ? rawText.uppercased() : rawText
         let maxLines = LabelTuning.maxLines
         let kern = TypeTuning.tracking
-        // Hyphenation is toggled PER PASS so the fit predicts the exact render.
-        // `.kern` is always included (tracking widens the render regardless).
-        func fits(_ s: String, _ f: UIFont, hyphenate: Bool) -> Bool {
+        let attrs: (UIFont) -> [NSAttributedString.Key: Any] = { f in
             let para = NSMutableParagraphStyle()
             para.lineBreakMode = .byWordWrapping
-            para.hyphenationFactor = hyphenate ? 1.0 : 0.0
+            // `.kern` always included (tracking widens the render → fit must match).
+            return [.font: f, .paragraphStyle: para, .kern: kern]
+        }
+        /// `requireCleanWords`: PASS 1 also rejects a tier if ANY single word is wider
+        /// than the box (word-wrap would char-break it — not a clean fit). PASS 2/3
+        /// pass false: soft hyphens / accumulation are expected to place the words.
+        func fits(_ s: String, _ f: UIFont, requireCleanWords: Bool) -> Bool {
+            let a = attrs(f)
             let b = (s as NSString).boundingRect(
                 with: CGSize(width: box, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: f, .paragraphStyle: para, .kern: kern], context: nil)
-            // width catches a single word wider than the box (word-wrap can't break
-            // it); height catches multi-line overflow.
-            return b.width <= box + 0.5 && b.height <= f.lineHeight * CGFloat(maxLines) + 1
+                attributes: a, context: nil)
+            guard b.height <= f.lineHeight * CGFloat(maxLines) + 1, b.width <= box + 0.5 else { return false }
+            if requireCleanWords {
+                for w in s.split(separator: " ", omittingEmptySubsequences: true) {
+                    let wb = (String(w) as NSString).boundingRect(
+                        with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
+                        options: [.usesFontLeading], attributes: a, context: nil)
+                    if wb.width > box + 0.5 { return false }
+                }
+            }
+            return true
         }
         let tiers = LabelTuning.tierSizes(box: box)
 
-        // PASS 1 — clean WORD-WRAP only, no hyphens. First tier (largest→smallest)
-        // where the whole title wraps within maxLines wins. Beats hyphenation.
+        // PASS 1 — clean WORD-WRAP only (no word char-broken). Beats hyphenation.
         for size in tiers {
             let f = CorpusPhysicsScene.mapLabelFont(size: size)
-            if fits(text, f, hyphenate: false) { return (f, text, .byWordWrapping, false) }
+            if fits(text, f, requireCleanWords: true) { return (f, text, .byWordWrapping, false) }
         }
 
-        let floorFont = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
-        let words = text.split(separator: " ", omittingEmptySubsequences: true)
-
-        // PASS 2 — an over-wide SINGLE word that word-wrap couldn't place. If
-        // hyphenation is on, insert soft hyphens at the locale's syllable points and
-        // render `.byWordWrapping` at the floor tier: UILabel breaks at a soft hyphen
-        // with a VISIBLE hyphen ("CONSTITU-TIONAL"), in caps or mixed case. Only when
-        // the word is UNKNOWN to the hyphenator (no break points — e.g. a coined
-        // token) does it fall to the char-wrap net (every letter, no hyphen).
-        if words.count <= 1 {
-            if TypeTuning.hyphenation {
-                let hyBase = CorpusPhysicsScene.softHyphenated(rawText)
-                if hyBase != rawText {
-                    let hy = TypeTuning.allCaps ? hyBase.uppercased() : hyBase
-                    return (floorFont, hy, .byWordWrapping, false)
+        // PASS 2 — hyphenate ANY title. Soft-hyphenate the whole title (per word), in
+        // original case for dictionary recognition, then uppercase if caps. First tier
+        // where the hyphenated title word-wraps within maxLines wins.
+        if TypeTuning.hyphenation {
+            let hyBase = CorpusPhysicsScene.softHyphenated(rawText)
+            if hyBase != rawText {   // soft hyphens were added (device has the dictionary)
+                let hyText = TypeTuning.allCaps ? hyBase.uppercased() : hyBase
+                for size in tiers {
+                    let f = CorpusPhysicsScene.mapLabelFont(size: size)
+                    if fits(hyText, f, requireCleanWords: false) { return (f, hyText, .byWordWrapping, false) }
                 }
             }
-            return (floorFont, text, .byCharWrapping, false)
+        }
+
+        // PASS 3 — genuinely too long, or no hyphenation break points.
+        let floorFont = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
+        let words = text.split(separator: " ", omittingEmptySubsequences: true)
+        if words.count <= 1 {
+            return (floorFont, text, .byCharWrapping, false)   // lone word — show every letter
         }
         var acc: [Substring] = []
         for w in words {
-            if fits((acc + [w]).joined(separator: " ") + "…", floorFont, hyphenate: false) { acc.append(w) } else { break }
+            if fits((acc + [w]).joined(separator: " ") + "…", floorFont, requireCleanWords: false) { acc.append(w) } else { break }
         }
-        // First word itself over-wide (rare) — char-wrap net (every letter shown).
         if acc.isEmpty { return (floorFont, String(words[0]), .byCharWrapping, false) }
         return (floorFont, acc.joined(separator: " ") + "…", .byWordWrapping, false)
     }

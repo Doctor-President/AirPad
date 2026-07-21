@@ -13,6 +13,39 @@ extension Notification.Name {
 }
 #endif
 
+/// Node-title typeface audition (Type arc #2). The map's label voice. T's instinct:
+/// a HUMANIST serif with soft, low-contrast serifs — editorial warmth + voice-unity
+/// with the cards, that survives going small (sharp high-contrast serifs muddy at
+/// tiny sizes). All faces are OFL/on-device (legally shippable):
+///   .sfSemibold  — current baseline to compare against
+///   .sourceSerif — serifFont(.bold) = SourceSerif4-Bold; the voice-unifier (already bundled)
+///   .fraunces    — Fraunces72pt-Bold; soft characterful humanist (bundled — see caveat)
+///   .lora        — Lora-Bold; warm moderate-contrast, legible small (bundled)
+///   .charter     — Charter-Bold; Bitstream Charter ships on iOS, designed for low-res legibility
+/// CAVEAT: only the Fraunces *72pt* optical cut is bundled (display end — higher
+/// contrast). The brief wanted the TEXT optical axis for small legibility; the
+/// static 72pt can't dial `opsz`. If T likes Fraunces but it muddies small, bundle
+/// the Fraunces TEXT-optical (opsz~9) cut. DEBUG picks via `type.font`; Release
+/// bakes T's choice. Always compiled (Release resolves `mapLabelFont` through it).
+enum MapLabelFont: String, CaseIterable {
+    case sfSemibold
+    case sourceSerif
+    case fraunces
+    case lora
+    case charter
+
+    /// Short label for the DEBUG segmented picker.
+    var pickerLabel: String {
+        switch self {
+        case .sfSemibold:  return "SF"
+        case .sourceSerif: return "Source"
+        case .fraunces:    return "Fraun"
+        case .lora:        return "Lora"
+        case .charter:     return "Charter"
+        }
+    }
+}
+
 /// Curated haptic ESCALATIONS for the browse→commit→detail→release loop. Weight
 /// tracks commitment: graze tick (lightest) → tap-orb→card (firmer grab) → card→
 /// detail (heaviest, arrival) → swipe-release (soft, "let go"). The `active` set
@@ -586,7 +619,22 @@ final class CorpusPhysicsScene: SKScene {
     /// device-verified pick from the Map tuner (reverses the old SF Condensed
     /// default). The tuner's condensed / serif options are gone with it.
     static func mapLabelFont(size: CGFloat) -> UIFont {
-        UIFont.systemFont(ofSize: size, weight: .semibold)
+        // Type arc #2 — the title typeface is auditionable (DEBUG picker; Release
+        // baked). Same call site for fit + render, so metrics stay consistent. The
+        // bundled/system faces fall back to the SourceSerif4 voice-unifier if a load
+        // fails (which would show up as a face reading identical to `.sourceSerif`).
+        switch TypeTuning.fontChoice {
+        case .sfSemibold:
+            return UIFont.systemFont(ofSize: size, weight: .semibold)
+        case .sourceSerif:
+            return serifFont(size: size, weight: .bold)               // SourceSerif4-Bold
+        case .fraunces:
+            return UIFont(name: "Fraunces72pt-Bold", size: size) ?? serifFont(size: size, weight: .bold)
+        case .lora:
+            return UIFont(name: "Lora-Bold", size: size) ?? serifFont(size: size, weight: .bold)
+        case .charter:
+            return UIFont(name: "Charter-Bold", size: size) ?? serifFont(size: size, weight: .bold)
+        }
     }
 
     /// Source Serif 4 — the app's editorial serif (note editor default, SB121).
@@ -602,6 +650,38 @@ final class CorpusPhysicsScene: SKScene {
             return UIFont(descriptor: d, size: size)
         }
         return UIFont(name: isBold ? "Georgia-Bold" : "Georgia", size: size) ?? base
+    }
+
+    /// Type arc #2 — insert U+00AD soft hyphens at the current locale's hyphenation
+    /// points. UILabel breaks at these under `.byWordWrapping` and renders a VISIBLE
+    /// hyphen, reliably and EVEN when the text is later uppercased — iOS's automatic
+    /// `hyphenationFactor` is skipped for all-caps runs and is finicky under
+    /// `.byCharWrapping`; explicit soft hyphens are always honored. Computed on the
+    /// given (original-case) string so the dictionary recognizes the word; the caller
+    /// uppercases afterward (U+00AD is case-neutral). Returns the input unchanged if
+    /// hyphenation is unavailable or the word has no break points (the char-wrap net
+    /// then applies). Indices are UTF-16; node titles are effectively ASCII so the
+    /// Character-array insert lines up (a rare mismatch is cosmetic, never a crash).
+    static func softHyphenated(_ s: String) -> String {
+        guard s.count > 4 else { return s }
+        let locale = CFLocaleCopyCurrent()
+        guard CFStringIsHyphenationAvailableForLocale(locale) else { return s }
+        let cf = s as CFString
+        let len = CFStringGetLength(cf)
+        var locs: [Int] = []
+        var probe = len
+        while probe > 1 {
+            let loc = CFStringGetHyphenationLocationBeforeIndex(cf, probe, CFRange(location: 0, length: len), 0, locale, nil)
+            guard loc != kCFNotFound, loc > 0, loc < len else { break }
+            locs.append(loc)
+            probe = loc
+        }
+        guard !locs.isEmpty else { return s }
+        var chars = Array(s)
+        for loc in locs.sorted(by: >) where loc <= chars.count {
+            chars.insert("\u{00AD}", at: loc)
+        }
+        return String(chars)
     }
 
     private var territoryLabelData: [TerritoryLabel] = []
@@ -2492,7 +2572,16 @@ final class CorpusPhysicsScene: SKScene {
         cameraNode.setScale(1.0)
         for (_, orb) in nodeSprites { orb.removeFromParent() }
         nodeSprites.removeAll()
-        let titles = ["Notes", "The Long Multi Word Title", "Geometric"]
+        // Type arc #2 test set: col A = RIDESHARE-class (two longish words — must
+        // clean WORD-WRAP, no hyphens, the reorder win); col B = multi-word wrap
+        // baseline; col C = an unbreakable long single word (forces PASS-2 syllable
+        // hyphenation, the last resort).
+        // Type arc #2 test set: col A = RIDESHARE-class (two longish words — must
+        // WORD-WRAP clean, no hyphens, the reorder win); col B = multi-word wrap
+        // baseline; col C = a long single word (hyphenates at syllables ON DEVICE via
+        // soft hyphens — the Simulator lacks the runtime hyphenation dictionary, so
+        // in-sim it char-wraps; the render path itself is soft-hyphen-verified).
+        let titles = ["Rideshare Revolution", "The Long Multi Word Title", "Constitutional"]
         let radii: [CGFloat] = [30, 45, 60]   // diameters 60 / 90 / 120
         let colX: [CGFloat] = [-130, 0, 130]
         let rowY: [CGFloat] = [280, 0, -280]
@@ -2642,7 +2731,8 @@ final class CorpusPhysicsScene: SKScene {
         summaryFont: UIFont,
         renderScale: CGFloat,
         fillColor: UIColor,
-        titleWrap: NSLineBreakMode = .byWordWrapping   // resolveTitle owns the fit; no mid-word cut
+        titleWrap: NSLineBreakMode = .byWordWrapping,  // resolveTitle owns the fit; no mid-word cut
+        titleHyphenate: Bool = false                   // resolveTitle's per-title decision (arc #2 last-resort)
     ) -> SKTexture {
         let textWidth = side  // padding inside the square
         // Luminance-aware ink + soft halo, from the node's OWN fill — so the
@@ -2673,7 +2763,7 @@ final class CorpusPhysicsScene: SKScene {
         let maxLines = LabelTuning.maxLines
         let titleLabel = UILabel()
         titleLabel.attributedText = styled(title, titleFont, titleWrap,
-                                           hyphenate: TypeTuning.hyphenation,
+                                           hyphenate: titleHyphenate,
                                            kern: TypeTuning.tracking)
         titleLabel.numberOfLines = maxLines
         titleLabel.lineBreakMode = titleWrap
@@ -2863,10 +2953,15 @@ final class CorpusPhysicsScene: SKScene {
             UserDefaults.standard.object(forKey: "type.tracking") == nil
                 ? 0.4 : CGFloat(UserDefaults.standard.double(forKey: "type.tracking"))
         }
+        /// Title typeface (Type arc #2). Default `.sfSemibold` (current baseline).
+        static var fontChoice: MapLabelFont {
+            MapLabelFont(rawValue: UserDefaults.standard.string(forKey: "type.font") ?? "") ?? .sfSemibold
+        }
         #else
         static let allCaps: Bool = false        // TASTE — pending T's device A/B
         static let hyphenation: Bool = true      // OBJECTIVE — ships on
         static let tracking: CGFloat = 0.4
+        static let fontChoice: MapLabelFont = .sfSemibold   // TASTE — pending T's audition
         #endif
     }
 
@@ -2922,55 +3017,74 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Resolve a node title into (font, renderText, wrapMode) with DISCRETE tiers
-    /// and NO mid-word truncation. Tries the tier fonts LARGEST→smallest,
-    /// word-wrapping the whole title into `box × maxLines`; returns the FIRST tier
-    /// at which it fits with zero truncation (font steps DOWN rather than cutting).
-    /// If even the smallest tier overflows: smallest tier + a WORD-boundary ellipsis
-    /// (multi-word) or char-wrap of the whole word (single unbreakable word — every
-    /// letter shown, no mid-word cut). Cache-safe: labels rasterize fresh per call.
-    private func resolveTitle(_ rawText: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode) {
-        // ALL-CAPS is applied FIRST so every downstream measurement + the returned
-        // renderText operate on the uppercased string (caps are ~10-15% wider — the
-        // fit MUST know). resolveTitle owns the fit; the caller renders `text` verbatim.
+    /// Resolve a node title into (font, renderText, wrapMode, hyphenate) with
+    /// DISCRETE tiers, NO mid-word truncation, and hyphenation as a LAST RESORT
+    /// (Type arc #2). PASS 1 steps the tier fonts LARGEST→smallest looking for a
+    /// clean WORD-WRAP (no hyphens) within maxLines — so "RIDESHARE REVOLUTION"
+    /// drops to a clean 2-line tier instead of hyphenating at a bigger one. PASS 2
+    /// fires only when NO tier word-wraps (a single word wider than the box even at
+    /// floor): `softHyphenated` inserts U+00AD at the locale's syllable points and
+    /// the render breaks there with a VISIBLE hyphen ("CONSTITU-TIONAL"), in caps or
+    /// mixed case (auto-insertion needs the device hyphenation dictionary — the
+    /// Simulator lacks it, so in-sim this path char-wraps). Absolute last nets
+    /// unchanged (word-boundary ellipsis / whole-word char-wrap). Cache-safe: labels
+    /// rasterize fresh per call. The `hyphenate` flag stays wired for the render but
+    /// PASS 2 uses soft hyphens (reliable across case), so it is passed false.
+    private func resolveTitle(_ rawText: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode, hyphenate: Bool) {
+        // ALL-CAPS first so every downstream measurement + the returned renderText
+        // operate on the uppercased string (caps are ~10-15% wider — the fit knows).
         let text = TypeTuning.allCaps ? rawText.uppercased() : rawText
         let maxLines = LabelTuning.maxLines
-        let wordPara = NSMutableParagraphStyle()
-        wordPara.lineBreakMode = .byWordWrapping
-        // Syllable hyphenation — must MATCH rasterizeSquareText's title paragraph so
-        // fit predicts render. `.kern` too: tracking widens the render, so the fit
-        // includes it or long titles would overflow the box the fit just cleared.
-        wordPara.hyphenationFactor = TypeTuning.hyphenation ? 1.0 : 0.0
         let kern = TypeTuning.tracking
-        func fits(_ s: String, _ f: UIFont) -> Bool {
+        // Hyphenation is toggled PER PASS so the fit predicts the exact render.
+        // `.kern` is always included (tracking widens the render regardless).
+        func fits(_ s: String, _ f: UIFont, hyphenate: Bool) -> Bool {
+            let para = NSMutableParagraphStyle()
+            para.lineBreakMode = .byWordWrapping
+            para.hyphenationFactor = hyphenate ? 1.0 : 0.0
             let b = (s as NSString).boundingRect(
                 with: CGSize(width: box, height: .greatestFiniteMagnitude),
                 options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: [.font: f, .paragraphStyle: wordPara, .kern: kern], context: nil)
-            // width check catches a single word wider than the box (byWordWrapping
-            // can't break it — but hyphenation now breaks most long words first);
-            // height check catches multi-line overflow.
+                attributes: [.font: f, .paragraphStyle: para, .kern: kern], context: nil)
+            // width catches a single word wider than the box (word-wrap can't break
+            // it); height catches multi-line overflow.
             return b.width <= box + 0.5 && b.height <= f.lineHeight * CGFloat(maxLines) + 1
         }
         let tiers = LabelTuning.tierSizes(box: box)
+
+        // PASS 1 — clean WORD-WRAP only, no hyphens. First tier (largest→smallest)
+        // where the whole title wraps within maxLines wins. Beats hyphenation.
         for size in tiers {
             let f = CorpusPhysicsScene.mapLabelFont(size: size)
-            if fits(text, f) { return (f, text, .byWordWrapping) }
+            if fits(text, f, hyphenate: false) { return (f, text, .byWordWrapping, false) }
         }
-        // Overflow — render at the smallest tier.
-        let f = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
+
+        let floorFont = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
         let words = text.split(separator: " ", omittingEmptySubsequences: true)
+
+        // PASS 2 — an over-wide SINGLE word that word-wrap couldn't place. If
+        // hyphenation is on, insert soft hyphens at the locale's syllable points and
+        // render `.byWordWrapping` at the floor tier: UILabel breaks at a soft hyphen
+        // with a VISIBLE hyphen ("CONSTITU-TIONAL"), in caps or mixed case. Only when
+        // the word is UNKNOWN to the hyphenator (no break points — e.g. a coined
+        // token) does it fall to the char-wrap net (every letter, no hyphen).
         if words.count <= 1 {
-            // Single (unbreakable) word — char-wrap the WHOLE word across lines.
-            return (f, text, .byCharWrapping)
+            if TypeTuning.hyphenation {
+                let hyBase = CorpusPhysicsScene.softHyphenated(rawText)
+                if hyBase != rawText {
+                    let hy = TypeTuning.allCaps ? hyBase.uppercased() : hyBase
+                    return (floorFont, hy, .byWordWrapping, false)
+                }
+            }
+            return (floorFont, text, .byCharWrapping, false)
         }
-        // Multi-word — drop trailing words until it fits, then append an ellipsis.
         var acc: [Substring] = []
         for w in words {
-            if fits((acc + [w]).joined(separator: " ") + "…", f) { acc.append(w) } else { break }
+            if fits((acc + [w]).joined(separator: " ") + "…", floorFont, hyphenate: false) { acc.append(w) } else { break }
         }
-        if acc.isEmpty { return (f, String(words[0]), .byCharWrapping) }
-        return (f, acc.joined(separator: " ") + "…", .byWordWrapping)
+        // First word itself over-wide (rare) — char-wrap net (every letter shown).
+        if acc.isEmpty { return (floorFont, String(words[0]), .byCharWrapping, false) }
+        return (floorFont, acc.joined(separator: " ") + "…", .byWordWrapping, false)
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
@@ -2979,7 +3093,7 @@ final class CorpusPhysicsScene: SKScene {
         // not a fixed 84pt canvas scaled down — so the title lays out + renders at
         // its real on-screen size per node (1:1), not wrapped for 84pt.
         let side = radius * LensTuning.labelBoxFactor
-        let (titleFont, renderTitle, titleWrap) = resolveTitle(text, box: side)
+        let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(text, box: side)
         let texture = rasterizeSquareText(
             title: renderTitle,
             summary: nil,
@@ -2988,7 +3102,8 @@ final class CorpusPhysicsScene: SKScene {
             summaryFont: titleFont,
             renderScale: 6.0,
             fillColor: fillColor,
-            titleWrap: titleWrap
+            titleWrap: titleWrap,
+            titleHyphenate: titleHyphenate
         )
         let sprite = SKSpriteNode(texture: texture)
         sprite.position = .zero
@@ -3025,7 +3140,7 @@ final class CorpusPhysicsScene: SKScene {
         else { return }
 
         let side = radius * LensTuning.labelBoxFactor
-        let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
+        let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
 
         let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
         let texture = rasterizeSquareText(
@@ -3036,7 +3151,8 @@ final class CorpusPhysicsScene: SKScene {
             summaryFont: titleFont,
             renderScale: 6.0,
             fillColor: fillColor,
-            titleWrap: titleWrap
+            titleWrap: titleWrap,
+            titleHyphenate: titleHyphenate
         )
         sprite.texture = texture
         sprite.size = CGSize(width: side, height: side)
@@ -3061,12 +3177,13 @@ final class CorpusPhysicsScene: SKScene {
                   let radius = nodeIntrinsicRadii[nodeID]
             else { continue }
             let side = radius * LensTuning.labelBoxFactor
-            let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
+            let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
             let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
             sprite.texture = rasterizeSquareText(
                 title: renderTitle, summary: nil, side: side,
                 titleFont: titleFont, summaryFont: titleFont,
-                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap)
+                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap,
+                titleHyphenate: titleHyphenate)
             sprite.size = CGSize(width: side, height: side)
         }
     }

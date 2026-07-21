@@ -406,13 +406,23 @@ final class CorpusPhysicsScene: SKScene {
             }
             sprite.setScale(scale)
             guard let intrinsic = nodeIntrinsicRadii[nodeID],
-                  let title = sprite.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode
+                  let title = sprite.children.first(where: { $0.name == "titleLabel" })
             else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
-            let onScreen = (intrinsic * 2) * scale / max(cameraScale, 0.0001)
+            let worldToScreen = scale / max(cameraScale, 0.0001)
+            let onScreen = (intrinsic * 2) * worldToScreen
             title.alpha = smoothstepClamp(lod, fadeHi, onScreen)
+            // MSDF glyph labels: refresh scale-aware smoothing from the on-screen size
+            // (only while visible → bounded cost; the raster path is a no-op here).
+            if title.alpha > 0.01, MSDFLabel.isGlyphContainer(title) {
+                MSDFLabel.refreshSmoothing(container: title, worldToScreenPt: worldToScreen,
+                                           contentScale: glyphContentScale)
+            }
         }
     }
+
+    /// Cached `view.contentScaleFactor` for MSDF smoothing (device px per point).
+    private var glyphContentScale: CGFloat { view?.contentScaleFactor ?? 3.0 }
 
     /// TRANSIENT push-apart for the amplified band. Enlarged nodes (restingScale ×
     /// zoomRamp × annulusAmplify) shove each other apart to keep the breathing gap,
@@ -2401,14 +2411,22 @@ final class CorpusPhysicsScene: SKScene {
     /// the SwiftUI overlay). Resting labels only → a one-time burst on flip.
     func restyleLabels() {
         for (nodeID, shape) in nodeSprites {
-            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-                  (sprite.userData?["isFocal"] as? Bool) != true,
-                  let fullTitle = sprite.userData?["fullTitle"] as? String,
+            guard let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
+                  (titleNode.userData?["isFocal"] as? Bool) != true,
+                  let fullTitle = titleNode.userData?["fullTitle"] as? String,
                   let radius = nodeIntrinsicRadii[nodeID]
             else { continue }
+            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
+            // MSDF glyph labels: recolor in place (no re-raster) — ink follows the same
+            // dark boost / legibleInk decision as the raster path.
+            if MSDFLabel.isGlyphContainer(titleNode) {
+                let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
+                MSDFLabel.recolor(container: titleNode, color: legibleInk(over: inkFill).ink)
+                continue
+            }
+            guard let sprite = titleNode as? SKSpriteNode else { continue }
             let side = radius * LensTuning.labelBoxFactor
             let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
-            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
             sprite.texture = rasterizeSquareText(
                 title: renderTitle, summary: nil, side: side,
                 titleFont: titleFont, summaryFont: titleFont,
@@ -3177,13 +3195,27 @@ final class CorpusPhysicsScene: SKScene {
         return (floorFont, acc.joined(separator: " ") + "…", .byWordWrapping, false)
     }
 
-    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKSpriteNode {
+    private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKNode {
         // Rasterize in the node's ACTUAL display box (radius × labelBoxFactor —
         // the rounded-square usable width, wider than the circle-inscribed 1.4),
         // not a fixed 84pt canvas scaled down — so the title lays out + renders at
         // its real on-screen size per node (1:1), not wrapped for 84pt.
         let side = radius * LensTuning.labelBoxFactor
         let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(text, box: side)
+
+        // Phase 1 — MSDF glyph labels (parallel path, gated on `SPRGlyphLabels`).
+        // Single-line, at resolveTitle's chosen SIZE, with the SAME ink as the raster
+        // path. Returns a container child of the orb named "titleLabel", z 2 — a
+        // drop-in at every seam (LOD alpha, focal, appearance flip). Multi-line
+        // wrap/hyphenation/truncation is Phase 2, so long titles overflow the box here.
+        if MSDFLabel.enabled, MSDFFont.shared.loaded {
+            let capsText = TypeTuning.allCaps ? text.uppercased() : text
+            let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
+            let ink = legibleInk(over: inkFill).ink
+            return MSDFLabel.makeContainer(text: capsText, pointSize: titleFont.pointSize,
+                                           color: ink, fullTitle: text)
+        }
+
         let texture = rasterizeSquareText(
             title: renderTitle,
             summary: nil,

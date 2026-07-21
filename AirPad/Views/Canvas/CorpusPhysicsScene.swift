@@ -2,16 +2,6 @@ import SpriteKit
 import UIKit
 import simd
 
-#if DEBUG
-extension Notification.Name {
-    /// Dark-mode orb POP DEBUG tuner (`DarkOrbTuningPanel`) posts this on any dial
-    /// edit; the scene observes it (added in `didMove`) and calls
-    /// `updateDarkOrbUniforms()` so T dials the dimensionality live. Baked + deleted
-    /// at arc end. Notification path keeps it off CanvasView.body's type-check budget.
-    static let darkOrbTuningChanged = Notification.Name("map.darkOrb.tuningChanged")
-}
-#endif
-
 /// Node-title typeface. **BAKED to `.fraunces`** (T's device-final, Type arc end) —
 /// `mapLabelFont` resolves it to Fraunces72pt-Bold. The audition/tuner is gone; the
 /// enum + `mapLabelFont` switch stay so the choice is one-liner-revivable. All faces
@@ -1136,38 +1126,8 @@ final class CorpusPhysicsScene: SKScene {
         if UserDefaults.standard.bool(forKey: "SPRMeasure") {
             runSPRMeasure()
         }
-        // Dark-mode orb POP tuner — re-set the shader uniforms live on any dial edit.
-        NotificationCenter.default.removeObserver(self, name: .darkOrbTuningChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleDarkOrbTuningChanged),
-            name: .darkOrbTuningChanged, object: nil)
         #endif
     }
-
-    #if DEBUG
-    @objc private func handleDarkOrbTuningChanged() {
-        updateDarkOrbUniforms()
-        restyleLabels()   // label ink depends on dark_sat/dark_val → re-flip while T dials
-    }
-
-    /// Push the current `DarkOrbTuning` values into the shared `orbSpriteShader`
-    /// uniforms (all orbs update at once — the batching win). DEBUG-only live dial;
-    /// Release sets these once at shader creation from the baked values.
-    func updateDarkOrbUniforms() {
-        let u = orbSpriteShader.uniforms
-        func set(_ name: String, _ v: CGFloat) { u.first(where: { $0.name == name })?.floatValue = Float(v) }
-        set("u_dark_sat", DarkOrbTuning.sat)
-        set("u_dark_val", DarkOrbTuning.val)
-        set("u_dark_rim", DarkOrbTuning.rim)
-        set("u_rim_width", DarkOrbTuning.rimWidth)
-        set("u_dark_sphere", DarkOrbTuning.sphere)
-        u.first(where: { $0.name == "u_light_dir" })?.vectorFloat2Value =
-            vector_float2(Float(DarkOrbTuning.lightDirX), Float(DarkOrbTuning.lightDirY))
-        set("u_dark_spec", DarkOrbTuning.spec)
-        set("u_spec_size", DarkOrbTuning.specSize)
-        set("u_dark_glow", DarkOrbTuning.glow)
-    }
-    #endif
 
     override func didChangeSize(_ oldSize: CGSize) {
         super.didChangeSize(oldSize)
@@ -2570,8 +2530,8 @@ final class CorpusPhysicsScene: SKScene {
         shader.uniforms = [
             SKUniform(name: "u_corner_radius", float: 0.5),
             SKUniform(name: "u_wash_is_light", float: 1.0),
-            // Dark-mode dimensionality levers (global → one batch). Initial values
-            // from DarkOrbTuning (DEBUG: UserDefaults; Release: baked starting mix).
+            // Dark-mode dimensionality levers (global → one batch). Set once here from
+            // the BAKED DarkOrbTuning literals (the tuner + live re-push were deleted).
             SKUniform(name: "u_dark_sat", float: Float(DarkOrbTuning.sat)),
             SKUniform(name: "u_dark_val", float: Float(DarkOrbTuning.val)),
             SKUniform(name: "u_dark_rim", float: Float(DarkOrbTuning.rim)),
@@ -3059,40 +3019,24 @@ final class CorpusPhysicsScene: SKScene {
         static let fontChoice: MapLabelFont = .fraunces
     }
 
-    /// Dark-mode orb POP — the substrate's first EFFECT: 5 dimensionality levers fed
-    /// to `orbSpriteShader`'s dark branch as GLOBAL uniforms (one value per orb → one
-    /// batch). Light (Cucumber Water) is untouched. DEBUG reads `dark.*` UserDefaults
-    /// (dialed via `DarkOrbTuningPanel`, live via `.darkOrbTuningChanged` →
-    /// `updateDarkOrbUniforms`); Release bakes the STARTING MIX (a sane baseline — the
-    /// tasteful core on, cherry subtle, neon off — T dials from there, then a future
-    /// bake). Zero UserDefaults in Release.
+    /// Dark-mode orb POP — the substrate's first EFFECT: dimensionality levers fed to
+    /// `orbSpriteShader`'s dark branch as GLOBAL uniforms (one value per orb → one
+    /// batch). Light (Cucumber Water) is untouched. BAKED to T's device-final dialed
+    /// mix (2026-07-21): the RESTRAINED register — vivid sat/val + a light rim, NO
+    /// sphere-shade / specular / glow. Literals, zero UserDefaults → Debug == Release
+    /// (the DEBUG dark-orb tuner panel + `dark.*` keys were baked-and-deleted). Pushed
+    /// once into the shader's `uniforms` at `orbSpriteShader` init.
     enum DarkOrbTuning {
-        #if DEBUG
-        static var sat: CGFloat       { ud("dark.sat", 1.3) }        // saturation ×
-        static var val: CGFloat       { ud("dark.val", 1.15) }       // brightness ×
-        static var rim: CGFloat       { ud("dark.rim", 0.5) }        // rim-light strength
-        static var rimWidth: CGFloat  { ud("dark.rimWidth", 0.12) }  // rim band width (uv)
-        static var sphere: CGFloat    { ud("dark.sphere", 0.4) }     // sphere-shade intensity
-        static var lightDirX: CGFloat { ud("dark.lightDirX", -0.6) } // light direction x
-        static var lightDirY: CGFloat { ud("dark.lightDirY", 0.8) }  // light direction y (top-left)
-        static var spec: CGFloat      { ud("dark.spec", 0.15) }      // specular strength
-        static var specSize: CGFloat  { ud("dark.specSize", 0.18) }  // specular radius (uv)
-        static var glow: CGFloat      { ud("dark.glow", 0.0) }       // inner glow (neon — default OFF)
-        private static func ud(_ k: String, _ def: CGFloat) -> CGFloat {
-            UserDefaults.standard.object(forKey: k) == nil ? def : CGFloat(UserDefaults.standard.double(forKey: k))
-        }
-        #else
-        static let sat: CGFloat = 1.3
-        static let val: CGFloat = 1.15
-        static let rim: CGFloat = 0.5
-        static let rimWidth: CGFloat = 0.12
-        static let sphere: CGFloat = 0.4
-        static let lightDirX: CGFloat = -0.6
-        static let lightDirY: CGFloat = 0.8
-        static let spec: CGFloat = 0.15
-        static let specSize: CGFloat = 0.18
-        static let glow: CGFloat = 0.0
-        #endif
+        static let sat: CGFloat = 2.00        // saturation ×
+        static let val: CGFloat = 1.25        // brightness ×
+        static let rim: CGFloat = 0.20        // rim-light strength
+        static let rimWidth: CGFloat = 0.17   // rim band width (uv)
+        static let sphere: CGFloat = 0.00     // sphere-shade intensity (off)
+        static let lightDirX: CGFloat = -1.0  // light direction x
+        static let lightDirY: CGFloat = -1.0  // light direction y
+        static let spec: CGFloat = 0.00       // specular strength (off)
+        static let specSize: CGFloat = 0.18   // specular radius (uv)
+        static let glow: CGFloat = 0.00       // inner glow (off)
     }
 
     /// Orb-size multiplier — BAKED 1.00 (T's device-final). Applied to the whole

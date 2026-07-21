@@ -1089,6 +1089,8 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.annulus.amplitude")     private var annAmplitude: Double = Double(CorpusPhysicsScene.AnnulusTuning.defaultAmplitude)
     @AppStorage("map.annulus.zoomThreshold") private var annZoom: Double      = Double(CorpusPhysicsScene.AnnulusTuning.defaultZoomThreshold)
     @AppStorage("map.annulus.radius")        private var annRadius: Double     = Double(CorpusPhysicsScene.AnnulusTuning.defaultRadius)
+    @AppStorage("map.annulus.breathingGap")  private var annGap: Double        = Double(CorpusPhysicsScene.AnnulusTuning.defaultBreathingGap)
+    @AppStorage("map.annulus.relaxPasses")   private var annPasses: Int        = CorpusPhysicsScene.AnnulusTuning.defaultRelaxPasses
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
@@ -1142,6 +1144,19 @@ struct MapLabelTuningPanel: View {
             sliderRow(label: "ann amp",  value: $annAmplitude, range: 0.0...1.2,  step: 0.02)
             sliderRow(label: "ann zoom", value: $annZoom,      range: 0.5...2.5,  step: 0.05)
             sliderRow(label: "ann rad",  value: $annRadius,    range: 80...500,   step: 10)
+            // Push-apart firmness: gap = extra spacing between scaled radii; passes =
+            // per-frame PBD iterations (0 = positions hold; higher = firmer/pricier).
+            sliderRow(label: "ann gap",  value: $annGap,       range: 0...30,     step: 1)
+            HStack(spacing: 8) {
+                Text("ann pass")
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(width: 48, alignment: .leading)
+                    .foregroundStyle(.secondary)
+                Picker("passes", selection: $annPasses) {
+                    ForEach([0, 2, 4, 6, 8], id: \.self) { Text("\($0)").tag($0) }
+                }
+                .pickerStyle(.segmented)
+            }
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1238,7 +1253,9 @@ struct MapLabelTuningPanel: View {
             "  lens.cornerMin: \(String(format: "%.2f", lensCornerMin))",
             "  annulus.amplitude:     \(String(format: "%.2f", annAmplitude))",
             "  annulus.zoomThreshold: \(String(format: "%.2f", annZoom))",
-            "  annulus.radius:        \(String(format: "%.0f", annRadius))"
+            "  annulus.radius:        \(String(format: "%.0f", annRadius))",
+            "  annulus.breathingGap:  \(String(format: "%.0f", annGap))",
+            "  annulus.relaxPasses:   \(annPasses)"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

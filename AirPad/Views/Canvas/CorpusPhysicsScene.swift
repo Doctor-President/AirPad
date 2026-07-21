@@ -342,8 +342,11 @@ final class CorpusPhysicsScene: SKScene {
             let resting = nodeRestingScales[nodeID] ?? 1.0
             var scale = resting * ramp
             if annulusOn {
-                let dx = sprite.position.x - camPos.x
-                let dy = sprite.position.y - camPos.y
+                // Amplify off the node's HOME distance (not its displaced sprite
+                // position) so scale and the relaxation don't feed back on each other.
+                let home = nodeRestingPositions[nodeID] ?? sprite.position
+                let dx = home.x - camPos.x
+                let dy = home.y - camPos.y
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale)
             }
             sprite.setScale(scale)
@@ -353,6 +356,80 @@ final class CorpusPhysicsScene: SKScene {
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
             let onScreen = (intrinsic * 2) * scale / max(cameraScale, 0.0001)
             title.alpha = smoothstepClamp(lod, fadeHi, onScreen)
+        }
+    }
+
+    /// TRANSIENT push-apart for the amplified band. Enlarged nodes (restingScale ×
+    /// zoomRamp × annulusAmplify) shove each other apart to keep the breathing gap,
+    /// as a per-frame OFFSET from restingPos — the base layout is never mutated.
+    /// The PBD is recomputed FROM restingPos each frame (a pure function of the
+    /// camera, no feedback), then the sprite damped-lerps toward it (anti-jitter).
+    /// When a node's amplification fades (leaves the band) its target → restingPos,
+    /// so it settles home. Off above `zoomThreshold` → everything lerps home.
+    private func applyBandRelaxation() {
+        let cameraScale = cameraNode.xScale
+        let lerp = AnnulusTuning.relaxLerp
+        // Damped move of a sprite toward `target`; skips sub-pixel noise.
+        func ease(_ id: String, _ target: CGPoint) {
+            guard let sprite = nodeSprites[id] else { return }
+            let dx = target.x - sprite.position.x, dy = target.y - sprite.position.y
+            if abs(dx) < 0.05 && abs(dy) < 0.05 { return }
+            sprite.position = CGPoint(x: sprite.position.x + dx * lerp, y: sprite.position.y + dy * lerp)
+        }
+
+        guard cameraScale < AnnulusTuning.zoomThreshold else {
+            // Annulus off → relax every displaced node back home.
+            for (id, _) in nodeSprites { if let h = nodeRestingPositions[id] { ease(id, h) } }
+            return
+        }
+
+        let ramp = zoomRampScale(cameraScale)
+        let camPos = cameraNode.position
+        // Band = nodes meaningfully amplified (by their HOME distance to center),
+        // CAPPED to the `maxBand` closest to center (the ones that actually overlap)
+        // so the per-frame PBD stays O(maxBand²·passes) at any corpus size.
+        var band: [(id: String, dist: CGFloat, r: CGFloat, home: CGPoint)] = []
+        for (id, _) in nodeSprites {
+            guard let home = nodeRestingPositions[id], let intrinsic = nodeIntrinsicRadii[id] else { continue }
+            let dist = hypot(home.x - camPos.x, home.y - camPos.y)
+            let amp = annulusAmplify(dist, cameraScale: cameraScale)
+            if amp > 1.02 {
+                band.append((id, dist, intrinsic * (nodeRestingScales[id] ?? 1) * ramp * amp, home))
+            }
+        }
+        if band.count > AnnulusTuning.maxBand {
+            band.sort { $0.dist < $1.dist }
+            band.removeLast(band.count - AnnulusTuning.maxBand)
+        }
+        var ids: [String] = []
+        var rad: [String: CGFloat] = [:]
+        var pos: [String: CGPoint] = [:]
+        for e in band { ids.append(e.id); rad[e.id] = e.r; pos[e.id] = e.home }
+        // Pairwise PBD push-apart from resting homes (transient, recomputed each frame).
+        let gap = AnnulusTuning.breathingGap
+        for _ in 0..<max(0, AnnulusTuning.relaxPasses) {
+            for i in 0..<ids.count {
+                for j in (i + 1)..<ids.count {
+                    let a = ids[i], b = ids[j]
+                    var pa = pos[a]!, pb = pos[b]!
+                    let dx = pb.x - pa.x, dy = pb.y - pa.y
+                    let dist = hypot(dx, dy)
+                    let minDist = rad[a]! + rad[b]! + gap
+                    if dist > 0.001 && dist < minDist {
+                        let push = (minDist - dist) * 0.5
+                        let nx = dx / dist, ny = dy / dist
+                        pa.x -= nx * push; pa.y -= ny * push
+                        pb.x += nx * push; pb.y += ny * push
+                        pos[a] = pa; pos[b] = pb
+                    }
+                }
+            }
+        }
+        // Ease band nodes toward the relaxed offset; everyone else eases home.
+        let bandSet = Set(ids)
+        for (id, _) in nodeSprites {
+            if bandSet.contains(id) { ease(id, pos[id]!) }
+            else if let h = nodeRestingPositions[id] { ease(id, h) }
         }
     }
 
@@ -986,10 +1063,12 @@ final class CorpusPhysicsScene: SKScene {
             updateNewcomerHalos(currentTime: currentTime)
         }
 
-        // Per-frame orb scale: zoom ramp (lens a) × viewport-centered annulus.
-        // The focal-engagement machine is RETIRED — magnify in place off the camera
-        // center, positions HOLD, no compression, no grace/focal/engaged.
+        // Per-frame orb scale (zoom ramp × viewport annulus), then the transient
+        // pairwise push-apart so enlarged band nodes don't overlap. The engagement
+        // machine is retired; displacement is per-frame off restingPos (never mutates
+        // the base layout), so nodes settle home as they leave the band.
         applyOrbScales()
+        applyBandRelaxation()
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
@@ -2294,6 +2373,7 @@ final class CorpusPhysicsScene: SKScene {
             nodeSprites[id] = orb
             nodeIntrinsicRadii[id] = radius   // for the lens zoom-ramp + label LOD
             nodeRestingScales[id] = 1.0
+            nodeRestingPositions[id] = orb.position   // for the annulus band relaxation
         }
     }
 
@@ -2322,6 +2402,7 @@ final class CorpusPhysicsScene: SKScene {
                 nodeSprites[id] = orb
                 nodeIntrinsicRadii[id] = radius   // for the lens zoom-ramp + label LOD
                 nodeRestingScales[id] = 1.0
+                nodeRestingPositions[id] = orb.position   // for the annulus band relaxation
             }
         }
     }
@@ -2736,6 +2817,11 @@ final class CorpusPhysicsScene: SKScene {
         static let defaultAmplitude: CGFloat = 0.35       // center ~35% bigger — gentle, never one-node-huge
         static let defaultZoomThreshold: CGFloat = 1.2    // ON when cameraScale < this (zoomed in)
         static let defaultRadius: CGFloat = 220           // screen-pt falloff radius (band width)
+        // Pairwise push-apart (transient) so enlarged band nodes don't overlap.
+        static let defaultRelaxPasses: Int = 4            // per-frame PBD passes (continuous → fewer than the old 8)
+        static let defaultBreathingGap: CGFloat = 6       // world-space extra spacing between scaled radii
+        static let defaultRelaxLerp: CGFloat = 0.22       // damped approach to the relaxed target (anti-jitter)
+        static let maxBand: Int = 56                      // PERF CAP: only the N most-central nodes relax (O(N²·passes))
         #if DEBUG
         private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
             (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
@@ -2743,10 +2829,16 @@ final class CorpusPhysicsScene: SKScene {
         static var amplitude: CGFloat     { d("map.annulus.amplitude", defaultAmplitude) }
         static var zoomThreshold: CGFloat { d("map.annulus.zoomThreshold", defaultZoomThreshold) }
         static var radius: CGFloat        { d("map.annulus.radius", defaultRadius) }
+        static var relaxPasses: Int       { (UserDefaults.standard.object(forKey: "map.annulus.relaxPasses") as? Int) ?? defaultRelaxPasses }
+        static var breathingGap: CGFloat  { d("map.annulus.breathingGap", defaultBreathingGap) }
+        static var relaxLerp: CGFloat     { d("map.annulus.relaxLerp", defaultRelaxLerp) }
         #else
         static var amplitude: CGFloat     { defaultAmplitude }
         static var zoomThreshold: CGFloat { defaultZoomThreshold }
         static var radius: CGFloat        { defaultRadius }
+        static var relaxPasses: Int       { defaultRelaxPasses }
+        static var breathingGap: CGFloat  { defaultBreathingGap }
+        static var relaxLerp: CGFloat     { defaultRelaxLerp }
         #endif
     }
 

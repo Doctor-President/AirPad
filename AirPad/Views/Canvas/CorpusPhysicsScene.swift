@@ -2,48 +2,19 @@ import SpriteKit
 import UIKit
 import simd
 
-#if DEBUG
-extension Notification.Name {
-    /// Type arc #1 DEBUG tuner (`MapTypeTuningPanel`) posts this on any
-    /// allCaps/hyphenation/tracking edit; the scene observes it (added in
-    /// `didMove`) and calls `restyleLabels()` so T sees type changes live.
-    /// Baked + deleted at arc end. Kept off CanvasView's `body` type-check budget
-    /// (Notification path, not an @AppStorage onChange on the canvas).
-    static let mapTypeTuningChanged = Notification.Name("map.type.tuningChanged")
-}
-#endif
-
-/// Node-title typeface audition (Type arc #2). The map's label voice. T's instinct:
-/// a HUMANIST serif with soft, low-contrast serifs — editorial warmth + voice-unity
-/// with the cards, that survives going small (sharp high-contrast serifs muddy at
-/// tiny sizes). All faces are OFL/on-device (legally shippable):
-///   .sfSemibold  — current baseline to compare against
-///   .sourceSerif — serifFont(.bold) = SourceSerif4-Bold; the voice-unifier (already bundled)
-///   .fraunces    — Fraunces72pt-Bold; soft characterful humanist (bundled — see caveat)
-///   .lora        — Lora-Bold; warm moderate-contrast, legible small (bundled)
-///   .charter     — Charter-Bold; Bitstream Charter ships on iOS, designed for low-res legibility
-/// CAVEAT: only the Fraunces *72pt* optical cut is bundled (display end — higher
-/// contrast). The brief wanted the TEXT optical axis for small legibility; the
-/// static 72pt can't dial `opsz`. If T likes Fraunces but it muddies small, bundle
-/// the Fraunces TEXT-optical (opsz~9) cut. DEBUG picks via `type.font`; Release
-/// bakes T's choice. Always compiled (Release resolves `mapLabelFont` through it).
+/// Node-title typeface. **BAKED to `.fraunces`** (T's device-final, Type arc end) —
+/// `mapLabelFont` resolves it to Fraunces72pt-Bold. The audition/tuner is gone; the
+/// enum + `mapLabelFont` switch stay so the choice is one-liner-revivable. All faces
+/// are OFL/on-device. NOTE: only the Fraunces *72pt* (display) optical cut is bundled
+/// — the static instance can't dial `opsz` to the soft TEXT axis; if the 72pt reads
+/// too sharp at tiny sizes, bundle the Fraunces TEXT-optical cut. `.lora` stays
+/// bundled but dormant; `.sourceSerif`/`.sfSemibold`/`.charter` are system/already-bundled.
 enum MapLabelFont: String, CaseIterable {
     case sfSemibold
     case sourceSerif
     case fraunces
     case lora
     case charter
-
-    /// Short label for the DEBUG segmented picker.
-    var pickerLabel: String {
-        switch self {
-        case .sfSemibold:  return "SF"
-        case .sourceSerif: return "Source"
-        case .fraunces:    return "Fraun"
-        case .lora:        return "Lora"
-        case .charter:     return "Charter"
-        }
-    }
 }
 
 /// Curated haptic ESCALATIONS for the browse→commit→detail→release loop. Weight
@@ -1155,12 +1126,6 @@ final class CorpusPhysicsScene: SKScene {
         if UserDefaults.standard.bool(forKey: "SPRMeasure") {
             runSPRMeasure()
         }
-        // Type arc #1 DEBUG tuner — re-raster resting labels live on edit. De-dup
-        // the observer (didMove can run more than once across a scene's life).
-        NotificationCenter.default.removeObserver(self, name: .mapTypeTuningChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleTypeTuningChanged),
-            name: .mapTypeTuningChanged, object: nil)
         #endif
     }
 
@@ -2942,38 +2907,16 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Type arc #1 — node-title typography. DEBUG reads UserDefaults (dialed via
-    /// the `MapTypeTuningPanel` `textformat` tuner, `#selector` posts
-    /// `.mapTypeTuningChanged` → `restyleLabels()`); Release bakes the held
-    /// defaults with ZERO UserDefaults access (the shipped release-gate pattern).
-    /// `hyphenation` is the OBJECTIVE win (default ON — long words break at
-    /// syllable points instead of char-snapping). `allCaps` + `tracking` are T's
-    /// device TASTE call (the "shouty at AIRPAD-scale?" A/B); baked false/0.4 until
-    /// T decides, then this whole enum collapses to plain `static let` at arc end.
+    /// Node-title typography — BAKED to T's device-final values (Type arc end,
+    /// 2026-07-21). Plain literals, ZERO UserDefaults → Debug == Release; the DEBUG
+    /// type tuner is gone. `resolveTitle` (clean-fit + whole-title hyphenation) and
+    /// `softHyphenated` stay — the hyphenation LOGIC is retained; only the dials are
+    /// frozen. Fraunces + all-caps + hyphenation on + no tracking.
     enum TypeTuning {
-        #if DEBUG
-        /// ALL-CAPS uppercasing of node titles. Default OFF (current mixed-case).
-        static var allCaps: Bool { UserDefaults.standard.bool(forKey: "type.allCaps") }
-        /// Syllable hyphenation. Default ON (nil → true) — the objective win.
-        static var hyphenation: Bool {
-            UserDefaults.standard.object(forKey: "type.hyphenation") == nil
-                ? true : UserDefaults.standard.bool(forKey: "type.hyphenation")
-        }
-        /// Letter tracking (`.kern`, points). Default 0.4 (nil → 0.4).
-        static var tracking: CGFloat {
-            UserDefaults.standard.object(forKey: "type.tracking") == nil
-                ? 0.4 : CGFloat(UserDefaults.standard.double(forKey: "type.tracking"))
-        }
-        /// Title typeface (Type arc #2). Default `.sfSemibold` (current baseline).
-        static var fontChoice: MapLabelFont {
-            MapLabelFont(rawValue: UserDefaults.standard.string(forKey: "type.font") ?? "") ?? .sfSemibold
-        }
-        #else
-        static let allCaps: Bool = false        // TASTE — pending T's device A/B
-        static let hyphenation: Bool = true      // OBJECTIVE — ships on
-        static let tracking: CGFloat = 0.4
-        static let fontChoice: MapLabelFont = .sfSemibold   // TASTE — pending T's audition
-        #endif
+        static let allCaps: Bool = true
+        static let hyphenation: Bool = true
+        static let tracking: CGFloat = 0.0
+        static let fontChoice: MapLabelFont = .fraunces
     }
 
     /// Orb-size multiplier — BAKED 1.00 (T's device-final). Applied to the whole
@@ -3185,36 +3128,6 @@ final class CorpusPhysicsScene: SKScene {
         sprite.size = CGSize(width: side, height: side)
         sprite.userData?["isFocal"] = false
     }
-
-    #if DEBUG
-    /// Type arc #1 DEBUG re-raster — the `MapTypeTuningPanel` posts
-    /// `.mapTypeTuningChanged` on any allCaps/hyphenation/tracking edit; re-raster
-    /// every resting (non-focal) label from current `TypeTuning` so T sees it live.
-    /// Mirrors `swapToNonFocalTexture`'s raster path; skips the focal (its title is
-    /// the SwiftUI overlay). Baked + deleted at arc end.
-    @objc private func handleTypeTuningChanged() {
-        restyleLabels()
-    }
-
-    func restyleLabels() {
-        for (nodeID, shape) in nodeSprites {
-            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-                  (sprite.userData?["isFocal"] as? Bool) != true,
-                  let fullTitle = sprite.userData?["fullTitle"] as? String,
-                  let radius = nodeIntrinsicRadii[nodeID]
-            else { continue }
-            let side = radius * LensTuning.labelBoxFactor
-            let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
-            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            sprite.texture = rasterizeSquareText(
-                title: renderTitle, summary: nil, side: side,
-                titleFont: titleFont, summaryFont: titleFont,
-                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap,
-                titleHyphenate: titleHyphenate)
-            sprite.size = CGSize(width: side, height: side)
-        }
-    }
-    #endif
 
     /// The resting orb physics body for a given radius — extracted so a rebuild
     /// produces an IDENTICAL body (SKPhysicsBody radius is immutable, so a fresh

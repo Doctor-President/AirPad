@@ -54,6 +54,14 @@ struct CanvasChrome: View {
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
 
+    /// DEBUG-only — Type arc #1 tuner (all-caps · hyphenation · tracking).
+    /// Minimal, re-introduced for this arc only; baked + deleted at arc end.
+    /// Mounted here (not in CanvasView) so the `textformat` trigger is reachable
+    /// across every body mode, and so its edits stay off CanvasView.body's
+    /// type-check budget (it posts `.mapTypeTuningChanged` to the scene instead).
+    @State private var showMapTypeTuningPanel = false
+    @State private var mapTypeTuningPanelOffset: CGSize = .zero
+
     #endif
 
     private var filterState: FilterState {
@@ -329,6 +337,10 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            mapTypeTuningTrigger
+            if showMapTypeTuningPanel {
+                floatingMapTypeTuningPanel
+            }
             #endif
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
@@ -416,6 +428,45 @@ struct CanvasChrome: View {
             SolarFlareTuningPanel(
                 isPresented: $showSolarFlareTuningPanel,
                 position: $solarFlareTuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+
+    // MARK: - Type arc #1 tuning (DEBUG)
+
+    /// Tiny `textformat` icon, stacked just below the Solar Flare ☀︎ (top: 100
+    /// → 134). Faint; tap shows/hides the floating type tuner. Baked + deleted
+    /// at arc end.
+    private var mapTypeTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showMapTypeTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 134)
+        .padding(.leading, 10)
+    }
+
+    private var floatingMapTypeTuningPanel: some View {
+        VStack {
+            Spacer()
+            MapTypeTuningPanel(
+                isPresented: $showMapTypeTuningPanel,
+                position: $mapTypeTuningPanelOffset
             )
             .padding(.bottom, 80)
         }
@@ -1008,3 +1059,137 @@ private extension View {
         }
     }
 }
+
+#if DEBUG
+// MARK: - Type arc #1 tuner (DEBUG)
+
+/// Minimal type tuner for Type arc #1: all-caps · hyphenation · tracking. Mirrors
+/// the SolarFlare widget's chrome (header drag / copy / close, glass surface).
+/// Writes `type.*` UserDefaults (read by `CorpusPhysicsScene.TypeTuning`) and posts
+/// `.mapTypeTuningChanged` on any edit so the scene re-rasters resting labels live.
+/// @AppStorage defaults MATCH `TypeTuning`'s DEBUG nil-defaults (false/true/0.4) so
+/// the controls open on exactly what renders. Baked + deleted at arc end.
+struct MapTypeTuningPanel: View {
+    @Binding var isPresented: Bool
+    @Binding var position: CGSize
+
+    @AppStorage("type.allCaps") private var allCaps: Bool = false
+    @AppStorage("type.hyphenation") private var hyphenation: Bool = true
+    @AppStorage("type.tracking") private var tracking: Double = 0.4
+
+    @GestureState private var dragTranslation: CGSize = .zero
+    @State private var justCopied = false
+    private static let widgetWidth: CGFloat = 280
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            HStack(spacing: 6) {
+                toggle("ALL CAPS", isOn: $allCaps)
+                toggle("hyphen", isOn: $hyphenation)
+            }
+            sliderRow(label: "track", value: $tracking, range: 0...3, step: 0.1)
+        }
+        .padding(12)
+        .frame(width: Self.widgetWidth)
+        .modifier(MapTypeWidgetSurface())
+        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 6)
+        .offset(x: position.width + dragTranslation.width,
+                y: position.height + dragTranslation.height)
+        // Edits post to the scene (kept off CanvasView.body) → live re-raster.
+        .onChange(of: allCaps) { _, _ in notifyChanged() }
+        .onChange(of: hyphenation) { _, _ in notifyChanged() }
+        .onChange(of: tracking) { _, _ in notifyChanged() }
+    }
+
+    private func notifyChanged() {
+        NotificationCenter.default.post(name: .mapTypeTuningChanged, object: nil)
+    }
+
+    private var header: some View {
+        ZStack {
+            Capsule().fill(Color.secondary.opacity(0.45)).frame(width: 36, height: 5)
+            HStack(spacing: 4) {
+                Text("Type").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                Spacer()
+                Button { copyValues() } label: {
+                    Image(systemName: justCopied ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(justCopied ? Color.green : .secondary)
+                        .contentShape(Rectangle()).frame(width: 28, height: 28)
+                }.buttonStyle(.plain)
+                Button { isPresented = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 17)).foregroundStyle(.secondary)
+                        .contentShape(Rectangle()).frame(width: 28, height: 28)
+                }.buttonStyle(.plain)
+            }
+        }
+        .frame(height: 28)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture()
+                .updating($dragTranslation) { value, state, _ in state = value.translation }
+                .onEnded { value in
+                    position.width += value.translation.width
+                    position.height += value.translation.height
+                }
+        )
+    }
+
+    private func toggle(_ label: String, isOn: Binding<Bool>) -> some View {
+        Button {
+            isOn.wrappedValue.toggle()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .padding(.horizontal, 8).padding(.vertical, 7)
+                .frame(maxWidth: .infinity)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isOn.wrappedValue ? Color.accentColor.opacity(0.85) : Color.gray.opacity(0.18)))
+                .foregroundStyle(isOn.wrappedValue ? Color.white : Color.secondary)
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }.buttonStyle(.plain)
+    }
+
+    private func sliderRow(label: String, value: Binding<Double>,
+                           range: ClosedRange<Double>, step: Double) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.system(.caption, design: .monospaced))
+                .frame(width: 44, alignment: .leading).foregroundStyle(.secondary)
+            Slider(value: value, in: range, step: step)
+            Text(String(format: "%.1f", value.wrappedValue))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary).frame(width: 34, alignment: .trailing)
+        }
+    }
+
+    private func copyValues() {
+        let lines = [
+            "type:",
+            "  allCaps:     \(allCaps)",
+            "  hyphenation: \(hyphenation)",
+            "  tracking:    \(String(format: "%.1f", tracking))",
+        ]
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        justCopied = true
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1200))
+            justCopied = false
+        }
+    }
+}
+
+private struct MapTypeWidgetSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content.background(.thinMaterial, in: shape)
+        }
+    }
+}
+#endif

@@ -1087,87 +1087,61 @@ struct MapLabelTuningPanel: View {
     // Viewport-centered annulus (T's primary browse-feel dial). Read per-frame by
     // the scene's applyOrbScales; no bump needed (the pass runs every frame).
     @AppStorage("map.annulus.amplitude")     private var annAmplitude: Double = Double(CorpusPhysicsScene.AnnulusTuning.defaultAmplitude)
-    @AppStorage("map.annulus.zoomThreshold") private var annZoom: Double      = Double(CorpusPhysicsScene.AnnulusTuning.defaultZoomThreshold)
+    @AppStorage("map.annulus.onset")         private var annOnset: Double      = Double(CorpusPhysicsScene.AnnulusTuning.defaultOnset)
+    @AppStorage("map.annulus.rampWidth")     private var annRamp: Double       = Double(CorpusPhysicsScene.AnnulusTuning.defaultRampWidth)
     @AppStorage("map.annulus.radius")        private var annRadius: Double     = Double(CorpusPhysicsScene.AnnulusTuning.defaultRadius)
     @AppStorage("map.annulus.breathingGap")  private var annGap: Double        = Double(CorpusPhysicsScene.AnnulusTuning.defaultBreathingGap)
     @AppStorage("map.annulus.relaxPasses")   private var annPasses: Int        = CorpusPhysicsScene.AnnulusTuning.defaultRelaxPasses
-    @AppStorage("map.annulus.fullZoom")      private var annFullZoom: Double   = Double(CorpusPhysicsScene.AnnulusTuning.defaultFullZoom)
     @AppStorage("map.annulus.hapticOn")      private var annHaptic: Bool       = CorpusPhysicsScene.AnnulusTuning.defaultHapticOn
     @AppStorage("map.card.morphLerp")        private var cardLerp: Double      = Double(CorpusPhysicsScene.defaultCardMorphLerp)
+
+    // Collapsible-section expand state (persisted). Default: only Annulus open.
+    @AppStorage("map.tuner.expand.tiers")   private var expandTiers: Bool   = false
+    @AppStorage("map.tuner.expand.lens")    private var expandLens: Bool    = false
+    @AppStorage("map.tuner.expand.annulus") private var expandAnnulus: Bool = true
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied = false
 
-    private static let widgetWidth: CGFloat = 300
+    private static let widgetWidth: CGFloat = 320
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             header
-            // Tiers are tried largest → smallest; the label takes the first that
-            // fits with no truncation. So large ≥ med ≥ small is the intended
-            // ordering (the ranges overlap so T can invert to experiment).
-            sliderRow(label: "large", value: $largeFrac, range: 0.08...0.30, step: 0.005)
-            sliderRow(label: "med",   value: $medFrac,   range: 0.06...0.25, step: 0.005)
-            sliderRow(label: "small", value: $smallFrac, range: 0.05...0.20, step: 0.005)
-            sliderRow(label: "floor", value: $floor,     range: 5...16,      step: 0.5)
-
-            HStack(spacing: 8) {
-                Text("lines")
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(width: 48, alignment: .leading)
-                    .foregroundStyle(.secondary)
-                Picker("lines", selection: $maxLines) {
-                    Text("2").tag(2)
-                    Text("3").tag(3)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    // LABEL TIERS — tried largest→smallest; first that fits with no cut.
+                    section("Label tiers", $expandTiers) {
+                        sliderRow(label: "large",       value: $largeFrac, range: 0.08...0.30, step: 0.005)
+                        sliderRow(label: "med",         value: $medFrac,   range: 0.06...0.25, step: 0.005)
+                        sliderRow(label: "small",       value: $smallFrac, range: 0.05...0.20, step: 0.005)
+                        sliderRow(label: "floor",       value: $floor,     range: 5...16,      step: 0.5)
+                        pickerRow("max lines", selection: $maxLines, options: [2, 3])
+                    }
+                    // LENS — orb-size max + zoom ramp/LOD + circle→square morph.
+                    section("Lens", $expandLens) {
+                        sliderRow(label: "orb size",    value: $orbSizeScale, range: 1.0...1.6, step: 0.02)
+                        sliderRow(label: "zoom in",     value: $lensZoomIn,    range: 0.5...2.0, step: 0.05)
+                        sliderRow(label: "zoom out",    value: $lensZoomOut,   range: 1.5...4.0, step: 0.05)
+                        sliderRow(label: "min shrink",  value: $lensMinShrink, range: 0.2...1.0, step: 0.01)
+                        sliderRow(label: "label LOD",   value: $lensLabelLOD,  range: 8...60,    step: 1)
+                        sliderRow(label: "corner min",  value: $lensCornerMin, range: 0.05...0.5, step: 0.01)
+                    }
+                    // ANNULUS — viewport magnify + envelope (onset/ramp) + push-apart.
+                    section("Annulus", $expandAnnulus) {
+                        sliderRow(label: "amplitude",   value: $annAmplitude, range: 0.0...1.2,  step: 0.02)
+                        sliderRow(label: "onset",       value: $annOnset,     range: 0.8...3.0,  step: 0.05)
+                        sliderRow(label: "ramp width",  value: $annRamp,      range: 0.3...2.5,  step: 0.05)
+                        sliderRow(label: "radius",      value: $annRadius,    range: 80...500,   step: 10)
+                        sliderRow(label: "gap",         value: $annGap,       range: 0...30,     step: 1)
+                        pickerRow("passes", selection: $annPasses, options: [0, 2, 4, 6, 8])
+                        Toggle(isOn: $annHaptic) { rowLabel("haptic") }
+                        sliderRow(label: "card lerp",   value: $cardLerp,     range: 0.06...0.30, step: 0.01)
+                    }
                 }
-                .pickerStyle(.segmented)
             }
-
-            // Orb size — grows every orb (sprite + body + label) and re-forms the
-            // layout so neighbors re-space with no overlap (positions WILL move).
-            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
-            sliderRow(label: "orb ×", value: $orbSizeScale, range: 1.0...1.6, step: 0.02)
-
-            // Lens (a) — zoom-ramp: idle orbs shrink from the orb-× max as you zoom
-            // OUT (cameraScale ↑ zoomIn→zoomOut), down to `shrink`; titles cull below
-            // `LOD` on-screen pt. VISUAL only — never re-spaces the layout.
-            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
-            sliderRow(label: "zoomIn",  value: $lensZoomIn,    range: 0.5...2.0, step: 0.05)
-            sliderRow(label: "zoomOut", value: $lensZoomOut,   range: 1.5...4.0, step: 0.05)
-            sliderRow(label: "shrink",  value: $lensMinShrink, range: 0.2...1.0, step: 0.01)
-            sliderRow(label: "LOD",     value: $lensLabelLOD,  range: 8...60,    step: 1)
-            // Circle→rounded-square morph: 0.5 = circle (zoomed out), cornerMin =
-            // rounded square (zoomed in). Too small → grid of tiles; too large → no
-            // width gain. Morph band = the zoomIn/zoomOut above.
-            sliderRow(label: "corner",  value: $lensCornerMin, range: 0.05...0.5, step: 0.01)
-
-            // Annulus — gentle viewport-centered magnify (browse feel). amp = center
-            // bump; zoomTh = on when cameraScale below it; radius = falloff band (pt).
-            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5).padding(.vertical, 2)
-            sliderRow(label: "ann amp",  value: $annAmplitude, range: 0.0...1.2,  step: 0.02)
-            sliderRow(label: "ann zoom", value: $annZoom,      range: 0.5...2.5,  step: 0.05)
-            // Bloom band: fullZoom (envelope=1) must be < ann zoom (onset). Wider gap
-            // = more gradual wake-up (no on/off lurch).
-            sliderRow(label: "ann full", value: $annFullZoom,  range: 0.3...1.2,  step: 0.05)
-            sliderRow(label: "ann rad",  value: $annRadius,    range: 80...500,   step: 10)
-            // Push-apart firmness: gap = extra spacing between scaled radii; passes =
-            // per-frame PBD iterations (0 = positions hold; higher = firmer/pricier).
-            sliderRow(label: "ann gap",  value: $annGap,       range: 0...30,     step: 1)
-            HStack(spacing: 8) {
-                Text("ann pass")
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(width: 48, alignment: .leading)
-                    .foregroundStyle(.secondary)
-                Picker("passes", selection: $annPasses) {
-                    ForEach([0, 2, 4, 6, 8], id: \.self) { Text("\($0)").tag($0) }
-                }
-                .pickerStyle(.segmented)
-            }
-            Toggle(isOn: $annHaptic) {
-                Text("ann haptic").font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-            }
-            // Card inflate speed (lower = more graceful escalation, kills the snap).
-            sliderRow(label: "card lerp", value: $cardLerp, range: 0.06...0.30, step: 0.01)
+            .frame(maxHeight: 460)
+            .scrollIndicators(.visible)
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -1229,21 +1203,61 @@ struct MapLabelTuningPanel: View {
         )
     }
 
+    /// Full-width monospace row label (no truncation — every control identifiable).
+    private func rowLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(.caption2, design: .monospaced))
+            .frame(width: 84, alignment: .leading)
+            .foregroundStyle(.secondary)
+    }
+
     @ViewBuilder
     private func sliderRow(label: String,
                            value: Binding<Double>,
                            range: ClosedRange<Double>,
                            step: Double) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.system(.caption, design: .monospaced))
-                .frame(width: 48, alignment: .leading)
-                .foregroundStyle(.secondary)
+        HStack(spacing: 6) {
+            rowLabel(label)
             Slider(value: value, in: range, step: step)
-            Text(String(format: "%.3f", value.wrappedValue))
-                .font(.system(.caption, design: .monospaced))
+            Text(String(format: "%.2f", value.wrappedValue))
+                .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .frame(width: 48, alignment: .trailing)
+                .frame(width: 40, alignment: .trailing)
+        }
+    }
+
+    /// A collapsible section — tap the header bar to expand/collapse (state persisted).
+    @ViewBuilder
+    private func section<Content: View>(_ title: String, _ expanded: Binding<Bool>,
+                                        @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { expanded.wrappedValue.toggle() }
+            } label: {
+                HStack {
+                    Image(systemName: expanded.wrappedValue ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(title.uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(0.6)
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded.wrappedValue { content() }
+        }
+    }
+
+    /// Segmented Int picker with a full row label.
+    private func pickerRow(_ label: String, selection: Binding<Int>, options: [Int]) -> some View {
+        HStack(spacing: 6) {
+            rowLabel(label)
+            Picker(label, selection: selection) {
+                ForEach(options, id: \.self) { Text("\($0)").tag($0) }
+            }
+            .pickerStyle(.segmented)
         }
     }
 
@@ -1263,11 +1277,11 @@ struct MapLabelTuningPanel: View {
             "  lens.labelLOD:  \(String(format: "%.0f", lensLabelLOD))",
             "  lens.cornerMin: \(String(format: "%.2f", lensCornerMin))",
             "  annulus.amplitude:     \(String(format: "%.2f", annAmplitude))",
-            "  annulus.zoomThreshold: \(String(format: "%.2f", annZoom))",
+            "  annulus.onset:         \(String(format: "%.2f", annOnset))",
+            "  annulus.rampWidth:     \(String(format: "%.2f", annRamp))",
             "  annulus.radius:        \(String(format: "%.0f", annRadius))",
             "  annulus.breathingGap:  \(String(format: "%.0f", annGap))",
             "  annulus.relaxPasses:   \(annPasses)",
-            "  annulus.fullZoom:      \(String(format: "%.2f", annFullZoom))",
             "  annulus.hapticOn:      \(annHaptic)",
             "  card.morphLerp:        \(String(format: "%.2f", cardLerp))"
         ]

@@ -1145,7 +1145,10 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     #if DEBUG
-    @objc private func handleDarkOrbTuningChanged() { updateDarkOrbUniforms() }
+    @objc private func handleDarkOrbTuningChanged() {
+        updateDarkOrbUniforms()
+        restyleLabels()   // label ink depends on dark_sat/dark_val → re-flip while T dials
+    }
 
     /// Push the current `DarkOrbTuning` values into the shared `orbSpriteShader`
     /// uniforms (all orbs update at once — the batching win). DEBUG-only live dial;
@@ -2346,7 +2349,12 @@ final class CorpusPhysicsScene: SKScene {
     /// took the DARK branch and lost transmission. A pushed bool can't be nil.
     /// Restyles on an actual flip so live theme changes still take.
     var appearanceIsLight: Bool = true {
-        didSet { if oldValue != appearanceIsLight { restyleUnfocusedOrbs() } }
+        didSet {
+            if oldValue != appearanceIsLight {
+                restyleUnfocusedOrbs()
+                restyleLabels()   // dark label ink depends on the sat/val boost → re-flip on theme change
+            }
+        }
     }
     private var currentIsLight: Bool { appearanceIsLight }
 
@@ -2423,6 +2431,30 @@ final class CorpusPhysicsScene: SKScene {
             guard let node = byID[id] else { continue }
             styleUnfocusedOrb(shape, baseFill: bubbleColor(for: node), isMeta: node.isMeta,
                               isLight: isLight)
+        }
+    }
+
+    /// Re-raster every resting (non-focal) label. Needed because the DARK label ink
+    /// now depends on the sat/val boost: called on APPEARANCE FLIP (so the ink
+    /// re-flips light↔dark) and, in DEBUG, when the dark-orb tuner changes sat/val.
+    /// Mirrors `swapToNonFocalTexture`'s raster path; skips the focal (its title is
+    /// the SwiftUI overlay). Resting labels only → a one-time burst on flip.
+    func restyleLabels() {
+        for (nodeID, shape) in nodeSprites {
+            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
+                  (sprite.userData?["isFocal"] as? Bool) != true,
+                  let fullTitle = sprite.userData?["fullTitle"] as? String,
+                  let radius = nodeIntrinsicRadii[nodeID]
+            else { continue }
+            let side = radius * LensTuning.labelBoxFactor
+            let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
+            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
+            sprite.texture = rasterizeSquareText(
+                title: renderTitle, summary: nil, side: side,
+                titleFont: titleFont, summaryFont: titleFont,
+                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap,
+                titleHyphenate: titleHyphenate)
+            sprite.size = CGSize(width: side, height: side)
         }
     }
 
@@ -2785,6 +2817,21 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// Replicate `orbSpriteShader`'s DARK sat/val boost EXACTLY (rgb→hsv,
+    /// s ×= dark_sat, v ×= dark_val, clamp [0,1], hsv→rgb), reading the SAME
+    /// `DarkOrbTuning` the shader uses so the label-ink decision can't drift from the
+    /// rendered orb. `legibleInk` then evaluates its `lum > 0.6` threshold on the
+    /// ACTUAL rendered tone → bright boosted orbs consistently get dark ink. The
+    /// rim/sphere/spec/glow levers are localized highlights, not the base tone, so
+    /// they don't enter the ink decision. Dark mode only.
+    private func applyDarkOrbBoost(_ c: UIColor) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0, a: CGFloat = 0
+        guard c.getHue(&h, saturation: &s, brightness: &v, alpha: &a) else { return c }
+        s = min(1.0, s * DarkOrbTuning.sat)
+        v = min(1.0, v * DarkOrbTuning.val)
+        return UIColor(hue: h, saturation: s, brightness: v, alpha: a)
+    }
+
     /// AT17.3.4: Render title + summary into a square canvas, vertically centered.
     /// The texture is treated as an icon — same square dimensions regardless of text content.
     /// Long content truncates with ellipsis. The square is sized in the bubble's intrinsic
@@ -2801,12 +2848,15 @@ final class CorpusPhysicsScene: SKScene {
         titleHyphenate: Bool = false                   // resolveTitle's per-title decision (arc #2 last-resort)
     ) -> SKTexture {
         let textWidth = side  // padding inside the square
-        // Luminance-aware ink + soft halo, from the node's OWN fill — so the
-        // resting title reads on a light node (dark ink) as well as a dark one
-        // (light ink), and the halo separates it on mid-tones.
-        // Ink-flip only — luminance-aware color, no baked halo (the NSShadow
-        // muddied minified text). Clean minification comes from texture mipmaps.
-        let (ink, _) = legibleInk(over: fillColor)
+        // Luminance-aware ink + soft halo, chosen on the ACTUAL rendered tone. DARK
+        // (Solar Flare) boosts the fill by the shader's sat/val FIRST so bright
+        // boosted orbs get dark ink consistently (no more light-on-light on
+        // near-threshold orbs); LIGHT (Cucumber Water) uses the base fill as before
+        // (unchanged). `currentIsLight` is the same flag that drives u_wash_is_light.
+        // Ink-flip only — no baked halo (the NSShadow muddied minified text). Clean
+        // minification comes from texture mipmaps.
+        let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
+        let (ink, _) = legibleInk(over: inkFill)
         func styled(_ text: String, _ font: UIFont, _ lineBreak: NSLineBreakMode,
                     hyphenate: Bool = false, kern: CGFloat = 0) -> NSAttributedString {
             let para = NSMutableParagraphStyle()

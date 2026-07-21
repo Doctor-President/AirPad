@@ -169,16 +169,6 @@ struct CanvasView: View {
             .onChange(of: mapColorScheme) { _, newScheme in
                 scene.appearanceIsLight = (newScheme == .light)
             }
-            #if DEBUG
-            // Orb-size dial (device pass): grow the orbs in-scene, then re-form the
-            // layout with the same-scaled radii so orbs re-space with no overlap
-            // (positions WILL change — the algorithmic re-settle). A ViewModifier
-            // owns the @AppStorage + observer so this stays off body's type-check budget.
-            .modifier(OrbSizeDialObserver(scene: scene) {
-                formTerritories(nodes: store.visibleNodes(in: scope), trigger: "orb-size")
-                syncScene(nodes: store.visibleNodes(in: scope))
-            })
-            #endif
     }
 
     // Body observers are split across two computed properties purely to keep
@@ -1500,25 +1490,4 @@ private struct TerritoryLabelPill: View {
             .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
     }
 }
-
-#if DEBUG
-/// Watches `map.orbSizeScale` (written by the orb-size slider in
-/// `MapLabelTuningPanel`) and, on change, grows every orb in-scene
-/// (`restyleOrbSizes`) then runs the caller's re-form closure — re-derive the
-/// territory layout with the same-scaled radii + resync, so orbs re-space with
-/// no overlap. Isolated as a ViewModifier so its @AppStorage + onChange live off
-/// `CanvasView.body`'s type-checker budget. Delete with the orb-size dial.
-private struct OrbSizeDialObserver: ViewModifier {
-    let scene: CorpusPhysicsScene
-    let reForm: () -> Void
-    @AppStorage("map.orbSizeScale") private var orbSizeScale: Double = 1.0
-
-    func body(content: Content) -> some View {
-        content.onChange(of: orbSizeScale) { _, _ in
-            scene.restyleOrbSizes()
-            reForm()
-        }
-    }
-}
-#endif
 

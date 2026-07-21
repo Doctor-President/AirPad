@@ -4,16 +4,13 @@ import simd
 
 /// Curated haptic ESCALATIONS for the browse→commit→detail→release loop. Weight
 /// tracks commitment: graze tick (lightest) → tap-orb→card (firmer grab) → card→
-/// detail (heaviest, arrival) → swipe-release (soft, "let go"). One `hapticSet`
-/// dial (A/B/C) cycles the whole coherent set so T auditions the RELATIONSHIP, not
-/// individual generators. Called from both the scene (graze/commit) and the SwiftUI
-/// card overlay (detail/release). Generators cached + reused (main-thread only).
+/// detail (heaviest, arrival) → swipe-release (soft, "let go"). The `active` set
+/// (A/B/C) selects the whole coherent set as one RELATIONSHIP, not individual
+/// generators — baked to C ("Gentle"), T's device-final pick. Called from both the
+/// scene (graze/commit) and the SwiftUI card overlay (detail/release). Generators
+/// cached + reused (main-thread only).
 enum MapHaptics {
-    #if DEBUG
-    static var active: Int { UserDefaults.standard.object(forKey: "map.haptic.set") as? Int ?? 0 }  // 0=A 1=B 2=C
-    #else
-    static var active: Int { 0 }
-    #endif
+    static let active: Int = 2   // BAKED: set C "Gentle" (T's device-final pick). 0=A 1=B 2=C
     private static let light = UIImpactFeedbackGenerator(style: .light)
     private static let soft = UIImpactFeedbackGenerator(style: .soft)
     private static let medium = UIImpactFeedbackGenerator(style: .medium)
@@ -46,15 +43,6 @@ enum MapHaptics {
     /// swipe-release dismiss — soft "let go" in every set.
     static func release() { soft.impactOccurred(intensity: 0.7) }
 }
-
-#if DEBUG
-extension Notification.Name {
-    /// Posted by the DEBUG `MapLabelTuningPanel` on every slider change; the
-    /// scene observes it (added in `didMove`) and calls `restyleLabels()` so the
-    /// node-label tier dial updates live on device. DEBUG-only.
-    static let mapLabelTuningChanged = Notification.Name("map.label.tuningChanged")
-}
-#endif
 
 /// The SpriteKit physics canvas that renders nodes as floating bubbles.
 /// Owned by CanvasView; communicates selection events back via CanvasState.
@@ -864,16 +852,9 @@ final class CorpusPhysicsScene: SKScene {
     /// Card morph clock (0 = no card, 1 = full card), eased toward the target each
     /// frame in `updateCardPresentation`. Drives `focalScaleProgress`/`focalMorph`.
     private var cardProgress: CGFloat = 0
-    /// Per-frame lerp for the card morph (tap → grow / dismiss). Lower = a more
-    /// graceful inflate. Dialable (DEBUG) so T can tune the escalation speed.
-    static let defaultCardMorphLerp: CGFloat = 0.14
-    #if DEBUG
-    private var cardMorphLerp: CGFloat {
-        (UserDefaults.standard.object(forKey: "map.card.morphLerp") as? Double).map { CGFloat($0) } ?? Self.defaultCardMorphLerp
-    }
-    #else
-    private let cardMorphLerp: CGFloat = defaultCardMorphLerp
-    #endif
+    /// Per-frame lerp for the card morph (tap → grow / dismiss) — BAKED 0.10
+    /// (T's device-final graceful inflate).
+    private let cardMorphLerp: CGFloat = 0.10
     /// Orb→card cross-fade band: the tapped orb holds full alpha until `Start`,
     /// then fades to 0 by `End` as the SwiftUI card face fades IN — so the orb
     /// INFLATES into the card (no instant pop).
@@ -1063,17 +1044,6 @@ final class CorpusPhysicsScene: SKScene {
 
         view.isMultipleTouchEnabled = true
 
-        #if DEBUG
-        // Device-pass node-label tier dial: re-raster every resting label when
-        // the floating tuner writes new map.label.* values (mechanism-only in
-        // Release; this observer + restyleLabels are DEBUG). De-dup the observer
-        // in case didMove ever re-fires on the persistent scene.
-        NotificationCenter.default.removeObserver(self, name: .mapLabelTuningChanged, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleLabelTuningChanged),
-            name: .mapLabelTuningChanged, object: nil)
-        #endif
-
         // Start shader animation clock
         shaderStartTime = CACurrentMediaTime()
         lastUpdateTime = shaderStartTime
@@ -1119,11 +1089,9 @@ final class CorpusPhysicsScene: SKScene {
         let elapsed = currentTime - shaderStartTime
         nodeFillShader.uniforms.first(where: { $0.name == "u_time" })?.floatValue = Float(elapsed)
 
-        // Lens: drive the circle→rounded-square morph off cameraScale (one global
-        // uniform on the shared orb shader — every orb morphs together, still one
-        // batch). Independent of engagement (the shape reads at any state).
-        orbSpriteShader.uniforms.first(where: { $0.name == "u_corner_radius" })?
-            .floatValue = Float(cornerRadiusForZoom(cameraNode.xScale))
+        // Morph RETIRED to dormant: u_corner_radius stays at its 0.5 default (=
+        // permanent circle). The per-frame cornerRadiusForZoom drive is gone; the
+        // sdRoundBox + uniform machinery is preserved inert for possible revival.
         // Wash composite mode (global): light screen-deepen vs dark darken.
         orbSpriteShader.uniforms.first(where: { $0.name == "u_wash_is_light" })?
             .floatValue = currentIsLight ? 1.0 : 0.0
@@ -2412,8 +2380,9 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_geom", type: .vectorFloat2),
             SKAttribute(name: "a_wash", type: .vectorFloat4)   // rgb = wash pigment, a = peak strength
         ]
-        // u_corner_radius: 0.5 = circle … cornerMin = rounded square (per-frame from
-        // cameraScale). u_wash_is_light: 1 = light screen-deepen, 0 = dark darken.
+        // u_corner_radius: 0.5 = circle. Held at 0.5 — the morph to rounded square
+        // (cornerMin) is retired to dormant; the uniform + sdRoundBox stay inert for
+        // revival. u_wash_is_light: 1 = light screen-deepen, 0 = dark darken.
         // Both global → the orb sprites still collapse to one batch.
         shader.uniforms = [
             SKUniform(name: "u_corner_radius", float: 0.5),
@@ -2482,8 +2451,8 @@ final class CorpusPhysicsScene: SKScene {
         let halfH = (view?.bounds.height ?? 852) * 0.46
         for i in 0..<count {
             let id = "synth-\(i)"
-            // ×OrbTuning.sizeScale so `-SPROrbScale` grows the synthetic orbs — lets
-            // CC sim-verify bigger orbs still batch (draws) + hold 60fps.
+            // ×OrbTuning.sizeScale keeps synthetic radii in step with the baked
+            // orb size, so the sim measures the size that actually ships.
             let radius = CGFloat.random(in: 16...40) * OrbTuning.sizeScale
             let color = UIColor(hue: hues[i % hues.count], saturation: 0.78, brightness: 0.92, alpha: 1)
             let orb = makeShape(radius: radius, fillColor: color, isMeta: false, nodeID: id)
@@ -2538,11 +2507,6 @@ final class CorpusPhysicsScene: SKScene {
             case "ON":  self.appearanceIsLight = true
             case "OFF": self.appearanceIsLight = false
             default:    self.appearanceIsLight = (self.view?.traitCollection.userInterfaceStyle == .light)
-            }
-            // `-SPROrbScale 1.5` → write map.orbSizeScale as a real Double so
-            // OrbTuning.sizeScale (and thus the synthetic radii) pick it up.
-            if let s = UserDefaults.standard.string(forKey: "SPROrbScale"), let v = Double(s) {
-                UserDefaults.standard.set(v, forKey: "map.orbSizeScale")
             }
             if UserDefaults.standard.bool(forKey: "SPRLabels") {
                 self.injectLabelTestSpread()
@@ -2835,35 +2799,16 @@ final class CorpusPhysicsScene: SKScene {
         )
     }
 
-    /// Node-label tier DIAL (taste — T tunes on device). Tier font sizes = box ×
-    /// fraction, clamped to [floor, cap]. DEBUG reads UserDefaults (`map.label.*`,
-    /// set by a device-pass panel); Release uses the baked defaults with ZERO
-    /// UserDefaults access (the NodeCardView release-gate pattern). Sensible
-    /// defaults; exact values are what T dials at the checkpoint.
+    /// Node-label size tiers — BAKED from T's device-final values (2026-07-21
+    /// end-of-loop bake). Tier font sizes = box × fraction, clamped to [floor, cap].
+    /// Plain literals, ZERO UserDefaults → Debug == Release.
     enum LabelTuning {
-        static let defaultLargeFrac: CGFloat = 1.0 / 6.0
-        static let defaultMedFrac:   CGFloat = 1.0 / 8.0
-        static let defaultSmallFrac: CGFloat = 1.0 / 10.5
-        static let defaultFloor:     CGFloat = 8
-        static let defaultMaxLines:  Int = 2
+        static let largeFrac: CGFloat = 0.195
+        static let medFrac:   CGFloat = 0.135
+        static let smallFrac: CGFloat = 0.125
+        static let floor:     CGFloat = 5
+        static let maxLines:  Int = 3
         static let cap: CGFloat = 28   // absolute point ceiling
-
-        #if DEBUG
-        private static func frac(_ key: String, _ def: CGFloat) -> CGFloat {
-            (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
-        }
-        static var largeFrac: CGFloat { frac("map.label.largeFrac", defaultLargeFrac) }
-        static var medFrac:   CGFloat { frac("map.label.medFrac", defaultMedFrac) }
-        static var smallFrac: CGFloat { frac("map.label.smallFrac", defaultSmallFrac) }
-        static var floor:     CGFloat { frac("map.label.floor", defaultFloor) }
-        static var maxLines:  Int { (UserDefaults.standard.object(forKey: "map.label.maxLines") as? Int) ?? defaultMaxLines }
-        #else
-        static var largeFrac: CGFloat { defaultLargeFrac }
-        static var medFrac:   CGFloat { defaultMedFrac }
-        static var smallFrac: CGFloat { defaultSmallFrac }
-        static var floor:     CGFloat { defaultFloor }
-        static var maxLines:  Int { defaultMaxLines }
-        #endif
 
         /// The 3 tier point sizes for a `box`-wide label, largest → smallest.
         static func tierSizes(box: CGFloat) -> [CGFloat] {
@@ -2871,119 +2816,49 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Orb-size DIAL (taste — T dials on device). A single multiplier applied to
-    /// the whole `bubbleRadius` (base + per-item extra + cap) so every orb grows
-    /// proportionally. radius drives the sprite, label box, AND physics body, so
-    /// the visual + physics stay coupled; the same scale feeds CanvasView's
-    /// layout-radii so `SubstrateLayoutService` / `TagTerritoryLayout` re-space
-    /// the grown orbs with no overlap (the layout math is untouched — only its
-    /// radii inputs scale). DEBUG reads `map.orbSizeScale`; Release bakes 1.0 with
-    /// ZERO UserDefaults access (the NodeCardView release-gate pattern).
+    /// Orb-size multiplier — BAKED 1.00 (T's device-final). Applied to the whole
+    /// `bubbleRadius`; radius drives sprite + label box + physics body + CanvasView's
+    /// layout-radii. Literal, zero UserDefaults → Debug == Release.
     enum OrbTuning {
-        static let defaultSizeScale: CGFloat = 1.0
-        #if DEBUG
-        static var sizeScale: CGFloat {
-            (UserDefaults.standard.object(forKey: "map.orbSizeScale") as? Double).map { CGFloat($0) } ?? defaultSizeScale
-        }
-        #else
-        static var sizeScale: CGFloat { defaultSizeScale }
-        #endif
+        static let sizeScale: CGFloat = 1.0
     }
 
-    /// Lens (a) — global zoom-ramp DIAL (taste — T dials on device). Shrinks IDLE
-    /// orbs from their `OrbTuning.sizeScale` max as the camera zooms OUT (larger
-    /// `cameraNode.xScale`) for airier structure, and culls titles below an
-    /// on-screen size. VISUAL scalar of zoom only — never touches layout radii or
-    /// physics bodies (those stay spaced-for-max, which is what makes the shrink
-    /// overlap-proof). DEBUG reads `map.lens.*`; Release bakes the defaults with
-    /// ZERO UserDefaults access (the NodeCardView release-gate pattern).
+    /// Lens (a) — global zoom-ramp — BAKED (T's device-final, 2026-07-21). Shrinks
+    /// IDLE orbs from the max as the camera zooms OUT; culls titles below labelLOD.
+    /// `cornerMin` baked 0.50 = permanent CIRCLE — the morph is DORMANT (its
+    /// sdRoundBox + u_corner_radius machinery is preserved inert in orbSpriteShader).
+    /// `labelBoxFactor` 1.4 = circle-inscribed. Literals, zero UD → Debug == Release.
     enum LensTuning {
-        static let defaultZoomIn: CGFloat = 1.0       // ≤ this cameraScale → full max (1.0)
-        static let defaultZoomOut: CGFloat = 2.5      // ≥ this cameraScale → minShrink
-        static let defaultMinShrink: CGFloat = 0.55   // airiest idle scale (zoomed out)
-        static let defaultLabelLOD: CGFloat = 26      // on-screen pt diameter to START showing a title
-        // Circle→rounded-square morph (SDF corner radius in uv, 0.5 = circle).
-        // Zoomed in → cornerMin (rounded-square text box); zoomed out → 0.5 (circle
-        // shape-reading), on the SAME zoomIn/zoomOut band as the scale ramp.
-        static let defaultCornerMin: CGFloat = 0.20
-        /// Label box as a fraction of diameter. The rounded-square usable width is
-        /// wider than the circle-inscribed ~1.4, so titles fit whole / at bigger
-        /// tiers (labels only show zoomed-in = the morphed state).
-        static let labelBoxFactor: CGFloat = 1.8
-        #if DEBUG
-        private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
-            (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
-        }
-        static var zoomIn: CGFloat    { d("map.lens.zoomIn", defaultZoomIn) }
-        static var zoomOut: CGFloat   { d("map.lens.zoomOut", defaultZoomOut) }
-        static var minShrink: CGFloat { d("map.lens.minShrink", defaultMinShrink) }
-        static var labelLOD: CGFloat  { d("map.lens.labelLOD", defaultLabelLOD) }
-        static var cornerMin: CGFloat { d("map.lens.cornerMin", defaultCornerMin) }
-        #else
-        static var zoomIn: CGFloat    { defaultZoomIn }
-        static var zoomOut: CGFloat   { defaultZoomOut }
-        static var minShrink: CGFloat { defaultMinShrink }
-        static var labelLOD: CGFloat  { defaultLabelLOD }
-        static var cornerMin: CGFloat { defaultCornerMin }
-        #endif
+        static let zoomIn: CGFloat = 0.55
+        static let zoomOut: CGFloat = 2.45
+        static let minShrink: CGFloat = 0.79
+        static let labelLOD: CGFloat = 33
+        static let cornerMin: CGFloat = 0.50   // permanent circle (morph retired to dormant)
+        static let labelBoxFactor: CGFloat = 1.4
     }
 
-    /// Viewport-centered continuous-annulus DIAL (taste — T's primary browse-feel
-    /// dial). Gentle magnification near SCREEN CENTER when zoomed in; positions
-    /// hold. `amplitude` = center orb bump (1+amp); `onset`/`rampWidth` = where the
-    /// bloom starts + how steeply it reaches full; `radius` = screen-pt falloff band
-    /// width. DEBUG reads `map.annulus.*`; Release bakes gentle defaults, zero UD.
+    /// Viewport-centered continuous-annulus — BAKED (T's device-final). `amplitude` =
+    /// center bump; `onset`/`rampWidth` = the bloom envelope; `radius` = falloff band;
+    /// the pairwise push-apart keeps enlarged band nodes apart. Literals, zero UD.
     enum AnnulusTuning {
-        static let defaultAmplitude: CGFloat = 0.35       // center ~35% bigger — gentle, never one-node-huge
-        // ONSET + RAMP WIDTH — independent envelope controls. onset = the cameraScale
-        // where the annulus BEGINS activating (envelope leaves 0); rampWidth = the
-        // cameraScale SPAN it takes to reach full (smaller = steeper bloom). Moving
-        // onset shifts WHERE it starts; moving rampWidth changes ONLY the steepness.
-        static let defaultOnset: CGFloat = 2.20           // T's device value
-        static let defaultRampWidth: CGFloat = 1.50       // T's fullZoom 0.70 → 2.20 − 0.70 = 1.50
-        static let defaultRadius: CGFloat = 220           // screen-pt falloff radius (band width)
-        // Pairwise push-apart (transient) so enlarged band nodes don't overlap.
-        static let defaultRelaxPasses: Int = 4            // per-frame PBD passes (continuous → fewer than the old 8)
-        static let defaultBreathingGap: CGFloat = 6       // world-space extra spacing between scaled radii
-        static let defaultRelaxLerp: CGFloat = 0.22       // damped approach to the relaxed target (anti-jitter)
-        static let defaultHapticOn: Bool = true           // master: tick as the most-amplified node changes
-        static let defaultHapticIntensity: CGFloat = 0.6  // base tick magnitude (T's "split the difference")
-        static let defaultHapticCentrality: Bool = false  // ON → also × the node's centrality (harder dead-center)
-        static let hapticMinAudible: CGFloat = 0.10       // floor when a tick actually fires (never round to nothing)
-        static let maxBand: Int = 56                      // PERF CAP: only the N most-central nodes relax (O(N²·passes))
-        #if DEBUG
-        private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
-            (UserDefaults.standard.object(forKey: key) as? Double).map { CGFloat($0) } ?? def
-        }
-        static var amplitude: CGFloat     { d("map.annulus.amplitude", defaultAmplitude) }
-        static var onset: CGFloat         { d("map.annulus.onset", defaultOnset) }
-        static var rampWidth: CGFloat     { d("map.annulus.rampWidth", defaultRampWidth) }
-        static var radius: CGFloat        { d("map.annulus.radius", defaultRadius) }
-        static var relaxPasses: Int       { (UserDefaults.standard.object(forKey: "map.annulus.relaxPasses") as? Int) ?? defaultRelaxPasses }
-        static var breathingGap: CGFloat  { d("map.annulus.breathingGap", defaultBreathingGap) }
-        static var relaxLerp: CGFloat     { d("map.annulus.relaxLerp", defaultRelaxLerp) }
-        static var hapticOn: Bool         { (UserDefaults.standard.object(forKey: "map.annulus.hapticOn") as? Bool) ?? defaultHapticOn }
-        static var hapticIntensity: CGFloat { d("map.annulus.hapticIntensity", defaultHapticIntensity) }
-        static var hapticCentrality: Bool { (UserDefaults.standard.object(forKey: "map.annulus.hapticCentrality") as? Bool) ?? defaultHapticCentrality }
-        #else
-        static var amplitude: CGFloat     { defaultAmplitude }
-        static var onset: CGFloat         { defaultOnset }
-        static var rampWidth: CGFloat     { defaultRampWidth }
-        static var radius: CGFloat        { defaultRadius }
-        static var relaxPasses: Int       { defaultRelaxPasses }
-        static var breathingGap: CGFloat  { defaultBreathingGap }
-        static var relaxLerp: CGFloat     { defaultRelaxLerp }
-        static var hapticOn: Bool         { defaultHapticOn }
-        static var hapticIntensity: CGFloat { defaultHapticIntensity }
-        static var hapticCentrality: Bool { defaultHapticCentrality }
-        #endif
+        static let amplitude: CGFloat = 1.20
+        static let onset: CGFloat = 3.00
+        static let rampWidth: CGFloat = 1.50
+        static let radius: CGFloat = 300
+        static let breathingGap: CGFloat = 30
+        static let relaxPasses: Int = 8
+        static let relaxLerp: CGFloat = 0.22       // damped approach to the relaxed target
+        static let hapticOn: Bool = true
+        static let hapticIntensity: CGFloat = 0.60
+        static let hapticCentrality: Bool = false
+        static let hapticMinAudible: CGFloat = 0.10   // floor when a tick fires (never round to nothing)
+        static let maxBand: Int = 56                  // PERF CAP: N most-central nodes relax (O(N²·passes))
 
         /// Full-bloom cameraScale (more zoomed in than onset), derived from the ramp.
         static var fullZoom: CGFloat { onset - rampWidth }
 
         /// Bloom-in envelope 0→1 as the camera zooms IN across [onset … fullZoom].
-        /// One envelope drives BOTH amplify + relaxation so they wake together (no
-        /// hard on/off lurch). 0 at onset, 1 at fullZoom. 0 = annulus is a full no-op.
+        /// One envelope drives BOTH amplify + relaxation. 0 at onset, 1 at fullZoom.
         static func envelope(_ cameraScale: CGFloat) -> CGFloat {
             let on = onset, full = fullZoom
             if cameraScale >= on { return 0 }
@@ -3104,11 +2979,11 @@ final class CorpusPhysicsScene: SKScene {
         sprite.userData?["isFocal"] = false
     }
 
-    /// The resting orb physics body for a given radius — extracted so a live
-    /// resize (`restyleOrbSizes`) rebuilds an IDENTICAL body (SKPhysicsBody radius
-    /// is immutable, so growing means a fresh body). Static: mass derives only
-    /// from radius. `isDynamic = false` — resting layout is algorithmic, not
-    /// physics-settled; the body is kept coupled for hit-testing + future use.
+    /// The resting orb physics body for a given radius — extracted so a rebuild
+    /// produces an IDENTICAL body (SKPhysicsBody radius is immutable, so a fresh
+    /// radius means a fresh body). Static: mass derives only from radius.
+    /// `isDynamic = false` — resting layout is algorithmic, not physics-settled;
+    /// the body is kept coupled for hit-testing + future use.
     private static func configuredOrbBody(radius: CGFloat) -> SKPhysicsBody {
         let body = SKPhysicsBody(circleOfRadius: radius)
         body.linearDamping = 0.6
@@ -3120,58 +2995,6 @@ final class CorpusPhysicsScene: SKScene {
         body.isDynamic = false
         return body
     }
-
-    #if DEBUG
-    @objc private func handleLabelTuningChanged() {
-        restyleLabels()
-        lastRampCameraScale = -1   // Lens (a): a lens dial changed the ramp/LOD → re-apply next idle frame
-    }
-
-    /// Live-apply `OrbTuning.sizeScale` to every resting orb: recompute radius,
-    /// resize the sprite, re-set the SDF stroke/feather geometry
-    /// (a_geom is radius-derived), swap in a fresh physics body, and re-raster the
-    /// label (its box + tier fonts key off radius). Visual + body only — the
-    /// no-overlap RE-SPACING is CanvasView's job (it re-forms the layout with the
-    /// same-scaled radii). DEBUG-only; Release renders the baked 1.0 once.
-    func restyleOrbSizes() {
-        for node in currentNodes {
-            guard let orb = nodeSprites[node.id] as? SKSpriteNode else { continue }
-            let radius = nodeRadii[node.id] ?? bubbleRadius(for: node)
-            nodeIntrinsicRadii[node.id] = radius
-            orb.userData?["radius"] = radius
-            orb.size = CGSize(width: radius * 2, height: radius * 2)
-            // Re-derive a_geom (stroke width + feather are in uv = f(radius)) and
-            // re-apply fill/stroke/wash for the current appearance.
-            styleUnfocusedOrb(orb, baseFill: bubbleColor(for: node),
-                              isMeta: node.isMeta, isLight: currentIsLight)
-            orb.physicsBody = Self.configuredOrbBody(radius: radius)
-        }
-        restyleLabels()   // label box + tier fonts follow the new radius
-    }
-
-    /// Re-raster every resting node label from the CURRENT LabelTuning values so
-    /// the device-pass tier dial (the floating `MapLabelTuningPanel`) shows live.
-    /// Mirrors `swapToNonFocalTexture`'s raster path; skips focal sprites (they
-    /// re-raster on release, which already reads the live tuning). DEBUG-only —
-    /// nothing calls this in Release, where the baked defaults render once.
-    func restyleLabels() {
-        for (nodeID, shape) in nodeSprites {
-            guard let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-                  (sprite.userData?["isFocal"] as? Bool) != true,
-                  let fullTitle = sprite.userData?["fullTitle"] as? String,
-                  let radius = nodeIntrinsicRadii[nodeID]
-            else { continue }
-            let side = radius * LensTuning.labelBoxFactor
-            let (titleFont, renderTitle, titleWrap) = resolveTitle(fullTitle, box: side)
-            let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            sprite.texture = rasterizeSquareText(
-                title: renderTitle, summary: nil, side: side,
-                titleFont: titleFont, summaryFont: titleFont,
-                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap)
-            sprite.size = CGSize(width: side, height: side)
-        }
-    }
-    #endif
 
     private func bubbleRadius(for node: Node) -> CGFloat {
         // Base diameter 60pt (radius 30), +8pt diameter per additional item (radius

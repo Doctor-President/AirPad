@@ -2,6 +2,51 @@ import SpriteKit
 import UIKit
 import simd
 
+/// Curated haptic ESCALATIONS for the browse→commit→detail→release loop. Weight
+/// tracks commitment: graze tick (lightest) → tap-orb→card (firmer grab) → card→
+/// detail (heaviest, arrival) → swipe-release (soft, "let go"). One `hapticSet`
+/// dial (A/B/C) cycles the whole coherent set so T auditions the RELATIONSHIP, not
+/// individual generators. Called from both the scene (graze/commit) and the SwiftUI
+/// card overlay (detail/release). Generators cached + reused (main-thread only).
+enum MapHaptics {
+    #if DEBUG
+    static var active: Int { UserDefaults.standard.object(forKey: "map.haptic.set") as? Int ?? 0 }  // 0=A 1=B 2=C
+    #else
+    static var active: Int { 0 }
+    #endif
+    private static let light = UIImpactFeedbackGenerator(style: .light)
+    private static let soft = UIImpactFeedbackGenerator(style: .soft)
+    private static let medium = UIImpactFeedbackGenerator(style: .medium)
+    private static let rigid = UIImpactFeedbackGenerator(style: .rigid)
+    private static let selection = UISelectionFeedbackGenerator()
+    private static let notification = UINotificationFeedbackGenerator()
+
+    /// The set's graze generator (varies by set: A/B .light, C .soft).
+    private static var grazeGen: UIImpactFeedbackGenerator { active == 2 ? soft : light }
+    static func prepareGraze() { grazeGen.prepare() }
+    /// Graze tick — intensity is already × envelope × centrality × the amount slider.
+    static func graze(intensity: CGFloat) { let g = grazeGen; g.impactOccurred(intensity: intensity); g.prepare() }
+
+    /// tap-orb → card (firmer grab).
+    static func commit() {
+        switch active {
+        case 1:  selection.selectionChanged(); selection.prepare()   // B: selection click
+        case 2:  light.impactOccurred()                              // C: gentle
+        default: medium.impactOccurred()                             // A: medium
+        }
+    }
+    /// card → detail (heaviest, the arrival).
+    static func detail() {
+        switch active {
+        case 1:  notification.notificationOccurred(.success)         // B: success notif
+        case 2:  medium.impactOccurred()                             // C
+        default: rigid.impactOccurred()                              // A: rigid
+        }
+    }
+    /// swipe-release dismiss — soft "let go" in every set.
+    static func release() { soft.impactOccurred(intensity: 0.7) }
+}
+
 #if DEBUG
 extension Notification.Name {
     /// Posted by the DEBUG `MapLabelTuningPanel` on every slider change; the
@@ -468,8 +513,7 @@ final class CorpusPhysicsScene: SKScene {
         var intensity = AnnulusTuning.hapticIntensity * envelope
         if AnnulusTuning.hapticCentrality { intensity *= centrality }
         intensity = min(1, max(AnnulusTuning.hapticMinAudible, intensity))
-        annulusHaptic.impactOccurred(intensity: intensity)
-        annulusHaptic.prepare()
+        MapHaptics.graze(intensity: intensity)   // set's graze style × the computed intensity
         lastAnnulusHapticTime = now
     }
 
@@ -843,9 +887,8 @@ final class CorpusPhysicsScene: SKScene {
     private var cardCamStart: CGPoint? = nil
     private var cardCamTarget: CGPoint? = nil
 
-    // Annulus browse tick (re-keyed SB96 haptic) — HEAVY punchy impact as the most-
-    // amplified node changes; throttled so fast pans don't machine-gun it.
-    private let annulusHaptic = UIImpactFeedbackGenerator(style: .heavy)
+    // Annulus browse tick — fires via MapHaptics (the set's graze style); throttled
+    // so fast pans don't machine-gun it.
     private var annulusNearestID: String? = nil
     private var lastAnnulusHapticTime: TimeInterval = 0
     private let annulusHapticThrottle: TimeInterval = 0.05
@@ -862,8 +905,6 @@ final class CorpusPhysicsScene: SKScene {
     /// Node currently rendering with the gradient shader (focal render state).
     /// Mutated only via `setFocalShader(to:)`.
     private var focalShaderID: String? = nil
-    // SB96: Selection haptic for focal changes during engagement
-    private let navHaptic = UIImpactFeedbackGenerator(style: .heavy)
 
     /// Strand ring-target positions in the undistorted (substrate-resting)
     /// frame, keyed by neighbor nodeID. Populated on engaged-state entry +
@@ -3320,7 +3361,7 @@ final class CorpusPhysicsScene: SKScene {
                         lastPanPosition: current
                     )
                     momentumEligible = true   // pan → coast-eligible
-                    annulusHaptic.prepare()   // warm the browse-tick generator
+                    MapHaptics.prepareGraze()   // warm the browse-tick generator
                 }
 
             case .honeycomb(let initialPosition, let lastPanPosition):
@@ -3440,8 +3481,8 @@ final class CorpusPhysicsScene: SKScene {
 
             // COMMIT: a clean tap on an orb morphs its CARD up. Reassigning while a
             // card is already up is a free NEIGHBOR-HOP (the morph re-points to the
-            // new orb — no teardown). Card→detail + X live in the SwiftUI overlay.
-            navHaptic.impactOccurred()
+            // new orb — no teardown). Card→detail + X + swipe live in the SwiftUI overlay.
+            MapHaptics.commit()   // the set's "firmer grab" tick
             DispatchQueue.main.async { [weak self] in
                 self?.canvasState?.cardedNodeID = nodeID
             }

@@ -1092,7 +1092,9 @@ struct MapLabelTuningPanel: View {
     @AppStorage("map.annulus.radius")        private var annRadius: Double     = Double(CorpusPhysicsScene.AnnulusTuning.defaultRadius)
     @AppStorage("map.annulus.breathingGap")  private var annGap: Double        = Double(CorpusPhysicsScene.AnnulusTuning.defaultBreathingGap)
     @AppStorage("map.annulus.relaxPasses")   private var annPasses: Int        = CorpusPhysicsScene.AnnulusTuning.defaultRelaxPasses
-    @AppStorage("map.annulus.hapticOn")      private var annHaptic: Bool       = CorpusPhysicsScene.AnnulusTuning.defaultHapticOn
+    @AppStorage("map.annulus.hapticOn")        private var annHaptic: Bool      = CorpusPhysicsScene.AnnulusTuning.defaultHapticOn
+    @AppStorage("map.annulus.hapticIntensity") private var annHapticInt: Double = Double(CorpusPhysicsScene.AnnulusTuning.defaultHapticIntensity)
+    @AppStorage("map.annulus.hapticCentrality") private var annHapticCentral: Bool = CorpusPhysicsScene.AnnulusTuning.defaultHapticCentrality
     @AppStorage("map.card.morphLerp")        private var cardLerp: Double      = Double(CorpusPhysicsScene.defaultCardMorphLerp)
 
     // Collapsible-section expand state (persisted). Default: only Annulus open.
@@ -1136,6 +1138,10 @@ struct MapLabelTuningPanel: View {
                         sliderRow(label: "gap",         value: $annGap,       range: 0...30,     step: 1)
                         pickerRow("passes", selection: $annPasses, options: [0, 2, 4, 6, 8])
                         Toggle(isOn: $annHaptic) { rowLabel("haptic") }
+                        // Base tick magnitude (× envelope so it's silent zoomed out).
+                        sliderRow(label: "haptic amt",  value: $annHapticInt, range: 0.0...1.0, step: 0.05)
+                        // ON → tick also tracks centrality (harder dead-center).
+                        Toggle(isOn: $annHapticCentral) { rowLabel("h central") }
                         sliderRow(label: "card lerp",   value: $cardLerp,     range: 0.06...0.30, step: 0.01)
                     }
                 }
@@ -1283,6 +1289,8 @@ struct MapLabelTuningPanel: View {
             "  annulus.breathingGap:  \(String(format: "%.0f", annGap))",
             "  annulus.relaxPasses:   \(annPasses)",
             "  annulus.hapticOn:      \(annHaptic)",
+            "  annulus.hapticIntensity: \(String(format: "%.2f", annHapticInt))",
+            "  annulus.hapticCentrality: \(annHapticCentral)",
             "  card.morphLerp:        \(String(format: "%.2f", cardLerp))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")

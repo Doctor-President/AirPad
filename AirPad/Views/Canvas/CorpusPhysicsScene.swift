@@ -315,11 +315,14 @@ final class CorpusPhysicsScene: SKScene {
     /// smoothstep falloff to `1.0` by `radius` (screen-pt band width). `dist` is
     /// scene-space; `/cameraScale` makes the band a consistent SCREEN size. The
     /// `envelope` (0→1, the zoom bloom) scales the bump so on/off is gradual.
-    private func annulusAmplify(_ dist: CGFloat, cameraScale: CGFloat, envelope: CGFloat) -> CGFloat {
+    /// Normalized centrality: 1 dead-center → 0 at/beyond the falloff radius (screen).
+    private func annulusFalloff(_ dist: CGFloat, cameraScale: CGFloat) -> CGFloat {
         let screenDist = dist / max(cameraScale, 0.0001)
         let t = min(screenDist / max(AnnulusTuning.radius, 1), 1)   // 0 center → 1 edge
-        let falloff = 1 - (t * t * (3 - 2 * t))                     // 1 center → 0 edge
-        return 1 + AnnulusTuning.amplitude * falloff * envelope
+        return 1 - (t * t * (3 - 2 * t))                            // 1 center → 0 edge
+    }
+    private func annulusAmplify(_ dist: CGFloat, cameraScale: CGFloat, envelope: CGFloat) -> CGFloat {
+        1 + AnnulusTuning.amplitude * annulusFalloff(dist, cameraScale: cameraScale) * envelope
     }
 
     /// PER-FRAME orb scale + label LOD. `scale = restingScale × zoomRamp × annulus
@@ -407,7 +410,8 @@ final class CorpusPhysicsScene: SKScene {
                 band.append((id, dist, intrinsic * (nodeRestingScales[id] ?? 1) * ramp * amp, home))
             }
         }
-        fireAnnulusHaptic(nearestID)
+        let nearestCentrality = nearestID != nil ? annulusFalloff(nearestDist, cameraScale: cameraScale) : 0
+        fireAnnulusHaptic(nearestID, envelope: envelope, centrality: nearestCentrality)
         if band.count > AnnulusTuning.maxBand {
             band.sort { $0.dist < $1.dist }
             band.removeLast(band.count - AnnulusTuning.maxBand)
@@ -448,21 +452,25 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Subtle browse tick: fire a light impact when the most-amplified node (nearest
-    /// to the viewport center) CHANGES as the user pans, throttled so fast pans don't
-    /// machine-gun it. Re-keyed from the retired SB96 focal-change haptic.
-    private func fireAnnulusHaptic(_ nearestID: String?) {
+    /// Browse tick: fire a heavy impact — scaled by `hapticIntensity × envelope`
+    /// (so it's SILENT when the annulus is off and blooms in with the magnification,
+    /// killing the zoomed-out phantom ticks) — when the most-amplified node (nearest
+    /// to viewport center) CHANGES. Centrality toggle ON also × the node's centrality
+    /// (firmer dead-center). Clamped to [minAudible, 1] when it fires; throttled.
+    private func fireAnnulusHaptic(_ nearestID: String?, envelope: CGFloat, centrality: CGFloat) {
         guard AnnulusTuning.hapticOn, let nearestID, nearestID != annulusNearestID else {
             if let nearestID { annulusNearestID = nearestID }
             return
         }
-        let now = CACurrentMediaTime()
-        if now - lastAnnulusHapticTime > annulusHapticThrottle {
-            annulusHaptic.impactOccurred()   // full-strength heavy tick
-            annulusHaptic.prepare()
-            lastAnnulusHapticTime = now
-        }
         annulusNearestID = nearestID
+        let now = CACurrentMediaTime()
+        guard now - lastAnnulusHapticTime > annulusHapticThrottle else { return }
+        var intensity = AnnulusTuning.hapticIntensity * envelope
+        if AnnulusTuning.hapticCentrality { intensity *= centrality }
+        intensity = min(1, max(AnnulusTuning.hapticMinAudible, intensity))
+        annulusHaptic.impactOccurred(intensity: intensity)
+        annulusHaptic.prepare()
+        lastAnnulusHapticTime = now
     }
 
     // MARK: - Private state
@@ -2897,7 +2905,10 @@ final class CorpusPhysicsScene: SKScene {
         static let defaultRelaxPasses: Int = 4            // per-frame PBD passes (continuous → fewer than the old 8)
         static let defaultBreathingGap: CGFloat = 6       // world-space extra spacing between scaled radii
         static let defaultRelaxLerp: CGFloat = 0.22       // damped approach to the relaxed target (anti-jitter)
-        static let defaultHapticOn: Bool = true           // heavy tick as the most-amplified node changes
+        static let defaultHapticOn: Bool = true           // master: tick as the most-amplified node changes
+        static let defaultHapticIntensity: CGFloat = 0.6  // base tick magnitude (T's "split the difference")
+        static let defaultHapticCentrality: Bool = false  // ON → also × the node's centrality (harder dead-center)
+        static let hapticMinAudible: CGFloat = 0.10       // floor when a tick actually fires (never round to nothing)
         static let maxBand: Int = 56                      // PERF CAP: only the N most-central nodes relax (O(N²·passes))
         #if DEBUG
         private static func d(_ key: String, _ def: CGFloat) -> CGFloat {
@@ -2911,6 +2922,8 @@ final class CorpusPhysicsScene: SKScene {
         static var breathingGap: CGFloat  { d("map.annulus.breathingGap", defaultBreathingGap) }
         static var relaxLerp: CGFloat     { d("map.annulus.relaxLerp", defaultRelaxLerp) }
         static var hapticOn: Bool         { (UserDefaults.standard.object(forKey: "map.annulus.hapticOn") as? Bool) ?? defaultHapticOn }
+        static var hapticIntensity: CGFloat { d("map.annulus.hapticIntensity", defaultHapticIntensity) }
+        static var hapticCentrality: Bool { (UserDefaults.standard.object(forKey: "map.annulus.hapticCentrality") as? Bool) ?? defaultHapticCentrality }
         #else
         static var amplitude: CGFloat     { defaultAmplitude }
         static var onset: CGFloat         { defaultOnset }
@@ -2920,6 +2933,8 @@ final class CorpusPhysicsScene: SKScene {
         static var breathingGap: CGFloat  { defaultBreathingGap }
         static var relaxLerp: CGFloat     { defaultRelaxLerp }
         static var hapticOn: Bool         { defaultHapticOn }
+        static var hapticIntensity: CGFloat { defaultHapticIntensity }
+        static var hapticCentrality: Bool { defaultHapticCentrality }
         #endif
 
         /// Full-bloom cameraScale (more zoomed in than onset), derived from the ramp.

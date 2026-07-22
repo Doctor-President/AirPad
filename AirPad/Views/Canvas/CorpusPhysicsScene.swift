@@ -414,12 +414,15 @@ final class CorpusPhysicsScene: SKScene {
             updateOrbEdgeAA(sprite, onScreen: onScreen)
 
             guard let title = sprite.children.first(where: { $0.name == "titleLabel" }) else { continue }
-            title.alpha = smoothstepClamp(lod, fadeHi, onScreen)
-            // MSDF glyph labels: refresh scale-aware smoothing from the on-screen size
-            // (only while visible → bounded cost).
-            if title.alpha > 0.01, MSDFLabel.isGlyphContainer(title) {
-                MSDFLabel.refreshSmoothing(container: title, worldToScreenPt: worldToScreen,
-                                           contentScale: glyphContentScale)
+            let lodFade = smoothstepClamp(lod, fadeHi, onScreen)
+            title.alpha = lodFade   // culls the container cleanly at 0
+            // MSDF glyph labels: the custom shader ignores SKNode.alpha, so push the LOD
+            // fade to the glyphs as a_lod_alpha (with scale-aware smoothing, one pass).
+            // Across the WHOLE band (not gated at alpha > 0) so the fade-IN from zero is
+            // smooth — the loop already runs only on zoom-change / annulus, so it's cheap.
+            if MSDFLabel.isGlyphContainer(title) {
+                MSDFLabel.applyLOD(container: title, lodAlpha: lodFade,
+                                   worldToScreenPt: worldToScreen, contentScale: glyphContentScale)
             }
         }
     }

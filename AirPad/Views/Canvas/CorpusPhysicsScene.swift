@@ -1855,19 +1855,27 @@ final class CorpusPhysicsScene: SKScene {
         }
         shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
 
-        // Title label update — re-rasterize texture if title changed
-        if let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-           let oldTitle = sprite.userData?["fullTitle"] as? String {
+        // Title label update — re-layout (glyph) or re-rasterize (raster) if title changed.
+        if let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
+           let oldTitle = titleNode.userData?["fullTitle"] as? String {
             let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
             if oldTitle != displayText {
-                sprite.userData?["fullTitle"] = displayText
-                let isFocal = (sprite.userData?["isFocal"] as? Bool) ?? false
-                if isFocal {
-                    sprite.userData?["isFocal"] = false
-                    swapToFocalTexture(nodeID: node.id)
-                } else {
-                    sprite.userData?["isFocal"] = true
-                    swapToNonFocalTexture(nodeID: node.id)
+                if MSDFLabel.isGlyphContainer(titleNode) {
+                    // Rebuild the glyph container so the edited title re-wraps in glyph-space.
+                    titleNode.removeFromParent()
+                    let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
+                    shape.addChild(makeTitleSprite(text: displayText, radius: radius,
+                                                   fillColor: bubbleColor(for: node)))
+                } else if let sprite = titleNode as? SKSpriteNode {
+                    sprite.userData?["fullTitle"] = displayText
+                    let isFocal = (sprite.userData?["isFocal"] as? Bool) ?? false
+                    if isFocal {
+                        sprite.userData?["isFocal"] = false
+                        swapToFocalTexture(nodeID: node.id)
+                    } else {
+                        sprite.userData?["isFocal"] = true
+                        swapToNonFocalTexture(nodeID: node.id)
+                    }
                 }
             }
         }
@@ -3195,27 +3203,165 @@ final class CorpusPhysicsScene: SKScene {
         return (floorFont, acc.joined(separator: " ") + "…", .byWordWrapping, false)
     }
 
+    // MARK: - Glyph-space line layout (Phase 2) — the MSDF port of resolveTitle
+
+    /// How a segment attaches to the previous one ON THE SAME LINE. A break before a
+    /// `.hyphen` segment (a soft-hyphen point, mid-word) leaves a VISIBLE "-"; a break
+    /// before `.space` drops cleanly with no mark.
+    private enum GlyphJoin { case start, space, hyphen }
+
+    /// Glyph-space port of `resolveTitle`'s PASS 1/2/3 — SAME tier set / maxLines /
+    /// softHyphenated dictionary / all-caps — but measured with `measure` (atlas
+    /// advances) and producing EXPLICIT lines, so one metric system drives both fit and
+    /// render. The raster path keeps `resolveTitle`'s UIKit measurer until Phase 3.
+    private func resolveTitleLines(_ rawText: String, box: CGFloat,
+                                   measure: (String, UIFont) -> CGFloat) -> (font: UIFont, lines: [String]) {
+        let maxLines = LabelTuning.maxLines
+        let tiers = LabelTuning.tierSizes(box: box)
+        let capsText = TypeTuning.allCaps ? rawText.uppercased() : rawText
+
+        // PASS 1 — clean WORD-WRAP across tiers (largest first). Each word must fit the
+        // box alone (no char-break) and wrap within maxLines by word boundaries. No hyphens.
+        for size in tiers {
+            let f = CorpusPhysicsScene.mapLabelFont(size: size)
+            let segs = capsText.split(separator: " ", omittingEmptySubsequences: true)
+                .enumerated().map { ($0 == 0 ? GlyphJoin.start : .space, String($1)) }
+            if let lines = Self.wrapSegments(segs, f, box: box, maxLines: maxLines, measure: measure) {
+                return (f, lines)
+            }
+        }
+
+        // PASS 2 — soft-hyphenate the whole title (original case for the dict), uppercase,
+        // wrap allowing hyphen breaks (a VISIBLE "-"). First tier that fits within maxLines.
+        // The Simulator lacks the hyphenation dictionary → softHyphenated is a no-op there,
+        // so this pass finds nothing in-sim and PASS 3 handles it (device renders the hyphens).
+        if TypeTuning.hyphenation {
+            let hyBase = CorpusPhysicsScene.softHyphenated(rawText)
+            if hyBase != rawText {
+                let hyText = TypeTuning.allCaps ? hyBase.uppercased() : hyBase
+                let segs = Self.hyphenSegments(hyText)
+                for size in tiers {
+                    let f = CorpusPhysicsScene.mapLabelFont(size: size)
+                    if let lines = Self.wrapSegments(segs, f, box: box, maxLines: maxLines, measure: measure) {
+                        return (f, lines)
+                    }
+                }
+            }
+        }
+
+        // PASS 3 — floor tier. Single word → char-wrap (show every letter). Multiple words
+        // → greedy word-wrap, drop the overflow, mark the last line with "..." (the atlas
+        // has no U+2026 ellipsis glyph). Mirrors resolveTitle's last resort.
+        let floorFont = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
+        let words = capsText.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        if words.count <= 1 {
+            return (floorFont, Self.charWrap(capsText, floorFont, box: box, maxLines: maxLines, measure: measure))
+        }
+        return (floorFont, Self.dropWithEllipsis(words, floorFont, box: box, maxLines: maxLines, measure: measure))
+    }
+
+    /// Greedy line wrapper over pre-tokenised `(join, segment)`s. `.space` break → new
+    /// line, no mark; `.hyphen` break (mid-word) → a VISIBLE "-" ends the broken line.
+    /// Returns nil if a segment can't fit the box alone or the wrap needs > maxLines.
+    private static func wrapSegments(_ segs: [(GlyphJoin, String)], _ f: UIFont, box: CGFloat,
+                                     maxLines: Int, measure: (String, UIFont) -> CGFloat) -> [String]? {
+        var lines: [String] = []
+        var cur = ""
+        for (join, seg) in segs {
+            if cur.isEmpty {
+                if measure(seg, f) > box + 0.5 { return nil }
+                cur = seg
+                continue
+            }
+            let glue = (join == .space) ? " " : ""
+            let trial = cur + glue + seg
+            if measure(trial, f) <= box + 0.5 {
+                cur = trial
+            } else {
+                lines.append(join == .hyphen ? cur + "-" : cur)
+                if lines.count >= maxLines { return nil }
+                if measure(seg, f) > box + 0.5 { return nil }
+                cur = seg
+            }
+        }
+        if !cur.isEmpty { lines.append(cur) }
+        return lines.count <= maxLines ? lines : nil
+    }
+
+    /// Segment a soft-hyphenated (U+00AD) title: words split on spaces (`.space` join),
+    /// syllables split on the soft hyphens (`.hyphen` join).
+    private static func hyphenSegments(_ text: String) -> [(GlyphJoin, String)] {
+        var segs: [(GlyphJoin, String)] = []
+        for (wi, word) in text.split(separator: " ", omittingEmptySubsequences: true).enumerated() {
+            for (si, syl) in word.split(separator: "\u{00AD}", omittingEmptySubsequences: true).enumerated() {
+                let join: GlyphJoin = (wi == 0 && si == 0) ? .start : (si == 0 ? .space : .hyphen)
+                segs.append((join, String(syl)))
+            }
+        }
+        return segs
+    }
+
+    /// Char-wrap a single over-long word (raster's `.byCharWrapping`): pack characters
+    /// per line, no hyphen, capped at maxLines.
+    private static func charWrap(_ text: String, _ f: UIFont, box: CGFloat, maxLines: Int,
+                                 measure: (String, UIFont) -> CGFloat) -> [String] {
+        var lines: [String] = []
+        var cur = ""
+        for ch in text {
+            let trial = cur + String(ch)
+            if cur.isEmpty || measure(trial, f) <= box + 0.5 { cur = trial }
+            else { lines.append(cur); cur = String(ch); if lines.count >= maxLines { return lines } }
+        }
+        if !cur.isEmpty, lines.count < maxLines { lines.append(cur) }
+        return lines
+    }
+
+    /// Greedy word-wrap at the floor tier; drop the overflow and mark the last kept line
+    /// with "..." (no U+2026 in the atlas). Best-effort — the rare PASS-3 multi-word case.
+    private static func dropWithEllipsis(_ words: [String], _ f: UIFont, box: CGFloat, maxLines: Int,
+                                         measure: (String, UIFont) -> CGFloat) -> [String] {
+        var lines: [String] = []
+        var cur = ""
+        var i = 0
+        while i < words.count {
+            let w = words[i]
+            let trial = cur.isEmpty ? w : cur + " " + w
+            if cur.isEmpty || measure(trial, f) <= box + 0.5 { cur = trial; i += 1 }
+            else if lines.count + 1 == maxLines { break }   // last line reached; rest overflow
+            else { lines.append(cur); cur = "" }
+        }
+        if i < words.count {   // words were dropped → ellipsize the last line
+            while cur.contains(" "), measure(cur + "...", f) > box + 0.5 {
+                cur = String(cur[..<cur.range(of: " ", options: .backwards)!.lowerBound])
+            }
+            lines.append(cur.isEmpty ? "..." : cur + "...")
+        } else if !cur.isEmpty {
+            lines.append(cur)
+        }
+        return Array(lines.prefix(maxLines))
+    }
+
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKNode {
         // Rasterize in the node's ACTUAL display box (radius × labelBoxFactor —
         // the rounded-square usable width, wider than the circle-inscribed 1.4),
         // not a fixed 84pt canvas scaled down — so the title lays out + renders at
         // its real on-screen size per node (1:1), not wrapped for 84pt.
         let side = radius * LensTuning.labelBoxFactor
-        let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(text, box: side)
 
-        // Phase 1 — MSDF glyph labels (parallel path, gated on `SPRGlyphLabels`).
-        // Single-line, at resolveTitle's chosen SIZE, with the SAME ink as the raster
-        // path. Returns a container child of the orb named "titleLabel", z 2 — a
-        // drop-in at every seam (LOD alpha, focal, appearance flip). Multi-line
-        // wrap/hyphenation/truncation is Phase 2, so long titles overflow the box here.
+        // Phase 2 — MSDF glyph labels (parallel path, gated on `SPRGlyphLabels`): the
+        // wrap / tier / hyphenation is resolved in glyph-space (resolveTitleLines,
+        // measured with atlas advances) → explicit multi-line, SAME ink as raster.
+        // Returns a container child of the orb named "titleLabel", z 2 — a drop-in.
         if MSDFLabel.enabled, MSDFFont.shared.loaded {
-            let capsText = TypeTuning.allCaps ? text.uppercased() : text
+            let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
+                MSDFLabel.textWidth(s, pointSize: f.pointSize)
+            }
             let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
-            let ink = legibleInk(over: inkFill).ink
-            return MSDFLabel.makeContainer(text: capsText, pointSize: titleFont.pointSize,
-                                           color: ink, fullTitle: text)
+            return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
+                                           color: legibleInk(over: inkFill).ink, fullTitle: text)
         }
 
+        let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(text, box: side)
         let texture = rasterizeSquareText(
             title: renderTitle,
             summary: nil,

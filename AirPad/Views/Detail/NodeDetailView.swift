@@ -118,13 +118,6 @@ struct NodeDetailView: View {
     /// resolved default (global state, or Display for a typed node).
     @State private var localModeOverride: DisplayEditMode? = nil
 
-    // ws-dark-light-mode STEP 3 — in-app appearance override so T can flip
-    // Solar Flare ↔ Cucumber Water repeatedly while judging on device, without
-    // leaving for system Settings. "system" follows the device. This is a
-    // JUDGING affordance; likely retired once the palette settles. Persisted so
-    // the chosen mode survives navigation.
-    @AppStorage("airpad.detail.appearanceOverride") private var appearanceOverrideRaw = "system"
-
     // Editable fields (mirrored from node, written back on disappear)
     @State private var editedTitle = ""
     @State private var editedSummary = ""
@@ -204,9 +197,6 @@ struct NodeDetailView: View {
                     .background(Color.black)
             }
         }
-        // ws-dark-light-mode STEP 3 — the appearance override flips the whole
-        // detail view (nil = follow system). Judging tool; see `cycleAppearance`.
-        .preferredColorScheme(appearanceOverride)
         .onAppear {
             if let node {
                 editedTitle   = node.title
@@ -630,9 +620,10 @@ struct NodeDetailView: View {
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                    .frame(width: 56, height: 56)
+                    .frame(width: 48, height: 48)
+                    .contentShape(Circle())
                     .modifier(InteractiveGlassCircle())
             }
             Spacer()
@@ -648,41 +639,34 @@ struct NodeDetailView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 20)
-                        .frame(height: 56)
+                        .frame(height: 48)
                         .modifier(InteractiveGlassCapsule())
                 }
             } else {
-                // ws-dark-light-mode STEP 3 — appearance override (judging
-                // tool). Cycles system → light → dark so T can flip Solar Flare
-                // ↔ Cucumber Water on device. Icon reflects the current state.
-                Button {
-                    cycleAppearance()
-                } label: {
-                    Image(systemName: appearanceIcon)
-                        .font(.system(size: 20, weight: .semibold))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                        .frame(width: 56, height: 56)
-                        .contentShape(Circle())
-                        .modifier(InteractiveGlassCircle())
-                }
-                // ws-display-edit-mode — the mode toggle sits left of the
-                // node ••• menu. It shows the DESTINATION action: an eye in
-                // Edit (tap → Display / read), a pencil in Display (tap →
-                // Edit). Hidden during capture (that surface is forced Edit).
-                // Icon + size are first-pass and tunable on device.
+                // ws-chrome-pill — EDIT + ••• combined into ONE two-segment
+                // interactive-glass capsule, mirroring the Map's ChromeBar
+                // (CanvasChrome) so the detail chrome reads consistently. The
+                // per-view appearance override (a judging tool) was retired: the
+                // detail view now follows the app/system appearance like every
+                // other surface (List / Grid / Map have no in-app toggle either).
+                HStack(spacing: 0) {
+                // ws-display-edit-mode — mode toggle segment. Shows the
+                // DESTINATION action: an eye in Edit (tap → Display / read), a
+                // pencil in Display (tap → Edit). Hidden during capture (that
+                // surface is forced Edit).
                 if !isCaptureMode {
                     Button {
                         toggleMode(node)
                     } label: {
                         Image(systemName: resolvedMode(node).isDisplay ? "square.and.pencil" : "eye")
-                            .font(.system(size: 20, weight: .semibold))
+                            .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                            .frame(width: 56, height: 56)
+                            .frame(width: 48, height: 48)
                             // ws-glass-effect-hit-region — interactive glass
                             // swallows taps without an explicit content shape.
-                            .contentShape(Circle())
-                            .modifier(InteractiveGlassCircle())
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
                 Menu {
                     Button {} label: {
@@ -748,11 +732,13 @@ struct NodeDetailView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                        .frame(width: 56, height: 56)
-                        .modifier(InteractiveGlassCircle())
+                        .frame(width: 48, height: 48)
+                        .contentShape(Rectangle())
                 }
+                }  // close ws-chrome-pill HStack
+                .modifier(InteractiveGlassCapsule())
             }
         }
         .padding(.horizontal, 16)
@@ -1070,38 +1056,6 @@ struct NodeDetailView: View {
                 globalIsDisplay = target.isDisplay
                 localModeOverride = nil
             }
-        }
-    }
-
-    // MARK: - Appearance override (ws-dark-light-mode STEP 3, judging tool)
-
-    /// Resolved scheme for `.preferredColorScheme`. Nil = follow the system.
-    private var appearanceOverride: ColorScheme? {
-        switch appearanceOverrideRaw {
-        case "light": return .light
-        case "dark":  return .dark
-        default:      return nil
-        }
-    }
-
-    /// Cycles system → light → dark → system. The whole detail view flips so T
-    /// can judge Solar Flare against Cucumber Water without leaving the app.
-    private func cycleAppearance() {
-        withAnimation(.easeInOut(duration: 0.25)) {
-            switch appearanceOverrideRaw {
-            case "system": appearanceOverrideRaw = "light"
-            case "light":  appearanceOverrideRaw = "dark"
-            default:       appearanceOverrideRaw = "system"
-            }
-        }
-    }
-
-    /// Icon reflecting the current override state.
-    private var appearanceIcon: String {
-        switch appearanceOverrideRaw {
-        case "light": return "sun.max.fill"
-        case "dark":  return "moon.fill"
-        default:      return "circle.lefthalf.filled"
         }
     }
 

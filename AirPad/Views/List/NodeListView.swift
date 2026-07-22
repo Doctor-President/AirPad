@@ -103,7 +103,8 @@ struct NodeListView: View {
                             navHaptic.impactOccurred()
                             navigationPath.append(node)
                         } label: {
-                            RecentNodeRow(node: node, timestamp: node.updatedAt)
+                            RecentNodeRow(node: node, timestamp: node.updatedAt,
+                                          ink: AppearancePalette.ink)
                                 .equatable()
                         }
                         // Frosted glass so bands read as separated panels

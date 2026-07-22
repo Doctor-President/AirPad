@@ -225,6 +225,13 @@ struct RecentsView: View {
 struct RecentNodeRow: View, Equatable {
     let node: Node
     let timestamp: Date
+    /// Text ink. Defaults to `.white` for the dark-only surfaces that own this
+    /// row (Recents / History both sit on a hardcoded black ground). The List
+    /// view — which rides the adaptive `AppearancePalette.mapBackground` (cream
+    /// in light mode) — passes `AppearancePalette.ink` so the title/timestamp
+    /// read dark on parchment. Not part of `==` (it's constant per surface, and
+    /// the dynamic color re-resolves on the trait change regardless).
+    var ink: Color = .white
 
     @Environment(CorpusStore.self) private var store
 
@@ -248,14 +255,14 @@ struct RecentNodeRow: View, Equatable {
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(ink)
                     .lineLimit(1)
                 Text(timestamp, style: .relative)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(ink.opacity(0.4))
                 + Text(" ago")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(ink.opacity(0.4))
             }
             Spacer()
         }

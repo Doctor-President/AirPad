@@ -130,7 +130,9 @@ enum MSDFLabel {
     /// (each label its own ink, still one batch — attributes don't break batching).
     /// SKTexture(rect:in:) means `v_tex_coord` already spans the glyph sub-rect, so no
     /// UV attribute is needed. No `fwidth` (SKShader GLSL may not expose it) — smoothing
-    /// is CPU-fed per frame.
+    /// is CPU-fed per frame. The LOD fade rides a per-glyph `a_lod_alpha`: a custom shader
+    /// writes gl_FragColor directly, so SpriteKit does NOT fold SKNode.alpha into it —
+    /// setting the container's alpha would never reach the glyphs (→ pop-in). See applyLOD.
     static let shader: SKShader = {
         let src = """
         float median3(vec3 m) { return max(min(m.r, m.g), min(max(m.r, m.g), m.b)); }
@@ -139,14 +141,15 @@ enum MSDFLabel {
             float sd = median3(msd);
             float screenPxDistance = a_px_range * (sd - 0.5);
             float opacity = clamp(screenPxDistance + 0.5, 0.0, 1.0);
-            float a = a_glyph_color.a * opacity;
+            float a = a_glyph_color.a * opacity * a_lod_alpha;   // a_lod_alpha = LOD fade
             gl_FragColor = vec4(a_glyph_color.rgb * a, a);   // premultiplied
         }
         """
         let shader = SKShader(source: src)
         shader.attributes = [
             SKAttribute(name: "a_glyph_color", type: .vectorFloat4),
-            SKAttribute(name: "a_px_range", type: .float)
+            SKAttribute(name: "a_px_range", type: .float),
+            SKAttribute(name: "a_lod_alpha", type: .float)
         ]
         return shader
     }()
@@ -205,7 +208,8 @@ enum MSDFLabel {
                 sprite.shader = shader
                 sprite.blendMode = .alpha
                 sprite.setValue(SKAttributeValue(vectorFloat4: colorVec), forAttribute: "a_glyph_color")
-                sprite.setValue(SKAttributeValue(float: 4.0), forAttribute: "a_px_range")   // set per-frame
+                sprite.setValue(SKAttributeValue(float: 4.0), forAttribute: "a_px_range")     // set per-frame (smoothing)
+                sprite.setValue(SKAttributeValue(float: 1.0), forAttribute: "a_lod_alpha")    // set per-frame (LOD fade)
                 container.addChild(sprite)
             }
         }
@@ -220,20 +224,30 @@ enum MSDFLabel {
         }
     }
 
-    /// Refresh scale-aware smoothing for a VISIBLE glyph container from its on-screen
-    /// size. `worldToScreenPt` = spriteScale / cameraScale (how many screen points one
-    /// world point occupies); `contentScale` = view.contentScaleFactor. All glyphs of a
-    /// label share `pointSize`, so it's one value per label — set on each glyph as
-    /// `a_px_range`. Bounded: call only when the label is on-screen (alpha > 0).
-    static func refreshSmoothing(container: SKNode, worldToScreenPt: CGFloat, contentScale: CGFloat) {
+    /// Per-frame per-glyph LOD refresh — ONE pass over the children sets BOTH:
+    ///   • `a_px_range` — scale-aware MSDF smoothing from the on-screen size.
+    ///     `worldToScreenPt` = spriteScale / cameraScale (screen points per world point);
+    ///     `contentScale` = view.contentScaleFactor. All glyphs share `pointSize`, so it's
+    ///     one value per label.
+    ///   • `a_lod_alpha` — the LOD fade. The glyph shader writes gl_FragColor directly, so
+    ///     SpriteKit never folds the container's SKNode.alpha into it; the fade has to reach
+    ///     the glyphs as an attribute or the label pops (full-opacity above the threshold,
+    ///     gone at 0) instead of fading.
+    /// Folding both into one child loop avoids a second per-frame iteration. Call across the
+    /// WHOLE fade band (incl. `lodAlpha` → 0) so the fade-IN from zero is smooth; the caller
+    /// loop only runs on zoom-change / annulus, so this stays cheap.
+    static func applyLOD(container: SKNode, lodAlpha: CGFloat,
+                         worldToScreenPt: CGFloat, contentScale: CGFloat) {
         let font = MSDFFont.shared
         guard let pt = container.userData?[pointSizeKey] as? CGFloat, pt > 0 else { return }
         // screenPxRange = pxrange · (screen px per atlas texel).
         // screen px per atlas texel = (pt · worldToScreenPt · contentScale) / atlasSize  (em cancels).
         let screenPxRange = max(1.0, font.distanceRange * pt * worldToScreenPt * contentScale / font.atlasSize)
-        let v = Float(screenPxRange)
-        for glyph in container.children {
-            (glyph as? SKSpriteNode)?.setValue(SKAttributeValue(float: v), forAttribute: "a_px_range")
+        let px = Float(screenPxRange)
+        let lod = Float(lodAlpha)
+        for case let glyph as SKSpriteNode in container.children {
+            glyph.setValue(SKAttributeValue(float: px), forAttribute: "a_px_range")
+            glyph.setValue(SKAttributeValue(float: lod), forAttribute: "a_lod_alpha")
         }
     }
 

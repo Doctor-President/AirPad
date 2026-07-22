@@ -95,6 +95,20 @@ enum AppearancePalette {
     static let panelShadow = dynamic(dark: "000000", darkAlpha: 0.35,
                                      light: "000000", lightAlpha: 0.10)
 
+    /// The card lift shadow that separates a card FACE (carousel + grid tiles)
+    /// from the ground. ONE token so the two surfaces can't drift.
+    /// Dark: `black@0.32` — the shipped `NodeCardView` value, BYTE-IDENTICAL, so
+    /// the dark card lift is unchanged. Light: a WARM low-saturation brown-gray
+    /// (`#43372A`) pulled toward the Cucumber-Water cream — an occluded warm
+    /// light reads warm on parchment, where a neutral gray reads "digital." Kept
+    /// SUBTLE (physical, not tinted): `0.22` alpha vs the dark `0.32`, matching
+    /// the parchment's soft-shadow register (T-dialed up from 0.18 for a touch
+    /// more lift). Dial: T nudges the warmth via the light hex and the heft via
+    /// `lightAlpha` here (hex is the colorblind-safe control; the grid scales
+    /// this same color down by tile width).
+    static let cardShadow = dynamic(dark: "000000", darkAlpha: 0.32,
+                                    light: "43372A", lightAlpha: 0.22)
+
     /// Foreground for a glyph placed ON an `ink`-filled SOLID (the capture "+":
     /// an `ink` circle with this glyph cut out of it). Dark: pure `#000000` —
     /// byte-identical to the shipped `.black` plus on the `.white` circle

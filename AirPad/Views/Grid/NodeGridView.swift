@@ -61,6 +61,13 @@ struct NodeGridView: View {
     private static let tileSheenOpacity: Double = 0.14  // specular top sheen
     private static let tileRimWidth: CGFloat = 1.5       // rim hairline width
 
+    /// Approx carousel-card width. The tile lift shadow scales DOWN from the
+    /// carousel's radius-12 / y-4 by `cellW / this`, so a small tile gets a
+    /// proportionally lighter shadow (a big card's shadow reads heavy on a
+    /// small tile). Sets only the shadow's relative heft, not layout — a rough
+    /// anchor is fine. The warm color is the shared `AppearancePalette.cardShadow`.
+    private static let cardShadowReferenceWidth: CGFloat = 360
+
     /// Faint glassy highlight at the tile's top edge, fading out fast. Applied
     /// pre-clip so it's masked to the rounded tile shape.
     private static var tileSheen: some View {
@@ -167,6 +174,9 @@ struct NodeGridView: View {
             let totalSpacing = tileSpacing * 2 + tileSpacing * CGFloat(columnCount - 1) + railLane
             let cellW = (geo.size.width - totalSpacing) / CGFloat(columnCount)
             let cellH = cellW * 7.0 / 5.0
+            // Carousel-parity lift, scaled to the tile width (same for every
+            // tile in a density) so grid cards separate from the parchment.
+            let shadowScale = min(cellW / Self.cardShadowReferenceWidth, 1)
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -195,6 +205,13 @@ struct NodeGridView: View {
                             // to the tile shape by the clip that follows.
                             .overlay(Self.tileSheen)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
+                            // Warm, appearance-adaptive lift — the SAME
+                            // AppearancePalette.cardShadow the carousel uses,
+                            // scaled down to the tile so it separates from the
+                            // parchment without reading heavy. Cast by the
+                            // clipped shape (drawn outside the clip).
+                            .shadow(color: AppearancePalette.cardShadow,
+                                    radius: 12 * shadowScale, x: 0, y: 4 * shadowScale)
                             // R6 — top-edge rim light on the rounded edge.
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)

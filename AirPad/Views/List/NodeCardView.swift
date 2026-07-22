@@ -216,7 +216,11 @@ struct NodeCardView: View {
                     RoundedRectangle(cornerRadius: Self.cornerRadius)
                         .stroke(Color.white, lineWidth: isSelecting && isPicked ? 3 : 0)
                 )
-                .shadow(color: .black.opacity(0.32), radius: 12, x: 0, y: 4)
+                // Warm, appearance-adaptive lift — shared AppearancePalette
+                // token (dark = the shipped black@0.32, byte-identical; light =
+                // warm brown-gray on parchment). The grid tiles reuse the same
+                // token so carousel + grid can't drift.
+                .shadow(color: AppearancePalette.cardShadow, radius: 12, x: 0, y: 4)
             }
         }
     }

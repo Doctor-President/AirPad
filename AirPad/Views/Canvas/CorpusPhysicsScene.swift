@@ -1855,28 +1855,16 @@ final class CorpusPhysicsScene: SKScene {
         }
         shape.userData?["neighborhoodID"] = neighborhoodCache?.neighborhoodID(forNodeID: node.id)
 
-        // Title label update — re-layout (glyph) or re-rasterize (raster) if title changed.
+        // Title label update — rebuild the glyph container if the title changed, so the
+        // edited title re-wraps in glyph-space.
         if let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
            let oldTitle = titleNode.userData?["fullTitle"] as? String {
             let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
             if oldTitle != displayText {
-                if MSDFLabel.isGlyphContainer(titleNode) {
-                    // Rebuild the glyph container so the edited title re-wraps in glyph-space.
-                    titleNode.removeFromParent()
-                    let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
-                    shape.addChild(makeTitleSprite(text: displayText, radius: radius,
-                                                   fillColor: bubbleColor(for: node)))
-                } else if let sprite = titleNode as? SKSpriteNode {
-                    sprite.userData?["fullTitle"] = displayText
-                    let isFocal = (sprite.userData?["isFocal"] as? Bool) ?? false
-                    if isFocal {
-                        sprite.userData?["isFocal"] = false
-                        swapToFocalTexture(nodeID: node.id)
-                    } else {
-                        sprite.userData?["isFocal"] = true
-                        swapToNonFocalTexture(nodeID: node.id)
-                    }
-                }
+                titleNode.removeFromParent()
+                let radius = nodeIntrinsicRadii[node.id] ?? bubbleRadius(for: node)
+                shape.addChild(makeTitleSprite(text: displayText, radius: radius,
+                                               fillColor: bubbleColor(for: node)))
             }
         }
     }
@@ -2412,35 +2400,17 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    /// Re-raster every resting (non-focal) label. Needed because the DARK label ink
-    /// now depends on the sat/val boost: called on APPEARANCE FLIP (so the ink
-    /// re-flips light↔dark) and, in DEBUG, when the dark-orb tuner changes sat/val.
-    /// Mirrors `swapToNonFocalTexture`'s raster path; skips the focal (its title is
-    /// the SwiftUI overlay). Resting labels only → a one-time burst on flip.
+    /// Recolor every resting (non-focal) glyph label on APPEARANCE FLIP — the DARK ink
+    /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in
+    /// place (set `a_glyph_color`; no re-raster) — a one-time burst on flip.
     func restyleLabels() {
         for (nodeID, shape) in nodeSprites {
             guard let titleNode = shape.children.first(where: { $0.name == "titleLabel" }),
-                  (titleNode.userData?["isFocal"] as? Bool) != true,
-                  let fullTitle = titleNode.userData?["fullTitle"] as? String,
-                  let radius = nodeIntrinsicRadii[nodeID]
+                  (titleNode.userData?["isFocal"] as? Bool) != true
             else { continue }
             let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-            // MSDF glyph labels: recolor in place (no re-raster) — ink follows the same
-            // dark boost / legibleInk decision as the raster path.
-            if MSDFLabel.isGlyphContainer(titleNode) {
-                let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
-                MSDFLabel.recolor(container: titleNode, color: legibleInk(over: inkFill).ink)
-                continue
-            }
-            guard let sprite = titleNode as? SKSpriteNode else { continue }
-            let side = radius * LensTuning.labelBoxFactor
-            let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
-            sprite.texture = rasterizeSquareText(
-                title: renderTitle, summary: nil, side: side,
-                titleFont: titleFont, summaryFont: titleFont,
-                renderScale: 6.0, fillColor: fillColor, titleWrap: titleWrap,
-                titleHyphenate: titleHyphenate)
-            sprite.size = CGSize(width: side, height: side)
+            let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
+            MSDFLabel.recolor(container: titleNode, color: legibleInk(over: inkFill).ink)
         }
     }
 
@@ -2818,204 +2788,6 @@ final class CorpusPhysicsScene: SKScene {
         return UIColor(hue: h, saturation: s, brightness: v, alpha: a)
     }
 
-    /// AT17.3.4: Render title + summary into a square canvas, vertically centered.
-    /// The texture is treated as an icon — same square dimensions regardless of text content.
-    /// Long content truncates with ellipsis. The square is sized in the bubble's intrinsic
-    /// coordinate space and scales with the parent shape.
-    private func rasterizeSquareText(
-        title: String,
-        summary: String?,
-        side: CGFloat,
-        titleFont: UIFont,
-        summaryFont: UIFont,
-        renderScale: CGFloat,
-        fillColor: UIColor,
-        titleWrap: NSLineBreakMode = .byWordWrapping,  // resolveTitle owns the fit; no mid-word cut
-        titleHyphenate: Bool = false                   // resolveTitle's per-title decision (arc #2 last-resort)
-    ) -> SKTexture {
-        let textWidth = side  // padding inside the square
-        // Luminance-aware ink + soft halo, chosen on the ACTUAL rendered tone. DARK
-        // (Solar Flare) boosts the fill by the shader's sat/val FIRST so bright
-        // boosted orbs get dark ink consistently (no more light-on-light on
-        // near-threshold orbs); LIGHT (Cucumber Water) uses the base fill as before
-        // (unchanged). `currentIsLight` is the same flag that drives u_wash_is_light.
-        // Ink-flip only — no baked halo (the NSShadow muddied minified text). Clean
-        // minification comes from texture mipmaps.
-        let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
-        let (ink, _) = legibleInk(over: inkFill)
-        func styled(_ text: String, _ font: UIFont, _ lineBreak: NSLineBreakMode,
-                    hyphenate: Bool = false, kern: CGFloat = 0) -> NSAttributedString {
-            let para = NSMutableParagraphStyle()
-            para.alignment = .center
-            para.lineBreakMode = lineBreak
-            // Title-only: hyphenation + tracking (Type arc #1). Must match the
-            // resolveTitle fit paragraph so the fit predicted this exact render.
-            if hyphenate { para.hyphenationFactor = 1.0 }
-            var attrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .foregroundColor: ink,
-                .paragraphStyle: para,
-            ]
-            if kern != 0 { attrs[.kern] = kern }
-            return NSAttributedString(string: text, attributes: attrs)
-        }
-
-        // Title label — wrap mode chosen by resolveTitle (word-boundary; the tier
-        // loop already guaranteed the fit, so nothing is truncated mid-word here).
-        let maxLines = LabelTuning.maxLines
-        let titleLabel = UILabel()
-        titleLabel.attributedText = styled(title, titleFont, titleWrap,
-                                           hyphenate: titleHyphenate,
-                                           kern: TypeTuning.tracking)
-        titleLabel.numberOfLines = maxLines
-        titleLabel.lineBreakMode = titleWrap
-        let titleMaxHeight = titleFont.lineHeight * CGFloat(maxLines) + 4
-        titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleMaxHeight)
-        let titleFit = titleLabel.sizeThatFits(CGSize(width: textWidth, height: titleMaxHeight))
-        let titleHeight = min(titleFit.height, titleMaxHeight)
-        titleLabel.frame = CGRect(x: 0, y: 0, width: textWidth, height: titleHeight)
-
-        // Summary label (optional)
-        let spacing: CGFloat = side * 0.04
-        var summaryLabel: UILabel? = nil
-        var summaryHeight: CGFloat = 0
-        if let summary, !summary.isEmpty {
-            let s = UILabel()
-            s.attributedText = styled(summary, summaryFont, .byTruncatingTail)
-            s.numberOfLines = 4
-            s.lineBreakMode = .byTruncatingTail
-            let sMaxHeight = summaryFont.lineHeight * 4 + 4
-            s.frame = CGRect(x: 0, y: 0, width: textWidth, height: sMaxHeight)
-            let sFit = s.sizeThatFits(CGSize(width: textWidth, height: sMaxHeight))
-            summaryHeight = min(sFit.height, sMaxHeight)
-            s.frame = CGRect(x: 0, y: 0, width: textWidth, height: summaryHeight)
-            summaryLabel = s
-        }
-
-        // Render into square canvas
-        let canvasSize = CGSize(width: side, height: side)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = renderScale
-        format.opaque = false
-        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
-        let image = renderer.image { ctx in
-            let totalTextHeight = titleHeight + (summaryLabel != nil ? spacing + summaryHeight : 0)
-            let yStart = (side - totalTextHeight) / 2.0
-            let xStart = (side - textWidth) / 2.0
-
-            ctx.cgContext.saveGState()
-            ctx.cgContext.translateBy(x: xStart, y: yStart)
-            titleLabel.layer.render(in: ctx.cgContext)
-            ctx.cgContext.restoreGState()
-
-            if let s = summaryLabel {
-                ctx.cgContext.saveGState()
-                ctx.cgContext.translateBy(x: xStart, y: yStart + titleHeight + spacing)
-                s.layer.render(in: ctx.cgContext)
-                ctx.cgContext.restoreGState()
-            }
-        }
-
-        let texture = SKTexture(image: image)
-        texture.filteringMode = .linear
-        texture.usesMipmaps = true   // clean minification when the sprite scales down
-        return texture
-    }
-
-    // SB97.1: Rasterize title (and optional summary) into an SKTexture via UIKit.
-    // SKLabelNode's text engine breaks mid-word at narrow widths; UILabel handles
-    // word-wrap, shrink-to-fit, and subpixel positioning correctly.
-    private func rasterizeText(
-        title: String,
-        summary: String?,
-        bubbleDiameter: CGFloat,
-        titleFont: UIFont,
-        summaryFont: UIFont?,
-        titleMaxLines: Int,
-        summaryMaxLines: Int,
-        renderScale: CGFloat
-    ) -> SKTexture {
-        let renderWidth = bubbleDiameter * 0.70
-        let textColor = UIColor.white.withAlphaComponent(0.65)
-
-        let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = titleFont
-        titleLabel.textColor = textColor
-        titleLabel.numberOfLines = 2
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.adjustsFontSizeToFitWidth = false
-        titleLabel.textAlignment = (summaryFont == nil) ? .center : .left
-        let titleMaxHeight = titleFont.lineHeight * CGFloat(titleMaxLines) + 4
-        titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleMaxHeight)
-        titleLabel.layoutIfNeeded()
-        let titleFitSize = titleLabel.sizeThatFits(CGSize(width: renderWidth, height: titleMaxHeight))
-        let titleHeight = min(titleFitSize.height, titleMaxHeight)
-        titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleHeight)
-        titleLabel.layoutIfNeeded()
-
-        let hasSummary = (summary?.isEmpty == false) && summaryFont != nil && summaryMaxLines > 0
-        let spacing: CGFloat = 8
-        var summaryLabel: UILabel? = nil
-        var summaryHeight: CGFloat = 0
-        if hasSummary, let sFont = summaryFont, let sText = summary {
-            let s = UILabel()
-            s.text = sText
-            s.font = sFont
-            s.textColor = textColor
-            s.numberOfLines = summaryMaxLines
-            s.lineBreakMode = .byTruncatingTail
-            s.textAlignment = .left
-            let sMaxHeight = sFont.lineHeight * CGFloat(summaryMaxLines) + 4
-            s.frame = CGRect(x: 0, y: 0, width: renderWidth, height: sMaxHeight)
-            s.layoutIfNeeded()
-            let sFit = s.sizeThatFits(CGSize(width: renderWidth, height: sMaxHeight))
-            summaryHeight = min(sFit.height, sMaxHeight)
-            s.frame = CGRect(x: 0, y: 0, width: renderWidth, height: summaryHeight)
-            s.layoutIfNeeded()
-            summaryLabel = s
-        }
-
-        let totalHeight = titleHeight + (summaryLabel != nil ? spacing + summaryHeight : 0)
-        let canvasSize = CGSize(width: renderWidth, height: max(totalHeight, 1))
-
-        let format = UIGraphicsImageRendererFormat()
-        // SB97.2: pixel density = renderScale × point size. Helper divides texture pixels
-        // by renderScale to recover intrinsic point size in parent coord space.
-        format.scale = renderScale
-        format.opaque = false
-        let renderer = UIGraphicsImageRenderer(size: canvasSize, format: format)
-        let image = renderer.image { ctx in
-            titleLabel.frame = CGRect(x: 0, y: 0, width: renderWidth, height: titleHeight)
-            titleLabel.layer.render(in: ctx.cgContext)
-            if let s = summaryLabel {
-                ctx.cgContext.saveGState()
-                ctx.cgContext.translateBy(x: 0, y: titleHeight + spacing)
-                s.layer.render(in: ctx.cgContext)
-                ctx.cgContext.restoreGState()
-            }
-        }
-
-        let texture = SKTexture(image: image)
-        texture.filteringMode = .linear
-        return texture
-    }
-
-    /// SB97.2: Convert texture pixel dimensions back to the sprite's intrinsic visual size in the parent's coord space.
-    /// The texture is rasterized at `bubbleDiameter * 1.4` width × renderScale multiplier of pixels.
-    /// To display at intrinsic size, divide pixel size by renderScale.
-    private func computeIntrinsicSpriteSize(
-        texture: SKTexture,
-        bubbleDiameter: CGFloat,
-        renderScale: CGFloat
-    ) -> CGSize {
-        let textureSize = texture.size()
-        return CGSize(
-            width: textureSize.width / renderScale,
-            height: textureSize.height / renderScale
-        )
-    }
-
     /// Node-label size tiers — BAKED from T's device-final values (2026-07-21
     /// end-of-loop bake). Tier font sizes = box × fraction, clamped to [floor, cap].
     /// Plain literals, ZERO UserDefaults → Debug == Release.
@@ -3115,92 +2887,6 @@ final class CorpusPhysicsScene: SKScene {
             let t = (on - cameraScale) / max(on - full, 0.0001)
             return t * t * (3 - 2 * t)   // smoothstep
         }
-    }
-
-    /// Resolve a node title into (font, renderText, wrapMode, hyphenate) with
-    /// DISCRETE tiers, NO mid-word truncation, and hyphenation as a LAST RESORT
-    /// (Type arc #2, corrected). Three passes, tiers LARGEST→smallest each:
-    ///  • PASS 1 — CLEAN word-wrap: the title wraps within maxLines AND no single word
-    ///    is wider than the box. The per-word test is the fix: `.byWordWrapping`
-    ///    boundingRect silently CHAR-BREAKS an over-wide word to fit and reports a
-    ///    success, so a width-only check let over-wide titles skip hyphenation
-    ///    entirely. "RIDESHARE REVOLUTION" still clean-fits (both words fit alone).
-    ///  • PASS 2 — HYPHENATE any title: `softHyphenated` inserts U+00AD in every
-    ///    hyphenatable word; the first tier where the hyphenated title word-wraps
-    ///    within maxLines wins, breaking at a VISIBLE hyphen ("ISOMOR-PHISM",
-    ///    "…DISTRIBU-TION"). Auto-insertion needs the device hyphenation dictionary —
-    ///    the Simulator lacks it (`softHyphenated` returns the input unchanged), so
-    ///    in-sim this path is skipped and it falls to PASS 3's char-wrap (EXPECTED).
-    ///  • PASS 3 — genuinely-too-long / no break points: drop trailing words + a
-    ///    word-boundary ellipsis (multi-word), or char-wrap the lone word.
-    /// Cache-safe: labels rasterize fresh per call. `hyphenate` stays wired for the
-    /// render but soft hyphens carry the break, so it is passed false.
-    private func resolveTitle(_ rawText: String, box: CGFloat) -> (font: UIFont, text: String, wrap: NSLineBreakMode, hyphenate: Bool) {
-        // ALL-CAPS first so every downstream measurement + the returned renderText
-        // operate on the uppercased string (caps are ~10-15% wider — the fit knows).
-        let text = TypeTuning.allCaps ? rawText.uppercased() : rawText
-        let maxLines = LabelTuning.maxLines
-        let kern = TypeTuning.tracking
-        let attrs: (UIFont) -> [NSAttributedString.Key: Any] = { f in
-            let para = NSMutableParagraphStyle()
-            para.lineBreakMode = .byWordWrapping
-            // `.kern` always included (tracking widens the render → fit must match).
-            return [.font: f, .paragraphStyle: para, .kern: kern]
-        }
-        /// `requireCleanWords`: PASS 1 also rejects a tier if ANY single word is wider
-        /// than the box (word-wrap would char-break it — not a clean fit). PASS 2/3
-        /// pass false: soft hyphens / accumulation are expected to place the words.
-        func fits(_ s: String, _ f: UIFont, requireCleanWords: Bool) -> Bool {
-            let a = attrs(f)
-            let b = (s as NSString).boundingRect(
-                with: CGSize(width: box, height: .greatestFiniteMagnitude),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
-                attributes: a, context: nil)
-            guard b.height <= f.lineHeight * CGFloat(maxLines) + 1, b.width <= box + 0.5 else { return false }
-            if requireCleanWords {
-                for w in s.split(separator: " ", omittingEmptySubsequences: true) {
-                    let wb = (String(w) as NSString).boundingRect(
-                        with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude),
-                        options: [.usesFontLeading], attributes: a, context: nil)
-                    if wb.width > box + 0.5 { return false }
-                }
-            }
-            return true
-        }
-        let tiers = LabelTuning.tierSizes(box: box)
-
-        // PASS 1 — clean WORD-WRAP only (no word char-broken). Beats hyphenation.
-        for size in tiers {
-            let f = CorpusPhysicsScene.mapLabelFont(size: size)
-            if fits(text, f, requireCleanWords: true) { return (f, text, .byWordWrapping, false) }
-        }
-
-        // PASS 2 — hyphenate ANY title. Soft-hyphenate the whole title (per word), in
-        // original case for dictionary recognition, then uppercase if caps. First tier
-        // where the hyphenated title word-wraps within maxLines wins.
-        if TypeTuning.hyphenation {
-            let hyBase = CorpusPhysicsScene.softHyphenated(rawText)
-            if hyBase != rawText {   // soft hyphens were added (device has the dictionary)
-                let hyText = TypeTuning.allCaps ? hyBase.uppercased() : hyBase
-                for size in tiers {
-                    let f = CorpusPhysicsScene.mapLabelFont(size: size)
-                    if fits(hyText, f, requireCleanWords: false) { return (f, hyText, .byWordWrapping, false) }
-                }
-            }
-        }
-
-        // PASS 3 — genuinely too long, or no hyphenation break points.
-        let floorFont = CorpusPhysicsScene.mapLabelFont(size: tiers.last ?? LabelTuning.floor)
-        let words = text.split(separator: " ", omittingEmptySubsequences: true)
-        if words.count <= 1 {
-            return (floorFont, text, .byCharWrapping, false)   // lone word — show every letter
-        }
-        var acc: [Substring] = []
-        for w in words {
-            if fits((acc + [w]).joined(separator: " ") + "…", floorFont, requireCleanWords: false) { acc.append(w) } else { break }
-        }
-        if acc.isEmpty { return (floorFont, String(words[0]), .byCharWrapping, false) }
-        return (floorFont, acc.joined(separator: " ") + "…", .byWordWrapping, false)
     }
 
     // MARK: - Glyph-space line layout (Phase 2) — the MSDF port of resolveTitle
@@ -3342,89 +3028,18 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private func makeTitleSprite(text: String, radius: CGFloat, fillColor: UIColor) -> SKNode {
-        // Rasterize in the node's ACTUAL display box (radius × labelBoxFactor —
-        // the rounded-square usable width, wider than the circle-inscribed 1.4),
-        // not a fixed 84pt canvas scaled down — so the title lays out + renders at
-        // its real on-screen size per node (1:1), not wrapped for 84pt.
+        // MSDF glyph label — the SOLE label path (raster retired in Phase 3). The wrap /
+        // tier / hyphenation is resolved in glyph-space (resolveTitleLines, measured with
+        // atlas advances → one metric system for fit + render); ink matches the orb
+        // (legibleInk over the dark-boosted fill). Returns a container child of the orb
+        // named "titleLabel", z 2 — resolution-independent (crisp at any zoom) + batched.
         let side = radius * LensTuning.labelBoxFactor
-
-        // Phase 2 — MSDF glyph labels (parallel path, gated on `SPRGlyphLabels`): the
-        // wrap / tier / hyphenation is resolved in glyph-space (resolveTitleLines,
-        // measured with atlas advances) → explicit multi-line, SAME ink as raster.
-        // Returns a container child of the orb named "titleLabel", z 2 — a drop-in.
-        if MSDFLabel.enabled, MSDFFont.shared.loaded {
-            let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
-                MSDFLabel.textWidth(s, pointSize: f.pointSize)
-            }
-            let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
-            return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
-                                           color: legibleInk(over: inkFill).ink, fullTitle: text)
+        let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
+            MSDFLabel.textWidth(s, pointSize: f.pointSize)
         }
-
-        let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(text, box: side)
-        let texture = rasterizeSquareText(
-            title: renderTitle,
-            summary: nil,
-            side: side,
-            titleFont: titleFont,
-            summaryFont: titleFont,
-            renderScale: 6.0,
-            fillColor: fillColor,
-            titleWrap: titleWrap,
-            titleHyphenate: titleHyphenate
-        )
-        let sprite = SKSpriteNode(texture: texture)
-        sprite.position = .zero
-        sprite.zPosition = 2
-        sprite.name = "titleLabel"
-        sprite.userData = ["fullTitle": text, "isFocal": false]
-        sprite.size = CGSize(width: side, height: side)
-        return sprite
-    }
-
-    /// Focal text is NO LONGER rasterized into the sprite. The focal sprite is
-    /// `alpha = 0` during engagement (see `setFocalShader`), so a scaled focal
-    /// texture would never be seen — the title/summary render in the SwiftUI
-    /// `focalEngagementOverlay` at final size instead. We only flag the sprite
-    /// so its small non-focal texture is restored on release
-    /// (`swapToNonFocalTexture`). The child keeps its non-focal texture, hidden
-    /// by the parent's alpha throughout.
-    private func swapToFocalTexture(nodeID: String) {
-        guard let shape = nodeSprites[nodeID],
-              let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-              let isFocal = sprite.userData?["isFocal"] as? Bool,
-              !isFocal
-        else { return }
-        sprite.userData?["isFocal"] = true
-    }
-
-    private func swapToNonFocalTexture(nodeID: String) {
-        guard let shape = nodeSprites[nodeID],
-              let sprite = shape.children.first(where: { $0.name == "titleLabel" }) as? SKSpriteNode,
-              let fullTitle = sprite.userData?["fullTitle"] as? String,
-              let isFocal = sprite.userData?["isFocal"] as? Bool,
-              isFocal,
-              let radius = nodeIntrinsicRadii[nodeID]
-        else { return }
-
-        let side = radius * LensTuning.labelBoxFactor
-        let (titleFont, renderTitle, titleWrap, titleHyphenate) = resolveTitle(fullTitle, box: side)
-
-        let fillColor = currentNodes.first(where: { $0.id == nodeID }).map { bubbleColor(for: $0) } ?? .gray
-        let texture = rasterizeSquareText(
-            title: renderTitle,
-            summary: nil,
-            side: side,
-            titleFont: titleFont,
-            summaryFont: titleFont,
-            renderScale: 6.0,
-            fillColor: fillColor,
-            titleWrap: titleWrap,
-            titleHyphenate: titleHyphenate
-        )
-        sprite.texture = texture
-        sprite.size = CGSize(width: side, height: side)
-        sprite.userData?["isFocal"] = false
+        let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
+        return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
+                                       color: legibleInk(over: inkFill).ink, fullTitle: text)
     }
 
     /// The resting orb physics body for a given radius — extracted so a rebuild

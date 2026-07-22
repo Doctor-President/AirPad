@@ -1,17 +1,16 @@
 //  MSDFLabel.swift
-//  In-scene MSDF (multi-channel signed-distance-field) glyph label rendering —
-//  the real foundation promoted from the throwaway spike (which returned PROCEED:
-//  razor-crisp at 12× zoom, 144 glyphs → 1 draw, tracks the orb 1:1 as a child).
+//  In-scene MSDF (multi-channel signed-distance-field) glyph label rendering — the
+//  SOLE map node-label path (the UIKit raster path was retired in Phase 3). Labels are
+//  resolution-independent (razor-crisp at any zoom, where the raster blurred past ~2×)
+//  and batch to ~1 draw (shared atlas + shader), and track the orb 1:1 as children.
 //
-//  Phase 0 (this file): atlas loader (as a DATA texture, not sRGB) + the MSDF shader
-//  + a single-line glyph-container builder. Phase 1 wires it into makeTitleSprite /
-//  applyOrbScales / restyleLabels behind the `SPRGlyphLabels` flag, in PARALLEL with
-//  the raster path (nothing ships broken; A/B on device). Phase 2 = the multi-line
-//  layout port (resolveTitle's wrap/hyphenation into glyph-space). Phase 3 deletes
-//  the raster path.
+//  Pipeline: makeTitleSprite → resolveTitleLines (glyph-space wrap/tier/hyphenation,
+//  measured with atlas advances) → makeContainer (multi-line glyph sprites). Per-frame
+//  scale-aware smoothing is fed from applyOrbScales; restyleLabels recolors on
+//  appearance flip. Ink = legibleInk over the dark-boosted fill (matches the orb).
 //
-//  Atlas: AirPad/Resources/MSDF/fraunces_msdf.{png,json}, baked with
-//    msdf-atlas-gen -font Fraunces_72pt-Regular.ttf -charset '[32,126]' \
+//  Atlas: AirPad/Resources/MSDF/fraunces_msdf.{png,json}, baked with (Bold = mapLabelFont):
+//    msdf-atlas-gen -font Fraunces_72pt-Bold.ttf -charset '[32,126]' \
 //      -type msdf -format png -size 48 -pxrange 4 -yorigin bottom
 //  msdf (opaque RGB) → no alpha channel to be premultiplied/corrupted on load.
 
@@ -121,14 +120,8 @@ final class MSDFFont {
 // MARK: - MSDF label helper
 
 enum MSDFLabel {
-    /// Parallel-path flag. OFF (default) = the shipping raster labels; ON = MSDF glyph
-    /// labels. Set via the `SPRGlyphLabels` launch arg (works in the -SPRMeasure harness
-    /// and when running from Xcode with the scheme arg). Nothing ships broken: default
-    /// OFF keeps the raster path.
-    static var enabled: Bool { UserDefaults.standard.bool(forKey: "SPRGlyphLabels") }
-
     /// Container marker + point-size stash (for per-frame smoothing).
-    static let containerName = "titleLabel"   // SAME name as the raster sprite → all seams find it
+    static let containerName = "titleLabel"   // the label child's name → all seams find it
     private static let markerKey = "msdfGlyph"
     private static let pointSizeKey = "msdfPointSize"
 

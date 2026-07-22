@@ -405,15 +405,18 @@ final class CorpusPhysicsScene: SKScene {
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
             }
             sprite.setScale(scale)
-            guard let intrinsic = nodeIntrinsicRadii[nodeID],
-                  let title = sprite.children.first(where: { $0.name == "titleLabel" })
-            else { continue }
+            guard let intrinsic = nodeIntrinsicRadii[nodeID] else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
             let worldToScreen = scale / max(cameraScale, 0.0001)
             let onScreen = (intrinsic * 2) * worldToScreen
+            // Orb edge crispness: drive the SDF feather to a screen-constant width so
+            // zooming in doesn't blow the 1px edge into a soft blur (see updateOrbEdgeAA).
+            updateOrbEdgeAA(sprite, onScreen: onScreen)
+
+            guard let title = sprite.children.first(where: { $0.name == "titleLabel" }) else { continue }
             title.alpha = smoothstepClamp(lod, fadeHi, onScreen)
             // MSDF glyph labels: refresh scale-aware smoothing from the on-screen size
-            // (only while visible → bounded cost; the raster path is a no-op here).
+            // (only while visible → bounded cost).
             if title.alpha > 0.01, MSDFLabel.isGlyphContainer(title) {
                 MSDFLabel.refreshSmoothing(container: title, worldToScreenPt: worldToScreen,
                                            contentScale: glyphContentScale)
@@ -423,6 +426,27 @@ final class CorpusPhysicsScene: SKScene {
 
     /// Cached `view.contentScaleFactor` for MSDF smoothing (device px per point).
     private var glyphContentScale: CGFloat { view?.contentScaleFactor ?? 3.0 }
+
+    // Orb edge feather (a_geom.y) clamps — screen-constant AA, tunable.
+    private static let orbEdgeMinAA: Float = 0.0003   // floor: avoid a razor-hard / aliased edge
+    private static let orbEdgeMaxAA: Float = 0.06     // ceiling: avoid a fuzzy blob when tiny on screen
+
+    /// Drive the orb SDF edge feather (`a_geom.y`) per frame to a SCREEN-CONSTANT width,
+    /// like the MSDF `u_px_range`. It's a UV fraction set ONCE at creation (1px at BASE
+    /// size), so it scales with the sprite → zooming in blows the feather into a soft
+    /// blur. Re-derive it from the on-screen size each frame:
+    ///   aa = clamp(contentScaleFactor / onScreenPx, minAA, maxAA),  onScreenPx = onScreen · csf
+    /// → a big zoomed orb gets a tiny UV feather (crisp ~1px edge); a small orb gets a
+    /// larger UV feather (still ~1px on screen). `a_geom.x` (stroke width) is PRESERVED —
+    /// it's the orb's visual weight, not the softness. Called only in `applyOrbScales`,
+    /// which already runs per-frame ONLY when the zoom changed (or the annulus is on).
+    private func updateOrbEdgeAA(_ sprite: SKNode, onScreen: CGFloat) {
+        guard let geom = sprite.value(forAttributeNamed: "a_geom")?.vectorFloat2Value else { return }
+        let csf = glyphContentScale
+        let onScreenPx = max(onScreen * csf, 0.5)
+        let aa = min(Self.orbEdgeMaxAA, max(Self.orbEdgeMinAA, Float(csf / onScreenPx)))
+        sprite.setValue(SKAttributeValue(vectorFloat2: vector_float2(geom.x, aa)), forAttribute: "a_geom")
+    }
 
     /// TRANSIENT push-apart for the amplified band. Enlarged nodes (restingScale ×
     /// zoomRamp × annulusAmplify) shove each other apart to keep the breathing gap,

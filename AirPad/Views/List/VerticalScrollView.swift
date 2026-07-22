@@ -68,27 +68,6 @@ struct VerticalScrollView: View {
                         .ignoresSafeArea()
                         .allowsHitTesting(false)
                     cardScrollContent(containerHeight: geo.size.height)
-                    VStack(spacing: 0) {
-                        LinearGradient(
-                            colors: [.black, .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 100)
-                        .allowsHitTesting(false)
-
-                        Spacer()
-
-                        LinearGradient(
-                            colors: [.clear, .black],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: 100)
-                        .allowsHitTesting(false)
-                    }
-                    .allowsHitTesting(false)
-                    .ignoresSafeArea()
 
                     #if DEBUG
                     cardTuningTrigger

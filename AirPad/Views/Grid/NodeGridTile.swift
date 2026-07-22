@@ -19,6 +19,7 @@
 // indirection and the tuning file.
 
 import SwiftUI
+import UIKit
 
 struct NodeGridTile: View {
     let node: Node
@@ -161,11 +162,43 @@ struct NodeGridTile: View {
     /// share one silhouette: text always starts below this height.
     private var heroZoneHeight: CGFloat { cellHeight * tuning.heroPercent }
 
-    // Warm-cream ink palette — copy of NodeCardView's.
-    private static let inkTitle = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.98)
-    private static let inkDeck  = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.86)
-    private static let inkMeta  = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.68)
-    private static let hairlineColor = Color(red: 1.0, green: 0.925, blue: 0.804)
+    // Adaptive ink palette — trait-dynamic port of NodeCardView's (the tile had
+    // copied NodeCardView's OLD static cream, before the card went adaptive). Dark
+    // reproduces the shipped warm-cream VERBATIM (byte-identical to Solar Flare);
+    // light sources from AppearancePalette.ink (#232A2E) so title/deck/meta/hairline
+    // read as DARK type on the gradient's cream lower section (Cucumber Water),
+    // matching the single card. Same opacities either way — the flip is coupled
+    // plumbing, not a judged knob.
+    private static let cream     = Color(red: 1.0, green: 0.976, blue: 0.941)
+    private static let creamHair = Color(red: 1.0, green: 0.925, blue: 0.804)
+    private static let inkLight: UIColor =
+        UIColor(AppearancePalette.ink).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+
+    private static func ink(_ darkOpaque: Color, _ alpha: CGFloat) -> Color {
+        let dark = UIColor(darkOpaque).withAlphaComponent(alpha)
+        let light = inkLight.withAlphaComponent(alpha)
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+
+    private static let inkTitle = ink(cream, 0.98)
+    private static let inkDeck  = ink(cream, 0.86)
+    private static let inkMeta  = ink(cream, 0.68)
+    // Full-alpha base; the body multiplies by `t.hairlineOpacity`.
+    private static let hairlineColor = ink(creamHair, 1.0)
+
+    // Legibility shadow behind ink. Dark: black (shipped scrim substitute —
+    // byte-identical). Light: a soft WHITE halo so type separates from the
+    // multiplied mid-tone pigment without smearing dark onto parchment.
+    private static let inkShadow = Color(UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor.black : UIColor.white
+    })
+
+    // Traveling-scrim ink. Dark: black (identical) — darkens the type bands over
+    // the bright gradient. Light: clear — a dark scrim pools as dirty bands on
+    // parchment; ink + halo carry legibility instead.
+    private static let scrimInk = Color(UIColor {
+        $0.userInterfaceStyle == .dark ? UIColor.black : UIColor.clear
+    })
 
     // MARK: - Type scaling
 
@@ -266,10 +299,10 @@ struct NodeGridTile: View {
         // higher behind the bumped-up text.
         LinearGradient(
             stops: [
-                .init(color: Color.black.opacity(0.42), location: 0.0),
-                .init(color: Color.clear,               location: 0.20),
-                .init(color: Color.clear,               location: 0.55),
-                .init(color: Color.black.opacity(0.52), location: 1.0)
+                .init(color: Self.scrimInk.opacity(0.42), location: 0.0),
+                .init(color: Color.clear,                 location: 0.20),
+                .init(color: Color.clear,                 location: 0.55),
+                .init(color: Self.scrimInk.opacity(0.52), location: 1.0)
             ],
             startPoint: .top,
             endPoint: .bottom
@@ -318,7 +351,7 @@ struct NodeGridTile: View {
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
             }
-            .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+            .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
 
             Rectangle()
                 .fill(Self.hairlineColor.opacity(t.hairlineOpacity))
@@ -332,7 +365,7 @@ struct NodeGridTile: View {
                 .font(.system(size: scaled(t.titleBaseSize * titleScaleFactor(for: titleText, maxScale: t.titleMaxScale)), weight: .bold, design: .serif))
                 .tracking(t.titleTracking)
                 .foregroundColor(Self.inkTitle)
-                .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+                .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
                 .lineSpacing(t.titleLineSpacing)
                 .lineLimit(t.titleLineLimit)
                 .minimumScaleFactor(t.titleMinScale)
@@ -345,7 +378,7 @@ struct NodeGridTile: View {
                     .font(.system(size: scaled(t.deckBaseSize), design: .serif))
                     .italic()
                     .foregroundColor(Self.inkDeck)
-                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
                     .tracking(t.deckTracking)
                     .lineSpacing(t.deckLineSpacing)
                     .lineLimit(t.deckLineLimit)
@@ -368,7 +401,7 @@ struct NodeGridTile: View {
                     .font(.system(size: scaled(t.metaBaseSize), weight: .medium, design: .serif))
                     .tracking(t.metaTracking)
                     .foregroundColor(Self.inkMeta)
-                    .shadow(color: .black.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
                     .lineLimit(1)
             }
         }
@@ -394,7 +427,7 @@ struct NodeGridTile: View {
                 .font(.system(size: scaled(t.titleBaseSize * titleScaleFactor(for: displayTitle, maxScale: t.titleMaxScale)), weight: .bold, design: .serif))
                 .tracking(t.titleTracking)
                 .foregroundColor(Self.inkTitle)
-                .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+                .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
                 .lineSpacing(t.titleLineSpacing)
                 .lineLimit(t.titleLineLimit)
                 .minimumScaleFactor(t.titleMinScale)

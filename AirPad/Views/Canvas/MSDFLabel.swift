@@ -23,6 +23,7 @@ import simd
 
 private struct MSDFAtlasJSON: Decodable {
     struct Atlas: Decodable { let distanceRange, size, width, height: Double }
+    struct Metrics: Decodable { let lineHeight: Double }   // em (font line height)
     struct Bounds: Decodable { let left, bottom, right, top: Double }
     struct Glyph: Decodable {
         let unicode: Int
@@ -31,6 +32,7 @@ private struct MSDFAtlasJSON: Decodable {
         let atlasBounds: Bounds?   // atlas px, y-from-bottom (nil for space)
     }
     let atlas: Atlas
+    let metrics: Metrics
     let glyphs: [Glyph]
 }
 
@@ -44,6 +46,7 @@ final class MSDFFont {
     let atlasW: CGFloat, atlasH: CGFloat
     let distanceRange: CGFloat      // pxrange, in atlas texels
     let atlasSize: CGFloat          // px per em in the atlas
+    let lineHeightEm: CGFloat       // font line height (em) for multi-line stacking
     private let glyphs: [Int: MSDFAtlasJSON.Glyph]
     private var subTexCache: [Int: SKTexture] = [:]
 
@@ -56,7 +59,7 @@ final class MSDFFont {
             print("[MSDF] ERROR — atlas not found/loadable (fraunces_msdf.png/.json)")
             loaded = false
             atlasTexture = SKTexture()
-            atlasW = 1; atlasH = 1; distanceRange = 4; atlasSize = 48; glyphs = [:]
+            atlasW = 1; atlasH = 1; distanceRange = 4; atlasSize = 48; lineHeightEm = 1.2; glyphs = [:]
             return
         }
         atlasTexture = tex
@@ -64,6 +67,7 @@ final class MSDFFont {
         atlasH = CGFloat(parsed.atlas.height)
         distanceRange = CGFloat(parsed.atlas.distanceRange)
         atlasSize = CGFloat(parsed.atlas.size)
+        lineHeightEm = CGFloat(parsed.metrics.lineHeight)
         var map: [Int: MSDFAtlasJSON.Glyph] = [:]
         for g in parsed.glyphs { map[g.unicode] = g }
         glyphs = map
@@ -90,6 +94,12 @@ final class MSDFFont {
 
     fileprivate func glyph(_ scalar: UInt32) -> MSDFAtlasJSON.Glyph? { glyphs[Int(scalar)] }
     fileprivate func advance(_ scalar: UInt32) -> CGFloat { CGFloat(glyphs[Int(scalar)]?.advance ?? 0.25) }
+
+    /// Rendered width (points) of `text` at `pointSize` — the SAME atlas advances that
+    /// drive the glyph render, so fit and render share one metric system.
+    fileprivate func width(_ text: String, pointSize: CGFloat) -> CGFloat {
+        text.unicodeScalars.reduce(CGFloat(0)) { $0 + advance($1.value) } * pointSize
+    }
 
     /// Cached `SKTexture(rect:in:)` sub-rect for a glyph — sub-rects of the ONE atlas
     /// texture batch (spike-proven, draws:5 for 144 glyphs). Cache keyed by unicode so
@@ -153,12 +163,19 @@ enum MSDFLabel {
         (node.userData?[markerKey] as? Bool) == true
     }
 
-    /// Build a single-line MSDF glyph container for `text`, centered on the origin, at
-    /// `pointSize` pt-per-em, all glyphs colored `color`. Returns an `SKNode` named
-    /// `containerName` (drop-in for the raster title sprite: child of the orb, z 2,
-    /// alpha-driven by LOD). Phase-1 layout is LEFT-TO-RIGHT single-line (no wrap /
-    /// hyphenation / truncation — that's Phase 2); long titles overflow the box.
-    static func makeContainer(text: String, pointSize: CGFloat, color: UIColor,
+    /// Rendered width (points) of `text` at `pointSize` — the measurer the glyph-space
+    /// line breaker feeds to the shared resolveTitleLines pass logic.
+    static func textWidth(_ text: String, pointSize: CGFloat) -> CGFloat {
+        MSDFFont.shared.width(text, pointSize: pointSize)
+    }
+
+    /// Build a MULTI-LINE MSDF glyph container from pre-broken `lines` (Phase 2: the
+    /// line breaking / tiering / hyphenation is done upstream in glyph-space so it
+    /// matches the raster wrap). Each line is laid out L→R by advance and CENTERED
+    /// horizontally; lines are STACKED by the font line-height and the whole block is
+    /// CENTERED vertically on the origin. Returns an `SKNode` named `containerName`
+    /// (drop-in for the raster title sprite: child of orb, z 2, alpha-driven by LOD).
+    static func makeContainer(lines: [String], pointSize: CGFloat, color: UIColor,
                               fullTitle: String) -> SKNode {
         let container = SKNode()
         container.zPosition = 2
@@ -170,29 +187,34 @@ enum MSDFLabel {
         container.userData?[pointSizeKey] = pointSize
 
         let font = MSDFFont.shared
-        guard font.loaded, pointSize > 0 else { return container }
+        guard font.loaded, pointSize > 0, !lines.isEmpty else { return container }
 
-        let scalars = Array(text.unicodeScalars)
-        let midCaps: CGFloat = 0.355   // cap-box center (em) → vertical centering
-        let totalAdvance = scalars.reduce(CGFloat(0)) { $0 + font.advance($1.value) } * pointSize
+        let midCaps: CGFloat = 0.355                 // cap-box center (em) → vertical centering
+        let lineSpacing = font.lineHeightEm * pointSize
         let colorVec = rgbaVec(color)
-        var penX: CGFloat = -totalAdvance / 2
-        for s in scalars {
-            let adv = font.advance(s.value)
-            defer { penX += adv * pointSize }
-            guard let g = font.glyph(s.value), let pb = g.planeBounds,
-                  let sub = font.subTexture(g) else { continue }   // skip space / missing glyphs
-            let sprite = SKSpriteNode(texture: sub)
-            sprite.size = CGSize(width: CGFloat(pb.right - pb.left) * pointSize,
-                                 height: CGFloat(pb.top - pb.bottom) * pointSize)
-            sprite.position = CGPoint(x: penX + CGFloat(pb.left + pb.right) / 2 * pointSize,
-                                      y: (CGFloat(pb.top + pb.bottom) / 2 - midCaps) * pointSize)
-            sprite.zPosition = 2
-            sprite.shader = shader
-            sprite.blendMode = .alpha
-            sprite.setValue(SKAttributeValue(vectorFloat4: colorVec), forAttribute: "a_glyph_color")
-            sprite.setValue(SKAttributeValue(float: 4.0), forAttribute: "a_px_range")   // set per-frame
-            container.addChild(sprite)
+        // Top line highest, block centered on y = 0.
+        let topOffset = CGFloat(lines.count - 1) / 2 * lineSpacing
+        for (li, line) in lines.enumerated() {
+            let lineY = topOffset - CGFloat(li) * lineSpacing
+            let lineWidth = font.width(line, pointSize: pointSize)
+            var penX = -lineWidth / 2
+            for s in line.unicodeScalars {
+                let adv = font.advance(s.value)
+                defer { penX += adv * pointSize }
+                guard let g = font.glyph(s.value), let pb = g.planeBounds,
+                      let sub = font.subTexture(g) else { continue }   // skip space / missing glyphs
+                let sprite = SKSpriteNode(texture: sub)
+                sprite.size = CGSize(width: CGFloat(pb.right - pb.left) * pointSize,
+                                     height: CGFloat(pb.top - pb.bottom) * pointSize)
+                sprite.position = CGPoint(x: penX + CGFloat(pb.left + pb.right) / 2 * pointSize,
+                                          y: (CGFloat(pb.top + pb.bottom) / 2 - midCaps) * pointSize + lineY)
+                sprite.zPosition = 2
+                sprite.shader = shader
+                sprite.blendMode = .alpha
+                sprite.setValue(SKAttributeValue(vectorFloat4: colorVec), forAttribute: "a_glyph_color")
+                sprite.setValue(SKAttributeValue(float: 4.0), forAttribute: "a_px_range")   // set per-frame
+                container.addChild(sprite)
+            }
         }
         return container
     }

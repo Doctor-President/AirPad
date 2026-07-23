@@ -299,7 +299,7 @@
 		1B2FC18986ACC45F4CAA20A7 /* card_parity_fixture.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = card_parity_fixture.json; sourceTree = "<group>"; };
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
-		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.extensionkit-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagTerritoryLayout.swift; sourceTree = "<group>"; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
@@ -397,7 +397,7 @@
 		8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentQuickLookViewer.swift; sourceTree = "<group>"; };
 		8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewQueueSheet.swift; sourceTree = "<group>"; };
 		8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkAppendSheet.swift; sourceTree = "<group>"; };
-		8C73593D5F5CF884769506DE /* BGEMicro.mlpackage */ = {isa = PBXFileReference; path = BGEMicro.mlpackage; sourceTree = "<group>"; };
+		8C73593D5F5CF884769506DE /* BGEMicro.mlpackage */ = {isa = PBXFileReference; lastKnownFileType = folder.mlpackage; path = BGEMicro.mlpackage; sourceTree = "<group>"; };
 		8E377DA84FC9332E02C687FB /* ChatTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscript.swift; sourceTree = "<group>"; };
 		8E4F251A686080806C62E071 /* NodeItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItem.swift; sourceTree = "<group>"; };
 		8EA8C82636A7D9E2E115A203 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = System/Library/Frameworks/AVKit.framework; sourceTree = SDKROOT; };
@@ -411,7 +411,7 @@
 		988F66299DD79745A824B3A0 /* RelatednessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatednessService.swift; sourceTree = "<group>"; };
 		9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayCardView.swift; sourceTree = "<group>"; };
 		9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterRegistry.swift; sourceTree = "<group>"; };
-		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Regular.ttf"; sourceTree = "<group>"; };
 		A1213E716A9E302D0B777EDD /* EntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryCard.swift; sourceTree = "<group>"; };
 		A33874916B1B3854F08227C7 /* fraunces_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = fraunces_msdf.png; sourceTree = "<group>"; };
@@ -1102,9 +1102,6 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					62C8055DB0F7AF52F9B3E615 = {
-						DevelopmentTeam = 8XM4B5F42Y;
-					};
 					9F144B331C91B74D76253A80 = {
 						DevelopmentTeam = 8XM4B5F42Y;
 					};
@@ -1433,7 +1430,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AirPad;
 				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;
 				INFOPLIST_FILE = AirPad/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
@@ -1442,6 +1440,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

@@ -98,6 +98,7 @@ struct DashboardView: View {
                             .padding(.top, 6)
                         todaySection
                         recentsRow
+                            .dashboardPaneSurface()   // #3 — same surface as the Today pane
                         collectionsSection
                     }
                     .padding(.horizontal, 20)
@@ -304,8 +305,12 @@ struct DashboardView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 4)
+            // #3 fix-up — vertical padding raised so this single-line pane matches
+            // a (two-line) Collections row's height/rhythm (measured parity, see
+            // report); horizontal 18 matches a Collections row's inset so the two
+            // panes read as siblings. No subtitle added to fill the space.
+            .padding(.vertical, 23)
+            .padding(.horizontal, 18)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -338,14 +343,20 @@ struct DashboardView: View {
                 }
                 NewCollectionButton { showCreateCollectionSheet = true }
             }
+            // #3 fix-up — the SAME pane surface as the Today card
+            // (`.thinMaterial` + white@0.12 rim, radius 22, no shadow; the lava
+            // reads through it). Replaced the List-view row treatment (opaque
+            // cream fill + heavy warm shadow + tight corners) that clashed here.
+            .dashboardPaneSurface()
         }
     }
 
-    /// Hairline used between rows in `collectionsSection` since the cards
-    /// were stripped in commit 2 of the recents-landing brief.
+    /// Hairline between rows in `collectionsSection`. #3 — appearance-aware ink
+    /// (dark #FFFFFF@0.08 byte-identical; light dark-ink so it reads on the
+    /// translucent pane in both modes) — was `.white@0.08`, invisible in light.
     private var collectionsHairline: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.08))
+            .fill(AppearancePalette.ink.opacity(0.08))
             .frame(height: 0.5)
     }
 

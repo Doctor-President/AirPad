@@ -50,6 +50,12 @@ struct DashboardView: View {
     @State private var deleteTarget: NodeCollection?
     @State private var showCreateCollectionSheet = false
     @State private var showSettings = false
+    #if DEBUG
+    /// #3 lava-lamp LIGHT tuner (throwaway; delete with the panel once T's values
+    /// are baked into DashLavaLight.default).
+    @State private var showDashLavaTuner = false
+    @State private var dashLavaTunerOffset: CGSize = .zero
+    #endif
 
     /// Dashboard Stage 3 — rows are derived at render time from
     /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
@@ -99,6 +105,10 @@ struct DashboardView: View {
                 }
 
                 floatingPlusButton
+
+                #if DEBUG
+                dashLavaTunerLayer
+                #endif
             }
             .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
             .navigationDestination(for: DashboardRoute.self) { route in
@@ -183,7 +193,7 @@ struct DashboardView: View {
                 .resizable()
                 .renderingMode(.template)
                 .scaledToFit()
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .frame(height: 56)
                 .frame(maxWidth: .infinity, alignment: .center)
 
@@ -275,15 +285,15 @@ struct DashboardView: View {
             HStack(spacing: 12) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .frame(width: 28)
                 Text("Recents")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 4)
@@ -298,7 +308,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Collections")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .tracking(0.8)
 
@@ -395,6 +405,40 @@ struct DashboardView: View {
         }
     }
 
+    #if DEBUG
+    /// #3 — floating tuner trigger (drop glyph, top-left) + panel. Delete with
+    /// DashLavaTuningPanel once T's LIGHT values are baked.
+    private var dashLavaTunerLayer: some View {
+        ZStack {
+            VStack {
+                HStack {
+                    Button { showDashLavaTuner.toggle() } label: {
+                        Image(systemName: "drop.fill")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                Spacer()
+            }
+            .padding(.top, 60)
+            .padding(.leading, 10)
+
+            if showDashLavaTuner {
+                VStack {
+                    Spacer()
+                    DashLavaTuningPanel(isPresented: $showDashLavaTuner,
+                                        position: $dashLavaTunerOffset)
+                        .padding(.bottom, 80)
+                }
+            }
+        }
+    }
+    #endif
+
 }
 
 // MARK: - Collection row
@@ -415,10 +459,10 @@ private struct CollectionRow: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(collection.name)
                             .font(nameFont)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppearancePalette.ink)
                         Text(subtitle)
                             .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.5))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     }
                     Spacer(minLength: 0)
                 }
@@ -443,7 +487,7 @@ private struct CollectionRow: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
@@ -451,7 +495,7 @@ private struct CollectionRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
         .padding(.horizontal, 18)
         .padding(.vertical, verticalPadding)
@@ -496,7 +540,7 @@ private struct NewCollectionButton: View {
                 Text("New Collection")
                     .font(.system(size: 15, weight: .semibold))
             }
-            .foregroundStyle(.white.opacity(0.7))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .contentShape(Rectangle())

@@ -64,6 +64,9 @@ struct RichTextEditor: UIViewRepresentable {
         textView.placeholderText = placeholder
         textView.minHeight = minHeight
         textView.attributedText = decodedAttributedText(text)
+        // Record the markdown now reflected in the view so the first updateUIView
+        // (and every benign re-render after) is a no-op — see `lastAppliedMarkdown`.
+        context.coordinator.lastAppliedMarkdown = text
         // Seed typingAttributes so the first keystroke into an empty editor renders
         // legibly. UIKit derives typingAttributes from the surrounding character on
         // each cursor move, but with no characters it falls back to system defaults.
@@ -83,14 +86,19 @@ struct RichTextEditor: UIViewRepresentable {
 
     func updateUIView(_ uiView: RichTextUIView, context: Context) {
         context.coordinator.parent = self
-        // The binding carries markdown. Only re-render if the binding's markdown differs
-        // from what's currently in the editor — otherwise we'd clobber typing in progress
-        // (textViewDidChange pushes new markdown out, SwiftUI calls updateUIView, and we'd
-        // re-decode and reset the cursor on every keystroke).
-        let currentMarkdown = MarkdownCodec.encode(uiView.attributedText ?? NSAttributedString())
-        if currentMarkdown != text {
+        // Only re-decode when the incoming binding differs from the markdown we last
+        // reflected in the view (`lastAppliedMarkdown`). This must be a plain string
+        // compare, NOT `encode(attributedText) != text`: `encode ∘ decode` is not the
+        // identity for links / checklists / nested bullets / escaped specials / serif
+        // bold-italic, so the old form was permanently true and clobbered the caret on
+        // every render (MD14 — see `Coordinator.lastAppliedMarkdown`). Typing already
+        // keeps the two in sync: `pushBinding` sets `lastAppliedMarkdown` to the value
+        // it writes to the binding, so the following updateUIView is a no-op and the
+        // cursor is left where the user put it.
+        if text != context.coordinator.lastAppliedMarkdown {
             let previousRange = uiView.selectedRange
             uiView.attributedText = decodedAttributedText(text)
+            context.coordinator.lastAppliedMarkdown = text
             let length = uiView.attributedText.length
             let clampedLocation = min(previousRange.location, length)
             let clampedLength = min(previousRange.length, length - clampedLocation)
@@ -140,6 +148,20 @@ struct RichTextEditor: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: RichTextEditor
         let state = RichTextEditorState()
+        /// The markdown currently reflected in the text view's `attributedText`.
+        /// This is the no-op signal for `updateUIView`: it re-decodes only when the
+        /// incoming binding differs from what we last put into (or read out of) the
+        /// view. It must NOT be derived from `MarkdownCodec.encode(attributedText)`,
+        /// because `encode ∘ decode` is not the identity for several ordinary
+        /// constructs (links gain a `<u>` span, checklists/nested bullets/escaped
+        /// specials re-serialize differently, and — for serif notes — a bold+italic
+        /// run collapses to bold since the face has no bold-italic variant). Any of
+        /// those made the old `encode(attributedText) != text` guard permanently
+        /// true, so every render reassigned `attributedText` and re-anchored the
+        /// caret to `previousRange` — which on the keyboard/focus render after a tap
+        /// is still the end-of-text default, jumping the caret to the end (MD14).
+        /// Set in `makeUIView`, `updateUIView` (external change), and `pushBinding`.
+        var lastAppliedMarkdown: String?
         /// Guards against re-entrancy when `applyInPlace` restyles storage from
         /// within `refreshActiveState` (a programmatic selection nudge could
         /// otherwise re-trigger the delegate and recurse).
@@ -287,7 +309,12 @@ struct RichTextEditor: UIViewRepresentable {
         /// binding. Use this instead of `parent.text = textView.text` to keep the binding
         /// authoritative as markdown rather than raw display text.
         private func pushBinding(from textView: UITextView) {
-            parent.text = MarkdownCodec.encode(textView.attributedText ?? NSAttributedString())
+            let markdown = MarkdownCodec.encode(textView.attributedText ?? NSAttributedString())
+            parent.text = markdown
+            // The view already holds exactly this markdown, so mark it applied: the
+            // updateUIView SwiftUI schedules from this binding write is then a no-op
+            // and won't re-decode over the user's caret (MD14).
+            lastAppliedMarkdown = markdown
         }
 
         // MARK: Inline images

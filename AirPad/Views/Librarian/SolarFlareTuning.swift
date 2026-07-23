@@ -88,18 +88,6 @@ enum SolarFlareTuningKey {
     static let askGlowBlur           = "sf.askGlowBlur"
     static let askGlowOpacity        = "sf.askGlowOpacity"
 
-    // Peek-pill flare — masked LIVE color layer behind the peek pill
-    // text. The prismatic mesh provides the color; a hand-painted
-    // grayscale PNG ("PeekPillMask") carries the falloff so color is
-    // full-strength at the center and feathers softly to transparent
-    // at the perimeter. Replaces the prior alpha-matte experiments.
-    static let peekFlareOn           = "sf.peekFlareOn"
-    static let peekFlarePalette      = "sf.peekFlarePalette"
-    static let peekFlareStrength     = "sf.peekFlareStrength"
-    static let peekFlareDesat        = "sf.peekFlareDesat"
-    static let peekFlareMaskOpacity  = "sf.peekFlareMaskOpacity"
-    static let peekFlareColorA       = "sf.peekFlareColorA"
-    static let peekFlareColorB       = "sf.peekFlareColorB"
 }
 
 // MARK: - Defaults
@@ -154,16 +142,6 @@ enum SolarFlareTuningDefaults {
     static let askGlowBlur: Double            = 16
     static let askGlowOpacity: Double         = 0.8
 
-    // Peek-flare defaults — Solar palette to match the panel material's
-    // default, near-full strength so the color reads behind the text,
-    // no desaturation so the prism reads vivid at peek.
-    static let peekFlareOn: Bool              = true
-    static let peekFlarePalette: String       = "Solar"
-    static let peekFlareStrength: Double      = 0.68
-    static let peekFlareDesat: Double         = 0.38
-    static let peekFlareMaskOpacity: Double   = 0.68
-    static let peekFlareColorA: String        = "Klein"
-    static let peekFlareColorB: String        = "Coral"
 }
 
 // MARK: - Palette
@@ -642,60 +620,6 @@ struct SolarFlarePrismaticMesh: View {
     }
 }
 
-// MARK: - Peek-pill masked flare
-
-/// The peek pill's interior — ONE mask asset, used TWICE, opposite
-/// polarity, replacing both the dark center plate AND the standalone
-/// color layer that previously fought each other (the prior pass left
-/// a glossy dark slab visible behind the masked color).
-///
-/// `PeekPillMask` is white-on-transparent: the painted soft-edged pill
-/// shape is the WHITE region; the surrounding canvas is fully clear.
-/// One polarity → dark center, other polarity → color edges:
-///   - **Dark center**: `Color.black.mask(PNG as-is)` — the white core
-///     punches through to opaque black, transparent edges drop the
-///     black entirely. The mask itself provides the dark; no extra
-///     plate behind.
-///   - **Color edges**: same PNG, INVERTED via a `destinationOut`
-///     punch through a full-opaque rectangle. Result is opaque
-///     wherever the PNG was transparent (perimeter) and clear
-///     wherever the PNG was white (center) — color reveals at the
-///     edges only.
-/// The colors are a leading→trailing lerp of the palette's two
-/// accents (same accents the panel material's L4 mesh uses), so the
-/// peek flare reads as a sibling treatment of the panel chrome.
-///
-/// `allowsHitTesting(false)` — purely visual.
-struct SolarFlarePeekFlare: View {
-    let colorA: Color
-    let colorB: Color
-    let desaturate: Double
-    let strength: Double
-    let maskOpacity: Double
-
-    var body: some View {
-        let a0 = SolarFlarePrismaticMesh.desat(colorA, by: desaturate)
-        let a1 = SolarFlarePrismaticMesh.desat(colorB, by: desaturate)
-        let colorField = LinearGradient(
-            colors: [a0, a1], startPoint: .leading, endPoint: .trailing
-        )
-        ZStack {
-            colorField
-                .opacity(strength)
-                .mask(
-                    ZStack {
-                        Rectangle().fill(.white)
-                        Image("PeekPillMask").resizable().blendMode(.destinationOut)
-                    }
-                    .compositingGroup()
-                )
-            Color.black
-                .opacity(maskOpacity)
-                .mask(Image("PeekPillMask").resizable())
-        }
-        .allowsHitTesting(false)
-    }
-}
 
 // MARK: - Tuning panel (DEBUG)
 
@@ -748,13 +672,6 @@ struct SolarFlareTuningPanel: View {
     @AppStorage(SolarFlareTuningKey.askGlowBlur) private var askGlowBlur: Double = SolarFlareTuningDefaults.askGlowBlur
     @AppStorage(SolarFlareTuningKey.askGlowOpacity) private var askGlowOpacity: Double = SolarFlareTuningDefaults.askGlowOpacity
 
-    @AppStorage(SolarFlareTuningKey.peekFlareOn) private var peekFlareOn: Bool = SolarFlareTuningDefaults.peekFlareOn
-    @AppStorage(SolarFlareTuningKey.peekFlarePalette) private var peekFlarePaletteRaw: String = SolarFlareTuningDefaults.peekFlarePalette
-    @AppStorage(SolarFlareTuningKey.peekFlareStrength) private var peekFlareStrength: Double = SolarFlareTuningDefaults.peekFlareStrength
-    @AppStorage(SolarFlareTuningKey.peekFlareDesat) private var peekFlareDesat: Double = SolarFlareTuningDefaults.peekFlareDesat
-    @AppStorage(SolarFlareTuningKey.peekFlareMaskOpacity) private var peekFlareMaskOpacity: Double = SolarFlareTuningDefaults.peekFlareMaskOpacity
-    @AppStorage(SolarFlareTuningKey.peekFlareColorA) private var peekFlareColorA: String = SolarFlareTuningDefaults.peekFlareColorA
-    @AppStorage(SolarFlareTuningKey.peekFlareColorB) private var peekFlareColorB: String = SolarFlareTuningDefaults.peekFlareColorB
 
     @GestureState private var dragTranslation: CGSize = .zero
     @State private var justCopied: Bool = false
@@ -820,33 +737,6 @@ struct SolarFlareTuningPanel: View {
                         sliderRow(label: "ask W",     value: $askGlowWidth,           range: 1...12,    step: 0.5,   gated: !bloomOn)
                         sliderRow(label: "ask blur",  value: $askGlowBlur,            range: 2...30,    step: 0.5,   gated: !bloomOn)
                         sliderRow(label: "ask α",     value: $askGlowOpacity,         range: 0...1,     step: 0.01,  gated: !bloomOn)
-                    }
-
-                    // Peek-pill masked LIVE color flare. Replaces the
-                    // flat-fill innerBgOpacity behavior on the morphing
-                    // field's peek posture with the prismatic mesh
-                    // clipped by the hand-painted PeekPillMask PNG —
-                    // palette/strength/desat dialable on-device, falloff
-                    // shape edited by repainting the mask.
-                    sectionHeader("peek flare")
-                    HStack(spacing: 8) {
-                        Picker("L", selection: $peekFlareColorA) {
-                            ForEach(SolarFlareNamedColor.allCases, id: \.rawValue) { c in
-                                Text(c.rawValue).tag(c.rawValue)
-                            }
-                        }.pickerStyle(.menu)
-                        Picker("R", selection: $peekFlareColorB) {
-                            ForEach(SolarFlareNamedColor.allCases, id: \.rawValue) { c in
-                                Text(c.rawValue).tag(c.rawValue)
-                            }
-                        }.pickerStyle(.menu)
-                    }
-                    .opacity(peekFlareOn ? 1 : 0.3)
-                    .allowsHitTesting(peekFlareOn)
-                    Group {
-                        sliderRow(label: "strength", value: $peekFlareStrength,   range: 0...1, step: 0.01, gated: !peekFlareOn)
-                        sliderRow(label: "mask α",   value: $peekFlareMaskOpacity, range: 0...1, step: 0.01, gated: !peekFlareOn)
-                        sliderRow(label: "desat",    value: $peekFlareDesat,       range: 0...1, step: 0.02, gated: !peekFlareOn)
                     }
                 }
             }
@@ -962,10 +852,6 @@ struct SolarFlareTuningPanel: View {
                 // the underlying key; the bloom→field-glow rewrite
                 // kept the key for AppStorage continuity.
                 layerToggle("field", isOn: $bloomOn)
-                // "flare" → peek-pill masked LIVE color flare. Flip OFF
-                // to fall back to the legacy flat-fill innerBgOpacity
-                // behavior on the morphing field's peek state.
-                layerToggle("flare", isOn: $peekFlareOn)
                 // Two empty cells keep this row aligned to the 4-pill
                 // grid above without stretching the active pills.
                 Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
@@ -1057,7 +943,6 @@ struct SolarFlareTuningPanel: View {
             "    noiseOn:                \(noiseOn)",
             "    glintOn:                \(glintOn)",
             "    bloomOn:                \(bloomOn)",
-            "    peekFlareOn:            \(peekFlareOn)",
             "  values:",
             "    tintLightness:          \(String(format: "%.3f", tintLightness))",
             "    tintOpacity:            \(String(format: "%.2f", tintOpacity))",
@@ -1083,12 +968,6 @@ struct SolarFlareTuningPanel: View {
             "    askGlowWidth:           \(String(format: "%.2f", askGlowWidth))",
             "    askGlowBlur:            \(String(format: "%.2f", askGlowBlur))",
             "    askGlowOpacity:         \(String(format: "%.2f", askGlowOpacity))",
-            "  peekFlare:",
-            "    peekFlareColorA:        \(peekFlareColorA)",
-            "    peekFlareColorB:        \(peekFlareColorB)",
-            "    peekFlareMaskOpacity:   \(String(format: "%.2f", peekFlareMaskOpacity))",
-            "    peekFlareStrength:      \(String(format: "%.2f", peekFlareStrength))",
-            "    peekFlareDesat:         \(String(format: "%.2f", peekFlareDesat))"
         ]
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()

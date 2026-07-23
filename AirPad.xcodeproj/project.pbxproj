@@ -194,6 +194,7 @@
 		B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC513418FD53025E45C9B6 /* BlockChunker.swift */; };
 		B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */; };
 		BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */; };
+		BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */; };
 		BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */; };
 		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
 		C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B1822A03D5407145464AB94 /* AppRouter.swift */; };
@@ -490,6 +491,7 @@
 		FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSnapshotService.swift; sourceTree = "<group>"; };
 		FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRouter.swift; sourceTree = "<group>"; };
 		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
+		FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPillStyle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -877,6 +879,7 @@
 				7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */,
 				B05B92C729C4833EC93C3A4A /* LibrarianState.swift */,
 				6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */,
+				FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */,
 				33AB8A695AFDD807BC72EBE9 /* SolarFlareTuning.swift */,
 			);
 			path = Librarian;
@@ -1302,6 +1305,7 @@
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
 				8D9DC70840AFFFF47A8577FB /* ParityShots.swift in Sources */,
 				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,
+				BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */,
 				8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */,
 				9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */,
 				99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */,

@@ -81,19 +81,10 @@ struct LibrarianSurface: View {
     @AppStorage(SolarFlareTuningKey.askGlowBlur) private var askGlowBlur: Double = SolarFlareTuningDefaults.askGlowBlur
     @AppStorage(SolarFlareTuningKey.askGlowOpacity) private var askGlowOpacity: Double = SolarFlareTuningDefaults.askGlowOpacity
 
-    // Peek-pill masked LIVE color flare — replaces the flat dark inner
-    // fill at peek with the prismatic mesh clipped by a hand-painted
-    // grayscale PNG ("PeekPillMask") that carries the falloff. Driven by
-    // `sf.peekFlare*` knobs in the tuner; gates are read at the
-    // morphingField mount site so the flare fades as the field grows
-    // past peek.
-    @AppStorage(SolarFlareTuningKey.peekFlareOn) private var sfPeekFlareOn: Bool = SolarFlareTuningDefaults.peekFlareOn
-    @AppStorage(SolarFlareTuningKey.peekFlarePalette) private var sfPeekFlarePaletteRaw: String = SolarFlareTuningDefaults.peekFlarePalette
-    @AppStorage(SolarFlareTuningKey.peekFlareStrength) private var sfPeekFlareStrength: Double = SolarFlareTuningDefaults.peekFlareStrength
-    @AppStorage(SolarFlareTuningKey.peekFlareDesat) private var sfPeekFlareDesat: Double = SolarFlareTuningDefaults.peekFlareDesat
-    @AppStorage(SolarFlareTuningKey.peekFlareMaskOpacity) private var sfPeekFlareMaskOpacity: Double = SolarFlareTuningDefaults.peekFlareMaskOpacity
-    @AppStorage(SolarFlareTuningKey.peekFlareColorA) private var sfPeekFlareColorARaw: String = SolarFlareTuningDefaults.peekFlareColorA
-    @AppStorage(SolarFlareTuningKey.peekFlareColorB) private var sfPeekFlareColorBRaw: String = SolarFlareTuningDefaults.peekFlareColorB
+    // #2 — the peek-pill masked "inner glow" flare (SolarFlarePeekFlare +
+    // `sf.peekFlare*`) was REMOVED. The pill's appearance is now the typed
+    // per-mode `PeekPillStyle` (material + tint + shadow-caster shadow/glow +
+    // stroke), applied via `.peekPillBackground(_:)` at the morphingField mount.
 
     /// Live keyboard height, observed via UIResponder notifications.
     /// Drives in-content layout (the input row rides above the keyboard,
@@ -347,24 +338,9 @@ struct LibrarianSurface: View {
         )
 
         ZStack {
-            // Peek flare on the OUTER pill body. Color feathers at the
-            // perimeter via the mask; masked-black center supplies the dark.
-            // Sits over the glass (PeekGlassBackground modifier below) and
-            // under the field content. Fades out as the field grows past peek.
-            if sfPeekFlareOn {
-                let flareFade = max(0, min(1, Double((p - 0.5) / 0.5)))
-                let cA = (SolarFlareNamedColor(rawValue: sfPeekFlareColorARaw) ?? .coral).color
-                let cB = (SolarFlareNamedColor(rawValue: sfPeekFlareColorBRaw) ?? .indigo).color
-                SolarFlarePeekFlare(
-                    colorA: cA, colorB: cB,
-                    desaturate: sfPeekFlareDesat,
-                    strength: sfPeekFlareStrength,
-                    maskOpacity: sfPeekFlareMaskOpacity
-                )
-                .opacity(1 - flareFade)
-                .clipShape(outerShape)
-                .allowsHitTesting(false)
-            }
+            // #2 — the SolarFlarePeekFlare "inner glow" (masked color + dark
+            // center) is gone; the pill's material/tint/shadow-glow now come
+            // from `.peekPillBackground(outerShape)` below.
             HStack(spacing: 10) {
                 // Neutral off-white at rest → Mango when expanded. The pill
                 // reads as glass + flare at peek (icon near-white), warming to
@@ -374,7 +350,9 @@ struct LibrarianSurface: View {
                 ZStack {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 19, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.85))
+                        // #2 FIX 2 — appearance-aware ink (dark #FFFFFF byte-identical,
+                        // light dark-ink so the peek icon reads on the light pill).
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                         .opacity(Double(1 - p))
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 19, weight: .regular))
@@ -394,7 +372,9 @@ struct LibrarianSurface: View {
                 ))
                     .focused($isSearchFocused)
                     .font(.system(size: 15, weight: .regular))
-                    .foregroundStyle(.white)
+                    // #2 FIX 2 — entered text: appearance-aware ink (was `.white`,
+                    // illegible on the light pill). Dark #FFFFFF byte-identical.
+                    .foregroundStyle(AppearancePalette.ink)
                     .tint(mango)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -412,7 +392,8 @@ struct LibrarianSurface: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 16))
-                                .foregroundStyle(.white.opacity(0.4))
+                                // #2 FIX 2 — appearance-aware ink (dark byte-identical).
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Clear search")
@@ -454,7 +435,13 @@ struct LibrarianSurface: View {
         .onTapGesture {
             if p > 0.5 { isSearchFocused = true }
         }
-        .modifier(PeekGlassBackground(shape: outerShape))
+        // #2 — typed per-mode pill treatment: translucent material + tint + a
+        // per-mode shadow/separation (+ optional stroke), baked in PeekPillStyle.
+        // The shadow/stroke are scoped to PEEK: `visibility` is 1 at peek (p=0) and
+        // fades to 0 by p≈0.35, so the half/full search field carries none of it
+        // (material + tint stay).
+        .peekPillBackground(outerShape,
+                            visibility: max(0, min(1, 1 - Double(p) / 0.35)))
         // Tap-to-expand overlay — only mounted at peek (`p < 0.5`).
         // Transparent Rectangle catches the entire pill area and routes
         // to `expandToHalf`. Once expanded the overlay disappears and
@@ -522,29 +509,9 @@ struct LibrarianSurface: View {
         return a + (b - a) * clamped
     }
 
-    /// Outer pill background. iOS 26+ Liquid Glass; falls back to
-    /// `.regularMaterial` on earlier versions. Shape is parameterized
-    /// so the morphing field can pass an interpolated rounded rect.
-    ///
-    /// TODO (iOS 26 glass-tier): the masked-flare inset region above
-    /// should reveal REAL `.glassEffect` refraction through the same
-    /// soft-edged PeekPillMask, so the upper tier gets live wet-glass
-    /// while the floor (masked mesh) ships everywhere. Today the
-    /// masked color sits over the flat dark plate — fine on iOS 18,
-    /// but on iOS 26 the same mask alpha should drive a layered
-    /// `glassEffect` reveal so the pill picks up canvas refraction
-    /// behind the painted highlight, not just static color.
-    private struct PeekGlassBackground<S: Shape>: ViewModifier {
-        let shape: S
-        @ViewBuilder
-        func body(content: Content) -> some View {
-            if #available(iOS 26.0, *) {
-                content.glassEffect(.regular, in: shape)
-            } else {
-                content.background(.regularMaterial, in: shape)
-            }
-        }
-    }
+    // #2 — `PeekGlassBackground` was removed; the peek pill's translucency now
+    // comes from the typed `PeekPillStyle` (material choice incl. glass) applied
+    // via `.peekPillBackground(_:)` (see PeekPillStyle.swift).
 
     // MARK: - Expanded chrome (born-in)
 
@@ -1275,8 +1242,8 @@ struct LibrarianSurface: View {
         //
         // Resting stroke is a soft white top→bottom gradient (NOT the
         // prior solid Klein outline) — restores the lit-top-edge look
-        // the Search field gets for free from its PeekGlassBackground
-        // glass rim, so the two fields read as the same material
+        // the Search field gets from its PeekPillStyle material/stroke
+        // treatment, so the two fields read as the same material
         // family without Ask reading as the "selected" one at rest.
         .clipShape(Capsule())
         .overlay(

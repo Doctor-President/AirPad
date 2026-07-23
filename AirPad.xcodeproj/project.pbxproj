@@ -34,6 +34,7 @@
 		130B5342B773AA3949CFC79C /* HDBSCANCluster.swift in Sources */ = {isa = PBXBuildFile; fileRef = D513DE977AA6A0B607CE5508 /* HDBSCANCluster.swift */; };
 		14CCCFDE746CB2FA0459B622 /* CanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66610DC5B90AC2729F2B6F1D /* CanvasView.swift */; };
 		1539FED677BC12C88E719D24 /* SubstrateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */; };
+		17F85DF35043F1C03EB655BD /* CaretMeasure.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D22141DDFC181FE31634680 /* CaretMeasure.swift */; };
 		180A5BBD985A33703EA64E74 /* UMAP.swift in Sources */ = {isa = PBXBuildFile; fileRef = D685E8AE8B6D8F7C0D614C65 /* UMAP.swift */; };
 		1A71668ACC87B6B9C0D804E7 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
@@ -218,6 +219,7 @@
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
+		DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */; };
 		E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */; };
 		E3407B345AD8EB8E5775944D /* QuikCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */; };
 		E36FB1C888465AFE23431F29 /* card_parity_fixture.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B2FC18986ACC45F4CAA20A7 /* card_parity_fixture.json */; };
@@ -245,6 +247,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 9F144B331C91B74D76253A80;
 			remoteInfo = AirPadShare;
+		};
+		BFC8CA76D007166180174193 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88710B490536A898E4AE3E9F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 62C8055DB0F7AF52F9B3E615;
+			remoteInfo = AirPad;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -297,6 +306,7 @@
 		26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Regular.ttf"; sourceTree = "<group>"; };
 		296A6F341B3C366497500A55 /* LibrarianFloatingPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianFloatingPanel.swift; sourceTree = "<group>"; };
 		2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadSuggestionCard.swift; sourceTree = "<group>"; };
+		2D22141DDFC181FE31634680 /* CaretMeasure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretMeasure.swift; sourceTree = "<group>"; };
 		30C340391F2E98790F9DA5D1 /* fraunces_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = fraunces_msdf.json; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
@@ -348,6 +358,7 @@
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridTileTuning.swift; sourceTree = "<group>"; };
 		64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCAN.swift; sourceTree = "<group>"; };
+		64F471EBF10E37239E168D8D /* AirPadUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = AirPadUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterLabelService.swift; sourceTree = "<group>"; };
 		6658362A7268EAA76A6AAF92 /* DashboardLavaLamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardLavaLamp.swift; sourceTree = "<group>"; };
 		66610DC5B90AC2729F2B6F1D /* CanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasView.swift; sourceTree = "<group>"; };
@@ -404,6 +415,7 @@
 		A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingParityTest.swift; sourceTree = "<group>"; };
 		A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlphabetScrubber.swift; sourceTree = "<group>"; };
 		A9247083C950538B08FD4D00 /* RenameCollectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RenameCollectionSheet.swift; sourceTree = "<group>"; };
+		A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaretTapTest.swift; sourceTree = "<group>"; };
 		AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateService.swift; sourceTree = "<group>"; };
 		ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridNode.swift; sourceTree = "<group>"; };
 		ADDA79A05C807120913FCE5F /* CorpusStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorpusStore.swift; sourceTree = "<group>"; };
@@ -542,6 +554,14 @@
 				7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */,
 			);
 			path = Canvas;
+			sourceTree = "<group>";
+		};
+		1FD4D705EF0E64DD9326D5C6 /* AirPadUITests */ = {
+			isa = PBXGroup;
+			children = (
+				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
+			);
+			path = AirPadUITests;
 			sourceTree = "<group>";
 		};
 		2B9615A52E1C8DCD63462128 /* Settings */ = {
@@ -711,6 +731,7 @@
 			children = (
 				A055D36542F89044D66F6B90 /* AirPad */,
 				FDEDADDFC6788C80B33AEE44 /* AirPadShare */,
+				1FD4D705EF0E64DD9326D5C6 /* AirPadUITests */,
 				6876C92BB6761BB9D3907C40 /* Frameworks */,
 				95C31440F925CC38D4918A3D /* Products */,
 			);
@@ -799,6 +820,7 @@
 			children = (
 				9D21AB3DEE91993C6F039833 /* AirPad.app */,
 				20ED1D435BF9E254D634DF37 /* AirPadShare.appex */,
+				64F471EBF10E37239E168D8D /* AirPadUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -936,6 +958,7 @@
 				BD02B64092A916BBD65260B0 /* AppearancePalette.swift */,
 				5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */,
 				B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */,
+				2D22141DDFC181FE31634680 /* CaretMeasure.swift */,
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
 				497A2D223E494E948D445DFF /* NodeGradientBackground.swift */,
 				BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */,
@@ -1046,6 +1069,24 @@
 			productReference = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		AA9929896740AE8EED70334C /* AirPadUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8360FC09BCE202500942ADBE /* Build configuration list for PBXNativeTarget "AirPadUITests" */;
+			buildPhases = (
+				2EAF9ACCF41F405BE3FB2447 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5453D48B856A8C4E1DA0A3CF /* PBXTargetDependency */,
+			);
+			name = AirPadUITests;
+			packageProductDependencies = (
+			);
+			productName = AirPadUITests;
+			productReference = 64F471EBF10E37239E168D8D /* AirPadUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1060,6 +1101,10 @@
 					};
 					9F144B331C91B74D76253A80 = {
 						DevelopmentTeam = 8XM4B5F42Y;
+					};
+					AA9929896740AE8EED70334C = {
+						DevelopmentTeam = 8XM4B5F42Y;
+						TestTargetID = 62C8055DB0F7AF52F9B3E615;
 					};
 				};
 			};
@@ -1082,6 +1127,7 @@
 			targets = (
 				62C8055DB0F7AF52F9B3E615 /* AirPad */,
 				9F144B331C91B74D76253A80 /* AirPadShare */,
+				AA9929896740AE8EED70334C /* AirPadUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -1113,6 +1159,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		2EAF9ACCF41F405BE3FB2447 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7A201F7DE28F2BC68B00D7BD /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1149,6 +1203,7 @@
 				4AA3817844E35B02AC0C24F1 /* CardEmbeddingService.swift in Sources */,
 				21CD74A24FCAA544898228E0 /* CardLinkTile.swift in Sources */,
 				B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */,
+				17F85DF35043F1C03EB655BD /* CaretMeasure.swift in Sources */,
 				B11CC0100B96616EFF31AF9F /* CatalogCard.swift in Sources */,
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
 				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
@@ -1339,6 +1394,11 @@
 			target = 9F144B331C91B74D76253A80 /* AirPadShare */;
 			targetProxy = 739EC8D6156E30C3FDE6CC62 /* PBXContainerItemProxy */;
 		};
+		5453D48B856A8C4E1DA0A3CF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 62C8055DB0F7AF52F9B3E615 /* AirPad */;
+			targetProxy = BFC8CA76D007166180174193 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -1396,6 +1456,25 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
+		};
+		7214A764D717123B6ECA14BA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AirPad;
+			};
+			name = Debug;
 		};
 		886247D1B0A418D294C351B4 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -1539,6 +1618,25 @@
 			};
 			name = Release;
 		};
+		F71BB0372444075FB6D0EE62 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				DEVELOPMENT_TEAM = 8XM4B5F42Y;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = AirPad;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1565,6 +1663,15 @@
 			buildConfigurations = (
 				B123521643E70F4FDECEC4C8 /* Debug */,
 				59B4832112D2799C5485A624 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8360FC09BCE202500942ADBE /* Build configuration list for PBXNativeTarget "AirPadUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7214A764D717123B6ECA14BA /* Debug */,
+				F71BB0372444075FB6D0EE62 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -23,9 +23,12 @@ struct AirPadApp: App {
     var body: some Scene {
         WindowGroup {
             #if DEBUG
-            // Data-independent substrate-batching measurement harness. Bypasses the
-            // whole app (store/iCloud) so CC can run it in the Simulator.
-            if UserDefaults.standard.bool(forKey: "SPRMeasure") {
+            // Data-independent measurement harnesses. Bypass the whole app
+            // (store/iCloud) so CC can run them headless in the Simulator.
+            if UserDefaults.standard.bool(forKey: "SPRCaretMeasure") {
+                // MD14 note-caret tap-trace fixture (driven by XCUITest).
+                CaretMeasureView()
+            } else if UserDefaults.standard.bool(forKey: "SPRMeasure") {
                 SPRMeasureView()
             } else {
                 mainContent

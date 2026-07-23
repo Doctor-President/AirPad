@@ -13,8 +13,11 @@ struct CardDocumentTile: View {
     @Environment(CorpusStore.self) private var store
     @State private var thumbnail: UIImage? = nil
 
-    private static let inkTitle = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.95)
-    private static let inkMeta  = Color(red: 1.0, green: 0.976, blue: 0.941).opacity(0.55)
+    // Appearance-aware ink: dark = shipped warm-cream (byte-identical), light =
+    // AppearancePalette.ink so chip text reads on parchment (was cream in both →
+    // illegible in light). Mirrors the NodeCardView row-title fix.
+    private static let inkTitle = AppearancePalette.cardCreamInk(0.95)
+    private static let inkMeta  = AppearancePalette.cardCreamInk(0.55)
 
     var body: some View {
         HStack(spacing: 10) {

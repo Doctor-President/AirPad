@@ -197,28 +197,49 @@ struct DashboardView: View {
                 .frame(height: 56)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            HStack(spacing: 10) {
+            HStack {
                 Spacer()
-                headerIconButton(systemName: "bubble.left.and.bubble.right.fill") {
-                    router.showChatsList = true
-                }
-                inboxButton
-                headerIconButton(systemName: "gearshape.fill") { showSettings = true }
+                headerPill
             }
         }
         .frame(height: 48)
     }
 
-    private var inboxButton: some View {
+    /// #3 — the chat / inbox / settings icons grouped into ONE liquid-glass pill,
+    /// reusing the STANDARD `chromeSurface(Capsule())` chrome treatment (the same
+    /// Map/Card/List chrome glass), NOT the #2 peek-pill style. Icons use the
+    /// adaptive `AppearancePalette.ink` (dark #FFFFFF byte-identical; light
+    /// dark-ink so they read on the light glass over parchment).
+    private var headerPill: some View {
+        HStack(spacing: 2) {
+            pillIcon("bubble.left.and.bubble.right.fill", size: 16) { router.showChatsList = true }
+            inboxPillIcon
+            pillIcon("gearshape.fill", size: 16) { showSettings = true }
+        }
+        .padding(.horizontal, 4)
+        .chromeSurface(Capsule())
+    }
+
+    private func pillIcon(_ systemName: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+                .frame(width: 40, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var inboxPillIcon: some View {
         let badgeCount = 0
         return Button(action: {}) {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "tray")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .frame(width: 40, height: 40)
-                    .background(Color(white: 0.14))
-                    .clipShape(Circle())
+                    .contentShape(Rectangle())
 
                 if badgeCount > 0 {
                     Text("\(badgeCount)")
@@ -231,18 +252,6 @@ struct DashboardView: View {
                         .offset(x: 4, y: -4)
                 }
             }
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func headerIconButton(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(Color(white: 0.14))
-                .clipShape(Circle())
         }
         .buttonStyle(.plain)
     }

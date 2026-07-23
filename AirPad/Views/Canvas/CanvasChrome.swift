@@ -999,8 +999,10 @@ private struct BatchActionBar: View {
 }
 
 // MARK: - Chrome surface (Liquid Glass on 26+, .thinMaterial below)
+// Internal (was private) so the dashboard upper-chrome pill (#3 follow-up) reuses
+// the SAME standard chrome glass as the Map/Card/List chrome — not a second impl.
 
-private extension View {
+extension View {
     @ViewBuilder
     func chromeSurface<S: Shape>(_ shape: S) -> some View {
         if #available(iOS 26, *) {

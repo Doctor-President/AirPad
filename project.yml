@@ -30,6 +30,13 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: 8XM4B5F42Y
+    # Pin automatic signing with the CURRENT identity. Without this, xcodegen
+    # defaults CODE_SIGN_IDENTITY to the deprecated "iPhone Developer", which the
+    # CoreDevice installer rejects on device with "The executable is not
+    # codesigned" (LaunchExecutableValidationErrorDomain). "Apple Development" +
+    # Automatic is what Xcode expects; archive/Distribution is picked automatically.
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "Apple Development"
     IPHONEOS_DEPLOYMENT_TARGET: "18.0"
     # Default build-number "floor" for CFBundleVersion. Both Info.plists set
     # CFBundleVersion to $(CURRENT_PROJECT_VERSION); this is the ONLY place that

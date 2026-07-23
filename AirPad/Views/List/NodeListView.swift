@@ -107,12 +107,25 @@ struct NodeListView: View {
                                           ink: AppearancePalette.ink)
                                 .equatable()
                         }
-                        // Frosted glass so bands read as separated panels
-                        // over the dotted canvas — the material blurs the grid
-                        // dots behind each row (a flat white tint wouldn't).
-                        // Frost level is a one-material dial (ultraThin → thin
-                        // → regular) if it needs more lift on device.
-                        .listRowBackground(Rectangle().fill(.ultraThinMaterial))
+                        // #13 (T-dialed) — LIGHT: a warm ELEVATED fill
+                        // (`bgElevated`, the note-panel lift tone) + a heavy warm
+                        // drop shadow, so each row band lifts off the hobonichi
+                        // parchment. The first pass kept the frosted
+                        // `.ultraThinMaterial` + a soft grid-card shadow and read
+                        // as NO separation on parchment (T device-verified) — the
+                        // material sits too close to the parchment tone. The warm
+                        // opaque fill hides the grid dots UNDER each band (they
+                        // still show in the gaps); T chose that trade for the
+                        // clean lift. DARK: unchanged — the frosted material with
+                        // `listRowLift` resolving `.clear`, BYTE-IDENTICAL to the
+                        // pre-#13 rows (dark had no shadow and no elevated fill).
+                        .listRowBackground(
+                            Rectangle()
+                                .fill(colorScheme == .dark
+                                      ? AnyShapeStyle(.ultraThinMaterial)
+                                      : AnyShapeStyle(AppearancePalette.bgElevated))
+                                .shadow(color: AppearancePalette.listRowLift, radius: 26, x: 0, y: 11)
+                        )
                     }
                 } header: {
                     if let label = section.label {

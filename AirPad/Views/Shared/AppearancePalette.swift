@@ -123,6 +123,21 @@ enum AppearancePalette {
     static let cardShadow = dynamic(dark: "000000", darkAlpha: 0.32,
                                     light: "43372A", lightAlpha: 0.22)
 
+    /// The list-row warm lift (#13, T-dialed). LIGHT: a heavy warm brown-gray
+    /// (`#43372A` @0.75) so the ELEVATED row band (filled with `bgElevated` — the
+    /// note-panel lift tone — not the frosted material) separates cleanly from the
+    /// hobonichi parchment. DARK: `.clear` — dark rows keep the frosted
+    /// `.ultraThinMaterial` with NO shadow, BYTE-IDENTICAL to the pre-#13 look.
+    /// Deliberately far heavier than `cardShadow` (0.22): the first pass reused
+    /// that soft grid-card value verbatim and it read as NO separation on
+    /// parchment (T device-verified), so T dialed the lift up here (paired with
+    /// `radius 26 · y 11` at the NodeListView call site).
+    static let listRowLift = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? .clear
+            : UIColor(red: 67/255, green: 55/255, blue: 42/255, alpha: 0.75)
+    })
+
     /// Foreground for a glyph placed ON an `ink`-filled SOLID (the capture "+":
     /// an `ink` circle with this glyph cut out of it). Dark: pure `#000000` —
     /// byte-identical to the shipped `.black` plus on the `.white` circle

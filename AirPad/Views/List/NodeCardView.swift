@@ -498,7 +498,8 @@ struct NodeCardView: View {
                 fontSize: 13,
                 lineSpacing: 2,
                 color: Self.inkDeck,
-                shadowOpacity: 0.35
+                shadowOpacity: 0.35,
+                renderMarkdown: true   // #18: render formatted markdown, not raw `**…**`
             )
         case .imageVideo:
             galleryStrip(for: item)
@@ -717,12 +718,18 @@ struct NodeCardView: View {
         italic: Bool = false,
         lineSpacing: CGFloat = 2,
         color: Color,
-        shadowOpacity: Double = 0.35
+        shadowOpacity: Double = 0.35,
+        renderMarkdown: Bool = false
     ) -> some View {
-        GeometryReader { proxy in
+        // Decode ONCE here (not per geometry pass) when this is a markdown note body.
+        let attributed: AttributedString? = renderMarkdown
+            ? Self.markdownBody(content, fontSize: fontSize, weight: weight, italic: italic)
+            : nil
+        return GeometryReader { proxy in
             let lineHeight = fontSize * 1.35 + lineSpacing
             let maxLines = max(1, Int(proxy.size.height / lineHeight))
             let styled: Text = {
+                if let attributed { return Text(attributed) }  // #18: formatted, not raw markdown
                 var t = Text(content).font(.system(size: fontSize, weight: weight, design: .serif))
                 if italic { t = t.italic() }
                 return t
@@ -736,6 +743,41 @@ struct NodeCardView: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+    }
+
+    /// #18 — renders a note body's markdown as read-only styled text for the card,
+    /// REUSING the detail Note pipeline's PARSE (`MarkdownCodec.decode`) — NOT the
+    /// editor/UITextView. Bold / italic / underline / strike / inline-code render;
+    /// the card's serif scale + foreground are applied here (not `NoteTypography`,
+    /// which is the note's 17pt paragraph typography). Attachment placeholders
+    /// (inline images) are stripped — SwiftUI `Text` can't render `NSTextAttachment`.
+    /// Best-effort: any decode oddity still renders as text, never raw asterisks.
+    private static func markdownBody(_ markdown: String, fontSize: CGFloat,
+                                     weight: Font.Weight, italic baseItalic: Bool) -> AttributedString {
+        let ns = MarkdownCodec.decode(markdown)
+        guard ns.length > 0 else { return AttributedString(markdown) }
+        var out = AttributedString()
+        ns.enumerateAttributes(in: NSRange(location: 0, length: ns.length), options: []) { attrs, range, _ in
+            // Strip attachment placeholders (U+FFFC); Text can't render attachments.
+            let seg = (ns.string as NSString).substring(with: range)
+                .replacingOccurrences(of: "\u{FFFC}", with: "")
+            guard !seg.isEmpty else { return }
+            var piece = AttributedString(seg)
+            let traits = (attrs[.font] as? UIFont)?.fontDescriptor.symbolicTraits ?? []
+            let isBold = traits.contains(.traitBold)
+            let isItalic = traits.contains(.traitItalic) || baseItalic
+            let isMono = (attrs[.airpadInlineCode] as? Bool) == true || traits.contains(.traitMonoSpace)
+            var font = Font.system(size: fontSize,
+                                   weight: isBold ? .bold : weight,
+                                   design: isMono ? .monospaced : .serif)
+            if isItalic { font = font.italic() }
+            piece.font = font
+            if (attrs[.underlineStyle] as? Int).map({ $0 != 0 }) ?? false { piece.underlineStyle = .single }
+            if (attrs[.strikethroughStyle] as? Int).map({ $0 != 0 }) ?? false { piece.strikethroughStyle = .single }
+            // No foreground — the card's `.foregroundColor(color)` controls it.
+            out.append(piece)
+        }
+        return out.characters.isEmpty ? AttributedString(markdown) : out
     }
 
     fileprivate static func fitPayloads(_ payloads: [NodeItem], budget: CGFloat) -> PayloadFit {

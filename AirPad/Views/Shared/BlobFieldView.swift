@@ -124,6 +124,10 @@ struct BlobFieldView: View {
     private let frameInterval: Double
     /// Card rest reference as a fraction of view size (card style only).
     private let anchor: UnitPoint
+    /// #3 — slight-irregularity domain warp. 0 = off; node cards / hero / dark
+    /// lava all pass 0 → byte-identical. Only the dashboard LIGHT field dials it.
+    private let noiseAmount: Float
+    private let noiseScale: Float
 
     init(parameters: Parameters) {
         self.style = .lava
@@ -132,6 +136,8 @@ struct BlobFieldView: View {
         self.animated = true
         self.frameInterval = parameters.frameInterval
         self.anchor = .center   // unused by the lava path
+        self.noiseAmount = 0
+        self.noiseScale = 0
     }
 
     /// - Parameter animated: `false` renders a single still frame (time = 0)
@@ -144,13 +150,17 @@ struct BlobFieldView: View {
          animated: Bool,
          anchor: UnitPoint = .center,
          sharedField: Bool = false,
-         frameInterval: Double = 1.0 / 30.0) {
+         frameInterval: Double = 1.0 / 30.0,
+         noiseAmount: CGFloat = 0,
+         noiseScale: CGFloat = 0) {
         self.style = .card
         self.packed = Self.packCard(cardBlobs)
         self.sharedField = sharedField
         self.animated = animated
         self.frameInterval = frameInterval
         self.anchor = anchor
+        self.noiseAmount = Float(noiseAmount)
+        self.noiseScale = Float(noiseScale)
     }
 
     init(heroBlobs: [HeroBlob],
@@ -163,6 +173,8 @@ struct BlobFieldView: View {
         self.animated = animated
         self.frameInterval = frameInterval
         self.anchor = .center   // unused by the hero path
+        self.noiseAmount = 0
+        self.noiseScale = 0
     }
 
     var body: some View {
@@ -196,6 +208,8 @@ struct BlobFieldView: View {
                     .float(sharedField ? 1 : 0),
                     .float(style.shaderValue),
                     .float2(Float(anchor.x), Float(anchor.y)),
+                    .float(noiseAmount),
+                    .float(noiseScale),
                     .floatArray(packed)
                 )
             )

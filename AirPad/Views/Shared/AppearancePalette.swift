@@ -178,4 +178,43 @@ enum AppearancePalette {
         let (r, g, b) = rgb(dark ? "111115" : "F4EFE3")
         return Color(red: Double(r), green: Double(g), blue: Double(b))
     }
+
+    // MARK: - Cucumber Water light pigment (shared: node cards + dashboard lava)
+
+    /// The light-mode "pigment on paper" recipe, promoted so the node-card
+    /// gradient (`NodeGradientBackground.lightBody`) and the dashboard lava lamp
+    /// (#3) share ONE light path. Values are T's device-verified Cucumber Water
+    /// bake: a bare (transparent-between) blob field composited OVER parchment
+    /// with `.plusDarker`, so saturated colour reads as pigment DARKENING the
+    /// paper rather than lighting it.
+    static let cwParchmentHex = "F4EFE3"
+    static let cwBaseLightness: CGFloat = 0.98
+    static let cwPigmentStrength: CGFloat = 1.0
+    static let cwTransferMode: BlendMode = .plusDarker
+
+    /// Opaque parchment ground — `cwParchmentHex` scaled by `lightness`.
+    static func parchmentGround(_ hex: String = cwParchmentHex,
+                                lightness: CGFloat = cwBaseLightness) -> Color {
+        let (r, g, b) = rgb(hex)
+        return Color(red: min(1, r * lightness),
+                     green: min(1, g * lightness),
+                     blue: min(1, b * lightness))
+    }
+}
+
+extension View {
+    /// Composite a bare blob/pigment field OVER parchment with the Cucumber Water
+    /// `.plusDarker` transfer (the shared light-mode recipe — one path for node
+    /// cards and the dashboard). `compositingGroup` isolates the blend so it
+    /// composites against the parchment, not whatever ground is behind.
+    func pigmentOnParchment(parchmentHex: String = AppearancePalette.cwParchmentHex,
+                            baseLightness: CGFloat = AppearancePalette.cwBaseLightness,
+                            strength: CGFloat = AppearancePalette.cwPigmentStrength,
+                            blend: BlendMode = AppearancePalette.cwTransferMode) -> some View {
+        ZStack {
+            AppearancePalette.parchmentGround(parchmentHex, lightness: baseLightness)
+            self.opacity(strength).blendMode(blend)
+        }
+        .compositingGroup()
+    }
 }

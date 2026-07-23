@@ -90,16 +90,11 @@ struct NodeGradientLayer: View {
     /// transmissive Cucumber Water path below.
     @Environment(\.colorScheme) private var colorScheme
 
-    // Cucumber Water (light) — BAKED. Tom's device-verified values from the
-    // (now-deleted) DEBUG tuner. Single source in BOTH configs — no @AppStorage,
-    // no live dial, no UserDefaults read (a stale `cucumber.*` key left on a dev
-    // device is inert; nothing reads it, so it can't drift — the NodeCardView
-    // gating precedent). Read ONLY by `lightBody`; the dark path never touches
-    // them, so Solar Flare stays byte-identical.
-    private static let cwTransferMode: BlendMode = .plusDarker   // was: transfer-mode picker
-    private static let cwBaseLightness: Double = 0.98            // parchment #F4EFE3 × this
-    private static let cwPigmentStrength: Double = 1.00          // pigment-layer opacity
-    private static let cwParchmentHex = "F4EFE3"
+    // Cucumber Water (light) — BAKED, T's device-verified values. PROMOTED to
+    // `AppearancePalette` (cwParchmentHex / cwBaseLightness / cwPigmentStrength /
+    // cwTransferMode + `.pigmentOnParchment()`) so the dashboard lava lamp (#3)
+    // shares this exact light path. Read only via that modifier; the dark path
+    // never touches it, so Solar Flare stays byte-identical.
 
     private static let circleColors: [(String, String, String)] = [
         ("9B6FE8", "F5C5A3", "E36B4E"),
@@ -225,21 +220,11 @@ struct NodeGradientLayer: View {
     /// `compositingGroup` isolates the blend so it composites against the
     /// parchment, not the map ground behind the card.
     private var lightBody: some View {
-        ZStack {
-            parchmentBase
-            pigmentField
-                .opacity(Self.cwPigmentStrength)
-                .blendMode(Self.cwTransferMode)
-        }
-        .compositingGroup()
-    }
-
-    /// Parchment ground for the light path — `#F4EFE3` scaled by the baked
-    /// `cwBaseLightness`. Opaque, so the pigment blend composites against paper.
-    private var parchmentBase: some View {
-        let (r, g, b) = Self.rgb(Self.cwParchmentHex)
-        let l = Self.cwBaseLightness
-        return Color(red: min(1, r * l), green: min(1, g * l), blue: min(1, b * l))
+        // #3 — converged onto the shared `.pigmentOnParchment()` recipe (its
+        // defaults ARE the Cucumber Water bake: parchment #F4EFE3 × 0.98 +
+        // `.plusDarker` at strength 1.0 + compositingGroup). The dashboard lava
+        // lamp uses the same modifier — one light path, no divergence.
+        pigmentField.pigmentOnParchment()
     }
 
     /// The color-pigment blobs ALONE (no base behind them) — the same GPU field

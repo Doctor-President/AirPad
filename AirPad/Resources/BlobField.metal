@@ -219,6 +219,18 @@ static half4 heroField(float2 samplePos, float time, float2 size,
     return half4(saturate(accumRGB), saturate(accumA));
 }
 
+// Low-frequency domain warp for SLIGHT blob irregularity (#3). Displaces the
+// sample point by a few low-freq sines so blob edges read wavy instead of
+// perfectly circular. `amount` is the displacement in points; `scale` sets the
+// spatial frequency. Gated by amount > 0 at the call site, so every existing
+// caller (node cards, hero, dark lava) passes 0 and is BYTE-IDENTICAL.
+static float2 blobWarp(float2 p, float t, float scale, float amount) {
+    float2 q = p * scale * 0.01;
+    float wx = sin(q.y * 1.3 + t * 0.30) + 0.5 * sin(q.x * 2.1 + t * 0.22);
+    float wy = cos(q.x * 1.1 + t * 0.25) + 0.5 * cos(q.y * 1.9 + t * 0.18);
+    return p + float2(wx, wy) * amount;
+}
+
 [[ stitchable ]] half4 blobField(float2 position,
                                  half4 color,
                                  float time,
@@ -227,12 +239,19 @@ static half4 heroField(float2 samplePos, float time, float2 size,
                                  float sharedField,
                                  float style,
                                  float2 anchor,
+                                 float noiseAmount,
+                                 float noiseScale,
                                  device const float *params,
                                  int paramCount) {
     // sharedField switch: local space by default; offset the sample point by
     // the view's global origin when on, so sibling surfaces read different
     // slices of one continuous field. One `if`, wired but default-off.
     float2 samplePos = position + globalOrigin * step(0.5, sharedField);
+
+    // #3 — slight-irregularity domain warp, off unless the caller dials it in.
+    if (noiseAmount > 0.001) {
+        samplePos = blobWarp(samplePos, time, noiseScale, noiseAmount);
+    }
 
     if (style < 0.5) {
         return lavaField(samplePos, time, size, params, paramCount);

@@ -173,9 +173,14 @@ struct EntryCard: View {
                     .padding(.top, displayEditMode.isDisplay ? 0 : 8)
             }
         }
-        .padding(.horizontal, 12)
+        // #15 (T-dialed) — entry cards sit FLUSH with the 20pt title column
+        // (NodeDetailView `.padding(20)`); the prior 12pt inset made every entry
+        // read narrower than the title. 0 aligns each card's left edge to the
+        // title and to its siblings. Outer gutter only — the note's internal
+        // text padding (TextEntryBody 22pt) is untouched.
+        .padding(.horizontal, 0)
         // Note headers tighten the vertical padding so the body + PastePad sit
-        // higher; other entry types keep the original 12.
+        // higher; other entry types keep the original vertical rhythm.
         .padding(.vertical, item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding)
         .background {
             // Long-press recognizer lives in the background slot so foreground

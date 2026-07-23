@@ -19,6 +19,8 @@ struct TodayCardView: View {
     let onJournalPromptTap: () -> Void
     let onRecentTap: (Node) -> Void
 
+    @Environment(\.colorScheme) private var colorScheme
+
     init(
         now: Date = Date(),
         recentNodes: [Node] = [],
@@ -92,20 +94,25 @@ struct TodayCardView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("What's on your mind today?")
                         .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Image(systemName: "pencil.line")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
+                // #3 — appearance-aware input well. DARK: the shipped near-black
+                // chip (byte-identical). LIGHT: a faint ink well + ink hairline so
+                // it reads as an input inside the light Today card (was a near-black
+                // chip clashing with the light register). Text/caret use ink above.
                 .background(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Color(white: 0.14))
+                        .fill(colorScheme == .dark ? Color(white: 0.14)
+                                                   : AppearancePalette.ink.opacity(0.05))
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                                .strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1)
                         )
                 )
             }

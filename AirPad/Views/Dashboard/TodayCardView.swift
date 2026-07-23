@@ -42,14 +42,10 @@ struct TodayCardView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.thinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                )
-        )
+        // #3 fix-up — this pane's treatment is now the shared `dashboardPaneSurface`
+        // (`.thinMaterial` + white@0.12 rim, radius 22, no shadow), so Recents and
+        // Collections use the exact same surface and cannot drift from Today.
+        .dashboardPaneSurface()
     }
 
     // MARK: - Date

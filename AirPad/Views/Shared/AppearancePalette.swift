@@ -217,4 +217,22 @@ extension View {
         }
         .compositingGroup()
     }
+
+    /// The dashboard pane surface — the Today card's exact treatment, promoted
+    /// out of `TodayCardView` so Today / Recents / Collections share ONE surface
+    /// and cannot drift (#3 fix-up). A rounded `.thinMaterial` fill (the lava
+    /// lamp reads THROUGH it, identically in all three panes) + a hairline white
+    /// rim, and NO shadow. `.thinMaterial` is adaptive, so light/dark parity is
+    /// automatic — the DARK pane keeps the same frosted material + `white@0.12`
+    /// rim, byte-identical to the dark Today card.
+    func dashboardPaneSurface(cornerRadius: CGFloat = 22) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.thinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                )
+        )
+    }
 }

@@ -89,6 +89,20 @@ enum AppearancePalette {
     /// the theme calls for) — dark enough to read on parchment.
     static let ink = dynamic(dark: "FFFFFF", light: "232A2E")
 
+    /// Ink for text placed on a card FACE (over the warm-cream card art), at a
+    /// given opacity. Dark reproduces the shipped warm-cream (`#FFF9F0`)
+    /// BYTE-IDENTICAL; light flips to the appearance `ink` (`#232A2E`) so the
+    /// text reads on Cucumber-Water parchment. Same opacity either way — the ink
+    /// flip is coupled plumbing, not a judged knob. Mirrors NodeCardView's local
+    /// `ink()`; shared here so the body chips can't drift from it.
+    static func cardCreamInk(_ opacity: CGFloat) -> Color {
+        let dark = UIColor(Color(red: 1.0, green: 0.976, blue: 0.941)).withAlphaComponent(opacity)
+        let light = UIColor(ink)
+            .resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+            .withAlphaComponent(opacity)
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
+    }
+
     /// The note panel's lift shadow. Dark: `black@0.35` (the landed value —
     /// identical). Light: soft, low, diffused — no hard shadow ("cloud cover is
     /// a reprieve").

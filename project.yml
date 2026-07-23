@@ -17,6 +17,8 @@ schemes:
       debugEnabled: false
     test:
       config: Debug
+      targets:
+        - AirPadUITests
     profile:
       config: Release
     analyze:
@@ -205,3 +207,22 @@ targets:
               NSExtensionActivationSupportsText: true
               NSExtensionActivationSupportsImageWithMaxCount: 10
               NSExtensionActivationSupportsFileWithMaxCount: 10
+
+  # MD14 measurement-only UI test target (drives a real synthesized tap into the
+  # note editor in the Simulator; the app traces the caret event sequence to a
+  # file CC reads back). Only in the `test` action — normal builds/TestFlight
+  # never build it.
+  AirPadUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: AirPadUITests
+    dependencies:
+      - target: AirPad
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.uitests
+        DEVELOPMENT_TEAM: 8XM4B5F42Y
+        TEST_TARGET_NAME: AirPad
+        GENERATE_INFOPLIST_FILE: YES

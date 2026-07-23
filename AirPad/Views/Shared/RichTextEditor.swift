@@ -51,6 +51,7 @@ struct RichTextEditor: UIViewRepresentable {
     func makeUIView(context: Context) -> RichTextUIView {
         let textView = RichTextUIView()
         textView.delegate = context.coordinator
+        if CaretTrace.enabled { textView.accessibilityIdentifier = "noteEditor" }
         textView.backgroundColor = .clear
         textView.font = UIFont.preferredFont(forTextStyle: .body)
         // documentStyle uses semantic `.label` (adaptive) so text is legible in
@@ -86,15 +87,14 @@ struct RichTextEditor: UIViewRepresentable {
 
     func updateUIView(_ uiView: RichTextUIView, context: Context) {
         context.coordinator.parent = self
+        CaretTrace.log("updateUIView ENTER \(CaretTrace.sel(uiView)) bindingLen=\((text as NSString).length) lastAppliedLen=\((context.coordinator.lastAppliedMarkdown as NSString?)?.length ?? -1) willReassign=\(text != context.coordinator.lastAppliedMarkdown)")
         // Only re-decode when the incoming binding differs from the markdown we last
-        // reflected in the view (`lastAppliedMarkdown`). This must be a plain string
-        // compare, NOT `encode(attributedText) != text`: `encode ∘ decode` is not the
-        // identity for links / checklists / nested bullets / escaped specials / serif
-        // bold-italic, so the old form was permanently true and clobbered the caret on
-        // every render (MD14 — see `Coordinator.lastAppliedMarkdown`). Typing already
-        // keeps the two in sync: `pushBinding` sets `lastAppliedMarkdown` to the value
-        // it writes to the binding, so the following updateUIView is a no-op and the
-        // cursor is left where the user put it.
+        // reflected in the view (`lastAppliedMarkdown`). This is a plain string compare,
+        // NOT `encode(attributedText) != text`: `encode ∘ decode` is not the identity for
+        // links / checklists / nested bullets / escaped specials / serif bold-italic, so
+        // that form was permanently true and would re-decode (clobbering caret/attributes)
+        // on every render. Typing keeps the two in sync: `pushBinding` sets
+        // `lastAppliedMarkdown` to the value it writes, so the next render is a no-op.
         if text != context.coordinator.lastAppliedMarkdown {
             let previousRange = uiView.selectedRange
             uiView.attributedText = decodedAttributedText(text)
@@ -103,6 +103,7 @@ struct RichTextEditor: UIViewRepresentable {
             let clampedLocation = min(previousRange.location, length)
             let clampedLength = min(previousRange.length, length - clampedLocation)
             uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+            CaretTrace.log("updateUIView REASSIGNED attributedText, restored \(CaretTrace.sel(uiView)) (prev=\(NSStringFromRange(previousRange)))")
             // After replacing attributedText, typingAttributes inherit from the new
             // surrounding character — or default to system attrs if the text is empty.
             // Re-seed for the empty case so the next keystroke stays legible.
@@ -382,12 +383,24 @@ struct RichTextEditor: UIViewRepresentable {
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
-            refreshActiveState(in: textView)
+            CaretTrace.log("didChangeSelection ENTER \(CaretTrace.sel(textView))")
+            // restyle: false — a selection change is not a content change; the storage
+            // is already styled. Restyling here would mutate storage mid-gesture and
+            // cancel tap-to-position (MD14). See `refreshActiveState`.
+            refreshActiveState(in: textView, restyle: false)
+            CaretTrace.log("didChangeSelection EXIT  \(CaretTrace.sel(textView))")
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
-            refreshActiveState(in: textView)
+            CaretTrace.log("didBeginEditing ENTER \(CaretTrace.sel(textView))")
+            // MD14 M2 geometry gate: where does the XCUITest tap point (0.35, 0.06) map?
+            CaretTrace.geomLog(textView)
+            // restyle: false — focusing is not a content change; restyling here mutates
+            // storage synchronously inside the focus/tap gesture and cancels
+            // tap-to-position, snapping the caret to the end (MD14 root cause).
+            refreshActiveState(in: textView, restyle: false)
             parent.onBeginEditing?()
+            CaretTrace.log("didBeginEditing EXIT  \(CaretTrace.sel(textView))")
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
@@ -410,7 +423,20 @@ struct RichTextEditor: UIViewRepresentable {
         /// Reads `typingAttributes` (UITextView keeps these in sync with the cursor /
         /// start of the current selection) to populate the toolbar's active-state flags.
         /// List state is derived from the current paragraph's prefix in the raw text.
-        private func refreshActiveState(in textView: UITextView) {
+        /// Updates the toolbar's active-state flags from the cursor, and — when
+        /// `restyle` is true — re-applies document typography via `applyInPlace`.
+        ///
+        /// `restyle` MUST be false for focus / selection changes. `applyInPlace`
+        /// mutates the text storage (`beginEditing`/`endEditing`); performing that
+        /// synchronously inside `textViewDidBeginEditing` / `textViewDidChangeSelection`
+        /// cancels the in-flight `UITextInteraction` tap-to-position gesture, so the
+        /// caret never lands where you tapped and snaps to the end (MD14 root cause).
+        /// On focus/selection nothing changed, so the storage is already styled and
+        /// skipping the restyle is a pure no-op for appearance. Content changes
+        /// (typing → `textViewDidChange`, toolbar mutations, undo/redo) keep
+        /// `restyle: true` so new/edited text still gets the serif + paragraph styling.
+        private func refreshActiveState(in textView: UITextView, restyle: Bool = true) {
+            CaretTrace.log("  refreshActiveState ENTER \(CaretTrace.sel(textView)) restyle=\(restyle)")
             let typing = textView.typingAttributes
             let font = (typing[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
             let traits = font.fontDescriptor.symbolicTraits
@@ -488,11 +514,14 @@ struct RichTextEditor: UIViewRepresentable {
             // hanging indent, adaptive color) applied as the text changes. This is
             // the single choke point every mutation and keystroke passes through.
             // Guarded against re-entrancy since it touches storage/selection.
-            if parent.documentStyle, !isRestyling {
+            if restyle, parent.documentStyle, !isRestyling {
+                CaretTrace.log("  refreshActiveState pre-applyInPlace  \(CaretTrace.sel(textView))")
                 isRestyling = true
                 NoteTypography.applyInPlace(to: textView, font: parent.documentFont)
                 isRestyling = false
+                CaretTrace.log("  refreshActiveState post-applyInPlace \(CaretTrace.sel(textView))")
             }
+            CaretTrace.log("  refreshActiveState EXIT  \(CaretTrace.sel(textView))")
         }
 
         /// Returns true when the paragraph containing the cursor starts with a
@@ -2877,11 +2906,14 @@ enum NoteTypography {
     /// it somehow shifted, to avoid a redundant delegate callback).
     static func applyInPlace(to textView: UITextView, font: NoteFontChoice = .system) {
         let sel = textView.selectedRange
+        CaretTrace.log("    applyInPlace ENTER captured-sel=\(NSStringFromRange(sel)) live=\(CaretTrace.sel(textView))")
         let storage = textView.textStorage
         storage.beginEditing()
         apply(to: storage, font: font)
         storage.endEditing()
+        CaretTrace.log("    applyInPlace post-endEditing live=\(CaretTrace.sel(textView))")
         if textView.selectedRange != sel { textView.selectedRange = sel }
+        CaretTrace.log("    applyInPlace EXIT live=\(CaretTrace.sel(textView)) (restored-to captured-sel if drifted)")
     }
 
     /// Core pass: per-paragraph paragraph style + white→label color normalization,

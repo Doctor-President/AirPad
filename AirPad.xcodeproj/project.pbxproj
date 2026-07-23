@@ -135,6 +135,7 @@
 		8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D539DCAE9FDB57420DF7460 /* NodeListView.swift */; };
 		8D93AB74B120515EE87D5A07 /* DocumentGalleryBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03D5CDD92B068C0BDB141317 /* DocumentGalleryBody.swift */; };
 		8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */; };
+		8D9DC70840AFFFF47A8577FB /* ParityShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60D13A13B22F4512A523EB58 /* ParityShots.swift */; };
 		8DF5479C80E72F6CE5DCC035 /* SubstrateLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */; };
 		8FCCD1C11E415D8FDC0322CA /* ZoomableImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
@@ -353,6 +354,7 @@
 		5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridView.swift; sourceTree = "<group>"; };
 		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
 		6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSurface.swift; sourceTree = "<group>"; };
+		60D13A13B22F4512A523EB58 /* ParityShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityShots.swift; sourceTree = "<group>"; };
 		6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionCreationSheet.swift; sourceTree = "<group>"; };
 		613177CF17502A7D0A1B2388 /* LinkGalleryTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryTile.swift; sourceTree = "<group>"; };
 		6150CF6FB6E8BBB89B1C5C8F /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
@@ -962,6 +964,7 @@
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
 				497A2D223E494E948D445DFF /* NodeGradientBackground.swift */,
 				BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */,
+				60D13A13B22F4512A523EB58 /* ParityShots.swift */,
 				CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */,
 				F135F708282671E607C7C84B /* RichTextEditor.swift */,
 			);
@@ -1297,6 +1300,7 @@
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
 				AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */,
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
+				8D9DC70840AFFFF47A8577FB /* ParityShots.swift in Sources */,
 				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,
 				8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */,
 				9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */,

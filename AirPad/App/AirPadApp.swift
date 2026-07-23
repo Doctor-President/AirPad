@@ -30,6 +30,9 @@ struct AirPadApp: App {
                 CaretMeasureView()
             } else if UserDefaults.standard.bool(forKey: "SPRMeasure") {
                 SPRMeasureView()
+            } else if let shot = UserDefaults.standard.string(forKey: "PARITYShot"), !shot.isEmpty {
+                // Quick-parity-sweep screenshot fixture (#13/#15/#17/#18).
+                ParityShotsView(shot: shot)
             } else {
                 mainContent
             }

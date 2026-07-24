@@ -250,6 +250,20 @@ struct LibrarianSurface: View {
     /// full chrome carries the same arc rather than flattening.
     private var surfaceCornerRadius: CGFloat { 39 }
 
+    /// Item 4 — LIGHT-ONLY field-definition stroke for the expanded Search field
+    /// (the peek-pill stroke has faded by full). `.clear` in DARK so the dark
+    /// field is byte-identical (no stroke, as before); dark-ink on cream in LIGHT
+    /// so the field edge reads. A top→bottom gradient (stronger top) mirrors the
+    /// Ask field's stroke direction.
+    private static let lightFieldStrokeTop = Color(UIColor { t in
+        t.userInterfaceStyle == .dark ? .clear
+            : UIColor(Color(hexString: "232A2E")).withAlphaComponent(0.28)
+    })
+    private static let lightFieldStrokeBottom = Color(UIColor { t in
+        t.userInterfaceStyle == .dark ? .clear
+            : UIColor(Color(hexString: "232A2E")).withAlphaComponent(0.08)
+    })
+
     /// Top-edge drag grabber. Live-tracks vertical drag: the surface
     /// height follows the finger between detents, with a light haptic
     /// pulse at each posture boundary crossed. On release the surface
@@ -442,6 +456,19 @@ struct LibrarianSurface: View {
         // (material + tint stay).
         .peekPillBackground(outerShape,
                             visibility: max(0, min(1, 1 - Double(p) / 0.35)))
+        // Item 4 — full-detent definition. The peek-pill stroke fades out by
+        // p≈0.35, so the expanded Search field is material-only on the cream
+        // panel (too light). Fade IN a LIGHT-ONLY ink stroke as p→1 so the field
+        // reads at full. Light-only (clear in dark) so DARK stays byte-identical
+        // — dark's expanded field had no stroke and still doesn't.
+        .overlay(
+            outerShape.strokeBorder(
+                LinearGradient(colors: [Self.lightFieldStrokeTop, Self.lightFieldStrokeBottom],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 1
+            )
+            .opacity(Double(p))
+        )
         // Tap-to-expand overlay — only mounted at peek (`p < 0.5`).
         // Transparent Rectangle catches the entire pill area and routes
         // to `expandToHalf`. Once expanded the overlay disappears and
@@ -1094,6 +1121,26 @@ struct LibrarianSurface: View {
         )
         let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
+        // Item 5 — Ask field is a ROUNDED RECT (constant corner as it grows,
+        // like normal chat composers), NOT a capsule that re-rounds to
+        // half-height per line. 18 reads as a modest rounded field at single line.
+        let askCorner: CGFloat = 18
+        let askShape = RoundedRectangle(cornerRadius: askCorner, style: .continuous)
+        // Item 4 — more separation from the (cream) panel. FILL: dark white@0.04
+        // (byte-identical to the prior `ink.opacity(0.04)`); light a stronger dark
+        // wash so the field reads. STROKE: adaptive ink (dark = white, byte-
+        // identical to the prior white gradient; light = dark ink so the edge
+        // reads on cream) — was a `.white` gradient, invisible on cream.
+        let askFill = Color(UIColor { t in
+            t.userInterfaceStyle == .dark
+                ? UIColor.white.withAlphaComponent(0.04)
+                : UIColor(Color(hexString: "232A2E")).withAlphaComponent(0.075)
+        })
+        let askStroke = LinearGradient(
+            colors: [AppearancePalette.ink.opacity(0.22), AppearancePalette.ink.opacity(0.04)],
+            startPoint: .top, endPoint: .bottom
+        )
+
         HStack(spacing: 8) {
             // Mode identity glyph (relocated from header in the
             // header-reclaim pass). Tap opens the mode dropdown
@@ -1108,7 +1155,10 @@ struct LibrarianSurface: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 40, height: 40)
-                .foregroundStyle(AppearancePalette.ink)
+                // Ask identity: the feather carries the Klein BLUE gradient, the
+                // way the Search magnifier carries the Mango orange gradient —
+                // reusing `kleinGrad` (the same gradient the mic/send use).
+                .foregroundStyle(kleinGrad)
                 // Equidistant: 12pt to the capsule's left edge (= this leading,
                 // since the capsule's widest point is at the feather's vertical
                 // center) matches the 12pt to "Ask" (HStack spacing 8 + the
@@ -1219,7 +1269,7 @@ struct LibrarianSurface: View {
         // the two composers read as siblings. minHeight (not fixed) so Ask can
         // still grow with multi-line input.
         .frame(minHeight: 52)
-        .background(AppearancePalette.ink.opacity(0.04))
+        .background(askFill)
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of
         // the mode glyph, the trailing area before mic/send), not
@@ -1228,7 +1278,7 @@ struct LibrarianSurface: View {
         // (`.buttonStyle(.plain)` does not propagate), so they still
         // fire correctly; this gesture only catches the "empty"
         // capsule regions.
-        .contentShape(Capsule())
+        .contentShape(askShape)
         .onTapGesture {
             isInputFocused = true
         }
@@ -1245,17 +1295,9 @@ struct LibrarianSurface: View {
         // the Search field gets from its PeekPillStyle material/stroke
         // treatment, so the two fields read as the same material
         // family without Ask reading as the "selected" one at rest.
-        .clipShape(Capsule())
+        .clipShape(askShape)
         .overlay(
-            Capsule()
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [.white.opacity(0.22), .white.opacity(0.04)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1
-                )
+            askShape.strokeBorder(askStroke, lineWidth: 1)
         )
     }
 

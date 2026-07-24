@@ -17,16 +17,14 @@ struct QuarantineReviewSheet: View {
                     list
                 }
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Quarantine Review")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 }
             }
             .onChange(of: quarantineStore.entries.count) { _, newCount in
@@ -36,7 +34,7 @@ struct QuarantineReviewSheet: View {
             }
         }
         .presentationDetents([.large])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
     }
 
     // MARK: - List
@@ -50,7 +48,7 @@ struct QuarantineReviewSheet: View {
             } header: {
                 Text("\(quarantineStore.entries.count) quarantined \(quarantineStore.entries.count == 1 ? "entry" : "entries")")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .textCase(nil)
             }
         }
@@ -64,10 +62,10 @@ struct QuarantineReviewSheet: View {
         VStack(spacing: 12) {
             Image(systemName: "checkmark.circle")
                 .font(.system(size: 44))
-                .foregroundStyle(.white.opacity(0.2))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.2))
             Text("No quarantined entries")
                 .font(.headline)
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -88,7 +86,7 @@ private struct QuarantineEntryRow: View {
                 reasonBadge
                 Text(entry.rawText)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .lineLimit(isExpanded ? nil : 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() } }
@@ -100,10 +98,10 @@ private struct QuarantineEntryRow: View {
                 } label: {
                     Text("Rescue")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Color.white.opacity(0.12))
+                        .background(AppearancePalette.ink.opacity(0.12))
                         .clipShape(Capsule())
                 }
 
@@ -123,14 +121,14 @@ private struct QuarantineEntryRow: View {
 
                 Text(entry.importedAt, style: .relative)
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.25))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.25))
                 + Text(" ago")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.25))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }
         }
         .padding(.vertical, 6)
-        .listRowBackground(Color.white.opacity(0.05))
+        .listRowBackground(AppearancePalette.ink.opacity(0.05))
     }
 
     private var reasonBadge: some View {

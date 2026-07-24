@@ -14,7 +14,7 @@ struct ImportIdeasSheet: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .topLeading) {
-                Color.black.ignoresSafeArea()
+                AppearancePalette.bgBase.ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
                     // Text editor area
@@ -22,22 +22,22 @@ struct ImportIdeasSheet: View {
                         if text.isEmpty {
                             Text("Paste any text — notes, bullet lists, multi-paragraph writing…")
                                 .font(.body)
-                                .foregroundStyle(.white.opacity(0.3))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                                 .padding(.horizontal, 4)
                                 .padding(.vertical, 8)
                                 .allowsHitTesting(false)
                         }
                         TextEditor(text: $text)
                             .font(.body)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppearancePalette.ink)
                             .scrollContentBackground(.hidden)
-                            .tint(.white)
+                            .tint(AppearancePalette.ink)
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 
                     Divider()
-                        .background(Color.white.opacity(0.1))
+                        .background(AppearancePalette.ink.opacity(0.1))
                         .padding(.top, 8)
 
                     // Live preview line
@@ -45,7 +45,7 @@ struct ImportIdeasSheet: View {
                         if detectedCount == 0 {
                             Text("No ideas detected yet")
                                 .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.35))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         } else if willTruncate {
                             Image(systemName: "exclamationmark.triangle")
                                 .font(.caption.weight(.semibold))
@@ -59,7 +59,7 @@ struct ImportIdeasSheet: View {
                                 .foregroundStyle(.green.opacity(0.8))
                             Text("\(detectedCount) idea\(detectedCount == 1 ? "" : "s") detected")
                                 .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.65))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                         }
                         Spacer()
                     }
@@ -71,13 +71,11 @@ struct ImportIdeasSheet: View {
             }
             .navigationTitle("Import Ideas")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Import") {
@@ -88,11 +86,11 @@ struct ImportIdeasSheet: View {
                         dismiss()
                     }
                     .fontWeight(.semibold)
-                    .foregroundStyle(detectedCount > 0 ? .white : .white.opacity(0.25))
+                    .foregroundStyle(detectedCount > 0 ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.25))
                     .disabled(detectedCount == 0)
                 }
             }
         }
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
     }
 }

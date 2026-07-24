@@ -1232,6 +1232,24 @@ struct LibrarianSurface: View {
             startPoint: .top, endPoint: .bottom
         )
 
+        // Optical alignment — DERIVED from the text's LINE BOX (not container
+        // padding, which lands off-centre because a line carries ascender/descender
+        // space beyond the glyph). Feather centres on the FIRST line's box, the
+        // trailing mic/send on the LAST line's box; at one line those coincide, so
+        // both read centred with no special-casing. All values fall out of the font
+        // line height, so they stay correct if the font/size changes.
+        let askLineHeight = UIFont.systemFont(ofSize: 16, weight: .regular).lineHeight
+        // TextField vertical padding chosen so a single line == the parity height
+        // (52), removing the minHeight-forced extra space that decoupled the glyphs
+        // from the text before.
+        let askTextVPad = max(0, (LibrarianSurface.askSingleLineHeight - askLineHeight) / 2)
+        // Centre of the top/bottom line box, measured from the field's top/bottom
+        // edge (they're symmetric): at one line this is the field centre.
+        let askLineCenter = askTextVPad + askLineHeight / 2
+        // Feather is a 40pt frame, top-pinned in the row → offset its top so its
+        // centre lands on line one's box centre.
+        let featherTopInset = max(0, askLineCenter - 20)
+
         // Item 3 — TOP alignment so the feather (and the growing TextField) pin to
         // the FIRST line as the field wraps, rather than the whole row centring.
         // The trailing mic/send follow; adjusted below if that reads wrong.
@@ -1245,11 +1263,10 @@ struct LibrarianSurface: View {
                 .frame(width: 40, height: 40)
                 .foregroundStyle(kleinGrad)
                 .padding(.leading, 12)
-                // Item 3 — nudge down so the 40pt glyph sits on the FIRST line's
-                // baseline area (the TextField pads 12 top), not floating above it.
-                // Constant, so at one line the feather still reads centred (40 + 6
-                // + ~6 ≈ the 52pt row) and at multi-line it stays on line one.
-                .padding(.top, 6)
+                // Optical: centre the 40pt feather on the FIRST line's box
+                // (`featherTopInset`, derived from the line height) so it reads
+                // centred at one line and stays on line one as the field grows.
+                .padding(.top, featherTopInset)
 
             TextField("Ask", text: Binding(
                 get: { librarian.inputText },
@@ -1268,7 +1285,9 @@ struct LibrarianSurface: View {
                 // bottom-trailing OVERLAY (not an HStack sibling) — so the text
                 // column stops before them at every height.
                 .padding(.trailing, 56)
-                .padding(.vertical, 12)
+                // Derived so a single line == the 52pt parity height (no minHeight
+                // forcing → glyphs stay locked to the text line box).
+                .padding(.vertical, askTextVPad)
                 .lineLimit(1...4)
 
         }
@@ -1285,14 +1304,16 @@ struct LibrarianSurface: View {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askFieldHeight = $0 }
         .background(askFill)
         // Item 2 — mic/send/clear as a BOTTOM-TRAILING overlay (not an HStack
-        // sibling). Bottom-aligned → sits with the LAST line as the field grows,
-        // always inside bounds; at ONE line the 15pt bottom inset centres the 22pt
-        // mic in the 52pt field so it reads vertically centred at rest. (Feather
-        // stays top-pinned in the HStack above.)
+        // sibling). Optical: constrain the cluster to the LINE-BOX height and pin
+        // it `askTextVPad` from the bottom, so the glyph centres on the LAST line's
+        // box (derived — no magic number). At one line last == first, so it reads
+        // centred; as the field grows it rides the last line. (Feather is top-
+        // pinned on line one in the HStack above.)
         .overlay(alignment: .bottomTrailing) {
             askTrailingControls(librarian: librarian, kleinGrad: kleinGrad)
+                .frame(height: askLineHeight)
                 .padding(.trailing, 10)
-                .padding(.bottom, 15)
+                .padding(.bottom, askTextVPad)
         }
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of

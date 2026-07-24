@@ -221,6 +221,24 @@ struct LibrarianSurface: View {
                 librarian.inputText = "What is the difference between a gerund and a present participle, and how do I tell them apart when both end in -ing in a sentence?"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { librarian.inputText = "" }
             }
+            // `-AskAutoSend <question>` — fires a real Ask through `groundedSend`
+            // (honouring the live `corpusAware` mode) so the corpus-aware toggle can
+            // be smoke-tested headlessly: screenshot the transcript to see the answer
+            // + whether a citation footer appears. Expands to full so the transcript
+            // is visible.
+            if let q = UserDefaults.standard.string(forKey: "AskAutoSend"), !q.isEmpty {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    Task { await librarian.groundedSend(query: q, store: store, chat: router.chat) }
+                }
+            }
+            // `-PersistCorpusAware YES` — flips the toggle ON via the real setter
+            // (didSet → UserDefaults), so a SUBSEQUENT launch with no arg proves the
+            // preference persisted across an app restart (⊇ a surface remount).
+            if UserDefaults.standard.bool(forKey: "PersistCorpusAware") {
+                librarian.corpusAware = true
+            }
             #endif
         }
         .task {
@@ -1124,36 +1142,81 @@ struct LibrarianSurface: View {
     /// composer is off via `showsComposer: false`).
     @ViewBuilder
     private func askComposer(librarian: LibrarianState) -> some View {
-        inputRow(librarian: librarian)
-            // Item 2 — the focus glow is driven from the SAME Messages-style
-            // RoundedRectangle the field uses (`askCornerRadius`), NOT its own
-            // Capsule — so the halo hugs the actual shape at one line (pill) AND
-            // when wrapped (rounded rect). No clip so the bloom radiates.
-            .background {
-                if sfBloomOn {
-                    SolarFlareFieldGlow(
-                        shape: RoundedRectangle(cornerRadius: askCornerRadius, style: .continuous),
-                        accent: Color(hexString: "1B59C2"),
-                        secondary: Color(hexString: "00BFFF"),
-                        isVisible: isInputFocused,
-                        widthOverride: askGlowWidth,
-                        blurOverride: askGlowBlur,
-                        opacityOverride: askGlowOpacity
-                    )
+        VStack(alignment: .leading, spacing: 8) {
+            // ★ Corpus-aware toggle — always visible above the Ask field so the user
+            // knows which mode the next question runs in (hybrid-authorship: the
+            // system's behaviour is legible, never hidden). Leading-aligned near the
+            // feather so it reads as part of the composer.
+            corpusModeToggle(librarian: librarian)
+                .padding(.leading, 6)
+
+            inputRow(librarian: librarian)
+                // Item 2 — the focus glow is driven from the SAME Messages-style
+                // RoundedRectangle the field uses (`askCornerRadius`), NOT its own
+                // Capsule — so the halo hugs the actual shape at one line (pill) AND
+                // when wrapped (rounded rect). No clip so the bloom radiates.
+                .background {
+                    if sfBloomOn {
+                        SolarFlareFieldGlow(
+                            shape: RoundedRectangle(cornerRadius: askCornerRadius, style: .continuous),
+                            accent: Color(hexString: "1B59C2"),
+                            secondary: Color(hexString: "00BFFF"),
+                            isVisible: isInputFocused,
+                            widthOverride: askGlowWidth,
+                            blurOverride: askGlowBlur,
+                            opacityOverride: askGlowOpacity
+                        )
+                    }
                 }
+                // Safari-style focus bounce — outside `.background` so halo + field
+                // scale together. Transform-only; gated on reduceMotion.
+                .scaleEffect(isInputFocused ? 1.0 : 0.985)
+                .animation(
+                    reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
+                    value: isInputFocused
+                )
+        }
+        // 14pt screen margins to match the Search field (width = geo−28 →
+        // 14 each side) so the two fields sit at the same width.
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+    }
+
+    /// ★ Private ↔ Corpus mode pill. Default is Private (model's own knowledge,
+    /// no retrieval); Corpus turns on notes-grounded answering with [n] citations.
+    /// Legibility requirement (T is colourblind): the active state reads by SHAPE +
+    /// LABEL + ICON, never colour alone — the two modes use different SF Symbols
+    /// (`lock.fill` vs `books.vertical.fill`), different words, and Corpus adds a
+    /// visible stroke + heavier fill so the "on" state is unmistakable in grayscale.
+    /// Reuses the panel's `AppearancePalette.ink` chrome so it works in both modes.
+    @ViewBuilder
+    private func corpusModeToggle(librarian: LibrarianState) -> some View {
+        let on = librarian.corpusAware
+        Button {
+            librarian.corpusAware.toggle()   // stored + persisted (didSet → UserDefaults)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: on ? "books.vertical.fill" : "lock.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(on ? "Corpus" : "Private")
+                    .font(.system(size: 12, weight: .semibold))
             }
-            // Safari-style focus bounce — outside `.background` so halo + field
-            // scale together. Transform-only; gated on reduceMotion.
-            .scaleEffect(isInputFocused ? 1.0 : 0.985)
-            .animation(
-                reduceMotion ? nil : .spring(response: 0.28, dampingFraction: 0.6),
-                value: isInputFocused
+            .foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill(AppearancePalette.ink.opacity(on ? 0.12 : 0.05))
             )
-            // 14pt screen margins to match the Search field (width = geo−28 →
-            // 14 each side) so the two fields sit at the same width.
-            .padding(.horizontal, 14)
-            .padding(.top, 14)
-            .padding(.bottom, 10)
+            .overlay(
+                // Stroke ONLY in Corpus mode — a grayscale-legible shape cue for "on".
+                Capsule().strokeBorder(AppearancePalette.ink.opacity(on ? 0.28 : 0), lineWidth: 1)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(on ? "Corpus grounding on" : "Private chat")
+        .accessibilityHint("Toggles whether answers are grounded in your notes")
     }
 
     /// Trailing mic/send/clear cluster — extracted so it can be a BOTTOM-TRAILING

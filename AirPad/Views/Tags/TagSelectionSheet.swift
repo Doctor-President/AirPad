@@ -50,7 +50,7 @@ struct TagSelectionSheet: View {
                 if displayedTags.isEmpty {
                     Text("No matches")
                         .font(.subheadline)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         .frame(maxWidth: .infinity, alignment: .center)
                         .listRowBackground(Color.clear)
                 } else {
@@ -61,29 +61,27 @@ struct TagSelectionSheet: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Tags")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search tags")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         selectedTagNames = draft
                         dismiss()
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                 }
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         .onAppear {
             guard !hasHydrated else { return }
             draft = selectedTagNames
@@ -106,16 +104,16 @@ struct TagSelectionSheet: View {
                     .frame(width: 10, height: 10)
                 Text(tag.name)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                 }
             }
         }
-        .listRowBackground(Color.white.opacity(0.05))
+        .listRowBackground(AppearancePalette.ink.opacity(0.05))
     }
 }

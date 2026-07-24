@@ -63,6 +63,12 @@ struct TagPillRail: View {
         return parsed
     }
 
+    /// The tag's stored hex, or a mid-gray fallback matching `color(for:)`'s
+    /// `.gray`. Feeds the selected pill's luminance-derived ink.
+    private func hex(for tagName: String) -> String {
+        store.tags.first(where: { $0.name == tagName })?.colorHex ?? "808080"
+    }
+
     private func pill(for tagName: String) -> some View {
         let isSelected = selectedTagNames.contains(tagName)
         let tagColor = color(for: tagName)
@@ -75,7 +81,15 @@ struct TagPillRail: View {
         } label: {
             Text(tagName)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
+                // Light-mode convergence. SELECTED: the pill fill is the full
+                // saturated tag colour (mode-invariant), so the ink is derived
+                // from that colour's luminance — white on dark tags, dark on light
+                // tags — reusing the map-orb rule (`legibleInk(onFillHex:)`).
+                // UNSELECTED: fill is `tagColor@0.18` over the adaptive ground,
+                // which tracks the mode, so the adaptive `ink` reads in both.
+                .foregroundStyle(isSelected
+                    ? AppearancePalette.legibleInk(onFillHex: hex(for: tagName))
+                    : AppearancePalette.ink)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(isSelected ? tagColor : tagColor.opacity(0.18))
@@ -98,11 +112,12 @@ struct TagPillRail: View {
                 Text("More")
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(.white.opacity(0.75))
+            // Light-mode convergence — adaptive ink text + stroke (no tag colour).
+            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .overlay(
-                Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1)
+                Capsule().stroke(AppearancePalette.ink.opacity(0.22), lineWidth: 1)
             )
             .clipShape(Capsule())
         }

@@ -41,27 +41,25 @@ struct TextCaptureSheet: View {
                 .dismissKeyboardOnTapOutside()
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Color.black)
+            .background(AppearancePalette.bgBase)
             .navigationTitle("New Idea")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Add") { commit() }
                         .fontWeight(.semibold)
-                        .foregroundStyle(trimmed.isEmpty ? .white.opacity(0.3) : .white)
+                        .foregroundStyle(trimmed.isEmpty ? AppearancePalette.ink.opacity(0.3) : AppearancePalette.ink)
                         .disabled(trimmed.isEmpty)
                 }
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         .onAppear {
             if text.isEmpty { text = initialText }
         }

@@ -33,14 +33,14 @@ struct RenameCollectionSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 0) {
-                TextField("", text: $name, prompt: Text("Collection name").foregroundStyle(.white.opacity(0.35)))
+                TextField("", text: $name, prompt: Text("Collection name").foregroundStyle(AppearancePalette.ink.opacity(0.35)))
                     .focused($isFocused)
                     .font(.body)
-                    .foregroundStyle(.white)
-                    .tint(.white)
+                    .foregroundStyle(AppearancePalette.ink)
+                    .tint(AppearancePalette.ink)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
-                    .background(Color(white: 0.10))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .submitLabel(.done)
                     .onSubmit { commit() }
@@ -49,28 +49,26 @@ struct RenameCollectionSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Rename Collection")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                         .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { commit() }
                         .fontWeight(.semibold)
-                        .foregroundStyle(canSave ? .white : .white.opacity(0.3))
+                        .foregroundStyle(canSave ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.3))
                         .disabled(!canSave || isSaving)
                 }
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         .onAppear { isFocused = true }
     }
 

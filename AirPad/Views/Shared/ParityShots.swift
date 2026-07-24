@@ -21,6 +21,10 @@ struct ParityShotsView: View {
     // returns nil (no sidecars) → SF-symbol fallback, which is the ink path #17
     // fixes. `setup()` is never called → no iCloud/disk work.
     @State private var store = CorpusStore()
+    /// Router for the `dash` shot's real `DashboardView` (unused by other shots).
+    @State private var dashRouter = AppRouter()
+    /// For the `canvas` shot's map ground (mapBackground is `dark:`-parameterised).
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Group {
@@ -30,10 +34,171 @@ struct ParityShotsView: View {
             case "chips":  chipsShot
             case "body":   bodyShot
             case "list":   listShot
+            case "dash":   dashShot
+            case "recents": recentsShot
+            case "canvas": canvasShot
+            case "capture": captureShot
             default:       Text("unknown PARITYShot: \(shot)")
             }
         }
         .environment(store)
+    }
+
+    // MARK: - #3 fix-up · dashboard pane parity (Today / Recents / Collections)
+
+    /// The REAL `DashboardView` (hub; `initialRoute` nil) over a small seeded
+    /// store + a fresh router, so Today / Recents / Collections render with live
+    /// rows and the lava lamp behind. Screenshot LIGHT/DARK to confirm the three
+    /// panes read as ONE family (same `.thinMaterial`, radius 22, white rim, no
+    /// shadow) and that the lava reads THROUGH Recents + Collections as it does
+    /// through Today. Seeds `store.nodes` directly (no setup()/iCloud).
+    private var dashShot: some View {
+        DashboardView()
+            .environment(dashRouter)
+            .onAppear { if store.nodes.isEmpty { store.nodes = Self.dashSeedNodes } }
+    }
+
+    /// A few nodes so Corpus counts, the Today "Activity" list, and Recents have
+    /// content. None carry a `journalDate`, so the Journal collection row stays a
+    /// regular (non-Corpus) row — the Recents height parity target.
+    private static let dashSeedNodes: [Node] = (0..<4).map { i in
+        Node(id: "dash-\(i)", createdAt: epoch, updatedAt: epoch,
+             title: ["On the Gerund", "Tomoe River paper",
+                     "Cucumber-water light", "Fold index notes"][i],
+             summary: "", tags: [])
+    }
+
+    // MARK: - Recents light-mode pass · the REAL RecentsView
+
+    /// The REAL `RecentsView` over a seeded store, in a NavigationStack (its own
+    /// glass-chrome header hides the nav bar). Nodes are dated relative to now so
+    /// the Today / Previous 7 Days / Previous 30 Days / month buckets all appear —
+    /// screenshot LIGHT/DARK to check ink legibility, container parity with the
+    /// dashboard panes, and the standard back/sort chrome.
+    private var recentsShot: some View {
+        NavigationStack {
+            RecentsView(onOpenNode: { _ in })
+                .onAppear { if store.nodes.isEmpty { seedRecents() } }
+        }
+    }
+
+    /// Spreads seed nodes across the buckets (now / −3d / −10d / −40d). Empty
+    /// tags → gray color dots, which is fine for the parity shot.
+    private func seedRecents() {
+        let now = Date()
+        let cal = Calendar.current
+        let offsets: [(String, Int)] = [
+            ("On the Gerund", 0), ("Tomoe River paper", -3),
+            ("Cucumber-water light", -10), ("Fold index notes", -40),
+        ]
+        store.nodes = offsets.enumerated().map { i, pair in
+            let d = cal.date(byAdding: .day, value: pair.1, to: now) ?? now
+            return Node(id: "recents-\(i)", createdAt: d, updatedAt: d,
+                        title: pair.0, summary: "", tags: [])
+        }
+    }
+
+    // MARK: - Canvas light-mode sweep · SwiftUI overlays over the real map ground
+
+    /// The changed Canvas SwiftUI overlays, each over the REAL adaptive map ground
+    /// (`AppearancePalette.mapBackground`, cream in light / near-black in dark), so
+    /// LIGHT/DARK screenshots show the exact ink/chrome on the exact background:
+    ///   • focal-engagement text — reconstructed with the REAL `NodeGradientBackground`
+    ///     bubble + the REAL `AppearancePalette.ink` treatment (the live overlay
+    ///     needs a physics scene, so the text block is rebuilt faithfully here).
+    ///   • a couple of cluster `LabelPill`-style pills (`.ultraThinMaterial` + ink).
+    ///   • the drill-down back pill.
+    ///   • the real `EmptyStateOverlay` + `ModelProcessingIndicator`.
+    /// (The capture `CollectionPillRail` has its own `captureShot`.)
+    private var canvasShot: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                captionLabel("FOCAL ENGAGEMENT — text over the node bubble (ink)")
+                focalSample(Self.mockNode)
+
+                captionLabel("CLUSTER / DRILL-DOWN PILLS — .ultraThinMaterial + ink")
+                HStack(spacing: 10) {
+                    mapPill { Label("Grammar", systemImage: "chevron.left") }
+                    mapPill { Text("Stationery") }
+                    mapPill { Text("Cucumber Water") }
+                }
+
+                captionLabel("MODEL PROCESSING + EMPTY STATE")
+                ModelProcessingIndicator()
+                EmptyStateOverlay()
+                    .frame(height: 120)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(AppearancePalette.mapBackground(dark: colorScheme == .dark).ignoresSafeArea())
+    }
+
+    /// Faithful rebuild of the focal-engagement text block: the REAL node bubble
+    /// gradient + the REAL `AppearancePalette.ink` (1.0 / 0.85 / 0.65 ratios).
+    private func focalSample(_ node: Node) -> some View {
+        ZStack {
+            NodeGradientBackground(node: node, cornerRadius: 32)
+            VStack(alignment: .leading, spacing: 12) {
+                Text(node.title)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                Text("A node summary line that must stay legible whether the bubble goes light on parchment or dark under Solar Flare.")
+                    .font(.system(size: 16))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                Spacer()
+                HStack(spacing: 16) {
+                    Label("3", systemImage: "pencil").font(.caption)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    Label("2", systemImage: "link").font(.caption)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    Text("2 days ago").font(.caption)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.65))
+                }
+            }
+            .padding(24)
+        }
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    /// The map-pill treatment I applied to `LabelPill` / the drill-down button:
+    /// adaptive `.ultraThinMaterial` + `AppearancePalette.ink`.
+    private func mapPill<V: View>(@ViewBuilder _ label: () -> V) -> some View {
+        label()
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.95))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.10), lineWidth: 0.5))
+    }
+
+    // MARK: - Capture surface · the REAL CollectionPillRail
+
+    /// The REAL `CollectionPillRail` over the adaptive capture ground
+    /// (`AppearancePalette.bgBase`), with one pill pre-selected so both the
+    /// selected (white) and unselected (glass) states show. Seeds a few
+    /// collections. Screenshot LIGHT/DARK to confirm the unselected pills are the
+    /// standard glass (not a solid dark circle) and the labels are legible.
+    private var captureShot: some View {
+        VStack(spacing: 20) {
+            captionLabel("CAPTURE — CollectionPillRail (one selected, rest glass)")
+            CollectionPillRail(
+                selectedCollectionID: .constant("cap-1"),
+                onCreateNew: {}
+            )
+            Spacer()
+        }
+        .padding(.top, 60)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(AppearancePalette.bgBase.ignoresSafeArea())
+        .onAppear {
+            if store.collections.isEmpty {
+                store.collections = ["Reading", "Field Notes", "Grammar", "Stationery"]
+                    .enumerated().map { i, name in NodeCollection(id: "cap-\(i)", name: name) }
+            }
+        }
     }
 
     // MARK: - #15 · note-entry gutter candidates

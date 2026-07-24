@@ -53,6 +53,11 @@ struct CanvasChrome: View {
     /// survives close/re-open within a session — same pattern as
     /// NodeGridView's tile tuning panel.
     @State private var solarFlareTuningPanelOffset: CGSize = .zero
+    /// Librarian LIGHT panel tuner (Cucumber Water) — dials `libp.l.*`. Sibling
+    /// to the Solar Flare tuner; self-deletes once T's light values are baked
+    /// into `LibrarianLightDefaults`.
+    @State private var showLibrarianLightTuningPanel = false
+    @State private var librarianLightTuningPanelOffset: CGSize = .zero
 
     #endif
 
@@ -329,6 +334,10 @@ struct CanvasChrome: View {
             if showSolarFlareTuningPanel {
                 floatingSolarFlareTuningPanel
             }
+            librarianLightTuningTrigger
+            if showLibrarianLightTuningPanel {
+                floatingLibrarianLightTuningPanel
+            }
             #endif
         }
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
@@ -416,6 +425,43 @@ struct CanvasChrome: View {
             SolarFlareTuningPanel(
                 isPresented: $showSolarFlareTuningPanel,
                 position: $solarFlareTuningPanelOffset
+            )
+            .padding(.bottom, 80)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(true)
+    }
+
+    /// Tiny drop glyph below the ☀︎, opening the Librarian LIGHT tuner. Dials the
+    /// Cucumber-Water panel — open it while the app is in LIGHT mode. Self-deletes
+    /// with the tuner once T bakes `libp.l.*` into `LibrarianLightDefaults`.
+    private var librarianLightTuningTrigger: some View {
+        VStack {
+            HStack {
+                Button {
+                    showLibrarianLightTuningPanel.toggle()
+                } label: {
+                    Image(systemName: "drop")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            Spacer()
+        }
+        .padding(.top, 132)   // below the ☀︎ (top 100) — 28pt glyph + gap
+        .padding(.leading, 10)
+    }
+
+    private var floatingLibrarianLightTuningPanel: some View {
+        VStack {
+            Spacer()
+            LibrarianLightTuningPanel(
+                isPresented: $showLibrarianLightTuningPanel,
+                position: $librarianLightTuningPanelOffset
             )
             .padding(.bottom, 80)
         }

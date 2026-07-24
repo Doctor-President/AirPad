@@ -43,6 +43,31 @@ enum ModelRouter {
         return .foundationModel
     }
 
+    /// Friendly, quiet name for the on-device Foundation Model — no network, safe
+    /// to return instantly. (Proposed wording; T confirms.)
+    static let foundationModelName = "On-device"
+
+    /// Resting label for a configured-but-not-yet-known remote endpoint (not
+    /// probed, or unreachable). Clear and calm — never a blank or an error.
+    static let remoteRestingName = "Local model"
+
+    /// Human-readable name of the model that will answer the NEXT turn. Reads the
+    /// live provider (Keychain), so an endpoint swapped in Settings is reflected.
+    /// Call this OFF the render path — it may hit the network for a remote endpoint
+    /// (and the Keychain read is XPC-backed). FM returns instantly; a remote
+    /// endpoint is probed for its first model id (the SAME `firstOllamaModel` the
+    /// generate path uses), falling back to the resting label if unreachable — so
+    /// the caller always gets a display string, never a throw or an empty value.
+    static func resolveActiveModelName() async -> String {
+        switch active {
+        case .foundationModel:
+            return foundationModelName
+        case .ollama(let endpoint):
+            guard let base = URL(string: endpoint) else { return remoteRestingName }
+            return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
+        }
+    }
+
     /// One-shot text generation. The system prompt is sent as a separate
     /// role for Ollama (OpenAI chat-completions shape); for FM it's
     /// concatenated since `LanguageModelSession` doesn't expose a system

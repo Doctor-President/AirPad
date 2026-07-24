@@ -733,6 +733,31 @@ final class LibrarianState {
         didSet { UserDefaults.standard.set(corpusAware, forKey: "librarianCorpusAware") }
     }
 
+    /// Read-only indicator of the model that will answer the next Ask (the FM
+    /// friendly name, or a remote endpoint's model id). STORED + observable so the
+    /// surface updates when an async probe lands; refreshed via `refreshActiveModel()`
+    /// — deliberately NOT read per render, because resolving the provider hits the
+    /// Keychain (XPC) and a remote endpoint hits the network, neither of which
+    /// belongs in `body`. Defaults to the FM name.
+    private(set) var activeModelLabel: String = ModelRouter.foundationModelName
+
+    /// Refresh the model indicator OFF the render path. Resolves the live provider
+    /// (so an endpoint swapped in Settings is reflected on the next turn) and probes
+    /// a remote endpoint's model id (best-effort → resting label). Cheap for FM (no
+    /// network). Called on surface appear and when the Ask field focuses — mirroring
+    /// the personal-voice hook's "read fresh right before it matters" cadence.
+    func refreshActiveModel() async {
+        #if DEBUG
+        // `-MockModelName <id>` forces the label (headless verification of the
+        // remote-endpoint state without a live server). No-op without the arg.
+        if let mock = UserDefaults.standard.string(forKey: "MockModelName"), !mock.isEmpty {
+            activeModelLabel = mock
+            return
+        }
+        #endif
+        activeModelLabel = await ModelRouter.resolveActiveModelName()
+    }
+
     /// User-defined standing voice (c7) — read fresh on each prompt build
     /// so Settings edits take effect on the next Ask without re-creating
     /// the session. Returns "" when unset or whitespace-only; otherwise

@@ -204,6 +204,10 @@ struct LibrarianSurface: View {
         .onAppear {
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
+            // Resolve the active-model indicator off the render path (Keychain +
+            // possible network probe). Refreshed again on Ask-focus so a Settings
+            // endpoint swap is reflected before the next turn.
+            Task { await librarian.refreshActiveModel() }
             #if DEBUG
             // Real-screen verification hooks for the Ask-field shape/glow pass:
             // `-AskPrefill <text>` fills the Ask field (to see it wrap), `-AskFocus`
@@ -274,6 +278,9 @@ struct LibrarianSurface: View {
             // keyboard's presentation.
             if focused {
                 panelModel.expandToFull(animated: true)
+                // About to ask — re-resolve which model will answer, so a Settings
+                // endpoint swap is reflected on the next turn (read fresh).
+                Task { await librarian.refreshActiveModel() }
             }
             updateActiveAccent()
         }
@@ -1143,12 +1150,16 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func askComposer(librarian: LibrarianState) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            // ★ Corpus-aware toggle — always visible above the Ask field so the user
-            // knows which mode the next question runs in (hybrid-authorship: the
-            // system's behaviour is legible, never hidden). Leading-aligned near the
-            // feather so it reads as part of the composer.
-            corpusModeToggle(librarian: librarian)
-                .padding(.leading, 6)
+            // ★ Corpus-aware toggle + active-model indicator — always visible above
+            // the Ask field so the user knows which mode the next question runs in AND
+            // which model will answer (hybrid-authorship: the system's behaviour is
+            // legible, never hidden). Leading-aligned near the feather.
+            HStack(spacing: 8) {
+                corpusModeToggle(librarian: librarian)
+                activeModelLabelView(librarian: librarian)
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 6)
 
             inputRow(librarian: librarian)
                 // Item 2 — the focus glow is driven from the SAME Messages-style
@@ -1217,6 +1228,28 @@ struct LibrarianSurface: View {
         .buttonStyle(.plain)
         .accessibilityLabel(on ? "Corpus grounding on" : "Private chat")
         .accessibilityHint("Toggles whether answers are grounded in your notes")
+    }
+
+    /// ★ Read-only active-model indicator — declares WHICH model will answer the
+    /// next Ask (FM friendly name, or the remote endpoint's model id). Quiet by
+    /// design (small, low-contrast ink) so it informs without competing with the
+    /// mode pill. Reads by TEXT (colourblind-safe); the value comes from
+    /// `librarian.activeModelLabel`, refreshed off-render (see `refreshActiveModel`),
+    /// never resolved in this body. NOT interactive — this pass declares, it doesn't
+    /// pick.
+    @ViewBuilder
+    private func activeModelLabelView(librarian: LibrarianState) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "cpu")
+                .font(.system(size: 9, weight: .semibold))
+            Text(librarian.activeModelLabel)
+                .font(.system(size: 11, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.middle)   // long model ids degrade gracefully
+        }
+        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Answering with \(librarian.activeModelLabel)")
     }
 
     /// Trailing mic/send/clear cluster — extracted so it can be a BOTTOM-TRAILING

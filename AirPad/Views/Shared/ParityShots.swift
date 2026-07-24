@@ -571,6 +571,7 @@ struct DebugScreenHost: View {
         // home). `-LibrarianDetent tip|half|full` (handled in ContentView) drives
         // the detent for peek/half/full shots.
         if screen == "librarian" { router.entryMode = .canvas }
+        if screen == "quikcapture" { router.entryMode = .quikCapture }
 
         // Chat content for `chatview` (and the Librarian if it surfaces the
         // transcript): a real user turn + a cited assistant answer, so the chat
@@ -612,6 +613,7 @@ struct DebugScreenHost: View {
         case "chatslist":        ChatsListView()
         case "backlink":         BacklinkPickerSheet(sourceNodeID: "seed-0", sourceEntryID: nil)
         case "librarian":        ContentView()   // real app → canvas + Librarian panel
+        case "quikcapture":      ContentView()   // real app → QuikCapture surface
         case "chatview":         NavigationStack { ChatView() }   // real chat transcript
         default:                 Text("unknown -Screen: \(screen)")
         }

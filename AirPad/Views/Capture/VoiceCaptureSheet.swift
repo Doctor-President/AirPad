@@ -16,6 +16,7 @@ struct VoiceCaptureSheet: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     // Recording state
     @State private var phase: RecordPhase = .requestingPermission
@@ -61,6 +62,22 @@ struct VoiceCaptureSheet: View {
         .task {
             await requestPermissionsAndStart()
         }
+        // BUG 8 — every teardown path frees the mic. `.onDisappear` catches the
+        // swipe-to-dismiss (and any programmatic dismiss) that the Cancel button
+        // handler alone would miss; `teardownAudio()` is idempotent so a save
+        // that already tore down is a harmless no-op here.
+        .onDisappear {
+            teardownAudio()
+        }
+        // Backgrounding mid-record must not leave the mic live. Gate on
+        // `.background` only (not `.inactive`) so a transient control-center
+        // pull doesn't kill an in-progress take; the partial recording stays
+        // saveable (recordingURL is preserved) via Done on return.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background && phase == .recording {
+                teardownAudio()
+            }
+        }
     }
 
     // MARK: - Recording UI
@@ -95,7 +112,12 @@ struct VoiceCaptureSheet: View {
             .disabled(elapsedSeconds < 1)
             .opacity(elapsedSeconds < 1 ? 0.4 : 1)
 
-            Button("Cancel") { dismiss() }
+            Button("Cancel") {
+                // Free the mic the instant Cancel is tapped (BUG 8) — don't wait
+                // for the dismiss animation. `.onDisappear` re-runs it as a belt.
+                teardownAudio()
+                dismiss()
+            }
                 .font(.body)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .padding(.bottom, 40)
@@ -200,16 +222,32 @@ struct VoiceCaptureSheet: View {
     }
 
     private func stopRecording() {
-        box.meterTimer?.invalidate()
-        box.meterTimer = nil
-        box.recorder?.stop()
+        // Capture duration before teardown nils the recorder.
         let duration = box.recorder?.currentTime ?? 0
-        box.recorder = nil
-
-        do { try AVAudioSession.sharedInstance().setActive(false) } catch { }
+        teardownAudio()
 
         guard let url = box.recordingURL else { dismiss(); return }
         transcribe(url: url, duration: duration)
+    }
+
+    /// BUG 8 — idempotent audio teardown. Stops the metering timer and recorder
+    /// and deactivates the shared session with `.notifyOthersOnDeactivation` so
+    /// the mic is released and other audio apps can resume. Every exit path —
+    /// Done/save, Cancel, swipe-dismiss, background mid-record — routes through
+    /// here, so no path can leave the microphone live. Deliberately does NOT
+    /// touch the recognition task (it's a file-based request that never opens the
+    /// mic) or `recordingURL` (so a backgrounded take stays saveable). Safe to
+    /// call repeatedly.
+    private func teardownAudio() {
+        box.meterTimer?.invalidate()
+        box.meterTimer = nil
+        box.recorder?.stop()
+        box.recorder = nil
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("[VoiceCapture] Session deactivate error: \(error)")
+        }
     }
 
     // MARK: - Transcription

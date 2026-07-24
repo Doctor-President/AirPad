@@ -125,19 +125,19 @@ struct LibrarianSurface: View {
         // change as p climbs from 0→1.
         GeometryReader { geo in
             ZStack {
-                // Panel material — Solar Flare layered look (tuner-driven
-                // base + dark tint + optional rotating prismatic edge).
-                // Faded via PeekFadeLayer (observes the isolated morph
-                // model) so the peek posture shows only the morphing
-                // field's Liquid Glass; the panel-wide material rises with
-                // the chrome. The -150pt bottom buffer + edge-vs-fill
-                // split live inside `SolarFlareMaterial`. Drag-gate flips
-                // off the rotating edge during finger-drag to keep the
-                // live motion cheap.
+                // Panel material — PER-MODE (T's decision 2026-07-24: the
+                // Librarian is NO LONGER dark-only; the "deliberately dark Solar
+                // Flare panel" exclusion is VOID). `LibrarianPanelMaterial` picks
+                // by colorScheme (ONE typed selection, the PeekPillStyle pattern —
+                // no colorScheme fork here): DARK = the untouched SolarFlareMaterial
+                // (byte-identical); LIGHT = the Cucumber Water cream+glass surface
+                // (tuner-driven `libp.l.*`). The -150pt bottom buffer + edge-vs-fill
+                // split live inside each material. Faded via PeekFadeLayer so the
+                // peek posture shows only the morphing field's glass.
                 PeekFadeLayer(
                     progress: panelModel.progress,
-                    content: SolarFlareMaterial(isDragging: panelModel.isDragging,
-                                                activeAccent: activeAccent)
+                    content: LibrarianPanelMaterial(isDragging: panelModel.isDragging,
+                                                    activeAccent: activeAccent)
                         .allowsHitTesting(false)
                 )
 
@@ -562,7 +562,7 @@ struct LibrarianSurface: View {
                         } label: {
                             Image(systemName: "lock.fill")
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.35))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                                 .frame(width: 32, height: 32)
                         }
                         .buttonStyle(.plain)
@@ -581,10 +581,10 @@ struct LibrarianSurface: View {
                         } label: {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.85))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                                 .frame(width: 32, height: 32)
                                 .background(
-                                    Circle().fill(Color.white.opacity(0.10))
+                                    Circle().fill(AppearancePalette.ink.opacity(0.10))
                                 )
                         }
                         .buttonStyle(.plain)
@@ -594,7 +594,7 @@ struct LibrarianSurface: View {
                         } label: {
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.55))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                                 .frame(width: 32, height: 32)
                         }
                         .buttonStyle(.plain)
@@ -686,7 +686,7 @@ struct LibrarianSurface: View {
                 VStack(spacing: 0) {
                     // Hairline rule so the band reads as a toolbar
                     // rather than a floating word above the keyboard.
-                    Color.white.opacity(0.1)
+                    AppearancePalette.ink.opacity(0.1)
                         .frame(height: 0.5)
                     HStack {
                         Spacer()
@@ -769,7 +769,7 @@ struct LibrarianSurface: View {
         } label: {
             Text("Done")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.95))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .contentShape(Rectangle())
                 .padding(.vertical, 6)
                 .padding(.horizontal, 8)
@@ -822,10 +822,10 @@ struct LibrarianSurface: View {
                     Text("Back")
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundStyle(.white.opacity(0.75))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(Color.white.opacity(0.06))
+                .background(AppearancePalette.ink.opacity(0.06))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -859,7 +859,7 @@ struct LibrarianSurface: View {
                         if isSavingSession {
                             ProgressView()
                                 .controlSize(.mini)
-                                .tint(.white.opacity(0.7))
+                                .tint(AppearancePalette.ink.opacity(0.7))
                         } else {
                             Image(systemName: "stop.circle")
                                 .font(.system(size: 12, weight: .medium))
@@ -867,10 +867,10 @@ struct LibrarianSurface: View {
                         Text(isSavingSession ? "Saving…" : "End session (\(totalCount))")
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.06))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -908,15 +908,15 @@ struct LibrarianSurface: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
             TextField("Search", text: Binding(
                 get: { librarian.searchText },
                 set: { librarian.searchText = $0 }
             ))
                 .focused($isSearchFocused)
                 .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(.white)
-                .tint(.white)
+                .foregroundStyle(AppearancePalette.ink)
+                .tint(AppearancePalette.ink)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !librarian.searchText.isEmpty {
@@ -925,7 +925,7 @@ struct LibrarianSurface: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -933,7 +933,7 @@ struct LibrarianSurface: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.white.opacity(0.06))
+        .background(AppearancePalette.ink.opacity(0.06))
         .clipShape(Capsule())
     }
 
@@ -956,7 +956,7 @@ struct LibrarianSurface: View {
                 if matchNodes.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
                     Text("No matches")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 12)
                 }
 
@@ -964,7 +964,7 @@ struct LibrarianSurface: View {
                     Text("MATCHES")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.8)
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 4)
                     ForEach(matchNodes, id: \.id) { node in
                         Button {
@@ -980,11 +980,11 @@ struct LibrarianSurface: View {
                     Text("RELATED")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.8)
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                     if librarian.searchSemanticInFlight {
                         ProgressView()
                             .controlSize(.mini)
-                            .tint(.white.opacity(0.45))
+                            .tint(AppearancePalette.ink.opacity(0.45))
                     }
                 }
                 .padding(.top, !matchNodes.isEmpty ? 8 : 4)
@@ -1108,7 +1108,7 @@ struct LibrarianSurface: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 40, height: 40)
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 // Equidistant: 12pt to the capsule's left edge (= this leading,
                 // since the capsule's widest point is at the feather's vertical
                 // center) matches the 12pt to "Ask" (HStack spacing 8 + the
@@ -1121,7 +1121,7 @@ struct LibrarianSurface: View {
             ), axis: .vertical)
                 .focused($isInputFocused)
                 .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .tint(klein)
                 // Leading 4 (+ the HStack's 8pt spacing) = 12pt from the
                 // feather's frame to "Ask", matching the feather's 12pt gap to
@@ -1149,7 +1149,7 @@ struct LibrarianSurface: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
-                            .foregroundStyle(.white.opacity(0.4))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Clear input")
@@ -1180,7 +1180,7 @@ struct LibrarianSurface: View {
                             .foregroundStyle(
                                 enabled
                                     ? AnyShapeStyle(kleinGrad)
-                                    : AnyShapeStyle(Color.white.opacity(0.2))
+                                    : AnyShapeStyle(AppearancePalette.ink.opacity(0.2))
                             )
                     }
                     .buttonStyle(.plain)
@@ -1219,7 +1219,7 @@ struct LibrarianSurface: View {
         // the two composers read as siblings. minHeight (not fixed) so Ask can
         // still grow with multi-line input.
         .frame(minHeight: 52)
-        .background(Color.white.opacity(0.04))
+        .background(AppearancePalette.ink.opacity(0.04))
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of
         // the mode glyph, the trailing area before mic/send), not
@@ -1319,7 +1319,7 @@ struct LibrarianSurface: View {
                         .foregroundStyle(Color(hexString: "00BFFF"))
                     Text(router.chat.displayTitle)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                 }
@@ -1333,14 +1333,14 @@ struct LibrarianSurface: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close chat")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.white.opacity(0.06))
+        .background(AppearancePalette.ink.opacity(0.06))
         .clipShape(Capsule())
     }
 
@@ -1353,7 +1353,7 @@ struct LibrarianSurface: View {
         if nodes.isEmpty {
             Text("No matches.")
                 .font(.system(size: 15))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
         } else {
             LazyVStack(spacing: 10) {
                 ForEach(nodes) { node in
@@ -1363,24 +1363,24 @@ struct LibrarianSurface: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(node.title)
                                 .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(AppearancePalette.ink)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
                             if !node.summary.isEmpty {
                                 Text(node.summary)
                                     .font(.system(size: 14))
-                                    .foregroundStyle(.white.opacity(0.7))
+                                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .lineLimit(2)
                             }
 
                             Text(node.createdAt.formatted(date: .abbreviated, time: .shortened))
                                 .font(.system(size: 12))
-                                .foregroundStyle(.white.opacity(0.4))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
                     .buttonStyle(.plain)
@@ -1481,17 +1481,17 @@ struct LibrarianSurface: View {
         let card = VStack(spacing: compact ? 6 : 10) {
             Image(systemName: systemImage)
                 .font(.system(size: compact ? 18 : 22, weight: .regular))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
             Text(label)
                 .font(.system(size: compact ? 11 : 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, compact ? 12 : 18)
         .padding(.horizontal, compact ? 8 : 16)
-        .background(Color.white.opacity(0.05))
+        .background(AppearancePalette.ink.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: compact ? 12 : 14))
 
         if isEnabled {
@@ -1545,10 +1545,10 @@ struct LibrarianSurface: View {
         } label: {
             Text(label)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? .black : .white.opacity(0.7))
+                .foregroundStyle(isSelected ? .black : AppearancePalette.ink.opacity(0.7))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
-                .background(isSelected ? Color.white : Color.white.opacity(0.08))
+                .background(isSelected ? Color.white : AppearancePalette.ink.opacity(0.08))
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -1608,12 +1608,12 @@ private struct SearchMatchRow: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(node.title.isEmpty ? "Untitled" : node.title)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.95))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .lineLimit(1)
             if !snippet.isEmpty {
                 Text(snippet)
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
             }
         }
@@ -1633,13 +1633,13 @@ private struct SearchRelatedRow: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(node.title.isEmpty ? "Untitled" : node.title)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.95))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .lineLimit(1)
             if !snippet.isEmpty {
                 Text(snippet)
                     .font(.system(size: 13, weight: .regular, design: .serif))
                     .italic()
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                     .lineLimit(3)
             }
         }

@@ -109,16 +109,13 @@ struct ContentView: View {
                     let clearedAppearance = proxy.controller.surfaceView.appearance
                     clearedAppearance.shadows = []
                     proxy.controller.surfaceView.appearance = clearedAppearance
-                    // First-render alignment with the current entry mode.
+                    // First-render alignment with the current surface.
                     // SwiftUI's `.onChange` doesn't fire for the initial
                     // value reliably across the panel-mount boundary, so
-                    // align here once the controller is wired up.
-                    switch router.entryMode {
-                    case .canvas, .collectionCanvas:
-                        proxy.controller.move(to: .tip, animated: false)
-                    case .dashboard, .quikCapture, .recents:
-                        proxy.controller.hide(animated: false)
-                    }
+                    // align here once the controller is wired up. Routes
+                    // through the same `librarianSuppressed` SSOT as every
+                    // runtime transition (BUG 11).
+                    applyLibrarianVisibility(animated: false)
                     #if DEBUG
                     // `-LibrarianDetent tip|half|full` — drives the panel to a
                     // detent for headless real-screen shots of the light panel
@@ -155,27 +152,22 @@ struct ContentView: View {
         // the layout's anchor set, so the duck goes through `hide()` (which
         // routes to a library-default offscreen anchor) — keeping `.tip`
         // as the hard user-facing floor for drag.
-        .onChange(of: router.entryMode) { _, newMode in
-            switch newMode {
-            case .canvas, .collectionCanvas:
-                panelState.raiseToPeek(animated: true)
-            case .dashboard, .quikCapture, .recents:
-                // Dashboard-persistence seam — Move 4 (or later) replaces
-                // this duck with Dashboard-appropriate panel content so
-                // the Librarian persists across dashboard too. Do NOT
-                // build that here; it belongs to a later move.
-                panelState.duck(animated: true)
-            }
+        // BUG 11 — single suppression SSOT. Both the entry-mode switch AND
+        // capture mode feed `librarianSuppressed`; re-applying visibility on
+        // either input change (instead of two independent imperative ducks
+        // that a later raise could silently override) is what keeps the peek
+        // out of every canvas-COVERING surface — QuikCapture, the ducked entry
+        // modes, and capture mode alike. The FloatingPanel is a root-mounted
+        // ZStack sibling that's never auto-dismissed, so this is the level
+        // where all of those surfaces get suppression.
+        .onChange(of: router.entryMode) { _, _ in
+            applyLibrarianVisibility(animated: true)
         }
         // Capture mode (Dashboard "+"): the focused blank-node surface ducks the
-        // Librarian so the note + capture buttons own the screen. Same duck path
-        // as the capture overlay above; restore per entry mode on exit.
-        .onChange(of: router.isCapturing) { _, capturing in
-            if capturing {
-                panelState.duck(animated: true)
-            } else {
-                restorePanelForEntryMode()
-            }
+        // Librarian so the note + capture buttons own the screen — folded into
+        // the same SSOT so exit restores per the live surface.
+        .onChange(of: router.isCapturing) { _, _ in
+            applyLibrarianVisibility(animated: true)
         }
         // Detail-view coexistence. ContentView's panel visibility is keyed
         // on entryMode, but a node detail is pushed inside the host
@@ -197,9 +189,13 @@ struct ContentView: View {
         // separate early-restore signal.
         .onChange(of: store.isInDetailView) { _, inDetail in
             if inDetail {
-                // Capture mode keeps the Librarian ducked — don't rescue-raise it
-                // when entering the capture detail.
-                if panelState.state == .hidden && !router.isCapturing {
+                // Rescue-raise ONLY when the current surface actually wants the
+                // Librarian (a canvas / collection-canvas detail). Any suppressed
+                // surface — capture mode OR QuikCapture / dashboard / recents —
+                // must stay ducked, so gate on the same SSOT (BUG 11). The bare
+                // `!isCapturing` guard let a detail-depth flip re-raise the peek
+                // over a non-canvas surface.
+                if panelState.state == .hidden && !librarianSuppressed {
                     panelState.raiseToPeek(animated: true)
                 }
             } else {
@@ -218,7 +214,10 @@ struct ContentView: View {
         // CanvasChrome) reads as the dominant action. No restore on
         // exit — peek is the correct resting state after a batch action.
         .onChange(of: selection.isActive) { _, isActive in
-            if isActive {
+            // Retract-to-peek is a canvas affordance (the BatchActionBar sits
+            // above the peek). Guard on the SSOT so activating selection can
+            // never raise the peek in a suppressed surface (BUG 11).
+            if isActive && !librarianSuppressed {
                 panelState.raiseToPeek(animated: true)
             }
         }
@@ -231,21 +230,41 @@ struct ContentView: View {
         }
     }
 
-    /// Apply the entryMode → panel visibility rule. Extracted so both
-    /// capture-overlay dismiss and detail-view exit can share it without
-    /// duplicating the switch.
-    private func restorePanelForEntryMode() {
-        // Capture mode overrides the entry-mode rule — stay ducked until it ends.
-        if router.isCapturing {
-            panelState.duck(animated: true)
-            return
-        }
+    /// BUG 11 — single source of truth for whether the Librarian peek must be
+    /// ducked for the CURRENT surface. Every canvas-COVERING surface hides it:
+    /// capture mode (the Dashboard "+" note editor) and the three ducked entry
+    /// modes (dashboard / QuikCapture / recents). Only a plain canvas /
+    /// collection-canvas shows the peek. Because the FloatingPanel is a
+    /// root-mounted ZStack sibling that's never auto-dismissed, this predicate
+    /// — not a scattered set of imperative ducks — is what guarantees the peek
+    /// can't persist into a surface that never asked for it.
+    private var librarianSuppressed: Bool {
+        if router.isCapturing { return true }
         switch router.entryMode {
         case .canvas, .collectionCanvas:
-            panelState.raiseToPeek(animated: true)
+            return false
         case .dashboard, .quikCapture, .recents:
-            panelState.duck(animated: true)
+            return true
         }
+    }
+
+    /// Drive the panel position from `librarianSuppressed`. Called on every
+    /// input change (entry mode, capture) and at first-render alignment, so the
+    /// position never drifts from the visible surface. Raise-intent callers
+    /// (selection retract, detail rescue) stay separate but gate on the same
+    /// predicate so they can't override a suppression.
+    private func applyLibrarianVisibility(animated: Bool) {
+        if librarianSuppressed {
+            panelState.duck(animated: animated)
+        } else {
+            panelState.raiseToPeek(animated: animated)
+        }
+    }
+
+    /// Restore panel visibility for the live surface. Shared by capture-overlay
+    /// dismiss and detail-view exit; delegates to the `librarianSuppressed` SSOT.
+    private func restorePanelForEntryMode() {
+        applyLibrarianVisibility(animated: true)
     }
 
     /// Collapse the entry modes to a Librarian scope.

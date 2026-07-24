@@ -683,14 +683,15 @@ enum LibrarianLightKey {
 /// that the ink is dark — see the content-legibility pass). These are the current
 /// DEFAULTS so a reinstall (which wipes `libp.l.*` UserDefaults) restores T's dial.
 ///
-/// T's dialled snapshot (verbatim, so it can't be lost):
-///   material ultraThin · tint Cream @ 0.500 · sheen 0.000
+/// T's dialled snapshot (verbatim, so it can't be lost) — UPDATED 2026-07-24 #2
+/// (tint dropped 0.500 → 0.350 now that the chat/field ink is legible):
+///   material ultraThin · tint Cream @ 0.350 · sheen 0.000
 ///   shadow Brown, radius 24.00, opacity 0.150, offset x 3.00 y 2.00
 ///   stroke ON, Warm Tan, width 1.200 · corner 40
 enum LibrarianLightDefaults {
     static let material: String      = "ultraThin"
     static let tintColor: String     = LibrarianLightColor.cream.rawValue
-    static let tintOpacity: Double   = 0.50   // T-dialled 2026-07-24 (was seed 0.18)
+    static let tintOpacity: Double   = 0.35   // T-dialled 2026-07-24 #2 (0.50 → 0.35)
     static let sheen: Double         = 0.0    // T-dialled (was seed 0.06)
     static let shadowColor: String   = LibrarianLightColor.brown.rawValue
     static let shadowRadius: Double  = 24

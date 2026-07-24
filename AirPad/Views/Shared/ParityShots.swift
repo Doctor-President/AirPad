@@ -571,7 +571,19 @@ struct DebugScreenHost: View {
         // home). `-LibrarianDetent tip|half|full` (handled in ContentView) drives
         // the detent for peek/half/full shots.
         if screen == "librarian" { router.entryMode = .canvas }
-        if screen == "quikcapture" { router.entryMode = .quikCapture }
+        // Capture harness — seed the live capture state so both capture surfaces
+        // render (they were blank because `createCaptureNode()` is async + needs
+        // iCloud). `captureNodeID` points at a seeded node so content resolves
+        // immediately; `isCapturing` puts NodeDetailView into capture mode.
+        if screen == "quikcapture" {
+            router.entryMode = .quikCapture
+            router.captureNodeID = "seed-0"
+        }
+        if screen == "capturemode" {
+            router.isCapturing = true
+            router.captureNodeID = "seed-0"
+            router.captureDraftHasText = false   // empty draft → the "Cancel" state (BUG 9)
+        }
 
         // Chat content for `chatview` (and the Librarian if it surfaces the
         // transcript): a real user turn + a cited assistant answer, so the chat
@@ -614,6 +626,7 @@ struct DebugScreenHost: View {
         case "backlink":         BacklinkPickerSheet(sourceNodeID: "seed-0", sourceEntryID: nil)
         case "librarian":        ContentView()   // real app → canvas + Librarian panel
         case "quikcapture":      ContentView()   // real app → QuikCapture surface
+        case "capturemode":      NavigationStack { NodeDetailView(nodeID: "seed-0") }   // capture-mode note editor (BUG 9)
         case "chatview":         NavigationStack { ChatView() }   // real chat transcript
         default:                 Text("unknown -Screen: \(screen)")
         }

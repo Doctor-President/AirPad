@@ -217,6 +217,16 @@ struct QuikCaptureView: View {
             }
         }
         .task {
+            #if DEBUG
+            // Capture harness (`-Screen quikcapture`): adopt a pre-seeded capture
+            // node instead of creating one, so the surface renders headlessly
+            // (createCaptureNode() needs iCloud). No-op in the real flow.
+            if nodeID == nil, let seeded = router.captureNodeID,
+               store.nodes.contains(where: { $0.id == seeded }) {
+                nodeID = seeded
+                return
+            }
+            #endif
             if nodeID == nil, let node = await store.createCaptureNode() {
                 router.isCapturing = true
                 router.captureNodeID = node.id

@@ -8,12 +8,14 @@ struct EmptyStateOverlay: View {
 
     var body: some View {
         VStack(spacing: 10) {
+            // Light-mode convergence — adaptive ink (was hardcoded `.white`,
+            // illegible on the cream map in light). Opacity ratios preserved.
             Text("I haven't any idea(s).")
                 .font(.title3)
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Text("Add one!")
                 .font(.title3)
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.35))
 
             ArrowToAddButton(color: kleinBlue.opacity(0.55))
                 .frame(width: 72, height: 72)

@@ -28,7 +28,12 @@ struct ModelProcessingIndicator: View {
             Text("Thinking")
                 .font(.system(size: 12, weight: .semibold))
         }
-        .foregroundStyle(.white)
+        // Light-mode convergence — adaptive ink (was hardcoded `.white`). NOTE:
+        // the pill fill is a FIXED pastel gradient (below), so this is really a
+        // white-on-colored-chip; the ink swap darkens the label in LIGHT (crisper
+        // on the pastels) and leaves DARK as white. See report — a fixed dark ink
+        // is the alternative if T wants max contrast in dark too.
+        .foregroundStyle(AppearancePalette.ink)
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(

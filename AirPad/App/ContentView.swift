@@ -119,6 +119,16 @@ struct ContentView: View {
                     case .dashboard, .quikCapture, .recents:
                         proxy.controller.hide(animated: false)
                     }
+                    #if DEBUG
+                    // `-LibrarianDetent tip|half|full` — drives the panel to a
+                    // detent for headless real-screen shots of the light panel
+                    // (peek/half/full). No-op without the arg.
+                    switch UserDefaults.standard.string(forKey: "LibrarianDetent") {
+                    case "half": proxy.controller.move(to: .half, animated: false)
+                    case "full": proxy.controller.move(to: .full, animated: false)
+                    default:     break
+                    }
+                    #endif
                 }
         }
         .floatingPanelLayout(panelLayout)

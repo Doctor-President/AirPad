@@ -144,8 +144,8 @@ struct LibrarianSurface: View {
                 // by colorScheme (ONE typed selection, the PeekPillStyle pattern —
                 // no colorScheme fork here): DARK = the untouched SolarFlareMaterial
                 // (byte-identical); LIGHT = the Cucumber Water cream+glass surface
-                // (tuner-driven `libp.l.*`). The -150pt bottom buffer + edge-vs-fill
-                // split live inside each material. Faded via PeekFadeLayer so the
+                // (baked values — light tuner deleted). The -150pt bottom buffer +
+                // edge-vs-fill split live inside each material. Faded via PeekFadeLayer so the
                 // peek posture shows only the morphing field's glass.
                 PeekFadeLayer(
                     progress: panelModel.progress,

@@ -631,84 +631,16 @@ struct SolarFlarePrismaticMesh: View {
 // a colorScheme-picked TOKEN, not a forked view hierarchy.
 //
 // The light surface is deliberately SIMPLE (material · tint colour+opacity · ONE
-// shadow/glow primitive · stroke), seeded to match the peek pill it expands from
-// (ultraThin · warm-brown shadow #43372A · warm-tan stroke #CEBBA2) so panel and
-// pill read as the same object. Values are LIVE-TUNED via `libp.l.*` @AppStorage
-// and dialled on device — BAKE NOTHING until T signs off.
-
-/// Named warm-light vocabulary for the light panel's tint / shadow / stroke.
-/// Chosen BY NAME only (T is colorblind); hex literals are the verifiable
-/// source of truth. The peek pill's baked warm-brown / warm-tan appear here so
-/// the panel can start exactly where the pill sits.
-enum LibrarianLightColor: String, CaseIterable {
-    case cream = "Cream", parchment = "Parchment", sand = "Sand"
-    case warmTan = "Warm Tan", clay = "Clay", cocoa = "Cocoa"
-    case brown = "Brown", espresso = "Espresso", ink = "Ink", white = "White"
-    var hex: String {
-        switch self {
-        case .cream:     return "F4EFE3"
-        case .parchment: return "FAF6EC"
-        case .sand:      return "E8DEC9"
-        case .warmTan:   return "CEBBA2"   // == peek pill stroke (0.807,0.734,0.637)
-        case .clay:      return "B89B7A"
-        case .cocoa:     return "6B5847"
-        case .brown:     return "43372A"   // == peek pill shadow (0.263,0.216,0.165)
-        case .espresso:  return "2A2018"
-        case .ink:       return "232A2E"   // AppearancePalette.ink light
-        case .white:     return "FFFFFF"
-        }
-    }
-    var color: Color { Color(hexString: hex) }
-}
-
-enum LibrarianLightKey {
-    static let material     = "libp.l.material"
-    static let tintColor    = "libp.l.tintColor"
-    static let tintOpacity  = "libp.l.tintOpacity"
-    static let sheen        = "libp.l.sheen"
-    static let shadowColor  = "libp.l.shadowColor"
-    static let shadowRadius = "libp.l.shadowRadius"
-    static let shadowOpacity = "libp.l.shadowOpacity"
-    static let shadowOffX   = "libp.l.shadowOffX"
-    static let shadowOffY   = "libp.l.shadowOffY"
-    static let strokeOn     = "libp.l.strokeOn"
-    static let strokeColor  = "libp.l.strokeColor"
-    static let strokeWidth  = "libp.l.strokeWidth"
-    static let corner       = "libp.l.corner"
-}
-
-/// Cucumber-Water panel values — **T's on-device dial, 2026-07-24** (NOT yet
-/// baked-and-deleted: the tuner stays live because T judged the tint while the
-/// panel's TEXT was illegible white, so the tint/opacity may need a re-check now
-/// that the ink is dark — see the content-legibility pass). These are the current
-/// DEFAULTS so a reinstall (which wipes `libp.l.*` UserDefaults) restores T's dial.
-///
-/// T's dialled snapshot (verbatim, so it can't be lost) — UPDATED 2026-07-24 #2
-/// (tint dropped 0.500 → 0.350 now that the chat/field ink is legible):
-///   material ultraThin · tint Cream @ 0.350 · sheen 0.000
-///   shadow Brown, radius 24.00, opacity 0.150, offset x 3.00 y 2.00
-///   stroke ON, Warm Tan, width 1.200 · corner 40
-enum LibrarianLightDefaults {
-    static let material: String      = "ultraThin"
-    static let tintColor: String     = LibrarianLightColor.cream.rawValue
-    static let tintOpacity: Double   = 0.35   // T-dialled 2026-07-24 #2 (0.50 → 0.35)
-    static let sheen: Double         = 0.0    // T-dialled (was seed 0.06)
-    static let shadowColor: String   = LibrarianLightColor.brown.rawValue
-    static let shadowRadius: Double  = 24
-    static let shadowOpacity: Double = 0.15
-    static let shadowOffX: Double    = 3
-    static let shadowOffY: Double    = 2
-    static let strokeOn: Bool        = true
-    static let strokeColor: String   = LibrarianLightColor.warmTan.rawValue
-    static let strokeWidth: Double   = 1.2
-    static let corner: Double        = 40     // T-dialled (was seed 39)
-}
+// shadow primitive · stroke), matching the peek pill it expands from (ultraThin ·
+// warm-brown shadow #43372A · warm-tan stroke #CEBBA2) so panel and pill read as
+// the same object. **BAKED to literals 2026-07-24 (T device-approved); the light
+// tuner + its `libp.l.*` keys have been deleted.**
 
 /// The Librarian panel material — ONE mount, per-mode by colorScheme (the
 /// PeekPillStyle pattern). DARK delegates to the untouched `SolarFlareMaterial`
-/// (byte-identical); LIGHT renders the Cucumber-Water cream+glass surface from
-/// the `libp.l.*` knobs. LibrarianSurface calls this instead of SolarFlareMaterial
-/// directly, so there is no colorScheme branch at the surface call site.
+/// (byte-identical); LIGHT renders the baked Cucumber-Water cream+glass surface.
+/// LibrarianSurface calls this instead of SolarFlareMaterial directly, so there is
+/// no colorScheme branch at the surface call site.
 struct LibrarianPanelMaterial: View {
     let isDragging: Bool
     var activeAccent: Color? = nil
@@ -724,69 +656,29 @@ struct LibrarianPanelMaterial: View {
     }
 }
 
-/// LIGHT panel surface — Cucumber Water. Reads `libp.l.*` (tuner-driven). Four
-/// elements only: translucent material · warm cream tint wash · a soft top sheen
-/// · ONE shadow/glow primitive (offset=0 → glow) applied to the material-backed
-/// shape · optional warm stroke. Mirrors the peek pill's construction so the
-/// pill visibly expands into the same object. The -150 bottom pad + ignoresSafeArea
-/// match SolarFlareMaterial so the morph geometry is identical across modes.
+/// LIGHT panel surface — Cucumber Water, **BAKED from T's on-device dial
+/// (2026-07-24, device-approved; the tuner has been deleted)**. Literals below are
+/// verbatim as dialled — do NOT snap to palette constants:
+///   material ultraThin · tint Cream #F4EFE3 @ 0.350 · sheen 0.000
+///   shadow Brown #43372A, radius 24, opacity 0.150, offset x 3 y 2
+///   stroke ON, Warm Tan #CEBBA2, width 1.200 · corner 40
+/// Three elements (sheen 0 → no sheen layer): translucent ultraThin material +
+/// warm cream tint wash, ONE shadow primitive on the material-backed shape, and a
+/// warm stroke. The -150 bottom pad + ignoresSafeArea match SolarFlareMaterial so
+/// the morph geometry is identical across modes.
 struct LibrarianLightMaterial: View {
-    @AppStorage(LibrarianLightKey.material) private var materialRaw: String = LibrarianLightDefaults.material
-    @AppStorage(LibrarianLightKey.tintColor) private var tintColorRaw: String = LibrarianLightDefaults.tintColor
-    @AppStorage(LibrarianLightKey.tintOpacity) private var tintOpacity: Double = LibrarianLightDefaults.tintOpacity
-    @AppStorage(LibrarianLightKey.sheen) private var sheen: Double = LibrarianLightDefaults.sheen
-    @AppStorage(LibrarianLightKey.shadowColor) private var shadowColorRaw: String = LibrarianLightDefaults.shadowColor
-    @AppStorage(LibrarianLightKey.shadowRadius) private var shadowRadius: Double = LibrarianLightDefaults.shadowRadius
-    @AppStorage(LibrarianLightKey.shadowOpacity) private var shadowOpacity: Double = LibrarianLightDefaults.shadowOpacity
-    @AppStorage(LibrarianLightKey.shadowOffX) private var shadowOffX: Double = LibrarianLightDefaults.shadowOffX
-    @AppStorage(LibrarianLightKey.shadowOffY) private var shadowOffY: Double = LibrarianLightDefaults.shadowOffY
-    @AppStorage(LibrarianLightKey.strokeOn) private var strokeOn: Bool = LibrarianLightDefaults.strokeOn
-    @AppStorage(LibrarianLightKey.strokeColor) private var strokeColorRaw: String = LibrarianLightDefaults.strokeColor
-    @AppStorage(LibrarianLightKey.strokeWidth) private var strokeWidth: Double = LibrarianLightDefaults.strokeWidth
-    @AppStorage(LibrarianLightKey.corner) private var corner: Double = LibrarianLightDefaults.corner
-
-    private func namedColor(_ raw: String, fallback: LibrarianLightColor) -> Color {
-        (LibrarianLightColor(rawValue: raw) ?? fallback).color
-    }
-
-    @ViewBuilder
-    private func materialFill(_ shape: RoundedRectangle) -> some View {
-        switch materialRaw {
-        case "thin":    shape.fill(.thinMaterial)
-        case "regular": shape.fill(.regularMaterial)
-        case "glass":
-            if #available(iOS 26.0, *) { Color.clear.glassEffect(.regular, in: shape) }
-            else { shape.fill(.regularMaterial) }
-        default:        shape.fill(.ultraThinMaterial)
-        }
-    }
-
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        let tint = namedColor(tintColorRaw, fallback: .cream)
-        let shadow = namedColor(shadowColorRaw, fallback: .brown)
-        let stroke = namedColor(strokeColorRaw, fallback: .warmTan)
-
+        let shape = RoundedRectangle(cornerRadius: 40, style: .continuous)
         ZStack {
-            // Translucent face + warm cream tint wash, with the shadow/glow
-            // primitive applied to the material-backed shape (no opaque fill
-            // behind it — matches the peek pill's translucency).
             ZStack {
-                materialFill(shape)
-                shape.fill(tint.opacity(tintOpacity))
-                if sheen > 0 {
-                    shape.fill(
-                        LinearGradient(colors: [.white.opacity(sheen), .clear],
-                                       startPoint: .top, endPoint: .center)
-                    )
-                }
+                shape.fill(.ultraThinMaterial)                         // material: ultraThin
+                shape.fill(Color(hexString: "F4EFE3").opacity(0.35))   // tint: Cream @ 0.350
             }
-            .shadow(color: shadow.opacity(shadowOpacity),
-                    radius: shadowRadius, x: shadowOffX, y: shadowOffY)
+            // shadow: Brown @ 0.150, radius 24, offset (3, 2)
+            .shadow(color: Color(hexString: "43372A").opacity(0.15), radius: 24, x: 3, y: 2)
 
-            if strokeOn {
-                shape.strokeBorder(stroke, lineWidth: strokeWidth)
-            }
+            // stroke: Warm Tan, width 1.2
+            shape.strokeBorder(Color(hexString: "CEBBA2"), lineWidth: 1.2)
         }
         .padding(.bottom, -150)
         .ignoresSafeArea(.container, edges: .bottom)
@@ -1167,194 +1059,4 @@ private struct WidgetSurface: ViewModifier {
     }
 }
 
-// MARK: - Librarian LIGHT tuner (DEBUG)
-
-/// Focused tuner for the Cucumber-Water LIGHT panel (`libp.l.*`). Only shows /
-/// dials LIGHT — dark keeps its own Solar Flare tuner above and is untouched.
-/// Named colour pickers (T is colorblind — never a hue wheel). Copy dumps the
-/// `libp.l.*` snapshot; T pastes it back, CC bakes to literals in
-/// `LibrarianLightDefaults` and DELETES this panel + its mount. Same widget
-/// chrome + drag/copy contract as the Solar Flare tuner.
-struct LibrarianLightTuningPanel: View {
-    @Binding var isPresented: Bool
-    @Binding var position: CGSize
-
-    @AppStorage(LibrarianLightKey.material) private var materialRaw: String = LibrarianLightDefaults.material
-    @AppStorage(LibrarianLightKey.tintColor) private var tintColorRaw: String = LibrarianLightDefaults.tintColor
-    @AppStorage(LibrarianLightKey.tintOpacity) private var tintOpacity: Double = LibrarianLightDefaults.tintOpacity
-    @AppStorage(LibrarianLightKey.sheen) private var sheen: Double = LibrarianLightDefaults.sheen
-    @AppStorage(LibrarianLightKey.shadowColor) private var shadowColorRaw: String = LibrarianLightDefaults.shadowColor
-    @AppStorage(LibrarianLightKey.shadowRadius) private var shadowRadius: Double = LibrarianLightDefaults.shadowRadius
-    @AppStorage(LibrarianLightKey.shadowOpacity) private var shadowOpacity: Double = LibrarianLightDefaults.shadowOpacity
-    @AppStorage(LibrarianLightKey.shadowOffX) private var shadowOffX: Double = LibrarianLightDefaults.shadowOffX
-    @AppStorage(LibrarianLightKey.shadowOffY) private var shadowOffY: Double = LibrarianLightDefaults.shadowOffY
-    @AppStorage(LibrarianLightKey.strokeOn) private var strokeOn: Bool = LibrarianLightDefaults.strokeOn
-    @AppStorage(LibrarianLightKey.strokeColor) private var strokeColorRaw: String = LibrarianLightDefaults.strokeColor
-    @AppStorage(LibrarianLightKey.strokeWidth) private var strokeWidth: Double = LibrarianLightDefaults.strokeWidth
-    @AppStorage(LibrarianLightKey.corner) private var corner: Double = LibrarianLightDefaults.corner
-
-    @GestureState private var dragTranslation: CGSize = .zero
-    @State private var justCopied: Bool = false
-
-    private static let widgetWidth: CGFloat = 320
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker("Material", selection: $materialRaw) {
-                        Text("ultraThin").tag("ultraThin")
-                        Text("thin").tag("thin")
-                        Text("regular").tag("regular")
-                        Text("glass").tag("glass")
-                    }
-                    .pickerStyle(.segmented)
-
-                    sectionHeader("tint")
-                    namedColorRow(label: "colour", selection: $tintColorRaw)
-                    sliderRow(label: "tint α",  value: $tintOpacity,   range: 0...0.7,  step: 0.01)
-                    sliderRow(label: "sheen",   value: $sheen,         range: 0...0.20, step: 0.005)
-
-                    sectionHeader("shadow / glow (offset 0 = glow)")
-                    namedColorRow(label: "colour", selection: $shadowColorRaw)
-                    sliderRow(label: "radius",  value: $shadowRadius,  range: 0...48,   step: 0.5)
-                    sliderRow(label: "α",       value: $shadowOpacity, range: 0...0.6,  step: 0.005)
-                    sliderRow(label: "off X",   value: $shadowOffX,    range: -12...12, step: 0.5)
-                    sliderRow(label: "off Y",   value: $shadowOffY,    range: -12...12, step: 0.5)
-
-                    sectionHeader("stroke")
-                    Toggle("stroke on", isOn: $strokeOn)
-                        .font(.system(.caption, design: .monospaced))
-                    namedColorRow(label: "colour", selection: $strokeColorRaw)
-                    sliderRow(label: "width",   value: $strokeWidth,   range: 0...3,    step: 0.05, gated: !strokeOn)
-
-                    sectionHeader("shape")
-                    sliderRow(label: "corner",  value: $corner,        range: 16...56,  step: 1)
-                }
-            }
-            .frame(maxHeight: 420)
-            .scrollIndicators(.visible)
-        }
-        .padding(12)
-        .frame(width: Self.widgetWidth)
-        .modifier(WidgetSurface())
-        .shadow(color: .black.opacity(0.25), radius: 16, x: 0, y: 6)
-        .offset(x: position.width + dragTranslation.width,
-                y: position.height + dragTranslation.height)
-    }
-
-    private var header: some View {
-        ZStack {
-            Capsule().fill(Color.secondary.opacity(0.45)).frame(width: 36, height: 5)
-            HStack(spacing: 4) {
-                Text("Librarian Light")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button { copyValues() } label: {
-                    Image(systemName: justCopied ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(justCopied ? Color.green : .secondary)
-                        .contentShape(Rectangle()).frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Copy values")
-                Button { isPresented = false } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 17)).foregroundStyle(.secondary)
-                        .contentShape(Rectangle()).frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .frame(height: 28)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture()
-                .updating($dragTranslation) { value, state, _ in state = value.translation }
-                .onEnded { value in
-                    position.width += value.translation.width
-                    position.height += value.translation.height
-                }
-        )
-    }
-
-    private func namedColorRow(label: String, selection: Binding<String>) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.system(.caption, design: .monospaced))
-                .frame(width: 56, alignment: .leading)
-                .foregroundStyle(.secondary)
-            Picker(label, selection: selection) {
-                ForEach(LibrarianLightColor.allCases, id: \.rawValue) { c in
-                    Text(c.rawValue).tag(c.rawValue)
-                }
-            }
-            .pickerStyle(.menu)
-            .font(.system(.caption, design: .monospaced))
-            Spacer()
-            // Swatch so T can locate the row; the NAME is the control (never hue).
-            Circle()
-                .fill((LibrarianLightColor(rawValue: selection.wrappedValue) ?? .cream).color)
-                .frame(width: 16, height: 16)
-                .overlay(Circle().stroke(Color.secondary.opacity(0.4), lineWidth: 0.5))
-        }
-    }
-
-    private func sectionHeader(_ label: String) -> some View {
-        HStack {
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.secondary).tracking(0.6)
-            Rectangle().fill(Color.secondary.opacity(0.25)).frame(height: 0.5)
-        }
-        .padding(.top, 4)
-    }
-
-    @ViewBuilder
-    private func sliderRow(label: String, value: Binding<Double>,
-                           range: ClosedRange<Double>, step: Double,
-                           gated: Bool = false) -> some View {
-        HStack(spacing: 8) {
-            Text(label)
-                .font(.system(.caption, design: .monospaced))
-                .frame(width: 56, alignment: .leading)
-                .foregroundStyle(.secondary)
-            Slider(value: value, in: range, step: step)
-            Text(String(format: "%.3f", value.wrappedValue))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 48, alignment: .trailing)
-        }
-        .opacity(gated ? 0.3 : 1)
-        .allowsHitTesting(!gated)
-    }
-
-    private func copyValues() {
-        let lines: [String] = [
-            "librarian_light:",
-            "    material:      \(materialRaw)",
-            "    tintColor:     \(tintColorRaw)",
-            "    tintOpacity:   \(String(format: "%.3f", tintOpacity))",
-            "    sheen:         \(String(format: "%.3f", sheen))",
-            "    shadowColor:   \(shadowColorRaw)",
-            "    shadowRadius:  \(String(format: "%.2f", shadowRadius))",
-            "    shadowOpacity: \(String(format: "%.3f", shadowOpacity))",
-            "    shadowOffX:    \(String(format: "%.2f", shadowOffX))",
-            "    shadowOffY:    \(String(format: "%.2f", shadowOffY))",
-            "    strokeOn:      \(strokeOn)",
-            "    strokeColor:   \(strokeColorRaw)",
-            "    strokeWidth:   \(String(format: "%.3f", strokeWidth))",
-            "    corner:        \(String(format: "%.0f", corner))",
-        ]
-        UIPasteboard.general.string = lines.joined(separator: "\n")
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        justCopied = true
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(1200))
-            justCopied = false
-        }
-    }
-}
 #endif

@@ -59,7 +59,7 @@ struct ChatTranscript: View {
                 errorBanner(error)
             }
             if showsComposer {
-                Divider().overlay(Color.white.opacity(0.08))
+                Divider().overlay(AppearancePalette.ink.opacity(0.08))
                 inputRow
             }
         }
@@ -175,7 +175,7 @@ struct ChatTranscript: View {
                             .foregroundStyle(ChatTypography.bodyText)
                             .frame(width: 36, height: 36)
                             .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+                            .overlay(Circle().strokeBorder(AppearancePalette.ink.opacity(0.12), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 12)
@@ -269,7 +269,7 @@ struct ChatTranscript: View {
                             .font(.system(size: 10, weight: .semibold))
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     }
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -291,14 +291,14 @@ struct ChatTranscript: View {
                                     // superscript. Monochrome. No brackets.
                                     Image(systemName: CitationReference.footerSymbolName(c.index))
                                         .font(.system(size: 15))
-                                        .foregroundStyle(.white.opacity(0.55))
+                                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(c.title)
                                             .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(.white.opacity(0.75))
+                                            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                                         Text(c.snippet)
                                             .font(.system(size: 12))
-                                            .foregroundStyle(.white.opacity(0.45))
+                                            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                                             .lineLimit(2)
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -334,7 +334,7 @@ struct ChatTranscript: View {
                 } label: {
                     Image(systemName: showPause ? "pause" : "play")
                         .font(.system(size: 22))
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
                 }
@@ -351,7 +351,7 @@ struct ChatTranscript: View {
                 } label: {
                     Image(systemName: "person.wave.2")
                         .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .frame(width: 32, height: 32)
                         .contentShape(Rectangle())
                 }
@@ -412,7 +412,7 @@ struct ChatTranscript: View {
         HStack(alignment: .bottom, spacing: 10) {
             TextField("Message", text: $input, axis: .vertical)
                 .font(.system(size: 15))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .tint(Color(hexString: "00BFFF"))
                 .focused($inputFocused)
                 .lineLimit(1...6)
@@ -420,14 +420,14 @@ struct ChatTranscript: View {
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color(white: 0.12))
+                        .fill(AppearancePalette.ink.opacity(0.06))
                 )
 
             sendButton
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color.black)
+        .background(AppearancePalette.bgBase)
     }
 
     private var sendButton: some View {
@@ -447,7 +447,7 @@ struct ChatTranscript: View {
                             startPoint: .top,
                             endPoint: .bottom
                         ))
-                        : AnyShapeStyle(Color.white.opacity(0.18))
+                        : AnyShapeStyle(AppearancePalette.ink.opacity(0.18))
                 )
         }
         .buttonStyle(.plain)
@@ -469,7 +469,7 @@ struct ChatTranscript: View {
                 .foregroundStyle(Color(hexString: "E8820A"))
             Text(message)
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.9))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button("Retry") {
                 Task { await session.retryLastUserTurn() }
@@ -483,7 +483,7 @@ struct ChatTranscript: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss error")

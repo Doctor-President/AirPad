@@ -17,7 +17,7 @@ struct ChatView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            AppearancePalette.bgBase.ignoresSafeArea()
             ChatTranscript(session: session)
         }
         .task {
@@ -37,13 +37,11 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "square.and.pencil")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                 }
                 .disabled(session.isStreaming)
             }
         }
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbarBackground(.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
     }
 }

@@ -571,6 +571,24 @@ struct DebugScreenHost: View {
         // home). `-LibrarianDetent tip|half|full` (handled in ContentView) drives
         // the detent for peek/half/full shots.
         if screen == "librarian" { router.entryMode = .canvas }
+
+        // Chat content for `chatview` (and the Librarian if it surfaces the
+        // transcript): a real user turn + a cited assistant answer, so the chat
+        // ink / user bubble / sources footer / scroll arrow all render for the
+        // light-mode legibility check.
+        if screen == "chatview" || screen == "librarian" {
+            let cites = [ChatSession.Message.Citation(
+                index: 1, nodeID: "seed-0", title: "On the Gerund",
+                snippet: "A gerund is a verbal noun formed with -ing.")]
+            let msgs: [ChatSession.Message] = [
+                .init(role: .user, text: "What's a gerund, and how is it different from a participle?"),
+                .init(role: .assistant,
+                      text: "A **gerund** is a verb form ending in *-ing* that works as a noun — *writing* is hard. A participle, by contrast, is adjectival or part of a verb tense. [1]",
+                      citations: cites),
+            ]
+            router.chat.load(Chat(id: UUID(), title: "Gerunds",
+                                  createdAt: Self.epoch, updatedAt: Self.epoch, messages: msgs))
+        }
     }
 
     @ViewBuilder
@@ -595,6 +613,7 @@ struct DebugScreenHost: View {
         case "chatslist":        ChatsListView()
         case "backlink":         BacklinkPickerSheet(sourceNodeID: "seed-0", sourceEntryID: nil)
         case "librarian":        ContentView()   // real app → canvas + Librarian panel
+        case "chatview":         NavigationStack { ChatView() }   // real chat transcript
         default:                 Text("unknown -Screen: \(screen)")
         }
     }

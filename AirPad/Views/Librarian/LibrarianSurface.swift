@@ -52,6 +52,19 @@ struct LibrarianSurface: View {
     /// Drives the active-chat pill's × → "Save or Delete" dialog.
     @State private var showChatDisposition = false
     @FocusState private var isInputFocused: Bool
+    /// Live measured height of the Ask field (grows with wrapped lines). Drives
+    /// the Messages-style corner: `min(height/2, singleLineHeight/2)` — a PILL at
+    /// one line, pinning to the single-line half-height (→ rounded rect) as it
+    /// grows. Shared by the field shape AND its focus glow so they can't disagree.
+    @State private var askFieldHeight: CGFloat = LibrarianSurface.askSingleLineHeight
+    /// The Ask field's single-line height (`.frame(minHeight:)`). Half of it is
+    /// the pinned corner radius once the field wraps.
+    static let askSingleLineHeight: CGFloat = 52
+    /// Messages-style corner from the live height: capsule at one line (radius =
+    /// half-height), pinned to `askSingleLineHeight/2` (=26) once it grows taller.
+    private var askCornerRadius: CGFloat {
+        min(askFieldHeight / 2, LibrarianSurface.askSingleLineHeight / 2)
+    }
     /// Focus state for the persistent search field. Kept separate from
     /// `isInputFocused` so each field's own promote-on-focus
     /// `.onChange` fires from its own state, and the lifted Done
@@ -173,6 +186,17 @@ struct LibrarianSurface: View {
         .onAppear {
             startWhisperCycle()
             seedScopeFromHostIfNeeded(librarian: librarian)
+            #if DEBUG
+            // Real-screen verification hooks for the Ask-field shape/glow pass:
+            // `-AskPrefill <text>` fills the Ask field (to see it wrap), `-AskFocus`
+            // focuses it (to see the glow). No-ops without the args.
+            if let prefill = UserDefaults.standard.string(forKey: "AskPrefill"), !prefill.isEmpty {
+                librarian.inputText = prefill
+            }
+            if UserDefaults.standard.bool(forKey: "AskFocus") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { isInputFocused = true }
+            }
+            #endif
         }
         .task {
             // Continue-by-default across launches: hydrate the shared
@@ -1070,13 +1094,14 @@ struct LibrarianSurface: View {
     @ViewBuilder
     private func askComposer(librarian: LibrarianState) -> some View {
         inputRow(librarian: librarian)
-            // Klein → cyan field glow locked to the Ask field's Capsule.
-            // `.background` pre-padding so the halo is concentric with the
-            // capsule; no clip so the bloom radiates. Gated on `sf.bloomOn`.
+            // Item 2 — the focus glow is driven from the SAME Messages-style
+            // RoundedRectangle the field uses (`askCornerRadius`), NOT its own
+            // Capsule — so the halo hugs the actual shape at one line (pill) AND
+            // when wrapped (rounded rect). No clip so the bloom radiates.
             .background {
                 if sfBloomOn {
                     SolarFlareFieldGlow(
-                        shape: Capsule(),
+                        shape: RoundedRectangle(cornerRadius: askCornerRadius, style: .continuous),
                         accent: Color(hexString: "1B59C2"),
                         secondary: Color(hexString: "00BFFF"),
                         isVisible: isInputFocused,
@@ -1121,11 +1146,12 @@ struct LibrarianSurface: View {
         )
         let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
-        // Item 5 — Ask field is a ROUNDED RECT (constant corner as it grows,
-        // like normal chat composers), NOT a capsule that re-rounds to
-        // half-height per line. 18 reads as a modest rounded field at single line.
-        let askCorner: CGFloat = 18
-        let askShape = RoundedRectangle(cornerRadius: askCorner, style: .continuous)
+        // Item 1 — Messages behaviour: a PILL at one line, becoming a rounded
+        // rect only as the text wraps. `askCornerRadius` = min(height/2,
+        // singleLineHeight/2): at one line height≈52 → radius 26 = capsule
+        // (matches the Search field); as it grows the radius stays pinned at 26
+        // so it rounds-rects naturally. No line-counting; animates smoothly.
+        let askShape = RoundedRectangle(cornerRadius: askCornerRadius, style: .continuous)
         // Item 4 — more separation from the (cream) panel. FILL: dark white@0.04
         // (byte-identical to the prior `ink.opacity(0.04)`); light a stronger dark
         // wash so the field reads. STROKE: adaptive ink (dark = white, byte-
@@ -1141,29 +1167,24 @@ struct LibrarianSurface: View {
             startPoint: .top, endPoint: .bottom
         )
 
-        HStack(spacing: 8) {
-            // Mode identity glyph (relocated from header in the
-            // header-reclaim pass). Tap opens the mode dropdown
-            // Ask identity glyph — the feather (AirPadLogo), monochrome white,
-            // inheriting foregroundStyle (template asset). Static (Ask is the
-            // only mode); the mode dropdown + the ContextRing are retired. Sized
-            // up to ~40 (from 28) so the feather reads with comparable weight to
-            // the old sparkle in the ~44pt slot; leading 2 nests it in the
-            // capsule's left rounded end. Frame is the optical tunable.
+        // Item 3 — TOP alignment so the feather (and the growing TextField) pin to
+        // the FIRST line as the field wraps, rather than the whole row centring.
+        // The trailing mic/send follow; adjusted below if that reads wrong.
+        HStack(alignment: .top, spacing: 8) {
+            // Ask identity glyph — the feather (AirPadLogo), carrying the Klein
+            // BLUE gradient (like the Search magnifier's mango). 40pt frame.
             Image("AirPadLogo")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 40, height: 40)
-                // Ask identity: the feather carries the Klein BLUE gradient, the
-                // way the Search magnifier carries the Mango orange gradient —
-                // reusing `kleinGrad` (the same gradient the mic/send use).
                 .foregroundStyle(kleinGrad)
-                // Equidistant: 12pt to the capsule's left edge (= this leading,
-                // since the capsule's widest point is at the feather's vertical
-                // center) matches the 12pt to "Ask" (HStack spacing 8 + the
-                // TextField's 4pt leading below).
                 .padding(.leading, 12)
+                // Item 3 — nudge down so the 40pt glyph sits on the FIRST line's
+                // baseline area (the TextField pads 12 top), not floating above it.
+                // Constant, so at one line the feather still reads centred (40 + 6
+                // + ~6 ≈ the 52pt row) and at multi-line it stays on line one.
+                .padding(.top, 6)
 
             TextField("Ask", text: Binding(
                 get: { librarian.inputText },
@@ -1264,11 +1285,20 @@ struct LibrarianSurface: View {
                 }
             }
             .padding(.trailing, 10)
+            // Item 3 follow — with the row top-aligned, sink the trailing mic/send
+            // to the BOTTOM (Messages convention: send tracks the last line). The
+            // frame is the MEASURED field height (not `.infinity`, which made the
+            // empty field greedily fill the panel; the text is the height driver,
+            // so this converges: empty → 52pt / pill, multi-line → send at bottom).
+            .frame(height: askFieldHeight, alignment: .bottom)
         }
         // Height parity with the Search field (morphingField expandedH = 52) so
         // the two composers read as siblings. minHeight (not fixed) so Ask can
         // still grow with multi-line input.
         .frame(minHeight: 52)
+        // Item 1 — measure the live height to drive the Messages-style corner
+        // (`askCornerRadius`). Grows as the TextField wraps (lineLimit 1...4).
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askFieldHeight = $0 }
         .background(askFill)
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of
@@ -1282,19 +1312,11 @@ struct LibrarianSurface: View {
         .onTapGesture {
             isInputFocused = true
         }
-        // Capsule (auto-rounds ends to half-height) so the terminating
-        // ends are true semicircles concentric with the 44pt glyph ring
-        // on the leading edge — the prior fixed cornerRadius: 22 read
-        // as rounded-rect, not capsule, especially when the TextField
-        // grew past one line (lineLimit 1...4) and corners stayed at
-        // 22 while the field got taller. Capsule keeps the curve =
-        // half-height at every line count.
-        //
-        // Resting stroke is a soft white top→bottom gradient (NOT the
-        // prior solid Klein outline) — restores the lit-top-edge look
-        // the Search field gets from its PeekPillStyle material/stroke
-        // treatment, so the two fields read as the same material
-        // family without Ask reading as the "selected" one at rest.
+        // Item 1 — `askShape` = the Messages-style RoundedRectangle whose radius
+        // is `askCornerRadius` (capsule at one line → rounded rect as it grows).
+        // clip + stroke both use it; the focus glow (askComposer) uses the SAME
+        // shape so they can't disagree (item 2). Stroke is the adaptive ink
+        // gradient (dark = white lit-top-edge byte-identical; light = dark ink).
         .clipShape(askShape)
         .overlay(
             askShape.strokeBorder(askStroke, lineWidth: 1)

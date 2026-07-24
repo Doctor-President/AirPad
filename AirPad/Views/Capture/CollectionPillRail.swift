@@ -73,16 +73,32 @@ struct CollectionPillRail: View {
                 selectedCollectionID = collection.id
             }
         } label: {
-            Text(collection.name)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(isSelected ? .black : .white.opacity(isLocked ? 0.35 : 0.75))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(isSelected ? Color.white : Color(white: 0.18))
-                .clipShape(Capsule())
+            pillLabel(collection.name, isSelected: isSelected, isLocked: isLocked)
         }
         .buttonStyle(.plain)
         .disabled(isLocked)
+    }
+
+    /// Pill face. Light-mode convergence: the UNSELECTED pill was a solid dark
+    /// `Color(white: 0.18)` circle with `.white` text (illegible on the light
+    /// capture surface) → now the STANDARD `chromeSurface` glass + adaptive `ink`,
+    /// one implementation for both modes. The SELECTED accent (white fill + black
+    /// text) is a selection-state branch (not a colorScheme fork) and is unchanged.
+    @ViewBuilder
+    private func pillLabel(_ name: String, isSelected: Bool, isLocked: Bool) -> some View {
+        let base = Text(name)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(isSelected ? Color.black
+                                        : AppearancePalette.ink.opacity(isLocked ? 0.35 : 0.75))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        if isSelected {
+            base.background(Color.white, in: Capsule())
+        } else {
+            base.contentShape(Capsule())
+                .chromeSurface(Capsule())
+                .clipShape(Capsule())
+        }
     }
 
     private var newCollectionPill: some View {
@@ -95,11 +111,14 @@ struct CollectionPillRail: View {
                 Text("New")
                     .font(.system(size: 13, weight: .semibold))
             }
-            .foregroundStyle(.white.opacity(0.75))
+            // Light-mode convergence — adaptive ink text + ink stroke (were
+            // `.white`, invisible on the light capture surface). Outline-only
+            // affordance kept (no fill) so it stays quieter than the pills.
+            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .overlay(
-                Capsule().stroke(Color.white.opacity(0.22), lineWidth: 1)
+                Capsule().stroke(AppearancePalette.ink.opacity(0.22), lineWidth: 1)
             )
             .clipShape(Capsule())
         }

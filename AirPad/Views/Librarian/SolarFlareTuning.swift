@@ -677,15 +677,21 @@ enum LibrarianLightKey {
     static let corner       = "libp.l.corner"
 }
 
-/// Cucumber-Water seed = the peek pill's baked material family + warm colours,
-/// with a modest cream tint (T's call: "cream-tinted glass" — the large panel
-/// needs some tint the small pill didn't, so it doesn't read muddy over the
-/// saturated orbs). Everything below is a STARTING POINT; T dials on device.
+/// Cucumber-Water panel values — **T's on-device dial, 2026-07-24** (NOT yet
+/// baked-and-deleted: the tuner stays live because T judged the tint while the
+/// panel's TEXT was illegible white, so the tint/opacity may need a re-check now
+/// that the ink is dark — see the content-legibility pass). These are the current
+/// DEFAULTS so a reinstall (which wipes `libp.l.*` UserDefaults) restores T's dial.
+///
+/// T's dialled snapshot (verbatim, so it can't be lost):
+///   material ultraThin · tint Cream @ 0.500 · sheen 0.000
+///   shadow Brown, radius 24.00, opacity 0.150, offset x 3.00 y 2.00
+///   stroke ON, Warm Tan, width 1.200 · corner 40
 enum LibrarianLightDefaults {
     static let material: String      = "ultraThin"
     static let tintColor: String     = LibrarianLightColor.cream.rawValue
-    static let tintOpacity: Double   = 0.18
-    static let sheen: Double         = 0.06
+    static let tintOpacity: Double   = 0.50   // T-dialled 2026-07-24 (was seed 0.18)
+    static let sheen: Double         = 0.0    // T-dialled (was seed 0.06)
     static let shadowColor: String   = LibrarianLightColor.brown.rawValue
     static let shadowRadius: Double  = 24
     static let shadowOpacity: Double = 0.15
@@ -694,7 +700,7 @@ enum LibrarianLightDefaults {
     static let strokeOn: Bool        = true
     static let strokeColor: String   = LibrarianLightColor.warmTan.rawValue
     static let strokeWidth: Double   = 1.2
-    static let corner: Double        = 39
+    static let corner: Double        = 40     // T-dialled (was seed 39)
 }
 
 /// The Librarian panel material — ONE mount, per-mode by colorScheme (the

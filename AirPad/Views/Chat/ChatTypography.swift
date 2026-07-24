@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Central type + color tokens for the chat lane. After this file lands,
 /// nothing in `ChatTranscript` or `LibrarianSurface` may hardcode a chat
@@ -62,13 +63,42 @@ enum ChatTypography {
     static let bulletIndent       : CGFloat = 15.5
     static let bulletGap          : CGFloat = 1.5
 
-    // COLOR TOKENS — hex literals only. Do not substitute named colors.
-    // Body text moves OFF pure white. This is deliberate; #FFFFFF at
-    // 17pt on near-black reads harsh.
-    static let bodyText        = Color(hexString: "E8E6E3")  // warm off-white
-    static let headingText     = Color(hexString: "F5F3F0")  // slightly lifted
-    static let secondaryText   = Color(hexString: "9A9793")  // thinking/footer
-    static let userBubbleFill  = Color(hexString: "00BFFF")  // Electric Cyan
-    static let userBubbleAlpha : Double = 0.18               // unchanged
-    static let userBubbleText  = Color(hexString: "F5F3F0")
+    // COLOR TOKENS — now PER-MODE (chat was white in light: these hex tokens are
+    // the chat's own two-voice palette, separate from AppearancePalette, so the
+    // `.white` sweep never caught them). DARK values are the shipped hexes, so
+    // dark stays BYTE-IDENTICAL; LIGHT flips to warm dark ink that reads on the
+    // Cucumber-Water cream panel. Still hex-only (T is colorblind).
+    //
+    // Body text moves OFF pure white in dark (deliberate; #FFFFFF at 17pt on
+    // near-black reads harsh) — and off pure black in light for the same reason.
+
+    /// Dynamic dark/light color from two hex literals.
+    private static func dyn(dark: String, light: String) -> Color {
+        Color(UIColor { $0.userInterfaceStyle == .dark
+            ? UIColor(Color(hexString: dark)) : UIColor(Color(hexString: light)) })
+    }
+
+    static let bodyText      = dyn(dark: "E8E6E3", light: "2A2520")  // warm off-white / warm near-black
+    static let headingText   = dyn(dark: "F5F3F0", light: "1A1712")  // lifted / deeper (headings pop)
+    static let secondaryText = dyn(dark: "9A9793", light: "6B655C")  // thinking/footer — warm mid-grey both modes
+
+    // User bubble — Electric Cyan. DARK: translucent @0.18 (unchanged). LIGHT:
+    // BOLDER cyan (@0.90) so the bubble reads on cream, with CONTRAST-DERIVED text
+    // (legibleInk over the cyan fill — same luminance rule as tag pills / map orbs;
+    // cyan luminance < 0.62 → warm off-white, i.e. white-on-cyan like iMessage).
+    static let userBubbleFill  = Color(hexString: "00BFFF")  // hue (verifiable source)
+    static let userBubbleAlpha : Double = 0.18               // dark (unchanged)
+
+    /// Adaptive bubble FILL: dark cyan@0.18 (byte-identical) / light cyan@0.90.
+    static let userBubbleFillResolved = Color(UIColor { t in
+        let cyan = UIColor(Color(hexString: "00BFFF"))
+        return cyan.withAlphaComponent(t.userInterfaceStyle == .dark ? 0.18 : 0.90)
+    })
+    /// Adaptive bubble TEXT: dark #F5F3F0 (byte-identical) / light = legibleInk
+    /// over the cyan fill (contrast-derived).
+    static let userBubbleText = Color(UIColor { t in
+        t.userInterfaceStyle == .dark
+            ? UIColor(Color(hexString: "F5F3F0"))
+            : UIColor(AppearancePalette.legibleInk(onFillHex: "00BFFF"))
+    })
 }

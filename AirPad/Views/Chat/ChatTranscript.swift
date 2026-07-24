@@ -199,7 +199,9 @@ struct ChatTranscript: View {
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(Color(hexString: "00BFFF").opacity(0.18))
+                            // Per-mode (ChatTypography): dark cyan@0.18 byte-identical;
+                            // light bolder cyan@0.90 so the bubble reads on cream.
+                            .fill(ChatTypography.userBubbleFillResolved)
                     )
                     // On the bubble composite (its textSelection is off), so the
                     // long-press has no selection gesture to fight.

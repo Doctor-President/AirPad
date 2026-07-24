@@ -23,14 +23,12 @@ struct ChatsListView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
-                Color.black.ignoresSafeArea()
+                AppearancePalette.bgBase.ignoresSafeArea()
                 content
             }
             .navigationTitle("Chats")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .navigationDestination(for: UUID.self) { _ in
                 // The route token exists only to drive a push; the actual
@@ -62,7 +60,7 @@ struct ChatsListView: View {
     private var emptyState: some View {
         Text("No chats yet")
             .font(.system(size: 15))
-            .foregroundStyle(.white.opacity(0.45))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -76,8 +74,8 @@ struct ChatsListView: View {
                     row(for: chat)
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(Color.black)
-                .listRowSeparatorTint(Color.white.opacity(0.08))
+                .listRowBackground(AppearancePalette.bgBase)
+                .listRowSeparatorTint(AppearancePalette.ink.opacity(0.08))
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         delete(chat)
@@ -89,7 +87,7 @@ struct ChatsListView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black)
+        .background(AppearancePalette.bgBase)
     }
 
     private func row(for chat: Chat) -> some View {
@@ -97,16 +95,16 @@ struct ChatsListView: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(displayTitle(for: chat))
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Text(relativeTime(chat.updatedAt))
                     .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
             Text(preview(for: chat))
                 .font(.system(size: 13))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                 .lineLimit(1)
         }
         .padding(.vertical, 6)
@@ -119,7 +117,7 @@ struct ChatsListView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button("Done") { dismiss() }
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
@@ -128,7 +126,7 @@ struct ChatsListView: View {
             } label: {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
             }
         }
     }

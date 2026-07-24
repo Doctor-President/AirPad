@@ -113,7 +113,11 @@ struct TagEditorSheet: View {
                         .frame(width: 34, height: 34)
                         .overlay(
                             Circle().stroke(
-                                colorHex == hex ? Color.white : Color.clear,
+                                // Ring contrasts on EVERY preset (incl. white/light
+                                // swatches, where a white ring vanished): derive it
+                                // from the swatch colour's luminance — the same
+                                // `legibleInk` rule tag pills / map orbs use.
+                                colorHex == hex ? AppearancePalette.legibleInk(onFillHex: hex) : Color.clear,
                                 lineWidth: 2.5
                             )
                         )

@@ -602,7 +602,6 @@ struct DebugScreenHost: View {
         case "collectioncreate": CollectionCreationSheet { _ in }
         case "history":          HistoryPanel(onSelect: { _ in })
         case "editmap":          EditMapSheet()
-        case "canvasplaceholder": CanvasPlaceholderView()
         case "tageditor":        TagEditorSheet(existing: store.tags.first)
         case "tagcreate":        TagEditorSheet(existing: nil)   // create-mode of the same editor
         case "rename":           RenameCollectionSheet(collectionID: "seed-col-0", currentName: "Reading")

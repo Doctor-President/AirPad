@@ -439,7 +439,11 @@ struct CanvasView: View {
                             Text(cluster.title)
                                 .font(.system(size: 14, weight: .medium))
                         }
-                        .foregroundStyle(.white)
+                        // Light-mode convergence — adaptive ink (dark `#FFFFFF`,
+                        // light `#232A2E`) on the already-adaptive `.ultraThinMaterial`
+                        // drill-down pill; was hardcoded `.white` (illegible on the
+                        // cream map in light).
+                        .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(.ultraThinMaterial)
@@ -1158,11 +1162,18 @@ private struct NodeDetailOverlay: View {
 
             // Text content: fades in after morph completes
             if showText {
+                // Light-mode convergence — adaptive ink. The focal bubble's
+                // luminance follows the APP MODE (light → pigment-on-parchment,
+                // dark → Solar Flare), so the mode-tracking `AppearancePalette.ink`
+                // (dark `#FFFFFF` — byte-identical to the old flat `.white`; light
+                // `#232A2E`) is the correct token — NOT the palette-keyed
+                // `legibleInk`, which would return cream ink on a light bubble for
+                // dark-palette nodes. Opacity ratios (1.0 / 0.85 / 0.65) preserved.
                 VStack(alignment: .leading, spacing: 12) {
                     // Title
                     Text(node.title.isEmpty ? (node.items.first?.content ?? "Untitled") : node.title)
                         .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1171,7 +1182,7 @@ private struct NodeDetailOverlay: View {
                     if !node.summary.isEmpty {
                         Text(node.summary)
                             .font(.system(size: 16))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1185,10 +1196,10 @@ private struct NodeDetailOverlay: View {
 
                         Text(node.createdAt, style: .relative)
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.65))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                         + Text(" ago")
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.65))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -1207,7 +1218,9 @@ private struct NodeDetailOverlay: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 12))
-                            .foregroundStyle(.white.opacity(0.6))
+                            // On frosted `.ultraThinMaterial` (adaptive), so adaptive
+                            // ink — not the node-face `legibleInk` used for the text.
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                             .frame(width: 28, height: 28)
                             .background(.ultraThinMaterial)
                             .clipShape(Circle())
@@ -1310,7 +1323,8 @@ private struct ItemCountsRow: View {
     private func chip(_ icon: String, _ count: Int) -> some View {
         Label("\(count)", systemImage: icon)
             .font(.caption)
-            .foregroundStyle(.white.opacity(0.55))
+            // Light-mode convergence — adaptive ink (was hardcoded `.white`).
+            .foregroundStyle(AppearancePalette.ink.opacity(0.55))
     }
 }
 
@@ -1406,7 +1420,11 @@ private struct LabelPill: View {
     var body: some View {
         Text(text)
             .font(.system(size: 13, weight: .medium, design: .serif))
-            .foregroundStyle(.white.opacity(0.95))
+            // Light-mode convergence — adaptive ink on the already-adaptive
+            // `.ultraThinMaterial` pill (was hardcoded `.white`, illegible on the
+            // cream map in light). The white rim (below) is a frosted-glass
+            // highlight, correct in both modes — left as-is.
+            .foregroundStyle(AppearancePalette.ink.opacity(0.95))
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .frame(minHeight: 26)

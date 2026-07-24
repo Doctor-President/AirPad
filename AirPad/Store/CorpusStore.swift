@@ -489,9 +489,24 @@ final class CorpusStore {
     // MARK: - Retrieval relevance (ws-card-catalog step 3c)
 
     /// Block matches below this cosine are dropped; when ALL fall below it,
-    /// RELATED/Ask show the honest "nothing close" state. Conservative start
-    /// (BGE real matches sit ~0.5–0.75) — 3d tunes on device.
-    static let minRelevanceScore: Float = 0.35
+    /// RELATED shows the honest "nothing close" state and Ask routes to
+    /// PARTIAL/OPEN (a normal answer, no refusal) instead of GROUNDED.
+    ///
+    /// MEASURED, not guessed (2026-07-23, BUG 7 fix). BGE-micro-v2 is strongly
+    /// anisotropic (corpus centroid norm ≈ 0.69), so raw cosines sit high: 60
+    /// real node-title probes floor at 0.585 (p50 0.708); 12 general-knowledge
+    /// probes span 0.573–0.729. The old 0.35 sat below the ENTIRE distribution,
+    /// so `strong` was never empty → GROUNDED always fired → general-knowledge
+    /// queries got refused (BUG 7). 0.60 is chosen over the marginally-more-
+    /// accurate 0.615 for margin: the thinnest genuine probe ("anti-extraction",
+    /// 0.616) clears 0.60 by 0.016 but 0.615 by only 0.001 — inside on-device
+    /// parity noise. Residual: a few general-knowledge queries adjacent to real
+    /// corpus topics (recipes, space) still ground; that overlap is semantic,
+    /// not calibratable, and is the Part 2 (no-routing) arc's job, not this
+    /// constant's. Shared by Ask (`groundedSend`) and the RELATED surface
+    /// (`findRelevantBlocks`); RELATED may later want its own lower discovery
+    /// bar — measure before splitting.
+    static let minRelevanceScore: Float = 0.60
 
     /// Breadth for the (future) card re-rank. NOT a hard candidate filter — see
     /// `cardNarrowedCandidates`.

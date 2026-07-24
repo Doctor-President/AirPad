@@ -54,5 +54,20 @@ enum CitationReference {
         (1...50).contains(index) ? "\(index).circle.fill" : "circle.fill"
     }
 
+    /// The set of `[n]` indices the model actually cited in `text`. Ask uses this
+    /// to keep only cited sources: retrieval provides candidate passages, but a
+    /// passage becomes a citation only when the prose references it. Empty when the
+    /// answer cites nothing (→ no footer). Same regex as the inline styler, so what
+    /// renders as a superscript and what survives as a source can't disagree.
+    static func citedIndices(in text: String) -> Set<Int> {
+        let ns = text as NSString
+        let matches = markerRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        var out = Set<Int>()
+        for m in matches where m.numberOfRanges > 1 {
+            if let n = Int(ns.substring(with: m.range(at: 1))) { out.insert(n) }
+        }
+        return out
+    }
+
     private static let markerRegex = try! NSRegularExpression(pattern: #"\[(\d{1,2})\]"#)
 }

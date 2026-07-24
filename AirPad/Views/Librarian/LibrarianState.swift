@@ -385,66 +385,54 @@ final class LibrarianState {
         return String(s.prefix(240)) + "…"
     }
 
-    /// Dispatches to the per-mode pipeline. Navigate uses block-level
-    /// embedding retrieval (no LLM); Ask uses block-embedding retrieval
-    /// to feed prompt context and routes via `ModelRouter` (FM default,
-    /// Ollama if configured). Research and Provoke still share the
-    /// legacy classify → respond pipeline absorbed from `CorpusQuerySheet`
-    /// until each lands its own. Store is injected at call site because
-    /// LibrarianState doesn't own a reference.
-    /// Live Ask entry — retrieval-INFORMED hybrid (never gated, no classifier).
-    /// ALWAYS retrieves; the retrieval STRENGTH picks the answering mode:
-    ///  - strong (top score ≥ `minRelevanceScore`) → GROUNDED: the user's passages
-    ///    are authoritative, model cites [1] [2].
-    ///  - weak (hits present but below the bar) → OPEN answer + related notes.
-    ///  - none → OPEN: a normal helpful answer, no "nothing in corpus" wall.
+    /// Live Ask entry — retrieval-INFORMED, NO mode routing (Part 2). ALWAYS
+    /// retrieves and hands the top passages to the model under ONE honest-framing
+    /// prompt ("these came from your notes by similarity search and may not be
+    /// relevant — use and cite any that help, otherwise answer normally"). The
+    /// MODEL judges relevance; we never pre-select a "grounded" vs "open" answer
+    /// from a score, so a general-knowledge question can no longer be refused for
+    /// lack of a matching passage (BUG 7).
+    ///
+    /// `minRelevanceScore` is now a budget/inclusion control — don't spend a small
+    /// local model's context on sub-bar passages — NOT a correctness switch (it
+    /// still gates the RELATED surface). Every included passage is a *candidate*
+    /// source; `ChatSession.send` keeps only the ones the answer actually cites
+    /// inline, so a turn that ignores the passages can't show phantom sources.
     /// LibrarianState owns retrieval + prompt construction; the composed turn is
     /// handed to the dumb `ChatSession` streaming lane (which owns the transcript).
     func groundedSend(query rawQuery: String, store: CorpusStore, chat: ChatSession) async {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
 
+        // Always retrieve. Include the passages worth the budget (≥ the bar);
+        // this is a budget filter, NOT the old mode switch — the answer is never
+        // gated on it, only which passages ride along.
         let matches = await store.askMatches(query: query, scope: selectedScope, topK: 8)
-        let strong = matches.filter { $0.score >= CorpusStore.minRelevanceScore }
+        let candidates = Self.trimToCharBudget(
+            matches.filter { $0.score >= CorpusStore.minRelevanceScore },
+            budget: Self.askPassageCharBudget
+        )
 
         let modelText: String
-        let system: String
-        // Only GROUNDED turns carry citation chips; OPEN/partial pass nil.
-        var chips: [ChatSession.Message.Citation]? = nil
-        if !strong.isEmpty {
-            // GROUNDED — passages authoritative.
-            let cited = Self.trimToCharBudget(strong, budget: Self.askPassageCharBudget)
-            let context = buildAskContext(citations: cited, store: store)
-            modelText = """
-            Relevant passages from the user's own notes:
-
-            \(context)
-
-            Question: \(query)
-
-            Answer using these passages as the source of truth. Cite inline with [1] [2].
-            """
-            system = Self.groundedSystemPrompt
-            chips = Self.citationChips(from: cited, store: store)
-        } else if !matches.isEmpty {
-            // PARTIAL — answer openly, surface loosely-related notes.
-            let related = Self.trimToCharBudget(Array(matches.prefix(3)), budget: Self.askPassageCharBudget)
-            let context = buildAskContext(citations: related, store: store)
-            modelText = """
-            Question: \(query)
-
-            Answer this directly and helpfully. The user's notes don't strongly cover it, but these passages are loosely related — mention them only if genuinely relevant, cited [1] [2]:
-
-            \(context)
-            """
-            system = ChatSession.systemPrompt
-        } else {
-            // OPEN — nothing close; a normal helpful answer, no refusal.
+        if candidates.isEmpty {
+            // No worthwhile passages — hand the model the bare question. The
+            // honest-framing system prompt still says "answer normally," no refusal.
             modelText = query
-            system = ChatSession.systemPrompt
+        } else {
+            let context = buildAskContext(citations: candidates, store: store)
+            modelText = """
+            Some passages retrieved from your notes by similarity search — they may or may not be relevant to the question:
+
+            \(context)
+
+            Question: \(query)
+            """
         }
 
-        await chat.send(displayText: query, modelText: modelText, systemPrompt: system, citations: chips)
+        // Candidate sources for THIS turn; `ChatSession.send` filters these down to
+        // the [n] the model actually cited before committing the message.
+        let chips = candidates.isEmpty ? nil : Self.citationChips(from: candidates, store: store)
+        await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt, citations: chips)
     }
 
     /// Per-passage citations, `index` = the `[n]` the prompt/model uses. Stored
@@ -457,13 +445,6 @@ final class LibrarianState {
             return .init(index: i + 1, nodeID: match.nodeID, title: title, snippet: snippet)
         }
     }
-
-    /// Grounded-mode system prompt — forces the user's OWN passages over the
-    /// model's priors. Written to be robust for both Qwen and on-device FM.
-    private static let groundedSystemPrompt = """
-    You are answering from the user's OWN notes. The numbered passages in the prompt are the source of truth about the user's world — treat them as authoritative over your prior knowledge. If they define a term, use THEIR definition, not a generic one. Ground every claim in the passages and cite them inline with bracket numbers like [1] [2]. If the passages don't cover part of the question, say so briefly rather than inventing. Do not append a References, Sources, or Citations section — stop after the prose answer.
-    """
-
 
     /// Ask mode — block-embedding retrieval feeds the prompt context,
     /// the same matches surface as citation chips. The response is a
@@ -714,7 +695,7 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their own corpus. Be specific, concise, and never generic. When you reference a passage, mark it inline with bracket numbers like [1] [2] matching the numbered passages in the user prompt. Do not append a References, Sources, or Citations section at the end of your response — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their OWN notes. Passages from the user's notes may appear below the question; they were pulled by similarity search and MAY OR MAY NOT be relevant. Treat any that genuinely help as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered passages. Ignore passages that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
     }
 

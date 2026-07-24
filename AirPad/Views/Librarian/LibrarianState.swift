@@ -404,9 +404,23 @@ final class LibrarianState {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
 
-        // Always retrieve. Include the passages worth the budget (≥ the bar);
-        // this is a budget filter, NOT the old mode switch — the answer is never
-        // gated on it, only which passages ride along.
+        // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
+        // bare question with a plain assistant prompt — no passages, no citation
+        // chips, no "answer from your notes" framing. On T's corpus BGE scores
+        // everything 0.5–0.7, so forced retrieval feeds hard-negative noise into
+        // every Ask and a small model drowns in it; grounding is now a mode the
+        // user turns ON only when interrogating their notes. `corpusAware` is a
+        // stored+persisted property read live here, so a toggle flip lands on the
+        // very next send.
+        guard corpusAware else {
+            await chat.send(displayText: query, modelText: query,
+                            systemPrompt: privateSystemPrompt, citations: nil)
+            return
+        }
+
+        // ★ Corpus mode (corpusAware == true): current behaviour exactly. Retrieve,
+        // include the passages worth the budget (≥ the bar) — a budget filter, NOT a
+        // correctness switch — and hand them to the honest-framing corpus prompt.
         let matches = await store.askMatches(query: query, scope: selectedScope, topK: 8)
         let candidates = Self.trimToCharBudget(
             matches.filter { $0.score >= CorpusStore.minRelevanceScore },
@@ -697,6 +711,26 @@ final class LibrarianState {
     private var askSystemPrompt: String {
         let base = "You are a reflective AI that helps someone think across their OWN notes. Passages from the user's notes may appear below the question; they were pulled by similarity search and MAY OR MAY NOT be relevant. Treat any that genuinely help as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered passages. Ignore passages that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
+    }
+
+    /// ★ Private-mode system prompt (corpusAware OFF). A plain, direct assistant —
+    /// deliberately ZERO corpus language: no "notes", no passages, no citation
+    /// framing, no "answer from your own knowledge if the notes don't help" hedging.
+    /// Sending corpus framing when there IS no corpus in the prompt is exactly what
+    /// confuses a small model; this is the LM-Studio-quality private-chat experience.
+    /// Keeps `personalVoicePrefix` because the standing voice is about tone, not
+    /// grounding — it applies to both modes.
+    private var privateSystemPrompt: String {
+        let base = "You are a helpful, direct, and concise assistant. Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer."
+        return personalVoicePrefix + base
+    }
+
+    /// ★ Corpus-grounding toggle (default FALSE = private chat). Stored so the
+    /// surface pill re-renders on flip (observation-tracked), and persisted via
+    /// `didSet` so it survives surface remounts and app restarts — a standing
+    /// preference, like personal voice. `groundedSend` reads it live at send time.
+    var corpusAware: Bool = UserDefaults.standard.bool(forKey: "librarianCorpusAware") {
+        didSet { UserDefaults.standard.set(corpusAware, forKey: "librarianCorpusAware") }
     }
 
     /// User-defined standing voice (c7) — read fresh on each prompt build

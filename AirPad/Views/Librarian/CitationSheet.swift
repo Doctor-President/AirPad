@@ -65,16 +65,14 @@ struct CitationSheet: View {
                 .padding(.bottom, 24)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Source")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -86,12 +84,12 @@ struct CitationSheet: View {
                             Image(systemName: "arrow.up.right")
                         }
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                 }
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
     }
 
     private var header: some View {
@@ -101,7 +99,7 @@ struct CitationSheet: View {
                 .frame(width: 10, height: 10)
             Text(nodeTitle)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(2)
             Spacer(minLength: 0)
         }
@@ -112,15 +110,15 @@ struct CitationSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("[\(bracketIndex)]")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
 
             Text(match.block.text)
                 .font(.system(size: 15))
-                .foregroundStyle(.white.opacity(0.88))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.88))
                 .lineSpacing(4)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-                .background(Color.white.opacity(0.06))
+                .background(AppearancePalette.ink.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .textSelection(.enabled)
         }

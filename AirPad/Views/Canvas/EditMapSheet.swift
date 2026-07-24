@@ -42,14 +42,14 @@ struct EditMapSheet: View {
                     Toggle(isOn: $tintByRecency) {
                         Text("Vary tint by recency")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppearancePalette.ink)
                     }
-                    .listRowBackground(Color.white.opacity(0.04))
+                    .listRowBackground(AppearancePalette.ink.opacity(0.04))
                 } header: {
                     Text("Gravity — signal weights")
                 } footer: {
                     Text("Collection / Anchor / Language decide a node's territory (argmax) and border lean. Backlink then pulls it toward its linked nodes — capped, so territory law still wins. Each node's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-node shade otherwise.")
-                        .font(.caption).foregroundStyle(.white.opacity(0.4))
+                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
                 Section {
@@ -62,17 +62,17 @@ struct EditMapSheet: View {
                     Text("Graze — engagement tuning")
                 } footer: {
                     Text("Focus decision + parting-crowd feel. Hysteresis resists focal flicker; steepness/midpoint shape the growth lens; compression is how far neighbors part; switch-lerp is the settle time after a focal switch. Live on device; baked later.")
-                        .font(.caption).foregroundStyle(.white.opacity(0.4))
+                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
                 Section {
                     Text("\(anchorCount) of \(CorpusStore.maxCanvasAnchors) anchors")
                         .font(.footnote)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 } footer: {
                     Text("Promote tags to spatial territories on the Map. Nodes gather in their territory; a node with no anchor tag lands near the nearest one.")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
                 Section {
@@ -83,7 +83,7 @@ struct EditMapSheet: View {
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Edit Map")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -102,15 +102,15 @@ struct EditMapSheet: View {
             HStack {
                 Text(label)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Text(String(format: "%.2f", value.wrappedValue))
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             Slider(value: value, in: 0...2)
         }
-        .listRowBackground(Color.white.opacity(0.04))
+        .listRowBackground(AppearancePalette.ink.opacity(0.04))
     }
 
     /// Slider row with an explicit range + value format (Graze dials span
@@ -121,15 +121,15 @@ struct EditMapSheet: View {
             HStack {
                 Text(label)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Text(String(format: format, value.wrappedValue))
                     .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             Slider(value: value, in: range)
         }
-        .listRowBackground(Color.white.opacity(0.04))
+        .listRowBackground(AppearancePalette.ink.opacity(0.04))
     }
 
     private func row(_ tag: Tag) -> some View {
@@ -143,7 +143,7 @@ struct EditMapSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(tag.name)
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 if let similar {
                     Text("Similar to: \(similar)")
@@ -155,7 +155,7 @@ struct EditMapSheet: View {
             Spacer(minLength: 8)
             Text("\(coverage)")
                 .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             Button {
                 Task {
                     if tag.isCanvasAnchor {
@@ -167,12 +167,12 @@ struct EditMapSheet: View {
             } label: {
                 Image(systemName: tag.isCanvasAnchor ? "star.fill" : "star")
                     .font(.system(size: 18))
-                    .foregroundStyle(tag.isCanvasAnchor ? Color.yellow : .white.opacity(promotable ? 0.4 : 0.15))
+                    .foregroundStyle(tag.isCanvasAnchor ? Color.yellow : AppearancePalette.ink.opacity(promotable ? 0.4 : 0.15))
             }
             .buttonStyle(.plain)
             .disabled(!promotable)
         }
-        .listRowBackground(Color.white.opacity(0.04))
+        .listRowBackground(AppearancePalette.ink.opacity(0.04))
     }
 
     /// Best-effort consolidation hint — the top lift-similar tag, resolved to a

@@ -44,7 +44,12 @@ struct CanvasSlideOutMenu: View {
                 panel
                     .frame(width: panelWidth)
                     .frame(maxHeight: .infinity)
-                    .background(Color(white: 0.12))
+                    // Light-mode convergence — adaptive frosted material (was a
+                    // solid `Color(white:0.12)` dark drawer). `.thinMaterial` keeps
+                    // the full-height square drawer shape (dashboardPaneSurface's
+                    // radius-22 would wrongly round a full-height edge drawer);
+                    // dark = frosted dark, light = frosted parchment.
+                    .background(.thinMaterial)
                     .offset(x: max(0, dragOffset))
                     .gesture(dragGesture)
                     .transition(.move(edge: .trailing))
@@ -104,15 +109,15 @@ struct CanvasSlideOutMenu: View {
         HStack {
             Text("Canvas")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
             Spacer()
             Button(action: { dismiss() }) {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .frame(width: 32, height: 32)
-                    .background(Color.white.opacity(0.06))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -127,7 +132,7 @@ struct CanvasSlideOutMenu: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .padding(.horizontal, 20)
                 .padding(.top, 18)
@@ -152,29 +157,29 @@ struct CanvasSlideOutMenu: View {
             HStack(spacing: 12) {
                 Image(systemName: mode.icon)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(mode.isAvailable ? 0.95 : 0.45))
+                    .foregroundStyle(AppearancePalette.ink.opacity(mode.isAvailable ? 0.95 : 0.45))
                     .frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(mode.displayName)
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white.opacity(mode.isAvailable ? 0.95 : 0.45))
+                        .foregroundStyle(AppearancePalette.ink.opacity(mode.isAvailable ? 0.95 : 0.45))
                     if !mode.isAvailable {
                         Text("Coming soon")
                             .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     }
                 }
                 Spacer()
                 if isActive {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
-            .background(isActive ? Color.white.opacity(0.06) : Color.clear)
+            .background(isActive ? AppearancePalette.ink.opacity(0.06) : Color.clear)
         }
         .buttonStyle(.plain)
     }
@@ -190,11 +195,11 @@ struct CanvasSlideOutMenu: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                     .frame(width: 24)
                 Text(label)
                     .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.95))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 Spacer()
                 if let badge {
                     Text(badge)

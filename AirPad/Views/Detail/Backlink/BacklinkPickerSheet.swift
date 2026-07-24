@@ -46,20 +46,20 @@ struct BacklinkPickerSheet: View {
                     HStack(spacing: 12) {
                         Text(BacklinkLabels.title(node))
                             .font(.system(size: 16, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(AppearancePalette.ink)
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                     }
                     .contentShape(Rectangle())
                 }
-                .listRowBackground(Color.white.opacity(0.04))
+                .listRowBackground(AppearancePalette.ink.opacity(0.04))
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .searchable(text: $searchText, prompt: "Search nodes")
             .navigationTitle("Backlink to…")
             .navigationBarTitleDisplayMode(.inline)
@@ -137,13 +137,13 @@ private struct BacklinkTargetPicker: View {
                     }
                 } header: {
                     Text("Or an entry")
-                        .font(.caption).foregroundStyle(.white.opacity(0.4))
+                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.black.ignoresSafeArea())
+        .background(AppearancePalette.bgBase.ignoresSafeArea())
         .navigationTitle("Link to")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -164,20 +164,20 @@ private struct BacklinkTargetPicker: View {
                 if indent { Spacer().frame(width: 16) }
                 Image(systemName: systemImage)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                     .frame(width: 22)
                 Text(title)
                     .font(.system(size: indent ? 15 : 16, weight: indent ? .regular : .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 18))
-                    .foregroundStyle(isSelected ? Color.blue : .white.opacity(0.3))
+                    .foregroundStyle(isSelected ? Color.blue : AppearancePalette.ink.opacity(0.3))
             }
             .contentShape(Rectangle())
         }
-        .listRowBackground(Color.white.opacity(0.04))
+        .listRowBackground(AppearancePalette.ink.opacity(0.04))
     }
 
     private func commit() {

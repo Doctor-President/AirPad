@@ -37,27 +37,25 @@ struct TagEditorSheet: View {
                 }
                 .padding(20)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle(existing == nil ? "New Tag" : "Edit Tag")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .fontWeight(.semibold)
-                        .foregroundStyle(name.trimmingCharacters(in: .whitespaces).isEmpty ? .white.opacity(0.25) : .white)
+                        .foregroundStyle(name.trimmingCharacters(in: .whitespaces).isEmpty ? AppearancePalette.ink.opacity(0.25) : AppearancePalette.ink)
                         .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         .confirmationDialog(
             "Delete \"\(existing?.name ?? "")\"?",
             isPresented: $showDeleteConfirmation,
@@ -81,10 +79,10 @@ struct TagEditorSheet: View {
             sectionLabel("Name")
             TextField("Tag name", text: $name)
                 .font(.body)
-                .foregroundStyle(.white)
-                .tint(.white)
+                .foregroundStyle(AppearancePalette.ink)
+                .tint(AppearancePalette.ink)
                 .padding(12)
-                .background(Color.white.opacity(0.07))
+                .background(AppearancePalette.ink.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .autocorrectionDisabled()
         }
@@ -147,7 +145,7 @@ struct TagEditorSheet: View {
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.35))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             .textCase(.uppercase)
             .tracking(0.6)
     }

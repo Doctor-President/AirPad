@@ -41,28 +41,26 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 32) {
                     aiModelSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     privacySection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     tagsSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     importSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     reviewSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     corpusSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     aboutSection
                     developerSection
                 }
                 .padding(20)
                 .dismissKeyboardOnTapOutside()
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -70,12 +68,12 @@ struct SettingsView: View {
                         saveKeys()
                         dismiss()
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .fontWeight(.semibold)
                 }
             }
         }
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         .onAppear { loadKeys() }
     }
 
@@ -95,13 +93,13 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama endpoint")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     TextField("http://192.168.x.x:11434", text: $ollamaEndpoint)
                         .font(.subheadline)
-                        .foregroundStyle(.white)
-                        .tint(.white)
+                        .foregroundStyle(AppearancePalette.ink)
+                        .tint(AppearancePalette.ink)
                         .padding(12)
-                        .background(Color.white.opacity(0.07))
+                        .background(AppearancePalette.ink.opacity(0.06))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                         .keyboardType(.URL)
                         .autocorrectionDisabled()
@@ -115,15 +113,15 @@ struct SettingsView: View {
                 } label: {
                     HStack(spacing: 6) {
                         if isTestingConnection {
-                            ProgressView().tint(.white).scaleEffect(0.7)
+                            ProgressView().tint(AppearancePalette.ink).scaleEffect(0.7)
                         }
                         Text(isTestingConnection ? "Testing…" : "Test connection")
                             .font(.subheadline.weight(.medium))
                     }
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
-                    .background(Color.white.opacity(0.09))
+                    .background(AppearancePalette.ink.opacity(0.09))
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -146,14 +144,14 @@ struct SettingsView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Personal voice")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Spacer()
                 Text("\(librarianPersonalPrompt.count) / \(Self.librarianPersonalPromptMaxChars)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(
                         librarianPersonalPrompt.count >= Self.librarianPersonalPromptMaxChars
                         ? .orange.opacity(0.8)
-                        : .white.opacity(0.3)
+                        : AppearancePalette.ink.opacity(0.3)
                     )
             }
             TextField(
@@ -162,11 +160,11 @@ struct SettingsView: View {
                 axis: .vertical
             )
             .font(.subheadline)
-            .foregroundStyle(.white)
-            .tint(.white)
+            .foregroundStyle(AppearancePalette.ink)
+            .tint(AppearancePalette.ink)
             .lineLimit(3...8)
             .padding(12)
-            .background(Color.white.opacity(0.07))
+            .background(AppearancePalette.ink.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .onChange(of: librarianPersonalPrompt) { _, new in
                 if new.count > Self.librarianPersonalPromptMaxChars {
@@ -178,7 +176,7 @@ struct SettingsView: View {
 
             Text("Prepended to every Librarian query — shapes how the model engages with you.")
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
@@ -189,15 +187,15 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Active model")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Text(activeModelName)
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
             }
             Spacer()
         }
         .padding(14)
-        .background(Color.white.opacity(0.05))
+        .background(AppearancePalette.ink.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -221,13 +219,13 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             SecureField(placeholder, text: text)
                 .font(.subheadline)
-                .foregroundStyle(.white)
-                .tint(.white)
+                .foregroundStyle(AppearancePalette.ink)
+                .tint(AppearancePalette.ink)
                 .padding(12)
-                .background(Color.white.opacity(0.07))
+                .background(AppearancePalette.ink.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
@@ -244,10 +242,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("GPS location on capture")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                     Text("Attaches your location to newly captured nodes")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
             .tint(.purple)
@@ -259,7 +257,7 @@ struct SettingsView: View {
                         .foregroundStyle(.green.opacity(0.8))
                     Text("Your data never leaves this device")
                         .font(.caption)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 }
             }
         }
@@ -278,7 +276,7 @@ struct SettingsView: View {
             if store.tags.isEmpty {
                 Text("No tags yet — AI will suggest them as you capture ideas.")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             } else {
                 FlowLayoutSettings(spacing: 8) {
                     ForEach(store.tags) { tag in
@@ -293,10 +291,10 @@ struct SettingsView: View {
             } label: {
                 Label("New Tag", systemImage: "plus")
                     .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.75))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.09))
+                    .background(AppearancePalette.ink.opacity(0.09))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -337,10 +335,10 @@ struct SettingsView: View {
                     Text("Import ideas")
                 }
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.75))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(0.07))
+                .background(AppearancePalette.ink.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
@@ -350,7 +348,7 @@ struct SettingsView: View {
 
             Text("Paste a block of text or share a .txt / .md file — each paragraph becomes a node.")
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
@@ -370,7 +368,7 @@ struct SettingsView: View {
                     if store.reviewQueue.isEmpty {
                         Text("Clear")
                             .font(.caption)
-                            .foregroundStyle(.white.opacity(0.3))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                     } else {
                         Text("\(store.reviewQueue.count)")
                             .font(.caption.weight(.bold))
@@ -382,10 +380,10 @@ struct SettingsView: View {
                     }
                 }
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.75))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(0.07))
+                .background(AppearancePalette.ink.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
@@ -395,7 +393,7 @@ struct SettingsView: View {
 
             Text("Ideas that didn't pass the quality gate during import. Promote or discard — nothing is lost.")
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
@@ -409,7 +407,7 @@ struct SettingsView: View {
             } label: {
                 Text("Simulate thread")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.2))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.2))
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -444,7 +442,7 @@ struct SettingsView: View {
             // Thomas debugging the substrate, not for end users.
             Text("· · ·")
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.12))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.12))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 12)
                 .contentShape(Rectangle())
@@ -482,7 +480,7 @@ struct SettingsView: View {
             if let s = state {
                 Text(reprocessStatusText(s))
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
         }
@@ -515,7 +513,7 @@ struct SettingsView: View {
             if let s = state {
                 Text(backfillStatusText(s))
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     .frame(maxWidth: .infinity, alignment: .center)
             }
         }
@@ -560,10 +558,10 @@ struct SettingsView: View {
                     Text("Export corpus")
                 }
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(Color.white.opacity(0.07))
+                .background(AppearancePalette.ink.opacity(0.07))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
@@ -601,14 +599,14 @@ struct SettingsView: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.title2.weight(.bold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
-        .background(Color.white.opacity(0.05))
+        .background(AppearancePalette.ink.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -619,15 +617,15 @@ struct SettingsView: View {
             sectionHeader("About")
             Text("AirPad")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
             Text("It works around you. Not the other way around.")
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
                 Text("Version \(version) (\(build))")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.25))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.25))
             }
         }
     }
@@ -638,7 +636,7 @@ struct SettingsView: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.35))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             .textCase(.uppercase)
             .tracking(0.6)
     }

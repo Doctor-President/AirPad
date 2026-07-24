@@ -185,44 +185,42 @@ struct SubstrateInspectView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     coverageSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     selectedNodeSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     pairInspectorSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     threadCandidatesSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     backfillSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     blockBackfillSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     selfTestSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     substrateLayoutSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     substrateClusterSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     substrateClusterIdentitySection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     substrateCosineDistributionSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     strandsSection
-                    Divider().background(Color.white.opacity(0.1))
+                    Divider().background(AppearancePalette.ink.opacity(0.1))
                     exportSection
                 }
                 .padding(20)
                 .dismissKeyboardOnTapOutside()
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Substrate (dev)")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                 }
             }
             // SB139 Stage 4c2 commit E — cluster rename alert. Mirrors
@@ -245,7 +243,7 @@ struct SubstrateInspectView: View {
                 Text("Up to 32 characters. The FM label service will not overwrite a manual rename — use Clear to re-open it.")
             }
         }
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
     }
 
     /// Commit the inspect-view cluster rename draft. Same rules as the
@@ -281,7 +279,7 @@ struct SubstrateInspectView: View {
             if !c.failuresByReason.isEmpty {
                 Text("Failure reasons")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .padding(.top, 4)
                 ForEach(c.failuresByReason.sorted(by: { $0.key < $1.key }), id: \.key) { (k, v) in
                     statRow(k, "\(v)")
@@ -307,7 +305,7 @@ struct SubstrateInspectView: View {
             } else {
                 Text("Pick a node above.")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
         }
     }
@@ -350,7 +348,7 @@ struct SubstrateInspectView: View {
             } else {
                 Text("Pick two nodes above.")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
         }
     }
@@ -384,12 +382,12 @@ struct SubstrateInspectView: View {
                 if cands.isEmpty {
                     Text("No pairs ≥ per-path T.")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 } else {
                     let surviving = cands.filter { $0.exclusion == nil }
                     Text("\(surviving.count) surviving · \(cands.count - surviving.count) excluded")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     ForEach(cands.indices, id: \.self) { i in
                         candidateRow(cands[i])
                     }
@@ -397,7 +395,7 @@ struct SubstrateInspectView: View {
             } else {
                 Text("Pick a node in the Selected node section above.")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
         }
     }
@@ -422,17 +420,17 @@ struct SubstrateInspectView: View {
         HStack(alignment: .top, spacing: 8) {
             Text(String(format: "%+.4f", c.blended))
                 .font(.caption2.monospaced())
-                .foregroundStyle(dim ? .white.opacity(0.4) : .white)
+                .foregroundStyle(dim ? AppearancePalette.ink.opacity(0.4) : AppearancePalette.ink)
                 .frame(width: 64, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(c.other.title.isEmpty ? "(untitled)" : c.other.title)
                         .font(.caption2)
-                        .foregroundStyle(dim ? .white.opacity(0.4) : .white.opacity(0.85))
+                        .foregroundStyle(dim ? AppearancePalette.ink.opacity(0.4) : AppearancePalette.ink.opacity(0.85))
                         .lineLimit(1)
                     Text(pathSuffix)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                 }
                 if let ex = c.exclusion {
                     Text("excluded: \(ex.rawValue)")
@@ -454,14 +452,14 @@ struct SubstrateInspectView: View {
             HStack(spacing: 8) {
                 Text("Batch size")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 TextField("10", text: $batchSizeText)
                     .font(.subheadline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .keyboardType(.numberPad)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.07))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .frame(width: 80)
                 Spacer()
@@ -471,7 +469,7 @@ struct SubstrateInspectView: View {
                 } label: {
                     Text(inFlight ? "Running…" : "Run")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(Color.purple.opacity(inFlight ? 0.3 : 0.6))
@@ -491,7 +489,7 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.orange.opacity(fmErrorCount == 0 || inFlight ? 0.3 : 0.8))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -501,14 +499,14 @@ struct SubstrateInspectView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(progressLine(s))
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     Text("ok=\(s.succeeded) refused=\(s.guardrailRefused) thin=\(s.thinContent) fm_err=\(s.fmError) emb_err=\(s.embedderError) pending=\(s.pendingAfter)")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.35))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     if let last = s.lastRunAt {
                         Text("last run: \(DateFormatter.substrateLog.string(from: last))")
                             .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.25))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.25))
                     }
                 }
             }
@@ -530,14 +528,14 @@ struct SubstrateInspectView: View {
             HStack(spacing: 8) {
                 Text("Re-embeds every node's `blocks.json` on BGE-micro-v2 (384-dim, v2) + the chunk-quality gate. Idempotent — v2 embeddings are reused on hash match. Run once to migrate the v1 (512-dim) corpus.")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 Spacer(minLength: 0)
                 Button {
                     Task { await store.backfillBlockEmbeddings() }
                 } label: {
                     Text(inFlight ? "Running…" : "Run block backfill (BGE)")
                         .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(Color.purple.opacity(inFlight ? 0.3 : 0.6))
@@ -549,7 +547,7 @@ struct SubstrateInspectView: View {
             if let s = state {
                 Text(blockProgressLine(s))
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             // ws-card-catalog step 3b — coverage readout at the current version.
             Button {
@@ -568,7 +566,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -600,7 +598,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -618,7 +616,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -636,7 +634,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -654,7 +652,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -672,7 +670,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -698,7 +696,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -725,7 +723,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -752,7 +750,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -780,7 +778,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -802,7 +800,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -824,7 +822,7 @@ struct SubstrateInspectView: View {
             Toggle(isOn: $strandSnapFlag) {
                 Text("FeatureFlags.strandSnap")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             }
             .tint(.purple)
 
@@ -886,15 +884,15 @@ struct SubstrateInspectView: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 .frame(width: 110, alignment: .leading)
             TextField(placeholder, text: text)
                 .font(.caption2.monospaced())
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
                 .keyboardType(.decimalPad)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.white.opacity(0.05))
+                .background(AppearancePalette.ink.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 6))
                 .frame(width: 80)
                 .onChange(of: text.wrappedValue) { _, new in
@@ -902,7 +900,7 @@ struct SubstrateInspectView: View {
                 }
             Text(text.wrappedValue.isEmpty ? "default \(placeholder)" : "")
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.35))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.35))
         }
     }
 
@@ -920,7 +918,7 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.purple.opacity(exportInProgress ? 0.4 : 0.7))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -933,7 +931,7 @@ struct SubstrateInspectView: View {
                             .foregroundStyle(.purple.opacity(0.7))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.05))
+                            .background(AppearancePalette.ink.opacity(0.05))
                             .clipShape(Capsule())
                     }
                 }
@@ -942,12 +940,12 @@ struct SubstrateInspectView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Exported to: \(result.url.path)")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text("\(result.nodeCount) nodes · \(String(format: "%.2fs", result.elapsed))")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
             if let err = exportError {
@@ -969,7 +967,7 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.purple.opacity(clusterExportInProgress ? 0.4 : 0.7))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -982,7 +980,7 @@ struct SubstrateInspectView: View {
                             .foregroundStyle(.purple.opacity(0.7))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.05))
+                            .background(AppearancePalette.ink.opacity(0.05))
                             .clipShape(Capsule())
                     }
                 }
@@ -991,12 +989,12 @@ struct SubstrateInspectView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Exported to: \(result.url.path)")
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.6))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text("\(result.nodeCount) nodes · \(String(format: "%.2fs", result.elapsed))")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.4))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
             }
             if let err = clusterExportError {
@@ -1434,14 +1432,14 @@ struct SubstrateInspectView: View {
             Toggle(isOn: $substrateLayoutFlag) {
                 Text("FeatureFlags.substrateLayout")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             }
             .tint(.purple)
 
             Toggle(isOn: $substrateRelaxationFlag) {
                 Text("FeatureFlags.substrateRelaxation")
                     .font(.caption.monospaced())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             }
             .tint(.purple)
 
@@ -1464,7 +1462,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity((backfillInFlight || refusedCount == 0) ? 0.4 : 0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1479,36 +1477,36 @@ struct SubstrateInspectView: View {
             HStack(spacing: 8) {
                 Text("n_neighbors")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 TextField("15", text: $umapNNeighborsText)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .keyboardType(.numberPad)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .frame(width: 70)
                 Text(umapNNeighborsText.isEmpty ? "default 15" : "")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
             HStack(spacing: 8) {
                 Text("min_dist")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 TextField("0.05", text: $umapMinDistText)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .keyboardType(.decimalPad)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .frame(width: 70)
                 Text(umapMinDistText.isEmpty ? "default 0.05" : "")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
 
             Button {
@@ -1519,7 +1517,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(umapFitInProgress ? 0.4 : 0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1547,7 +1545,7 @@ struct SubstrateInspectView: View {
                             .foregroundStyle(.purple.opacity(0.7))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.05))
+                            .background(AppearancePalette.ink.opacity(0.05))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -1587,7 +1585,7 @@ struct SubstrateInspectView: View {
     private func excludedBucketHeader(_ label: String, count: Int) -> some View {
         Text("\(label) (\(count))")
             .font(.caption2.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             .padding(.top, 4)
     }
 
@@ -1595,16 +1593,16 @@ struct SubstrateInspectView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(en.title.isEmpty ? "(untitled)" : en.title)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
             if !en.contentPreview.isEmpty {
                 Text(en.contentPreview)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.4))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .lineLimit(3)
             }
             Text(en.id)
                 .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                 .textSelection(.enabled)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1715,35 +1713,35 @@ struct SubstrateInspectView: View {
             HStack(spacing: 8) {
                 Text("min_cluster_size")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 TextField("8", text: $hdbscanMinClusterSizeText)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .keyboardType(.numberPad)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .frame(width: 70)
             }
             HStack(spacing: 8) {
                 Text("min_samples")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 TextField("", text: $hdbscanMinSamplesText)
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .keyboardType(.numberPad)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .frame(width: 70)
                 Text(hdbscanMinSamplesText.isEmpty
                      ? "auto (= min_cluster_size)"
                      : "")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.35))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             }
 
             Button {
@@ -1754,7 +1752,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity((hdbscanFitInProgress || !modelLoaded) ? 0.4 : 0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1770,19 +1768,19 @@ struct SubstrateInspectView: View {
                 if !r.clusters.isEmpty {
                     Text("Clusters (id · size · stability)")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.top, 4)
                     ForEach(r.clusters) { hdbscanClusterRowView($0) }
                 }
                 if !r.noiseSampleTitles.isEmpty {
                     Text("Noise (first 5)")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                         .padding(.top, 4)
                     ForEach(Array(r.noiseSampleTitles.enumerated()), id: \.offset) { _, t in
                         Text(t.isEmpty ? "(untitled)" : t)
                             .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.55))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -1803,16 +1801,16 @@ struct SubstrateInspectView: View {
             HStack {
                 Text("c\(row.id) · n=\(row.size) · s=\(String(format: "%.3f", row.stabilityScore))")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                 Spacer()
                 Text("int=\(row.internalID)")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             }
             ForEach(Array(row.sampleTitles.enumerated()), id: \.offset) { _, t in
                 Text("  · \(t.isEmpty ? "(untitled)" : t)")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1934,10 +1932,10 @@ struct SubstrateInspectView: View {
             HStack(spacing: 8) {
                 Text("match_threshold")
                     .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
                 Text(String(format: "%.2f", registry.matchThreshold))
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                 Spacer()
                 Stepper(
                     "",
@@ -1952,7 +1950,7 @@ struct SubstrateInspectView: View {
                     step: 0.05
                 )
                 .labelsHidden()
-                .tint(.white.opacity(0.6))
+                .tint(AppearancePalette.ink.opacity(0.6))
             }
 
             // SB139 Stage 4c2 — action stack split into safe-actions
@@ -1971,7 +1969,7 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.orange.opacity(modelLoaded ? 0.85 : 0.4))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1980,7 +1978,7 @@ struct SubstrateInspectView: View {
                 if let feedback = clearFMLabelsFeedback {
                     Text(feedback)
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                 }
             }
 
@@ -1993,7 +1991,7 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.purple.opacity((simulateRefitInProgress || !modelLoaded) ? 0.4 : 0.7))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -2001,7 +1999,7 @@ struct SubstrateInspectView: View {
             }
 
             Divider()
-                .background(Color.white.opacity(0.1))
+                .background(AppearancePalette.ink.opacity(0.1))
                 .padding(.vertical, 6)
 
             HStack(spacing: 8) {
@@ -2017,7 +2015,7 @@ struct SubstrateInspectView: View {
                         .foregroundStyle(.red.opacity(0.7))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -2045,7 +2043,7 @@ struct SubstrateInspectView: View {
             if !identities.isEmpty {
                 Text("Identities (slot · uuid · n · fits)")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .padding(.top, 4)
                 ForEach(identities) { clusterIdentityRow($0) }
             }
@@ -2057,18 +2055,18 @@ struct SubstrateInspectView: View {
             HStack {
                 Text("s\(identity.paletteSlot)")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                     .frame(width: 36, alignment: .leading)
                 Text(String(identity.id.uuidString.prefix(8)))
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                 Spacer()
                 Text("n=\(identity.memberCount)")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 Text("f\(identity.firstSeenFitVersion)→\(identity.lastSeenFitVersion)")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             }
             // SB139 Stage 4c2 commit E — label row + rename/clear affordances.
             // Empty label rendered as "—" so the row height stays consistent;
@@ -2078,14 +2076,14 @@ struct SubstrateInspectView: View {
                 Text(identity.label ?? "—")
                     .font(.caption2)
                     .foregroundStyle(identity.label == nil
-                        ? .white.opacity(0.35)
-                        : .white.opacity(0.9))
+                        ? AppearancePalette.ink.opacity(0.35)
+                        : AppearancePalette.ink.opacity(0.9))
                     .lineLimit(1)
                 if let source = identity.labelSource {
                     let (sourceLabel, sourceColor): (String, Color) = {
                         switch source {
                         case .user:   return ("user",   .yellow.opacity(0.8))
-                        case .fm:     return ("fm",     .white.opacity(0.45))
+                        case .fm:     return ("fm",     AppearancePalette.ink.opacity(0.45))
                         case .honest: return ("honest", .orange.opacity(0.7))
                         }
                     }()
@@ -2100,10 +2098,10 @@ struct SubstrateInspectView: View {
                 } label: {
                     Text("Rename")
                         .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.05))
+                        .background(AppearancePalette.ink.opacity(0.05))
                         .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -2116,7 +2114,7 @@ struct SubstrateInspectView: View {
                             .foregroundStyle(.red.opacity(0.7))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.white.opacity(0.05))
+                            .background(AppearancePalette.ink.opacity(0.05))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -2228,7 +2226,7 @@ struct SubstrateInspectView: View {
             sectionHeader("Stage 4c2 — substrate cosine distribution")
             Text("Pairwise cosine over substrate vectors. Diagnostic only — no state mutation.")
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
@@ -2239,7 +2237,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.purple.opacity(cosineDistInProgress ? 0.4 : 0.7))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -2261,7 +2259,7 @@ struct SubstrateInspectView: View {
 
                 Text("Histogram (bucket · count)")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .padding(.top, 4)
                 ForEach(0..<r.bins.count, id: \.self) { i in
                     cosineBinRow(
@@ -2280,12 +2278,12 @@ struct SubstrateInspectView: View {
             }
 
             Divider()
-                .background(Color.white.opacity(0.08))
+                .background(AppearancePalette.ink.opacity(0.08))
                 .padding(.vertical, 4)
 
             Text("Block-pooled — replace per-node summary vector with mean of that node's block embeddings. Tests whether richer aggregation widens the distribution.")
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
@@ -2296,7 +2294,7 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.orange.opacity(blockCosineDistInProgress ? 0.4 : 0.75))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+                    .background(AppearancePalette.ink.opacity(0.05))
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -2323,7 +2321,7 @@ struct SubstrateInspectView: View {
 
                 Text("Histogram (bucket · count)")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .padding(.top, 4)
                 ForEach(0..<r.bins.count, id: \.self) { i in
                     cosineBinRow(
@@ -2353,12 +2351,12 @@ struct SubstrateInspectView: View {
         return HStack(spacing: 6) {
             Text(String(format: "%.2f–%.2f", lo, hi))
                 .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                 .frame(width: 80, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Rectangle()
-                        .fill(Color.white.opacity(0.05))
+                        .fill(AppearancePalette.ink.opacity(0.05))
                     Rectangle()
                         .fill(tint.opacity(0.55))
                         .frame(width: geo.size.width * fill)
@@ -2367,7 +2365,7 @@ struct SubstrateInspectView: View {
             .frame(height: 8)
             Text("\(count)")
                 .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .frame(width: 50, alignment: .trailing)
         }
     }
@@ -2607,7 +2605,7 @@ struct SubstrateInspectView: View {
     private func sectionHeader(_ text: String) -> some View {
         Text(text.uppercased())
             .font(.caption2.weight(.bold))
-            .foregroundStyle(.white.opacity(0.5))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             .tracking(1.2)
     }
 
@@ -2615,11 +2613,11 @@ struct SubstrateInspectView: View {
         HStack {
             Text(key)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.6))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
             Spacer()
             Text(value)
                 .font(.caption2.monospaced())
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
         }
     }
 
@@ -2627,10 +2625,10 @@ struct SubstrateInspectView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(key)
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             Text(value)
                 .font(.caption2.monospaced())
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -2652,18 +2650,18 @@ struct SubstrateInspectView: View {
             HStack {
                 Text(label)
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 Spacer()
                 Text(selection.wrappedValue.flatMap { id in
                     nodes.first(where: { $0.id == id }).map(menuLabel(for:))
                 } ?? "—")
                     .font(.caption2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(AppearancePalette.ink)
                     .lineLimit(1)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color.white.opacity(0.05))
+            .background(AppearancePalette.ink.opacity(0.05))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
     }

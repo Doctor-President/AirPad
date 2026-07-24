@@ -11,7 +11,7 @@ struct CanvasPlaceholderView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                Color.black.ignoresSafeArea()
+                AppearancePalette.bgBase.ignoresSafeArea()
 
                 if store.nodes.isEmpty {
                     EmptyCorpusView()
@@ -65,10 +65,10 @@ private struct EmptyCorpusView: View {
         VStack(spacing: 16) {
             Text("I haven't any idea(s).")
                 .font(.title3)
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             Text("Add one!")
                 .font(.title3)
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 }
@@ -95,7 +95,7 @@ private struct NodeBubble: View {
 
             Text(node.title)
                 .font(.caption2)
-                .foregroundStyle(.white.opacity(0.8))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                 .lineLimit(1)
                 .frame(maxWidth: radius * 2 + 24)
         }
@@ -112,12 +112,12 @@ private struct NodeTitleOverlay: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(node.title)
                 .font(.headline)
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
 
             if !node.summary.isEmpty {
                 Text(node.summary)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                     .lineLimit(2)
             }
 
@@ -126,10 +126,10 @@ private struct NodeTitleOverlay: View {
                 Spacer()
                 Text(node.createdAt, style: .relative)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                     + Text(" ago")
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.45))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             }
         }
         .padding(16)
@@ -150,7 +150,7 @@ private struct NodeTitleOverlay: View {
             if counts.link     > 0 { Label("\(counts.link)",     systemImage: "link").font(.caption) }
             if counts.document > 0 { Label("\(counts.document)", systemImage: "doc").font(.caption) }
         }
-        .foregroundStyle(.white.opacity(0.6))
+        .foregroundStyle(AppearancePalette.ink.opacity(0.6))
     }
 }
 

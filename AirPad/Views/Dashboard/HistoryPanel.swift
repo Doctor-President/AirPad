@@ -21,28 +21,30 @@ struct HistoryPanel: View {
                         onSelect(node)
                         dismiss()
                     } label: {
-                        RecentNodeRow(node: node, timestamp: node.updatedAt)
+                        // Light-mode convergence — pass adaptive ink (RecentNodeRow
+                        // defaults to `.white`, which was illegible on the light
+                        // panel). Same as RecentsView / NodeListView callers.
+                        RecentNodeRow(node: node, timestamp: node.updatedAt,
+                                      ink: AppearancePalette.ink)
                             .equatable()
                     }
-                    .listRowBackground(Color.white.opacity(0.05))
+                    .listRowBackground(AppearancePalette.ink.opacity(0.05))
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("History")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 }
             }
         }
         .presentationDetents([.medium, .large])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
     }
 }

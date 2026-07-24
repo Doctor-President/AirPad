@@ -83,10 +83,15 @@ struct NodeDetailView: View {
             } label: {
                 Text(hasContent ? "Done" : "Cancel")
                     .font(.headline)
-                    .foregroundStyle(hasContent ? .black : .white)
+                    // BUG 9 — was hardcoded `.black`/`.white` literals, so Cancel
+                    // rendered white on parchment in light. Now adaptive, mirroring
+                    // the QuikCapture pill: Done = onInk on an ink pill, Cancel =
+                    // ink on a faint ink pill. Dark byte-identical (onInk dark
+                    // #000000 == .black; ink dark #FFFFFF == .white / Color.white).
+                    .foregroundStyle(hasContent ? AppearancePalette.onInk : AppearancePalette.ink)
                     .padding(.horizontal, 18)
                     .frame(height: 44)
-                    .background(hasContent ? Color.white : Color.white.opacity(0.14), in: Capsule())
+                    .background(hasContent ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.14), in: Capsule())
             }
             .buttonStyle(.plain)
             .animation(.easeInOut(duration: 0.2), value: hasContent)

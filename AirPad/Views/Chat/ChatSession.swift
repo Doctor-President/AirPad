@@ -139,7 +139,17 @@ final class ChatSession {
             }
             let finalText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !finalText.isEmpty {
-                messages.append(Message(role: .assistant, text: finalText, citations: citations))
+                // Keep ONLY the sources the answer actually cited inline ([n]).
+                // Retrieval hands over candidates; a passage becomes a citation
+                // only when the prose references it — so a turn that ignores the
+                // passages (or answers from general knowledge) can't render
+                // phantom "sources" under it (BUG 7 / Part 2).
+                let citedOnly: [Message.Citation]? = citations.flatMap { candidates in
+                    let used = CitationReference.citedIndices(in: finalText)
+                    let kept = candidates.filter { used.contains($0.index) }
+                    return kept.isEmpty ? nil : kept
+                }
+                messages.append(Message(role: .assistant, text: finalText, citations: citedOnly))
             }
         } catch {
             // Endpoint / network / discovery failure. Surface it as a

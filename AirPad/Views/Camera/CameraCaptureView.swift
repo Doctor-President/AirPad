@@ -36,11 +36,11 @@ struct CameraCaptureView: View {
             VStack(spacing: 24) {
                 if isSaving {
                     ProgressView("Saving…")
-                        .tint(.white)
+                        .tint(AppearancePalette.ink)
                 } else {
                     Text("Capture")
                         .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
 
                     HStack(spacing: 20) {
                         SourceButton(icon: "camera.fill", label: "Camera") {
@@ -59,11 +59,15 @@ struct CameraCaptureView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.black.ignoresSafeArea())
+            // Light-mode convergence — this is the CHOOSER screen (title + Camera/
+            // Library buttons), not a live viewfinder (that's the system
+            // UIImagePickerController sheet), so its ground converts like the other
+            // sheets. bgBase = dark #1A1A1A / light parchment.
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 }
             }
         }
@@ -79,7 +83,7 @@ struct CameraCaptureView: View {
                 Task { await handleCapturedImage(image) }
             }
         }
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         // ws-dark-light-mode — full-height (no `.medium` detent). The medium
         // detent bought nothing here (a mostly-empty field with two buttons)
         // and, in Cucumber Water, it revealed the parchment detail view behind,
@@ -303,7 +307,7 @@ private struct SourceButton: View {
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                 Text(label)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.8))
             }
         }
     }

@@ -38,12 +38,12 @@ struct VoiceCaptureSheet: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            AppearancePalette.bgBase.ignoresSafeArea()
 
             switch phase {
             case .requestingPermission:
                 ProgressView()
-                    .tint(.white)
+                    .tint(AppearancePalette.ink)
 
             case .permissionDenied:
                 PermissionDeniedView { dismiss() }
@@ -55,7 +55,7 @@ struct VoiceCaptureSheet: View {
                 transcribingBody
 
             case .done:
-                Color.black.ignoresSafeArea()
+                AppearancePalette.bgBase.ignoresSafeArea()
             }
         }
         .task {
@@ -72,7 +72,7 @@ struct VoiceCaptureSheet: View {
             // Elapsed time
             Text(timeString(elapsedSeconds))
                 .font(.system(size: 48, weight: .thin, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
 
             // Waveform
             WaveformView(levels: levels)
@@ -97,7 +97,7 @@ struct VoiceCaptureSheet: View {
 
             Button("Cancel") { dismiss() }
                 .font(.body)
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .padding(.bottom, 40)
         }
     }
@@ -109,17 +109,17 @@ struct VoiceCaptureSheet: View {
             Spacer()
 
             ProgressView()
-                .tint(.white)
+                .tint(AppearancePalette.ink)
                 .scaleEffect(1.2)
 
             Text("Transcribing…")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
 
             if !transcript.isEmpty {
                 Text(transcript)
                     .font(.body)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
                     .lineLimit(6)
@@ -332,7 +332,7 @@ private struct WaveformView: View {
             HStack(alignment: .center, spacing: 3) {
                 ForEach(Array(levels.enumerated()), id: \.offset) { _, level in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white)
+                        .fill(AppearancePalette.ink)
                         .frame(width: max(2, (geo.size.width - CGFloat(levels.count - 1) * 3) / CGFloat(levels.count)),
                                height: max(4, CGFloat(level) * geo.size.height))
                 }
@@ -351,11 +351,11 @@ private struct PermissionDeniedView: View {
         VStack(spacing: 24) {
             Image(systemName: "mic.slash")
                 .font(.system(size: 48))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
 
             Text("Microphone or speech recognition access is required for voice notes.")
                 .font(.body)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
@@ -365,11 +365,11 @@ private struct PermissionDeniedView: View {
                 }
             }
             .font(.body.weight(.semibold))
-            .foregroundStyle(.white)
+            .foregroundStyle(AppearancePalette.ink)
 
             Button("Cancel") { onDismiss() }
                 .font(.body)
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
         }
     }
 }

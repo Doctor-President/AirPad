@@ -103,6 +103,19 @@ enum AppearancePalette {
         return Color(UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
 
+    /// Luminance-derived ink for text on a FIXED fill colour that does NOT track
+    /// appearance (e.g. a selected tag pill whose background is the saturated tag
+    /// colour in both modes) — so the adaptive `ink` is wrong there. Mirrors the
+    /// map orbs' rule (`NodeGradientLayer.legibleInk`): near-black on a light fill
+    /// (relative luminance > 0.62), warm off-white on a dark one. Same threshold
+    /// and ink values as the orbs, so tag pills and node labels agree.
+    static func legibleInk(onFillHex hex: String) -> Color {
+        let (r, g, b) = rgb(hex)
+        let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        return lum > 0.62 ? Color(red: 0.08, green: 0.07, blue: 0.06)
+                          : Color(red: 1.0, green: 0.98, blue: 0.95)
+    }
+
     /// The note panel's lift shadow. Dark: `black@0.35` (the landed value —
     /// identical). Light: soft, low, diffused — no hard shadow ("cloud cover is
     /// a reprieve").

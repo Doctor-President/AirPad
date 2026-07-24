@@ -33,25 +33,23 @@ struct TagCreationSheet: View {
                 }
                 .padding(24)
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Add Tags")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Skip") { dismiss() }
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { confirm() }
                         .fontWeight(.semibold)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                 }
             }
         }
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
         .presentationDetents([.medium, .large])
     }
 
@@ -61,10 +59,10 @@ struct TagCreationSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("AI suggested these tags")
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(AppearancePalette.ink)
             Text("New tags need a color. Tap to change.")
                 .font(.subheadline)
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
         }
     }
 
@@ -73,7 +71,7 @@ struct TagCreationSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Applied automatically")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .kerning(0.5)
 
@@ -90,7 +88,7 @@ struct TagCreationSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("New tags")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 .textCase(.uppercase)
                 .kerning(0.5)
 
@@ -211,14 +209,14 @@ private struct NewTagPill: View {
             Button(action: onToggle) {
                 Text(tag.name)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(isAccepted ? .white : .white.opacity(0.35))
+                    .foregroundStyle(isAccepted ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.35))
                     .strikethrough(!isAccepted)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(isAccepted ? pillColor.opacity(0.25) : Color.white.opacity(0.06))
-        .overlay(Capsule().stroke(isAccepted ? pillColor.opacity(0.6) : Color.white.opacity(0.15), lineWidth: 1))
+        .background(isAccepted ? pillColor.opacity(0.25) : AppearancePalette.ink.opacity(0.06))
+        .overlay(Capsule().stroke(isAccepted ? pillColor.opacity(0.6) : AppearancePalette.ink.opacity(0.15), lineWidth: 1))
         .clipShape(Capsule())
         .sheet(isPresented: $showColorPicker) {
             ColorPickerSheet(selectedHex: $tag.colorHex, presets: colorPresets)
@@ -246,7 +244,7 @@ private struct ColorPickerSheet: View {
                             .frame(width: 36, height: 36)
                             .overlay(
                                 Circle().stroke(
-                                    selectedHex == hex ? Color.white : Color.clear,
+                                    selectedHex == hex ? AppearancePalette.ink : Color.clear,
                                     lineWidth: 2.5
                                 )
                             )
@@ -259,21 +257,19 @@ private struct ColorPickerSheet: View {
                 .padding(24)
                 Spacer()
             }
-            .background(Color.black.ignoresSafeArea())
+            .background(AppearancePalette.bgBase.ignoresSafeArea())
             .navigationTitle("Pick a Color")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
-                        .foregroundStyle(.white)
+                        .foregroundStyle(AppearancePalette.ink)
                 }
             }
         }
         .presentationDetents([.medium])
-        .presentationBackground(.black)
+        .presentationBackground(AppearancePalette.bgBase)
     }
 }
 

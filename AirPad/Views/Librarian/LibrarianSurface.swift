@@ -128,6 +128,24 @@ struct LibrarianSurface: View {
         return activeWhispers[currentWhisperIndex % activeWhispers.count]
     }
 
+    /// BUG 11 — race-proof suppression gate. The panel POSITION duck driven from
+    /// ContentView can be raced on a warm canvas→capture transition (the peek
+    /// pill can bleed into the capture editor / QuikCapture on device). This
+    /// mirrors ContentView's `librarianSuppressed` SSOT but lives HERE, where the
+    /// `@Environment(AppRouter.self)` body re-evaluates reactively on every
+    /// `isCapturing`/`entryMode` change — so the surface renders empty + inert
+    /// whenever a canvas-covering surface is up, regardless of where the panel
+    /// physically sits. Canvas / collection-canvas show the peek as normal.
+    private var panelSuppressed: Bool {
+        if router.isCapturing { return true }
+        switch router.entryMode {
+        case .canvas, .collectionCanvas:
+            return false
+        case .dashboard, .quikCapture, .recents:
+            return true
+        }
+    }
+
     var body: some View {
         @Bindable var librarian = router.librarian
 
@@ -274,6 +292,12 @@ struct LibrarianSurface: View {
                 keyboardHeight = 0
             }
         }
+        // BUG 11 — hard suppression. Empty + inert whenever a canvas-covering
+        // surface is up, so a raced position-duck can't leak the peek pill into
+        // the capture editor / QuikCapture. Reactive on `router` (see
+        // `panelSuppressed`), so it never depends on the panel's physical detent.
+        .opacity(panelSuppressed ? 0 : 1)
+        .allowsHitTesting(!panelSuppressed)
     }
 
     /// Surface corner radius — unified at 39pt so the peek pill arc

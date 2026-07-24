@@ -547,6 +547,20 @@ struct DebugScreenHost: View {
             .environment(quarantineStore)
             .environment(selectionService)
             .onAppear(perform: seed)
+            .task {
+                // `-CaptureWarm YES` on the real ContentView (`librarian`) reproduces
+                // the WARM Map→"+" transition: let the panel settle at peek, THEN flip
+                // isCapturing (exactly what CanvasChrome's captureTriggerButton does).
+                // Cold `capturemode` couldn't surface the BUG 11 peek race; this does.
+                if screen == "librarian",
+                   UserDefaults.standard.bool(forKey: "CaptureWarm") {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    router.isCapturing = true
+                    router.captureNodeID = "seed-0"
+                    router.captureDraftHasText = false
+                    router.pendingNodeNavigationID = "seed-0"   // push the capture detail (full flow)
+                }
+            }
     }
 
     /// Seed a small REAL corpus: tags (a DARK blue + a LIGHT yellow so the

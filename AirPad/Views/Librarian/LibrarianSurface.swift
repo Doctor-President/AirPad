@@ -196,6 +196,13 @@ struct LibrarianSurface: View {
             if UserDefaults.standard.bool(forKey: "AskFocus") {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { isInputFocused = true }
             }
+            // `-AskShrinkTest YES` — the height-shrink proof: fill to 4 lines, then
+            // CLEAR after a beat. Screenshot after the clear must show a 1-line
+            // pill (proves the field shrinks, not just grows).
+            if UserDefaults.standard.bool(forKey: "AskShrinkTest") {
+                librarian.inputText = "What is the difference between a gerund and a present participle, and how do I tell them apart when both end in -ing in a sentence?"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { librarian.inputText = "" }
+            }
             #endif
         }
         .task {
@@ -1125,6 +1132,65 @@ struct LibrarianSurface: View {
             .padding(.bottom, 10)
     }
 
+    /// Trailing mic/send/clear cluster — extracted so it can be a BOTTOM-TRAILING
+    /// OVERLAY on the field (not an HStack sibling). As a sibling it had to be
+    /// sized to the field height to bottom-align, which ratcheted the height up
+    /// and blocked shrink; as an overlay the field height is TextField-driven
+    /// (grows AND shrinks) and the cluster just pins to the bottom.
+    @ViewBuilder
+    private func askTrailingControls(librarian: LibrarianState, kleinGrad: LinearGradient) -> some View {
+        let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let isHot = dictation.isListening && dictation.activeToken == "ask"
+        HStack(spacing: 8) {
+            if hasText {
+                Button { librarian.inputText = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear input")
+            }
+            if hasText {
+                Button {
+                    if dictation.isListening && dictation.activeToken == "ask" { dictation.stop() }
+                    let text = librarian.inputText
+                    librarian.inputText = ""
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: true)
+                    Task { await librarian.groundedSend(query: text, store: store, chat: router.chat) }
+                } label: {
+                    let enabled = sendIsEnabled(librarian: librarian)
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(enabled ? AnyShapeStyle(kleinGrad)
+                                                 : AnyShapeStyle(AppearancePalette.ink.opacity(0.2)))
+                }
+                .buttonStyle(.plain)
+                .disabled(!sendIsEnabled(librarian: librarian))
+            } else if isHot {
+                Button {
+                    dictation.toggle(token: "ask", baseline: librarian.inputText,
+                                     onUpdate: { librarian.inputText = $0 })
+                } label: {
+                    Image(systemName: "stop.fill").font(.system(size: 22)).foregroundStyle(kleinGrad)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop dictation")
+            } else {
+                Button {
+                    dictation.toggle(token: "ask", baseline: librarian.inputText,
+                                     onUpdate: { librarian.inputText = $0 })
+                } label: {
+                    Image(systemName: "mic.fill").font(.system(size: 22))
+                        .foregroundStyle(kleinGrad).opacity(0.8)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dictate")
+            }
+        }
+    }
+
     /// The Ask input row — the panel's persistent bottom composer. The one
     /// flexing element — chat-app convention: history scrolls above,
     /// typing happens at the bottom near the keyboard.
@@ -1144,7 +1210,6 @@ struct LibrarianSurface: View {
             startPoint: .top,
             endPoint: .bottom
         )
-        let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         // Item 1 — Messages behaviour: a PILL at one line, becoming a rounded
         // rect only as the text wraps. `askCornerRadius` = min(height/2,
@@ -1199,107 +1264,36 @@ struct LibrarianSurface: View {
                 // the field's left edge so the glyph sits equidistant. Trailing
                 // stays tight at 8 for the mic/send slot's compactness.
                 .padding(.leading, 4)
-                .padding(.trailing, 8)
+                // Trailing clearance for the mic/send, which are now a
+                // bottom-trailing OVERLAY (not an HStack sibling) — so the text
+                // column stops before them at every height.
+                .padding(.trailing, 56)
                 .padding(.vertical, 12)
                 .lineLimit(1...4)
 
-            // Messages-pattern trailing slot. Empty field → dictation
-            // mic (Klein, visual-only this pass — speech wiring lives
-            // in a later brief). Non-empty → clear (×) + send arrow
-            // that runs the Ask pipeline. The send swaps to Klein when
-            // enabled, dim white when disabled (matches the prior
-            // disabled state). The lifted field-agnostic Done (Move 2
-            // fix-pass v3 Item 1) still handles keyboard dismiss for
-            // both panes.
-            let isHot = dictation.isListening && dictation.activeToken == "ask"
-            HStack(spacing: 8) {
-                // × clear — whenever there's text (dictating or not).
-                if hasText {
-                    Button {
-                        librarian.inputText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear input")
-                }
-                // Dictating WITH text, or idle WITH text → SEND. Sending
-                // also ends any active dictation (one move, no separate
-                // stop step — Ask's intent is to send, not to review).
-                if hasText {
-                    Button {
-                        if dictation.isListening && dictation.activeToken == "ask" {
-                            dictation.stop()
-                        }
-                        // Retrieval-informed Ask hybrid: LibrarianState.groundedSend
-                        // retrieves + builds the (grounded / open / partial) prompt,
-                        // then hands the composed turn to the ChatSession lane (which
-                        // owns the transcript + persistence). Clear the field and raise
-                        // to full so the transcript is visible per the expanded-posture
-                        // invariant.
-                        let text = librarian.inputText
-                        librarian.inputText = ""
-                        isViewingActiveChat = true
-                        panelModel.expandToFull(animated: true)
-                        Task { await librarian.groundedSend(query: text, store: store, chat: router.chat) }
-                    } label: {
-                        let enabled = sendIsEnabled(librarian: librarian)
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 28))
-                            .foregroundStyle(
-                                enabled
-                                    ? AnyShapeStyle(kleinGrad)
-                                    : AnyShapeStyle(AppearancePalette.ink.opacity(0.2))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!sendIsEnabled(librarian: librarian))
-                } else if isHot {
-                    // Dictating but NOTHING said yet → stop (nothing to
-                    // send, so offer a way out rather than a dead send).
-                    Button {
-                        dictation.toggle(token: "ask", baseline: librarian.inputText,
-                                         onUpdate: { librarian.inputText = $0 })
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(kleinGrad)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Stop dictation")
-                } else {
-                    // Idle, empty → mic.
-                    Button {
-                        dictation.toggle(token: "ask", baseline: librarian.inputText,
-                                         onUpdate: { librarian.inputText = $0 })
-                    } label: {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 22))
-                            .foregroundStyle(kleinGrad)
-                            .opacity(0.8)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Dictate")
-                }
-            }
-            .padding(.trailing, 10)
-            // Item 3 follow — with the row top-aligned, sink the trailing mic/send
-            // to the BOTTOM (Messages convention: send tracks the last line). The
-            // frame is the MEASURED field height (not `.infinity`, which made the
-            // empty field greedily fill the panel; the text is the height driver,
-            // so this converges: empty → 52pt / pill, multi-line → send at bottom).
-            .frame(height: askFieldHeight, alignment: .bottom)
         }
         // Height parity with the Search field (morphingField expandedH = 52) so
         // the two composers read as siblings. minHeight (not fixed) so Ask can
         // still grow with multi-line input.
+        // minHeight 52 = single-line height (matches the Search field). No fixed
+        // height and NO self-referential trailing frame, so the TextField drives
+        // the height and it GROWS AND SHRINKS freely on every text change.
         .frame(minHeight: 52)
         // Item 1 — measure the live height to drive the Messages-style corner
-        // (`askCornerRadius`). Grows as the TextField wraps (lineLimit 1...4).
+        // (`askCornerRadius`). Read-only (feeds the corner, not the height), so no
+        // ratchet. Grows/shrinks as the TextField wraps/unwraps (lineLimit 1...4).
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { askFieldHeight = $0 }
         .background(askFill)
+        // Item 2 — mic/send/clear as a BOTTOM-TRAILING overlay (not an HStack
+        // sibling). Bottom-aligned → sits with the LAST line as the field grows,
+        // always inside bounds; at ONE line the 15pt bottom inset centres the 22pt
+        // mic in the 52pt field so it reads vertically centred at rest. (Feather
+        // stays top-pinned in the HStack above.)
+        .overlay(alignment: .bottomTrailing) {
+            askTrailingControls(librarian: librarian, kleinGrad: kleinGrad)
+                .padding(.trailing, 10)
+                .padding(.bottom, 15)
+        }
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of
         // the mode glyph, the trailing area before mic/send), not

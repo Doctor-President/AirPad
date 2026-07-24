@@ -67,7 +67,9 @@ struct RecentsView: View {
 
             Text("Recents")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
+                // Light-mode pass — adaptive ink (dark `#FFFFFF` == `.white`,
+                // byte-identical; light `#232A2E` so the title reads on parchment).
+                .foregroundStyle(AppearancePalette.ink)
 
             Spacer()
 
@@ -84,53 +86,101 @@ struct RecentsView: View {
                     .tag(SortKey.created)
             }
         } label: {
-            Image(systemName: "arrow.up.arrow.down")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(Color(white: 0.14))
-                .clipShape(Circle())
+            chromeCircle(
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .frame(width: 40, height: 40)
+            )
         }
     }
 
     private func glassCircleButton(systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(Color(white: 0.14))
-                .clipShape(Circle())
+            chromeCircle(
+                Image(systemName: systemName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .frame(width: 40, height: 40)
+            )
         }
         .buttonStyle(.plain)
     }
 
+    /// Back / sort chrome — the STANDARD `chromeSurface` liquid glass the
+    /// Map/Card/List + dashboard chrome use (NOT the #2 peek-pill), same recipe
+    /// as `DashboardBackButton` (contentShape → chromeSurface → clip). ONE
+    /// implementation for both modes: `chromeSurface` is adaptive (Liquid Glass /
+    /// `.thinMaterial`), so light and dark converge (T's standing decision) — the
+    /// former dark-only solid `Color(white: 0.14)` circle is gone.
+    private func chromeCircle<V: View>(_ label: V) -> some View {
+        label
+            .contentShape(Circle())
+            .chromeSurface(Circle())
+            .clipShape(Circle())
+    }
+
     // MARK: - Bucket list
 
+    /// ONE implementation for both modes (T's standing decision — no colorScheme
+    /// fork). Each bucket is a `dashboardPaneSurface` pane — the SAME shared style
+    /// the Today/Recents/Collections hub panes use (`.thinMaterial`, radius 22,
+    /// white@0.12 rim, no shadow, lava reading through) — with the eyebrow header
+    /// above each pane and appearance-aware `ink@0.08` hairlines between rows,
+    /// mirroring the dashboard Collections list. `.thinMaterial` + adaptive `ink`
+    /// carry the appearance, so this converges light and dark (dark shifts from
+    /// the old inset-grouped List with `white@0.05` rows → frosted panes).
     private var bucketList: some View {
-        List {
-            ForEach(buckets, id: \.label) { bucket in
-                Section {
-                    ForEach(bucket.nodes) { node in
-                        Button {
-                            onOpenNode(node)
-                        } label: {
-                            RecentNodeRow(node: node, timestamp: date(for: node))
-                                .equatable()
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 24) {
+                ForEach(buckets, id: \.label) { bucket in
+                    VStack(alignment: .leading, spacing: 10) {
+                        sectionHeader(bucket.label)
+                            .padding(.horizontal, 4)
+                        VStack(spacing: 0) {
+                            ForEach(Array(bucket.nodes.enumerated()), id: \.element.id) { index, node in
+                                Button {
+                                    onOpenNode(node)
+                                } label: {
+                                    RecentNodeRow(node: node, timestamp: date(for: node),
+                                                  ink: AppearancePalette.ink)
+                                        .equatable()
+                                        .padding(.horizontal, 18)
+                                        .padding(.vertical, 14)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                if index < bucket.nodes.count - 1 {
+                                    rowHairline
+                                }
+                            }
                         }
-                        .listRowBackground(Color.white.opacity(0.05))
+                        .dashboardPaneSurface()
                     }
-                } header: {
-                    Text(bucket.label)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .textCase(.uppercase)
-                        .tracking(0.8)
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 120)
         }
-        .listStyle(.insetGrouped)
-        .scrollContentBackground(.hidden)
+    }
+
+    /// Section eyebrow ("TODAY" / "PREVIOUS 7 DAYS" …). Adaptive ink (dark
+    /// `#FFFFFF@0.5` byte-identical; light dark-ink so it reads on parchment).
+    private func sectionHeader(_ label: String) -> some View {
+        Text(label)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            .textCase(.uppercase)
+            .tracking(0.8)
+    }
+
+    /// Between-row hairline in the light panes — the same appearance-aware ink
+    /// divider the dashboard Collections pane uses.
+    private var rowHairline: some View {
+        Rectangle()
+            .fill(AppearancePalette.ink.opacity(0.08))
+            .frame(height: 0.5)
     }
 
     private var emptyState: some View {
@@ -138,10 +188,10 @@ struct RecentsView: View {
             Spacer()
             Text("Nothing yet")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             Text("Capture something to get started.")
                 .font(.system(size: 14))
-                .foregroundStyle(.white.opacity(0.3))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             Spacer()
         }
         .frame(maxWidth: .infinity)

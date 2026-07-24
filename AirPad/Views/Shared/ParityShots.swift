@@ -521,4 +521,76 @@ struct ParityShotsView: View {
              summary: "", tags: [["grammar"], ["stationery"], ["design"], ["engineering"]][i])
     }
 }
+
+// MARK: - Real-screen presenter for the light-mode convergence pass
+
+/// Renders an ACTUAL production surface (not a reconstruction) over a seeded REAL
+/// store, reached via `-Screen <name>`. Unlike the parity fixtures, this is the
+/// real view with real data — the same SettingsView / ChatsListView / TagEditor
+/// the app shows — so LIGHT/DARK screenshots are recognisable real screens. The
+/// launch arg is set per shot; each real view is rendered directly (its own
+/// NavigationStack + `.presentationBackground` are honoured where present).
+struct DebugScreenHost: View {
+    let screen: String
+
+    @State private var store = CorpusStore()
+    @State private var router = AppRouter()
+    @State private var quarantineStore = QuarantineStore()
+    @State private var selectionService = SelectionService()
+
+    private static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
+
+    var body: some View {
+        content
+            .environment(store)
+            .environment(router)
+            .environment(quarantineStore)
+            .environment(selectionService)
+            .onAppear(perform: seed)
+    }
+
+    /// Seed a small REAL corpus: tags (a DARK blue + a LIGHT yellow so the
+    /// selected-tag-pill luminance ink is visible both ways), collections, nodes.
+    private func seed() {
+        guard store.tags.isEmpty else { return }
+        store.tags = [
+            Tag(id: UUID(), name: "grammar",    colorHex: "#1B59C2", createdAt: Self.epoch, useCount: 5),
+            Tag(id: UUID(), name: "stationery", colorHex: "#F5C542", createdAt: Self.epoch, useCount: 3),
+            Tag(id: UUID(), name: "design",     colorHex: "#E8820A", createdAt: Self.epoch, useCount: 2),
+        ]
+        store.collections = ["Reading", "Field Notes", "Grammar"].enumerated().map { i, n in
+            NodeCollection(id: "seed-col-\(i)", name: n)
+        }
+        store.nodes = ["On the Gerund", "Tomoe River paper", "Cucumber-water light"].enumerated().map { i, t in
+            Node(id: "seed-\(i)", createdAt: Self.epoch, updatedAt: Self.epoch,
+                 title: t, summary: "Field notes converging on one question.",
+                 tags: [store.tags[i].name])
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch screen {
+        case "settings":         SettingsView()
+        case "substrate":        SubstrateInspectView()
+        case "import":           ImportIdeasSheet()
+        case "reviewqueue":      ReviewQueueSheet()
+        case "quarantine":       QuarantineReviewSheet()
+        case "collectioncreate": CollectionCreationSheet { _ in }
+        case "history":          HistoryPanel(onSelect: { _ in })
+        case "editmap":          EditMapSheet()
+        case "canvasplaceholder": CanvasPlaceholderView()
+        case "tageditor":        TagEditorSheet(existing: store.tags.first)
+        case "tagcreate":        TagEditorSheet(existing: nil)   // create-mode of the same editor
+        case "rename":           RenameCollectionSheet(collectionID: "seed-col-0", currentName: "Reading")
+        case "tagselect":        TagSelectionSheet(selectedTagNames: .constant(["grammar"]))
+        case "textcapture":      TextCaptureSheet()
+        case "voicecapture":     VoiceCaptureSheet()
+        case "camera":           CameraCaptureView()
+        case "chatslist":        ChatsListView()
+        case "backlink":         BacklinkPickerSheet(sourceNodeID: "seed-0", sourceEntryID: nil)
+        default:                 Text("unknown -Screen: \(screen)")
+        }
+    }
+}
 #endif

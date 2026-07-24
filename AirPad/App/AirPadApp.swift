@@ -33,6 +33,10 @@ struct AirPadApp: App {
             } else if let shot = UserDefaults.standard.string(forKey: "PARITYShot"), !shot.isEmpty {
                 // Quick-parity-sweep screenshot fixture (#13/#15/#17/#18).
                 ParityShotsView(shot: shot)
+            } else if let screen = UserDefaults.standard.string(forKey: "Screen"), !screen.isEmpty {
+                // Light-mode convergence — REAL production surface over a seeded
+                // real store (not a fixture), reached via `-Screen <name>`.
+                DebugScreenHost(screen: screen)
             } else {
                 mainContent
             }

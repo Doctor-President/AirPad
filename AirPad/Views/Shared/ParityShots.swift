@@ -566,6 +566,11 @@ struct DebugScreenHost: View {
                  title: t, summary: "Field notes converging on one question.",
                  tags: [store.tags[i].name])
         }
+        // `-Screen librarian` renders the REAL ContentView; put it on the canvas
+        // so the Librarian FloatingPanel is mounted over the map (the panel's real
+        // home). `-LibrarianDetent tip|half|full` (handled in ContentView) drives
+        // the detent for peek/half/full shots.
+        if screen == "librarian" { router.entryMode = .canvas }
     }
 
     @ViewBuilder
@@ -589,6 +594,7 @@ struct DebugScreenHost: View {
         case "camera":           CameraCaptureView()
         case "chatslist":        ChatsListView()
         case "backlink":         BacklinkPickerSheet(sourceNodeID: "seed-0", sourceEntryID: nil)
+        case "librarian":        ContentView()   // real app → canvas + Librarian panel
         default:                 Text("unknown -Screen: \(screen)")
         }
     }

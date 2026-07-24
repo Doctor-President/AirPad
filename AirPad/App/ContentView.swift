@@ -254,6 +254,16 @@ struct ContentView: View {
     /// (selection retract, detail rescue) stay separate but gate on the same
     /// predicate so they can't override a suppression.
     private func applyLibrarianVisibility(animated: Bool) {
+        // BUG 11 dead-zone fix. The position duck can be raced by a concurrent
+        // NavigationStack push (warm Map→"+" capture), leaving the panel's UIKit
+        // surfaceView physically at peek. `LibrarianSurface`'s opacity gate hides
+        // it visually, but the surfaceView (and its pan recognizer) still SWALLOW
+        // touches in the bottom band — the QuikCapture / capture toolbar under it
+        // needs ~a dozen taps to register. A SwiftUI `.allowsHitTesting(false)`
+        // can't reach that UIKit view, so make the whole panel non-interactive at
+        // the controller level when suppressed: touches then fall through to the
+        // surface below. Instant (not animated), so it can't be raced.
+        panelState.controller?.view.isUserInteractionEnabled = !librarianSuppressed
         if librarianSuppressed {
             panelState.duck(animated: animated)
         } else {

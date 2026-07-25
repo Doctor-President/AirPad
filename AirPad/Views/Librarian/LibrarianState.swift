@@ -419,8 +419,11 @@ final class LibrarianState {
             // target — behaves exactly as before). A non-tool remote model simply
             // never calls a tool and answers normally, so this degrades silently.
             if case .ollama = ModelRouter.active {
+                // Tool loop steers with the tool-aware prompt (real date + "trust the
+                // live results, don't hedge") — NOT the plain private prompt, which
+                // told the model to answer "from your own knowledge" (the bug).
                 await chat.sendWithTools(displayText: query,
-                                         systemPrompt: privateSystemPrompt,
+                                         systemPrompt: toolChatSystemPrompt,
                                          executor: WebSearchToolExecutor())
             } else {
                 await chat.send(displayText: query, modelText: query,
@@ -735,6 +738,40 @@ final class LibrarianState {
         let base = "You are a helpful, direct, and concise assistant. Answer the user's question clearly and accurately from your own knowledge. Be specific and genuinely useful; don't pad the answer."
         return personalVoicePrefix + base
     }
+
+    /// ★ Tool-loop system prompt (private + REMOTE). Distinct from `privateSystemPrompt`
+    /// because a web search has ALREADY run — the model must synthesize from the LIVE
+    /// tool results in the conversation, NOT from its training data. This directly
+    /// fixes the "tools fired but the answer ignored them + dated itself to 2024" bug:
+    /// it injects the REAL current date (the model otherwise guesses its training-cutoff
+    /// year) and explicitly counters the trained "as an AI I don't have real-time access"
+    /// reflex. Read fresh at send time so the date is always today's.
+    private var toolChatSystemPrompt: String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US")
+        df.dateFormat = "EEEE, MMMM d, yyyy"
+        let today = df.string(from: Date())
+        let base = """
+        You are a helpful, direct, concise assistant with LIVE web tools (web_search, fetch_url). \
+        Today's real date is \(today). When a question needs current, local, or factual information, \
+        call the tools.
+
+        CRITICAL — how to use tool results: any tool results already present in this conversation were \
+        fetched JUST NOW. They are live, current, and authoritative. Answer FROM those results, not from \
+        your training data. Do NOT say you lack real-time access. Do NOT claim a knowledge cutoff. Do NOT \
+        guess or invent the date — today is \(today), and the current information is already in front of \
+        you. Synthesize a specific answer from the results and reference the relevant sources by title and \
+        URL. If the results genuinely don't cover the question, say what you found and what is missing — \
+        but never refuse on the grounds that you cannot access the web, because you just did.
+        """
+        return personalVoicePrefix + base
+    }
+
+    #if DEBUG
+    /// Headless-verification accessor — lets `-Screen` dump the resolved tool prompt
+    /// (with today's real date injected) so STEP 0 can SEE the corrected context.
+    var debugToolSystemPrompt: String { toolChatSystemPrompt }
+    #endif
 
     /// ★ Corpus-grounding toggle (default FALSE = private chat). Stored so the
     /// surface pill re-renders on flip (observation-tracked), and persisted via

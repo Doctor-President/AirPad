@@ -269,6 +269,17 @@ struct LibrarianSurface: View {
                     )
                 }
             }
+            // `-DeadLinkTest YES` — inject an assistant turn with MODEL-AUTHORED URLs
+            // (a markdown link + a bare url + a [1] ref) so `-Screen` can confirm the
+            // fabricated URLs render as PLAIN TEXT (de-linked), while the activity-row
+            // result links stay real + tappable.
+            if UserDefaults.standard.bool(forKey: "DeadLinkTest") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                router.chat.debugAppendAssistant(
+                    "Two good SpongeBob video essays: [Full Fat Videos on YouTube](https://www.youtube.com/playlist?list=PLfabricated9x8y7z) and one at https://example.com/spongebob-essay-fake — see [1] for the source I used."
+                )
+            }
             #endif
         }
         .task {

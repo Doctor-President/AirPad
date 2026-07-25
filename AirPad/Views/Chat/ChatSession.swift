@@ -331,6 +331,12 @@ final class ChatSession {
     }
 
     #if DEBUG
+    /// Headless verification hook — inject a settled assistant turn (used to prove
+    /// model-authored inline URLs render de-linked / plain).
+    func debugAppendAssistant(_ text: String) {
+        messages.append(Message(role: .assistant, text: text))
+    }
+
     /// Headless verification hook — inject a completed activity row (from a REAL
     /// executor run) so `-Screen` can screenshot the scrape + the collapsible row
     /// without a live LM Studio loop.

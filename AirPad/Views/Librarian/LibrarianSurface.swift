@@ -250,13 +250,21 @@ struct LibrarianSurface: View {
             if UserDefaults.standard.bool(forKey: "ToolExecutorTest") {
                 isViewingActiveChat = true
                 panelModel.expandToFull(animated: false)
+                let q = UserDefaults.standard.string(forKey: "ToolTestQuery") ?? "the yogic tradition"
                 Task {
                     let result = await WebSearchToolExecutor()
-                        .execute(name: AgentTools.webSearch, arguments: ["query": "the yogic tradition"])
+                        .execute(name: AgentTools.webSearch, arguments: ["query": q])
+                    // Dump the EXACT tool-role content that gets injected, so STEP 0 can
+                    // SEE the model received real readable text (read via get_app_container).
+                    let dump = FileManager.default.temporaryDirectory.appendingPathComponent("tooldump.txt")
+                    try? result.textForModel.write(to: dump, atomically: true, encoding: .utf8)
+                    // Also dump the resolved tool system prompt (with today's real date).
+                    let pdump = FileManager.default.temporaryDirectory.appendingPathComponent("toolprompt.txt")
+                    try? librarian.debugToolSystemPrompt.write(to: pdump, atomically: true, encoding: .utf8)
                     router.chat.debugAppendActivity(
                         icon: "magnifyingglass",
                         label: result.links.isEmpty ? "Searched the web — no results" : "Searched the web",
-                        detail: "the yogic tradition",
+                        detail: q,
                         links: result.links
                     )
                 }

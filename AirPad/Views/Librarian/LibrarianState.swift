@@ -760,9 +760,13 @@ final class LibrarianState {
         fetched JUST NOW. They are live, current, and authoritative. Answer FROM those results, not from \
         your training data. Do NOT say you lack real-time access. Do NOT claim a knowledge cutoff. Do NOT \
         guess or invent the date — today is \(today), and the current information is already in front of \
-        you. Synthesize a specific answer from the results and reference the relevant sources by title and \
-        URL. If the results genuinely don't cover the question, say what you found and what is missing — \
+        you. If the results genuinely don't cover the question, say what you found and what is missing — \
         but never refuse on the grounds that you cannot access the web, because you just did.
+
+        CITING SOURCES: the search results are numbered ([1], [2], …). When you use a result, cite it \
+        inline with its bracket number like [1] or [2] matching that numbered result. Do NOT paste raw \
+        URLs into your prose — the app renders the real links from your [n] citations, and any URL you \
+        type yourself will be shown as plain, non-clickable text.
         """
         return personalVoicePrefix + base
     }

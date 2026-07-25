@@ -37,6 +37,9 @@ struct ChatTranscript: View {
     @State private var speech = SpeechSynthesisService.shared
     @State private var input: String = ""
     @FocusState private var inputFocused: Bool
+    /// Ambient URL opener — web-citation chips (real scraped URLs) open through this.
+    /// (Corpus chips navigate to a node via `onOpenNode` instead.)
+    @Environment(\.openURL) private var openURL
     /// Live "is the user reading at/near the bottom?" — gates the stream-follow.
     /// Assigned ONLY on change (below) so scroll geometry callbacks don't churn
     /// this body (and re-parse settled bubbles) on every frame.
@@ -239,9 +242,16 @@ struct ChatTranscript: View {
             // links fall through to the system handler.
             .environment(\.openURL, OpenURLAction { url in
                 if let n = CitationReference.index(from: url),
-                   let nodeID = message.citations?.first(where: { $0.index == n })?.nodeID {
-                    onOpenNode?(nodeID)
-                    return .handled
+                   let cite = message.citations?.first(where: { $0.index == n }) {
+                    // Web citation → open the real scraped URL; corpus citation →
+                    // navigate to the node (as today).
+                    if let nodeID = cite.nodeID {
+                        onOpenNode?(nodeID)
+                        return .handled
+                    }
+                    if let urlStr = cite.url, let real = URL(string: urlStr) {
+                        return .systemAction(real)
+                    }
                 }
                 return .systemAction
             })
@@ -265,9 +275,17 @@ struct ChatTranscript: View {
             // passages from one node read as one source, not two.
             let sources: [ChatSession.Message.Citation] = {
                 var seen = Set<String>()
-                return citations.filter { seen.insert($0.nodeID).inserted }
+                // Dedup by source identity — nodeID (corpus) or url (web); fall back to
+                // the index so a malformed citation still shows once.
+                return citations.filter { seen.insert($0.nodeID ?? $0.url ?? "\($0.index)").inserted }
             }()
-            let isExpanded = expandedCitations.contains(message.id)
+            #if DEBUG
+            // `-CitationExpand YES` — start expanded so `-Screen` can shoot the chips.
+            let forceExpand = UserDefaults.standard.bool(forKey: "CitationExpand")
+            #else
+            let forceExpand = false
+            #endif
+            let isExpanded = forceExpand || expandedCitations.contains(message.id)
             VStack(alignment: .leading, spacing: 8) {
                 Button {
                     if isExpanded { expandedCitations.remove(message.id) }
@@ -296,7 +314,13 @@ struct ChatTranscript: View {
                             // route through onOpenNode. No-op when the host
                             // didn't supply one (ChatView).
                             Button {
-                                onOpenNode?(c.nodeID)
+                                // Web chip → open the real scraped URL; corpus chip →
+                                // navigate to the node.
+                                if let urlStr = c.url, let real = URL(string: urlStr) {
+                                    openURL(real)
+                                } else if let nodeID = c.nodeID {
+                                    onOpenNode?(nodeID)
+                                }
                             } label: {
                                 HStack(alignment: .top, spacing: 8) {
                                     // Footer marker: solid ENCIRCLED number (the

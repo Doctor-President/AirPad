@@ -18,14 +18,29 @@ final class ChatSession {
         /// transcripts never carry `.activity`.
         enum Role: String, Codable { case user, assistant, activity }
 
-        /// A grounded-answer source: one cited passage, `index` = its `[n]` in the
-        /// prompt's numbered passages. Piece 1 restores these as collapsible chips.
+        /// A cited source, `index` = its `[n]` in the numbered context. ONE type, TWO
+        /// source kinds: corpus (a `nodeID` → tap navigates to the node) OR web (a
+        /// `url` → tap opens the page). Exactly one is set per citation. Both optional
+        /// so the synthesized Codable is back-compatible: a legacy corpus transcript
+        /// decodes `nodeID` (present) + `url` (decodeIfPresent → nil).
         struct Citation: Codable, Hashable, Identifiable {
             let index: Int
-            let nodeID: String
+            let nodeID: String?
+            let url: String?
             let title: String
             let snippet: String
             var id: Int { index }
+
+            /// Corpus source — navigates to a node.
+            init(index: Int, nodeID: String, title: String, snippet: String) {
+                self.index = index; self.nodeID = nodeID; self.url = nil
+                self.title = title; self.snippet = snippet
+            }
+            /// Web source — opens a real (scraped) URL.
+            init(index: Int, url: String, title: String, snippet: String) {
+                self.index = index; self.nodeID = nil; self.url = url
+                self.title = title; self.snippet = snippet
+            }
         }
 
         let id: UUID
@@ -232,6 +247,9 @@ final class ChatSession {
             working.append(["role": "user", "content": displayText])
 
             var finalAnswer = ""
+            // Accumulates web_search result links across the turn, GLOBALLY numbered,
+            // so the answer's cited [n] maps unambiguously to its {title, url}.
+            var citationLinks: [ToolLink] = []
             for step in 0..<maxToolSteps {
                 streamingText = ""
                 let turn = try await ModelRouter.streamAgentTurn(
@@ -265,10 +283,23 @@ final class ChatSession {
                     let result = await executor.execute(name: call.name, arguments: call.arguments)
                     appendActivity(for: call, result: result)
                     producedActivity = true
+                    // Web results feed the answer's citations. Renumber GLOBALLY across
+                    // the turn so the model's [n] is unambiguous even across multiple
+                    // searches, and accumulate so cited [n] → {title, url}.
+                    let toolContent: String
+                    if call.name == AgentTools.webSearch, !result.links.isEmpty {
+                        let start = citationLinks.count
+                        toolContent = result.links.enumerated().map { i, l in
+                            "[\(start + i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
+                        }.joined(separator: "\n\n")
+                        citationLinks.append(contentsOf: result.links)
+                    } else {
+                        toolContent = result.textForModel
+                    }
                     working.append([
                         "role": "tool",
                         "tool_call_id": call.id,
-                        "content": result.textForModel
+                        "content": toolContent
                     ])
                 }
 
@@ -280,7 +311,18 @@ final class ChatSession {
 
             streamingText = ""
             if !finalAnswer.isEmpty {
-                messages.append(Message(role: .assistant, text: finalAnswer))
+                // ★ Gate chips to CITED, not searched (the corpus rule via the SAME
+                // `citedIndices` parser): attach a web citation ONLY for the [n] the
+                // answer actually referenced, each mapped to its real scraped URL. No
+                // [n] → no footer, exactly like corpus.
+                let cited = CitationReference.citedIndices(in: finalAnswer)
+                let webCitations: [Message.Citation] = cited.sorted().compactMap { n in
+                    guard n >= 1, n <= citationLinks.count else { return nil }
+                    let link = citationLinks[n - 1]
+                    return Message.Citation(index: n, url: link.url, title: link.title, snippet: link.snippet ?? "")
+                }
+                messages.append(Message(role: .assistant, text: finalAnswer,
+                                        citations: webCitations.isEmpty ? nil : webCitations))
             }
         } catch {
             // Degrade SILENTLY if the FIRST turn failed (e.g. the endpoint/model
@@ -335,6 +377,19 @@ final class ChatSession {
     /// model-authored inline URLs render de-linked / plain).
     func debugAppendAssistant(_ text: String) {
         messages.append(Message(role: .assistant, text: text))
+    }
+
+    /// Headless verification hook — inject a web answer + its CITED chips, using the
+    /// SAME `citedIndices` gating as the live loop, so `-Screen` can prove chips gate
+    /// to cited (not searched).
+    func debugAppendWebAnswer(_ text: String, links: [ToolLink]) {
+        let cited = CitationReference.citedIndices(in: text)
+        let cites: [Message.Citation] = cited.sorted().compactMap { n in
+            guard n >= 1, n <= links.count else { return nil }
+            let l = links[n - 1]
+            return Message.Citation(index: n, url: l.url, title: l.title, snippet: l.snippet ?? "")
+        }
+        messages.append(Message(role: .assistant, text: text, citations: cites.isEmpty ? nil : cites))
     }
 
     /// Headless verification hook — inject a completed activity row (from a REAL

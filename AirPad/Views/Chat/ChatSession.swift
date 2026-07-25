@@ -250,6 +250,9 @@ final class ChatSession {
             // Accumulates web_search result links across the turn, GLOBALLY numbered,
             // so the answer's cited [n] maps unambiguously to its {title, url}.
             var citationLinks: [ToolLink] = []
+            // Whether any tool reported a provider throttle this turn — used only to
+            // word the give-up message honestly (the cap/backoff live in the executor).
+            var sawRateLimit = false
             for step in 0..<maxToolSteps {
                 streamingText = ""
                 let turn = try await ModelRouter.streamAgentTurn(
@@ -283,6 +286,7 @@ final class ChatSession {
                     let result = await executor.execute(name: call.name, arguments: call.arguments)
                     appendActivity(for: call, result: result)
                     producedActivity = true
+                    if result.rateLimited { sawRateLimit = true }
                     // Web results feed the answer's citations. Renumber GLOBALLY across
                     // the turn so the model's [n] is unambiguous even across multiple
                     // searches, and accumulate so cited [n] → {title, url}.
@@ -304,8 +308,11 @@ final class ChatSession {
                 }
 
                 if step == maxToolSteps - 1 {
-                    // Iteration cap hit — graceful stop, no infinite loop.
-                    finalAnswer = "I reached the tool-step limit (\(maxToolSteps)) for this question. Here's what I have so far — ask me to continue if you'd like."
+                    // Loop backstop (the model never settled on an answer). Word it by
+                    // CAUSE: a throttle reads as honest degradation, not surrender.
+                    finalAnswer = sawRateLimit
+                        ? "Web search is temporarily rate-limited right now, so I couldn't pull fresh sources for this. Please try again in a little while — or ask me to answer from what I already know."
+                        : "I reached the tool-step limit (\(maxToolSteps)) for this question. Here's what I have so far — ask me to continue if you'd like."
                 }
             }
 

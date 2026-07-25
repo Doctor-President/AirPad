@@ -302,6 +302,27 @@ struct LibrarianSurface: View {
                     try? out.write(to: f, atomically: true, encoding: .utf8)
                 }
             }
+            // `-ExecutorFixTest YES` — verify fix #1: (A) the per-turn CAP (one executor,
+            // 4 searches → 2 real then "budget exhausted", no more scraping); (B) THROTTLE
+            // detection (push DDG into 202 with rapid probes, then execute → rateLimited
+            // signal, NOT an empty "no results"). Dumped to tmp/execfix.txt.
+            if UserDefaults.standard.bool(forKey: "ExecutorFixTest") {
+                Task {
+                    var out = "=== (A) CAP TEST — one executor, 4 web_search calls ===\n"
+                    let exec = WebSearchToolExecutor()
+                    for (i, q) in ["yoga chicago", "coffee chicago", "pizza chicago", "museums chicago"].enumerated() {
+                        let r = await exec.execute(name: AgentTools.webSearch, arguments: ["query": q])
+                        out += "[\(i + 1)] q=\(q)  rateLimited=\(r.rateLimited)  links=\(r.links.count)  :: \(r.textForModel.prefix(90))\n"
+                    }
+                    out += "\n=== (B) THROTTLE TEST — push DDG to 202, then a fresh executor ===\n"
+                    for i in 1...6 { _ = await WebSearchToolExecutor.diagnose(query: "throttle probe \(i)") }
+                    let exec2 = WebSearchToolExecutor()
+                    let r = await exec2.execute(name: AgentTools.webSearch, arguments: ["query": "chicago news today"])
+                    out += "execute after throttle:  rateLimited=\(r.rateLimited)  links=\(r.links.count)  :: \(r.textForModel.prefix(140))\n"
+                    let f = FileManager.default.temporaryDirectory.appendingPathComponent("execfix.txt")
+                    try? out.write(to: f, atomically: true, encoding: .utf8)
+                }
+            }
             // `-WebChipTest YES` — real search (8 results) + a synthetic answer citing
             // [1] and [4] → proves web chips GATE TO CITED (exactly 2 chips, not 8),
             // with the correct titles/URLs, alongside the full "Searched the web" list.

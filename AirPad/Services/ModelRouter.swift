@@ -44,12 +44,12 @@ enum ModelRouter {
     }
 
     /// Friendly, quiet name for the on-device Foundation Model — no network, safe
-    /// to return instantly. (Proposed wording; T confirms.)
-    static let foundationModelName = "On-device"
+    /// to return instantly. (Wording confirmed by T.)
+    static let foundationModelName = "Apple Intelligence"
 
     /// Resting label for a configured-but-not-yet-known remote endpoint (not
     /// probed, or unreachable). Clear and calm — never a blank or an error.
-    static let remoteRestingName = "Local model"
+    static let remoteRestingName = "No model"
 
     /// Human-readable name of the model that will answer the NEXT turn. Reads the
     /// live provider (Keychain), so an endpoint swapped in Settings is reflected.

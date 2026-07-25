@@ -131,6 +131,11 @@ struct ChatTranscript: View {
                         }
                     case .assistant:
                         break
+                    case .activity:
+                        // Reveal each tool phase as it lands so the search is visible.
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
                     }
                 } else if let last = session.messages.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
@@ -240,6 +245,12 @@ struct ChatTranscript: View {
                 }
                 return .systemAction
             })
+        case .activity:
+            // Tool-loop phase (web search / fetch) — a collapsible activity strip,
+            // collapsed by default, expandable to the query + tappable links.
+            if let activity = message.activity {
+                ActivityRow(activity: activity)
+            }
         }
     }
 
@@ -693,5 +704,104 @@ private struct ThinkingShimmerView: View {
                     phase = 1
                 }
             }
+    }
+}
+
+/// Collapsible tool-loop activity strip (web search / fetch). Collapsed by default;
+/// expands to the query/url + TAPPABLE result links. Reads by ICON + LABEL + chevron
+/// shape (colourblind-safe), not colour. Reuses the panel `AppearancePalette.ink`
+/// chrome; renders in both appearance modes.
+private struct ActivityRow: View {
+    let activity: ChatSession.ToolActivity
+    @State private var expanded = false
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        content
+        #if DEBUG
+            // `-ToolExpandActivity YES` — start expanded so `-Screen` can shoot the
+            // links row without a tap. No-op without the arg.
+            .onAppear {
+                if UserDefaults.standard.bool(forKey: "ToolExpandActivity") { expanded = true }
+            }
+        #endif
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: activity.icon)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(activity.label)
+                        .font(.system(size: 13, weight: .medium))
+                    if !activity.links.isEmpty {
+                        Text("· \(activity.links.count)")
+                            .font(.system(size: 13))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let detail = activity.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.system(size: 12))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    ForEach(activity.links) { link in
+                        Button {
+                            if let url = URL(string: link.url) { openURL(url) }
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(link.title)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(AppearancePalette.ink)
+                                    .lineLimit(2)
+                                Text(link.url)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color(hexString: "1B59C2"))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                if let s = link.snippet, !s.isEmpty {
+                                    Text(s)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                                        .lineLimit(2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 10)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppearancePalette.ink.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(AppearancePalette.ink.opacity(0.08), lineWidth: 1)
+        )
+        .padding(.trailing, 40)
     }
 }

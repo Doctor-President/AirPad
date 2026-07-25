@@ -413,8 +413,19 @@ final class LibrarianState {
         // stored+persisted property read live here, so a toggle flip lands on the
         // very next send.
         guard corpusAware else {
-            await chat.send(displayText: query, modelText: query,
-                            systemPrompt: privateSystemPrompt, citations: nil)
+            // ★ Private mode. REMOTE endpoint → agentic web-search loop (the tool
+            // schema is attached and the model may call web_search / fetch_url). FM
+            // → plain chat with NO tools (different tool API, not the near-term
+            // target — behaves exactly as before). A non-tool remote model simply
+            // never calls a tool and answers normally, so this degrades silently.
+            if case .ollama = ModelRouter.active {
+                await chat.sendWithTools(displayText: query,
+                                         systemPrompt: privateSystemPrompt,
+                                         executor: WebSearchToolExecutor())
+            } else {
+                await chat.send(displayText: query, modelText: query,
+                                systemPrompt: privateSystemPrompt, citations: nil)
+            }
             return
         }
 

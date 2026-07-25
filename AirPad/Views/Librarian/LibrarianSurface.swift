@@ -280,6 +280,23 @@ struct LibrarianSurface: View {
                     "Two good SpongeBob video essays: [Full Fat Videos on YouTube](https://www.youtube.com/playlist?list=PLfabricated9x8y7z) and one at https://example.com/spongebob-essay-fake — see [1] for the source I used."
                 )
             }
+            // `-WebChipTest YES` — real search (8 results) + a synthetic answer citing
+            // [1] and [4] → proves web chips GATE TO CITED (exactly 2 chips, not 8),
+            // with the correct titles/URLs, alongside the full "Searched the web" list.
+            if UserDefaults.standard.bool(forKey: "WebChipTest") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                Task {
+                    let result = await WebSearchToolExecutor()
+                        .execute(name: AgentTools.webSearch, arguments: ["query": "spongebob video essays"])
+                    router.chat.debugAppendActivity(
+                        icon: "magnifyingglass", label: "Searched the web",
+                        detail: "spongebob video essays", links: result.links)
+                    router.chat.debugAppendWebAnswer(
+                        "Two strong SpongeBob video essays: a long-form deep dive [1] and a sharper analytical piece [4]. Both dig into the show's writing and humor.",
+                        links: result.links)
+                }
+            }
             #endif
         }
         .task {

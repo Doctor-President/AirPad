@@ -699,7 +699,7 @@ final class WebSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 
     // MARK: fetch_url readability
 
-    private static func fetchReadable(_ url: URL, budget: Int = 6000) async -> String {
+    static func fetchReadable(_ url: URL, budget: Int = 6000) async -> String {
         var req = URLRequest(url: url)
         req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
         req.timeoutInterval = 20
@@ -735,17 +735,148 @@ final class WebSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         return re.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: ns.length), withTemplate: " ")
     }
 
-    private static func stripTags(_ html: String) -> String {
+    static func stripTags(_ html: String) -> String {
         guard let re = try? NSRegularExpression(pattern: "<[^>]+>", options: [.dotMatchesLineSeparators]) else { return html }
         let ns = html as NSString
         return re.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: ns.length), withTemplate: "")
     }
 
-    private static func decodeEntities(_ s: String) -> String {
+    static func decodeEntities(_ s: String) -> String {
         var out = s
         let map = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"",
                    "&#x27;": "'", "&#39;": "'", "&apos;": "'", "&nbsp;": " ", "&#x2F;": "/"]
         for (k, v) in map { out = out.replacingOccurrences(of: k, with: v) }
         return out
+    }
+}
+
+/// ★ RELIABLE executor — Brave Search API (real independent index, JSON, no scraping /
+/// no anti-bot throttle). Same seam, same per-turn cap/throttle machinery as the DDG
+/// scraper (Brave just won't trip it under normal use — its own 429 maps to the SAME
+/// `rateLimited` signal). `fetch_url` is provider-agnostic and reuses the scraper's
+/// readability fetch verbatim.
+///
+/// ⚠️ DEV/PERSONAL only: the key lives in the user's Keychain (entered in Settings). A
+/// shipped build carrying/entering a per-install key is the "key in the app" problem —
+/// the launch version moves it behind a relay (T's pending interrogation).
+final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
+
+    private let apiKey: String
+    init(apiKey: String) { self.apiKey = apiKey }
+
+    // Same per-turn budget/throttle contract as WebSearchToolExecutor (kept intact so a
+    // backend swap changes nothing for the loop).
+    private let maxSearchesPerTurn = 2
+    private var searchCount = 0
+    private var throttled = false
+
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        switch name {
+        case AgentTools.webSearch:
+            let query = (arguments["query"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return ToolResult(textForModel: "No query provided.", links: []) }
+            if throttled {
+                return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider. Do NOT search again this turn — answer now from the results you already have; if you have none, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
+            }
+            if searchCount >= maxSearchesPerTurn {
+                return ToolResult(textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.", links: [])
+            }
+            searchCount += 1
+            let (links, rateLimited) = await braveSearch(query)
+            if rateLimited {
+                throttled = true
+                return ToolResult(textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.", links: [], rateLimited: true)
+            }
+            guard !links.isEmpty else {
+                return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
+            }
+            let text = links.enumerated().map { i, l in
+                "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
+            }.joined(separator: "\n\n")
+            return ToolResult(textForModel: text, links: links)
+
+        case AgentTools.fetchURL:
+            let raw = (arguments["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else {
+                return ToolResult(textForModel: "Invalid URL: \(raw)", links: [])
+            }
+            // Provider-agnostic — reuse the scraper's readability fetch verbatim.
+            let text = await WebSearchToolExecutor.fetchReadable(url)
+            return ToolResult(textForModel: text, links: [])
+
+        default:
+            return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
+        }
+    }
+
+    /// GET the Brave web-search API → `[{title,url,snippet}]`. HTTP 429 (Brave's own
+    /// rate-limit) → the shared `rateLimited` signal. Descriptions can carry `<strong>`
+    /// highlight tags → stripped via the shared HTML helpers.
+    private func braveSearch(_ query: String) async -> (links: [ToolLink], rateLimited: Bool) {
+        var comps = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "8")]
+        guard let url = comps?.url else { return ([], false) }
+        var req = URLRequest(url: url)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("gzip", forHTTPHeaderField: "Accept-Encoding")
+        req.setValue(apiKey, forHTTPHeaderField: "X-Subscription-Token")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else { return ([], false) }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        if status == 429 { return ([], true) }  // Brave rate-limit → distinct signal
+        return (Self.parseBrave(data), false)
+    }
+
+    #if DEBUG
+    /// STEP-verification — raw Brave request capturing status + body head + parse count
+    /// (proves wiring with a fake key even without a live subscription; real results with T's key).
+    static func diagnose(query: String, apiKey: String) async -> String {
+        var comps = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "8")]
+        guard let url = comps?.url else { return "BAD URL" }
+        var req = URLRequest(url: url)
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(apiKey, forHTTPHeaderField: "X-Subscription-Token")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            let parsed = parseBrave(data).count
+            let head = String(String(data: data, encoding: .utf8)?.prefix(200) ?? "").replacingOccurrences(of: "\n", with: " ")
+            return "BRAVE q=\(query)  STATUS: \(status)  PARSED: \(parsed)  HEAD: \(head)"
+        } catch { return "BRAVE ERROR: \(error.localizedDescription)" }
+    }
+    #endif
+
+    /// Map Brave JSON (`web.results[].{title,url,description}`) → `ToolLink`. Static +
+    /// internal so it's unit-testable via the DEBUG hook without a live key.
+    static func parseBrave(_ data: Data) -> [ToolLink] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let web = json["web"] as? [String: Any],
+              let results = web["results"] as? [[String: Any]] else { return [] }
+        return results.prefix(8).compactMap { r -> ToolLink? in
+            guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
+            let cleanTitle = WebSearchToolExecutor.decodeEntities(WebSearchToolExecutor.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let snippet = (r["description"] as? String).map {
+                WebSearchToolExecutor.decodeEntities(WebSearchToolExecutor.stripTags($0)).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            guard !cleanTitle.isEmpty else { return nil }
+            return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet)
+        }
+    }
+}
+
+/// Selects the web-search backend BEHIND the seam: Brave when a key is configured
+/// (reliable), else the keyless DDG scraper (fallback — kept intact). The loop calls
+/// `make()` per turn and never knows which backend it got.
+enum WebSearchBackend {
+    static let keychainKey = "braveSearchAPIKey"
+
+    static func make() -> ToolExecutor {
+        #if DEBUG
+        if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty {
+            return BraveSearchToolExecutor(apiKey: k)
+        }
+        #endif
+        let key = (KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return key.isEmpty ? WebSearchToolExecutor() : BraveSearchToolExecutor(apiKey: key)
     }
 }

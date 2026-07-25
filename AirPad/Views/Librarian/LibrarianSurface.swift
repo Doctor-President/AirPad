@@ -243,6 +243,24 @@ struct LibrarianSurface: View {
             if UserDefaults.standard.bool(forKey: "PersistCorpusAware") {
                 librarian.corpusAware = true
             }
+            // `-ToolExecutorTest YES` — runs the REAL WebSearchToolExecutor (live DDG
+            // scrape from the sim's network) and injects the resulting activity row,
+            // so `-Screen` can verify the scrape + the collapsible tappable-links row
+            // WITHOUT a live LM Studio loop (the model↔tool wiring is device-only).
+            if UserDefaults.standard.bool(forKey: "ToolExecutorTest") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                Task {
+                    let result = await WebSearchToolExecutor()
+                        .execute(name: AgentTools.webSearch, arguments: ["query": "the yogic tradition"])
+                    router.chat.debugAppendActivity(
+                        icon: "magnifyingglass",
+                        label: result.links.isEmpty ? "Searched the web — no results" : "Searched the web",
+                        detail: "the yogic tradition",
+                        links: result.links
+                    )
+                }
+            }
             #endif
         }
         .task {

@@ -12,7 +12,11 @@ import Observation
 final class ChatSession {
 
     struct Message: Identifiable, Hashable, Codable {
-        enum Role: String, Codable { case user, assistant }
+        /// `.activity` is a tool-loop phase row (web search / fetch), NOT a chat turn —
+        /// rendered as a collapsible activity strip and skipped when building the
+        /// model's message array. A String raw enum stays decode-safe: legacy
+        /// transcripts never carry `.activity`.
+        enum Role: String, Codable { case user, assistant, activity }
 
         /// A grounded-answer source: one cited passage, `index` = its `[n]` in the
         /// prompt's numbered passages. Piece 1 restores these as collapsible chips.
@@ -32,13 +36,27 @@ final class ChatSession {
         /// uses decodeIfPresent, so legacy transcripts decode with `nil`
         /// (mirrors `Node.titleSource` / `isJournalEntry`).
         var citations: [Citation]?
+        /// Tool-loop activity payload for a `.activity` row (icon, label, the query/url,
+        /// and the tappable links returned). Nil for chat turns. Optional →
+        /// decodeIfPresent keeps legacy transcripts decoding with `nil`.
+        var activity: ToolActivity?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, activity: ToolActivity? = nil) {
             self.id = id
             self.role = role
             self.text = text
             self.citations = citations
+            self.activity = activity
         }
+    }
+
+    /// One tool phase in the private-mode web-search loop, rendered as a collapsible
+    /// activity row. Reads by icon + label (colourblind-safe); `links` render tappable.
+    struct ToolActivity: Codable, Hashable {
+        var icon: String          // SF Symbol
+        var label: String         // "Searched the web" / "Fetched a page"
+        var detail: String?       // the query or the url
+        var links: [ToolLink]     // tappable {title, url, snippet}
     }
 
     /// Identity of the current chat. Survives encode/decode so a
@@ -175,6 +193,152 @@ final class ChatSession {
         // path. Runs detached so it never blocks the next user turn.
         scheduleTitleGenerationIfNeeded()
     }
+
+    /// ★ Agentic web-search turn (PRIVATE MODE + REMOTE ENDPOINT only). Runs the
+    /// OpenAI tool-calling loop: send the user turn WITH the tool schema; if the
+    /// model answers normally it streams as today; if it emits tool_calls, run each
+    /// via the injected `ToolExecutor` (the seam), append a collapsible activity row,
+    /// feed results back as tool-role messages, and repeat — capped at `maxToolSteps`
+    /// against an infinite loop. The OpenAI messages working-set is kept SEPARATE from
+    /// the display transcript (which owns rendering + persistence): the transcript gets
+    /// the user bubble, one activity row per phase, and the final answer.
+    func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor) async {
+        guard !displayText.isEmpty, !isStreaming else { return }
+        guard case .ollama(let endpoint) = ModelRouter.active else {
+            // Caller guarantees remote; defensive fallback to plain chat.
+            await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
+            return
+        }
+
+        lastError = nil
+        messages.append(Message(role: .user, text: displayText))
+        pendingUser = nil
+        isStreaming = true
+        streamingText = ""
+
+        let maxToolSteps = 5
+        // Declared outside `do` so the `catch` can read it (Swift scoping).
+        var producedActivity = false
+
+        do {
+            let model = try await ModelRouter.firstModelID(endpoint: endpoint)
+
+            // OpenAI working-set (system + prior chat turns + this turn). Activity
+            // rows are display-only — skipped here.
+            var working: [[String: Any]] = [["role": "system", "content": systemPrompt]]
+            for m in messages.dropLast() where m.role == .user || m.role == .assistant {
+                working.append(["role": m.role == .user ? "user" : "assistant", "content": m.text])
+            }
+            working.append(["role": "user", "content": displayText])
+
+            var finalAnswer = ""
+            for step in 0..<maxToolSteps {
+                streamingText = ""
+                let turn = try await ModelRouter.streamAgentTurn(
+                    endpoint: endpoint,
+                    model: model,
+                    messages: working,
+                    tools: AgentTools.schema,
+                    onContentDelta: { [weak self] delta in
+                        Task { @MainActor in self?.streamingText += delta }
+                    }
+                )
+
+                if turn.toolCalls.isEmpty {
+                    finalAnswer = turn.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    break
+                }
+
+                // Record the assistant tool-call turn in the OpenAI working-set.
+                working.append([
+                    "role": "assistant",
+                    "content": turn.content,
+                    "tool_calls": turn.toolCalls.map { call in
+                        ["id": call.id, "type": "function",
+                         "function": ["name": call.name, "arguments": call.argumentsJSON]]
+                    }
+                ])
+                streamingText = ""
+
+                // Run each tool through the seam; show an activity row; feed results back.
+                for call in turn.toolCalls {
+                    let result = await executor.execute(name: call.name, arguments: call.arguments)
+                    appendActivity(for: call, result: result)
+                    producedActivity = true
+                    working.append([
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": result.textForModel
+                    ])
+                }
+
+                if step == maxToolSteps - 1 {
+                    // Iteration cap hit — graceful stop, no infinite loop.
+                    finalAnswer = "I reached the tool-step limit (\(maxToolSteps)) for this question. Here's what I have so far — ask me to continue if you'd like."
+                }
+            }
+
+            streamingText = ""
+            if !finalAnswer.isEmpty {
+                messages.append(Message(role: .assistant, text: finalAnswer))
+            }
+        } catch {
+            // Degrade SILENTLY if the FIRST turn failed (e.g. the endpoint/model
+            // doesn't advertise tool support and 400s on the `tools` param): drop the
+            // user bubble and re-run as a normal chat turn — no tools, no error. If a
+            // tool already ran (mid-loop failure), keep the activity rows and surface
+            // the error banner instead of silently discarding the work.
+            if !producedActivity, messages.last?.role == .user {
+                messages.removeLast()
+                streamingText = ""
+                isStreaming = false
+                await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
+                return
+            }
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+
+        streamingText = ""
+        isStreaming = false
+        flush()
+        scheduleTitleGenerationIfNeeded()
+    }
+
+    /// Append a collapsible activity row for one completed tool call.
+    private func appendActivity(for call: ToolCall, result: ToolResult) {
+        let icon: String
+        let label: String
+        let detail: String?
+        switch call.name {
+        case AgentTools.webSearch:
+            icon = "magnifyingglass"
+            label = result.links.isEmpty ? "Searched the web — no results" : "Searched the web"
+            detail = call.arguments["query"] as? String
+        case AgentTools.fetchURL:
+            icon = "doc.text"
+            label = "Fetched a page"
+            detail = call.arguments["url"] as? String
+        default:
+            icon = "wrench.and.screwdriver"
+            label = "Ran \(call.name)"
+            detail = nil
+        }
+        messages.append(Message(
+            role: .activity,
+            text: label,
+            activity: ToolActivity(icon: icon, label: label, detail: detail, links: result.links)
+        ))
+    }
+
+    #if DEBUG
+    /// Headless verification hook — inject a completed activity row (from a REAL
+    /// executor run) so `-Screen` can screenshot the scrape + the collapsible row
+    /// without a live LM Studio loop.
+    func debugAppendActivity(icon: String, label: String, detail: String?, links: [ToolLink]) {
+        messages.append(Message(role: .activity, text: label,
+                                activity: ToolActivity(icon: icon, label: label, detail: detail, links: links)))
+    }
+    #endif
 
     /// Dismiss the transient failure banner without retrying.
     func clearError() {

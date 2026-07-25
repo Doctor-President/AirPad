@@ -371,3 +371,292 @@ enum ModelRouter {
         }
     }
 }
+
+// MARK: - Agentic tool calling (web search / fetch)
+
+/// One structured link surfaced by a tool — the unit the collapsible activity row
+/// renders TAPPABLE (url + title). Codable so it can ride along in a persisted
+/// transcript message.
+struct ToolLink: Codable, Hashable, Sendable, Identifiable {
+    let title: String
+    let url: String
+    let snippet: String?
+    var id: String { url }
+}
+
+/// What a `ToolExecutor` returns for one call: the text handed BACK to the model
+/// (tool-role message content) plus any structured links for the activity UI.
+struct ToolResult: Sendable {
+    let textForModel: String
+    let links: [ToolLink]
+}
+
+/// One tool call the model requested (OpenAI shape). `argumentsJSON` is the raw
+/// JSON string; `arguments` decodes it lazily.
+struct ToolCall: Sendable {
+    let id: String
+    let name: String
+    let argumentsJSON: String
+    var arguments: [String: Any] {
+        guard let data = argumentsJSON.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        return obj
+    }
+}
+
+/// Result of one model turn in the agentic loop: streamed content (already handed
+/// to the caller via the delta callback) plus any tool calls the model requested.
+struct AgentTurn: Sendable {
+    let content: String
+    let toolCalls: [ToolCall]
+}
+
+/// ★ THE LOAD-BEARING SEAM. The agent loop is identical whether AIRPAD executes the
+/// tool or a relay / BYO-key backend does — only this one method differs. This build
+/// ships `WebSearchToolExecutor` (AirPad-executes via free DuckDuckGo HTML scraping,
+/// zero cost / no key — a DEV/TEST executor, NOT the declared launch backend). A
+/// thin-relay or keyed implementation drops in behind the SAME method later without
+/// touching the loop.
+protocol ToolExecutor: Sendable {
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult
+}
+
+/// The FIXED tool contract — identical names/shapes in the test executor AND the
+/// eventual launch backend, so swapping executors never changes the wire the model
+/// sees.
+enum AgentTools {
+    static let webSearch = "web_search"
+    static let fetchURL  = "fetch_url"
+
+    /// OpenAI `tools` schema, attached to every private-mode remote request.
+    static let schema: [[String: Any]] = [
+        ["type": "function", "function": [
+            "name": webSearch,
+            "description": "Search the web and return a list of results (title, url, snippet). Use for current events, facts you are unsure of, or anything needing up-to-date information.",
+            "parameters": ["type": "object",
+                "properties": ["query": ["type": "string", "description": "The search query."]],
+                "required": ["query"]]
+        ]],
+        ["type": "function", "function": [
+            "name": fetchURL,
+            "description": "Fetch the readable text of a web page by URL. Use to read a result found via web_search.",
+            "parameters": ["type": "object",
+                "properties": ["url": ["type": "string", "description": "The absolute URL to fetch."]],
+                "required": ["url"]]
+        ]]
+    ]
+}
+
+extension ModelRouter {
+
+    /// Raw model id for the request `model` field (remote endpoints). Reuses the
+    /// same discovery the generate path uses.
+    static func firstModelID(endpoint: String) async throws -> String {
+        guard let base = URL(string: endpoint) else { throw RouterError.ollamaBadEndpoint(endpoint) }
+        return try await firstOllamaModel(base: base)
+    }
+
+    /// One agentic model turn against a remote OpenAI-compatible endpoint. Streams
+    /// content deltas via `onContentDelta` (so a NORMAL answer streams like today)
+    /// AND accumulates any `tool_call` fragments, returning the assembled turn. If
+    /// `toolCalls` is empty the streamed content IS the final answer; otherwise the
+    /// caller runs the tools and calls again with results appended. Non-tool models
+    /// simply never emit tool_calls → the loop degrades to a single streamed answer.
+    static func streamAgentTurn(
+        endpoint: String,
+        model: String,
+        messages: [[String: Any]],
+        tools: [[String: Any]]?,
+        onContentDelta: @Sendable @escaping (String) -> Void
+    ) async throws -> AgentTurn {
+        guard let base = URL(string: endpoint) else { throw RouterError.ollamaBadEndpoint(endpoint) }
+        let path = "v1/chat/completions"
+        var request = URLRequest(url: base.appendingPathComponent(path))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["model": model, "stream": true, "messages": messages]
+        if let tools { body["tools"] = tools }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do {
+            (bytes, response) = try await URLSession.shared.bytes(for: request)
+        } catch {
+            throw RouterError.ollamaTransport(error.localizedDescription)
+        }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var data = Data()
+            for try await b in bytes { data.append(b) }
+            let s = String(data: data, encoding: .utf8) ?? ""
+            throw RouterError.ollamaHTTPError(path: path, status: http.statusCode, body: s)
+        }
+
+        var content = ""
+        // Tool calls stream in fragments keyed by index (id/name once, arguments in
+        // pieces). Accumulate per index, assemble at end.
+        var accum: [Int: (id: String, name: String, args: String)] = [:]
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            guard payload != "[DONE]" else { break }
+            guard let data = payload.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let delta = choices.first?["delta"] as? [String: Any] else { continue }
+            if let c = delta["content"] as? String, !c.isEmpty {
+                content += c
+                onContentDelta(c)
+            }
+            if let calls = delta["tool_calls"] as? [[String: Any]] {
+                for call in calls {
+                    let idx = call["index"] as? Int ?? 0
+                    var e = accum[idx] ?? (id: "", name: "", args: "")
+                    if let id = call["id"] as? String, !id.isEmpty { e.id = id }
+                    if let fn = call["function"] as? [String: Any] {
+                        if let n = fn["name"] as? String { e.name += n }
+                        if let a = fn["arguments"] as? String { e.args += a }
+                    }
+                    accum[idx] = e
+                }
+            }
+        }
+        let toolCalls = accum.sorted { $0.key < $1.key }.map { idx, e in
+            ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)
+        }
+        return AgentTurn(content: content, toolCalls: toolCalls)
+    }
+}
+
+/// ★ DEV/TEST executor — AirPad-executes the fixed tool pair for zero cost, no key,
+/// no provider account, so T can watch the loop work. `web_search` scrapes the free
+/// DuckDuckGo HTML endpoint (the same approach LM Studio's local-web-search plugin
+/// uses); `fetch_url` is a plain HTTPS GET + readability trim. ⚠️ Direct-from-device
+/// scraping does NOT scale (per-install traffic → rate-limit / block risk) — this is
+/// NOT the launch backend; a thin-relay or BYO-key executor swaps in behind
+/// `ToolExecutor` later. See the launch-backend flag in the report.
+struct WebSearchToolExecutor: ToolExecutor {
+
+    private static let browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        switch name {
+        case AgentTools.webSearch:
+            let query = (arguments["query"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { return ToolResult(textForModel: "No query provided.", links: []) }
+            let links = await Self.duckDuckGoSearch(query)
+            guard !links.isEmpty else {
+                return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
+            }
+            let text = links.enumerated().map { i, l in
+                "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
+            }.joined(separator: "\n\n")
+            return ToolResult(textForModel: text, links: links)
+
+        case AgentTools.fetchURL:
+            let raw = (arguments["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else {
+                return ToolResult(textForModel: "Invalid URL: \(raw)", links: [])
+            }
+            let text = await Self.fetchReadable(url)
+            return ToolResult(textForModel: text, links: [])
+
+        default:
+            return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
+        }
+    }
+
+    // MARK: DuckDuckGo HTML scrape
+
+    private static func duckDuckGoSearch(_ query: String) async -> [ToolLink] {
+        var comps = URLComponents(string: "https://html.duckduckgo.com/html/")
+        comps?.queryItems = [URLQueryItem(name: "q", value: query)]
+        guard let url = comps?.url else { return [] }
+        var req = URLRequest(url: url)
+        req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8) else { return [] }
+        return parseDDG(html)
+    }
+
+    private static func parseDDG(_ html: String) -> [ToolLink] {
+        let anchors  = regexCaptures(#"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, html)
+        let snippets = regexCaptures(#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, html)
+        var out: [ToolLink] = []
+        for (i, a) in anchors.enumerated() where i < 8 {
+            guard a.count >= 2 else { continue }
+            let href = decodeDDGHref(a[0])
+            let title = decodeEntities(stripTags(a[1])).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !href.isEmpty, !title.isEmpty else { continue }
+            let snippet = i < snippets.count && !snippets[i].isEmpty
+                ? decodeEntities(stripTags(snippets[i][0])).trimmingCharacters(in: .whitespacesAndNewlines)
+                : nil
+            out.append(ToolLink(title: title, url: href, snippet: snippet))
+        }
+        return out
+    }
+
+    /// DDG result hrefs are redirects like `//duckduckgo.com/l/?uddg=<encoded>&rut=…`.
+    /// Pull the `uddg` target (URLComponents percent-decodes query values).
+    private static func decodeDDGHref(_ raw: String) -> String {
+        var s = raw
+        if s.hasPrefix("//") { s = "https:" + s }
+        guard let comps = URLComponents(string: s) else { return raw }
+        if let target = comps.queryItems?.first(where: { $0.name == "uddg" })?.value {
+            return target
+        }
+        return s
+    }
+
+    // MARK: fetch_url readability
+
+    private static func fetchReadable(_ url: URL, budget: Int = 6000) async -> String {
+        var req = URLRequest(url: url)
+        req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
+        req.timeoutInterval = 20
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8) else {
+            return "Couldn't fetch \(url.absoluteString)."
+        }
+        var text = removeBlocks(html, tag: "script")
+        text = removeBlocks(text, tag: "style")
+        text = stripTags(text)
+        text = decodeEntities(text)
+        text = text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        if text.count > budget { text = String(text.prefix(budget)) + "…" }
+        return text.isEmpty ? "No readable text at \(url.absoluteString)." : text
+    }
+
+    // MARK: HTML helpers
+
+    private static func regexCaptures(_ pattern: String, _ text: String) -> [[String]] {
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return [] }
+        let ns = text as NSString
+        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { m in
+            (1..<m.numberOfRanges).map { g -> String in
+                let r = m.range(at: g)
+                return r.location == NSNotFound ? "" : ns.substring(with: r)
+            }
+        }
+    }
+
+    private static func removeBlocks(_ html: String, tag: String) -> String {
+        guard let re = try? NSRegularExpression(pattern: "<\(tag)[^>]*>.*?</\(tag)>", options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return html }
+        let ns = html as NSString
+        return re.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: ns.length), withTemplate: " ")
+    }
+
+    private static func stripTags(_ html: String) -> String {
+        guard let re = try? NSRegularExpression(pattern: "<[^>]+>", options: [.dotMatchesLineSeparators]) else { return html }
+        let ns = html as NSString
+        return re.stringByReplacingMatches(in: html, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+    }
+
+    private static func decodeEntities(_ s: String) -> String {
+        var out = s
+        let map = ["&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"",
+                   "&#x27;": "'", "&#39;": "'", "&apos;": "'", "&nbsp;": " ", "&#x2F;": "/"]
+        for (k, v) in map { out = out.replacingOccurrences(of: k, with: v) }
+        return out
+    }
+}

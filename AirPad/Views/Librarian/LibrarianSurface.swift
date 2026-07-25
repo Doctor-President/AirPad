@@ -280,6 +280,28 @@ struct LibrarianSurface: View {
                     "Two good SpongeBob video essays: [Full Fat Videos on YouTube](https://www.youtube.com/playlist?list=PLfabricated9x8y7z) and one at https://example.com/spongebob-essay-fake — see [1] for the source I used."
                 )
             }
+            // `-ScraperDiag YES` — STEP-0 evidence: run simple vs over-specified queries
+            // + a rapid burst against live DDG, capturing status/body/parse-count, written
+            // to tmp/scraperdiag.txt (read via get_app_container). Splits scraper vs prompt.
+            if UserDefaults.standard.bool(forKey: "ScraperDiag") {
+                Task {
+                    var out = "=== SINGLE QUERIES (simple → over-specified) ===\n\n"
+                    let queries = [
+                        "yoga classes chicago",
+                        "inclusive yoga studio south loop chicago",
+                        "Half Moon Yoga Chicago South Loop inclusive community beginner friendly reviews 2026",
+                        "latest news chicago today",
+                    ]
+                    for q in queries { out += await WebSearchToolExecutor.diagnose(query: q) + "\n\n---\n\n" }
+                    out += "\n=== RAPID BURST (6 back-to-back, rate-limit probe) ===\n\n"
+                    let burst = ["yoga chicago", "coffee chicago", "weather chicago", "pizza chicago", "museums chicago", "parks chicago"]
+                    for (i, q) in burst.enumerated() {
+                        out += "[\(i + 1)] " + (await WebSearchToolExecutor.diagnose(query: q)) + "\n\n"
+                    }
+                    let f = FileManager.default.temporaryDirectory.appendingPathComponent("scraperdiag.txt")
+                    try? out.write(to: f, atomically: true, encoding: .utf8)
+                }
+            }
             // `-WebChipTest YES` — real search (8 results) + a synthetic answer citing
             // [1] and [4] → proves web chips GATE TO CITED (exactly 2 chips, not 8),
             // with the correct titles/URLs, alongside the full "Searched the web" list.

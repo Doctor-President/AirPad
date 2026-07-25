@@ -579,6 +579,40 @@ struct WebSearchToolExecutor: ToolExecutor {
         return parseDDG(html)
     }
 
+    #if DEBUG
+    /// STEP-0 diagnostic — the same request `duckDuckGoSearch` makes, but capturing the
+    /// HTTP status, body length, first ~600 chars, parse count, and anomaly markers that
+    /// the production path silently swallows. Used to split scraper-vs-prompt with evidence.
+    static func diagnose(query: String) async -> String {
+        var comps = URLComponents(string: "https://html.duckduckgo.com/html/")
+        comps?.queryItems = [URLQueryItem(name: "q", value: query)]
+        guard let url = comps?.url else { return "QUERY: \(query)\nBAD URL\n" }
+        var req = URLRequest(url: url)
+        req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            let html = String(data: data, encoding: .utf8) ?? "<non-utf8 \(data.count) bytes>"
+            let parsed = parseDDG(html).count
+            let low = html.lowercased()
+            var flags: [String] = []
+            if low.contains("anomaly") { flags.append("anomaly") }
+            if low.contains("captcha") { flags.append("captcha") }
+            if low.contains("challenge") { flags.append("challenge") }
+            if !html.contains("result__a") { flags.append("NO_result__a_class") }
+            if html.contains("result__snippet") == false { flags.append("no_snippet_class") }
+            let head = String(html.prefix(600)).replacingOccurrences(of: "\n", with: " ")
+            return """
+            QUERY: \(query)
+            STATUS: \(status)  BODY_LEN: \(html.count)  PARSED: \(parsed)  FLAGS: \(flags.isEmpty ? "none" : flags.joined(separator: ","))
+            HEAD: \(head)
+            """
+        } catch {
+            return "QUERY: \(query)\nERROR: \(error.localizedDescription)"
+        }
+    }
+    #endif
+
     private static func parseDDG(_ html: String) -> [ToolLink] {
         let anchors  = regexCaptures(#"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, html)
         let snippets = regexCaptures(#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, html)

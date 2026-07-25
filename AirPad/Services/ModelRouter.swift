@@ -389,6 +389,11 @@ struct ToolLink: Codable, Hashable, Sendable, Identifiable {
 struct ToolResult: Sendable {
     let textForModel: String
     let links: [ToolLink]
+    /// The provider throttled us (distinct from a genuine empty result). Backend-
+    /// agnostic: the DDG scraper sets it on a 202/challenge; a future SearXNG/keyed
+    /// backend would set it on its own throttle signal. The loop reads it only to
+    /// word the give-up message honestly — the cap/backoff live in the executor.
+    var rateLimited: Bool = false
 }
 
 /// One tool call the model requested (OpenAI shape). `argumentsJSON` is the raw
@@ -535,16 +540,49 @@ extension ModelRouter {
 /// scraping does NOT scale (per-install traffic → rate-limit / block risk) — this is
 /// NOT the launch backend; a thin-relay or BYO-key executor swaps in behind
 /// `ToolExecutor` later. See the launch-backend flag in the report.
-struct WebSearchToolExecutor: ToolExecutor {
+/// A CLASS (not struct) so it carries PER-TURN state — the search budget + throttle
+/// flag — behind the seam, so the loop stays untouched. Created fresh per user turn;
+/// `execute` is called sequentially (awaited) from the one `sendWithTools` loop, so the
+/// mutable state is never touched concurrently (`@unchecked Sendable` is safe here).
+final class WebSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 
     private static let browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+    /// A single question rarely needs more than a couple of successful searches; this
+    /// cap (below the loop's 5-step tool cap) stops retries from burning the whole turn.
+    private let maxSearchesPerTurn = 2
+    private var searchCount = 0
+    /// Set once the provider throttles us this turn — every later web_search short-
+    /// circuits to a "stop searching, answer now" result instead of re-scraping.
+    private var throttled = false
 
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
         switch name {
         case AgentTools.webSearch:
             let query = (arguments["query"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !query.isEmpty else { return ToolResult(textForModel: "No query provided.", links: []) }
-            let links = await Self.duckDuckGoSearch(query)
+
+            // Already throttled this turn → do NOT scrape again (that just gets more 202s).
+            if throttled {
+                return ToolResult(
+                    textForModel: "Web search is temporarily rate-limited by the provider. Do NOT search again this turn — answer now from the results you already have; if you have none, tell the user web search is rate-limited right now and to try again shortly.",
+                    links: [], rateLimited: true)
+            }
+            // Search budget — stop the retry-storm before it consumes the tool cap.
+            if searchCount >= maxSearchesPerTurn {
+                return ToolResult(
+                    textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.",
+                    links: [])
+            }
+            searchCount += 1
+
+            let (links, rateLimited) = await Self.scrape(query)
+            if rateLimited {
+                throttled = true
+                return ToolResult(
+                    textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.",
+                    links: [], rateLimited: true)
+            }
             guard !links.isEmpty else {
                 return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
             }
@@ -568,15 +606,32 @@ struct WebSearchToolExecutor: ToolExecutor {
 
     // MARK: DuckDuckGo HTML scrape
 
-    private static func duckDuckGoSearch(_ query: String) async -> [ToolLink] {
+    /// Scrape DDG, distinguishing a THROTTLE (HTTP 202 / anomaly-challenge page with no
+    /// `result__a`) from a genuine empty result. On a throttle, back off briefly and
+    /// retry ONCE; if still throttled, report it (→ `rateLimited`) rather than an empty
+    /// "no results" the model would keep retrying against.
+    private static func scrape(_ query: String, allowRetry: Bool = true) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: "https://html.duckduckgo.com/html/")
         comps?.queryItems = [URLQueryItem(name: "q", value: query)]
-        guard let url = comps?.url else { return [] }
+        guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
         req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let html = String(data: data, encoding: .utf8) else { return [] }
-        return parseDDG(html)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8) else {
+            return ([], false)   // transport failure → treat as empty, not a throttle
+        }
+        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+        let low = html.lowercased()
+        let isThrottle = status == 202
+            || (!html.contains("result__a") && (low.contains("anomaly") || low.contains("challenge")))
+        if isThrottle {
+            if allowRetry {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)   // brief backoff
+                return await scrape(query, allowRetry: false)        // one retry
+            }
+            return ([], true)   // still throttled
+        }
+        return (parseDDG(html), false)
     }
 
     #if DEBUG

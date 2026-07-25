@@ -302,6 +302,32 @@ struct LibrarianSurface: View {
                     try? out.write(to: f, atomically: true, encoding: .utf8)
                 }
             }
+            // `-BraveDiag YES` — verify the Brave executor without a live subscription:
+            // (1) parseBrave on a mock payload → mapped {title,url,snippet}; (2) backend
+            // selection given key present/absent; (3) live request wiring (fake key from
+            // -BraveTestKey → reaches Brave, real results with T's key). → tmp/bravediag.txt
+            if UserDefaults.standard.bool(forKey: "BraveDiag") {
+                Task {
+                    var out = "=== (1) parseBrave(mock) ===\n"
+                    let mock = """
+                    {"web":{"results":[
+                      {"title":"Chicago <strong>Yoga</strong> Studio","url":"https://example.com/yoga","description":"A welcoming <strong>yoga</strong> studio in the South Loop."},
+                      {"title":"Best Coffee in Chicago","url":"https://example.com/coffee","description":"Top roasters &amp; cafes."}
+                    ]}}
+                    """.data(using: .utf8)!
+                    for l in BraveSearchToolExecutor.parseBrave(mock) {
+                        out += "  • \(l.title) | \(l.url) | \(l.snippet ?? "-")\n"
+                    }
+                    out += "\n=== (2) WebSearchBackend.make() selection ===\n"
+                    let dbgKey = UserDefaults.standard.string(forKey: "BraveTestKey") ?? ""
+                    out += "  -BraveTestKey present=\(!dbgKey.isEmpty) → \(String(describing: type(of: WebSearchBackend.make())))\n"
+                    out += "\n=== (3) live Brave request wiring ===\n"
+                    let probeKey = dbgKey.isEmpty ? "FAKE-KEY-NO-SUB" : dbgKey
+                    out += await BraveSearchToolExecutor.diagnose(query: "chicago yoga", apiKey: probeKey) + "\n"
+                    let f = FileManager.default.temporaryDirectory.appendingPathComponent("bravediag.txt")
+                    try? out.write(to: f, atomically: true, encoding: .utf8)
+                }
+            }
             // `-ExecutorFixTest YES` — verify fix #1: (A) the per-turn CAP (one executor,
             // 4 searches → 2 real then "budget exhausted", no more scraping); (B) THROTTLE
             // detection (push DDG into 202 with rapid probes, then execute → rateLimited

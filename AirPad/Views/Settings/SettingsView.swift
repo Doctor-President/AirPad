@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var anthropicKey = ""
     @State private var openAIKey = ""
     @State private var deepSeekKey = ""
+    @State private var braveSearchKey = ""
     @State private var ollamaEndpoint = ""
 
     // Privacy
@@ -89,6 +90,10 @@ struct SettingsView: View {
                 apiKeyField(label: "Anthropic API key", placeholder: "sk-ant-...", text: $anthropicKey)
                 apiKeyField(label: "OpenAI API key", placeholder: "sk-...", text: $openAIKey)
                 apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
+                // Web search backend (private-mode tool loop). With a Brave key the
+                // reliable Brave Search API is used; without one, the keyless DDG
+                // scraper (which rate-limits). DEV/PERSONAL only — see the relay note.
+                apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama endpoint")
@@ -645,6 +650,7 @@ struct SettingsView: View {
         anthropicKey   = KeychainHelper.load(key: "anthropicAPIKey")   ?? ""
         openAIKey      = KeychainHelper.load(key: "openAIAPIKey")      ?? ""
         deepSeekKey    = KeychainHelper.load(key: "deepSeekAPIKey")    ?? ""
+        braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
     }
 
@@ -652,6 +658,7 @@ struct SettingsView: View {
         persistKey("anthropicAPIKey", value: anthropicKey)
         persistKey("openAIAPIKey",    value: openAIKey)
         persistKey("deepSeekAPIKey",  value: deepSeekKey)
+        persistKey(WebSearchBackend.keychainKey, value: braveSearchKey)
         persistKey("ollamaEndpoint",  value: ollamaEndpoint)
     }
 

@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Observation
 import os
+import UIKit
 import KokoroSwift
 import MLX
 import MLXUtilsLibrary
@@ -97,11 +98,36 @@ final class KokoroTTSEngine: TTSEngine {
     private var speakTask: Task<Void, Never>?
     private var buffersInFlight = 0
     private var producerDone = false
-    private let lookAhead = 1                           // synth only ONE chunk ahead of playback → minimal peak memory
+    // Race synthesis well ahead of playback (bounded) so a whole typical answer
+    // is buffered as PCM BEFORE the user locks/backgrounds — background playback
+    // of already-synthesized audio needs no GPU. 16 chunks ≈ 30 MB PCM; the 48 MB
+    // MLX cache cap bounds GPU memory independently (so this can't re-trigger the
+    // earlier jetsam, which was cache growth, not audio buffers).
+    private let lookAhead = 16
     private var utteranceGenerateSeconds = 0.0
     private var utteranceAudioSeconds = 0.0
 
-    private init() {}
+    /// True while the app is backgrounded/locked. iOS blocks GPU (Metal) work in
+    /// the background — a synth call there stalls or CRASHES — so the producer
+    /// PARKS while this is set and resumes on foreground. Set from lifecycle
+    /// notifications (see `observeLifecycle`).
+    private var isBackgrounded = false
+
+    private init() {
+        observeLifecycle()
+    }
+
+    private func observeLifecycle() {
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                       object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor in self?.isBackgrounded = true }
+        }
+        nc.addObserver(forName: UIApplication.willEnterForegroundNotification,
+                       object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor in self?.isBackgrounded = false }
+        }
+    }
 
     // MARK: TTSEngine
 
@@ -160,19 +186,30 @@ final class KokoroTTSEngine: TTSEngine {
         utteranceGenerateSeconds = 0
         utteranceAudioSeconds = 0
         timeToFirstAudioSeconds = nil
+        GPU.resetPeakMemory()   // so the peak logged at end reflects THIS answer
 
         kokoroLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public)")
         speakTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for (i, chunk) in chunks.enumerated() {
                 if Task.isCancelled { return }
-                // Bounded look-ahead: don't outrun playback by more than `lookAhead`
-                // chunks. During a pause this naturally throttles the producer
-                // (in-flight never drains), so memory stays capped while paused.
-                while self.buffersInFlight >= self.lookAhead && !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 40_000_000)  // 40 ms
+                // Park here while (a) we're already `lookAhead` chunks ahead of
+                // playback, or (b) the app is backgrounded — iOS blocks GPU work
+                // in the background, so we must NOT call synth there (stall/crash).
+                // Parking (not breaking) means synthesis RESUMES on foreground.
+                // Because we race far ahead, a typical answer is fully buffered
+                // before the user locks, so background playback just drains PCM.
+                while (self.buffersInFlight >= self.lookAhead || self.isBackgrounded)
+                        && !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 100_000_000)  // 100 ms
                 }
                 if Task.isCancelled { return }
+                // Resuming after a background park may find the engine stopped
+                // (system suspended it once buffers drained) — re-arm the graph.
+                if self.graphReady && !self.engine.isRunning {
+                    PlaybackAudioSession.configure()
+                    try? self.engine.start()
+                }
                 // Per-chunk breadcrumb BEFORE synth: if the app dies here, the last
                 // line names the chunk (degenerate text?) and MLX memory at the time
                 // (climbing → memory kill). active+cache is MLX's own footprint.
@@ -182,14 +219,16 @@ final class KokoroTTSEngine: TTSEngine {
                     if Task.isCancelled { return }
                     self.recordChunk(seconds: seconds, sampleCount: samples.count, isFirst: i == 0)
                     self.schedule(samples: samples)
-                    if i == 0 { self.player.play() }
+                    // Start on the first chunk, and re-start if a background
+                    // suspension left the player stopped.
+                    if self.engine.isRunning && !self.player.isPlaying { self.player.play() }
                 } catch {
                     // A chunk that still exceeds the token window (or a synth
                     // error) is skipped so the rest of the answer still reads.
                     kokoroLog.error("chunk \(i) synth failed: \(String(describing: error), privacy: .public)")
                 }
             }
-            kokoroLog.info("producer done, \(self.buffersInFlight) buffers draining, mlxPeak=\(GPU.peakMemory / 1_048_576)MB")
+            kokoroLog.info("producer done: \(chunks.count) chunks, mlxPeak=\(GPU.peakMemory / 1_048_576)MB mlxCache=\(GPU.cacheMemory / 1_048_576)MB (cap 48MB), \(self.buffersInFlight) draining")
             self.producerDone = true
             // All chunks failed → nothing scheduled → finish now.
             if self.buffersInFlight == 0 { self.fireFinish() }
@@ -197,7 +236,13 @@ final class KokoroTTSEngine: TTSEngine {
     }
 
     func pause()  { if graphReady { player.pause() } }
-    func resume() { if engine.isRunning { player.play() } }
+    /// Robust resume — after an interruption the engine may have stopped, so
+    /// restart it before playing (the session is re-asserted by the caller).
+    func resume() {
+        guard graphReady else { return }
+        if !engine.isRunning { try? engine.start() }
+        if engine.isRunning { player.play() }
+    }
     func stop() {
         speakTask?.cancel()
         speakTask = nil
@@ -207,6 +252,10 @@ final class KokoroTTSEngine: TTSEngine {
         guard graphReady else { return }
         player.stop()
         player.reset()           // drop any queued-but-unplayed buffers
+        // Stop the engine too so the caller can deactivate the audio session
+        // cleanly (a running engine blocks setActive(false)). Restarted lazily
+        // on the next speak().
+        if engine.isRunning { engine.stop() }
     }
 
     // MARK: Playback (main thread)
@@ -260,6 +309,9 @@ final class KokoroTTSEngine: TTSEngine {
     }
 
     private func fireFinish() {
+        // Natural end: stop the engine so the caller's session deactivation
+        // succeeds (restarted lazily on the next speak()).
+        if engine.isRunning { engine.stop() }
         let cb = onFinish; onFinish = nil
         cb?()
     }

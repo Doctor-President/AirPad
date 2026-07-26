@@ -361,10 +361,25 @@ struct ChatTranscript: View {
             let token = message.id.uuidString
             let isActive = speech.activeToken == token
             let showPause = isActive && speech.isSpeaking && !speech.isPaused
-            let voiceSelection = Binding<String?>(
-                get: { speech.selectedVoiceIdentifier },
-                set: { speech.selectedVoiceIdentifier = $0 }
+            // System voices set the AVSpeech identifier AND clear any Kokoro
+            // selection so read-aloud actually uses AVSpeech. Kokoro (“AirPad”)
+            // voices set selectedKokoroVoiceID — the same setting the service
+            // already routes on — so this footer IS the real control, not a
+            // parallel one.
+            let systemSelection = Binding<String?>(
+                get: { speech.selectedKokoroVoiceID == nil ? speech.selectedVoiceIdentifier : nil },
+                set: {
+                    speech.selectedVoiceIdentifier = $0
+                    speech.selectedKokoroVoiceID = nil
+                }
             )
+            let kokoroSelection = Binding<String?>(
+                get: { speech.selectedKokoroVoiceID },
+                set: { speech.selectedKokoroVoiceID = $0 }
+            )
+            let kokoroInstalled = KokoroTTSEngine.shared.isModelInstalled
+            let kokoroExtras = KokoroVoiceCatalog.allEnglishVoiceIDs
+                .filter { !KokoroVoiceCatalog.shortlist.contains($0) }
             HStack(spacing: 14) {
                 Button {
                     speech.toggle(token: token, text: message.text)
@@ -379,10 +394,29 @@ struct ChatTranscript: View {
                 .accessibilityLabel(showPause ? "Pause" : "Play")
 
                 Menu {
-                    Picker("Voice", selection: voiceSelection) {
-                        Text("Best available").tag(String?.none)
-                        ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
-                            Text(Self.voiceLabel(v)).tag(Optional(v.identifier))
+                    Menu("System Voices") {
+                        Picker("System Voice", selection: systemSelection) {
+                            Text("Best available").tag(String?.none)
+                            ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
+                                Text(Self.voiceLabel(v)).tag(Optional(v.identifier))
+                            }
+                        }
+                    }
+                    // On-device neural voices — shown only when the model is
+                    // bundled. Absent on a build/device without the asset → the
+                    // menu is System-only, which is the graceful degradation.
+                    if kokoroInstalled {
+                        Menu("AirPad Voices") {
+                            Picker("AirPad Voice", selection: kokoroSelection) {
+                                ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
+                                    Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
+                                        .tag(Optional(id))
+                                }
+                                ForEach(kokoroExtras, id: \.self) { id in
+                                    Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
+                                        .tag(Optional(id))
+                                }
+                            }
                         }
                     }
                 } label: {

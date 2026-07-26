@@ -79,6 +79,44 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         synthesizer.delegate = self
         selectedVoiceIdentifier = UserDefaults.standard.string(forKey: Self.voiceKey)
         selectedKokoroVoiceID = UserDefaults.standard.string(forKey: Self.kokoroVoiceKey)
+        registerInterruptionObserver()
+    }
+
+    /// Handle audio-session interruptions (phone call, another app taking the
+    /// session). AVSpeech manages its own resume, but the Kokoro AVAudioEngine
+    /// path does not — so on `.began` we pause the active utterance, and on
+    /// `.ended` with `.shouldResume` we re-assert `.playback` and resume it.
+    /// Block-based observer so the callback can hop to the main actor cleanly
+    /// (the notification is posted on an arbitrary thread).
+    private func registerInterruptionObserver() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: nil
+        ) { [weak self] note in
+            guard let info = note.userInfo,
+                  let raw = info[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
+            let shouldResume = (info[AVAudioSessionInterruptionOptionKey] as? UInt).map {
+                AVAudioSession.InterruptionOptions(rawValue: $0).contains(.shouldResume)
+            } ?? false
+            Task { @MainActor [weak self] in
+                self?.onInterruption(rawType: raw, shouldResume: shouldResume)
+            }
+        }
+    }
+
+    @MainActor
+    private func onInterruption(rawType: UInt, shouldResume: Bool) {
+        guard let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
+        switch type {
+        case .began:
+            if isSpeaking && !isPaused { pauseCurrent() }
+        case .ended:
+            if isSpeaking && isPaused && shouldResume {
+                PlaybackAudioSession.configure()   // re-assert .playback + active
+                resumeCurrent()
+            }
+        @unknown default:
+            break
+        }
     }
 
     /// Wire MPRemoteCommandCenter once on first speak — needed so the
@@ -134,6 +172,15 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
 
     private func clearNowPlaying() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+    }
+
+    /// End-of-playback teardown: clear now-playing AND release the audio session
+    /// (with `.notifyOthersOnDeactivation`) so AirPad stops holding audio focus —
+    /// music/podcasts can resume. Called on explicit stop + natural completion,
+    /// NOT on pause or a mid-switch cancel.
+    private func endPlaybackSession() {
+        clearNowPlaying()
+        PlaybackAudioSession.deactivate()
     }
 
     /// Installed voices for the current language, best quality first.
@@ -260,7 +307,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
                     self.isSpeaking = false
                     self.isPaused = false
                     self.activeToken = nil
-                    self.clearNowPlaying()
+                    self.endPlaybackSession()
                 }
             } catch {
                 guard self.activeToken == token else { return }
@@ -283,7 +330,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         isPaused = false
         activeToken = nil
         activeUtterance = nil
-        clearNowPlaying()
+        endPlaybackSession()
     }
 
     // Delegate — reset state when speech ends naturally or is cancelled, but
@@ -297,7 +344,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
             isPaused = false
             activeToken = nil
             activeUtterance = nil
-            clearNowPlaying()
+            endPlaybackSession()
         }
     }
     nonisolated func speechSynthesizer(_ s: AVSpeechSynthesizer,

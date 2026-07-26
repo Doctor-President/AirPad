@@ -448,6 +448,10 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
+
+            // Read-aloud voice: pick the Kokoro voice that real Librarian/Note
+            // read-aloud uses (or the System voice). This is T's A/B tool.
+            kokoroVoicePicker
             #endif
 
             Toggle(isOn: $useCorpusAwareTagging) {
@@ -485,6 +489,44 @@ struct SettingsView: View {
         }
         #endif
     }
+
+    #if DEBUG
+    /// Read-aloud voice picker (Kokoro spike). Drives
+    /// `SpeechSynthesisService.selectedKokoroVoiceID` — the voice real Librarian
+    /// answer + Note read-aloud plays through. "" = System (AVSpeech). Shortlist
+    /// marked with ★. Never ships (DEBUG only; model is a dev asset).
+    private var kokoroVoicePicker: some View {
+        let speech = SpeechSynthesisService.shared
+        let binding = Binding<String>(
+            get: { speech.selectedKokoroVoiceID ?? "" },
+            set: { speech.selectedKokoroVoiceID = $0.isEmpty ? nil : $0 }
+        )
+        let extras = KokoroVoiceCatalog.allEnglishVoiceIDs
+            .filter { !KokoroVoiceCatalog.shortlist.contains($0) }
+        return VStack(alignment: .leading, spacing: 2) {
+            Picker(selection: binding) {
+                Text("System voice (AVSpeech)").tag("")
+                ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
+                    Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))").tag(id)
+                }
+                ForEach(extras, id: \.self) { id in
+                    Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))").tag(id)
+                }
+            } label: {
+                Text("Read-aloud voice")
+            }
+            .pickerStyle(.menu)
+            .font(.caption2)
+            .tint(.orange)
+            if !KokoroTTSEngine.shared.isModelInstalled {
+                Text("Kokoro model not installed — read-aloud uses the System voice.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+    #endif
 
     @ViewBuilder
     private var reprocessRow: some View {

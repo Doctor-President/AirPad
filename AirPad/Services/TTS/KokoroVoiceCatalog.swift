@@ -12,6 +12,15 @@ import KokoroSwift
 /// (raw id) but will be phonemized as en-US — expect mispronunciation.
 enum KokoroVoiceCatalog {
 
+    /// T's evaluation shortlist (ids), in his stated order.
+    static let shortlist = [
+        "bm_george", "af_aoede", "af_sky", "af_heart", "am_michael",
+        "am_echo", "bf_emma", "bm_daniel", "bm_fable",
+    ]
+
+    /// All standard English voice ids, grouped-sorted (US female/male, UK female/male).
+    static var allEnglishVoiceIDs: [String] { sorted(Array(knownNames.keys)) }
+
     /// British voices use en-GB; everything else defaults to en-US.
     static func language(for id: String) -> Language {
         (id.hasPrefix("bf_") || id.hasPrefix("bm_")) ? .enGB : .enUS

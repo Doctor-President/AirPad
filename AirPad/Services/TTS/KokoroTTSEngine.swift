@@ -1,9 +1,16 @@
 import Foundation
 import AVFoundation
 import Observation
+import os
 import KokoroSwift
 import MLX
 import MLXUtilsLibrary
+
+/// Localized log for the streaming synth path. Read on device with
+/// `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "kokoro"'`
+/// or in Xcode's console — shows per-chunk MLX memory so a memory climb (→ OS
+/// kill on long answers) is visible, and names the exact chunk if synth faults.
+private let kokoroLog = Logger(subsystem: "com.doctorpresident.airpad", category: "kokoro")
 
 /// Off-main owner of the Kokoro model + voice styles. An `actor` so the
 /// multi-second weight load and every GPU synth run OFF the main thread
@@ -23,6 +30,10 @@ actor KokoroCore {
         guard tts == nil else { return 0 }
         let t0 = CFAbsoluteTimeGetCurrent()
         tts = KokoroTTS(modelPath: modelURL, g2p: .misaki)
+        // Cap MLX's Metal buffer cache. Without this, repeated chunk synthesis
+        // over a long answer lets cached GPU memory grow until iOS memory-kills
+        // the app (the "short works, long crashes, no crash report" signature).
+        GPU.set(cacheLimit: 48 * 1024 * 1024)   // 48 MB
         if let voicesURL, let dict = NpyzReader.read(fileFromPath: voicesURL) {
             // The .npz stores each style under a ".npy"-suffixed key
             // (e.g. "af_heart.npy"). Normalize to the bare voice id so callers
@@ -86,7 +97,7 @@ final class KokoroTTSEngine: TTSEngine {
     private var speakTask: Task<Void, Never>?
     private var buffersInFlight = 0
     private var producerDone = false
-    private let lookAhead = 3                           // cap chunks synthesized ahead of playback → bounded memory
+    private let lookAhead = 1                           // synth only ONE chunk ahead of playback → minimal peak memory
     private var utteranceGenerateSeconds = 0.0
     private var utteranceAudioSeconds = 0.0
 
@@ -150,6 +161,7 @@ final class KokoroTTSEngine: TTSEngine {
         utteranceAudioSeconds = 0
         timeToFirstAudioSeconds = nil
 
+        kokoroLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public)")
         speakTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for (i, chunk) in chunks.enumerated() {
@@ -161,6 +173,10 @@ final class KokoroTTSEngine: TTSEngine {
                     try? await Task.sleep(nanoseconds: 40_000_000)  // 40 ms
                 }
                 if Task.isCancelled { return }
+                // Per-chunk breadcrumb BEFORE synth: if the app dies here, the last
+                // line names the chunk (degenerate text?) and MLX memory at the time
+                // (climbing → memory kill). active+cache is MLX's own footprint.
+                kokoroLog.info("chunk \(i)/\(chunks.count) len=\(chunk.count) mlxActive=\(GPU.activeMemory / 1_048_576)MB mlxCache=\(GPU.cacheMemory / 1_048_576)MB text=\(String(chunk.prefix(48)), privacy: .public)")
                 do {
                     let (samples, seconds) = try await self.core.generate(voiceID: id, language: lang, text: chunk)
                     if Task.isCancelled { return }
@@ -170,8 +186,10 @@ final class KokoroTTSEngine: TTSEngine {
                 } catch {
                     // A chunk that still exceeds the token window (or a synth
                     // error) is skipped so the rest of the answer still reads.
+                    kokoroLog.error("chunk \(i) synth failed: \(String(describing: error), privacy: .public)")
                 }
             }
+            kokoroLog.info("producer done, \(self.buffersInFlight) buffers draining, mlxPeak=\(GPU.peakMemory / 1_048_576)MB")
             self.producerDone = true
             // All chunks failed → nothing scheduled → finish now.
             if self.buffersInFlight == 0 { self.fireFinish() }

@@ -33,6 +33,12 @@ scripts/__pycache__/
 # Local experiment spikes — not part of the shipping app
 spikes/
 
+# Kokoro TTS spike — the model weights + voice styles are huge, dev-only, and
+# placed by hand (see AirPad/Resources/Kokoro/README-DROP-MODEL-HERE.txt).
+# The README stays tracked; the assets never get committed.
+AirPad/Resources/Kokoro/*.safetensors
+AirPad/Resources/Kokoro/*.npz
+
 # TestFlight / App Store Connect secrets — NEVER commit
 *.p8
 .testflight.env

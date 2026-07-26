@@ -72,6 +72,15 @@ packages:
   mlx-swift:
     url: https://github.com/ml-explore/mlx-swift
     exactVersion: 0.29.1
+  # NpyzReader (.npz → [String: MLXArray]) for loading Kokoro voice styles — the app
+  # owns voices (moved out of KokoroSwift in 1.0.5). Transitive via KokoroSwift; linked
+  # directly so AirPad can `import MLXUtilsLibrary`.
+  # 0.0.6 is the version KokoroSwift's own Package.resolved uses; it requires
+  # mlx-swift `from: 0.29.1` (compatible with our exact 0.29.1 pin). 0.0.7 bumps
+  # its floor to mlx 0.30.3, which would fight the pin.
+  MLXUtilsLibrary:
+    url: https://github.com/mlalma/MLXUtilsLibrary
+    exactVersion: 0.0.6
 
 targets:
   AirPad:
@@ -83,12 +92,30 @@ targets:
         excludes:
           - "Info.plist"
           - "*.entitlements"
+          # Bundled separately as a folder reference (below) so its contents
+          # bundle under a runtime "Kokoro/" subdirectory. Kept out of the code
+          # group so the ~600 MB assets aren't treated as compilable sources.
+          - "Resources/Kokoro"
+          - "Resources/Kokoro/**"
+      # Kokoro model + voices (TTS spike). Folder reference → whatever T drops in
+      # (kokoro-v1_0.safetensors, voices.npz) bundles under "Kokoro/". The weights
+      # themselves are gitignored; only README-DROP-MODEL-HERE.txt is tracked.
+      - path: AirPad/Resources/Kokoro
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: AirPadShare
         embed: true
       - package: FloatingPanel
       - package: KokoroSwift
         product: KokoroSwift
+      # MLX (MLXArray + loadArrays) and NpyzReader (.npz voice styles) are
+      # transitive via KokoroSwift; linked directly so KokoroTTSEngine can
+      # `import MLX` / `import MLXUtilsLibrary`.
+      - package: mlx-swift
+        product: MLX
+      - package: MLXUtilsLibrary
+        product: MLXUtilsLibrary
       - sdk: SpriteKit.framework
       - sdk: AVFoundation.framework
       - sdk: Speech.framework

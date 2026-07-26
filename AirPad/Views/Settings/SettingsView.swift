@@ -36,6 +36,9 @@ struct SettingsView: View {
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
     @State private var showSubstrateInspect = false
+    #if DEBUG
+    @State private var showKokoroSampler = false
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -434,6 +437,19 @@ struct SettingsView: View {
 
             backfillEmbeddingRow
 
+            #if DEBUG
+            // Kokoro on-device TTS voice spike — DEBUG only, never ships.
+            Button {
+                showKokoroSampler = true
+            } label: {
+                Text("Kokoro Voice Sampler")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
+            #endif
+
             Toggle(isOn: $useCorpusAwareTagging) {
                 Text("SB126 Stage 2 — corpus-aware tagging")
                     .font(.caption2)
@@ -463,6 +479,11 @@ struct SettingsView: View {
                     .environment(store)
             }
         }
+        #if DEBUG
+        .sheet(isPresented: $showKokoroSampler) {
+            KokoroVoiceSamplerView()
+        }
+        #endif
     }
 
     @ViewBuilder

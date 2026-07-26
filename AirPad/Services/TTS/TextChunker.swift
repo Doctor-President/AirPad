@@ -49,7 +49,11 @@ enum TextChunker {
             }
         }
         flush()
-        return chunks
+        // Drop letterless fragments (pure numbers/punctuation left after the
+        // Markdown strip, e.g. a bare list marker). Misaki can produce an empty
+        // phoneme sequence for these, which faults synthesis — and one such chunk
+        // is far more likely to appear in a long answer than a short one.
+        return chunks.filter { $0.rangeOfCharacter(from: .letters) != nil }
     }
 
     /// Split an over-long sentence into ≤ maxChars pieces on word boundaries.

@@ -24,7 +24,15 @@ actor KokoroCore {
         let t0 = CFAbsoluteTimeGetCurrent()
         tts = KokoroTTS(modelPath: modelURL, g2p: .misaki)
         if let voicesURL, let dict = NpyzReader.read(fileFromPath: voicesURL) {
-            voices = dict
+            // The .npz stores each style under a ".npy"-suffixed key
+            // (e.g. "af_heart.npy"). Normalize to the bare voice id so callers
+            // — the Settings picker and the sampler — can look up by "af_heart".
+            var normalized: [String: MLXArray] = [:]
+            for (key, value) in dict {
+                let id = String(key.split(separator: ".").first ?? Substring(key))
+                normalized[id] = value
+            }
+            voices = normalized
         }
         return CFAbsoluteTimeGetCurrent() - t0
     }
@@ -69,9 +77,18 @@ final class KokoroTTSEngine: TTSEngine {
     private(set) var isWarmingUp = false
     private(set) var isLoaded = false
     private(set) var coldLoadSeconds: Double?
-    private(set) var lastGenerateSeconds: Double?
-    private(set) var lastRTF: Double?            // generate / audio-duration (<1 = faster than real-time)
+    private(set) var lastGenerateSeconds: Double?      // total synth time, last utterance
+    private(set) var lastRTF: Double?                  // total generate / total audio (<1 = faster than real-time)
+    private(set) var timeToFirstAudioSeconds: Double?  // first-chunk synth latency (time to first sound)
     private(set) var loadedVoiceIDs: [String] = []
+
+    // Streaming-synthesis pipeline state (main thread only).
+    private var speakTask: Task<Void, Never>?
+    private var buffersInFlight = 0
+    private var producerDone = false
+    private let lookAhead = 3                           // cap chunks synthesized ahead of playback → bounded memory
+    private var utteranceGenerateSeconds = 0.0
+    private var utteranceAudioSeconds = 0.0
 
     private init() {}
 
@@ -107,26 +124,71 @@ final class KokoroTTSEngine: TTSEngine {
         return isLoaded
     }
 
+    /// Streaming synthesis. A full Librarian answer is far longer than Kokoro's
+    /// ~510-token window (a single `generateAudio` would throw `tooManyTokens`),
+    /// so the text is split into sentence-sized chunks and synthesized one at a
+    /// time on the actor (off-main), each scheduled onto the player as it's ready.
+    /// Playback starts after the FIRST chunk → low latency to first sound; at most
+    /// `lookAhead` chunks are held in flight → bounded memory on long passages.
     func speak(text: String, voiceID: String?, onFinish: @escaping () -> Void) async throws {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        stop()  // cancel any in-flight utterance + clear the player queue
+        let chunks = TextChunker.chunk(text)
+        guard !chunks.isEmpty else { return }
         try await warmUpIfNeeded()
         let id = voiceID ?? loadedVoiceIDs.first ?? "af_heart"
         let lang = KokoroVoiceCatalog.language(for: id)
-        let (samples, seconds) = try await core.generate(voiceID: id, language: lang, text: trimmed)
-        lastGenerateSeconds = seconds
-        let audioDuration = Double(samples.count) / Double(KokoroTTS.Constants.samplingRate)
-        lastRTF = audioDuration > 0 ? seconds / audioDuration : nil
-        try play(samples: samples, onFinish: onFinish)
+
+        PlaybackAudioSession.configure()
+        ensureGraph()
+        if !engine.isRunning { try engine.start() }
+
+        // Reset per-utterance state + telemetry.
+        self.onFinish = onFinish
+        buffersInFlight = 0
+        producerDone = false
+        utteranceGenerateSeconds = 0
+        utteranceAudioSeconds = 0
+        timeToFirstAudioSeconds = nil
+
+        speakTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for (i, chunk) in chunks.enumerated() {
+                if Task.isCancelled { return }
+                // Bounded look-ahead: don't outrun playback by more than `lookAhead`
+                // chunks. During a pause this naturally throttles the producer
+                // (in-flight never drains), so memory stays capped while paused.
+                while self.buffersInFlight >= self.lookAhead && !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 40_000_000)  // 40 ms
+                }
+                if Task.isCancelled { return }
+                do {
+                    let (samples, seconds) = try await self.core.generate(voiceID: id, language: lang, text: chunk)
+                    if Task.isCancelled { return }
+                    self.recordChunk(seconds: seconds, sampleCount: samples.count, isFirst: i == 0)
+                    self.schedule(samples: samples)
+                    if i == 0 { self.player.play() }
+                } catch {
+                    // A chunk that still exceeds the token window (or a synth
+                    // error) is skipped so the rest of the answer still reads.
+                }
+            }
+            self.producerDone = true
+            // All chunks failed → nothing scheduled → finish now.
+            if self.buffersInFlight == 0 { self.fireFinish() }
+        }
     }
 
-    func pause()  { player.pause() }
+    func pause()  { if graphReady { player.pause() } }
     func resume() { if engine.isRunning { player.play() } }
     func stop() {
-        // Null the callback BEFORE stopping so the flush-triggered completion
-        // handler doesn't fire a spurious "finished".
-        onFinish = nil
-        if player.isPlaying { player.stop() }
+        speakTask?.cancel()
+        speakTask = nil
+        onFinish = nil           // null before flushing so no spurious finish fires
+        producerDone = false
+        buffersInFlight = 0
+        guard graphReady else { return }
+        player.stop()
+        player.reset()           // drop any queued-but-unplayed buffers
     }
 
     // MARK: Playback (main thread)
@@ -145,29 +207,42 @@ final class KokoroTTSEngine: TTSEngine {
         graphReady = true
     }
 
-    private func play(samples: [Float], onFinish: @escaping () -> Void) throws {
-        PlaybackAudioSession.configure()
-        ensureGraph()
-        guard let buf = AVAudioPCMBuffer(pcmFormat: kokoroFormat,
-                                         frameCapacity: AVAudioFrameCount(samples.count)) else {
-            throw KokoroEngineError.audioBufferFailed
+    private func schedule(samples: [Float]) {
+        guard let buf = makeBuffer(samples) else { return }
+        buffersInFlight += 1
+        player.scheduleBuffer(buf, at: nil, options: []) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.buffersInFlight -= 1
+                if self.producerDone && self.buffersInFlight == 0 {
+                    self.fireFinish()
+                }
+            }
         }
+    }
+
+    private func makeBuffer(_ samples: [Float]) -> AVAudioPCMBuffer? {
+        guard let buf = AVAudioPCMBuffer(pcmFormat: kokoroFormat,
+                                         frameCapacity: AVAudioFrameCount(samples.count)) else { return nil }
         buf.frameLength = AVAudioFrameCount(samples.count)
         samples.withUnsafeBufferPointer { src in
             if let dst = buf.floatChannelData?[0], let base = src.baseAddress {
                 dst.update(from: base, count: samples.count)
             }
         }
-        if !engine.isRunning { try engine.start() }
-        if player.isPlaying { player.stop() }
-        self.onFinish = onFinish
-        player.scheduleBuffer(buf, at: nil, options: []) { [weak self] in
-            Task { @MainActor in
-                guard let self else { return }
-                let cb = self.onFinish; self.onFinish = nil
-                cb?()
-            }
-        }
-        player.play()
+        return buf
+    }
+
+    private func recordChunk(seconds: Double, sampleCount: Int, isFirst: Bool) {
+        utteranceGenerateSeconds += seconds
+        utteranceAudioSeconds += Double(sampleCount) / Double(KokoroTTS.Constants.samplingRate)
+        if isFirst { timeToFirstAudioSeconds = seconds }
+        lastGenerateSeconds = utteranceGenerateSeconds
+        lastRTF = utteranceAudioSeconds > 0 ? utteranceGenerateSeconds / utteranceAudioSeconds : nil
+    }
+
+    private func fireFinish() {
+        let cb = onFinish; onFinish = nil
+        cb?()
     }
 }

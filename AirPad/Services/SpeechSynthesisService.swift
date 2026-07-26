@@ -40,6 +40,29 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     }
     private static let voiceKey = "tts.selectedVoiceIdentifier"
 
+    /// User-chosen Kokoro voice id (e.g. "af_heart"). nil = use the system
+    /// AVSpeech voice (the default). Persisted. Changing it stops any in-flight
+    /// speech so the next play starts cleanly on the newly-chosen engine/voice.
+    var selectedKokoroVoiceID: String? {
+        didSet {
+            UserDefaults.standard.set(selectedKokoroVoiceID, forKey: Self.kokoroVoiceKey)
+            if isSpeaking { stop() }
+        }
+    }
+    private static let kokoroVoiceKey = "tts.selectedKokoroVoiceID"
+
+    /// Which engine owns the CURRENTLY-active utterance. Fixed at speak-time (the
+    /// selection can change mid-utterance) so pause/resume/stop/remote-commands
+    /// route to the right engine.
+    private var activeEngineIsKokoro = false
+
+    /// Route to Kokoro only when a Kokoro voice is chosen AND its model is
+    /// actually installed — otherwise fall back to AVSpeech (a Release build with
+    /// no bundled model, or the dev asset absent, must still read aloud).
+    private var shouldUseKokoro: Bool {
+        selectedKokoroVoiceID != nil && KokoroTTSEngine.shared.isModelInstalled
+    }
+
     private let synthesizer = AVSpeechSynthesizer()
     private var remoteCommandsConfigured = false
 
@@ -55,6 +78,7 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         super.init()
         synthesizer.delegate = self
         selectedVoiceIdentifier = UserDefaults.standard.string(forKey: Self.voiceKey)
+        selectedKokoroVoiceID = UserDefaults.standard.string(forKey: Self.kokoroVoiceKey)
     }
 
     /// Wire MPRemoteCommandCenter once on first speak — needed so the
@@ -66,32 +90,18 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         let center = MPRemoteCommandCenter.shared()
 
         center.playCommand.addTarget { [weak self] _ in
-            guard let self else { return .commandFailed }
-            if self.isPaused {
-                self.synthesizer.continueSpeaking()
-                self.isPaused = false
-                self.updateNowPlayingPlaybackState()
-                return .success
-            }
-            return .commandFailed
+            guard let self, self.isPaused else { return .commandFailed }
+            self.resumeCurrent()
+            return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
             guard let self, self.isSpeaking, !self.isPaused else { return .commandFailed }
-            self.synthesizer.pauseSpeaking(at: .word)
-            self.isPaused = true
-            self.updateNowPlayingPlaybackState()
+            self.pauseCurrent()
             return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             guard let self, self.isSpeaking else { return .commandFailed }
-            if self.isPaused {
-                self.synthesizer.continueSpeaking()
-                self.isPaused = false
-            } else {
-                self.synthesizer.pauseSpeaking(at: .word)
-                self.isPaused = true
-            }
-            self.updateNowPlayingPlaybackState()
+            if self.isPaused { self.resumeCurrent() } else { self.pauseCurrent() }
             return .success
         }
         center.stopCommand.addTarget { [weak self] _ in
@@ -183,48 +193,92 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     /// Different token always restarts a fresh utterance.
     func toggle(token: String, text: String) {
         if activeToken == token && isSpeaking {
-            if isPaused {
-                synthesizer.continueSpeaking()
-                isPaused = false
-            } else {
-                synthesizer.pauseSpeaking(at: .word)
-                isPaused = true
-            }
+            if isPaused { resumeCurrent() } else { pauseCurrent() }
         } else {
             speak(token: token, text: text)
         }
+    }
+
+    /// Pause the active utterance on whichever engine owns it.
+    private func pauseCurrent() {
+        guard isSpeaking, !isPaused else { return }
+        if activeEngineIsKokoro { KokoroTTSEngine.shared.pause() }
+        else { synthesizer.pauseSpeaking(at: .word) }
+        isPaused = true
+        updateNowPlayingPlaybackState()
+    }
+
+    /// Resume the active utterance on whichever engine owns it.
+    private func resumeCurrent() {
+        guard isSpeaking, isPaused else { return }
+        if activeEngineIsKokoro { KokoroTTSEngine.shared.resume() }
+        else { synthesizer.continueSpeaking() }
+        isPaused = false
+        updateNowPlayingPlaybackState()
     }
 
     private func speak(token: String, text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if synthesizer.isSpeaking {
-            synthesizer.stopSpeaking(at: .immediate)
-        }
+        // Stop whatever is currently playing on EITHER engine before starting.
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        KokoroTTSEngine.shared.stop()
 
         // Reclaim playback — dictation/capture may have left .record.
         PlaybackAudioSession.configure()
 
-        let utterance = AVSpeechUtterance(string: trimmed)
-        if let voice = resolvedVoice {
-            utterance.voice = voice
-        }
-        // Defaults (rate 0.5, pitch 1.0) — dial later if Tom wants.
-
         isSpeaking = true
         isPaused = false
         activeToken = token
-        activeUtterance = utterance
         configureRemoteCommandsIfNeeded()
         setNowPlaying(title: "AirPad")
-        synthesizer.speak(utterance)
+
+        if shouldUseKokoro, let voiceID = selectedKokoroVoiceID {
+            activeEngineIsKokoro = true
+            activeUtterance = nil          // AVSpeech delegates key off this; nil = "not mine"
+            speakViaKokoro(token: token, text: trimmed, voiceID: voiceID)
+        } else {
+            activeEngineIsKokoro = false
+            let utterance = AVSpeechUtterance(string: trimmed)
+            if let voice = resolvedVoice { utterance.voice = voice }
+            // Defaults (rate 0.5, pitch 1.0) — dial later if Tom wants.
+            activeUtterance = utterance
+            synthesizer.speak(utterance)
+        }
+    }
+
+    /// Kokoro path: streaming chunked synthesis → PCM → AVAudioEngine. Returns
+    /// after the producer is launched; `onFinish` fires at natural end. On a
+    /// setup failure (cold-load/engine-start) it falls back to AVSpeech so the
+    /// answer still reads. State resets are guarded on the owning token.
+    private func speakViaKokoro(token: String, text: String, voiceID: String) {
+        Task { @MainActor in
+            do {
+                try await KokoroTTSEngine.shared.speak(text: text, voiceID: voiceID) { [weak self] in
+                    guard let self, self.activeEngineIsKokoro, self.activeToken == token else { return }
+                    self.isSpeaking = false
+                    self.isPaused = false
+                    self.activeToken = nil
+                    self.clearNowPlaying()
+                }
+            } catch {
+                guard self.activeToken == token else { return }
+                self.activeEngineIsKokoro = false
+                let utterance = AVSpeechUtterance(string: text)
+                if let voice = self.resolvedVoice { utterance.voice = voice }
+                self.activeUtterance = utterance
+                self.synthesizer.speak(utterance)
+            }
+        }
     }
 
     func stop() {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
+        KokoroTTSEngine.shared.stop()
+        activeEngineIsKokoro = false
         isSpeaking = false
         isPaused = false
         activeToken = nil

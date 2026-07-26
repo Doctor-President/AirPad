@@ -59,6 +59,19 @@ packages:
   FloatingPanel:
     url: https://github.com/scenee/FloatingPanel
     exactVersion: 3.2.2
+  # Kokoro on-device TTS (voice spike). MLX-Swift-based text→audio with the Misaki
+  # G2P built in (proven iOS-clean). Pulls mlx-swift + MisakiSwift + MLXUtilsLibrary
+  # transitively. DEV/PERSONAL spike — model weights dev-bundled; ODR for production.
+  KokoroSwift:
+    url: https://github.com/adriancmurray/kokoro-ios
+    revision: 2c1e7c41ff0e2160617cc90b8ac25287a1cd6451
+  # Pin mlx-swift to the version KokoroSwift's own Package.resolved was built against
+  # (0.29.1). AirPad otherwise re-resolves to 0.31.6, which ships a `CudaBuild`
+  # build-tool plugin that xcodebuild blocks (plugin-validation) headlessly + on
+  # TestFlight. 0.29.1 has no such plugin and is the author-tested version.
+  mlx-swift:
+    url: https://github.com/ml-explore/mlx-swift
+    exactVersion: 0.29.1
 
 targets:
   AirPad:
@@ -74,6 +87,8 @@ targets:
       - target: AirPadShare
         embed: true
       - package: FloatingPanel
+      - package: KokoroSwift
+        product: KokoroSwift
       - sdk: SpriteKit.framework
       - sdk: AVFoundation.framework
       - sdk: Speech.framework

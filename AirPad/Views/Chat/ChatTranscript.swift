@@ -373,9 +373,22 @@ struct ChatTranscript: View {
                     speech.selectedKokoroVoiceID = nil
                 }
             )
+            // MLX ("AirPad Voices") and ANE ("ANE Voices") share selectedKokoroVoiceID
+            // but differ on the engine flag, so each binding shows its checkmark only
+            // when its engine is active, and picking one flips useANEKokoro accordingly.
             let kokoroSelection = Binding<String?>(
-                get: { speech.selectedKokoroVoiceID },
-                set: { speech.selectedKokoroVoiceID = $0 }
+                get: { !speech.useANEKokoro ? speech.selectedKokoroVoiceID : nil },
+                set: {
+                    speech.selectedKokoroVoiceID = $0
+                    speech.useANEKokoro = false
+                }
+            )
+            let aneSelection = Binding<String?>(
+                get: { speech.useANEKokoro ? speech.selectedKokoroVoiceID : nil },
+                set: {
+                    speech.selectedKokoroVoiceID = $0
+                    speech.useANEKokoro = true
+                }
             )
             let kokoroInstalled = KokoroTTSEngine.shared.isModelInstalled
             let kokoroExtras = KokoroVoiceCatalog.allEnglishVoiceIDs
@@ -416,6 +429,21 @@ struct ChatTranscript: View {
                                     Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
                                         .tag(Optional(id))
                                 }
+                            }
+                        }
+                    }
+                    // ANE Kokoro (Core ML, no GPU) — the background-survival spike.
+                    // Shown unconditionally: the ANE models download on demand, so
+                    // this tier doesn't need the MLX weights bundled. Same voice IDs.
+                    Menu("ANE Voices (β)") {
+                        Picker("ANE Voice", selection: aneSelection) {
+                            ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
+                                Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
+                                    .tag(Optional(id))
+                            }
+                            ForEach(kokoroExtras, id: \.self) { id in
+                                Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
+                                    .tag(Optional(id))
                             }
                         }
                     }

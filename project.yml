@@ -81,6 +81,20 @@ packages:
   MLXUtilsLibrary:
     url: https://github.com/mlalma/MLXUtilsLibrary
     exactVersion: 0.0.6
+  # FluidAudio — Kokoro TTS on the Apple Neural Engine via a 7-stage Core ML chain
+  # (background-survival SPIKE, parallel to the MLX KokoroSwift path which stays as
+  # fallback). We drive it with the `.allAne` compute-unit routing so every stage
+  # requests the ANE and the ANE-incompatible iSTFT/noise ops fall back to CPU
+  # (NOT the GPU the default routing uses) → no Metal → not killed by the
+  # Metal-in-background ban that forced the MLX park-while-backgrounded workaround.
+  # Apache-2.0, iOS 17+. No external SPM deps (internal targets + a prebuilt
+  # NemoTextProcessing.xcframework carrying ios-arm64 + ios-arm64-simulator slices)
+  # → zero conflict with the mlx-swift 0.29.1 pin. Models download on first use to
+  # the app cache (not dev-bundled like the MLX weights). We link only the FluidAudio
+  # LIBRARY product; the macOS-only fluidaudiocli executable stays unlinked.
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio
+    exactVersion: 0.15.5
 
 targets:
   AirPad:
@@ -116,6 +130,9 @@ targets:
         product: MLX
       - package: MLXUtilsLibrary
         product: MLXUtilsLibrary
+      # FluidAudio (ANE Kokoro spike). Library product only — never fluidaudiocli.
+      - package: FluidAudio
+        product: FluidAudio
       - sdk: SpriteKit.framework
       - sdk: AVFoundation.framework
       - sdk: Speech.framework
@@ -129,6 +146,15 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_ENTITLEMENTS: AirPad/AirPad.entitlements
         DEVELOPMENT_TEAM: 8XM4B5F42Y
+        # Re-pin signing at the TARGET level too. The project-level pin (see
+        # settings.base up top) is OUTRANKED by xcodegen's per-target auto-default
+        # of CODE_SIGN_IDENTITY="iPhone Developer", which the CoreDevice installer
+        # rejects on device ("executable is not codesigned"). A target-level pin
+        # wins. Regenerating after adding the FluidAudio package surfaced this —
+        # the app target's Debug+Release flipped to "iPhone Developer". Re-verify a
+        # DEVICE install after any `xcodegen generate`.
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
         # App icon = the Icon Composer bundle AirPad/AirPad.icon (a standalone
         # `wrapper.icon` resource — NOT inside Assets.xcassets; actool rejects a
         # nested .icon in a catalog). The legacy AppIcon.appiconset stays as an

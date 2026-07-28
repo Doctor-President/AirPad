@@ -24,6 +24,29 @@ private func ortFootprintMB() -> Double {
     return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576.0 : -1
 }
 
+/// QoS of the CURRENT thread — the effective priority the code runs at. Logged at the actual
+/// inference site to answer "is the real read-aloud path throttled below the sampler?".
+private func qosClassName() -> String {
+    switch qos_class_self() {
+    case QOS_CLASS_USER_INTERACTIVE: return "userInteractive"
+    case QOS_CLASS_USER_INITIATED:   return "userInitiated"
+    case QOS_CLASS_DEFAULT:          return "default"
+    case QOS_CLASS_UTILITY:          return "utility"
+    case QOS_CLASS_BACKGROUND:       return "background"
+    default:                         return "unspecified"
+    }
+}
+
+private func thermalName() -> String {
+    switch ProcessInfo.processInfo.thermalState {
+    case .nominal:  return "nominal"
+    case .fair:     return "fair"
+    case .serious:  return "serious"
+    case .critical: return "critical"
+    @unknown default: return "?"
+    }
+}
+
 /// Kokoro phoneme→id vocab (114 entries) from `hexgrad/Kokoro-82M` config.json (Apache-2.0).
 /// The SAME map the model was trained with; `n_token = 178`. Embedded (not a resource) so
 /// there's no bundle-path risk. MisakiSwift emits these exact IPA symbols.
@@ -77,6 +100,7 @@ actor ORTCore {
     private var g2pGB: EnglishG2P?
     private(set) var inputNames: [String] = []
     private(set) var outputNames: [String] = []
+    private var loggedInferenceQoS = false
 
     var isLoaded: Bool { session != nil }
     var voiceIDs: [String] { Array(voices.keys) }
@@ -87,6 +111,7 @@ actor ORTCore {
         session = nil
         env = nil
         voices = [:]
+        loggedInferenceQoS = false
     }
 
     /// Build the ORT session (CPU EP) + load voice styles. Returns cold-load wall time and
@@ -134,6 +159,12 @@ actor ORTCore {
     /// Returns the samples, the inference wall time, and the phoneme count (for telemetry).
     func generate(text: String, voiceID: String) throws -> (samples: [Float], seconds: Double, phonemes: Int) {
         guard let session else { throw KokoroEngineError.modelNotInstalled }
+        // ★ QoS/thermal at the ACTUAL inference site (actor executor, inherited from the caller's
+        // Task). Answers whether the real read-aloud path runs throttled below the sampler.
+        if !loggedInferenceQoS {
+            loggedInferenceQoS = true
+            kokoroOrtLog.info("★ ORT INFERENCE CONTEXT: qos=\(qosClassName(), privacy: .public) thermal=\(thermalName(), privacy: .public)")
+        }
         // British voices (bf_/bm_) use the en-GB frontend; everything else en-US.
         let british = voiceID.hasPrefix("bf_") || voiceID.hasPrefix("bm_")
         let (phonemeString, _) = g2p(british: british).phonemize(text: text)
@@ -330,7 +361,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
         var totalGen = 0.0
         var totalAudio = 0.0
 
-        kokoroOrtLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public), variant=\(self.modelVariant.rawValue, privacy: .public)")
+        kokoroOrtLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public), variant=\(self.modelVariant.rawValue, privacy: .public), threads=\(self.intraOpThreads.map(String.init) ?? "default", privacy: .public), thermal=\(thermalName(), privacy: .public), mainQoS=\(qosClassName(), privacy: .public)")
         speakTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for (i, chunk) in chunks.enumerated() {
@@ -340,6 +371,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
                     let samples: [Float]
                     let seconds: Double
                     let phonemes: Int
+                    let rBefore = ortFootprintMB()   // resident before this chunk's inference
                     if let cached = self.takeSpec(chunkText: chunk, voiceID: id) {
                         // Speculative HIT — synthesized ahead of the tap; play with ~0 latency.
                         samples = cached; seconds = 0; phonemes = -1
@@ -348,6 +380,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
                         let r = try await self.core.generate(text: chunk, voiceID: id)
                         samples = r.samples; seconds = r.seconds; phonemes = r.phonemes
                     }
+                    let rAfter = ortFootprintMB()    // resident after — Δ per chunk exposes the arena growth
                     if i == 0 { self.tFirstSynthDone = CFAbsoluteTimeGetCurrent() }
                     if Task.isCancelled { return }
                     guard !samples.isEmpty else { continue }
@@ -355,8 +388,8 @@ final class ORTKokoroTTSEngine: TTSEngine {
                     totalAudio += Double(samples.count) / Self.sampleRate
                     self.lastRTF = totalAudio > 0 ? totalGen / totalAudio : nil
                     // Track peak resident across the answer (M3 #5 — confirm int8 holds under load).
-                    self.peakResidentMB = max(self.peakResidentMB ?? 0, ortFootprintMB())
-                    kokoroOrtLog.info("chunk \(i)/\(chunks.count) phonemes=\(phonemes) synth \(seconds, format: .fixed(precision: 2))s → \(samples.count) samples, RTF=\(self.lastRTF ?? 0, format: .fixed(precision: 2)) resident=\(ortFootprintMB(), format: .fixed(precision: 0))MB")
+                    self.peakResidentMB = max(self.peakResidentMB ?? 0, rAfter)
+                    kokoroOrtLog.info("chunk \(i)/\(chunks.count) phonemes=\(phonemes) synth \(seconds, format: .fixed(precision: 2))s → \(samples.count) samples, RTF=\(self.lastRTF ?? 0, format: .fixed(precision: 2)) · resident \(rBefore, format: .fixed(precision: 0))→\(rAfter, format: .fixed(precision: 0)) (Δ\(rAfter - rBefore, format: .fixed(precision: 0)))MB")
                     self.schedule(samples: samples)
                     if self.engine.isRunning && !self.player.isPlaying {
                         self.player.play()

@@ -13,6 +13,7 @@
 		0284EB1329A9A5B1C0DF85D6 /* NeighborhoodService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */; };
 		02A14D3596D8C515D5585893 /* DashboardLavaLamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6658362A7268EAA76A6AAF92 /* DashboardLavaLamp.swift */; };
 		0322D64C0EE47E45F43BB07A /* CanvasScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592EF17AD51166EAA3E577F2 /* CanvasScope.swift */; };
+		03F5877AF874572F168AA89D /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 8372AD42EB0513ED6C941AB1 /* onnxruntime */; };
 		0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		05B10604308289E3B1B57BC2 /* EntryMigrationSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */; };
 		072DC09BF29115E7CB85AC94 /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39E6876F450FCAC6F6B1A9CF /* Tag.swift */; };
@@ -40,6 +41,7 @@
 		1A9E8EF4E13EF3D1B9009EB8 /* ReviewQueueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */; };
 		1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE402981E931009EBB3F93EE /* Neighborhood.swift */; };
 		1B229A753568E78D6E70A5BA /* fraunces_msdf.json in Resources */ = {isa = PBXBuildFile; fileRef = 30C340391F2E98790F9DA5D1 /* fraunces_msdf.json */; };
+		1B41F8D24569DF270223309E /* ORTKokoroTTSEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C4D570DFAF5FFF608BB804 /* ORTKokoroTTSEngine.swift */; };
 		1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */; };
 		1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE4CFCC06057A8055A511FC /* BackgroundGridNode.swift */; };
 		1F75D3242F7280C70C2158C5 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79694583DE4ADDFCDD62B5F6 /* SceneDelegate.swift */; };
@@ -480,6 +482,7 @@
 		DF61433D19DB8098D7096F3D /* VideoEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoEntryBody.swift; sourceTree = "<group>"; };
 		E0B45CEB1C0E9FEB4B20A4F4 /* CanvasChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasChrome.swift; sourceTree = "<group>"; };
 		E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissModifier.swift; sourceTree = "<group>"; };
+		E2C4D570DFAF5FFF608BB804 /* ORTKokoroTTSEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ORTKokoroTTSEngine.swift; sourceTree = "<group>"; };
 		E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryBody.swift; sourceTree = "<group>"; };
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
@@ -520,6 +523,7 @@
 				AAB2501E331656DE7FE806A6 /* MLX in Frameworks */,
 				AC2DE8245EED4A88F909800B /* MLXUtilsLibrary in Frameworks */,
 				30E3302F48AED5CC0FD688FB /* FluidAudio in Frameworks */,
+				03F5877AF874572F168AA89D /* onnxruntime in Frameworks */,
 				C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */,
 				B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */,
 				CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */,
@@ -710,6 +714,7 @@
 				F89D57ADC31DE6DC0691D3A4 /* FluidKokoroTTSEngine.swift */,
 				BB25EB3732E6F88839D53D31 /* KokoroTTSEngine.swift */,
 				7E13B726C9EB9C50D85D1F23 /* KokoroVoiceCatalog.swift */,
+				E2C4D570DFAF5FFF608BB804 /* ORTKokoroTTSEngine.swift */,
 				A3F9DE5923343BE8332C2411 /* TextChunker.swift */,
 				B39893411C3255475A44AC19 /* TTSEngine.swift */,
 			);
@@ -1091,6 +1096,7 @@
 				DED18CD6E90D08F09C3F3202 /* MLX */,
 				6191643410CA207688397732 /* MLXUtilsLibrary */,
 				088313F381401C3E629BA3C6 /* FluidAudio */,
+				8372AD42EB0513ED6C941AB1 /* onnxruntime */,
 			);
 			productName = AirPad;
 			productReference = 9D21AB3DEE91993C6F039833 /* AirPad.app */;
@@ -1170,6 +1176,7 @@
 				73B6C9EA8465026F7AEE0367 /* XCRemoteSwiftPackageReference "kokoro-ios" */,
 				48CC89D1BD992DEC33BC4009 /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */,
 				CEC47C63A31A877EDCB4CF98 /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				8080786896FFFF9B3FA323CD /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 95C31440F925CC38D4918A3D /* Products */;
@@ -1352,6 +1359,7 @@
 				8C96AD497D0109F8061A0BB6 /* NodeListView.swift in Sources */,
 				AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */,
 				0EEF4CACE92EAACFFD043499 /* OGPreviewView.swift in Sources */,
+				1B41F8D24569DF270223309E /* ORTKokoroTTSEngine.swift in Sources */,
 				8D9DC70840AFFFF47A8577FB /* ParityShots.swift in Sources */,
 				09AE21B8978FFA31BA8A26AF /* PastePadView.swift in Sources */,
 				BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */,
@@ -1768,6 +1776,14 @@
 				revision = 2c1e7c41ff0e2160617cc90b8ac25287a1cd6451;
 			};
 		};
+		8080786896FFFF9B3FA323CD /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = exactVersion;
+				version = 1.24.2;
+			};
+		};
 		CEC47C63A31A877EDCB4CF98 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/ml-explore/mlx-swift";
@@ -1801,6 +1817,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 73B6C9EA8465026F7AEE0367 /* XCRemoteSwiftPackageReference "kokoro-ios" */;
 			productName = KokoroSwift;
+		};
+		8372AD42EB0513ED6C941AB1 /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8080786896FFFF9B3FA323CD /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
 		};
 		DED18CD6E90D08F09C3F3202 /* MLX */ = {
 			isa = XCSwiftPackageProductDependency;

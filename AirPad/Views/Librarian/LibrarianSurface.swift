@@ -198,6 +198,13 @@ struct LibrarianSurface: View {
                 PeekProgressReader(progress: panelModel.progress) { p in
                     morphingField(geo: geo, librarian: librarian, p: p)
                 }
+                // #1 — suppress the search bar / peek pill while the active-chat
+                // transcript is showing (you're chatting, not searching). Reuses the
+                // shipped BUG-11 suppress idiom (opacity + hit-testing), gated on the
+                // surface's own home↔chat toggle rather than the whole-surface
+                // `panelSuppressed` — so the chat + its input row stay visible.
+                .opacity(isViewingActiveChat ? 0 : 1)
+                .allowsHitTesting(!isViewingActiveChat)
 
             }
         }

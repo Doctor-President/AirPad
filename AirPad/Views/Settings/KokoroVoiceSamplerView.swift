@@ -140,6 +140,15 @@ struct KokoroVoiceSamplerView: View {
                 }
             }
             .pickerStyle(.segmented)
+            // Intra-op thread count — M3-alongside measurement (default vs all cores).
+            Picker("Threads", selection: Binding(
+                get: { ortEngine.intraOpThreads ?? 0 },
+                set: { ortEngine.intraOpThreads = ($0 == 0) ? nil : $0 }
+            )) {
+                Text("threads: default").tag(0)
+                Text("all (\(ProcessInfo.processInfo.activeProcessorCount))").tag(ProcessInfo.processInfo.activeProcessorCount)
+            }
+            .pickerStyle(.segmented)
             Button {
                 ortTest()
             } label: {

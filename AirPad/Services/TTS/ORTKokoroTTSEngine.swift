@@ -91,11 +91,14 @@ actor ORTCore {
 
     /// Build the ORT session (CPU EP) + load voice styles. Returns cold-load wall time and
     /// whether the CoreML EP is even available (logged so we PROVE we didn't append it).
-    func warmUp(modelURL: URL, voicesURL: URL?) throws -> (seconds: Double, coreMLAvailable: Bool) {
+    func warmUp(modelURL: URL, voicesURL: URL?, intraOpThreads: Int?) throws -> (seconds: Double, coreMLAvailable: Bool) {
         guard session == nil else { return (0, false) }
         let t0 = CFAbsoluteTimeGetCurrent()
         let env = try ORTEnv(loggingLevel: ORTLoggingLevel.warning)
         let opts = try ORTSessionOptions()
+        // Optional intra-op thread pin (M3-alongside measurement: default vs explicit). ORT's
+        // default may not use all A19 performance cores for a single inference.
+        if let n = intraOpThreads { try opts.setIntraOpNumThreads(Int32(n)) }
         // ★★ CPU EXECUTION PROVIDER ONLY. The CoreML EP is OPT-IN in ORT — you must call
         // `appendCoreMLExecutionProvider…`. We DELIBERATELY DO NOT, because CoreML re-enters
         // Espresso/BNNS — the exact libBNNS crash this whole pivot exists to escape. With no
@@ -200,6 +203,12 @@ final class ORTKokoroTTSEngine: TTSEngine {
         didSet { if oldValue != modelVariant { switchVariant() } }
     }
 
+    /// Intra-op thread count for ORT (nil = ORT default). Changing it reloads the session —
+    /// for the M3-alongside measurement (default vs explicit thread count). Not persisted.
+    var intraOpThreads: Int? = nil {
+        didSet { if oldValue != intraOpThreads { switchVariant() } }
+    }
+
     private let core = ORTCore()
 
     // Playback graph (main thread; built once).
@@ -235,6 +244,14 @@ final class ORTKokoroTTSEngine: TTSEngine {
     private var firstAudibleLogged = false
     private var renderTapInstalled = false
 
+    // ── Speculative synthesis seam (build the shape; UNWIRED — M4 wires the trigger). Synthesize
+    //    the first chunk to PCM WITHOUT playing, cached by exact (voice, text); speak() plays a
+    //    hit instantly. `firstChunkMaxChars` keeps chunk 0 small (~one short sentence ≈ ~2 s at
+    //    int8) so first-audio is fast AND the speculative unit is cheap.
+    private static let firstChunkMaxChars = 60
+    private var specCache: [(key: String, samples: [Float])] = []   // tiny, FIFO
+    private let specCacheCap = 4
+
     private init() {}
 
     // MARK: TTSEngine
@@ -257,8 +274,9 @@ final class ORTKokoroTTSEngine: TTSEngine {
         coldLoadSeconds = nil
         lastRTF = nil
         loadedVoiceIDs = []
+        clearSpec()
         Task { await core.evict() }
-        kokoroOrtLog.info("model variant → \(self.modelVariant.rawValue, privacy: .public) (session evicted; next play reloads)")
+        kokoroOrtLog.info("ORT session reset (variant=\(self.modelVariant.rawValue, privacy: .public) threads=\(self.intraOpThreads.map(String.init) ?? "default", privacy: .public)) — reloads on next play")
     }
 
     /// Cold-load the ORT session + voices OFF the launch path. First call does the heavy work
@@ -269,7 +287,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
             throw KokoroEngineError.modelNotInstalled
         }
         let footBefore = ortFootprintMB()
-        let (secs, coreMLAvailable) = try await core.warmUp(modelURL: modelURL, voicesURL: Self.voicesURL)
+        let (secs, coreMLAvailable) = try await core.warmUp(modelURL: modelURL, voicesURL: Self.voicesURL, intraOpThreads: intraOpThreads)
         let footAfter = ortFootprintMB()
         loadedFootprintMB = footAfter - footBefore
         let inN = await core.inputNames
@@ -277,7 +295,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
         loadedVoiceIDs = await core.voiceIDs.sorted()
         isLoaded = await core.isLoaded
         if secs > 0 { coldLoadSeconds = secs }
-        kokoroOrtLog.info("★ ORT cold-load [\(self.modelVariant.rawValue, privacy: .public)] \(secs, format: .fixed(precision: 2))s · EP=CPU (default; CoreML EP available=\(coreMLAvailable) but DELIBERATELY NOT appended) · resident \(footBefore, format: .fixed(precision: 0))→\(footAfter, format: .fixed(precision: 0))MB (model ≈ \(footAfter - footBefore, format: .fixed(precision: 0))MB) · inputs=\(inN, privacy: .public) · outputs=\(outN, privacy: .public) · voices=\(self.loadedVoiceIDs.count)")
+        kokoroOrtLog.info("★ ORT cold-load [\(self.modelVariant.rawValue, privacy: .public), threads=\(self.intraOpThreads.map(String.init) ?? "default", privacy: .public)] \(secs, format: .fixed(precision: 2))s · EP=CPU (default; CoreML EP available=\(coreMLAvailable) but DELIBERATELY NOT appended) · resident \(footBefore, format: .fixed(precision: 0))→\(footAfter, format: .fixed(precision: 0))MB (model ≈ \(footAfter - footBefore, format: .fixed(precision: 0))MB) · inputs=\(inN, privacy: .public) · outputs=\(outN, privacy: .public) · voices=\(self.loadedVoiceIDs.count)")
     }
 
     func speak(text: String, voiceID: String?, onFinish: @escaping () -> Void) async throws {
@@ -292,7 +310,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
         let preloaded = isLoaded
         kokoroOrtLog.info("▶ PLAY TAPPED — preloaded=\(preloaded) (cold-load \(preloaded ? "already done" : "runs now"))")
 
-        let chunks = TextChunker.chunk(text)
+        let chunks = TextChunker.chunk(text, firstChunkMaxChars: Self.firstChunkMaxChars)
         guard !chunks.isEmpty else { return }
         tColdStart = CFAbsoluteTimeGetCurrent()
         try await warmUpIfNeeded()
@@ -319,7 +337,17 @@ final class ORTKokoroTTSEngine: TTSEngine {
                 if Task.isCancelled { return }
                 do {
                     if i == 0 { self.tFirstSynthStart = CFAbsoluteTimeGetCurrent() }
-                    let (samples, seconds, phonemes) = try await self.core.generate(text: chunk, voiceID: id)
+                    let samples: [Float]
+                    let seconds: Double
+                    let phonemes: Int
+                    if let cached = self.takeSpec(chunkText: chunk, voiceID: id) {
+                        // Speculative HIT — synthesized ahead of the tap; play with ~0 latency.
+                        samples = cached; seconds = 0; phonemes = -1
+                        kokoroOrtLog.info("chunk \(i) SPECULATIVE HIT — \(cached.count) samples, no synth")
+                    } else {
+                        let r = try await self.core.generate(text: chunk, voiceID: id)
+                        samples = r.samples; seconds = r.seconds; phonemes = r.phonemes
+                    }
                     if i == 0 { self.tFirstSynthDone = CFAbsoluteTimeGetCurrent() }
                     if Task.isCancelled { return }
                     guard !samples.isEmpty else { continue }
@@ -437,8 +465,52 @@ final class ORTKokoroTTSEngine: TTSEngine {
         guard isLoaded, speakTask == nil, buffersInFlight == 0 else { return }
         await core.evict()
         isLoaded = false
+        clearSpec()
         kokoroOrtLog.info("idle eviction: released ORT model after \(Int(self.idleEvictionSeconds / 60)) min unused (footprint now \(ortFootprintMB(), format: .fixed(precision: 0))MB)")
     }
+
+    // MARK: Speculative synthesis (UNWIRED — M4 wires the trigger to the chat surface)
+
+    /// Synthesize the FIRST chunk of `text` in `voiceID` to PCM and cache it WITHOUT playing, so
+    /// the eventual `speak()` plays it with ~0 latency. Called speculatively (e.g. once the
+    /// answer's first sentence has streamed). No-op if already cached. **UNWIRED** — no trigger.
+    func speculativeSynthesize(text: String, voiceID: String?) {
+        noteActivity()
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await self.warmUpIfNeeded()
+                let id = voiceID ?? "af_heart"
+                let chunks = TextChunker.chunk(text, firstChunkMaxChars: Self.firstChunkMaxChars)
+                guard let first = chunks.first else { return }
+                let key = Self.specKey(first, id)
+                if self.specCache.contains(where: { $0.key == key }) { return }
+                let (samples, seconds, _) = try await self.core.generate(text: first, voiceID: id)
+                guard !samples.isEmpty else { return }
+                self.insertSpec(key: key, samples: samples)
+                kokoroOrtLog.info("speculative synth cached: \(first.count) chars in \(seconds, format: .fixed(precision: 2))s, voice=\(id, privacy: .public) (cache=\(self.specCache.count))")
+            } catch {
+                kokoroOrtLog.error("speculative synth failed: \(String(describing: error), privacy: .public)")
+            }
+        }
+    }
+
+    private static func specKey(_ text: String, _ voiceID: String) -> String { "\(voiceID)\u{1}\(text)" }
+
+    private func insertSpec(key: String, samples: [Float]) {
+        specCache.removeAll { $0.key == key }
+        specCache.append((key: key, samples: samples))
+        if specCache.count > specCacheCap { specCache.removeFirst(specCache.count - specCacheCap) }
+    }
+
+    /// Consume a cached speculative chunk (one-shot) if present.
+    private func takeSpec(chunkText: String, voiceID: String) -> [Float]? {
+        let k = Self.specKey(chunkText, voiceID)
+        guard let idx = specCache.firstIndex(where: { $0.key == k }) else { return nil }
+        return specCache.remove(at: idx).samples
+    }
+
+    private func clearSpec() { specCache.removeAll() }
 
     // MARK: Perceived-wait render tap (first AUDIBLE sample out of the mixer)
 

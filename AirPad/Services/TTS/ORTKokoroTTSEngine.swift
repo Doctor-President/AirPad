@@ -46,19 +46,20 @@ private let kokoroVocab: [String: Int] = [
 /// Resources/Kokoro/ (same tensor contract — only weight precision differs). Switchable at
 /// runtime so both can be measured in one session; fp32 stays intact + default.
 enum ORTModelVariant: String, CaseIterable, Sendable {
-    case fp32, int8, q8f16
+    // int8 is the SHIP choice (T-verified: sounds identical to fp32, 187MB vs 441MB resident,
+    // 92MB vs 326MB disk, RTF 0.55). fp32 kept switchable in the dev sampler. q8f16 dropped
+    // (dominated — more memory than int8 AND slower).
+    case int8, fp32
     var filename: String {
         switch self {
-        case .fp32:  return "kokoro-v1_0"
         case .int8:  return "kokoro-v1_0-int8"
-        case .q8f16: return "kokoro-v1_0-q8f16"
+        case .fp32:  return "kokoro-v1_0"
         }
     }
     var label: String {
         switch self {
-        case .fp32:  return "fp32"
         case .int8:  return "int8"
-        case .q8f16: return "q8f16"
+        case .fp32:  return "fp32"
         }
     }
     var url: URL? { Bundle.main.url(forResource: filename, withExtension: "onnx", subdirectory: "Kokoro") }
@@ -195,7 +196,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
 
     /// Which weight precision to load. Switching evicts the session so the next play reloads
     /// the new variant (for the fp32-vs-int8 footprint/RTF measurement). fp32 default + intact.
-    var modelVariant: ORTModelVariant = .fp32 {
+    var modelVariant: ORTModelVariant = .int8 {
         didSet { if oldValue != modelVariant { switchVariant() } }
     }
 
@@ -215,6 +216,24 @@ final class ORTKokoroTTSEngine: TTSEngine {
     private(set) var coldLoadSeconds: Double?
     private(set) var lastRTF: Double?
     private(set) var loadedVoiceIDs: [String] = []
+    private(set) var loadedFootprintMB: Double?
+    private(set) var peakResidentMB: Double?   // peak phys_footprint during the last utterance (M3 #5)
+
+    // ── Warm-up design (ported from the Fluid spike): speculative warm + idle eviction.
+    private let idleEvictionSeconds: TimeInterval = 5 * 60
+    private var idleTimer: Task<Void, Never>?
+
+    // ── Perceived-wait instrumentation (tap → first AUDIBLE sample out of the mixer, NOT
+    //    scheduleBuffer's return). All CFAbsoluteTime.
+    private var tTap = 0.0
+    private var tColdStart = 0.0
+    private var tColdDone = 0.0
+    private var tEngineReady = 0.0
+    private var tFirstSynthStart = 0.0
+    private var tFirstSynthDone = 0.0
+    private var tFirstPlay = 0.0
+    private var firstAudibleLogged = false
+    private var renderTapInstalled = false
 
     private init() {}
 
@@ -252,6 +271,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
         let footBefore = ortFootprintMB()
         let (secs, coreMLAvailable) = try await core.warmUp(modelURL: modelURL, voicesURL: Self.voicesURL)
         let footAfter = ortFootprintMB()
+        loadedFootprintMB = footAfter - footBefore
         let inN = await core.inputNames
         let outN = await core.outputNames
         loadedVoiceIDs = await core.voiceIDs.sorted()
@@ -262,41 +282,64 @@ final class ORTKokoroTTSEngine: TTSEngine {
 
     func speak(text: String, voiceID: String?, onFinish: @escaping () -> Void) async throws {
         stop()
+        noteActivity()  // reset idle-eviction clock
+        // Perceived-wait clock. speak() is entered synchronously off the play tap (sub-ms hop).
+        // ★ preloaded answers whether cold-load runs now (felt wait includes it) or was already
+        // done by a prior play / warm() (felt wait excludes the load).
+        tTap = CFAbsoluteTimeGetCurrent()
+        firstAudibleLogged = false
+        tFirstSynthStart = 0; tFirstSynthDone = 0; tFirstPlay = 0
+        let preloaded = isLoaded
+        kokoroOrtLog.info("▶ PLAY TAPPED — preloaded=\(preloaded) (cold-load \(preloaded ? "already done" : "runs now"))")
+
         let chunks = TextChunker.chunk(text)
         guard !chunks.isEmpty else { return }
+        tColdStart = CFAbsoluteTimeGetCurrent()
         try await warmUpIfNeeded()
+        tColdDone = CFAbsoluteTimeGetCurrent()
         let id = voiceID ?? "af_heart"
 
         PlaybackAudioSession.configure()
         ensureGraph()
         if !engine.isRunning { try engine.start() }
+        tEngineReady = CFAbsoluteTimeGetCurrent()
+        installFirstSampleTap()   // first AUDIBLE frame out of the mixer
 
         self.onFinish = onFinish
         buffersInFlight = 0
         producerDone = false
+        peakResidentMB = ortFootprintMB()
         var totalGen = 0.0
         var totalAudio = 0.0
 
-        kokoroOrtLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public)")
+        kokoroOrtLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public), variant=\(self.modelVariant.rawValue, privacy: .public)")
         speakTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for (i, chunk) in chunks.enumerated() {
                 if Task.isCancelled { return }
                 do {
+                    if i == 0 { self.tFirstSynthStart = CFAbsoluteTimeGetCurrent() }
                     let (samples, seconds, phonemes) = try await self.core.generate(text: chunk, voiceID: id)
+                    if i == 0 { self.tFirstSynthDone = CFAbsoluteTimeGetCurrent() }
                     if Task.isCancelled { return }
                     guard !samples.isEmpty else { continue }
                     totalGen += seconds
                     totalAudio += Double(samples.count) / Self.sampleRate
                     self.lastRTF = totalAudio > 0 ? totalGen / totalAudio : nil
-                    kokoroOrtLog.info("chunk \(i)/\(chunks.count) phonemes=\(phonemes) synth \(seconds, format: .fixed(precision: 2))s → \(samples.count) samples, RTF=\(self.lastRTF ?? 0, format: .fixed(precision: 2))")
+                    // Track peak resident across the answer (M3 #5 — confirm int8 holds under load).
+                    self.peakResidentMB = max(self.peakResidentMB ?? 0, ortFootprintMB())
+                    kokoroOrtLog.info("chunk \(i)/\(chunks.count) phonemes=\(phonemes) synth \(seconds, format: .fixed(precision: 2))s → \(samples.count) samples, RTF=\(self.lastRTF ?? 0, format: .fixed(precision: 2)) resident=\(ortFootprintMB(), format: .fixed(precision: 0))MB")
                     self.schedule(samples: samples)
-                    if self.engine.isRunning && !self.player.isPlaying { self.player.play() }
+                    if self.engine.isRunning && !self.player.isPlaying {
+                        self.player.play()
+                        if self.tFirstPlay == 0 { self.tFirstPlay = CFAbsoluteTimeGetCurrent() }
+                    }
                 } catch {
                     kokoroOrtLog.error("chunk \(i) synth failed: \(String(describing: error), privacy: .public)")
                 }
             }
             self.producerDone = true
+            kokoroOrtLog.info("producer done: \(chunks.count) chunks, RTF=\(self.lastRTF ?? 0, format: .fixed(precision: 2)), peakResident=\(self.peakResidentMB ?? 0, format: .fixed(precision: 0))MB")
             if self.buffersInFlight == 0 { self.fireFinish() }
         }
     }
@@ -313,6 +356,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
         onFinish = nil
         producerDone = false
         buffersInFlight = 0
+        removeFirstSampleTap()
         guard graphReady else { return }
         player.stop()
         player.reset()
@@ -358,8 +402,86 @@ final class ORTKokoroTTSEngine: TTSEngine {
     }
 
     private func fireFinish() {
+        removeFirstSampleTap()
         if engine.isRunning { engine.stop() }
+        noteActivity()  // playback ended → start the idle-eviction clock from here
         let cb = onFinish; onFinish = nil
         cb?()
+    }
+
+    // MARK: Warm-up design (speculative warm + idle eviction) — ported, mechanism only, UNWIRED
+
+    /// Speculative, fire-and-forget model load the UI can call AHEAD of playback. Cheap if
+    /// already loaded/loading. Deliberately **not wired to launch or any hook** — the caller
+    /// picks the trigger. Failures swallowed (the first real `speak` surfaces + falls back).
+    func warm() {
+        noteActivity()
+        guard !isLoaded else { return }
+        Task { @MainActor in try? await warmUpIfNeeded() }
+    }
+
+    /// Reset the idle-eviction clock (called on warm/speak/finish) so the model is dropped
+    /// only after a genuine quiet period.
+    private func noteActivity() {
+        idleTimer?.cancel()
+        idleTimer = Task { @MainActor [weak self] in
+            let secs = self?.idleEvictionSeconds ?? 300
+            try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.evictIfIdle()
+        }
+    }
+
+    /// Drop the loaded model (frees resident RAM) only if nothing is playing/loading.
+    private func evictIfIdle() async {
+        guard isLoaded, speakTask == nil, buffersInFlight == 0 else { return }
+        await core.evict()
+        isLoaded = false
+        kokoroOrtLog.info("idle eviction: released ORT model after \(Int(self.idleEvictionSeconds / 60)) min unused (footprint now \(ortFootprintMB(), format: .fixed(precision: 0))MB)")
+    }
+
+    // MARK: Perceived-wait render tap (first AUDIBLE sample out of the mixer)
+
+    /// Passive tap on the mixer output; the FIRST non-silent frame = audio actually reaching
+    /// the device (the real start of the felt wait, which scheduleBuffer's return does NOT
+    /// capture). Detected on the audio thread; logged + removed on main.
+    private func installFirstSampleTap() {
+        guard graphReady, !renderTapInstalled else { return }
+        let node = engine.mainMixerNode
+        node.installTap(onBus: 0, bufferSize: 4096, format: node.outputFormat(forBus: 0)) { [weak self] buf, _ in
+            guard Self.hasAudio(buf) else { return }
+            let now = CFAbsoluteTimeGetCurrent()
+            Task { @MainActor [weak self] in self?.logPerceivedWait(firstSampleAt: now) }
+        }
+        renderTapInstalled = true
+    }
+
+    private func removeFirstSampleTap() {
+        guard renderTapInstalled else { return }
+        engine.mainMixerNode.removeTap(onBus: 0)
+        renderTapInstalled = false
+    }
+
+    private nonisolated static func hasAudio(_ buf: AVAudioPCMBuffer) -> Bool {
+        guard let ch = buf.floatChannelData else { return false }
+        let n = Int(buf.frameLength)
+        let p = ch[0]
+        var i = 0
+        while i < n { if abs(p[i]) > 1e-4 { return true }; i += 1 }
+        return false
+    }
+
+    /// Emit the full tap→first-audible interval + breakdown. Fires once per utterance.
+    private func logPerceivedWait(firstSampleAt tFirst: Double) {
+        guard !firstAudibleLogged, tTap > 0 else { return }
+        firstAudibleLogged = true
+        removeFirstSampleTap()
+        let total     = tFirst - tTap
+        let tapToCold = tColdStart - tTap
+        let cold      = tColdDone - tColdStart
+        let sessEng   = tEngineReady - tColdDone
+        let synth     = (tFirstSynthStart > 0 && tFirstSynthDone > 0) ? tFirstSynthDone - tFirstSynthStart : 0
+        let playToAud = (tFirstPlay > 0) ? tFirst - tFirstPlay : tFirst - tEngineReady
+        kokoroOrtLog.info("★ PERCEIVED WAIT tap→first-audible = \(total, format: .fixed(precision: 2))s  [tap→coldStart \(tapToCold, format: .fixed(precision: 3))s · cold-load \(cold, format: .fixed(precision: 2))s · session+engine \(sessEng, format: .fixed(precision: 3))s · synth(chunk0) \(synth, format: .fixed(precision: 2))s · play→audible \(playToAud, format: .fixed(precision: 3))s]  variant=\(self.modelVariant.rawValue, privacy: .public)")
     }
 }

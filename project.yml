@@ -95,6 +95,17 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio
     exactVersion: 0.15.5
+  # ONNX Runtime (MIT) — CPU-kernel inference backend for Kokoro TTS, the pivot away
+  # from Core ML/BNNS (Apple libBNNS crash, unfixable) and MLX/Metal (background ban).
+  # ORT's CPU EP touches neither. Official Microsoft SPM package wrapping the
+  # onnxruntime-c binary; exposes the Objective-C API (ORTEnv/ORTSession/ORTValue).
+  # ★ We PIN the CPU execution provider — NEVER the CoreML EP (it re-enters
+  # Espresso/BNNS = the exact crash we're escaping). NOTE: known SPM caveat
+  # (onnxruntime #27396) — missing MinimumOSVersion in the framework Info.plist can
+  # fail App Store/TestFlight validation; fine for dev builds, revisit for distribution.
+  onnxruntime:
+    url: https://github.com/microsoft/onnxruntime-swift-package-manager
+    exactVersion: 1.24.2
 
 targets:
   AirPad:
@@ -133,6 +144,9 @@ targets:
       # FluidAudio (ANE Kokoro spike). Library product only — never fluidaudiocli.
       - package: FluidAudio
         product: FluidAudio
+      # ONNX Runtime (Kokoro CPU inference — the pivot). Obj-C API; CPU EP only.
+      - package: onnxruntime
+        product: onnxruntime
       - sdk: SpriteKit.framework
       - sdk: AVFoundation.framework
       - sdk: Speech.framework

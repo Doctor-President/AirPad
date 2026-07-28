@@ -1,0 +1,320 @@
+import Foundation
+import AVFoundation
+import Observation
+import os
+import OnnxRuntimeBindings
+import MisakiSwift
+import MLX
+import MLXUtilsLibrary
+
+/// Read on device with
+/// `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "kokoro-ort"'`.
+private let kokoroOrtLog = Logger(subsystem: "com.doctorpresident.airpad", category: "kokoro-ort")
+
+/// Process resident memory (`phys_footprint`, MB) — the figure iOS jetsam + Xcode use.
+/// Diff before/after session load = the ORT model's resident cost (an M1 report metric).
+private func ortFootprintMB() -> Double {
+    var info = task_vm_info_data_t()
+    var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.stride / MemoryLayout<natural_t>.stride)
+    let kr = withUnsafeMutablePointer(to: &info) { ptr in
+        ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+            task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+        }
+    }
+    return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576.0 : -1
+}
+
+/// Kokoro phoneme→id vocab (114 entries) from `hexgrad/Kokoro-82M` config.json (Apache-2.0).
+/// The SAME map the model was trained with; `n_token = 178`. Embedded (not a resource) so
+/// there's no bundle-path risk. MisakiSwift emits these exact IPA symbols.
+private let kokoroVocab: [String: Int] = [
+    ";": 1, ":": 2, ",": 3, ".": 4, "!": 5, "?": 6, "—": 9, "…": 10, "\"": 11, "(": 12,
+    ")": 13, "“": 14, "”": 15, " ": 16, "̃": 17, "ʣ": 18, "ʥ": 19, "ʦ": 20, "ʨ": 21, "ᵝ": 22,
+    "ꭧ": 23, "A": 24, "I": 25, "O": 31, "Q": 33, "S": 35, "T": 36, "W": 39, "Y": 41, "ᵊ": 42,
+    "a": 43, "b": 44, "c": 45, "d": 46, "e": 47, "f": 48, "h": 50, "i": 51, "j": 52, "k": 53,
+    "l": 54, "m": 55, "n": 56, "o": 57, "p": 58, "q": 59, "r": 60, "s": 61, "t": 62, "u": 63,
+    "v": 64, "w": 65, "x": 66, "y": 67, "z": 68, "ɑ": 69, "ɐ": 70, "ɒ": 71, "æ": 72, "β": 75,
+    "ɔ": 76, "ɕ": 77, "ç": 78, "ɖ": 80, "ð": 81, "ʤ": 82, "ə": 83, "ɚ": 85, "ɛ": 86, "ɜ": 87,
+    "ɟ": 90, "ɡ": 92, "ɥ": 99, "ɨ": 101, "ɪ": 102, "ʝ": 103, "ɯ": 110, "ɰ": 111, "ŋ": 112,
+    "ɳ": 113, "ɲ": 114, "ɴ": 115, "ø": 116, "ɸ": 118, "θ": 119, "œ": 120, "ɹ": 123, "ɾ": 125,
+    "ɻ": 126, "ʁ": 128, "ɽ": 129, "ʂ": 130, "ʃ": 131, "ʈ": 132, "ʧ": 133, "ʊ": 135, "ʋ": 136,
+    "ʌ": 138, "ɣ": 139, "ɤ": 140, "χ": 142, "ʎ": 143, "ʒ": 147, "ʔ": 148, "ˈ": 156, "ˌ": 157,
+    "ː": 158, "ʰ": 162, "ʲ": 164, "↓": 169, "→": 171, "↗": 172, "↘": 173, "ᵻ": 177,
+]
+
+/// Off-main owner of the ORT session + voice styles + MisakiSwift G2P. An `actor` so the
+/// CPU-heavy ORT inference and the ~326 MB model load run OFF the main thread, and the
+/// `ORTSession` / `MLXArray` never cross a thread boundary. Only Sendable values (`URL`,
+/// `String`, `[Float]`) enter or leave.
+actor ORTCore {
+    private var env: ORTEnv?
+    private var session: ORTSession?
+    private var voices: [String: MLXArray] = [:]
+    private var g2pUS: EnglishG2P?
+    private var g2pGB: EnglishG2P?
+    private(set) var inputNames: [String] = []
+    private(set) var outputNames: [String] = []
+
+    var isLoaded: Bool { session != nil }
+    var voiceIDs: [String] { Array(voices.keys) }
+
+    /// Build the ORT session (CPU EP) + load voice styles. Returns cold-load wall time and
+    /// whether the CoreML EP is even available (logged so we PROVE we didn't append it).
+    func warmUp(modelURL: URL, voicesURL: URL?) throws -> (seconds: Double, coreMLAvailable: Bool) {
+        guard session == nil else { return (0, false) }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let env = try ORTEnv(loggingLevel: ORTLoggingLevel.warning)
+        let opts = try ORTSessionOptions()
+        // ★★ CPU EXECUTION PROVIDER ONLY. The CoreML EP is OPT-IN in ORT — you must call
+        // `appendCoreMLExecutionProvider…`. We DELIBERATELY DO NOT, because CoreML re-enters
+        // Espresso/BNNS — the exact libBNNS crash this whole pivot exists to escape. With no
+        // EP appended, ORT runs on its own CPU kernels (no BNNS, no Metal).
+        let coreMLAvailable = ORTIsCoreMLExecutionProviderAvailable()
+        let session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: opts)
+        self.env = env
+        self.session = session
+        self.inputNames = (try? session.inputNames()) ?? []
+        self.outputNames = (try? session.outputNames()) ?? []
+        // Voice styles: the SAME voices.npz the MLX path bundles ([510,1,256] per voice,
+        // indexed by phoneme-token count). Reuse NpyzReader; strip the ".npy" key suffix.
+        if let voicesURL, let dict = NpyzReader.read(fileFromPath: voicesURL) {
+            var norm: [String: MLXArray] = [:]
+            for (key, value) in dict {
+                norm[String(key.split(separator: ".").first ?? Substring(key))] = value
+            }
+            voices = norm
+        }
+        return (CFAbsoluteTimeGetCurrent() - t0, coreMLAvailable)
+    }
+
+    private func g2p(british: Bool) -> EnglishG2P {
+        if british {
+            if g2pGB == nil { g2pGB = EnglishG2P(british: true) }
+            return g2pGB!
+        }
+        if g2pUS == nil { g2pUS = EnglishG2P(british: false) }
+        return g2pUS!
+    }
+
+    /// text → phonemes (MisakiSwift) → ids (Kokoro vocab) → ORT (CPU) → 24 kHz mono float PCM.
+    /// Returns the samples, the inference wall time, and the phoneme count (for telemetry).
+    func generate(text: String, voiceID: String) throws -> (samples: [Float], seconds: Double, phonemes: Int) {
+        guard let session else { throw KokoroEngineError.modelNotInstalled }
+        // British voices (bf_/bm_) use the en-GB frontend; everything else en-US.
+        let british = voiceID.hasPrefix("bf_") || voiceID.hasPrefix("bm_")
+        let (phonemeString, _) = g2p(british: british).phonemize(text: text)
+        // Map each IPA scalar to its id; unknown scalars are dropped (same as Kokoro).
+        let tokens: [Int64] = phonemeString.unicodeScalars.compactMap {
+            kokoroVocab[String($0)].map(Int64.init)
+        }
+        guard !tokens.isEmpty else { return ([], 0, 0) }
+        guard let voiceArr = voices[voiceID] else { throw KokoroEngineError.voiceUnavailable(voiceID) }
+
+        // style = the 256-dim row at index = phoneme-token count (kokoro-onnx `voice[len(tokens)]`).
+        let idx = max(0, min(tokens.count, voiceArr.shape[0] - 1))
+        let style: [Float] = voiceArr[idx].asArray(Float.self)
+        // input_ids = BOS(0) + tokens + EOS(0), int64.
+        var ids: [Int64] = [0]
+        ids.append(contentsOf: tokens)
+        ids.append(0)
+        let speed: [Float] = [1.0]
+
+        let t0 = CFAbsoluteTimeGetCurrent()
+        // Hold the backing NSData alive through run() (ORTValue wraps, may not copy).
+        let idsData = NSMutableData(bytes: ids, length: ids.count * MemoryLayout<Int64>.size)
+        let styleData = NSMutableData(bytes: style, length: style.count * MemoryLayout<Float>.size)
+        let speedData = NSMutableData(bytes: speed, length: speed.count * MemoryLayout<Float>.size)
+        let idsVal = try ORTValue(tensorData: idsData, elementType: .int64,
+                                  shape: [NSNumber(value: 1), NSNumber(value: ids.count)])
+        let styleVal = try ORTValue(tensorData: styleData, elementType: .float,
+                                    shape: [NSNumber(value: 1), NSNumber(value: style.count)])
+        let speedVal = try ORTValue(tensorData: speedData, elementType: .float,
+                                    shape: [NSNumber(value: 1)])
+        let inputs: [String: ORTValue] = ["input_ids": idsVal, "style": styleVal, "speed": speedVal]
+        let outSet: Set<String> = Set(outputNames.isEmpty ? ["waveform"] : outputNames)
+        let result = try session.run(withInputs: inputs, outputNames: outSet, runOptions: nil)
+        guard let waveVal = result.values.first else { throw KokoroEngineError.audioBufferFailed }
+        let data = try waveVal.tensorData() as Data
+        let samples = data.withUnsafeBytes { raw -> [Float] in
+            let buf = raw.bindMemory(to: Float.self)
+            return Array(buf)
+        }
+        _ = (idsData, styleData, speedData)  // keep alive to here
+        return (samples, CFAbsoluteTimeGetCurrent() - t0, tokens.count)
+    }
+}
+
+/// `TTSEngine` conformance for Kokoro on **ONNX Runtime (CPU)** — the pivot away from Core ML/
+/// BNNS (Apple libBNNS crash, unfixable) and MLX/Metal (background ban). ORT's CPU kernels touch
+/// NEITHER, so both failures are out of reach by construction. This is the MLX path with the
+/// inference engine swapped: same MisakiSwift G2P, same voices.npz, same string voice IDs.
+/// Produces a whole PCM clip per chunk off-main (the `ORTCore` actor), then plays it through an
+/// `AVAudioEngine`/`AVAudioPlayerNode` graph — the proven pattern from `KokoroTTSEngine`.
+@MainActor
+@Observable
+final class ORTKokoroTTSEngine: TTSEngine {
+    static let shared = ORTKokoroTTSEngine()
+
+    private static let sampleRate: Double = 24_000
+
+    // Assets in AirPad/Resources/Kokoro/ (folder ref). T drops the ONNX model in, parallel to
+    // the MLX safetensors; voices.npz is the SAME file the MLX path already uses. Bundled in-app
+    // — NO runtime download (contrast FluidAudio).
+    static let modelURL: URL? = Bundle.main.url(
+        forResource: "kokoro-v1_0", withExtension: "onnx", subdirectory: "Kokoro")
+    static let voicesURL: URL? = Bundle.main.url(
+        forResource: "voices", withExtension: "npz", subdirectory: "Kokoro")
+
+    private let core = ORTCore()
+
+    // Playback graph (main thread; built once).
+    private let engine = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
+    private var graphReady = false
+    private var onFinish: (() -> Void)?
+    private var speakTask: Task<Void, Never>?
+    private var buffersInFlight = 0
+    private var producerDone = false
+
+    // Telemetry.
+    private(set) var isLoaded = false
+    private(set) var coldLoadSeconds: Double?
+    private(set) var lastRTF: Double?
+    private(set) var loadedVoiceIDs: [String] = []
+
+    private init() {}
+
+    // MARK: TTSEngine
+
+    var isReady: Bool { isModelInstalled }
+
+    /// True only when a plausibly-real ONNX model is bundled (guards a stub / un-pulled LFS
+    /// pointer). Real `model.onnx` ≈ 326 MB fp32.
+    var isModelInstalled: Bool {
+        guard let url = Self.modelURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int else { return false }
+        return size > 50_000_000
+    }
+
+    /// Cold-load the ORT session + voices OFF the launch path. First call does the heavy work
+    /// on the actor; later calls are cheap. Logs the active EP (asserts CPU by construction).
+    func warmUpIfNeeded() async throws {
+        if isLoaded { return }
+        guard let modelURL = Self.modelURL, isModelInstalled else {
+            throw KokoroEngineError.modelNotInstalled
+        }
+        let footBefore = ortFootprintMB()
+        let (secs, coreMLAvailable) = try await core.warmUp(modelURL: modelURL, voicesURL: Self.voicesURL)
+        let footAfter = ortFootprintMB()
+        let inN = await core.inputNames
+        let outN = await core.outputNames
+        loadedVoiceIDs = await core.voiceIDs.sorted()
+        isLoaded = await core.isLoaded
+        if secs > 0 { coldLoadSeconds = secs }
+        kokoroOrtLog.info("★ ORT cold-load \(secs, format: .fixed(precision: 2))s · EP=CPU (default; CoreML EP available=\(coreMLAvailable) but DELIBERATELY NOT appended) · resident \(footBefore, format: .fixed(precision: 0))→\(footAfter, format: .fixed(precision: 0))MB (model ≈ \(footAfter - footBefore, format: .fixed(precision: 0))MB) · inputs=\(inN, privacy: .public) · outputs=\(outN, privacy: .public) · voices=\(self.loadedVoiceIDs.count)")
+    }
+
+    func speak(text: String, voiceID: String?, onFinish: @escaping () -> Void) async throws {
+        stop()
+        let chunks = TextChunker.chunk(text)
+        guard !chunks.isEmpty else { return }
+        try await warmUpIfNeeded()
+        let id = voiceID ?? "af_heart"
+
+        PlaybackAudioSession.configure()
+        ensureGraph()
+        if !engine.isRunning { try engine.start() }
+
+        self.onFinish = onFinish
+        buffersInFlight = 0
+        producerDone = false
+        var totalGen = 0.0
+        var totalAudio = 0.0
+
+        kokoroOrtLog.info("speak start: \(chunks.count) chunks, voice=\(id, privacy: .public)")
+        speakTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            for (i, chunk) in chunks.enumerated() {
+                if Task.isCancelled { return }
+                do {
+                    let (samples, seconds, phonemes) = try await self.core.generate(text: chunk, voiceID: id)
+                    if Task.isCancelled { return }
+                    guard !samples.isEmpty else { continue }
+                    totalGen += seconds
+                    totalAudio += Double(samples.count) / Self.sampleRate
+                    self.lastRTF = totalAudio > 0 ? totalGen / totalAudio : nil
+                    kokoroOrtLog.info("chunk \(i)/\(chunks.count) phonemes=\(phonemes) synth \(seconds, format: .fixed(precision: 2))s → \(samples.count) samples, RTF=\(self.lastRTF ?? 0, format: .fixed(precision: 2))")
+                    self.schedule(samples: samples)
+                    if self.engine.isRunning && !self.player.isPlaying { self.player.play() }
+                } catch {
+                    kokoroOrtLog.error("chunk \(i) synth failed: \(String(describing: error), privacy: .public)")
+                }
+            }
+            self.producerDone = true
+            if self.buffersInFlight == 0 { self.fireFinish() }
+        }
+    }
+
+    func pause()  { if graphReady { player.pause() } }
+    func resume() {
+        guard graphReady else { return }
+        if !engine.isRunning { try? engine.start() }
+        if engine.isRunning { player.play() }
+    }
+    func stop() {
+        speakTask?.cancel()
+        speakTask = nil
+        onFinish = nil
+        producerDone = false
+        buffersInFlight = 0
+        guard graphReady else { return }
+        player.stop()
+        player.reset()
+        if engine.isRunning { engine.stop() }
+    }
+
+    // MARK: Playback (main thread) — mirrors KokoroTTSEngine
+
+    private var kokoroFormat: AVAudioFormat {
+        AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Self.sampleRate,
+                      channels: 1, interleaved: false)!
+    }
+
+    private func ensureGraph() {
+        guard !graphReady else { return }
+        engine.attach(player)
+        engine.connect(player, to: engine.mainMixerNode, format: kokoroFormat)
+        graphReady = true
+    }
+
+    private func schedule(samples: [Float]) {
+        guard let buf = makeBuffer(samples) else { return }
+        buffersInFlight += 1
+        player.scheduleBuffer(buf, at: nil, options: []) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.buffersInFlight -= 1
+                if self.producerDone && self.buffersInFlight == 0 { self.fireFinish() }
+            }
+        }
+    }
+
+    private func makeBuffer(_ samples: [Float]) -> AVAudioPCMBuffer? {
+        guard let buf = AVAudioPCMBuffer(pcmFormat: kokoroFormat,
+                                         frameCapacity: AVAudioFrameCount(samples.count)) else { return nil }
+        buf.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { src in
+            if let dst = buf.floatChannelData?[0], let base = src.baseAddress {
+                dst.update(from: base, count: samples.count)
+            }
+        }
+        return buf
+    }
+
+    private func fireFinish() {
+        if engine.isRunning { engine.stop() }
+        let cb = onFinish; onFinish = nil
+        cb?()
+    }
+}

@@ -38,6 +38,7 @@ spikes/
 # The README stays tracked; the assets never get committed.
 AirPad/Resources/Kokoro/*.safetensors
 AirPad/Resources/Kokoro/*.npz
+AirPad/Resources/Kokoro/*.onnx
 
 # TestFlight / App Store Connect secrets — NEVER commit
 *.p8

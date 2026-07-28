@@ -131,6 +131,15 @@ struct KokoroVoiceSamplerView: View {
     @ViewBuilder
     private var ortTestRow: some View {
         if ortEngine.isModelInstalled {
+            Picker("Model", selection: Binding(
+                get: { ortEngine.modelVariant },
+                set: { ortEngine.modelVariant = $0 }
+            )) {
+                ForEach(ORTModelVariant.allCases, id: \.self) { v in
+                    Text(v.label).tag(v)
+                }
+            }
+            .pickerStyle(.segmented)
             Button {
                 ortTest()
             } label: {

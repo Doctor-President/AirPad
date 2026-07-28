@@ -10,7 +10,13 @@ enum TextChunker {
 
     /// `maxChars` is a conservative proxy for the token window (~510 tokens ≈
     /// 400–500 English chars; 300 keeps a safe margin incl. phoneme expansion).
-    static func chunk(_ text: String, maxChars: Int = 300) -> [String] {
+    ///
+    /// `firstChunkMaxChars` (nil = same as `maxChars`) caps CHUNK 0 to a smaller
+    /// budget so first-audio lands fast: at int8 RTF ~0.55, a 300-char chunk 0 is
+    /// ~10 s of synth before any sound, vs ~2 s for ~60 chars. The ORT engine passes
+    /// ~60. A first sentence longer than the budget is word-boundary hard-split, so
+    /// chunk 0 may be a leading fragment of it; chunks 1+ use `maxChars`.
+    static func chunk(_ text: String, maxChars: Int = 300, firstChunkMaxChars: Int? = nil) -> [String] {
         let cleaned = stripMarkdown(text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return [] }
 
@@ -53,7 +59,21 @@ enum TextChunker {
         // Markdown strip, e.g. a bare list marker). Misaki can produce an empty
         // phoneme sequence for these, which faults synthesis — and one such chunk
         // is far more likely to appear in a long answer than a short one.
-        return chunks.filter { $0.rangeOfCharacter(from: .letters) != nil }
+        var result = chunks.filter { $0.rangeOfCharacter(from: .letters) != nil }
+        // Peel a small head (≤ firstChunkMaxChars, word boundary) off chunk 0 so
+        // first-audio lands fast; the remainder becomes chunk 1. The head depends
+        // only on the answer's LEADING words, so a speculative synth of the first
+        // sentence produces the SAME head → the speculative cache hits.
+        if let cap = firstChunkMaxChars, let first = result.first, first.count > cap {
+            let pieces = hardSplit(first, maxChars: cap)
+            if pieces.count >= 2 {
+                let remainder = pieces.dropFirst().joined(separator: " ")
+                result.removeFirst()
+                result.insert(remainder, at: 0)
+                result.insert(pieces[0], at: 0)
+            }
+        }
+        return result
     }
 
     /// Split an over-long sentence into ≤ maxChars pieces on word boundaries.

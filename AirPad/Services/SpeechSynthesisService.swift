@@ -73,13 +73,17 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     /// Same, for the ORT engine (the ship path). Mutually exclusive with the others.
     private var activeEngineIsORT = false
 
-    /// ★ Route to the ORT Kokoro engine (ONNX Runtime CPU — the SHIP path, escapes the
-    /// libBNNS crash + the Metal-in-background ban) whenever a Kokoro voice is chosen AND the
-    /// ORT model is bundled. Checked FIRST, so with the model present all Kokoro-voice
-    /// read-aloud goes through ORT; ANE/MLX stay as fallbacks + the dev sampler. A setup
-    /// failure falls back to AVSpeech (see `speakViaORT`).
+    /// ★★ SHELVED 2026-07-28 (T): synthesized voice (Kokoro on ORT/MLX/ANE) is dormant behind
+    /// the `TTSEngine` seam — **AVSpeechSynthesizer is the shipped read-aloud engine.** This
+    /// master flag makes ALL Kokoro routing unreachable from production without deleting any
+    /// engine (all three stay in-tree, compiling). Flip to `true` (with the DEBUG sampler /
+    /// picker tiers) to resume. See decisions.md 2026-07-28 + ws-synthesized-voice.md.
+    static let kokoroEnginesEnabled = false
+
+    /// Route to the ORT Kokoro engine (ONNX Runtime CPU). SHELVED — gated off by
+    /// `kokoroEnginesEnabled`, so read-aloud always falls through to AVSpeech.
     private var shouldUseORT: Bool {
-        selectedKokoroVoiceID != nil && ORTKokoroTTSEngine.shared.isModelInstalled
+        Self.kokoroEnginesEnabled && selectedKokoroVoiceID != nil && ORTKokoroTTSEngine.shared.isModelInstalled
     }
 
     /// Route to the ANE Kokoro engine when a Kokoro voice is chosen AND the ANE
@@ -87,14 +91,14 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     /// gate; a setup failure falls back to AVSpeech (see `speakViaANEKokoro`).
     /// Checked BEFORE `shouldUseKokoro` so ANE wins when enabled.
     private var shouldUseANE: Bool {
-        useANEKokoro && selectedKokoroVoiceID != nil
+        Self.kokoroEnginesEnabled && useANEKokoro && selectedKokoroVoiceID != nil
     }
 
     /// Route to the MLX Kokoro engine only when a Kokoro voice is chosen AND its
     /// model is actually installed — otherwise fall back to AVSpeech (a Release
     /// build with no bundled model, or the dev asset absent, must still read aloud).
     private var shouldUseKokoro: Bool {
-        selectedKokoroVoiceID != nil && KokoroTTSEngine.shared.isModelInstalled
+        Self.kokoroEnginesEnabled && selectedKokoroVoiceID != nil && KokoroTTSEngine.shared.isModelInstalled
     }
 
     private let synthesizer = AVSpeechSynthesizer()

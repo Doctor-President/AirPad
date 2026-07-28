@@ -415,12 +415,27 @@ struct ChatTranscript: View {
                             }
                         }
                     }
-                    // On-device neural voices — shown only when the model is
-                    // bundled. Absent on a build/device without the asset → the
-                    // menu is System-only, which is the graceful degradation.
-                    if kokoroInstalled {
-                        Menu("AirPad Voices") {
-                            Picker("AirPad Voice", selection: kokoroSelection) {
+                    // ★★ SHELVED 2026-07-28 (T): the synthesized-voice (Kokoro) tiers are gated
+                    // OFF behind `kokoroEnginesEnabled` — production offers System (AVSpeech)
+                    // voices only. The tiers + engines stay in-tree (dormant), pickable again
+                    // by flipping the flag. See decisions.md 2026-07-28.
+                    if SpeechSynthesisService.kokoroEnginesEnabled {
+                        if kokoroInstalled {
+                            Menu("AirPad Voices") {
+                                Picker("AirPad Voice", selection: kokoroSelection) {
+                                    ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
+                                        Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
+                                            .tag(Optional(id))
+                                    }
+                                    ForEach(kokoroExtras, id: \.self) { id in
+                                        Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
+                                            .tag(Optional(id))
+                                    }
+                                }
+                            }
+                        }
+                        Menu("ANE Voices (β)") {
+                            Picker("ANE Voice", selection: aneSelection) {
                                 ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
                                     Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
                                         .tag(Optional(id))
@@ -429,21 +444,6 @@ struct ChatTranscript: View {
                                     Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
                                         .tag(Optional(id))
                                 }
-                            }
-                        }
-                    }
-                    // ANE Kokoro (Core ML, no GPU) — the background-survival spike.
-                    // Shown unconditionally: the ANE models download on demand, so
-                    // this tier doesn't need the MLX weights bundled. Same voice IDs.
-                    Menu("ANE Voices (β)") {
-                        Picker("ANE Voice", selection: aneSelection) {
-                            ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
-                                Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
-                                    .tag(Optional(id))
-                            }
-                            ForEach(kokoroExtras, id: \.self) { id in
-                                Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
-                                    .tag(Optional(id))
                             }
                         }
                     }

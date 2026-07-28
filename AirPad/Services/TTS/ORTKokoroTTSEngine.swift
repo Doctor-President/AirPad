@@ -42,6 +42,28 @@ private let kokoroVocab: [String: Int] = [
     "ː": 158, "ʰ": 162, "ʲ": 164, "↓": 169, "→": 171, "↗": 172, "↘": 173, "ᵻ": 177,
 ]
 
+/// fp32 baseline + quantized variants for the M1.5 footprint measurement. Files live in
+/// Resources/Kokoro/ (same tensor contract — only weight precision differs). Switchable at
+/// runtime so both can be measured in one session; fp32 stays intact + default.
+enum ORTModelVariant: String, CaseIterable, Sendable {
+    case fp32, int8, q8f16
+    var filename: String {
+        switch self {
+        case .fp32:  return "kokoro-v1_0"
+        case .int8:  return "kokoro-v1_0-int8"
+        case .q8f16: return "kokoro-v1_0-q8f16"
+        }
+    }
+    var label: String {
+        switch self {
+        case .fp32:  return "fp32"
+        case .int8:  return "int8"
+        case .q8f16: return "q8f16"
+        }
+    }
+    var url: URL? { Bundle.main.url(forResource: filename, withExtension: "onnx", subdirectory: "Kokoro") }
+}
+
 /// Off-main owner of the ORT session + voice styles + MisakiSwift G2P. An `actor` so the
 /// CPU-heavy ORT inference and the ~326 MB model load run OFF the main thread, and the
 /// `ORTSession` / `MLXArray` never cross a thread boundary. Only Sendable values (`URL`,
@@ -57,6 +79,14 @@ actor ORTCore {
 
     var isLoaded: Bool { session != nil }
     var voiceIDs: [String] { Array(voices.keys) }
+
+    /// Drop the session + voices so the next warmUp reloads (used when switching model
+    /// variant for the fp32-vs-int8 measurement).
+    func evict() {
+        session = nil
+        env = nil
+        voices = [:]
+    }
 
     /// Build the ORT session (CPU EP) + load voice styles. Returns cold-load wall time and
     /// whether the CoreML EP is even available (logged so we PROVE we didn't append it).
@@ -160,10 +190,14 @@ final class ORTKokoroTTSEngine: TTSEngine {
     // Assets in AirPad/Resources/Kokoro/ (folder ref). T drops the ONNX model in, parallel to
     // the MLX safetensors; voices.npz is the SAME file the MLX path already uses. Bundled in-app
     // — NO runtime download (contrast FluidAudio).
-    static let modelURL: URL? = Bundle.main.url(
-        forResource: "kokoro-v1_0", withExtension: "onnx", subdirectory: "Kokoro")
     static let voicesURL: URL? = Bundle.main.url(
         forResource: "voices", withExtension: "npz", subdirectory: "Kokoro")
+
+    /// Which weight precision to load. Switching evicts the session so the next play reloads
+    /// the new variant (for the fp32-vs-int8 footprint/RTF measurement). fp32 default + intact.
+    var modelVariant: ORTModelVariant = .fp32 {
+        didSet { if oldValue != modelVariant { switchVariant() } }
+    }
 
     private let core = ORTCore()
 
@@ -191,17 +225,28 @@ final class ORTKokoroTTSEngine: TTSEngine {
     /// True only when a plausibly-real ONNX model is bundled (guards a stub / un-pulled LFS
     /// pointer). Real `model.onnx` ≈ 326 MB fp32.
     var isModelInstalled: Bool {
-        guard let url = Self.modelURL,
+        guard let url = modelVariant.url,
               let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
               let size = attrs[.size] as? Int else { return false }
         return size > 50_000_000
+    }
+
+    /// Evict the loaded session on a variant change so the next play reloads the new precision.
+    private func switchVariant() {
+        stop()
+        isLoaded = false
+        coldLoadSeconds = nil
+        lastRTF = nil
+        loadedVoiceIDs = []
+        Task { await core.evict() }
+        kokoroOrtLog.info("model variant → \(self.modelVariant.rawValue, privacy: .public) (session evicted; next play reloads)")
     }
 
     /// Cold-load the ORT session + voices OFF the launch path. First call does the heavy work
     /// on the actor; later calls are cheap. Logs the active EP (asserts CPU by construction).
     func warmUpIfNeeded() async throws {
         if isLoaded { return }
-        guard let modelURL = Self.modelURL, isModelInstalled else {
+        guard let modelURL = modelVariant.url, isModelInstalled else {
             throw KokoroEngineError.modelNotInstalled
         }
         let footBefore = ortFootprintMB()
@@ -212,7 +257,7 @@ final class ORTKokoroTTSEngine: TTSEngine {
         loadedVoiceIDs = await core.voiceIDs.sorted()
         isLoaded = await core.isLoaded
         if secs > 0 { coldLoadSeconds = secs }
-        kokoroOrtLog.info("★ ORT cold-load \(secs, format: .fixed(precision: 2))s · EP=CPU (default; CoreML EP available=\(coreMLAvailable) but DELIBERATELY NOT appended) · resident \(footBefore, format: .fixed(precision: 0))→\(footAfter, format: .fixed(precision: 0))MB (model ≈ \(footAfter - footBefore, format: .fixed(precision: 0))MB) · inputs=\(inN, privacy: .public) · outputs=\(outN, privacy: .public) · voices=\(self.loadedVoiceIDs.count)")
+        kokoroOrtLog.info("★ ORT cold-load [\(self.modelVariant.rawValue, privacy: .public)] \(secs, format: .fixed(precision: 2))s · EP=CPU (default; CoreML EP available=\(coreMLAvailable) but DELIBERATELY NOT appended) · resident \(footBefore, format: .fixed(precision: 0))→\(footAfter, format: .fixed(precision: 0))MB (model ≈ \(footAfter - footBefore, format: .fixed(precision: 0))MB) · inputs=\(inN, privacy: .public) · outputs=\(outN, privacy: .public) · voices=\(self.loadedVoiceIDs.count)")
     }
 
     func speak(text: String, voiceID: String?, onFinish: @escaping () -> Void) async throws {

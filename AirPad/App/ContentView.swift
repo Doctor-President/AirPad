@@ -196,7 +196,13 @@ struct ContentView: View {
                 // `!isCapturing` guard let a detail-depth flip re-raise the peek
                 // over a non-canvas surface.
                 if panelState.state == .hidden && !librarianSuppressed {
-                    panelState.raiseToPeek(animated: true)
+                    // BUG 15 — go through the visibility SSOT, not a bare
+                    // raiseToPeek: entering .recents both ducked the panel AND
+                    // disabled its UIKit interaction, so a raise alone would
+                    // surface a NON-tappable pill. `applyLibrarianVisibility`
+                    // re-enables interaction and raises (we only reach here when
+                    // hidden + unsuppressed, so no user detent is overridden).
+                    applyLibrarianVisibility(animated: true)
                 }
             } else {
                 // Leaving the detail ends capture mode (Done → Recents and a
@@ -243,8 +249,16 @@ struct ContentView: View {
         switch router.entryMode {
         case .canvas, .collectionCanvas:
             return false
-        case .dashboard, .quikCapture, .recents:
+        case .quikCapture:
             return true
+        case .dashboard, .recents:
+            // BUG 15 — the dashboard / recents LIST surfaces suppress the peek,
+            // but a node DETAIL pushed from them (depth ≥ 1) is a canvas-like
+            // surface where the Librarian belongs. Keying suppression on
+            // entryMode alone left a detail reached from Recents with a ducked
+            // panel and no Librarian at all. Capture mode is caught above, so
+            // its detail-like editor stays ducked regardless.
+            return !store.isInDetailView
         }
     }
 

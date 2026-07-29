@@ -94,6 +94,47 @@ extension HeroCrop {
         self.init()
         offset = try c.decodeIfPresent(CGPoint.self, forKey: .offset) ?? offset
     }
+
+    // MARK: - Crop → points geometry (ONE source for every surface)
+    //
+    // The hero banner (detail), the card tile, and the grid tile all crop a
+    // `scaledToFill` cover the same way; keeping the math here means the framing
+    // can't drift between the surface you dial it on and the ones that show it.
+
+    /// The clamped POINT offset to apply to a `scaledToFill` image of
+    /// `imageAspect` (w/h) inside a `width`×`height` frame, given a NORMALIZED
+    /// offset (fraction of the rendered image). `extraTranslation` (points) is
+    /// added before clamping — the detail-view drag passes the live finger
+    /// delta; display surfaces pass `.zero`. Clamped to the overflow so a pan
+    /// can never expose an edge.
+    static func clampedPointOffset(normalizedOffset: CGPoint,
+                                   imageAspect aspect: CGFloat,
+                                   width: CGFloat,
+                                   height: CGFloat,
+                                   extraTranslation: CGSize = .zero) -> CGPoint {
+        let s = max(width / max(aspect, 0.01), height)   // fill scale (unit-height image)
+        let scaledW = aspect * s
+        let scaledH = s
+        let overflowX = max(0, (scaledW - width) / 2)
+        let overflowY = max(0, (scaledH - height) / 2)
+        let px = normalizedOffset.x * scaledW + extraTranslation.width
+        let py = normalizedOffset.y * scaledH + extraTranslation.height
+        return CGPoint(x: min(max(px, -overflowX), overflowX),
+                       y: min(max(py, -overflowY), overflowY))
+    }
+
+    /// Inverse of `clampedPointOffset`: convert a committed POINT offset back to
+    /// a normalized fraction, for persisting a drag.
+    static func normalize(pointOffset: CGPoint,
+                          imageAspect aspect: CGFloat,
+                          width: CGFloat,
+                          height: CGFloat) -> CGPoint {
+        let s = max(width / max(aspect, 0.01), height)
+        let scaledW = aspect * s
+        let scaledH = s
+        return CGPoint(x: scaledW > 0 ? pointOffset.x / scaledW : 0,
+                       y: scaledH > 0 ? pointOffset.y / scaledH : 0)
+    }
 }
 
 struct Node: Codable, Identifiable, Hashable {

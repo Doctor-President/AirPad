@@ -2681,20 +2681,14 @@ private struct HeroImageBanner: View {
             if let image, let aspect {
                 let visibleHeight = max(200, min(visualSettings.heroMaxHeight, width / max(aspect, 0.01)))
                 let totalHeight = visibleHeight + topInset
-                // #7 — `scaledToFill` scales the image to cover width×totalHeight,
-                // overflowing on the longer axis. The crop's NORMALIZED offset
-                // (+ the live drag) shifts which slice is visible, clamped to
-                // ±overflow so an edge gap can never appear. Zero offset =
-                // centered crop. `s` is the fill scale for a unit-height image
-                // (imgW = aspect, imgH = 1); `scaledW/H` are the rendered image
-                // size the normalized fraction is taken against.
-                let s = max(width / max(aspect, 0.01), totalHeight)
-                let scaledW = aspect * s
-                let scaledH = s
-                let overflowX = max(0, (scaledW - width) / 2)
-                let overflowY = max(0, (scaledH - totalHeight) / 2)
-                let offset = clampedOffset(scaledW: scaledW, scaledH: scaledH,
-                                           overflowX: overflowX, overflowY: overflowY)
+                // #7 — `scaledToFill` covers width×totalHeight, overflowing on
+                // the longer axis; the crop's NORMALIZED offset (+ the live drag)
+                // shifts which slice shows, clamped to the overflow so an edge
+                // gap can't appear. Shared math with the card / grid tiles
+                // (`HeroCrop.clampedPointOffset`).
+                let offset = HeroCrop.clampedPointOffset(
+                    normalizedOffset: baseCrop.offset, imageAspect: aspect,
+                    width: width, height: totalHeight, extraTranslation: dragTranslation)
                 Color.clear
                     .frame(width: width, height: totalHeight)
                     .overlay {
@@ -2716,8 +2710,7 @@ private struct HeroImageBanner: View {
                     // adjusting; masked off entirely otherwise so normal scrolling
                     // over the hero is untouched.
                     .highPriorityGesture(
-                        panGesture(scaledW: scaledW, scaledH: scaledH,
-                                   overflowX: overflowX, overflowY: overflowY),
+                        panGesture(width: width, height: totalHeight, aspect: aspect),
                         including: isAdjusting ? .all : .none
                     )
                     .overlay(alignment: .bottomTrailing) {
@@ -2781,31 +2774,18 @@ private struct HeroImageBanner: View {
 
     // MARK: - #7 reposition
 
-    /// Committed crop (NORMALIZED → points via the rendered image size) + the
-    /// live drag (points), clamped to the overflow so a pan can't expose an edge.
-    private func clampedOffset(scaledW: CGFloat, scaledH: CGFloat,
-                               overflowX: CGFloat, overflowY: CGFloat) -> CGPoint {
-        let rawX = baseCrop.offset.x * scaledW + dragTranslation.width
-        let rawY = baseCrop.offset.y * scaledH + dragTranslation.height
-        return CGPoint(
-            x: min(max(rawX, -overflowX), overflowX),
-            y: min(max(rawY, -overflowY), overflowY)
-        )
-    }
-
-    private func panGesture(scaledW: CGFloat, scaledH: CGFloat,
-                            overflowX: CGFloat, overflowY: CGFloat) -> some Gesture {
+    private func panGesture(width: CGFloat, height: CGFloat, aspect: CGFloat) -> some Gesture {
         DragGesture()
             .onChanged { value in dragTranslation = value.translation }
             .onEnded { value in
-                let px = min(max(baseCrop.offset.x * scaledW + value.translation.width, -overflowX), overflowX)
-                let py = min(max(baseCrop.offset.y * scaledH + value.translation.height, -overflowY), overflowY)
-                // Convert the committed POINTS back to a NORMALIZED fraction of
-                // the rendered image so the crop survives other frames / aspects.
-                let crop = HeroCrop(offset: CGPoint(
-                    x: scaledW > 0 ? px / scaledW : 0,
-                    y: scaledH > 0 ? py / scaledH : 0
-                ))
+                // Clamp the committed points, then convert back to a NORMALIZED
+                // fraction so the crop survives other frames / aspects. Shared
+                // math with the display surfaces (`HeroCrop`).
+                let points = HeroCrop.clampedPointOffset(
+                    normalizedOffset: baseCrop.offset, imageAspect: aspect,
+                    width: width, height: height, extraTranslation: value.translation)
+                let crop = HeroCrop(offset: HeroCrop.normalize(
+                    pointOffset: points, imageAspect: aspect, width: width, height: height))
                 localCrop = crop             // optimistic — no flash on release
                 dragTranslation = .zero
                 Task { await store.setHeroCrop(crop, nodeID: node.id) }

@@ -127,7 +127,6 @@
 		80929F37D80B349FBF52A58E /* NodeConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */; };
 		82A241AC4B5BE28AC0C44FCE /* UMAPTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */; };
 		82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */; };
-		82FC7F44FEB8F3CCB674D173 /* Kokoro in Resources */ = {isa = PBXBuildFile; fileRef = 81375D87329AB2EC903C3165 /* Kokoro */; };
 		84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F8312336CC2A7C1C2763EF /* SelectionService.swift */; };
 		85903919E22420C824ADCD93 /* CanvasScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592EF17AD51166EAA3E577F2 /* CanvasScope.swift */; };
 		868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */; };
@@ -402,7 +401,6 @@
 		7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MSDFLabel.swift; sourceTree = "<group>"; };
 		801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCaptureSheet.swift; sourceTree = "<group>"; };
 		804D3764E120F2398822E16A /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		81375D87329AB2EC903C3165 /* Kokoro */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Kokoro; path = AirPad/Resources/Kokoro; sourceTree = SOURCE_ROOT; };
 		841450783E48B41397FDDB34 /* MarkdownBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlock.swift; sourceTree = "<group>"; };
 		88A13C2113DC9781B455DF42 /* PastePadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePadView.swift; sourceTree = "<group>"; };
 		88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
@@ -563,7 +561,6 @@
 				DCD1F1D8FB8E5BD9A579A960 /* Fonts */,
 				0014A048A23F28BB62EC724F /* MSDF */,
 				BD12D156A4CBC12E872BDEC7 /* BlobField.metal */,
-				81375D87329AB2EC903C3165 /* Kokoro */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1199,7 +1196,6 @@
 				94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */,
 				3E395C3D1D01816EA4255C62 /* Fraunces_72pt-Bold.ttf in Resources */,
 				7F1400E0F8FC4DC57AFA78B0 /* Fraunces_72pt-Regular.ttf in Resources */,
-				82FC7F44FEB8F3CCB674D173 /* Kokoro in Resources */,
 				B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */,
 				4D418B5B931D8B8170E67A3A /* Lato-Regular.ttf in Resources */,
 				ACB61EF70E11DC8884EE3A6F /* Lora-Bold.ttf in Resources */,

@@ -3,6 +3,14 @@ import Foundation
 import NaturalLanguage
 import Observation
 import UIKit
+import os
+
+// BUG 17 instrumentation (TEMPORARY — remove once diagnosed). Hybrid authorship
+// not firing (no FM summary on user-authored nodes; suggested tags gone). Logs
+// the five stages of enrichment — SCHEDULED · GATE · FM-RAN · FM-RETURNED ·
+// WRITE — so a single node-save run says which stage fails and why. Capture:
+// `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "bug17"'`.
+private let bug17Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug17")
 
 // MARK: - Seeded RNG (SB126 Stage 1)
 
@@ -1213,6 +1221,7 @@ final class CorpusStore {
     /// authored/edited note. Per-node only; never corpus-wide analysis (stays
     /// decoupled from the Analyze/idle territory pass). Quiet: no tag sheet.
     func scheduleEnrichment(nodeID: String) {
+        bug17Log.notice("SCHEDULED node=\(nodeID, privacy: .public)")
         enrichmentTasks[nodeID]?.cancel()
         enrichmentTasks[nodeID] = Task(priority: .userInitiated) { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -1235,6 +1244,7 @@ final class CorpusStore {
             let substrateMissing = (node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                 || (node.folksonomy?.isEmpty ?? true)
             let needs = title.isEmpty || summary.isEmpty || substrateMissing
+            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) substrateMissing=\(substrateMissing) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs && !content.isEmpty)")
             guard needs, !content.isEmpty else {
                 print("[Enrich] skip node=\(nodeID) needs=\(needs) contentLen=\(content.count)")
                 return
@@ -3814,6 +3824,7 @@ final class CorpusStore {
         let useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
         let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
         let aiResult: NodeAIOutput?
+        bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
         if useCorpusAware {
             let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
             let tagDigests = topTagsForProcessNode(N: 12)
@@ -3828,6 +3839,7 @@ final class CorpusStore {
         } else {
             aiResult = await aiSvc.processNode(node, tagVocabulary: currentTags)
         }
+        bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) nil=\(aiResult == nil) summaryLen=\(aiResult?.summary.count ?? -1) titleLen=\(aiResult?.title.count ?? -1)")
         guard let result = aiResult else {
             // AI unavailable — apply a fallback title from raw content so the node
             // isn't blank. Race-safe read-modify-write; never touches `.items`.
@@ -3902,6 +3914,14 @@ final class CorpusStore {
                 n.fmErrorDetail = working.fmErrorDetail
             }
             n.needsAIProcessing = false
+        }
+
+        // BUG 17 instrument — WRITE outcome: did the summary/title gate pass?
+        // (summarySource `.user`, even empty, blocks the FM summary — 3876.)
+        // tagsEmitted is always NO: the pendingTagSuggestions emission was
+        // removed in ws-card-catalog step 1 (see the comment just below).
+        if let after = nodes.first(where: { $0.id == nodeID }) {
+            bug17Log.notice("WRITE node=\(nodeID, privacy: .public) summaryLen=\(after.summary.count) summarySource=\(String(describing: after.summarySource), privacy: .public) titleLen=\(after.title.count) titleSource=\(String(describing: after.titleSource), privacy: .public) tagsEmitted=NO")
         }
 
         // ws-card-catalog step 1 — with no FM tags produced, the capture-time

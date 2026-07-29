@@ -262,9 +262,18 @@ struct GalleryItem: Codable, Identifiable, Equatable {
     /// bento layout can size tiles without first loading every image.
     var aspectRatio: Double?
     let capturedAt: Date
+    /// #6 (launch list) — user-authored caption for this image OR video, per
+    /// the filed design (`ws-gallery-zoom-captions.md`: "`caption: String?` on
+    /// MediaItem … no migration needed — additive field"). Optional, `nil` by
+    /// default: the synthesized `Decodable` reads a missing key as nil for an
+    /// Optional (same tolerance as `aspectRatio`), and the `= nil` default keeps
+    /// the memberwise init back-compatible for every existing call site. A
+    /// scalar String, not a wrapper — future per-image metadata (Vision labels,
+    /// OCR text) will be *separate* sibling fields, not sub-fields of this one.
+    var caption: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, file
+        case id, file, caption
         case mediaType = "media_type"
         case aspectRatio = "aspect_ratio"
         case capturedAt = "captured_at"

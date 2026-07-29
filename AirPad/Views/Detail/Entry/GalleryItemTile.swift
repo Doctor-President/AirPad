@@ -42,6 +42,13 @@ struct GalleryItemTile: View {
     /// "video" at thumb size. Fullscreen / inline-player contexts can pass
     /// false to suppress the badge when the player itself is the affordance.
     var showVideoBadge: Bool = true
+    /// #6 (launch list) — when true and the item carries a caption, a legible
+    /// caption strip is overlaid on the tile's bottom edge (gradient scrim +
+    /// text). Non-invasive: it's an overlay INSIDE the parent-owned frame, so
+    /// it works identically in the carousel and the 2-D bento without touching
+    /// either layout. Off in the fullscreen viewer, which shows its own caption
+    /// line. Covers image AND video tiles.
+    var showsCaption: Bool = false
     /// Fires once on successful media load with `width / height`. Parents use
     /// this to update both an in-session override (so the next render uses
     /// the measured aspect without waiting for store round-trip) and the
@@ -75,8 +82,33 @@ struct GalleryItemTile: View {
                     }
             }
         }
+        .overlay(alignment: .bottom) { captionStrip }
         .task(id: galleryItem.id) {
             await resolveAndLoad()
+        }
+    }
+
+    /// #6 — bottom caption strip. Only drawn when the tile is asked to show it
+    /// and a caption exists; a top-to-bottom scrim keeps the text legible over
+    /// any image. Clipped to the tile shape by the parent's `.clipShape`.
+    @ViewBuilder
+    private var captionStrip: some View {
+        if showsCaption, let caption = galleryItem.caption, !caption.isEmpty {
+            Text(caption)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.top, 14)
+                .padding(.bottom, 6)
+                .background(
+                    LinearGradient(
+                        colors: [.black.opacity(0), .black.opacity(0.6)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
         }
     }
 

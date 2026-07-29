@@ -3145,6 +3145,33 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// #6 (launch list) — sets (or clears) the user caption on one gallery
+    /// media item. Unlike `setGalleryItemAspectRatio` (a renderer-driven write
+    /// that deliberately does NOT bump timestamps), this IS a user edit → bumps
+    /// `updatedAt` on the entry and node. Whitespace-only / empty input clears
+    /// the caption back to `nil` so an empty string never persists. No-op when
+    /// the normalized value already matches.
+    func setGalleryItemCaption(
+        entryID: String,
+        nodeID: String,
+        galleryItemID: String,
+        caption: String
+    ) async {
+        let trimmed = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        let newValue: String? = trimmed.isEmpty ? nil : trimmed
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var items = updated.items[itemIdx].mediaItems,
+              let galleryIdx = items.firstIndex(where: { $0.id == galleryItemID }),
+              items[galleryIdx].caption != newValue else { return }
+        items[galleryIdx].caption = newValue
+        updated.items[itemIdx].mediaItems = items
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Stage 4.2 commit 4 — user-driven view-mode toggle for a `.imageVideo`
     /// entry's gallery presentation. Single-item entries don't render through
     /// `GalleryBody`, so the toggle is unreachable for them; this method is

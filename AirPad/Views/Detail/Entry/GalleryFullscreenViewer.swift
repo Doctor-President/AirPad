@@ -96,6 +96,14 @@ struct GalleryFullscreenViewer: View {
     /// pans the image instead of turning the page. Off-screen pages are
     /// reset to `false` defensively when `currentIndex` changes.
     @State private var pageZoomed: [Bool]
+    /// #6 (launch list) — caption editing. `captionDraft` backs the edit alert;
+    /// `isEditingCaption` presents it. `captionOverrides` is a session-local
+    /// echo of just-saved captions (keyed by gallery-item id) so the caption
+    /// line updates immediately — `galleryItems` is a snapshot captured at
+    /// presentation and won't reflect the store write until the viewer reopens.
+    @State private var captionDraft = ""
+    @State private var isEditingCaption = false
+    @State private var captionOverrides: [String: String?] = [:]
 
     init(
         galleryItems: [GalleryItem],
@@ -233,9 +241,12 @@ struct GalleryFullscreenViewer: View {
                 // (Copy / Set-Hero disabled for video) lives inside
                 // `bottomBar(for:)`.
                 if let current = currentItem {
-                    bottomBar(for: current)
-                        .opacity(chromeVisible ? 1 : 0)
-                        .animation(.easeInOut, value: chromeVisible)
+                    VStack(spacing: 10) {
+                        captionLine(for: current)
+                        bottomBar(for: current)
+                    }
+                    .opacity(chromeVisible ? 1 : 0)
+                    .animation(.easeInOut, value: chromeVisible)
                 }
             }
         }
@@ -282,6 +293,17 @@ struct GalleryFullscreenViewer: View {
         // back up the moment the viewer is gone. See
         // `PlaybackAudioSession` for the why-it's-shared rationale.
         .onDisappear { PlaybackAudioSession.deactivate() }
+        // #6 — caption editor. Alert TextField keeps editing robust over the
+        // lightbox (no inline keyboard-in-ScrollView complexity).
+        .alert("Caption", isPresented: $isEditingCaption) {
+            TextField("Caption", text: $captionDraft)
+            Button("Save") { saveCaption() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(currentItem?.mediaType == .video
+                 ? "Describe this video."
+                 : "Describe this photo.")
+        }
     }
 
     // MARK: - Chrome
@@ -303,6 +325,57 @@ struct GalleryFullscreenViewer: View {
         }
         .padding(.horizontal)
         .padding(.top, 8)
+    }
+
+    /// #6 — caption for `item`, preferring a just-saved session override over
+    /// the (snapshot) model value so edits show immediately.
+    private func effectiveCaption(for item: GalleryItem) -> String? {
+        if let override = captionOverrides[item.id] { return override }
+        return item.caption
+    }
+
+    /// #6 — tappable caption line above the action bar. Shows the caption, or a
+    /// muted "Add caption…" affordance when empty. Works for images and videos.
+    private func captionLine(for item: GalleryItem) -> some View {
+        let caption = effectiveCaption(for: item)
+        let hasCaption = !(caption ?? "").isEmpty
+        return Button {
+            captionDraft = caption ?? ""
+            isEditingCaption = true
+        } label: {
+            Group {
+                if hasCaption {
+                    Text(caption ?? "")
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(3)
+                } else {
+                    Label("Add caption…", systemImage: "text.badge.plus")
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
+            .font(.callout)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// #6 — commits the draft to the store and echoes it locally so the caption
+    /// line refreshes without waiting on the snapshot `galleryItems` to reload.
+    private func saveCaption() {
+        guard let item = currentItem else { return }
+        let trimmed = captionDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        captionOverrides[item.id] = trimmed.isEmpty ? nil : trimmed
+        Task {
+            await store.setGalleryItemCaption(
+                entryID: parentItem.id,
+                nodeID: nodeID,
+                galleryItemID: item.id,
+                caption: captionDraft
+            )
+        }
     }
 
     private func bottomBar(for item: GalleryItem) -> some View {

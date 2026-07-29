@@ -1,12 +1,6 @@
 import SwiftUI
 import AVFoundation
 import FloatingPanel
-import os
-
-// BUG 15 instrumentation (TEMPORARY — remove once device-confirmed). Captures
-// the SURFACE-level gates (panelSuppressed opacity + the BUG-14 morphing-field
-// alpha) the instant a Detail is entered. Same category as ContentView's.
-private let bug15Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug15")
 
 /// Librarian surface — full Librarian chrome rendered inside the
 /// in-layout FloatingPanel mounted at `ContentView` root. Body content
@@ -263,15 +257,6 @@ struct LibrarianSurface: View {
                 }
 
             }
-        }
-        // BUG 15 instrument (temporary) — surface + pill-level gate snapshot at
-        // the instant a Detail is entered. `panelSuppressed` opacity-0's the
-        // whole surface; `fieldAlpha` is the BUG-14 morphing-field gate.
-        .onChange(of: store.isInDetailView) { _, inDetail in
-            guard inDetail else { return }
-            let p = panelModel.progress.peekProgress
-            let fieldAlpha = isViewingActiveChat ? Double(max(0, min(1, (0.5 - p) / 0.5))) : 1
-            bug15Log.notice("SURFACE detail-present: entryMode=\(String(describing: router.entryMode), privacy: .public) panelSuppressed=\(panelSuppressed ? "true" : "false", privacy: .public) surfaceAlpha=\(panelSuppressed ? "0" : "1", privacy: .public) isViewingActiveChat=\(isViewingActiveChat ? "true" : "false", privacy: .public) peekProgress=\(String(format: "%.3f", p), privacy: .public) fieldAlpha=\(String(format: "%.3f", fieldAlpha), privacy: .public)")
         }
         .onAppear {
             startWhisperCycle()

@@ -64,6 +64,10 @@ struct LibrarianSurface: View {
     @AppStorage("cct.bottomFade")    private var cctBottomFade: Double = 0.06
     @AppStorage("cct.titleCollapse") private var cctTitleCollapse: Double = 64
     @AppStorage("cct.titleSize")     private var cctTitleSize: Double = 15
+    // Item 2 — bottom padding under the backPill row; pulls the whole bottom
+    // chrome (Ask row + backPill) down toward the panel's bottom edge. Negative
+    // eats the dead space below Back that T flagged.
+    @AppStorage("cct.bottomInset")   private var cctBottomInset: Double = 10
     @State private var showChatChromeTuner = false
     #else
     private let cctTopGap: Double = 6
@@ -71,6 +75,7 @@ struct LibrarianSurface: View {
     private let cctBottomFade: Double = 0.06
     private let cctTitleCollapse: Double = 64
     private let cctTitleSize: Double = 15
+    private let cctBottomInset: Double = 10
     #endif
     /// Drives the active-chat pill's × → "Save or Delete" dialog.
     @State private var showChatDisposition = false
@@ -810,8 +815,15 @@ struct LibrarianSurface: View {
                 // we hide it in ContentView's panel mount so this
                 // SwiftUI Capsule remains the single grabber owner —
                 // sized/styled to match the Librarian's visual language.
-                dragGrabber(librarian: librarian)
-                    .padding(.top, 6)
+                // Item 1 (T's call) — REMOVED in the chat view: it collided with
+                // the scroll-collapsing title, and Back + the exit chevron cover
+                // the affordances there. The panel stays DRAGGABLE — this Capsule
+                // hosts no gesture; dragging lives on the FloatingPanel pan
+                // recognizer, so only the visual signal goes.
+                if !isViewingActiveChat {
+                    dragGrabber(librarian: librarian)
+                        .padding(.top, 6)
+                }
 
                 // Chrome correction 2 — the lock + collapse controls exist ONLY
                 // inside the chat interface (the backPill row). On non-chat
@@ -1025,8 +1037,11 @@ struct LibrarianSurface: View {
             tunerSlider("Top gap", $cctTopGap, 0...40)
             tunerSlider("Top fade", $cctTopFade, 0...0.3)
             tunerSlider("Bottom fade", $cctBottomFade, 0...0.3)
+            tunerSlider("Bottom inset", $cctBottomInset, -40...60)
             tunerSlider("Title collapse", $cctTitleCollapse, 10...200)
-            tunerSlider("Title size", $cctTitleSize, 11...22)
+            // Item 3 — widened 11…22 → 11…32: Source Serif 4 reads optically
+            // smaller than the sans, so the serif title needs more headroom.
+            tunerSlider("Title size", $cctTitleSize, 11...32)
             Button("Done") { showChatChromeTuner = false }
                 .font(.caption.weight(.semibold))
         }
@@ -1137,7 +1152,9 @@ struct LibrarianSurface: View {
             lockChevronControls()
         }
         .padding(.horizontal, 20)
-        .padding(.bottom, 10)
+        // Item 2 — tunable so T can pull the bottom chrome down into the dead
+        // space below Back (default 10 = the prior literal).
+        .padding(.bottom, cctBottomInset)
     }
 
     /// #1-followup — the lock + collapse (chevron) controls, shared by the

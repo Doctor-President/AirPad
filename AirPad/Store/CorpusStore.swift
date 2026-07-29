@@ -1363,17 +1363,55 @@ final class CorpusStore {
         }
     }
 
+    private static let udCatalogFingerprintKey = "com.airpad.catalog.fingerprint"
+
     /// Arm the one-shot post-launch backfill off the launch path.
     private func armCatalogBackfill() {
         catalogBackfillTask?.cancel()
-        // ws-librarian-perf Part 2 — `.background` so the scheduler defers this
-        // under UI load, and a longer settle so it doesn't overlap the first
-        // interaction window. `backfillCatalog` also yields generously per node.
-        catalogBackfillTask = Task(priority: .background) { @MainActor [weak self] in
+        // BUG 16 (ws-librarian-perf Part 3) — the skip decision runs OFF the main
+        // actor. `Task(priority:) { @MainActor in … }` does NOT move @MainActor
+        // work off main — priority only orders scheduling, so the whole 203-node
+        // scan ran on main and stuttered the first scroll. `Task.detached` truly
+        // leaves main: one cheap hop snapshots (id, updatedAt); the fingerprint +
+        // compare run off-main; and ONLY a corpus that actually changed hops back
+        // to main for the scan. An unchanged launch does zero per-node main work.
+        catalogBackfillTask = Task.detached(priority: .background) { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             guard let self, !Task.isCancelled else { return }
+            let pairs = await self.backfillFingerprintPairs()
+            let fingerprint = CorpusStore.catalogFingerprint(pairs)
+            if fingerprint == CorpusStore.loadCatalogFingerprint() {
+                bug16Log.notice("CatalogBackfill SKIP — corpus fingerprint unchanged (\(pairs.count, privacy: .public) nodes)")
+                return
+            }
             await self.backfillCatalog()
         }
+    }
+
+    /// Cheap (id, updatedAt) snapshot for the corpus fingerprint. Read on the main
+    /// actor (one O(n) map), then fingerprinted off-main — see `armCatalogBackfill`.
+    private func backfillFingerprintPairs() -> [(id: String, updatedAt: Date)] {
+        nodes.map { (id: $0.id, updatedAt: $0.updatedAt) }
+    }
+
+    /// Corpus signature: every node's id + updatedAt, salted with the card
+    /// embedding version (a version bump forces one full re-scan). Pure/nonisolated
+    /// so the launch-time skip decision never touches the main actor.
+    nonisolated static func catalogFingerprint(_ pairs: [(id: String, updatedAt: Date)]) -> String {
+        let body = pairs
+            .sorted { $0.id < $1.id }
+            .map { "\($0.id)|\($0.updatedAt.timeIntervalSince1970)" }
+            .joined(separator: ";")
+        let salted = "v\(CardEmbeddingService.currentEmbeddingVersion);\(body)"
+        let digest = SHA256.hash(data: Data(salted.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    nonisolated static func loadCatalogFingerprint() -> String? {
+        UserDefaults.standard.string(forKey: udCatalogFingerprintKey)
+    }
+    nonisolated static func storeCatalogFingerprint(_ fingerprint: String) {
+        UserDefaults.standard.set(fingerprint, forKey: udCatalogFingerprintKey)
     }
 
     /// One-shot, resumable backfill over all nodes: refresh + embed each card.
@@ -1405,6 +1443,15 @@ final class CorpusStore {
             // window so they rarely land inside a 60fps panel-drag frame. The
             // backfill is one-shot/idle-time, so a slower pace is free.
             try? await Task.sleep(nanoseconds: 40_000_000)
+        }
+        // Only record the fingerprint on a COMPLETE scan — a cancelled pass left
+        // work undone, so the next launch must re-scan (don't persist a "clean"
+        // signature over partial work). Computed from the current nodes so a manual
+        // Settings rebuild also refreshes the signature.
+        if !Task.isCancelled {
+            CorpusStore.storeCatalogFingerprint(
+                CorpusStore.catalogFingerprint(nodes.map { (id: $0.id, updatedAt: $0.updatedAt) })
+            )
         }
         let duration = Date().timeIntervalSince(start)
         lastCatalogBackfillDuration = duration

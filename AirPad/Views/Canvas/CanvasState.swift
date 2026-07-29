@@ -107,6 +107,13 @@ final class CanvasState {
         let name: String
         let colorHex: String
         let screenPosition: CGPoint
+        /// Region-label zoom fade [0,1], computed in the scene from `cameraScale`
+        /// via the SAME `smoothstepClamp` curve the per-orb label LOD uses — so
+        /// region labels are the macro complement of node labels (full at rest /
+        /// zoomed out, fading as you zoom in and node labels take over). Carried
+        /// here (already bridged per-frame) so the pill needs no separate
+        /// cameraScale reader. Defaults to 1 for any producer that omits it.
+        var lodAlpha: CGFloat = 1
         var id: String { key }
     }
 }

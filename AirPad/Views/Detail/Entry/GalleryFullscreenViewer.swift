@@ -105,6 +105,23 @@ struct GalleryFullscreenViewer: View {
     @State private var isEditingCaption = false
     @State private var captionOverrides: [String: String?] = [:]
 
+    // Lightbox chrome dials. DEBUG: @AppStorage so the tuner dials them live on
+    // device. Release: `let` literals — ZERO UserDefaults reads (see
+    // feedback_release_gate_dev_tuner_reads). Bake into the literals + delete
+    // the tuner once T settles them.
+    #if DEBUG
+    @AppStorage("glbx.topPad")    private var glTopPad: Double = 8
+    @AppStorage("glbx.bottomPad") private var glBottomPad: Double = 24
+    @AppStorage("glbx.chromeGap") private var glChromeGap: Double = 10
+    @AppStorage("glbx.actionGap") private var glActionGap: Double = 24
+    @State private var showLightboxTuner = false
+    #else
+    private let glTopPad: Double = 8
+    private let glBottomPad: Double = 24
+    private let glChromeGap: Double = 10
+    private let glActionGap: Double = 24
+    #endif
+
     init(
         galleryItems: [GalleryItem],
         nodeID: String,
@@ -241,7 +258,7 @@ struct GalleryFullscreenViewer: View {
                 // (Copy / Set-Hero disabled for video) lives inside
                 // `bottomBar(for:)`.
                 if let current = currentItem {
-                    VStack(spacing: 10) {
+                    VStack(spacing: CGFloat(glChromeGap)) {
                         captionLine(for: current)
                         bottomBar(for: current)
                     }
@@ -250,6 +267,8 @@ struct GalleryFullscreenViewer: View {
                 }
             }
         }
+        // Lightbox chrome dials (DEBUG tuner; empty in Release).
+        .overlay(alignment: .topLeading) { lightboxTunerOverlay }
         // ws-dark-light-mode — the media viewer is a LIGHTBOX, not an app
         // surface. Its background is the user's arbitrary photo/video, so its
         // chrome's contrast is against unknown imagery, not the palette — it
@@ -324,7 +343,7 @@ struct GalleryFullscreenViewer: View {
             Color.clear.frame(width: 56, height: 56)
         }
         .padding(.horizontal)
-        .padding(.top, 8)
+        .padding(.top, CGFloat(glTopPad))
     }
 
     /// #6 — caption for `item`, preferring a just-saved session override over
@@ -379,7 +398,7 @@ struct GalleryFullscreenViewer: View {
     }
 
     private func bottomBar(for item: GalleryItem) -> some View {
-        HStack(spacing: 24) {
+        HStack(spacing: CGFloat(glActionGap)) {
             actionButton(systemImage: "square.and.arrow.up", label: "Share") {
                 Task { await resolveAndShare(item) }
             }
@@ -405,8 +424,57 @@ struct GalleryFullscreenViewer: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 22)
         .modifier(ViewerGlassCapsule())
-        .padding(.bottom, 24)
+        .padding(.bottom, CGFloat(glBottomPad))
     }
+
+    /// Lightbox chrome dials — DEBUG-only tuner (empty in Release). Toggled by a
+    /// slider button top-left; the lightbox is a modal (not the FloatingPanel),
+    /// so a plain overlay receives touches fine. Bake the dialed values into the
+    /// `gl*` literals and delete this once T settles them.
+    @ViewBuilder
+    private var lightboxTunerOverlay: some View {
+        #if DEBUG
+        VStack(alignment: .leading, spacing: 8) {
+            Button { showLightboxTuner.toggle() } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+            .buttonStyle(.plain)
+            if showLightboxTuner {
+                lightboxTunerPanel
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.top, 64)
+        #endif
+    }
+
+    #if DEBUG
+    private var lightboxTunerPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Lightbox chrome").font(.caption.weight(.bold))
+            lightboxTunerSlider("Top pad", $glTopPad, 0...48)
+            lightboxTunerSlider("Bottom pad", $glBottomPad, 0...80)
+            lightboxTunerSlider("Caption↔bar gap", $glChromeGap, 0...40)
+            lightboxTunerSlider("Action gap", $glActionGap, 8...48)
+        }
+        .padding(12)
+        .frame(width: 240)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func lightboxTunerSlider(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(label): \(value.wrappedValue, specifier: "%.0f")")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.8))
+            Slider(value: value, in: range)
+        }
+    }
+    #endif
 
     private func chromeIconButton(systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {

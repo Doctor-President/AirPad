@@ -219,15 +219,24 @@ struct LibrarianSurface: View {
                 // per-frame value via PeekProgressReader's isolated
                 // subtree so the parent body stays quiet during drag.
                 PeekProgressReader(progress: panelModel.progress) { p in
+                    // #1 / BUG 14 — while viewing the active chat, fade the
+                    // morphing field out ONLY as it expands into the chat chrome
+                    // (p → 1). The PEEK PILL (p ≈ 0) stays visible + tappable so
+                    // collapsing to peek ALWAYS leaves a way back into the
+                    // Librarian. The original c06f88f gate used a blanket
+                    // opacity-0 across every posture — so a collapse-to-peek out
+                    // of a chat suppressed the pill for the whole process
+                    // lifetime and stranded the user (BUG 14). `isViewingActiveChat`
+                    // stays set across postures by design (posture-persistent
+                    // chat), so the fix is posture-awareness here, NOT clearing
+                    // the flag. Not in a chat → always fully shown (unchanged).
+                    let fieldOpacity: Double = isViewingActiveChat
+                        ? Double(max(0, min(1, (0.5 - p) / 0.5)))
+                        : 1
                     morphingField(geo: geo, librarian: librarian, p: p)
+                        .opacity(fieldOpacity)
+                        .allowsHitTesting(fieldOpacity > 0.01)
                 }
-                // #1 — suppress the search bar / peek pill while the active-chat
-                // transcript is showing (you're chatting, not searching). Reuses the
-                // shipped BUG-11 suppress idiom (opacity + hit-testing), gated on the
-                // surface's own home↔chat toggle rather than the whole-surface
-                // `panelSuppressed` — so the chat + its input row stay visible.
-                .opacity(isViewingActiveChat ? 0 : 1)
-                .allowsHitTesting(!isViewingActiveChat)
 
             }
         }

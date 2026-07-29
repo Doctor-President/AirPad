@@ -1460,10 +1460,13 @@ private struct TerritoryLabelLayer: View {
             let visible = declutter(in: bounds)
             ZStack(alignment: .topLeading) {
                 ForEach(visible) { label in
-                    TerritoryLabelPill(text: label.name, colorHex: label.colorHex)
+                    // Region-label zoom fade (computed in-scene, shared curve):
+                    // TEXT fades to a low floor; MATERIAL drops to 0 near the floor
+                    // so faint text alone can't obscure a legible node title.
+                    TerritoryLabelPill(text: label.name, colorHex: label.colorHex,
+                                       textAlpha: label.lodAlpha,
+                                       materialAlpha: label.materialAlpha)
                         .position(label.screenPosition)
-                        // Region-label zoom fade (computed in-scene, shared curve).
-                        .opacity(label.lodAlpha)
                 }
             }
         }
@@ -1495,6 +1498,11 @@ private struct TerritoryLabelLayer: View {
 private struct TerritoryLabelPill: View {
     let text: String
     let colorHex: String
+    /// Text alpha — fades to the low floor as the camera zooms in.
+    var textAlpha: CGFloat = 1
+    /// Material (capsule fill + stroke + shadow) alpha — drops to 0 as the pill
+    /// nears its floor so only faint text remains over a legible node title.
+    var materialAlpha: CGFloat = 1
     /// Same theme accessor the rest of the canvas chrome uses. Dark keeps the
     /// shipped white; light darkens the text to the detail-view ink so it reads
     /// on cream (this pill was missed by the canvas white-sweep).
@@ -1507,14 +1515,54 @@ private struct TerritoryLabelPill: View {
             // Dark (Solar Flare): byte-identical white@0.95. Light (Cucumber
             // Water): AppearancePalette.ink — the same token the detail view uses.
             .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.95) : AppearancePalette.ink)
+            .opacity(textAlpha)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .frame(minHeight: 30)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(
-                Capsule().stroke(Color(hexString: colorHex).opacity(0.95), lineWidth: 1.5)
-            )
-            .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
+            // MATERIAL (fill + stroke + shadow) on its OWN alpha, so it can drop out
+            // from under the still-visible text as the pill approaches its floor.
+            .background {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Capsule().stroke(Color(hexString: colorHex).opacity(0.95), lineWidth: 1.5)
+                    )
+                    .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
+                    .opacity(materialAlpha)
+            }
     }
+}
+
+// MARK: - Region-label zoom fade (BAKED)
+//
+// Zoom-driven fade of the region/territory-label pills, BAKED from T's on-device
+// dial (2026-07-29, accepted; the RegionLabelTuningPanel tuner + its rlt.* keys are
+// deleted). Consumed by CorpusPhysicsScene.syncTerritoryLabelsToCanvasState via
+// smoothstepClamp(fadeBandEnd, fadeBandStart, xScale).
+//
+//   • fadeBandStart / fadeBandEnd — the camera xScale band: floored (zoomed IN) at
+//     ≤ fadeBandEnd, full (zoomed OUT) at ≥ fadeBandStart. T's accepted band spans
+//     the whole zoom range. Do NOT "correct" start > end — that's the dialed shape,
+//     consumed via the (end, start) argument order, not a bug.
+//   • alphaFloor — the label never fully disappears; the region name stays faintly
+//     present (T's low-alpha-floor decision).
+//   • materialDropThreshold = 0 — the pill's MATERIAL (capsule fill + stroke +
+//     shadow) stays full through almost the whole fade and drops to 0 only over the
+//     final 0.2 of fade progress (regionRaw 0.2 → 0): the capsule persists until the
+//     text is nearly at its floor, then clears, leaving only faint text over a
+//     title. Deliberate — T dialed 0.
+//
+// The engagement-driven fade explored in f525711 was REMOVED before baking. At T's
+// accepted literals its band was zero-width (engageBandStart == engageBandEnd == 1)
+// so engageRaw ≡ 1 and min(zoomRaw, engageRaw) == zoomRaw — a no-op. It was correctly
+// wired to lodAlpha but keyed on `cardProgress` (the TAP-committed card clock), which
+// the graze/honeycomb browse never drives; not shipped as dead code. If an
+// engagement-coupled fade is ever wanted, re-derive off a signal the graze path
+// actually moves (see the retired focal-scale lens in applyOrbScales), not cardProgress.
+enum RegionLabelTuning {
+    static let fadeBandStart: CGFloat = 2.45
+    static let fadeBandEnd: CGFloat = 0.55
+    static let alphaFloor: CGFloat = 0.255
+    static let materialDropThreshold: CGFloat = 0.0
 }
 

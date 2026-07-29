@@ -1534,12 +1534,23 @@ final class CorpusPhysicsScene: SKScene {
 
             var out: [CanvasState.TerritoryLabelInfo] = []
             out.reserveCapacity(territoryLabelData.count)
-            // Region-label zoom fade — macro complement of the per-orb label LOD:
-            // full at rest / zoomed out (cameraScale ≥ 1), fading to 0 as you zoom
-            // IN toward LensTuning.zoomIn, where node labels take over. Same
-            // `smoothstepClamp` curve the orb labels use — one value per frame
-            // (cameraScale is global), so no per-label cost.
-            let regionLodAlpha = smoothstepClamp(LensTuning.zoomIn, 1.0, cameraNode.xScale)
+            // Region-label zoom fade — macro complement of the per-orb title LOD, at
+            // T's device-dialed + accepted literals (ws-map-labels 2026-07-29; baked in
+            // RegionLabelTuning, tuner deleted). xScale small = zoomed IN → floored;
+            // large = zoomed OUT → full; smoothstep across the (end, start) band. Text
+            // lands on a LOW FLOOR (region name stays faintly present); as the pill
+            // nears the floor its MATERIAL drops out (below) leaving only faint text.
+            // One value per frame (cameraScale is global) → no per-label cost.
+            // (The engagement-coupled driver from f525711 was removed at bake — inert at
+            // the accepted literals; see the RegionLabelTuning note in CanvasView.)
+            let regionScale = cameraNode.xScale
+            let regionRaw = smoothstepClamp(RegionLabelTuning.fadeBandEnd,
+                                            RegionLabelTuning.fadeBandStart, regionScale)
+            let regionFloor = RegionLabelTuning.alphaFloor
+            let regionLodAlpha = regionFloor + (1 - regionFloor) * regionRaw
+            let regionMatDrop = RegionLabelTuning.materialDropThreshold
+            let regionMaterialAlpha = smoothstepClamp(regionMatDrop,
+                                                      min(regionMatDrop + 0.2, 1.0), regionRaw)
             for label in territoryLabelData {
                 var sum = CGPoint.zero
                 var n: CGFloat = 0
@@ -1557,7 +1568,8 @@ final class CorpusPhysicsScene: SKScene {
                     name: label.name,
                     colorHex: label.colorHex,
                     screenPosition: screen,
-                    lodAlpha: regionLodAlpha
+                    lodAlpha: regionLodAlpha,
+                    materialAlpha: regionMaterialAlpha
                 ))
             }
             canvasState?.territoryLabels = out

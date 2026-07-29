@@ -114,6 +114,13 @@ final class CanvasState {
         /// here (already bridged per-frame) so the pill needs no separate
         /// cameraScale reader. Defaults to 1 for any producer that omits it.
         var lodAlpha: CGFloat = 1
+        /// Material (capsule fill + stroke + shadow) fade, SEPARATE from the text
+        /// `lodAlpha`. As the pill nears its floor the MATERIAL drops to 0 while the
+        /// text persists faintly — the fill is what obscures a node title; faint
+        /// text alone is near-harmless (T, ws-map-labels 2026-07-29). Both computed
+        /// in-scene on the shared curve; the pill applies `lodAlpha` to its text and
+        /// `materialAlpha` to its capsule/stroke/shadow. Defaults to 1.
+        var materialAlpha: CGFloat = 1
         var id: String { key }
     }
 }

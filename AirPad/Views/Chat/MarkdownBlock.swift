@@ -17,6 +17,12 @@ enum MarkdownBlock: Hashable {
     case bullet(String)
     case numbered(index: Int, text: String)
     case codeBlock(String)
+    /// A GitHub-style pipe table, REFLOWED at render into header-labelled
+    /// key:value groups — one group per row, no grid/borders (chat width can't
+    /// hold real columns; T's call, ws-instant-search.md). Cells are already
+    /// split + trimmed; raggedness (row cell-count ≠ header count) is handled
+    /// at render (falls back to a plain line rather than mis-labelling).
+    case table(headers: [String], rows: [[String]])
 }
 
 /// Line-oriented block splitter. The classification ORDER is load-bearing
@@ -50,9 +56,27 @@ enum MarkdownBlockParser {
         let normalized = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
+        // Indexed (not for-in) so the table branch can look ahead for the
+        // `|---|` separator and consume the row run.
+        let lines = normalized.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
 
-        for rawLine in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = trimTrailing(rawLine)                       // trailing WS only
+        func stripped(_ raw: String) -> String {
+            let t = trimTrailing(Substring(raw))
+            return String(t.drop(while: { $0.isWhitespace }))
+        }
+        // Index of the next NON-BLANK line after `idx`, or nil at EOF.
+        func nextNonBlank(after idx: Int) -> Int? {
+            var k = idx + 1
+            while k < lines.count {
+                if !stripped(lines[k]).isEmpty { return k }
+                k += 1
+            }
+            return nil
+        }
+
+        var i = 0
+        while i < lines.count {
+            let line = trimTrailing(Substring(lines[i]))           // trailing WS only
             let s = String(line.drop(while: { $0.isWhitespace }))  // + leading, for rules
 
             // 1 — FENCE. While open, nothing else applies; lines accumulate
@@ -61,29 +85,73 @@ enum MarkdownBlockParser {
             if s.hasPrefix("```") {
                 if inFence { flushFence() }                        // closing fence
                 else { flushParagraph(); inFence = true }          // opener
-                continue
+                i += 1; continue
             }
-            if inFence { fence.append(line); continue }
+            if inFence { fence.append(line); i += 1; continue }
 
-            // 2 — ATX HEADING
-            if let h = atxHeading(s) { flushParagraph(); blocks.append(h); continue }
+            // 2 — TABLE (leading pipe). Checked before the other classifiers so
+            //     a `| … |` row never reads as prose. Three outcomes:
+            //     (a) header + a `|---|` separator on the next non-blank line →
+            //         a reflowed `.table` (rows accumulated until a blank or a
+            //         non-pipe line);
+            //     (b) a leading-pipe line with NO non-blank line after it → a
+            //         half-arrived table mid-STREAM: HOLD it (emit nothing) so
+            //         raw pipes never flash; the next parse pass resolves it;
+            //     (c) otherwise (next non-blank isn't a separator) → confirmed
+            //         not-a-table → normal prose.
+            if s.hasPrefix("|") {
+                if isTableRowCandidate(s),
+                   let sepIdx = nextNonBlank(after: i),
+                   isSeparatorLine(stripped(lines[sepIdx])) {
+                    let headers = splitCells(s)
+                    var rows: [[String]] = []
+                    var j = sepIdx + 1
+                    while j < lines.count {
+                        let rs = stripped(lines[j])
+                        if rs.isEmpty { break }                    // blank ends the table
+                        guard isTableRowCandidate(rs) else { break } // non-pipe ends it
+                        rows.append(splitCells(rs))
+                        j += 1
+                    }
+                    // Only emit once there's ≥1 data row: header+separator with
+                    // no rows yet is a mid-stream table — consume + hold (no
+                    // phantom empty block), the next row-bearing pass emits it.
+                    if !rows.isEmpty {
+                        flushParagraph()
+                        blocks.append(.table(headers: headers, rows: rows))
+                    }
+                    i = j
+                    continue
+                }
+                if nextNonBlank(after: i) == nil {
+                    // (b) dangling at EOF → mid-stream, hold. Leave any open
+                    //     paragraph intact; just don't emit this line yet.
+                    i += 1; continue
+                }
+                // (c) confirmed not-a-table → prose (raw pipes are correct here).
+                paragraph.append(s); i += 1; continue
+            }
 
-            // 3 — BULLET (before bold-heading: a bullet whose content is
+            // 3 — ATX HEADING
+            if let h = atxHeading(s) { flushParagraph(); blocks.append(h); i += 1; continue }
+
+            // 4 — BULLET (before bold-heading: a bullet whose content is
             //     entirely bold, `*   **Napa**`, must stay a bullet)
-            if let b = bullet(s) { flushParagraph(); blocks.append(b); continue }
+            if let b = bullet(s) { flushParagraph(); blocks.append(b); i += 1; continue }
 
-            // 4 — NUMBERED
-            if let n = numbered(s) { flushParagraph(); blocks.append(n); continue }
+            // 5 — NUMBERED
+            if let n = numbered(s) { flushParagraph(); blocks.append(n); i += 1; continue }
 
-            // 5 — BOLD-LINE HEADING (only raw lines that reached here)
-            if let bh = boldHeading(s) { flushParagraph(); blocks.append(bh); continue }
+            // 6 — BOLD-LINE HEADING (only raw lines that reached here)
+            if let bh = boldHeading(s) { flushParagraph(); blocks.append(bh); i += 1; continue }
 
-            // 6 — BLANK: boundary only, never an empty paragraph (FM puts a
+            // 7 — BLANK: boundary only, never an empty paragraph (FM puts a
             //     blank line between a header and its first bullet).
-            if s.isEmpty { flushParagraph(); continue }
+            if s.isEmpty { flushParagraph(); i += 1; continue }
 
-            // 7 — PARAGRAPH
+            // 8 — PARAGRAPH
             paragraph.append(s)
+            i += 1
         }
 
         // EOF — flush whatever is open.
@@ -141,6 +209,45 @@ enum MarkdownBlockParser {
         let inner = s.dropFirst(2).dropLast(2)
         guard !inner.isEmpty, !inner.contains("**") else { return nil }
         return .heading(level: 2, text: String(inner))
+    }
+
+    // MARK: - Table classifiers
+
+    /// A BORDERED pipe row: starts AND ends with `|` and holds ≥1 cell. Bordered
+    /// is the shape the shipping models emit (T's screenshot), and it keeps a
+    /// lone pipe *inside* prose (`A | B`, no leading pipe) from ever triggering.
+    /// A row still streaming (no trailing `|` yet) is deliberately NOT a
+    /// candidate — it's held rather than reflowed half-formed.
+    private static func isTableRowCandidate(_ s: String) -> Bool {
+        guard s.hasPrefix("|"), s.hasSuffix("|") else { return false }
+        return s.filter { $0 == "|" }.count >= 2
+    }
+
+    /// A separator row: bordered, every cell matching `:?-{1,}:?` (dashes with
+    /// optional alignment colons). This is the unambiguous "this IS a table"
+    /// signal — prose essentially never contains a `|---|` line.
+    private static func isSeparatorLine(_ s: String) -> Bool {
+        guard s.hasPrefix("|"), s.hasSuffix("|") else { return false }
+        let cells = splitCells(s)
+        guard !cells.isEmpty else { return false }
+        for cell in cells {
+            var body = Substring(cell)
+            if body.first == ":" { body = body.dropFirst() }
+            if body.last == ":" { body = body.dropLast() }
+            guard !body.isEmpty, body.allSatisfy({ $0 == "-" }) else { return false }
+        }
+        return true
+    }
+
+    /// Split a bordered pipe row into trimmed cells (edge pipes dropped). Empty
+    /// cells are PRESERVED so the cell count matches the header for raggedness
+    /// checks; the renderer skips empties.
+    private static func splitCells(_ s: String) -> [String] {
+        var t = Substring(s)
+        if t.first == "|" { t = t.dropFirst() }
+        if t.last == "|" { t = t.dropLast() }
+        return t.split(separator: "|", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
     }
 }
 
@@ -231,7 +338,57 @@ struct MarkdownBlockView: View {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(Color(hexString: "1C1C1E"))
                 )
+
+        case let .table(headers, rows):
+            // Reflowed table — one header-labelled group per row, no grid /
+            // borders (chat width can't hold columns). Plain + typographic.
+            VStack(alignment: .leading, spacing: ChatTypography.blockSpacing) {
+                ForEach(Array(rows.enumerated()), id: \.offset) { pair in
+                    reflowedRow(headers: headers, cells: pair.element)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
         }
+    }
+
+    /// One table row → a header-labelled key:value group. Escape hatch: a
+    /// RAGGED row (cell count ≠ header count) renders as a plain middot-joined
+    /// line rather than mis-labelling against the wrong headers.
+    @ViewBuilder
+    private func reflowedRow(headers: [String], cells: [String]) -> some View {
+        if cells.count != headers.count {
+            Text(Self.inline(cells.filter { !$0.isEmpty }.joined(separator: "  ·  ")))
+                .font(ChatTypography.body)
+                .foregroundStyle(ChatTypography.bodyText)
+                .lineSpacing(ChatTypography.bodyLine)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: ChatTypography.listSpacing) {
+                ForEach(Array(zip(headers, cells).enumerated()), id: \.offset) { item in
+                    // Empty cells skipped — a labelled row of blanks is noise.
+                    if !item.element.1.isEmpty {
+                        labeledCell(header: item.element.0, value: item.element.1)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// `Header: value` on one wrapping line. Header is semibold/secondary; the
+    /// value goes through the SAME inline parse as prose so bold / italic /
+    /// citations survive inside cells.
+    private func labeledCell(header: String, value: String) -> some View {
+        (Text(header.isEmpty ? "" : header + ": ")
+            .font(ChatTypography.body)
+            .fontWeight(.semibold)
+            .foregroundStyle(ChatTypography.secondaryText)
+         + Text(Self.inline(value))
+            .font(ChatTypography.body)
+            .foregroundStyle(ChatTypography.bodyText))
+            .lineSpacing(ChatTypography.bodyLine)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func headingFont(_ level: Int) -> Font {

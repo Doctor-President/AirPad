@@ -1374,11 +1374,26 @@ struct RichTextEditor: UIViewRepresentable {
             let newChecked = !currentChecked
 
             captureUndoSnapshot(in: textView)
+            // BUG 13 — save the selection: reassigning `attributedText` below
+            // resets the caret to the document END, and UITextView then scrolls
+            // to it, so every checkbox tick shot the view to the bottom of the
+            // entry. `adjustChecklistIndent` restores the selection after the
+            // same reassignment and never jumps — mirror it here.
+            let savedSelection = textView.selectedRange
             let mut = NSMutableAttributedString(attributedString: attrText)
             let replacement = MarkdownCodec.checklistAttachmentString(checked: newChecked)
             mut.replaceCharacters(in: NSRange(location: glyphLoc, length: 1), with: replacement)
             textView.attributedText = mut
-            refreshActiveState(in: textView)
+            // The replace is length-preserving, so the saved range is still
+            // valid (clamped defensively).
+            let loc = min(savedSelection.location, mut.length)
+            textView.selectedRange = NSRange(location: loc,
+                                             length: min(savedSelection.length, mut.length - loc))
+            // restyle:false — only the glyph attachment swapped (checked↔unchecked);
+            // paragraph typography is unchanged, so the storage-mutating
+            // `applyInPlace` (the MD14 caret-jump root cause, a second scroll
+            // disruptor) must NOT run on a mere toggle.
+            refreshActiveState(in: textView, restyle: false)
             pushBinding(from: textView)
         }
 

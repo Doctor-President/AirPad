@@ -2324,6 +2324,21 @@ final class CorpusStore {
         await cleanupOwnedCover(old, nodeID: nodeID)
     }
 
+    /// #7 (launch list) — persists the hero banner's pan offset. Only touches
+    /// `heroOffset`, leaving the cover path untouched. Repositioning IS a user
+    /// edit → bumps `updatedAt`. No-op when the value is unchanged (the drag
+    /// commits on every release, so identical re-commits are common). The
+    /// render path treats `.zero` as the centered crop, so passing `.zero`
+    /// recenters.
+    func setHeroOffset(_ offset: CGPoint, nodeID: String) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard updated.heroOffset != offset else { return }
+        updated.heroOffset = offset
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Resolves the on-disk URL of a node's hero image, or `nil` when
     /// none is set. The hero always lives on its own node, so the node's
     /// own id is the resolution context.

@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 enum TagSource: String, Codable {
     case user
@@ -245,6 +246,17 @@ struct Node: Codable, Identifiable, Hashable {
     /// `summarySource` — no schema-version bump.
     var coverImageRelativePath: String?
 
+    /// #7 (launch list) — additive pan offset (in points) applied to the
+    /// hero banner's `scaledToFill` crop, letting the user reposition which
+    /// part of an over-tall / over-wide image is visible. `nil` (and `.zero`)
+    /// reproduce the prior centered crop exactly, so this is fully backward
+    /// compatible. Persisted as a `CGPoint` (`[x, y]` on disk). Additive +
+    /// decode-tolerant like `coverImageRelativePath`; no schema-version bump.
+    /// Clamped to the image's overflow at render time so it can never reveal
+    /// empty edges — the value is stored raw and re-clamped on read, so a
+    /// stale offset survives a hero swap without exposing a gap.
+    var heroOffset: CGPoint?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -276,6 +288,7 @@ struct Node: Codable, Identifiable, Hashable {
         case summarySource = "summary_source"
         case titleSource = "title_source"
         case coverImageRelativePath = "cover_image_relative_path"
+        case heroOffset = "hero_offset"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -323,7 +336,8 @@ struct Node: Codable, Identifiable, Hashable {
         descriptionOnCard: Bool = true,
         summarySource: TagSource? = nil,
         titleSource: TagSource? = nil,
-        coverImageRelativePath: String? = nil
+        coverImageRelativePath: String? = nil,
+        heroOffset: CGPoint? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -365,6 +379,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.summarySource               = summarySource
         self.titleSource                 = titleSource
         self.coverImageRelativePath      = coverImageRelativePath
+        self.heroOffset                  = heroOffset
     }
 }
 
@@ -420,6 +435,7 @@ extension Node {
         summarySource              = try c.decodeIfPresent(TagSource.self, forKey: .summarySource)
         titleSource                = try c.decodeIfPresent(TagSource.self, forKey: .titleSource)
         coverImageRelativePath     = try c.decodeIfPresent(String.self,   forKey: .coverImageRelativePath) ?? nil
+        heroOffset                 = try c.decodeIfPresent(CGPoint.self,   forKey: .heroOffset)
     }
 }
 

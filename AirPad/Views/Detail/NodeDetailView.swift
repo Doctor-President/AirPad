@@ -153,6 +153,12 @@ struct NodeDetailView: View {
     /// zero own-images can still pick from Photos).
     @State private var showHeroPicker = false
 
+    /// #7 (launch list) — when true, the hero banner enters reposition mode:
+    /// a drag pans the cover's crop (persisted as `Node.heroOffset`) instead
+    /// of scrolling the detail view. Toggled by the `•••` menu's "Reposition
+    /// Hero…" item; the banner shows a "Done" affordance to exit.
+    @State private var isAdjustingHero = false
+
     /// Stage 4.6 commit 3 — capture-time modal for the canvas-level
     /// "+ Document" path. When the user picks documents in a node that
     /// already has a `.document` entry, we present a modal asking
@@ -719,11 +725,21 @@ struct NodeDetailView: View {
                         }
                     } else {
                         Button {
+                            // Leaving/replacing the hero: exit reposition mode
+                            // so the incoming banner doesn't start in it.
+                            isAdjustingHero = false
                             showHeroPicker = true
                         } label: {
                             Label("Change Hero Image…", systemImage: "photo.badge.plus")
                         }
+                        // #7 — enter reposition mode for the current hero.
                         Button {
+                            isAdjustingHero = true
+                        } label: {
+                            Label("Reposition Hero…", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                        }
+                        Button {
+                            isAdjustingHero = false
                             Task { await store.clearCoverImage(nodeID: nodeID) }
                         } label: {
                             Label("Remove Hero Image", systemImage: "photo.badge.exclamationmark")
@@ -818,7 +834,7 @@ struct NodeDetailView: View {
                     )
                 )
         } else {
-            HeroImageBanner(node: node, topInset: topInset, width: width)
+            HeroImageBanner(node: node, topInset: topInset, width: width, isAdjusting: $isAdjustingHero)
                 // Force a fresh view identity whenever the source path
                 // flips so the `.task(id:)` inside actually re-fires.
                 // Without this the banner's identity is reused across
@@ -2634,6 +2650,10 @@ private struct HeroImageBanner: View {
     let node: Node
     let topInset: CGFloat
     let width: CGFloat
+    /// #7 (launch list) — reposition mode. While true, a drag on the banner
+    /// pans the crop (see `panGesture`) instead of scrolling the detail view,
+    /// and a "Done" affordance is shown. Owned by `NodeDetailView`.
+    @Binding var isAdjusting: Bool
 
     @Environment(CorpusStore.self) private var store
 
@@ -2643,15 +2663,42 @@ private struct HeroImageBanner: View {
     /// (default 420 = the prior literal). Gradient fallback keeps its fixed 200.
     @State private var visualSettings = EntryVisualSettings.shared
 
+    /// #7 — live finger translation during a reposition drag (points). Added
+    /// to the committed offset and reset on release.
+    @State private var dragTranslation: CGSize = .zero
+    /// #7 — optimistic copy of the committed offset so the crop doesn't flash
+    /// back to the store value for a frame between drag-end and the
+    /// `@Observable` round-trip. Seeded from the node lazily; the banner gets a
+    /// fresh identity (via `.id`) on hero swap, so this resets with it.
+    @State private var localOffset: CGPoint? = nil
+
+    /// #7 — committed offset in effect right now (optimistic local wins, then
+    /// the persisted node value, then centered).
+    private var baseOffset: CGPoint { localOffset ?? node.heroOffset ?? .zero }
+
     var body: some View {
         Group {
             if let image, let aspect {
                 let visibleHeight = max(200, min(visualSettings.heroMaxHeight, width / max(aspect, 0.01)))
                 let totalHeight = visibleHeight + topInset
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                // #7 — `scaledToFill` scales the image to cover width×totalHeight,
+                // overflowing on the longer axis. `heroOffset` (+ the live drag)
+                // shifts which slice is visible, clamped to ±overflow so an edge
+                // gap can never appear. Zero offset reproduces the prior centered
+                // crop exactly. `s` is the fill scale for a unit-height image
+                // (imgW = aspect, imgH = 1).
+                let s = max(width / max(aspect, 0.01), totalHeight)
+                let overflowX = max(0, (aspect * s - width) / 2)
+                let overflowY = max(0, (s - totalHeight) / 2)
+                let offset = clampedOffset(overflowX: overflowX, overflowY: overflowY)
+                Color.clear
                     .frame(width: width, height: totalHeight)
+                    .overlay {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .offset(x: offset.x, y: offset.y)
+                    }
                     .clipped()
                     .clipShape(
                         UnevenRoundedRectangle(
@@ -2660,6 +2707,17 @@ private struct HeroImageBanner: View {
                             style: .continuous
                         )
                     )
+                    .contentShape(Rectangle())
+                    // High-priority so a pan beats the enclosing ScrollView while
+                    // adjusting; masked off entirely otherwise so normal scrolling
+                    // over the hero is untouched.
+                    .highPriorityGesture(
+                        panGesture(overflowX: overflowX, overflowY: overflowY),
+                        including: isAdjusting ? .all : .none
+                    )
+                    .overlay(alignment: .bottomTrailing) {
+                        if isAdjusting { adjustDoneButton }
+                    }
             } else {
                 // Loading / resolve-or-decode failure: fall back to the
                 // gradient banner at its natural 200 + topInset height.
@@ -2714,6 +2772,45 @@ private struct HeroImageBanner: View {
             image = decoded.0
             aspect = decoded.1
         }
+    }
+
+    // MARK: - #7 reposition
+
+    /// Committed offset + the live drag, clamped to the overflow so a pan can
+    /// never expose an empty edge.
+    private func clampedOffset(overflowX: CGFloat, overflowY: CGFloat) -> CGPoint {
+        let rawX = baseOffset.x + dragTranslation.width
+        let rawY = baseOffset.y + dragTranslation.height
+        return CGPoint(
+            x: min(max(rawX, -overflowX), overflowX),
+            y: min(max(rawY, -overflowY), overflowY)
+        )
+    }
+
+    private func panGesture(overflowX: CGFloat, overflowY: CGFloat) -> some Gesture {
+        DragGesture()
+            .onChanged { value in dragTranslation = value.translation }
+            .onEnded { value in
+                let fx = min(max(baseOffset.x + value.translation.width, -overflowX), overflowX)
+                let fy = min(max(baseOffset.y + value.translation.height, -overflowY), overflowY)
+                let final = CGPoint(x: fx, y: fy)
+                localOffset = final          // optimistic — no flash on release
+                dragTranslation = .zero
+                Task { await store.setHeroOffset(final, nodeID: node.id) }
+            }
+    }
+
+    private var adjustDoneButton: some View {
+        Button { isAdjusting = false } label: {
+            Text("Done")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(.black.opacity(0.55), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(12)
     }
 }
 

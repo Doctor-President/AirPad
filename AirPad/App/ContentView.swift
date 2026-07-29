@@ -1,5 +1,12 @@
 import SwiftUI
 import FloatingPanel
+import os
+
+/// BUG 15 instrumentation (TEMPORARY — remove once device-confirmed). Captures
+/// the panel-visibility gate values the instant a Detail is presented, so a
+/// single Recents→Detail run says which gate suppresses the peek pill. Capture:
+/// `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "bug15"'`.
+private let bug15Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug15")
 
 struct ContentView: View {
 
@@ -189,6 +196,8 @@ struct ContentView: View {
         // separate early-restore signal.
         .onChange(of: store.isInDetailView) { _, inDetail in
             if inDetail {
+                // BUG 15 instrument (temporary) — panel-level gate snapshot.
+                bug15Log.notice("CONTENTVIEW detail-present: entryMode=\(String(describing: router.entryMode), privacy: .public) librarianSuppressed=\(librarianSuppressed ? "true" : "false", privacy: .public) isInDetailView=\(store.isInDetailView ? "true" : "false", privacy: .public) uiInteractionEnabled=\(String(describing: panelState.controller?.view.isUserInteractionEnabled), privacy: .public) posture=\(String(describing: panelState.state), privacy: .public)")
                 // Rescue-raise ONLY when the current surface actually wants the
                 // Librarian (a canvas / collection-canvas detail). Any suppressed
                 // surface — capture mode OR QuikCapture / dashboard / recents —

@@ -19,6 +19,10 @@ struct GalleryBody: View {
     @Environment(CorpusStore.self) private var store
 
     @State private var showingPicker = false
+    /// #4 (launch list) — presents the drag-to-reorder sheet. The gallery's
+    /// carousel/bento aren't Lists, so reordering happens in a modal List
+    /// (the one place `.onMove` works); see `GalleryReorderSheet`.
+    @State private var showingReorder = false
     /// Per-session aspect-ratio overrides keyed by `GalleryItem.id`. Tiles
     /// report their measured aspect on first load via
     /// `onMeasuredAspect`; the override takes precedence over the model's
@@ -80,13 +84,29 @@ struct GalleryBody: View {
                 onAdd: { showingPicker = true },
                 accessibilityLabel: "Add more media"
             ) {
-                ViewModeToggle(active: effectiveViewMode) { newMode in
-                    Task {
-                        await store.setEntryViewMode(
-                            itemID: item.id,
-                            nodeID: nodeID,
-                            viewMode: newMode
-                        )
+                HStack(spacing: 12) {
+                    // #4 — reorder trigger. Mirrors the "+" button's shape so
+                    // the chrome reads as one control cluster.
+                    Button { showingReorder = true } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                            .frame(width: 32, height: 32)
+                            .background(AppearancePalette.ink.opacity(0.08))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Circle())
+                    .accessibilityLabel("Reorder media")
+
+                    ViewModeToggle(active: effectiveViewMode) { newMode in
+                        Task {
+                            await store.setEntryViewMode(
+                                itemID: item.id,
+                                nodeID: nodeID,
+                                viewMode: newMode
+                            )
+                        }
                     }
                 }
             }
@@ -95,6 +115,10 @@ struct GalleryBody: View {
             MediaPickerWrapper { results in
                 Task { await handlePickedMedia(results) }
             }
+        }
+        .sheet(isPresented: $showingReorder) {
+            GalleryReorderSheet(item: item, nodeID: nodeID)
+                .environment(store)
         }
         .fullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
             GalleryFullscreenViewer(
@@ -368,6 +392,95 @@ private struct GalleryBento: View {
                         availableWidth = newValue
                     }
             }
+        }
+    }
+}
+
+/// #4 (launch list) — drag-to-reorder sheet for a gallery entry's media.
+///
+/// The in-card gallery renders as a horizontal carousel or a 2-D bento;
+/// neither is a `List`, and SwiftUI's inline `.onMove` only works inside a
+/// `List`. The app's other reorder idiom (`EntryReorderController`) is a
+/// bespoke *vertical-list-only* drag controller and doesn't translate to a
+/// horizontal strip or a 2-D grid. So reordering happens here, in a modal
+/// `List` pinned to permanent edit mode — the one place `.onMove` applies —
+/// with system drag handles.
+///
+/// `workingItems` is a local copy that drives the List, so a drag animates
+/// immediately without waiting on the store's `@Observable` round-trip. Each
+/// move persists the *resulting order* (by ID) via
+/// `CorpusStore.setGalleryItemOrder` — one write per move, matching
+/// `moveEntry`'s one-commit-per-reorder philosophy. The card behind the sheet
+/// reflects the persisted order once the sheet dismisses.
+private struct GalleryReorderSheet: View {
+
+    let item: NodeItem
+    let nodeID: String
+
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var workingItems: [GalleryItem]
+
+    init(item: NodeItem, nodeID: String) {
+        self.item = item
+        self.nodeID = nodeID
+        _workingItems = State(initialValue: item.mediaItems ?? [])
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(workingItems) { galleryItem in
+                    reorderRow(galleryItem)
+                }
+                .onMove(perform: move)
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func reorderRow(_ galleryItem: GalleryItem) -> some View {
+        HStack(spacing: 12) {
+            GalleryItemTile(
+                galleryItem: galleryItem,
+                nodeID: nodeID,
+                parentItem: item
+            )
+            .frame(width: 48, height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            Text(galleryItem.mediaType == .video ? "Video" : "Photo")
+                .font(.body)
+                .foregroundStyle(AppearancePalette.ink)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Applies the List's move to the local working copy (instant, smooth),
+    /// then persists the new order by ID. Both stay in lock-step because the
+    /// working copy starts equal to `mediaItems` and every move is applied to
+    /// it before the ID snapshot is taken.
+    private func move(from source: IndexSet, to destination: Int) {
+        workingItems.move(fromOffsets: source, toOffset: destination)
+        let orderedIDs = workingItems.map(\.id)
+        Task {
+            await store.setGalleryItemOrder(
+                entryID: item.id,
+                nodeID: nodeID,
+                orderedIDs: orderedIDs
+            )
         }
     }
 }

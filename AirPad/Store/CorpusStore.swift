@@ -3186,6 +3186,54 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// #4 (launch list) — reorders a gallery entry's `mediaItems` to match
+    /// `orderedIDs`. The gallery renders as a horizontal carousel / 2-D bento
+    /// (neither a `List`), so SwiftUI's inline `.onMove` can't drive it; the
+    /// reorder UI is a modal `List` that commits the *resulting order* rather
+    /// than a from/to pair — hence this takes an ordered ID list, not the
+    /// index pair `moveEntry` uses. Still a single persisted mutation per
+    /// reorder action, matching `moveEntry`'s one-commit philosophy.
+    ///
+    /// Reordering IS a user edit → bumps `updatedAt` on both the entry and
+    /// the node (unlike `setGalleryItemAspectRatio`, which is renderer-driven
+    /// and deliberately does not). Foundation-only (no SwiftUI dependency in
+    /// the store): the permutation is applied by dictionary lookup.
+    ///
+    /// Defensive: `orderedIDs` must be a permutation of the current item IDs.
+    /// Any ID in `orderedIDs` not present is skipped; any current item not
+    /// named in `orderedIDs` is appended in its original relative order. If
+    /// the reconciled set doesn't match the original count, or the order is
+    /// unchanged, the call is a no-op (no write, no timestamp churn).
+    func setGalleryItemOrder(
+        entryID: String,
+        nodeID: String,
+        orderedIDs: [String]
+    ) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              let items = updated.items[itemIdx].mediaItems else { return }
+
+        var byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        var reordered: [GalleryItem] = []
+        reordered.reserveCapacity(items.count)
+        for id in orderedIDs {
+            if let picked = byID.removeValue(forKey: id) { reordered.append(picked) }
+        }
+        // Append anything the order list omitted, preserving original order.
+        for existing in items where byID[existing.id] != nil {
+            reordered.append(existing)
+            byID.removeValue(forKey: existing.id)
+        }
+        guard reordered.count == items.count,
+              reordered.map(\.id) != items.map(\.id) else { return }
+
+        updated.items[itemIdx].mediaItems = reordered
+        updated.items[itemIdx].updatedAt = Date()
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     private func persistMediaFiles(_ media: [PendingMediaItem], nodeID: String) async {
         for m in media {
             do {

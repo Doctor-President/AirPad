@@ -157,6 +157,94 @@ enum MarkdownBlockParserSelfTest {
             }
         }
 
+        // T7 — well-formed pipe table → one .table with split/trimmed cells.
+        do {
+            ran += 1
+            let input = [
+                "| Model | Score |",
+                "|-------|-------|",
+                "| Fable | 0.9 |",
+                "| Opus | 0.95 |",
+            ].joined(separator: "\n")
+            let blocks = MarkdownBlockParser.parse(input)
+            let expected: [MarkdownBlock] = [
+                .table(headers: ["Model", "Score"],
+                       rows: [["Fable", "0.9"], ["Opus", "0.95"]]),
+            ]
+            if blocks != expected {
+                failures.append("T7: \(describe(blocks)) != \(describe(expected))")
+            }
+        }
+
+        // T8 — ragged row (fewer cells than the header). The parser KEEPS it in
+        // the table (rows carry it verbatim); the renderer is what falls back to
+        // a plain line. Guards the escape hatch's parser-side input.
+        do {
+            ran += 1
+            let input = [
+                "| A | B |",
+                "|---|---|",
+                "| 1 | 2 |",
+                "| 3 |",
+            ].joined(separator: "\n")
+            let blocks = MarkdownBlockParser.parse(input)
+            let expected: [MarkdownBlock] = [
+                .table(headers: ["A", "B"], rows: [["1", "2"], ["3"]]),
+            ]
+            if blocks != expected {
+                failures.append("T8: \(describe(blocks)) != \(describe(expected))")
+            }
+        }
+
+        // T9 — table mid-STREAM must NEVER flash raw pipes. A header row with no
+        // separator yet is HELD (no block); a header+separator with no data rows
+        // yet is also held (no phantom block). Both resolve on the next pass.
+        do {
+            ran += 1
+            let headerOnly = MarkdownBlockParser.parse("| Model | Score |")
+            if !headerOnly.isEmpty {
+                failures.append("T9a: header-only must be held, got \(describe(headerOnly))")
+            }
+            let noRows = MarkdownBlockParser.parse("| Model | Score |\n|---|---|")
+            if !noRows.isEmpty {
+                failures.append("T9b: header+separator with no rows must be held, got \(describe(noRows))")
+            }
+        }
+
+        // T10 — a lone pipe INSIDE prose (no leading pipe) must stay a
+        // paragraph, never trip the table path.
+        do {
+            ran += 1
+            let input = "Use the A | B operator when either matches."
+            let blocks = MarkdownBlockParser.parse(input)
+            let expected: [MarkdownBlock] = [
+                .paragraph("Use the A | B operator when either matches."),
+            ]
+            if blocks != expected {
+                failures.append("T10: \(describe(blocks)) != \(describe(expected))")
+            }
+        }
+
+        // T11 — table directly under a heading (no blank between): heading then
+        // table, in order.
+        do {
+            ran += 1
+            let input = [
+                "## Results",
+                "| A | B |",
+                "|---|---|",
+                "| 1 | 2 |",
+            ].joined(separator: "\n")
+            let blocks = MarkdownBlockParser.parse(input)
+            let expected: [MarkdownBlock] = [
+                .heading(level: 2, text: "Results"),
+                .table(headers: ["A", "B"], rows: [["1", "2"]]),
+            ]
+            if blocks != expected {
+                failures.append("T11: \(describe(blocks)) != \(describe(expected))")
+            }
+        }
+
         if failures.isEmpty {
             return "MarkdownBlockParser: \(ran)/\(ran) passed"
         } else {
@@ -178,6 +266,7 @@ enum MarkdownBlockParserSelfTest {
         case let .bullet(text):         return "bullet(\"\(text)\")"
         case let .numbered(index, text): return "numbered(\(index), \"\(text)\")"
         case let .codeBlock(code):      return "codeBlock(\"\(code.replacingOccurrences(of: "\n", with: "\\n"))\")"
+        case let .table(headers, rows): return "table(h:\(headers), r:\(rows))"
         }
     }
 }

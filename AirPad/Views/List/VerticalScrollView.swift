@@ -1,4 +1,12 @@
 import SwiftUI
+import os
+
+// BUG 16 instrumentation (TEMPORARY — remove once diagnosed). Card-view first-
+// scroll stutter: log every buildItems() re-emit (with trigger + order
+// signature), every sortOrder change, and every scrollToFirstAfterSort firing —
+// os_log auto-timestamps each, so the first-~2s window is read off the stream.
+// Capture: `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "bug16"'`.
+private let bug16Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug16")
 
 // MARK: - Scroll node (wrapper for sentinel/real items in the looping scroll)
 
@@ -112,14 +120,16 @@ struct VerticalScrollView: View {
             haptic.prepare()
             navHaptic.prepare()
             store.detailViewDepth = navigationPath.count
-            buildItems()
+            bug16Log.notice("onAppear (t0)")
+            buildItems(reason: "appear")
         }
         // Observe the broad filteredNodes signal — for collection scopes this
         // still fires whenever any filter input changes; `buildItems` reads
         // through the scoped accessor.
-        .onChange(of: store.filteredNodes) { _, _ in buildItems() }
-        .onChange(of: store.filterState.sortOrder) { _, _ in
-            buildItems()
+        .onChange(of: store.filteredNodes) { _, _ in buildItems(reason: "filteredNodes") }
+        .onChange(of: store.filterState.sortOrder) { old, new in
+            bug16Log.notice("sortOrder CHANGED \(String(describing: old), privacy: .public) → \(String(describing: new), privacy: .public)")
+            buildItems(reason: "sortOrder")
             scrollToFirstAfterSort = true
         }
     }
@@ -247,6 +257,7 @@ struct VerticalScrollView: View {
             }
             .onChange(of: scrollToFirstAfterSort) { _, flag in
                 guard flag, let firstID = displayItems.first(where: { $0.isReal })?.id else { return }
+                bug16Log.notice("scrollToFirstAfterSort FIRED → scrollTo \(firstID, privacy: .public)")
                 scrollToFirstAfterSort = false
                 withAnimation(.spring(response: 0.4)) {
                     proxy.scrollTo(firstID, anchor: .center)
@@ -283,8 +294,13 @@ struct VerticalScrollView: View {
 
     // MARK: - Build display items
 
-    private func buildItems() {
+    private func buildItems(reason: String) {
         let nodes = store.filteredNodes(in: scope)
+        // BUG 16 instrument — log the trigger + order signature (first/last id +
+        // sort) so a re-emit that reorders under the first gesture is visible.
+        let firstID = nodes.first.map { String($0.id.prefix(8)) } ?? "nil"
+        let lastID = nodes.last.map { String($0.id.prefix(8)) } ?? "nil"
+        bug16Log.notice("buildItems reason=\(reason, privacy: .public) count=\(nodes.count) first=\(firstID, privacy: .public) last=\(lastID, privacy: .public) sort=\(String(describing: store.filterState.sortOrder), privacy: .public)")
         guard !nodes.isEmpty else { displayItems = []; return }
 
         let sentCount = min(3, nodes.count)

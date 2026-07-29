@@ -12,6 +12,11 @@ import os
 // `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "bug17"'`.
 private let bug17Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug17")
 
+// BUG 16 (card-view first-scroll stutter) — log the CatalogBackfill window in
+// the SAME `bug16` stream as VerticalScrollView's scroll-phase timestamps, so
+// the stutter can be lined up against the backfill run directly. TEMPORARY.
+private let bug16Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug16")
+
 // MARK: - Seeded RNG (SB126 Stage 1)
 
 /// Deterministic 64-bit RNG used for the random tier of neighborhood member
@@ -1378,6 +1383,7 @@ final class CorpusStore {
         let start = Date()
         let ids = nodes.map(\.id)
         var built = 0, skippedNoGist = 0, reEmbedded = 0
+        bug16Log.notice("CatalogBackfill START total=\(ids.count)")
         for id in ids {
             if Task.isCancelled { break }
             let had = await card(forNodeID: id) != nil
@@ -1402,6 +1408,7 @@ final class CorpusStore {
         }
         let duration = Date().timeIntervalSince(start)
         lastCatalogBackfillDuration = duration
+        bug16Log.notice("CatalogBackfill END built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration), privacy: .public)s")
         print("[CatalogBackfill] built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration))s")
     }
 

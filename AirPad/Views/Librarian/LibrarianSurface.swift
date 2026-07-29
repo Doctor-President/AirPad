@@ -54,29 +54,17 @@ struct LibrarianSurface: View {
     // top; drives the scroll-collapsing chat title's opacity.
     @State private var chatScrollTopOffset: CGFloat = 0
 
-    // #1-followup TUNABLES. DEBUG: @AppStorage so the tuner panel dials them
-    // live on device. Release: `let` literals — ZERO UserDefaults reads (kills
-    // reinstall drift; see feedback_release_gate_dev_tuner_reads). Bake these
-    // into the views and delete the tuner once T settles the values.
-    #if DEBUG
-    @AppStorage("cct.topGap")        private var cctTopGap: Double = 6
-    @AppStorage("cct.topFade")       private var cctTopFade: Double = 0.06
-    @AppStorage("cct.bottomFade")    private var cctBottomFade: Double = 0.06
-    @AppStorage("cct.titleCollapse") private var cctTitleCollapse: Double = 64
-    @AppStorage("cct.titleSize")     private var cctTitleSize: Double = 15
-    // Item 2 — bottom padding under the backPill row; pulls the whole bottom
-    // chrome (Ask row + backPill) down toward the panel's bottom edge. Negative
-    // eats the dead space below Back that T flagged.
-    @AppStorage("cct.bottomInset")   private var cctBottomInset: Double = 10
-    @State private var showChatChromeTuner = false
-    #else
+    // #1-followup chat-chrome values — BAKED from the DEBUG tuner (T-dialed,
+    // settled 2026-07-29; the tuner panel + button were deleted). Plain literals:
+    // top gap of the reclaimed chat header · top/bottom transcript fade fractions
+    // · scroll distance the collapsing title fades in over · title point size ·
+    // bottom-chrome inset under the backPill.
     private let cctTopGap: Double = 6
     private let cctTopFade: Double = 0.06
     private let cctBottomFade: Double = 0.06
     private let cctTitleCollapse: Double = 64
     private let cctTitleSize: Double = 15
     private let cctBottomInset: Double = 10
-    #endif
     /// Drives the active-chat pill's × → "Save or Delete" dialog.
     @State private var showChatDisposition = false
     @FocusState private var isInputFocused: Bool
@@ -1026,53 +1014,7 @@ struct LibrarianSurface: View {
         } message: {
             Text("Save keeps this chat in your Chats list. Delete removes it permanently.")
         }
-        // #1-followup item 4 — DEBUG chat-chrome tuner (empty in Release).
-        .overlay(alignment: .top) { chatChromeTunerOverlay }
     }
-
-    /// #1-followup — DEBUG-only tuner overlay for the chat chrome (fades /
-    /// spacing / title). Empty in Release. Toggled from a DEBUG button in the
-    /// backPill. Bake the dialed values into the `cct*` literals and delete
-    /// this + the tuner once T settles them.
-    @ViewBuilder
-    private var chatChromeTunerOverlay: some View {
-        #if DEBUG
-        if isViewingActiveChat && showChatChromeTuner {
-            chatChromeTunerPanel
-        }
-        #endif
-    }
-
-    #if DEBUG
-    private var chatChromeTunerPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Chat chrome").font(.caption.weight(.bold))
-            tunerSlider("Top gap", $cctTopGap, 0...40)
-            tunerSlider("Top fade", $cctTopFade, 0...0.3)
-            tunerSlider("Bottom fade", $cctBottomFade, 0...0.3)
-            tunerSlider("Bottom inset", $cctBottomInset, -40...60)
-            tunerSlider("Title collapse", $cctTitleCollapse, 10...200)
-            // Item 3 — widened 11…22 → 11…32: Source Serif 4 reads optically
-            // smaller than the sans, so the serif title needs more headroom.
-            tunerSlider("Title size", $cctTitleSize, 11...32)
-            Button("Done") { showChatChromeTuner = false }
-                .font(.caption.weight(.semibold))
-        }
-        .padding(12)
-        .frame(width: 250)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.top, 70)
-    }
-
-    private func tunerSlider(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("\(label): \(value.wrappedValue, specifier: "%.2f")")
-                .font(.caption2)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-            Slider(value: value, in: range)
-        }
-    }
-    #endif
 
     /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out
     /// of `inputRow` so it's reachable from the search-results pane
@@ -1149,16 +1091,6 @@ struct LibrarianSurface: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back to Librarian home")
             Spacer()
-            #if DEBUG
-            // #1-followup item 4 — DEBUG-only tuner toggle.
-            Button { showChatChromeTuner.toggle() } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                    .frame(width: 32, height: 32)
-            }
-            .buttonStyle(.plain)
-            #endif
             // #1-followup item 2 — lock + collapse controls relocated here from
             // the top header so the transcript owns the top band. Right side,
             // vertically level with Back.

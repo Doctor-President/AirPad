@@ -813,17 +813,11 @@ struct LibrarianSurface: View {
                 dragGrabber(librarian: librarian)
                     .padding(.top, 6)
 
-                // Home / search keep the lock + collapse controls top-trailing.
-                // In an active chat they move to the BOTTOM (backPill row) so
-                // the transcript reclaims the top band — #1-followup item 2.
-                if !isViewingActiveChat {
-                    HStack(alignment: .top) {
-                        Spacer()
-                        lockChevronControls()
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 14)
-                }
+                // Chrome correction 2 — the lock + collapse controls exist ONLY
+                // inside the chat interface (the backPill row). On non-chat
+                // surfaces (home / search) the header carries no such controls;
+                // `lockChevronControls()` stays the single shared source, just
+                // not rendered here. (Was briefly top-trailing in 7410dee.)
 
                 // #1-followup item 3 — scroll-collapsing chat title. Absent at
                 // scroll-top; fades into the top chrome as the transcript scrolls
@@ -832,7 +826,12 @@ struct LibrarianSurface: View {
                 // 2–5s) so there's no blank window and no placeholder needed.
                 if isViewingActiveChat {
                     Text(router.chat.displayTitle)
-                        .font(.system(size: cctTitleSize, weight: .semibold))
+                        // Chrome correction 1 — Source Serif 4 BOLD (the app's
+                        // registered serif family; PostScript "SourceSerif4-Bold",
+                        // same face as ChatTypography's headings). It reads
+                        // optically smaller than the system face, so the tuner's
+                        // title-size still needs re-dialing — tuner stays, NOT baked.
+                        .font(.custom("SourceSerif4-Bold", size: cctTitleSize))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                         .lineLimit(1)
                         .padding(.horizontal, 44)

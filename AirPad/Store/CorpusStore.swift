@@ -2347,17 +2347,16 @@ final class CorpusStore {
         await cleanupOwnedCover(old, nodeID: nodeID)
     }
 
-    /// #7 (launch list) — persists the hero banner's pan offset. Only touches
-    /// `heroOffset`, leaving the cover path untouched. Repositioning IS a user
-    /// edit → bumps `updatedAt`. No-op when the value is unchanged (the drag
-    /// commits on every release, so identical re-commits are common). The
-    /// render path treats `.zero` as the centered crop, so passing `.zero`
-    /// recenters.
-    func setHeroOffset(_ offset: CGPoint, nodeID: String) async {
+    /// #7 (hero-crop v2) — persists the hero banner's crop (normalized offset;
+    /// see `HeroCrop`). Only touches `heroCrop`, leaving the cover path
+    /// untouched. Repositioning IS a user edit → bumps `updatedAt`. No-op when
+    /// unchanged (the drag commits on every release, so identical re-commits are
+    /// common). The render path treats `.zero` offset as the centered crop.
+    func setHeroCrop(_ crop: HeroCrop, nodeID: String) async {
         guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[nodeIdx]
-        guard updated.heroOffset != offset else { return }
-        updated.heroOffset = offset
+        guard updated.heroCrop != crop else { return }
+        updated.heroCrop = crop
         updated.updatedAt = Date()
         await updateNode(updated)
     }

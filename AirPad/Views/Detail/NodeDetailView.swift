@@ -154,7 +154,7 @@ struct NodeDetailView: View {
     @State private var showHeroPicker = false
 
     /// #7 (launch list) — when true, the hero banner enters reposition mode:
-    /// a drag pans the cover's crop (persisted as `Node.heroOffset`) instead
+    /// a drag pans the cover's crop (persisted as `Node.heroCrop`) instead
     /// of scrolling the detail view. Toggled by the `•••` menu's "Reposition
     /// Hero…" item; the banner shows a "Done" affordance to exit.
     @State private var isAdjustingHero = false
@@ -2663,18 +2663,18 @@ private struct HeroImageBanner: View {
     /// (default 420 = the prior literal). Gradient fallback keeps its fixed 200.
     @State private var visualSettings = EntryVisualSettings.shared
 
-    /// #7 — live finger translation during a reposition drag (points). Added
-    /// to the committed offset and reset on release.
+    /// #7 — live finger translation during a reposition drag (POINTS). Added to
+    /// the committed offset (converted from normalized) and reset on release.
     @State private var dragTranslation: CGSize = .zero
-    /// #7 — optimistic copy of the committed offset so the crop doesn't flash
-    /// back to the store value for a frame between drag-end and the
-    /// `@Observable` round-trip. Seeded from the node lazily; the banner gets a
-    /// fresh identity (via `.id`) on hero swap, so this resets with it.
-    @State private var localOffset: CGPoint? = nil
+    /// #7 — optimistic copy of the committed crop so it doesn't flash back to
+    /// the store value for a frame between drag-end and the `@Observable`
+    /// round-trip. Fresh identity on hero swap (via `.id`) resets it.
+    @State private var localCrop: HeroCrop? = nil
 
-    /// #7 — committed offset in effect right now (optimistic local wins, then
-    /// the persisted node value, then centered).
-    private var baseOffset: CGPoint { localOffset ?? node.heroOffset ?? .zero }
+    /// #7 — committed crop in effect right now (optimistic local wins, then the
+    /// persisted node value, then centered). `offset` is NORMALIZED — a fraction
+    /// of the rendered image, converted to points against the live frame below.
+    private var baseCrop: HeroCrop { localCrop ?? node.heroCrop ?? HeroCrop() }
 
     var body: some View {
         Group {
@@ -2682,15 +2682,19 @@ private struct HeroImageBanner: View {
                 let visibleHeight = max(200, min(visualSettings.heroMaxHeight, width / max(aspect, 0.01)))
                 let totalHeight = visibleHeight + topInset
                 // #7 — `scaledToFill` scales the image to cover width×totalHeight,
-                // overflowing on the longer axis. `heroOffset` (+ the live drag)
-                // shifts which slice is visible, clamped to ±overflow so an edge
-                // gap can never appear. Zero offset reproduces the prior centered
-                // crop exactly. `s` is the fill scale for a unit-height image
-                // (imgW = aspect, imgH = 1).
+                // overflowing on the longer axis. The crop's NORMALIZED offset
+                // (+ the live drag) shifts which slice is visible, clamped to
+                // ±overflow so an edge gap can never appear. Zero offset =
+                // centered crop. `s` is the fill scale for a unit-height image
+                // (imgW = aspect, imgH = 1); `scaledW/H` are the rendered image
+                // size the normalized fraction is taken against.
                 let s = max(width / max(aspect, 0.01), totalHeight)
-                let overflowX = max(0, (aspect * s - width) / 2)
-                let overflowY = max(0, (s - totalHeight) / 2)
-                let offset = clampedOffset(overflowX: overflowX, overflowY: overflowY)
+                let scaledW = aspect * s
+                let scaledH = s
+                let overflowX = max(0, (scaledW - width) / 2)
+                let overflowY = max(0, (scaledH - totalHeight) / 2)
+                let offset = clampedOffset(scaledW: scaledW, scaledH: scaledH,
+                                           overflowX: overflowX, overflowY: overflowY)
                 Color.clear
                     .frame(width: width, height: totalHeight)
                     .overlay {
@@ -2712,7 +2716,8 @@ private struct HeroImageBanner: View {
                     // adjusting; masked off entirely otherwise so normal scrolling
                     // over the hero is untouched.
                     .highPriorityGesture(
-                        panGesture(overflowX: overflowX, overflowY: overflowY),
+                        panGesture(scaledW: scaledW, scaledH: scaledH,
+                                   overflowX: overflowX, overflowY: overflowY),
                         including: isAdjusting ? .all : .none
                     )
                     .overlay(alignment: .bottomTrailing) {
@@ -2776,27 +2781,34 @@ private struct HeroImageBanner: View {
 
     // MARK: - #7 reposition
 
-    /// Committed offset + the live drag, clamped to the overflow so a pan can
-    /// never expose an empty edge.
-    private func clampedOffset(overflowX: CGFloat, overflowY: CGFloat) -> CGPoint {
-        let rawX = baseOffset.x + dragTranslation.width
-        let rawY = baseOffset.y + dragTranslation.height
+    /// Committed crop (NORMALIZED → points via the rendered image size) + the
+    /// live drag (points), clamped to the overflow so a pan can't expose an edge.
+    private func clampedOffset(scaledW: CGFloat, scaledH: CGFloat,
+                               overflowX: CGFloat, overflowY: CGFloat) -> CGPoint {
+        let rawX = baseCrop.offset.x * scaledW + dragTranslation.width
+        let rawY = baseCrop.offset.y * scaledH + dragTranslation.height
         return CGPoint(
             x: min(max(rawX, -overflowX), overflowX),
             y: min(max(rawY, -overflowY), overflowY)
         )
     }
 
-    private func panGesture(overflowX: CGFloat, overflowY: CGFloat) -> some Gesture {
+    private func panGesture(scaledW: CGFloat, scaledH: CGFloat,
+                            overflowX: CGFloat, overflowY: CGFloat) -> some Gesture {
         DragGesture()
             .onChanged { value in dragTranslation = value.translation }
             .onEnded { value in
-                let fx = min(max(baseOffset.x + value.translation.width, -overflowX), overflowX)
-                let fy = min(max(baseOffset.y + value.translation.height, -overflowY), overflowY)
-                let final = CGPoint(x: fx, y: fy)
-                localOffset = final          // optimistic — no flash on release
+                let px = min(max(baseCrop.offset.x * scaledW + value.translation.width, -overflowX), overflowX)
+                let py = min(max(baseCrop.offset.y * scaledH + value.translation.height, -overflowY), overflowY)
+                // Convert the committed POINTS back to a NORMALIZED fraction of
+                // the rendered image so the crop survives other frames / aspects.
+                let crop = HeroCrop(offset: CGPoint(
+                    x: scaledW > 0 ? px / scaledW : 0,
+                    y: scaledH > 0 ? py / scaledH : 0
+                ))
+                localCrop = crop             // optimistic — no flash on release
                 dragTranslation = .zero
-                Task { await store.setHeroOffset(final, nodeID: node.id) }
+                Task { await store.setHeroCrop(crop, nodeID: node.id) }
             }
     }
 

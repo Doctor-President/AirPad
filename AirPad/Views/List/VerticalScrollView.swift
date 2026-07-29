@@ -247,6 +247,11 @@ struct VerticalScrollView: View {
             .contentMargins(.vertical, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
+            // BUG 16 instrument — scroll-phase timestamps so the stutter window
+            // can be lined up against the CatalogBackfill run in the same log.
+            .onScrollPhaseChange { old, new in
+                bug16Log.notice("scroll phase \(String(describing: old), privacy: .public) → \(String(describing: new), privacy: .public)")
+            }
             .onChange(of: scrolledID) { _, newID in
                 guard let newID, !isJumping else { return }
                 if let index = displayItems.firstIndex(where: { $0.id == newID }) {

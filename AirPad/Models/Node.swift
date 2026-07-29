@@ -61,6 +61,41 @@ extension TagOrigin {
     }
 }
 
+/// #7 (hero-crop v2) — crop adjustment for a node's hero banner, stored as
+/// NORMALIZED fractions of the rendered image so it survives any frame size or
+/// aspect ratio. Supersedes the v1 `heroOffset` (absolute points, which didn't
+/// translate across frames); v1 values do NOT migrate — a precise conversion
+/// needs the image's rendered size (unavailable at decode) and the old points
+/// were frame-specific, so an existing v1 hero recenters (see `Node`'s decode).
+///
+/// TYPED (schema-foresight) so future crop controls — `zoom` / `scale`, an
+/// explicit `focalPoint`, or per-surface overrides — can be added as additive,
+/// decode-tolerant fields with NO further migration.
+struct HeroCrop: Codable, Hashable {
+    /// Pan offset as a FRACTION of the rendered image's width / height. `.zero`
+    /// = the centered crop (default). Roughly ±0.5; clamped to the actual image
+    /// overflow at render so it can never expose an edge.
+    var offset: CGPoint
+
+    init(offset: CGPoint = .zero) {
+        self.offset = offset
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case offset
+    }
+}
+
+extension HeroCrop {
+    /// Decode-tolerant (codebase norm — see `Node` / `FilterState`): future
+    /// additive fields decode as their defaults rather than throwing.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        offset = try c.decodeIfPresent(CGPoint.self, forKey: .offset) ?? offset
+    }
+}
+
 struct Node: Codable, Identifiable, Hashable {
     let id: String
     var createdAt: Date
@@ -246,16 +281,13 @@ struct Node: Codable, Identifiable, Hashable {
     /// `summarySource` — no schema-version bump.
     var coverImageRelativePath: String?
 
-    /// #7 (launch list) — additive pan offset (in points) applied to the
-    /// hero banner's `scaledToFill` crop, letting the user reposition which
-    /// part of an over-tall / over-wide image is visible. `nil` (and `.zero`)
-    /// reproduce the prior centered crop exactly, so this is fully backward
-    /// compatible. Persisted as a `CGPoint` (`[x, y]` on disk). Additive +
-    /// decode-tolerant like `coverImageRelativePath`; no schema-version bump.
-    /// Clamped to the image's overflow at render time so it can never reveal
-    /// empty edges — the value is stored raw and re-clamped on read, so a
-    /// stale offset survives a hero swap without exposing a gap.
-    var heroOffset: CGPoint?
+    /// #7 (hero-crop v2) — normalized crop adjustment for the hero banner
+    /// (`nil` = centered default). See `HeroCrop`. Additive + decode-tolerant;
+    /// no schema-version bump. Replaces the v1 `hero_offset` (absolute points):
+    /// that key is no longer decoded, so an existing v1 hero recenters and the
+    /// stale key is dropped on the next save — a deliberate reset, not a
+    /// migration (v1 points can't be converted without the image + frame).
+    var heroCrop: HeroCrop?
 
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
@@ -288,7 +320,7 @@ struct Node: Codable, Identifiable, Hashable {
         case summarySource = "summary_source"
         case titleSource = "title_source"
         case coverImageRelativePath = "cover_image_relative_path"
-        case heroOffset = "hero_offset"
+        case heroCrop = "hero_crop"
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -337,7 +369,7 @@ struct Node: Codable, Identifiable, Hashable {
         summarySource: TagSource? = nil,
         titleSource: TagSource? = nil,
         coverImageRelativePath: String? = nil,
-        heroOffset: CGPoint? = nil
+        heroCrop: HeroCrop? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -379,7 +411,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.summarySource               = summarySource
         self.titleSource                 = titleSource
         self.coverImageRelativePath      = coverImageRelativePath
-        self.heroOffset                  = heroOffset
+        self.heroCrop                    = heroCrop
     }
 }
 
@@ -435,7 +467,7 @@ extension Node {
         summarySource              = try c.decodeIfPresent(TagSource.self, forKey: .summarySource)
         titleSource                = try c.decodeIfPresent(TagSource.self, forKey: .titleSource)
         coverImageRelativePath     = try c.decodeIfPresent(String.self,   forKey: .coverImageRelativePath) ?? nil
-        heroOffset                 = try c.decodeIfPresent(CGPoint.self,   forKey: .heroOffset)
+        heroCrop                   = try c.decodeIfPresent(HeroCrop.self,  forKey: .heroCrop)
     }
 }
 

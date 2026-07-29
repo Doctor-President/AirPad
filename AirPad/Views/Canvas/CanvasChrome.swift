@@ -712,6 +712,21 @@ struct FilterPanelView: View {
                         }
                     }
 
+                    // #9 — recency window (enum pills, mirrors "Type").
+                    filterSection("When") {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(RecencyFilter.allCases, id: \.self) { window in
+                                    filterPill(
+                                        window.displayName,
+                                        icon: window.icon,
+                                        isActive: state.recency == window
+                                    ) { mutate { $0.recency = window } }
+                                }
+                            }
+                        }
+                    }
+
                     if !store.tags.isEmpty {
                         filterSection("Tag") {
                             ScrollView(.horizontal, showsIndicators: false) {
@@ -725,6 +740,27 @@ struct FilterPanelView: View {
                                             color: Color(hex: tag.colorHex),
                                             isActive: state.tagName == tag.name
                                         ) { mutate { $0.tagName = tag.name } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // #9 — collection membership (mirrors the "Tag" section
+                    // exactly: an "All" pill plus one pill per collection,
+                    // single-select).
+                    if !store.collections.isEmpty {
+                        filterSection("Collection") {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    filterPill("All", isActive: state.collectionID == nil) {
+                                        mutate { $0.collectionID = nil }
+                                    }
+                                    ForEach(store.collections, id: \.id) { collection in
+                                        filterPill(
+                                            collection.name,
+                                            isActive: state.collectionID == collection.id
+                                        ) { mutate { $0.collectionID = collection.id } }
                                     }
                                 }
                             }
@@ -761,6 +797,8 @@ struct FilterPanelView: View {
                             $0.itemType = .all
                             $0.tagName = nil
                             $0.threadStatus = .all
+                            $0.recency = .all
+                            $0.collectionID = nil
                         }}
                         .foregroundStyle(.white.opacity(0.55))
                     }

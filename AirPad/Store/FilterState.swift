@@ -127,12 +127,44 @@ enum ThreadStatusFilter: String, Codable, CaseIterable {
     }
 }
 
+/// #9 (launch list) — date-range filter over a node's `createdAt`. Distinct
+/// from `SortOrder.recency`, which orders the whole set; this narrows it to a
+/// calendar window ("same day / week / month as now"). Additive; `.all` is the
+/// no-filter default so existing persisted `FilterState`s decode unchanged.
+enum RecencyFilter: String, Codable, CaseIterable {
+    case all, today, thisWeek, thisMonth
+
+    var displayName: String {
+        switch self {
+        case .all:       return "Any Time"
+        case .today:     return "Today"
+        case .thisWeek:  return "This Week"
+        case .thisMonth: return "This Month"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .all:       return "infinity"
+        case .today:     return "sun.max"
+        case .thisWeek:  return "calendar"
+        case .thisMonth: return "calendar.badge.clock"
+        }
+    }
+}
+
 struct FilterState: Codable {
     var viewMode: ViewMode = .systemGraph
     var sortOrder: SortOrder = .recency
     var itemType: ItemTypeFilter = .all
     var tagName: String? = nil
     var threadStatus: ThreadStatusFilter = .all
+    /// #9 (launch list) — date-range narrowing over `createdAt`. `.all` = off.
+    var recency: RecencyFilter = .all
+    /// #9 (launch list) — narrows to members of one collection. `nil` = off.
+    /// Mirrors `tagName` exactly (single-select, nil-is-none); decode-tolerant
+    /// via `decodeIfPresent` on the optional, so old states round-trip.
+    var collectionID: String? = nil
 
     var activeFilterCount: Int {
         var n = 0
@@ -140,6 +172,8 @@ struct FilterState: Codable {
         if itemType != .all             { n += 1 }
         if tagName != nil               { n += 1 }
         if threadStatus != .all         { n += 1 }
+        if recency != .all              { n += 1 }
+        if collectionID != nil          { n += 1 }
         return n
     }
 
@@ -153,6 +187,33 @@ struct FilterState: Codable {
               let state = try? JSONDecoder().decode(FilterState.self, from: data)
         else { return FilterState() }
         return state
+    }
+}
+
+// MARK: - Decode tolerance
+
+extension FilterState {
+    enum CodingKeys: String, CodingKey {
+        case viewMode, sortOrder, itemType, tagName, threadStatus, recency, collectionID
+    }
+
+    /// Decode-tolerant initializer (matches the codebase norm — see `Node`).
+    /// Swift's synthesized `Decodable` throws `.keyNotFound` for a missing
+    /// non-optional key rather than using the property default, which would
+    /// have wiped every scope's persisted `FilterState` the first time the new
+    /// `recency` field was read from an older payload. `decodeIfPresent ??
+    /// default` makes each field independently additive — old states keep their
+    /// sort / view-mode / tag prefs, and the new fields default to "off".
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        viewMode     = try c.decodeIfPresent(ViewMode.self,           forKey: .viewMode)     ?? viewMode
+        sortOrder    = try c.decodeIfPresent(SortOrder.self,          forKey: .sortOrder)    ?? sortOrder
+        itemType     = try c.decodeIfPresent(ItemTypeFilter.self,     forKey: .itemType)     ?? itemType
+        tagName      = try c.decodeIfPresent(String.self,             forKey: .tagName)
+        threadStatus = try c.decodeIfPresent(ThreadStatusFilter.self, forKey: .threadStatus) ?? threadStatus
+        recency      = try c.decodeIfPresent(RecencyFilter.self,      forKey: .recency)      ?? recency
+        collectionID = try c.decodeIfPresent(String.self,            forKey: .collectionID)
     }
 }
 

@@ -409,6 +409,29 @@ final class CorpusStore {
             result = result.filter { $0.tags.contains(tag) }
         }
 
+        // #9 — collection membership (mirrors the tag predicate exactly:
+        // single-select, nil = no filter). In a collection scope this
+        // intersects with the scope's own membership, which is harmless.
+        if let collectionID = state.collectionID {
+            result = result.filter { $0.collectionIDs.contains(collectionID) }
+        }
+
+        // #9 — recency window over `createdAt`. Calendar-relative ("same day /
+        // week / month as now"), not a rolling N-day window, to match the
+        // "Today / This Week / This Month" labels.
+        if state.recency != .all {
+            let cal = Calendar.current
+            let now = Date()
+            result = result.filter { node in
+                switch state.recency {
+                case .all:       return true
+                case .today:     return cal.isDateInToday(node.createdAt)
+                case .thisWeek:  return cal.isDate(node.createdAt, equalTo: now, toGranularity: .weekOfYear)
+                case .thisMonth: return cal.isDate(node.createdAt, equalTo: now, toGranularity: .month)
+                }
+            }
+        }
+
         switch state.threadStatus {
         case .all:         break
         case .threadsOnly: result = result.filter { !$0.threads.isEmpty || $0.isMeta }
@@ -4792,6 +4815,8 @@ final class CorpusStore {
             filterState.tagName = nil
             filterState.itemType = .all
             filterState.threadStatus = .all
+            filterState.recency = .all
+            filterState.collectionID = nil
             print("[Batch] Cleared active filter so imported nodes are visible")
         }
 

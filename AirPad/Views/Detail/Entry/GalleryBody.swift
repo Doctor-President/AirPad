@@ -298,6 +298,7 @@ private struct GalleryCarousel: View {
                         galleryItem: galleryItem,
                         nodeID: nodeID,
                         parentItem: parentItem,
+                        showsCaption: true,
                         onMeasuredAspect: { aspect in
                             onMeasuredAspect(galleryItem.id, aspect)
                         }
@@ -365,6 +366,7 @@ private struct GalleryBento: View {
                             galleryItem: galleryItem,
                             nodeID: nodeID,
                             parentItem: parentItem,
+                            showsCaption: true,
                             onMeasuredAspect: { aspect in
                                 onMeasuredAspect(galleryItem.id, aspect)
                             }

@@ -95,6 +95,8 @@ struct NodeListView: View {
     // MARK: - Bucketed list
 
     private var bucketList: some View {
+        // #3 — ScrollViewReader so the shared focus signal can scroll to a row.
+        ScrollViewReader { proxy in
         List {
             ForEach(sections, id: \.id) { section in
                 Section {
@@ -144,6 +146,13 @@ struct NodeListView: View {
         // bottom sort+capture floaters + Librarian peek.
         .contentMargins(.top, 96, for: .scrollContent)
         .contentMargins(.bottom, LibrarianPanelLayout.peekDetentHeight + 72, for: .scrollContent)
+        // #3 — shared focus signal: scroll the list to the focused row in place.
+        .onChange(of: router.pendingFocusNodeID) { _, id in
+            guard let id else { return }
+            withAnimation { proxy.scrollTo(id, anchor: .top) }
+            router.pendingFocusNodeID = nil
+        }
+        }
     }
 
     private var emptyState: some View {

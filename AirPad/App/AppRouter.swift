@@ -65,11 +65,17 @@ final class AppRouter {
     /// it fires exactly once.
     var pendingNodeNavigationID: String? = nil
 
-    /// Scroll-to-node seam for the grid. Set a node ID to scroll the grid
-    /// to that tile; NodeGridView observes and clears it. The access layer
-    /// (sort / A–Z jump) and the Librarian drive this later. No setter yet
-    /// — this is the seam so it doesn't need a retrofit.
-    var pendingGridScrollNodeID: String? = nil
+    /// #3 (search-navigates-by-view) — the ONE shared "focus a node in the
+    /// user's CURRENT view" signal. Set a node ID; whichever canvas view is
+    /// mounted observes it and moves its viewport to that node — Map flies the
+    /// camera to the orb, List/Card scroll to the row/card, Grid scrolls to the
+    /// tile — then clears it (fires exactly once). Consumers are per-view (a
+    /// list scrolls, a camera flies) but the SIGNAL is single, so a new view
+    /// mode wires itself in by observing this one property. Two producers today:
+    /// a search-result row tap (focus-in-place) and capture-return (Done →
+    /// focus the new node). Was `pendingGridScrollNodeID` (Grid-only) —
+    /// generalized so focus can't drift per-surface (BUG 10's failure mode).
+    var pendingFocusNodeID: String? = nil
 
     /// Librarian session state — the morphing query / synthesis surface.
     /// Travels across canvas, list, and (future) detail-view mounts so an

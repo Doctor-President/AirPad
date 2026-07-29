@@ -251,10 +251,11 @@ struct NodeGridView: View {
                     StopperProbe(stopper: momentumStopper)
                         .frame(width: 0, height: 0)
                 }
-                .onChange(of: router.pendingGridScrollNodeID) { _, id in
+                // #3 — shared focus signal: scroll the grid to the focused tile.
+                .onChange(of: router.pendingFocusNodeID) { _, id in
                     guard let id else { return }
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
-                    router.pendingGridScrollNodeID = nil
+                    router.pendingFocusNodeID = nil
                 }
                 .overlay { scrubberOverlay(proxy: proxy) }
             }

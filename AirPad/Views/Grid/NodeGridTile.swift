@@ -525,9 +525,16 @@ private struct GridTileHeroImage: View {
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                // #7 — apply the node's hero crop so the tile framing matches
+                // the detail banner. Fast path (no GeometryReader) when there's
+                // no non-zero crop — the common case across a scrolling grid.
+                if let crop = node.heroCrop, crop.offset != .zero {
+                    croppedFill(image: image, crop: crop)
+                } else {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                }
             } else {
                 Color.clear
             }
@@ -542,6 +549,25 @@ private struct GridTileHeroImage: View {
                 return img
             }.value
             if let decoded { image = decoded }
+        }
+    }
+
+    /// #7 — cover cropped by the node's hero offset (mirror of
+    /// `CardHeroImage.croppedFill`; shared math in `HeroCrop.clampedPointOffset`).
+    private func croppedFill(image: UIImage, crop: HeroCrop) -> some View {
+        GeometryReader { geo in
+            let aspect: CGFloat = image.size.height > 0 ? image.size.width / image.size.height : 1
+            let offset = HeroCrop.clampedPointOffset(
+                normalizedOffset: crop.offset, imageAspect: aspect,
+                width: geo.size.width, height: geo.size.height)
+            Color.clear
+                .overlay {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .offset(x: offset.x, y: offset.y)
+                }
+                .clipped()
         }
     }
 }

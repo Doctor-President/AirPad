@@ -117,17 +117,18 @@ targets:
         excludes:
           - "Info.plist"
           - "*.entitlements"
-          # Bundled separately as a folder reference (below) so its contents
-          # bundle under a runtime "Kokoro/" subdirectory. Kept out of the code
-          # group so the ~600 MB assets aren't treated as compilable sources.
+          # Resources/Kokoro holds the SHELVED TTS weights (gitignored, T drops
+          # them in). UN-BUNDLED 2026-07-29: the folder-reference resource entry
+          # that used to ship this directory was removed, so ~724 MB of
+          # shelved-feature model no longer bundles (835 MB → ~110 MB .app). The
+          # files stay ON DISK (un-bundling, not deleting). Still excluded from
+          # the code group so the .onnx/.safetensors are neither compiled NOR
+          # bundled. The engines locate weights via `Bundle.main.url(...)` →
+          # nil → `throw .modelNotInstalled` → AVSpeech, so a missing model
+          # fails gracefully. RESUMING the arc = re-add a folder reference here
+          # + re-drop weights (int8 ONLY — see ws-synthesized-voice.md).
           - "Resources/Kokoro"
           - "Resources/Kokoro/**"
-      # Kokoro model + voices (TTS spike). Folder reference → whatever T drops in
-      # (kokoro-v1_0.safetensors, voices.npz) bundles under "Kokoro/". The weights
-      # themselves are gitignored; only README-DROP-MODEL-HERE.txt is tracked.
-      - path: AirPad/Resources/Kokoro
-        type: folder
-        buildPhase: resources
     dependencies:
       - target: AirPadShare
         embed: true

@@ -1534,6 +1534,12 @@ final class CorpusPhysicsScene: SKScene {
 
             var out: [CanvasState.TerritoryLabelInfo] = []
             out.reserveCapacity(territoryLabelData.count)
+            // Region-label zoom fade — macro complement of the per-orb label LOD:
+            // full at rest / zoomed out (cameraScale ≥ 1), fading to 0 as you zoom
+            // IN toward LensTuning.zoomIn, where node labels take over. Same
+            // `smoothstepClamp` curve the orb labels use — one value per frame
+            // (cameraScale is global), so no per-label cost.
+            let regionLodAlpha = smoothstepClamp(LensTuning.zoomIn, 1.0, cameraNode.xScale)
             for label in territoryLabelData {
                 var sum = CGPoint.zero
                 var n: CGFloat = 0
@@ -1550,7 +1556,8 @@ final class CorpusPhysicsScene: SKScene {
                     key: label.key,
                     name: label.name,
                     colorHex: label.colorHex,
-                    screenPosition: screen
+                    screenPosition: screen,
+                    lodAlpha: regionLodAlpha
                 ))
             }
             canvasState?.territoryLabels = out

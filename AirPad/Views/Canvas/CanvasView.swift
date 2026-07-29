@@ -1462,6 +1462,8 @@ private struct TerritoryLabelLayer: View {
                 ForEach(visible) { label in
                     TerritoryLabelPill(text: label.name, colorHex: label.colorHex)
                         .position(label.screenPosition)
+                        // Region-label zoom fade (computed in-scene, shared curve).
+                        .opacity(label.lodAlpha)
                 }
             }
         }

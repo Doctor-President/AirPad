@@ -171,6 +171,21 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// #3 (search-navigates-by-view) — fly the camera to a node's orb WITHOUT
+    /// the detail-preview treatment `centerAndZoomNode` does: no node scale-up,
+    /// no fade-to-α0, no overlay, no physics removal. This is the Map consumer
+    /// of the shared `pendingFocusNodeID` signal — "show me where it lives, in
+    /// the view I'm already in." Same 0.38s ease as the grid scroll so the four
+    /// views feel consistent. A scale-pulse emphasis is deliberately omitted:
+    /// `applyOrbScales` rewrites each orb's scale every frame, so a hardcoded
+    /// pulse would be stomped — emphasis, if wanted, belongs in that system.
+    func focusNode(_ nodeID: String) {
+        guard let shape = nodeSprites[nodeID] else { return }
+        let move = SKAction.move(to: shape.position, duration: 0.38)
+        move.timingMode = .easeInEaseOut
+        cameraNode.run(move, withKey: "focus")
+    }
+
     /// Reset camera and node scale to original state
     func resetZoom() {
         guard let nodeID = zoomedNodeID,

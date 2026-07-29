@@ -252,6 +252,19 @@ struct VerticalScrollView: View {
                     proxy.scrollTo(firstID, anchor: .center)
                 }
             }
+            // #3 — shared focus signal: scroll the card stack to the focused
+            // node in place. Resolve the node ID to its display-item id (cards
+            // are keyed by the wrapper `item.id`, not the raw node id — mirror
+            // of the sort consumer above).
+            .onChange(of: router.pendingFocusNodeID) { _, id in
+                guard let id,
+                      let target = displayItems.first(where: { $0.realNodeID == id })?.id
+                else { return }
+                router.pendingFocusNodeID = nil
+                withAnimation(.spring(response: 0.4)) {
+                    proxy.scrollTo(target, anchor: .center)
+                }
+            }
         }
     }
 

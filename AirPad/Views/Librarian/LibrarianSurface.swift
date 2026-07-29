@@ -1204,12 +1204,14 @@ struct LibrarianSurface: View {
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 4)
                     ForEach(matchNodes, id: \.id) { node in
-                        Button {
-                            openNode(node.id)
-                        } label: {
+                        // #3 — two targets: row body focuses in the current
+                        // view, the tail Open button pushes Detail.
+                        SearchResultRow(
+                            onFocus: { focusNode(node.id) },
+                            onOpen: { openNode(node.id) }
+                        ) {
                             SearchMatchRow(node: node)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
 
@@ -1228,12 +1230,12 @@ struct LibrarianSurface: View {
 
                 ForEach(related) { rel in
                     if let node = byID[rel.nodeID] {
-                        Button {
-                            openNode(rel.nodeID)
-                        } label: {
+                        SearchResultRow(
+                            onFocus: { focusNode(rel.nodeID) },
+                            onOpen: { openNode(rel.nodeID) }
+                        ) {
                             SearchRelatedRow(node: node, snippet: rel.snippet)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -1266,6 +1268,22 @@ struct LibrarianSurface: View {
                                         to: nil, from: nil, for: nil)
         panelModel.dropToHalf(animated: true)
         router.pendingNodeNavigationID = nodeID
+    }
+
+    /// #3 (search-navigates-by-view) — focus the node in the user's CURRENT
+    /// view instead of pushing Detail: fire the shared `pendingFocusNodeID`
+    /// signal (Map flies the camera to the orb, List/Card/Grid scroll to it)
+    /// and drop the panel to PEEK so the whole canvas is visible for the
+    /// landing — dropToHalf would cover screen-center, exactly where Map
+    /// centers the orb. Search never switches view mode. Same keyboard/panel
+    /// teardown as `openNode`. The row's tail "Open" button still calls
+    /// `openNode` for the direct route to Detail.
+    private func focusNode(_ nodeID: String) {
+        isInputFocused = false
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                        to: nil, from: nil, for: nil)
+        panelModel.raiseToPeek(animated: true)
+        router.pendingFocusNodeID = nodeID
     }
 
     // MARK: - Chat layout (c14)
@@ -1925,6 +1943,34 @@ struct LibrarianSurface: View {
 /// MATCHES row — node title prominently, scope/tag hint underneath.
 /// Tap-through wiring lands in C3; visual stub today renders title +
 /// summary preview without navigation.
+/// #3 (search-navigates-by-view) — two-target wrapper for a search result row.
+/// The body is a large tap target that **focuses the node in the user's current
+/// view** (`onFocus` → `router.pendingFocusNodeID`); the tail "Open" button
+/// **pushes the Detail view** (`onOpen` → `openNode`). Search never switches
+/// view mode — see `ws-instant-search.md` § NAVIGATION BEHAVIOUR ON TAP. Used
+/// by both MATCHES and RELATED rows so the two targets stay consistent.
+private struct SearchResultRow<Label: View>: View {
+    let onFocus: () -> Void
+    let onOpen: () -> Void
+    @ViewBuilder var label: () -> Label
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: onFocus) { label() }
+                .buttonStyle(.plain)
+            Button(action: onOpen) {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open in detail view")
+        }
+    }
+}
+
 private struct SearchMatchRow: View {
     let node: Node
 

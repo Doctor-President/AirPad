@@ -3589,6 +3589,29 @@ final class CorpusStore {
         }
     }
 
+    /// Collections reorder — reorders the user collections to match `orderedIDs`
+    /// (Dashboard drag-to-reorder). Mirrors `setGalleryItemOrder`: the order IS
+    /// the array position (collections persist in array order — no order field,
+    /// no migration), and it's a single persisted write. IDs not present are
+    /// skipped; any collection omitted from the list keeps its relative position
+    /// at the end. No-op when the order is unchanged.
+    func setCollectionOrder(_ orderedIDs: [String]) async {
+        var byID = Dictionary(uniqueKeysWithValues: collections.map { ($0.id, $0) })
+        var reordered: [NodeCollection] = []
+        reordered.reserveCapacity(collections.count)
+        for id in orderedIDs {
+            if let picked = byID.removeValue(forKey: id) { reordered.append(picked) }
+        }
+        for existing in collections where byID[existing.id] != nil {
+            reordered.append(existing)
+            byID.removeValue(forKey: existing.id)
+        }
+        guard reordered.count == collections.count,
+              reordered.map(\.id) != collections.map(\.id) else { return }
+        collections = reordered
+        await persistCollections()
+    }
+
     /// Seeded once on first launch (when `collections.json` is absent). The
     /// IDs match the values previously hardcoded in `NodeCollection.sample()`
     /// so existing dashboard screenshots stay recognizable; the names are the

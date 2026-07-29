@@ -49,6 +49,7 @@ struct DashboardView: View {
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
     @State private var showCreateCollectionSheet = false
+    @State private var showCollectionReorder = false
     @State private var showSettings = false
     #if DEBUG
     /// #3 lava-lamp LIGHT tuner (throwaway; delete with the panel once T's values
@@ -127,6 +128,10 @@ struct DashboardView: View {
             }
             .sheet(isPresented: $showCreateCollectionSheet) {
                 CollectionCreationSheet { _ in }
+            }
+            .sheet(isPresented: $showCollectionReorder) {
+                CollectionReorderSheet(collections: store.collections)
+                    .environment(store)
             }
             .sheet(isPresented: $showSettings) {
                 SettingsView()
@@ -320,11 +325,25 @@ struct DashboardView: View {
 
     private var collectionsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Collections")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                .textCase(.uppercase)
-                .tracking(0.8)
+            HStack {
+                Text("Collections")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .textCase(.uppercase)
+                    .tracking(0.8)
+                Spacer()
+                // Collections reorder — drag-to-reorder trigger (only meaningful
+                // with >1 user collection; Corpus/Journal are synthetic rows).
+                if store.collections.count > 1 {
+                    Button { showCollectionReorder = true } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Reorder collections")
+                }
+            }
 
             VStack(spacing: 0) {
                 ForEach(displayedCollections) { collection in
@@ -566,6 +585,58 @@ private struct NewCollectionButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Collections reorder — drag-to-reorder sheet for the Dashboard's user
+/// collections. The `ddbf66f`/`GalleryReorderSheet` shape: a modal `List` in
+/// permanent edit mode over a local working copy; each move persists the
+/// resulting order by ID via `CorpusStore.setCollectionOrder` (order = array
+/// position, no migration). Only user collections are passed in — Corpus /
+/// Journal are synthetic Dashboard rows and aren't reorderable.
+private struct CollectionReorderSheet: View {
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var working: [NodeCollection]
+
+    init(collections: [NodeCollection]) {
+        _working = State(initialValue: collections)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(working) { collection in
+                    HStack(spacing: 12) {
+                        Image(systemName: "folder")
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        Text(collection.name)
+                            .font(.body)
+                            .foregroundStyle(AppearancePalette.ink)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 2)
+                }
+                .onMove(perform: move)
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Collections")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    /// Applies the List move to the local working copy (instant, smooth), then
+    /// persists the resulting order by ID — one write per move.
+    private func move(from source: IndexSet, to destination: Int) {
+        working.move(fromOffsets: source, toOffset: destination)
+        let orderedIDs = working.map(\.id)
+        Task { await store.setCollectionOrder(orderedIDs) }
     }
 }
 

@@ -175,8 +175,21 @@ struct LibrarianSurface: View {
         switch router.entryMode {
         case .canvas, .collectionCanvas:
             return false
-        case .dashboard, .quikCapture, .recents:
+        case .quikCapture:
             return true
+        case .dashboard, .recents:
+            // BUG 15 — mirror ContentView.librarianSuppressed's Detail exemption.
+            // The dashboard / recents LIST surfaces suppress the whole surface,
+            // but a node DETAIL pushed from them is a canvas-like surface where
+            // the Librarian belongs. Without this, the surface stayed opacity-0
+            // in a Recents→Detail even after ContentView raised the panel — the
+            // peek pill was POSITIONED but INVISIBLE. Confirmed by device log
+            // (2026-07-29): here `panelSuppressed=true` / `surfaceAlpha=0` while
+            // `librarianSuppressed=false`, `isViewingActiveChat=false`,
+            // `fieldAlpha=1` — i.e. every other gate was already open; this one
+            // wasn't. a91a0cd fixed the panel POSITION gate but not this SURFACE
+            // OPACITY gate.
+            return !store.isInDetailView
         }
     }
 

@@ -33,6 +33,17 @@ struct ChatTranscript: View {
     /// ChatView leaves it nil so citations only expand/collapse. Both renderings
     /// route through this ONE closure.
     var onOpenNode: ((String) -> Void)? = nil
+    /// #1-followup (chat chrome reclaim) — scroll-edge fade lengths as fractions
+    /// of the transcript height. Bottom defaults to the shipped 0.06 (the old
+    /// hardcoded 0.94 stop); top defaults to 0 (no top fade) so other hosts
+    /// (ChatView) are unchanged. The Librarian passes a non-zero top fade when
+    /// the transcript extends up into the reclaimed search-bar space.
+    var topFadeFraction: CGFloat = 0
+    var bottomFadeFraction: CGFloat = 0.06
+    /// #1-followup — reports how far the transcript is scrolled from its TOP
+    /// (`visibleRect.minY`) so the host can drive a scroll-collapsing title.
+    /// nil for hosts that don't want it (ChatView).
+    var onScrollTopOffset: ((CGFloat) -> Void)? = nil
 
     @State private var speech = SpeechSynthesisService.shared
     @State private var input: String = ""
@@ -121,6 +132,13 @@ struct ChatTranscript: View {
                     withAnimation(.easeOut(duration: 0.18)) { isPinnedToBottom = pinned }
                 }
             }
+            // #1-followup — report scroll distance from the TOP so the host can
+            // drive a scroll-collapsing title. Only wired when a host opts in.
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                geo.visibleRect.minY
+            } action: { _, topOffset in
+                onScrollTopOffset?(topOffset)
+            }
             .onChange(of: session.messages.count) { oldCount, newCount in
                 // New user turn → reveal the query + START of the response near
                 // the TOP (read-from-top), not the bottom. Assistant commit →
@@ -149,14 +167,17 @@ struct ChatTranscript: View {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
-            // Bottom scroll-edge fade — always on, both hosts, all postures.
-            // On the ScrollView ONLY (the composer lives outside it and stays
-            // solid). 0.94 is the tunable.
+            // Scroll-edge fades — bottom always on; top on only when the host
+            // asks (Librarian, reclaimed space). On the ScrollView ONLY (the
+            // composer lives outside it and stays solid). Fractions are the
+            // tunables (#1-followup). topFadeFraction == 0 collapses the first
+            // two stops to the same location → no top fade (default).
             .mask(
                 LinearGradient(
                     stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: 0.94),
+                        .init(color: .clear, location: 0),
+                        .init(color: .black, location: topFadeFraction),
+                        .init(color: .black, location: 1 - bottomFadeFraction),
                         .init(color: .clear, location: 1.0)
                     ],
                     startPoint: .top, endPoint: .bottom

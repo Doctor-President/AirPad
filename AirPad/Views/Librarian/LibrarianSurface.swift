@@ -49,6 +49,29 @@ struct LibrarianSurface: View {
     /// transcript. Only meaningful when `activeMode == .ask`; set true on
     /// send / active-chat-pill tap, false on Back.
     @State private var isViewingActiveChat = false
+
+    // #1-followup (chat chrome reclaim) — scroll offset from the transcript
+    // top; drives the scroll-collapsing chat title's opacity.
+    @State private var chatScrollTopOffset: CGFloat = 0
+
+    // #1-followup TUNABLES. DEBUG: @AppStorage so the tuner panel dials them
+    // live on device. Release: `let` literals — ZERO UserDefaults reads (kills
+    // reinstall drift; see feedback_release_gate_dev_tuner_reads). Bake these
+    // into the views and delete the tuner once T settles the values.
+    #if DEBUG
+    @AppStorage("cct.topGap")        private var cctTopGap: Double = 6
+    @AppStorage("cct.topFade")       private var cctTopFade: Double = 0.06
+    @AppStorage("cct.bottomFade")    private var cctBottomFade: Double = 0.06
+    @AppStorage("cct.titleCollapse") private var cctTitleCollapse: Double = 64
+    @AppStorage("cct.titleSize")     private var cctTitleSize: Double = 15
+    @State private var showChatChromeTuner = false
+    #else
+    private let cctTopGap: Double = 6
+    private let cctTopFade: Double = 0.06
+    private let cctBottomFade: Double = 0.06
+    private let cctTitleCollapse: Double = 64
+    private let cctTitleSize: Double = 15
+    #endif
     /// Drives the active-chat pill's × → "Save or Delete" dialog.
     @State private var showChatDisposition = false
     @FocusState private var isInputFocused: Bool
@@ -781,66 +804,35 @@ struct LibrarianSurface: View {
                 dragGrabber(librarian: librarian)
                     .padding(.top, 6)
 
-                HStack(alignment: .top) {
-                    // Provisional compose glyph removed (FIX 3). New-chat
-                    // returns later in proper header grammar;
-                    // `router.chat.startNew()` stays intact and new/switch
-                    // chats remain reachable via the Chats tile.
-                    Spacer()
-
-                    // TEMP (3a) — manual lock trigger so 3a's panel
-                    // mechanics can be exercised on device. 3b replaces
-                    // this with the Ask-input → `lockToFull` pipeline
-                    // and removes the button. Visible only when NOT
-                    // already locked.
-                    if !panelModel.isLocked {
-                        Button {
-                            panelModel.lockToFull(animated: true)
-                        } label: {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(AppearancePalette.ink.opacity(0.35))
-                                .frame(width: 32, height: 32)
-                        }
-                        .buttonStyle(.plain)
+                // Home / search keep the lock + collapse controls top-trailing.
+                // In an active chat they move to the BOTTOM (backPill row) so
+                // the transcript reclaims the top band — #1-followup item 2.
+                if !isViewingActiveChat {
+                    HStack(alignment: .top) {
+                        Spacer()
+                        lockChevronControls()
                     }
-
-                    if panelModel.isLocked {
-                        // Locked-state collapse exit. Always visible while
-                        // locked so the way out is discoverable at a
-                        // glance. Tap → `unlock(animated:)` clears the
-                        // lock and animates to `.half`. Filled-circle
-                        // backdrop + brighter opacity than the unlocked
-                        // chevron so it reads as a primary affordance
-                        // rather than chrome.
-                        Button {
-                            panelModel.unlock(animated: true)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                                .frame(width: 32, height: 32)
-                                .background(
-                                    Circle().fill(AppearancePalette.ink.opacity(0.10))
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        Button {
-                            panelModel.raiseToPeek(animated: true)
-                        } label: {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                                .frame(width: 32, height: 32)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 14)
                 }
-                .padding(.horizontal, 14)
-                .padding(.top, 14)
+
+                // #1-followup item 3 — scroll-collapsing chat title. Absent at
+                // scroll-top; fades into the top chrome as the transcript scrolls
+                // away (iOS large-title collapse). `displayTitle` always has a
+                // real value (first-message truncation within ms, FM title in
+                // 2–5s) so there's no blank window and no placeholder needed.
+                if isViewingActiveChat {
+                    Text(router.chat.displayTitle)
+                        .font(.system(size: cctTitleSize, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                        .lineLimit(1)
+                        .padding(.horizontal, 44)
+                        .padding(.top, 12)
+                        .opacity(titleCollapseOpacity)
+                        .allowsHitTesting(false)
+                }
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, isViewingActiveChat ? 4 : 14)
             .contentShape(Rectangle())
 
             // Reserved slot for the morphing field at p=1. Height
@@ -849,7 +841,10 @@ struct LibrarianSurface: View {
             // the bottom row (Capsule / Chats) clears the Ask field
             // at half detent. The field itself is drawn in the `body`
             // overlay; this just holds the pocket.
-            Color.clear.frame(height: 62)
+            // #1-followup item 1 — in an active chat the morphing field is
+            // suppressed, so this pocket is dead space; collapse it to a small
+            // gap (tunable) and let the transcript extend up into it.
+            Color.clear.frame(height: isViewingActiveChat ? cctTopGap : 62)
 
             // Scope-chip row removed (FIX 2). Scope still defaults from
             // the host context via `seedScopeFromHostIfNeeded`; only the
@@ -877,8 +872,15 @@ struct LibrarianSurface: View {
                 // posture now (chat art-direction pass), so the panel no longer
                 // masks it — the placeholder posture mask would have faded out
                 // the transcript's footer buttons and scroll-to-latest arrow.
-                ChatTranscript(session: router.chat, showsComposer: false, onOpenNode: openNode)
-                    .frame(maxHeight: .infinity)
+                ChatTranscript(
+                    session: router.chat,
+                    showsComposer: false,
+                    onOpenNode: openNode,
+                    topFadeFraction: cctTopFade,
+                    bottomFadeFraction: cctBottomFade,
+                    onScrollTopOffset: { chatScrollTopOffset = $0 }
+                )
+                .frame(maxHeight: .infinity)
                 askComposer(librarian: librarian)
             } else if panelModel.contentRevealed {
                 // Home / search are light — free to mount/unmount with the
@@ -991,7 +993,50 @@ struct LibrarianSurface: View {
         } message: {
             Text("Save keeps this chat in your Chats list. Delete removes it permanently.")
         }
+        // #1-followup item 4 — DEBUG chat-chrome tuner (empty in Release).
+        .overlay(alignment: .top) { chatChromeTunerOverlay }
     }
+
+    /// #1-followup — DEBUG-only tuner overlay for the chat chrome (fades /
+    /// spacing / title). Empty in Release. Toggled from a DEBUG button in the
+    /// backPill. Bake the dialed values into the `cct*` literals and delete
+    /// this + the tuner once T settles them.
+    @ViewBuilder
+    private var chatChromeTunerOverlay: some View {
+        #if DEBUG
+        if isViewingActiveChat && showChatChromeTuner {
+            chatChromeTunerPanel
+        }
+        #endif
+    }
+
+    #if DEBUG
+    private var chatChromeTunerPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Chat chrome").font(.caption.weight(.bold))
+            tunerSlider("Top gap", $cctTopGap, 0...40)
+            tunerSlider("Top fade", $cctTopFade, 0...0.3)
+            tunerSlider("Bottom fade", $cctBottomFade, 0...0.3)
+            tunerSlider("Title collapse", $cctTitleCollapse, 10...200)
+            tunerSlider("Title size", $cctTitleSize, 11...22)
+            Button("Done") { showChatChromeTuner = false }
+                .font(.caption.weight(.semibold))
+        }
+        .padding(12)
+        .frame(width: 250)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.top, 70)
+    }
+
+    private func tunerSlider(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("\(label): \(value.wrappedValue, specifier: "%.2f")")
+                .font(.caption2)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+            Slider(value: value, in: range)
+        }
+    }
+    #endif
 
     /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out
     /// of `inputRow` so it's reachable from the search-results pane
@@ -1068,9 +1113,72 @@ struct LibrarianSurface: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back to Librarian home")
             Spacer()
+            #if DEBUG
+            // #1-followup item 4 — DEBUG-only tuner toggle.
+            Button { showChatChromeTuner.toggle() } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            #endif
+            // #1-followup item 2 — lock + collapse controls relocated here from
+            // the top header so the transcript owns the top band. Right side,
+            // vertically level with Back.
+            lockChevronControls()
         }
         .padding(.horizontal, 20)
         .padding(.bottom, 10)
+    }
+
+    /// #1-followup — the lock + collapse (chevron) controls, shared by the
+    /// home/search header (top-trailing) and the active-chat backPill (bottom-
+    /// right) so the two placements never diverge (one source, BUG-10 lesson).
+    /// Lock shows only when unlocked; the chevron unlocks when locked, else
+    /// drops the panel to peek.
+    @ViewBuilder
+    private func lockChevronControls() -> some View {
+        if !panelModel.isLocked {
+            Button {
+                panelModel.lockToFull(animated: true)
+            } label: {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+        }
+        if panelModel.isLocked {
+            Button {
+                panelModel.unlock(animated: true)
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(AppearancePalette.ink.opacity(0.10)))
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button {
+                panelModel.raiseToPeek(animated: true)
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// #1-followup — scroll-collapsing title opacity: 0 at the transcript top,
+    /// ramping to 1 over `cctTitleCollapse` points of upward scroll.
+    private var titleCollapseOpacity: Double {
+        guard cctTitleCollapse > 0 else { return 1 }
+        return min(1, max(0, Double(chatScrollTopOffset) / cctTitleCollapse))
     }
 
     /// Footer row holding the End button. Visible whenever the session

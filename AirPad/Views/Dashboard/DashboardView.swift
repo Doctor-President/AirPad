@@ -21,6 +21,7 @@ import SwiftUI
 /// Recents → Detail stacks deeper on the same path.
 enum DashboardRoute: Hashable {
     case recents
+    case priority
     case node(Node)
     /// Passage-free FM chat surface (`ChatView`). Pushed via the header
     /// chat icon. Detail-depth math (`detailDepth(in:)`) deliberately
@@ -98,6 +99,13 @@ struct DashboardView: View {
                         header
                             .padding(.top, 6)
                         todaySection
+                        // Priority working set — the quick re-entry cluster sits
+                        // ABOVE Recents. Hidden entirely until the user prioritizes
+                        // something, so an empty set never shows a dead row.
+                        if !store.priorityNodes.isEmpty {
+                            priorityRow
+                                .dashboardPaneSurface()
+                        }
                         recentsRow
                             .dashboardPaneSurface()   // #3 — same surface as the Today pane
                         collectionsSection
@@ -117,6 +125,8 @@ struct DashboardView: View {
                 switch route {
                 case .recents:
                     RecentsView(onOpenNode: { node in path.append(.node(node)) })
+                case .priority:
+                    PriorityView(onOpenNode: { node in path.append(.node(node)) })
                 case .node(let node):
                     NodeDetailView(nodeID: node.id)
                 case .chat:
@@ -293,6 +303,35 @@ struct DashboardView: View {
     /// from `CollectionRow` (no `.thinMaterial` card, no subtitle) so it
     /// reads as a sibling navigation row to the Collections list, not as
     /// one of the collections.
+    /// Dashboard "Priority" row — mirrors `recentsRow`'s single-line pane rhythm
+    /// (flag icon + label + trailing count + chevron). Navigates to `PriorityView`.
+    private var priorityRow: some View {
+        Button {
+            path.append(.priority)
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "flag.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .frame(width: 28)
+                Text("Priority")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                Spacer()
+                Text("\(store.priorityNodes.count)")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+            }
+            .padding(.vertical, 23)
+            .padding(.horizontal, 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var recentsRow: some View {
         Button {
             path.append(.recents)

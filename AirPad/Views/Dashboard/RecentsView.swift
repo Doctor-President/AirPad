@@ -325,3 +325,169 @@ struct RecentNodeRow: View, Equatable {
         return Color(hex: storeTag.colorHex) ?? .gray
     }
 }
+
+// MARK: - Priority working set
+
+/// Priority — the manually-ordered working set, pushed from the Dashboard's
+/// Priority row. Mirrors `RecentsView`'s chrome and reuses `RecentNodeRow`, but
+/// lists `store.priorityNodes` in MANUAL order (no time bucketing) and offers a
+/// drag-reorder (the same idiom as the Collections reorder sheet).
+struct PriorityView: View {
+
+    let onOpenNode: (Node) -> Void
+
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var showReorder = false
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            DashboardLavaLamp()
+
+            VStack(spacing: 0) {
+                header
+                    .padding(.horizontal, 20)
+                    .padding(.top, 6)
+                    .padding(.bottom, 12)
+
+                if store.priorityNodes.isEmpty {
+                    emptyState
+                } else {
+                    list
+                }
+            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .background {
+            SwipeBackProxy()
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        }
+        .sheet(isPresented: $showReorder) {
+            PriorityReorderSheet(nodes: store.priorityNodes)
+                .environment(store)
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            chromeCircleButton("chevron.backward") { dismiss() }
+            Spacer()
+            Text("Priority")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+            Spacer()
+            // Reorder only makes sense with 2+; keep the layout balanced otherwise.
+            if store.priorityNodes.count > 1 {
+                chromeCircleButton("arrow.up.arrow.down") { showReorder = true }
+            } else {
+                Color.clear.frame(width: 40, height: 40)
+            }
+        }
+    }
+
+    private func chromeCircleButton(_ systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+                .frame(width: 40, height: 40)
+                .contentShape(Circle())
+                .chromeSurface(Circle())
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var list: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(Array(store.priorityNodes.enumerated()), id: \.element.id) { index, node in
+                    Button {
+                        onOpenNode(node)
+                    } label: {
+                        RecentNodeRow(node: node, timestamp: node.updatedAt,
+                                      ink: AppearancePalette.ink)
+                            .equatable()
+                            .padding(.horizontal, 18)
+                            .padding(.vertical, 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if index < store.priorityNodes.count - 1 {
+                        Rectangle()
+                            .fill(AppearancePalette.ink.opacity(0.08))
+                            .frame(height: 0.5)
+                    }
+                }
+            }
+            .dashboardPaneSurface()
+            .padding(.horizontal, 20)
+            .padding(.top, 4)
+            .padding(.bottom, 120)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Spacer()
+            Text("No priority nodes")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            Text("Flag a node as Priority from its ••• menu.")
+                .font(.system(size: 14))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// Drag-to-reorder the Priority set — the SAME idiom as `CollectionReorderSheet`
+/// (List + `.onMove` + always-active edit mode), writing through
+/// `CorpusStore.setPriorityOrder`.
+private struct PriorityReorderSheet: View {
+    @Environment(CorpusStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    @State private var working: [Node]
+
+    init(nodes: [Node]) {
+        _working = State(initialValue: nodes)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(working) { node in
+                    HStack(spacing: 12) {
+                        Image(systemName: "flag")
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        Text(node.title.isEmpty ? "Untitled" : node.title)
+                            .font(.body)
+                            .foregroundStyle(AppearancePalette.ink)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 2)
+                }
+                .onMove(perform: move)
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Priority")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func move(from source: IndexSet, to destination: Int) {
+        working.move(fromOffsets: source, toOffset: destination)
+        let orderedIDs = working.map(\.id)
+        Task { await store.setPriorityOrder(orderedIDs) }
+    }
+}

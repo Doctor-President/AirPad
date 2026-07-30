@@ -692,6 +692,18 @@ struct NodeDetailView: View {
                     }
                     .disabled(true)
                     Divider()
+                    // Priority working set (Dashboard "Priority" row). `flag` =
+                    // a follow-up / working-set mark, deliberately NOT a star
+                    // (T rejected "Favorites" — it's a working set, not affection).
+                    Button {
+                        Task { await store.setPriority(node.priority == nil, nodeID: node.id) }
+                    } label: {
+                        Label(
+                            node.priority == nil ? "Add to Priority" : "Remove from Priority",
+                            systemImage: node.priority == nil ? "flag" : "flag.slash"
+                        )
+                    }
+                    Divider()
                     // entry-system-and-fold Commit 6 — visibility flag for
                     // the description on the card-view surface (queue #10).
                     // Orthogonal to summarySource: toggling visibility does

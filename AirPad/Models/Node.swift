@@ -137,6 +137,37 @@ extension HeroCrop {
     }
 }
 
+/// Membership in the Dashboard "Priority" working set (`nil` on `Node` = not
+/// prioritized). `order` is the explicit manual position (lower = higher in the
+/// list) so the Collections-reorder idiom can reassign it; `addedAt` is the
+/// fallback sort and a record of when the node was prioritized. Additive +
+/// decode-tolerant, per `HeroCrop` — not a bare Bool, so ordering has somewhere
+/// to live without a later schema change.
+struct PriorityState: Codable, Hashable {
+    var addedAt: Date
+    var order: Int
+
+    init(addedAt: Date = Date(), order: Int = 0) {
+        self.addedAt = addedAt
+        self.order = order
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case addedAt = "added_at"
+        case order
+    }
+}
+
+extension PriorityState {
+    /// Decode-tolerant (codebase norm): additive fields decode as defaults.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init()
+        addedAt = try c.decodeIfPresent(Date.self, forKey: .addedAt) ?? addedAt
+        order = try c.decodeIfPresent(Int.self, forKey: .order) ?? order
+    }
+}
+
 struct Node: Codable, Identifiable, Hashable {
     let id: String
     var createdAt: Date
@@ -330,6 +361,10 @@ struct Node: Codable, Identifiable, Hashable {
     /// migration (v1 points can't be converted without the image + frame).
     var heroCrop: HeroCrop?
 
+    /// Dashboard "Priority" working set membership (`nil` = not prioritized).
+    /// See `PriorityState`. Additive + decode-tolerant; no schema-version bump.
+    var priority: PriorityState?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -362,6 +397,7 @@ struct Node: Codable, Identifiable, Hashable {
         case titleSource = "title_source"
         case coverImageRelativePath = "cover_image_relative_path"
         case heroCrop = "hero_crop"
+        case priority
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -410,7 +446,8 @@ struct Node: Codable, Identifiable, Hashable {
         summarySource: TagSource? = nil,
         titleSource: TagSource? = nil,
         coverImageRelativePath: String? = nil,
-        heroCrop: HeroCrop? = nil
+        heroCrop: HeroCrop? = nil,
+        priority: PriorityState? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -453,6 +490,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.titleSource                 = titleSource
         self.coverImageRelativePath      = coverImageRelativePath
         self.heroCrop                    = heroCrop
+        self.priority                    = priority
     }
 }
 
@@ -509,6 +547,7 @@ extension Node {
         titleSource                = try c.decodeIfPresent(TagSource.self, forKey: .titleSource)
         coverImageRelativePath     = try c.decodeIfPresent(String.self,   forKey: .coverImageRelativePath) ?? nil
         heroCrop                   = try c.decodeIfPresent(HeroCrop.self,  forKey: .heroCrop)
+        priority                   = try c.decodeIfPresent(PriorityState.self, forKey: .priority)
     }
 }
 

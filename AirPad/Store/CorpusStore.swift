@@ -3676,6 +3676,53 @@ final class CorpusStore {
         await persistCollections()
     }
 
+    // MARK: - Priority working set (Dashboard "Priority" row)
+
+    /// Nodes in the Priority set, in manual order (`order` asc, `addedAt` asc
+    /// tiebreak). Empty when nothing is prioritized → the Dashboard hides the row.
+    var priorityNodes: [Node] {
+        nodes.filter { $0.priority != nil }
+            .sorted {
+                let a = $0.priority!, b = $1.priority!
+                return a.order != b.order ? a.order < b.order : a.addedAt < b.addedAt
+            }
+    }
+
+    /// Add or remove a node from the Priority set. Adding appends at the end
+    /// (max existing order + 1) so a new pick lands last; removing clears the
+    /// field. No-op if already in the requested state. Metadata only — routed
+    /// through `updateNode`, so `updatedAt` is untouched (same as `setHeroCrop`
+    /// leaving it to the caller: here we don't bump it — prioritizing isn't a
+    /// content edit).
+    func setPriority(_ on: Bool, nodeID: String) async {
+        guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[idx]
+        if on {
+            guard updated.priority == nil else { return }
+            let nextOrder = (nodes.compactMap { $0.priority?.order }.max() ?? -1) + 1
+            updated.priority = PriorityState(addedAt: Date(), order: nextOrder)
+        } else {
+            guard updated.priority != nil else { return }
+            updated.priority = nil
+        }
+        await updateNode(updated)
+    }
+
+    /// Manual reorder — reassign each priority node's `order` to match
+    /// `orderedIDs` (the same idiom as `setCollectionOrder`, but the order lives
+    /// on the node's `PriorityState` since priority is a per-node field, not a
+    /// standalone array). Only rewrites nodes whose order actually changes.
+    func setPriorityOrder(_ orderedIDs: [String]) async {
+        for (i, id) in orderedIDs.enumerated() {
+            guard let node = nodes.first(where: { $0.id == id }),
+                  var p = node.priority, p.order != i else { continue }
+            p.order = i
+            var updated = node
+            updated.priority = p
+            await updateNode(updated)
+        }
+    }
+
     /// Seeded once on first launch (when `collections.json` is absent). The
     /// IDs match the values previously hardcoded in `NodeCollection.sample()`
     /// so existing dashboard screenshots stay recognizable; the names are the

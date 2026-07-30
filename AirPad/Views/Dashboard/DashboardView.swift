@@ -99,15 +99,7 @@ struct DashboardView: View {
                         header
                             .padding(.top, 6)
                         todaySection
-                        // Priority working set — the quick re-entry cluster sits
-                        // ABOVE Recents. Hidden entirely until the user prioritizes
-                        // something, so an empty set never shows a dead row.
-                        if !store.priorityNodes.isEmpty {
-                            priorityRow
-                                .dashboardPaneSurface()
-                        }
-                        recentsRow
-                            .dashboardPaneSurface()   // #3 — same surface as the Today pane
+                        quickReentrySection
                         collectionsSection
                     }
                     .padding(.horizontal, 20)
@@ -303,6 +295,22 @@ struct DashboardView: View {
     /// from `CollectionRow` (no `.thinMaterial` card, no subtitle) so it
     /// reads as a sibling navigation row to the Collections list, not as
     /// one of the collections.
+    /// Quick re-entry cluster — Priority (when non-empty) stacked over Recents in
+    /// ONE grouped pane with a hairline between, the SAME treatment as the
+    /// Collections pane (not two separate floating panes — T, 2026-07-30). When
+    /// Priority is empty the pane is just Recents: no hairline, no gap, no empty
+    /// container.
+    private var quickReentrySection: some View {
+        VStack(spacing: 0) {
+            if !store.priorityNodes.isEmpty {
+                priorityRow
+                collectionsHairline
+            }
+            recentsRow
+        }
+        .dashboardPaneSurface()
+    }
+
     /// Dashboard "Priority" row — mirrors `recentsRow`'s single-line pane rhythm
     /// (flag icon + label + trailing count + chevron). Navigates to `PriorityView`.
     private var priorityRow: some View {

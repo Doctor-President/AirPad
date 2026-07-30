@@ -1,28 +1,14 @@
 import SwiftUI
-import os
-
-// BUG 16 instrumentation (TEMPORARY — remove once diagnosed). Card-view first-
-// scroll stutter: log every buildItems() re-emit (with trigger + order
-// signature), every sortOrder change, and every scrollToFirstAfterSort firing —
-// os_log auto-timestamps each, so the first-~2s window is read off the stream.
-// Capture: `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "bug16"'`.
-private let bug16Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug16")
-
-// MARK: - Scroll node (wrapper for sentinel/real items in the looping scroll)
-
-private struct ScrollItem: Identifiable {
-    let id: String        // "real-<nodeID>" | "sent-start-<nodeID>" | "sent-end-<nodeID>"
-    let node: Node
-    var isReal: Bool { id.hasPrefix("real-") }
-    var realNodeID: String { String(id.dropFirst(id.hasPrefix("real-") ? 5 : id.hasPrefix("sent-start-") ? 11 : 9)) }
-}
 
 // MARK: - VerticalScrollView
 
-/// Vertical-scroll presentation of Card View — full-bleed NodeCardView
-/// faces stacked in a viewAligned vertical scroll (one card centered at a
-/// time, infinite loop). Reached from the density pill's 4th segment
-/// (`gridColumnCount == 4`) alongside carousel / 2-col / dense grid.
+/// Vertical-scroll presentation of Card View — full-bleed NodeCardView faces
+/// stacked in a viewAligned vertical scroll (one card centered at a time). FINITE
+/// by design: a sorted corpus has a first and a last, so the scroll opens at the
+/// first node (natural top) and stops at the last — no wrap. Wrapping past the
+/// oldest back into the newest destroyed the sense of position against the sort
+/// (T, 2026-07-29), so the sentinel loop was removed. Reached from the density
+/// pill's 4th segment (`gridColumnCount == 4`) alongside carousel / 2-col / dense grid.
 struct VerticalScrollView: View {
 
     @Environment(CorpusStore.self) private var store
@@ -36,9 +22,8 @@ struct VerticalScrollView: View {
     /// same Librarian match (which otherwise stack identical detail
     /// views). Cleared when the path returns to root.
     @State private var currentDetailNodeID: String? = nil
-    @State private var displayItems: [ScrollItem] = []
+    @State private var displayItems: [Node] = []
     @State private var scrolledID: String? = nil
-    @State private var isJumping = false
 
     @State private var scrollToFirstAfterSort = false
     /// What slice of the corpus this view renders. Defaults to `.corpus` so
@@ -120,16 +105,14 @@ struct VerticalScrollView: View {
             haptic.prepare()
             navHaptic.prepare()
             store.detailViewDepth = navigationPath.count
-            bug16Log.notice("onAppear (t0)")
-            buildItems(reason: "appear")
+            buildItems()
         }
         // Observe the broad filteredNodes signal — for collection scopes this
         // still fires whenever any filter input changes; `buildItems` reads
         // through the scoped accessor.
-        .onChange(of: store.filteredNodes) { _, _ in buildItems(reason: "filteredNodes") }
-        .onChange(of: store.filterState.sortOrder) { old, new in
-            bug16Log.notice("sortOrder CHANGED \(String(describing: old), privacy: .public) → \(String(describing: new), privacy: .public)")
-            buildItems(reason: "sortOrder")
+        .onChange(of: store.filteredNodes) { _, _ in buildItems() }
+        .onChange(of: store.filterState.sortOrder) { _, _ in
+            buildItems()
             scrollToFirstAfterSort = true
         }
     }
@@ -181,23 +164,23 @@ struct VerticalScrollView: View {
         return ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: cardSpacing) {
-                    ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(displayItems.enumerated()), id: \.element.id) { index, node in
                         let dist = abs(index - centerIdx)
                         // R2 — pass the ID + a snapshot fallback. The card
                         // owns the live lookup (mirrors NodeDetailView), so
                         // in-place fold/entry edits re-render the card in
                         // place without waiting for the scroll to recycle.
                         NodeCardView(
-                            nodeID: item.realNodeID,
-                            fallbackNode: item.node,
+                            nodeID: node.id,
+                            fallbackNode: node,
                             isSelecting: selection.isActive,
-                            isPicked: selection.isSelected(item.realNodeID),
+                            isPicked: selection.isSelected(node.id),
                             presentation: .vertical
                         )
                         .frame(height: cardHeight)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .animation(.easeInOut(duration: 0.18), value: selection.isActive)
-                        .id(item.id)
+                        .id(node.id)
                         .visualEffect { content, proxy in
                             let frame = proxy.frame(in: .global)
                             let screenHeight = UIScreen.main.bounds.height
@@ -227,10 +210,10 @@ struct VerticalScrollView: View {
                                 .opacity(vignetteOpacity)
                                 .scaleEffect(scale, anchor: .center)
                         }
-                        .matchedTransitionSource(id: item.isReal ? item.node.id : item.id, in: zoomNamespace)
+                        .matchedTransitionSource(id: node.id, in: zoomNamespace)
                         .contentShape(Rectangle())
                         .onTapGesture {
-                            guard let real = store.nodes.first(where: { $0.id == item.realNodeID }) else { return }
+                            guard let real = store.nodes.first(where: { $0.id == node.id }) else { return }
                             if selection.isActive {
                                 haptic.impactOccurred()
                                 selection.toggle(real.id)
@@ -247,34 +230,25 @@ struct VerticalScrollView: View {
             .contentMargins(.vertical, margin, for: .scrollContent)
             .scrollTargetBehavior(.viewAligned)
             .scrollPosition(id: $scrolledID)
-            // BUG 16 instrument — scroll-phase timestamps so the stutter window
-            // can be lined up against the CatalogBackfill run in the same log.
-            .onScrollPhaseChange { old, new in
-                bug16Log.notice("scroll phase \(String(describing: old), privacy: .public) → \(String(describing: new), privacy: .public)")
-            }
             .onChange(of: scrolledID) { _, newID in
-                guard let newID, !isJumping else { return }
+                guard let newID else { return }
                 if let index = displayItems.firstIndex(where: { $0.id == newID }) {
                     centerIdx = index
                 }
                 haptic.impactOccurred()
-                handleLoopJump(to: newID, proxy: proxy)
             }
             .onChange(of: scrollToFirstAfterSort) { _, flag in
-                guard flag, let firstID = displayItems.first(where: { $0.isReal })?.id else { return }
-                bug16Log.notice("scrollToFirstAfterSort FIRED → scrollTo \(firstID, privacy: .public)")
+                guard flag, let firstID = displayItems.first?.id else { return }
                 scrollToFirstAfterSort = false
                 withAnimation(.spring(response: 0.4)) {
                     proxy.scrollTo(firstID, anchor: .center)
                 }
             }
-            // #3 — shared focus signal: scroll the card stack to the focused
-            // node in place. Resolve the node ID to its display-item id (cards
-            // are keyed by the wrapper `item.id`, not the raw node id — mirror
-            // of the sort consumer above).
+            // #3 — shared focus signal: scroll the card stack to the focused node
+            // in place (cards are keyed by node id).
             .onChange(of: router.pendingFocusNodeID) { _, id in
                 guard let id,
-                      let target = displayItems.first(where: { $0.realNodeID == id })?.id
+                      let target = displayItems.first(where: { $0.id == id })?.id
                 else { return }
                 router.pendingFocusNodeID = nil
                 withAnimation(.spring(response: 0.4)) {
@@ -284,43 +258,13 @@ struct VerticalScrollView: View {
         }
     }
 
-    // MARK: - Infinite loop handling
-
-    private func handleLoopJump(to id: String, proxy: ScrollViewProxy) {
-        guard id.hasPrefix("sent-") else { return }
-        let realNodeID = id.hasPrefix("sent-start-")
-            ? String(id.dropFirst(11))
-            : String(id.dropFirst(10))
-        guard let target = displayItems.first(where: { $0.id == "real-\(realNodeID)" }) else { return }
-        isJumping = true
-        proxy.scrollTo(target.id, anchor: .center)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { isJumping = false }
-    }
-
     // MARK: - Build display items
 
-    private func buildItems(reason: String) {
-        let nodes = store.filteredNodes(in: scope)
-        // BUG 16 instrument — log the trigger + order signature (first/last id +
-        // sort) so a re-emit that reorders under the first gesture is visible.
-        let firstID = nodes.first.map { String($0.id.prefix(8)) } ?? "nil"
-        let lastID = nodes.last.map { String($0.id.prefix(8)) } ?? "nil"
-        bug16Log.notice("buildItems reason=\(reason, privacy: .public) count=\(nodes.count) first=\(firstID, privacy: .public) last=\(lastID, privacy: .public) sort=\(String(describing: store.filterState.sortOrder), privacy: .public)")
-        guard !nodes.isEmpty else { displayItems = []; return }
-
-        let sentCount = min(3, nodes.count)
-        var result: [ScrollItem] = []
-
-        for node in nodes.suffix(sentCount) {
-            result.append(ScrollItem(id: "sent-start-\(node.id)", node: node))
-        }
-        for node in nodes {
-            result.append(ScrollItem(id: "real-\(node.id)", node: node))
-        }
-        for node in nodes.prefix(sentCount) {
-            result.append(ScrollItem(id: "sent-end-\(node.id)", node: node))
-        }
-        displayItems = result
+    private func buildItems() {
+        // Finite, sorted order: the display list IS the filtered corpus, in order.
+        // No sentinels, no wrap — the scroll opens at the first node (natural top)
+        // and ends at the last, so position always reads true against the sort.
+        displayItems = store.filteredNodes(in: scope)
     }
 }
 

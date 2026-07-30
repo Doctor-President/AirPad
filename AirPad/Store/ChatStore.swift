@@ -11,6 +11,11 @@ import Observation
 struct Chat: Identifiable, Codable, Hashable {
     let id: UUID
     var title: String
+    /// `.user` once the user renames the chat → blocks any later FM title pass
+    /// from overwriting it (see `updateTitle`). nil / `.model` = FM-or-truncation
+    /// authored. Optional + synthesized Codable is decode-tolerant, so chats
+    /// persisted before this field decode with `titleSource == nil`.
+    var titleSource: TagSource? = nil
     let createdAt: Date
     var updatedAt: Date
     var messages: [ChatSession.Message]
@@ -107,9 +112,22 @@ final class ChatStore {
     /// No-op when the chat has been deleted in the meantime.
     func updateTitle(id: UUID, title: String) {
         guard let i = chats.firstIndex(where: { $0.id == id }) else { return }
+        // Never overwrite a user-authored title (hybrid authorship: the model
+        // proposes, the human overrides — a rename wins over any later FM pass).
+        guard chats[i].titleSource != .user else { return }
         chats[i].title = title
         chats[i].updatedAt = Date()
         chats.sort { $0.updatedAt > $1.updatedAt }
+        Task { await save() }
+    }
+
+    /// User rename. Marks the title `.user` so no later FM title pass overwrites
+    /// it. Does NOT bump `updatedAt` — a rename is metadata, not activity, so the
+    /// chat keeps its place in the recency-sorted list rather than jumping to top.
+    func renameChat(id: UUID, title: String) {
+        guard let i = chats.firstIndex(where: { $0.id == id }) else { return }
+        chats[i].title = title
+        chats[i].titleSource = .user
         Task { await save() }
     }
 

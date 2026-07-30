@@ -947,14 +947,12 @@ private struct BatchActionBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Menu {
-                TagPickerMenuContent(
-                    tags: tags,
-                    excludeNames: [],
-                    onPickExisting: onPickExistingTag,
-                    onAddNew: onAddNewTag
-                )
-            } label: {
+            TagPickerButton(
+                tags: tags,
+                excludeNames: [],
+                onPickExisting: onPickExistingTag,
+                onAddNew: onAddNewTag
+            ) {
                 HStack(spacing: 6) {
                     Image(systemName: "tag")
                         .font(.system(size: 14, weight: .semibold))

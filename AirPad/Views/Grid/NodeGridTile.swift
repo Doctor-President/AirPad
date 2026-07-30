@@ -272,6 +272,7 @@ struct NodeGridTile: View {
         let heroHeight = heroZoneHeight
         return VStack(spacing: 0) {
             GridTileHeroImage(node: node)
+                .equatable()
                 .frame(width: cellWidth, height: heroHeight)
                 .clipped()
                 .mask(
@@ -492,11 +493,21 @@ struct NodeGridTile: View {
 // to that file). Same resolver path — `store.coverImageURL(for:)` — so
 // card and tile stay byte-identical on what they resolve.
 
-private struct GridTileHeroImage: View {
+private struct GridTileHeroImage: View, Equatable {
     let node: Node
 
     @Environment(CorpusStore.self) private var store
     @State private var image: UIImage? = nil
+
+    // `Node.==` is id-only → a heroCrop / cover-path change on the same node
+    // wouldn't re-render this child (framing stale until navigating away + back).
+    // Diff on exactly what this view renders; the crop re-applies to the cached
+    // image with no reload. Mirrors CardHeroImage / RecentNodeRow.
+    static func == (l: GridTileHeroImage, r: GridTileHeroImage) -> Bool {
+        l.node.id == r.node.id &&
+        l.node.coverImageRelativePath == r.node.coverImageRelativePath &&
+        l.node.heroCrop == r.node.heroCrop
+    }
 
     var body: some View {
         Group {

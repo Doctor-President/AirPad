@@ -231,6 +231,7 @@ struct NodeCardView: View {
         let heroHeight = height * hero
         VStack(spacing: 0) {
             CardHeroImage(node: node)
+                .equatable()
                 .frame(width: width, height: heroHeight)
                 .clipped()
                 .mask(
@@ -820,11 +821,23 @@ struct NodeCardView: View {
 // parent (no aspect-ratio math here); the card pins the hero to the top
 // ~42% and masks the bottom edge into a fade.
 
-private struct CardHeroImage: View {
+private struct CardHeroImage: View, Equatable {
     let node: Node
 
     @Environment(CorpusStore.self) private var store
     @State private var image: UIImage? = nil
+
+    // `Node.==` is id-only, so a heroCrop (or cover-path) change on the SAME node
+    // wouldn't re-render this child — the framing only refreshed after navigating
+    // away and back (the reported cache-invalidation bug). Same fix RecentNodeRow
+    // uses: diff on exactly what this view renders. The crop re-applies to the
+    // already-cached image (no reload → no flash), riding the same @Observable
+    // store publish that already updates title/summary in the parent body.
+    static func == (l: CardHeroImage, r: CardHeroImage) -> Bool {
+        l.node.id == r.node.id &&
+        l.node.coverImageRelativePath == r.node.coverImageRelativePath &&
+        l.node.heroCrop == r.node.heroCrop
+    }
 
     var body: some View {
         Group {

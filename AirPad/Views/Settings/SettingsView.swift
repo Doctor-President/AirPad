@@ -212,7 +212,9 @@ struct SettingsView: View {
         if !openAIKey.isEmpty    { return "OpenAI" }
         if !deepSeekKey.isEmpty  { return "DeepSeek" }
         if !ollamaEndpoint.isEmpty { return "Ollama (local)" }
-        return "On-device (Foundation Model)"
+        // Single source of truth so this can't drift from the Librarian pill
+        // (both now read "Apple Intelligence"). Was "On-device (Foundation Model)".
+        return ModelRouter.foundationModelName
     }
 
     private var activeAPIKey: String? {

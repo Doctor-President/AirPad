@@ -97,6 +97,22 @@ struct ChatsListView: View {
                     }
                     .tint(Color(hexString: "1B59C2"))   // Klein blue (T is colorblind → named literal)
                 }
+                // Long-press context menu — discoverable path for Rename (the leading
+                // swipe lane is easy to miss; the trailing lane is taken by Delete).
+                // Mirrors both swipe actions, the standard iOS both-paths pattern.
+                .contextMenu {
+                    Button {
+                        renameText = displayTitle(for: chat)
+                        renamingChatID = chat.id
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        delete(chat)
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
+                }
             }
         }
         .listStyle(.plain)

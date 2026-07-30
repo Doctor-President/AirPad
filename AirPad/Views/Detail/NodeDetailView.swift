@@ -945,19 +945,17 @@ struct NodeDetailView: View {
                         editedTags.removeAll { $0 == name }
                     }
                 }
-                // Add from vocabulary
-                Menu {
-                    TagPickerMenuContent(
-                        tags: store.tags,
-                        excludeNames: Set(editedTags),
-                        onPickExisting: { name in
-                            if !editedTags.contains(name) {
-                                editedTags.append(name)
-                            }
-                        },
-                        onAddNew: { showingNewTagSheet = true }
-                    )
-                } label: {
+                // Add from vocabulary (searchable — prevents near-duplicate tags)
+                TagPickerButton(
+                    tags: store.tags,
+                    excludeNames: Set(editedTags),
+                    onPickExisting: { name in
+                        if !editedTags.contains(name) {
+                            editedTags.append(name)
+                        }
+                    },
+                    onAddNew: { showingNewTagSheet = true }
+                ) {
                     Label("Add tag", systemImage: "plus")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))

@@ -17,6 +17,11 @@ struct ChatsListView: View {
     /// reads `router.chat` directly so we only need the id as a token.
     @State private var path: [UUID] = []
 
+    /// Rename flow — non-nil id presents the rename alert; `renameText` is its
+    /// editable buffer (seeded from the chat's current display title).
+    @State private var renamingChatID: UUID? = nil
+    @State private var renameText: String = ""
+
     private var session: ChatSession { router.chat }
     private var chatStore: ChatStore { router.chatStore }
 
@@ -83,11 +88,40 @@ struct ChatsListView: View {
                         Label("Delete", systemImage: "trash")
                     }
                 }
+                .swipeActions(edge: .leading) {
+                    Button {
+                        renameText = displayTitle(for: chat)
+                        renamingChatID = chat.id
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
+                    }
+                    .tint(Color(hexString: "1B59C2"))   // Klein blue (T is colorblind → named literal)
+                }
             }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(AppearancePalette.bgBase)
+        .alert("Rename chat", isPresented: renameAlertPresented) {
+            TextField("Title", text: $renameText)
+            Button("Cancel", role: .cancel) { renamingChatID = nil }
+            Button("Save") { commitRename() }
+        } message: {
+            Text("Renaming keeps this title — the model won't overwrite it.")
+        }
+    }
+
+    /// Drives the rename alert off `renamingChatID`; dismissing clears the id.
+    private var renameAlertPresented: Binding<Bool> {
+        Binding(get: { renamingChatID != nil },
+                set: { if !$0 { renamingChatID = nil } })
+    }
+
+    private func commitRename() {
+        guard let id = renamingChatID else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { chatStore.renameChat(id: id, title: trimmed) }
+        renamingChatID = nil
     }
 
     private func row(for chat: Chat) -> some View {

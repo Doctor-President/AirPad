@@ -263,9 +263,6 @@ struct NodeGridTile: View {
             }
             travelingScrim
             identityContent
-            if isEditorial {
-                watermark
-            }
         }
     }
 
@@ -479,27 +476,6 @@ struct NodeGridTile: View {
         if docs > 0   { result.append(Badge(glyph: "doc.text",    count: docs)) }
         if audio > 0  { result.append(Badge(glyph: "waveform",    count: audio)) }
         return result
-    }
-
-    // MARK: - Watermark
-
-    private var watermark: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Image("NavMarkBlue")
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .foregroundColor(Self.inkTitle)
-                    .frame(width: 30, height: 30)
-                    .opacity(0.08)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
-            }
-        }
-        .allowsHitTesting(false)
     }
 
     // MARK: - Title fallback

@@ -1,6 +1,6 @@
 // NodeCardView.swift
 // Editorial 5:7 card face — full-bleed NodeGradientLayer + optional hero,
-// dateline · serif title · deck · inline small-caps tags · feather watermark.
+// dateline · serif title · deck · inline small-caps tags.
 // Preserves the struct's interface and selection chrome.
 
 import SwiftUI
@@ -193,7 +193,6 @@ struct NodeCardView: View {
                     }
                     travelingScrim
                     editorialContent(cardHeight: geo.size.height)
-                    watermark
                     sheen
                 }
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
@@ -803,27 +802,6 @@ struct NodeCardView: View {
             }
         }
         return PayloadFit(rendered: rendered, overflowCount: payloads.count - rendered.count)
-    }
-
-    // MARK: - Feather watermark
-
-    private var watermark: some View {
-        VStack {
-            Spacer()
-            HStack {
-                Spacer()
-                Image("NavMarkBlue")
-                    .resizable()
-                    .renderingMode(.template)
-                    .scaledToFit()
-                    .foregroundColor(Self.inkTitle)
-                    .frame(width: 30, height: 30)
-                    .opacity(0.08)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 16)
-            }
-        }
-        .allowsHitTesting(false)
     }
 
     // MARK: - Title fallback

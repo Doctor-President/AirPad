@@ -666,8 +666,9 @@ actor AIService {
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             case .imageVideo:        return nil
             // Stage 4.8 — Rating is an atomic numeric value, not text;
-            // contributes nothing to AI content extraction.
-            case .rating:            return nil
+            // contributes nothing to AI content extraction. Stage 5.1 —
+            // fields are atomic too; no free text to extract in Stage 1.
+            case .rating, .field:    return nil
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
     }

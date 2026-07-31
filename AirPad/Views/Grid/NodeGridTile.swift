@@ -467,7 +467,7 @@ struct NodeGridTile: View {
                 docs += item.documentItems?.count ?? 0
             case .audio:
                 audio += 1
-            case .text, .image, .video, .rating:
+            case .text, .image, .video, .rating, .field:
                 break
             }
         }

@@ -364,9 +364,9 @@ private struct NodeCardItemCounts: View {
             // reflects how many entries hold media, not how many media items
             // they hold. Adequate until 4.2.x or 4.3 revisits list chips.
             case .imageVideo: i += 1
-            // Stage 4.8 — Rating doesn't surface in the legacy six-
-            // bucket chip row; skipped (no dedicated rating chip yet).
-            case .rating:   break
+            // Stage 4.8 / 5.1 — Rating and fields don't surface in the legacy
+            // six-bucket chip row; skipped (no dedicated chip yet).
+            case .rating, .field:   break
             }
         }
         return (t, i, a, v, l, d)

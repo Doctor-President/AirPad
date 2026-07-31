@@ -19,6 +19,12 @@ enum NodeItemType: String, Codable, Equatable {
     /// multi-item gallery — one per node. See `Rating` for the value
     /// schema and `appendRatingItem` for the singleton-enforced add path.
     case rating
+    /// Stage 5.1 — atomic typed FIELD entry. The value is a `FieldValue`
+    /// (`NodeItem.field`) referencing a corpus-level `FieldDefinition` by
+    /// stable ID; the kind (number/duration/money/…) lives on the definition,
+    /// NOT on this enum — `NodeItemType` still answers exactly one question,
+    /// `isAtomic`. Unlike `.rating`, fields are MULTI per node.
+    case field
 }
 
 extension NodeItemType {
@@ -42,12 +48,16 @@ extension NodeItemType {
         case .document:   return "Document"
         case .imageVideo: return "Image/Video"
         case .rating:     return "Rating"
+        // Fields carry their name on the DEFINITION (user-owned displayName),
+        // not the type. This generic fallback is used only where no definition
+        // is resolvable; the render path prefers `FieldDefinition.displayName`.
+        case .field:      return "Field"
         }
     }
 
-    /// Stage 4.8 — partitions entry types into *atomic* (singleton-typed
-    /// attribute values that render in the pinned Attributes section —
-    /// rating today; cook time / serving size later) and *payload*
+    /// Stage 4.8 — partitions entry types into *atomic* (typed attribute
+    /// values that render in the pinned Attributes section — `.rating` and,
+    /// as of Stage 5.1, `.field`; fields are MULTI per node) and *payload*
     /// (content entries that render in the scrolling list with the fold
     /// machinery — everything else). The split governs presentation
     /// only: both groups live in `node.items` and persist identically.
@@ -57,7 +67,7 @@ extension NodeItemType {
     /// caller routes through this.
     var isAtomic: Bool {
         switch self {
-        case .rating:
+        case .rating, .field:
             return true
         case .text, .image, .audio, .video, .link, .document, .imageVideo:
             return false

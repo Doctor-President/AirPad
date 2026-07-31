@@ -223,6 +223,7 @@
 		CEC9C7F4431D0776A1A4DC13 /* AirPad.icon in Resources */ = {isa = PBXBuildFile; fileRef = D86D98BB8BD1E493F884909C /* AirPad.icon */; };
 		CFFE64A955B749CCBAA0C04D /* BacklinkPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA44132CD96DC6E2560940ED /* BacklinkPickerSheet.swift */; };
 		D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841450783E48B41397FDDB34 /* MarkdownBlock.swift */; };
+		D2F3CB50F971A325ED172AD3 /* FieldValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8587B8FB965733F87A837170 /* FieldValue.swift */; };
 		D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 804D3764E120F2398822E16A /* AppDelegate.swift */; };
 		D40987532E02080C68E3A0EE /* KokoroVoiceSamplerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC5589940D7DC99F578CC154 /* KokoroVoiceSamplerView.swift */; };
 		D5709E0DEA900DA3FA2CF236 /* FoundationModels.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C9E7CD2C583E1D7E60A3126A /* FoundationModels.framework */; };
@@ -235,6 +236,7 @@
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
 		DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */; };
+		E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8587B8FB965733F87A837170 /* FieldValue.swift */; };
 		E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */; };
 		E3407B345AD8EB8E5775944D /* QuikCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */; };
 		E36FB1C888465AFE23431F29 /* card_parity_fixture.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B2FC18986ACC45F4CAA20A7 /* card_parity_fixture.json */; };
@@ -408,6 +410,7 @@
 		801C2DAC6AF0F2DE2EB27A25 /* TextCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCaptureSheet.swift; sourceTree = "<group>"; };
 		804D3764E120F2398822E16A /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		841450783E48B41397FDDB34 /* MarkdownBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlock.swift; sourceTree = "<group>"; };
+		8587B8FB965733F87A837170 /* FieldValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValue.swift; sourceTree = "<group>"; };
 		88A13C2113DC9781B455DF42 /* PastePadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePadView.swift; sourceTree = "<group>"; };
 		88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPickerWrapper.swift; sourceTree = "<group>"; };
@@ -837,6 +840,7 @@
 				21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */,
 				003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */,
 				6EDDB291F9F6170B93CE084E /* FieldKind.swift */,
+				8587B8FB965733F87A837170 /* FieldValue.swift */,
 				AE402981E931009EBB3F93EE /* Neighborhood.swift */,
 				1866B7173FCC4A9B1AE81AF1 /* Node.swift */,
 				376265F2CCAF46EDE2216E54 /* NodeBlock.swift */,
@@ -1308,6 +1312,7 @@
 				2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */,
 				53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */,
 				8C816C9A65368BD8D812CFFB /* FieldKind.swift in Sources */,
+				E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
 				71A9DACF5563A23D695206FE /* FluidKokoroTTSEngine.swift in Sources */,
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
@@ -1447,6 +1452,7 @@
 				50DC50BEDB156FA63FDCB05A /* CorpusIndex.swift in Sources */,
 				1A4B4683A0B01732DEC94DBF /* FieldDefinition.swift in Sources */,
 				C778ACC9CC63354AC17A3744 /* FieldKind.swift in Sources */,
+				D2F3CB50F971A325ED172AD3 /* FieldValue.swift in Sources */,
 				1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */,
 				0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */,
 				07C8518A53FA5439187CAE4B /* NodeBlock.swift in Sources */,

@@ -3977,7 +3977,7 @@ final class CorpusStore {
                     case .text:          return item.content
                     case .audio, .video: return item.transcript
                     case .link:          return item.title ?? item.url
-                    case .image, .document, .imageVideo, .rating: return nil
+                    case .image, .document, .imageVideo, .rating, .field: return nil
                     }
                 }.first(where: { !$0.isEmpty })
                 if let fallback, n.title.isEmpty || n.title == "Photo" || n.title == "Voice note" {
@@ -4644,7 +4644,7 @@ final class CorpusStore {
             case .link:
                 if let title = item.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
                 if let url = item.url, !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-            case .image, .video, .document, .imageVideo, .rating:
+            case .image, .video, .document, .imageVideo, .rating, .field:
                 continue
             }
         }
@@ -4704,9 +4704,9 @@ final class CorpusStore {
                             // is empty (the per-item descriptions land in a
                             // later workstream).
                             case .imageVideo: return nil
-                            // Stage 4.8 — Rating is an atomic numeric value,
-                            // no text contribution to FM coherence.
-                            case .rating: return nil
+                            // Stage 4.8 / 5.1 — Rating and fields are atomic
+                            // values, no text contribution to FM coherence.
+                            case .rating, .field: return nil
                             }
                         }.filter { !$0.isEmpty }.joined(separator: "\n")
 
@@ -6090,7 +6090,7 @@ final class CorpusStore {
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             case .imageVideo:        return nil
-            case .rating:            return nil
+            case .rating, .field:    return nil
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
     }

@@ -113,7 +113,7 @@ struct FieldPairCell: View {
             // whole-cell tap is a no-op there. Numeric style opens the sheet.
             if (definition.config.ratingStyle ?? .stars) != .stars { onRequestEdit() }
         case .vocabulary, .nodeReference:
-            break   // wired in C3
+            onRequestEdit()
         }
     }
 

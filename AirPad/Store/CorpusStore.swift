@@ -3827,6 +3827,29 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Stage 5.3 — add a value to a `vocabulary` definition's list. ★ This is the
+    /// first value-editor write to CORPUS-LEVEL state — it mutates the DEFINITION
+    /// and persists `field_definitions.json`, so the value is immediately
+    /// available on every other node. FIND-OR-CREATE with case-insensitive dedup
+    /// (offer the existing value before minting) — the whole point of vocabulary
+    /// over text. A new value gets a STABLE ID (the Stage 1 union-mergeability
+    /// amendment; never a bare string). Returns the value (existing or new).
+    @discardableResult
+    func addVocabularyValue(definitionID: String, label: String) async -> VocabularyValue? {
+        guard let dIdx = fieldDefinitions.firstIndex(where: { $0.id == definitionID }) else { return nil }
+        let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var values = fieldDefinitions[dIdx].config.vocabularyValues ?? []
+        if let existing = values.first(where: { $0.label.lowercased() == trimmed.lowercased() }) {
+            return existing   // dedup at entry time — never a second copy
+        }
+        let value = VocabularyValue(label: trimmed)   // fresh stable id
+        values.append(value)
+        fieldDefinitions[dIdx].config.vocabularyValues = values
+        await persistFieldDefinitions()
+        return value
+    }
+
     /// Collections reorder — reorders the user collections to match `orderedIDs`
     /// (Dashboard drag-to-reorder). Mirrors `setGalleryItemOrder`: the order IS
     /// the array position (collections persist in array order — no order field,

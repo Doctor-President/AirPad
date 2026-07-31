@@ -14,6 +14,13 @@ struct BacklinkPickerSheet: View {
     /// The entry the "Backlink" action fired on — recorded as the source anchor
     /// on the target's mirror edge. Nil for a whole-node source.
     let sourceEntryID: String?
+    /// Stage 5.3 — when set, this is a FIELD-REFERENCE picker (a `nodeReference`
+    /// value), not backlink creation: tapping a node returns its id and dismisses,
+    /// SKIPPING the backlink-specific screen-2 granularity, the bidirectional
+    /// connection write, and the already-linked exclusion. nil = the original
+    /// backlink-creation flow, unchanged. (Screen 1's node search+list is the
+    /// only reusable part — the rest is backlink-only.)
+    var onPick: ((String) -> Void)? = nil
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -25,7 +32,9 @@ struct BacklinkPickerSheet: View {
     /// linked to it, most-recent first, narrowed by the search text.
     private var candidates: [Node] {
         let source = store.nodes.first { $0.id == sourceNodeID }
-        let alreadyLinked: Set<String> = Set((source?.connections ?? []).map(\.nodeID))
+        // Field-reference mode doesn't exclude already-linked — a reference isn't
+        // a backlink, so those nodes are still valid targets.
+        let alreadyLinked: Set<String> = onPick == nil ? Set((source?.connections ?? []).map(\.nodeID)) : []
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         var result: [Node] = store.nodes.filter { node in
             node.id != sourceNodeID && !alreadyLinked.contains(node.id)
@@ -41,7 +50,12 @@ struct BacklinkPickerSheet: View {
         NavigationStack {
             List(candidates) { node in
                 Button {
-                    pickedNodeID = node.id
+                    if let onPick {
+                        onPick(node.id)   // field-reference: return the id
+                        dismiss()
+                    } else {
+                        pickedNodeID = node.id   // backlink: proceed to screen 2
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         Text(BacklinkLabels.title(node))
@@ -61,7 +75,7 @@ struct BacklinkPickerSheet: View {
             .scrollContentBackground(.hidden)
             .background(AppearancePalette.bgBase.ignoresSafeArea())
             .searchable(text: $searchText, prompt: "Search nodes")
-            .navigationTitle("Backlink to…")
+            .navigationTitle(onPick == nil ? "Backlink to…" : "Reference a node…")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

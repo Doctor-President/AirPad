@@ -34,6 +34,11 @@ struct FieldValueEditorSheet: View {
     @State private var upperAmount: String
     @State private var upperHours: Int
     @State private var upperMinutes: Int
+    // C3
+    @State private var selectedValueIDs: Set<String>
+    @State private var newVocabLabel: String = ""
+    @State private var draftRefID: String?
+    @State private var showNodePicker = false
 
     init(nodeID: String, item: NodeItem, definition: FieldDefinition) {
         self.nodeID = nodeID
@@ -54,6 +59,8 @@ struct FieldValueEditorSheet: View {
         _upperAmount = State(initialValue: Self.seedAmount(u))
         _upperHours = State(initialValue: Self.seedHours(u))
         _upperMinutes = State(initialValue: Self.seedMinutes(u))
+        _selectedValueIDs = State(initialValue: Self.seedVocabIDs(v))
+        _draftRefID = State(initialValue: Self.seedRefID(v))
     }
 
     private var isScalar: Bool { [.number, .duration, .measurement, .money].contains(definition.kind) }
@@ -84,6 +91,13 @@ struct FieldValueEditorSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .sheet(isPresented: $showNodePicker) {
+            // Reuse BacklinkPickerSheet's node search+list via its field-reference
+            // `onPick` mode (no backlink connection is created).
+            BacklinkPickerSheet(sourceNodeID: nodeID, sourceEntryID: nil, onPick: { id in
+                draftRefID = id
+            })
+        }
     }
 
     // MARK: - Editors
@@ -120,9 +134,60 @@ struct FieldValueEditorSheet: View {
             // Reached only for the NUMERIC style; star style is direct-manip in the cell.
             Stepper("\(ratingValue) / \(definition.config.ratingScale ?? 5)", value: $ratingValue,
                     in: 0...(definition.config.ratingScale ?? 5))
-        case .boolean, .vocabulary, .nodeReference:
-            Text("Editing for \(definition.kind.pickerName) lands in a later commit.")
-                .foregroundStyle(.secondary)
+        case .vocabulary:
+            // Multi-select from the definition's LIVE value list (so a value just
+            // added shows immediately), plus add-a-new-value inline.
+            ForEach(liveVocabValues) { val in
+                Button {
+                    if selectedValueIDs.contains(val.id) { selectedValueIDs.remove(val.id) }
+                    else { selectedValueIDs.insert(val.id) }
+                } label: {
+                    HStack {
+                        Text(val.label).foregroundStyle(AppearancePalette.ink)
+                        Spacer()
+                        if selectedValueIDs.contains(val.id) {
+                            Image(systemName: "checkmark").foregroundStyle(.blue)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+            }
+            HStack {
+                TextField("Add a value", text: $newVocabLabel).onSubmit(addVocab)
+                Button("Add", action: addVocab)
+                    .disabled(newVocabLabel.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        case .nodeReference:
+            HStack {
+                Text("Node")
+                Spacer()
+                Text(referencedTitle ?? "None").foregroundStyle(.secondary).lineLimit(1)
+            }
+            Button("Choose a node") { showNodePicker = true }
+        case .boolean:
+            EmptyView()   // boolean is direct-manip in the cell — never routed here
+        }
+    }
+
+    private var liveVocabValues: [VocabularyValue] {
+        store.fieldDefinition(id: definition.id)?.config.vocabularyValues
+            ?? definition.config.vocabularyValues ?? []
+    }
+
+    private var referencedTitle: String? {
+        guard let id = draftRefID, let node = store.nodes.first(where: { $0.id == id }) else { return nil }
+        let t = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "Untitled" : t
+    }
+
+    private func addVocab() {
+        let label = newVocabLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty else { return }
+        Task {
+            if let v = await store.addVocabularyValue(definitionID: definition.id, label: label) {
+                selectedValueIDs.insert(v.id)
+            }
+            newVocabLabel = ""
         }
     }
 
@@ -181,8 +246,12 @@ struct FieldValueEditorSheet: View {
             return .measurement(amount: d, unit: unit)
         case .rating:
             return .rating(ratingValue)
-        case .boolean, .vocabulary, .nodeReference:
-            return item.field?.value   // unimplemented here: leave unchanged
+        case .vocabulary:
+            return selectedValueIDs.isEmpty ? nil : .vocabulary(valueIDs: Array(selectedValueIDs))
+        case .nodeReference:
+            return draftRefID.map { .nodeReference(nodeID: $0) }
+        case .boolean:
+            return item.field?.value   // boolean is direct-manip — unreachable here
         }
     }
 
@@ -265,5 +334,13 @@ struct FieldValueEditorSheet: View {
     private static func seedRating(_ p: FieldPayload?) -> Int {
         if case .rating(let v)? = p { return v }
         return 0
+    }
+    private static func seedVocabIDs(_ p: FieldPayload?) -> Set<String> {
+        if case .vocabulary(let ids)? = p { return Set(ids) }
+        return []
+    }
+    private static func seedRefID(_ p: FieldPayload?) -> String? {
+        if case .nodeReference(let id)? = p { return id }
+        return nil
     }
 }

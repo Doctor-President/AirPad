@@ -3713,6 +3713,80 @@ final class CorpusStore {
         fieldDefinitions.first { $0.id == id }
     }
 
+    // MARK: - Field definition creation / attach (Stage 5.2)
+
+    /// Write half of the corpus-level definition store — wired now that Stage 2
+    /// creates definitions. Mirrors `persistCollections`.
+    private func persistFieldDefinitions() async {
+        do {
+            try await service.saveFieldDefinitions(FieldDefinitionStore(definitions: fieldDefinitions))
+        } catch {
+            print("[CorpusStore] Field definitions save error: \(error)")
+        }
+    }
+
+    /// New Field path — mint a brand-new definition, append, persist, return it.
+    /// The caller then attaches it. `lastUsedAt` seeded so a just-created field
+    /// leads the MRU order.
+    @discardableResult
+    func createFieldDefinition(displayName: String, kind: FieldKind, config: FieldConfig) async -> FieldDefinition {
+        let def = FieldDefinition(displayName: displayName, kind: kind, config: config, lastUsedAt: Date())
+        fieldDefinitions.append(def)
+        await persistFieldDefinitions()
+        return def
+    }
+
+    /// Preset path — FIND-OR-CREATE the definition a preset stands for. Reuse by
+    /// id: a preset tapped twice returns the SAME definition (matched
+    /// case-insensitively on display name + kind), never a duplicate. This is
+    /// the whole point of showing presets before the build-your-own path.
+    func resolvePreset(_ preset: FieldPreset) async -> FieldDefinition {
+        if let existing = fieldDefinitions.first(where: {
+            $0.kind == preset.kind && $0.displayName.lowercased() == preset.displayName.lowercased()
+        }) {
+            return existing
+        }
+        var def = preset.makeDefinition()   // fresh UUID — a preset is just data
+        def.lastUsedAt = Date()
+        fieldDefinitions.append(def)
+        await persistFieldDefinitions()
+        return def
+    }
+
+    /// Attach a field to a node: append a `.field` NodeItem carrying the
+    /// definitionID and a NULL value (renders as unfilled — the em dash). Insert
+    /// at the front so the atomic-prefix invariant holds WITHOUT a reload/
+    /// normalize (mirrors `appendRatingItem`; `normalizeAtomicsToFront` only runs
+    /// on load). `lastUsedAt` is refreshed regardless. Per-DEFINITION dedup: a
+    /// definition already on the node is a no-op re-attach — fields are multi
+    /// across DIFFERENT definitions, not duplicated for the same one (this is
+    /// NOT the rating per-TYPE singleton).
+    func attachField(definitionID: String, toNodeID nodeID: String) async {
+        guard let nIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        let now = Date()
+        if let dIdx = fieldDefinitions.firstIndex(where: { $0.id == definitionID }) {
+            fieldDefinitions[dIdx].lastUsedAt = now
+            await persistFieldDefinitions()
+        }
+        guard !nodes[nIdx].items.contains(where: {
+            $0.type == .field && $0.field?.definitionID == definitionID
+        }) else { return }
+        let item = NodeItem(
+            id: UUID().uuidString,
+            type: .field,
+            createdAt: now,
+            displayName: nil,
+            isExpanded: false,
+            updatedAt: now,
+            field: FieldValue(definitionID: definitionID, value: nil)
+        )
+        var updated = nodes[nIdx]
+        updated.items.insert(item, at: 0)
+        updated.foldIndex = updated.foldIndex.map { min(updated.items.count, $0 + 1) }
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
     /// Collections reorder — reorders the user collections to match `orderedIDs`
     /// (Dashboard drag-to-reorder). Mirrors `setGalleryItemOrder`: the order IS
     /// the array position (collections persist in array order — no order field,

@@ -108,17 +108,24 @@ struct FieldDefinition: Codable, Equatable, Identifiable {
     let kind: FieldKind
     /// Kind-specific extras. Coherent with `kind` by construction.
     var config: FieldConfig
+    /// Stage 5.2 — most-recently-used timestamp, driving the sheet's
+    /// User-Created ordering. Additive optional; nil on Stage 1 definitions,
+    /// decodes clean. Bumped on create and on every attach (the accepted cost:
+    /// each attach writes `field_definitions.json` — see the store).
+    var lastUsedAt: Date?
 
     init(
         id: String = UUID().uuidString,
         displayName: String,
         kind: FieldKind,
-        config: FieldConfig = FieldConfig()
+        config: FieldConfig = FieldConfig(),
+        lastUsedAt: Date? = nil
     ) {
         self.id = id
         self.displayName = displayName
         self.kind = kind
         self.config = config
+        self.lastUsedAt = lastUsedAt
     }
 
     enum CodingKeys: String, CodingKey {
@@ -126,6 +133,7 @@ struct FieldDefinition: Codable, Equatable, Identifiable {
         case displayName = "display_name"
         case kind
         case config
+        case lastUsedAt = "last_used_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -134,6 +142,7 @@ struct FieldDefinition: Codable, Equatable, Identifiable {
         displayName = try c.decode(String.self, forKey: .displayName)
         kind        = try c.decode(FieldKind.self, forKey: .kind)
         config      = try c.decodeIfPresent(FieldConfig.self, forKey: .config) ?? FieldConfig()
+        lastUsedAt  = try c.decodeIfPresent(Date.self, forKey: .lastUsedAt)
     }
 }
 

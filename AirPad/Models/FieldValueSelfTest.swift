@@ -274,6 +274,10 @@ enum FieldValueSelfTest {
         ]
         // one present-but-unfilled value, to exercise the nullable state
         items.append(makeField(byKind[.text]!, value: nil))
+        // C8 — a LEGACY `.rating` atomic so the fixture exercises coexistence:
+        // the old RatingAttributeRow renders (and stays editable via
+        // RatingEditSheet) below the new stacked-pairs grid.
+        items.append(NodeItem(id: "fixture-legacy-rating", type: .rating, createdAt: date0, rating: Rating(value: 3)))
         return makeNode(items: items, foldIndex: nil)
     }
 

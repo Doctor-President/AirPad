@@ -712,7 +712,17 @@ final class CorpusStore {
 
     func load() async {
         // Import any nodes staged by the share extension first
+        #if DEBUG
+        // -FieldFixtureNode runs against a throwaway scratch root (see
+        // iCloudDriveService.setup); skip the inbox import so it can't consume
+        // the user's real pending shares into the scratch corpus.
+        let isFieldFixtureRun = ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode")
+        if !isFieldFixtureRun {
+            await importFromAppGroupInbox()
+        }
+        #else
         await importFromAppGroupInbox()
+        #endif
         do {
             let loaded = try await service.loadAllNodes()
             let layout = try await service.loadCanvasLayout()

@@ -17,9 +17,46 @@ actor iCloudDriveService {
     // MARK: - Setup
 
     func setup() async {
+        #if DEBUG
+        // Device-safety for the Stage 5.1 -FieldFixtureNode visual check: root
+        // at a THROWAWAY local scratch dir so the twelve-kind fixture (and any
+        // derived write a background pass makes over it — saveNode, saveCard,
+        // saveCorpusIndex, …) can NEVER reach the real iCloud corpus. Every I/O
+        // in this actor flows through `requireRoot()`, so redirecting the root
+        // is a single, total isolation point; the real container is not even
+        // resolved in this mode. See `CorpusStore.load`'s injection.
+        if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode"),
+           trySetupFieldFixtureScratch() {
+            return
+        }
+        #endif
         if await trySetupICloud() { return }
         trySetupLocalFallback()
     }
+
+    #if DEBUG
+    private func trySetupFieldFixtureScratch() -> Bool {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
+        let root = caches.appendingPathComponent("AirPadFieldFixtureScratch")
+        do {
+            // Start clean each launch so the injected fixture is the ONLY node
+            // and never accumulates / duplicates against a prior scratch run.
+            if FileManager.default.fileExists(atPath: root.path) {
+                try FileManager.default.removeItem(at: root)
+            }
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("nodes"),
+                withIntermediateDirectories: true
+            )
+            rootURL = root
+            isAvailable = true
+            usingLocalFallback = true
+            return true
+        } catch {
+            return false
+        }
+    }
+    #endif
 
     private func trySetupICloud() async -> Bool {
         let identifier = containerIdentifier

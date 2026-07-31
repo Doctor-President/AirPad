@@ -256,6 +256,7 @@
 		F37D50BEE893123479290739 /* SolarFlareTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33AB8A695AFDD807BC72EBE9 /* SolarFlareTuning.swift */; };
 		F39A0B2613577ADDA29F4230 /* HDBSCANTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */; };
 		F59A93CA70C8FE71BC12E118 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
+		F6CAEE543F6F38B6B7198993 /* FieldPairsGrid.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */; };
 		F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 239B75A26B2BA53534F71428 /* LayoutService.swift */; };
 		F9BF2E691950BCBE9DA2906C /* CanvasLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */; };
 		FABCB8A1724DA28BB708A093 /* TTSEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39893411C3255475A44AC19 /* TTSEngine.swift */; };
@@ -323,6 +324,7 @@
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPairsGrid.swift; sourceTree = "<group>"; };
 		219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagTerritoryLayout.swift; sourceTree = "<group>"; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
@@ -718,6 +720,7 @@
 				1794E183AE4B40A9C89EAAC6 /* DisplayEditMode.swift */,
 				187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */,
 				2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */,
+				217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
 				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
 				88A13C2113DC9781B455DF42 /* PastePadView.swift */,
@@ -1327,6 +1330,7 @@
 				3437F7F4A49EF84BA0BCB836 /* FieldCreationSheet.swift in Sources */,
 				53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */,
 				8C816C9A65368BD8D812CFFB /* FieldKind.swift in Sources */,
+				F6CAEE543F6F38B6B7198993 /* FieldPairsGrid.swift in Sources */,
 				C2FDA9A2A99BDA1CA9FC2281 /* FieldPreset.swift in Sources */,
 				E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */,
 				3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */,

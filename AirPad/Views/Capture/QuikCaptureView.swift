@@ -280,7 +280,6 @@ struct QuikCaptureView: View {
                 // re-reading the store mid-drag.
                 let payloadEntries = Array(node.items.enumerated()).filter { !$1.type.isAtomic }
                 let payloadSnapshot = payloadEntries.map { $0.element.id }
-                let atomicCount = node.items.count - payloadEntries.count
                 // Images inserted inline into a note render inside that note's
                 // flowing document; hide them from the standalone list below.
                 let inlineImageIDs = Set(
@@ -288,11 +287,10 @@ struct QuikCaptureView: View {
                         .flatMap { MarkdownCodec.referencedImageItemIDs(in: $0) }
                 )
 
-                // Pinned Attributes section — renders only when the node
-                // has ≥1 atomic entry.
-                if atomicCount > 0 {
-                    QuikCaptureAttributesSection(nodeID: node.id)
-                }
+                // Stage 5.2 C10 — Attributes section ALWAYS shown in QuickCapture
+                // so its "+" (field creation) is available whether or not the
+                // node already has atomics; empty → just the header + "+".
+                QuikCaptureAttributesSection(nodeID: node.id)
 
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
                     ForEach(payloadEntries, id: \.element.id) { pair in
@@ -950,6 +948,7 @@ private struct QuikCaptureAttributesSection: View {
 
     @Environment(CorpusStore.self) private var store
     @State private var editingItem: NodeItem? = nil
+    @State private var showFieldSheet = false   // Stage 5.2 C10 — the "+"
 
     private var node: Node? {
         store.nodes.first { $0.id == nodeID }
@@ -961,12 +960,27 @@ private struct QuikCaptureAttributesSection: View {
         return Array(node.items.prefix(atomicCount))
     }
 
+    /// Stage 5.2 C10 — `.field` atomics (rendered via the shared FieldPairsGrid)
+    /// vs non-field atomics (legacy `.rating`, its own row + edit sheet).
+    private var fieldItems: [NodeItem] { atomicItems.filter { $0.type == .field } }
+    private var nonFieldAtomics: [NodeItem] { atomicItems.filter { $0.type != .field } }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             sectionHeader
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(atomicItems) { item in
-                    rowFor(item)
+            // Stage 5.2 C10 — QuickCapture renders `.field` atomics through the
+            // SAME FieldPairsGrid as the detail view (one component; the narrower
+            // QuickCapture width just yields fewer columns — that IS the
+            // one-primitive property). Legacy `.rating` keeps its own full-width
+            // row + edit sheet.
+            if !fieldItems.isEmpty {
+                FieldPairsGrid(fieldItems: fieldItems)
+            }
+            if !nonFieldAtomics.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(nonFieldAtomics) { item in
+                        rowFor(item)
+                    }
                 }
             }
         }
@@ -982,23 +996,34 @@ private struct QuikCaptureAttributesSection: View {
                 .presentationDragIndicator(.visible)
             }
         }
+        .sheet(isPresented: $showFieldSheet) {
+            FieldCreationSheet(nodeID: nodeID)
+        }
     }
 
     private var sectionHeader: some View {
-        // Stage 5.2 C9 — QuickCapture's vestigial rating "+" removed. It was a
-        // disabled, empty-action stub (a copy of the pre-C8 NodeDetailView dead
-        // stub) — it never actually minted a rating. QuickCapture is a
-        // fast-capture surface, so it deliberately does NOT carry the
-        // three-section Add Field sheet (CC's recommendation; T's call): field
-        // creation is a deliberate act for the full detail view. Existing
-        // atomics still render below, and an existing rating still edits via
-        // QuikCaptureRatingEditSheet.
+        // Stage 5.2 C10 — QuickCapture DOES get field creation (T's call,
+        // overriding CC's C9 recommendation): the "+" opens the SAME
+        // FieldCreationSheet as the detail view — same component, same
+        // @AppStorage remembered section, same resolvePreset reuse-by-id, not a
+        // trimmed variant. The section is ungated in the parent, so this "+"
+        // shows whether or not the node already has attributes — it is the
+        // first-field entry point on the capture surface.
         HStack(spacing: 8) {
             Text("ATTRIBUTES")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .tracking(0.6)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Spacer(minLength: 0)
+            Button {
+                showFieldSheet = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
         }
     }
 

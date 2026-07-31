@@ -3787,6 +3787,46 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    // MARK: - Field value editing (Stage 5.3)
+
+    /// Set a field's value IN PLACE (edit). Editing does not reorder items, so
+    /// the atomic-prefix + foldIndex invariants are untouched (landmine 4).
+    /// `upperValue` is the range second value (nil for non-ranges). Binds the
+    /// RAW payload — never a display string.
+    func setFieldValue(itemID: String, nodeID: String, value: FieldPayload?, upperValue: FieldPayload? = nil) async {
+        guard let nIdx = nodes.firstIndex(where: { $0.id == nodeID }),
+              let iIdx = nodes[nIdx].items.firstIndex(where: { $0.id == itemID }),
+              nodes[nIdx].items[iIdx].type == .field,
+              nodes[nIdx].items[iIdx].field != nil else { return }
+        var updated = nodes[nIdx]
+        updated.items[iIdx].field?.value = value
+        updated.items[iIdx].field?.upperValue = upperValue
+        let now = Date()
+        updated.items[iIdx].updatedAt = now
+        updated.updatedAt = now
+        await updateNode(updated)
+    }
+
+    /// Clear a field back to UNFILLED — a genuinely null value (reuses the
+    /// Stage 1 nullable), not an empty string / sentinel.
+    func clearFieldValue(itemID: String, nodeID: String) async {
+        await setFieldValue(itemID: itemID, nodeID: nodeID, value: nil, upperValue: nil)
+    }
+
+    /// Remove a field FROM THIS NODE only. The corpus-level definition survives
+    /// and stays assignable — this is NOT the three-operation corpus-wide delete.
+    /// Removing an atomic shifts an authored foldIndex down by one (the inverse
+    /// of `attachField`).
+    func removeField(itemID: String, nodeID: String) async {
+        guard let nIdx = nodes.firstIndex(where: { $0.id == nodeID }),
+              nodes[nIdx].items.contains(where: { $0.id == itemID && $0.type == .field }) else { return }
+        var updated = nodes[nIdx]
+        updated.items.removeAll { $0.id == itemID }
+        updated.foldIndex = updated.foldIndex.map { min(updated.items.count, max(0, $0 - 1)) }
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
     /// Collections reorder — reorders the user collections to match `orderedIDs`
     /// (Dashboard drag-to-reorder). Mirrors `setGalleryItemOrder`: the order IS
     /// the array position (collections persist in array order — no order field,

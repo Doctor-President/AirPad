@@ -2096,7 +2096,7 @@ private struct AttributesSection: View {
             // untouched) below the grid: transitional coexistence, the old row
             // style directly beside the new pairs.
             if !fieldItems.isEmpty {
-                FieldPairsGrid(fieldItems: fieldItems)
+                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems)
             }
             if !nonFieldAtomics.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {

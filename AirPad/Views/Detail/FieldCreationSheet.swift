@@ -198,6 +198,7 @@ private struct NewFieldForm: View {
     @State private var ratingScale = 5
     @State private var ratingStyle: RatingStyle = .stars
     @State private var rangeEnabled = false
+    @State private var dateHasTime = false
     @State private var vocabValues: [VocabularyValue] = []
     @State private var newVocabLabel = ""
 
@@ -258,7 +259,9 @@ private struct NewFieldForm: View {
                 .disabled(ratingScale > 5)
         case .vocabulary:
             vocabularyEditor
-        case .date, .location, .text, .boolean, .url, .nodeReference:
+        case .date:
+            Toggle("Include time", isOn: $dateHasTime)
+        case .location, .text, .boolean, .url, .nodeReference:
             EmptyView()
         }
     }
@@ -317,7 +320,9 @@ private struct NewFieldForm: View {
             return FieldConfig(ratingScale: ratingScale, ratingStyle: ratingScale > 5 ? .numeric : ratingStyle)
         case .vocabulary:
             return FieldConfig(vocabularyValues: vocabValues)
-        case .date, .location, .text, .boolean, .url, .nodeReference:
+        case .date:
+            return FieldConfig(dateHasTime: dateHasTime)
+        case .location, .text, .boolean, .url, .nodeReference:
             return FieldConfig()
         }
     }

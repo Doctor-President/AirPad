@@ -10,18 +10,51 @@ import SwiftUI
 /// cell). Callers gate on non-emptiness.
 struct FieldPairsGrid: View {
 
+    let nodeID: String
     let fieldItems: [NodeItem]
 
     @Environment(CorpusStore.self) private var store
+    @State private var editingItem: NodeItem?
 
     var body: some View {
         StackedPairsFlow(minColumnWidth: 150, columnSpacing: 24, rowSpacing: 18) {
             ForEach(resolvedPairs, id: \.item.id) { pair in
-                FieldPairCell(
-                    value: pair.value,
-                    definition: pair.definition,
-                    resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
-                )
+                cell(for: pair)
+            }
+        }
+        .sheet(item: $editingItem) { item in
+            if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
+                FieldValueEditorSheet(nodeID: nodeID, item: item, definition: def)
+            }
+        }
+    }
+
+    // Extracted so the ForEach's ViewBuilder stays cheap to type-check.
+    @ViewBuilder
+    private func cell(for pair: (item: NodeItem, value: FieldValue, definition: FieldDefinition)) -> some View {
+        FieldPairCell(
+            value: pair.value,
+            definition: pair.definition,
+            resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title },
+            // Stage 5.3 — direct-manip write (boolean/rating) vs sheet edit.
+            onDirectSet: { payload in
+                Task {
+                    await store.setFieldValue(
+                        itemID: pair.item.id, nodeID: nodeID,
+                        value: payload, upperValue: pair.value.upperValue
+                    )
+                }
+            },
+            onRequestEdit: { editingItem = pair.item }
+        )
+        .contextMenu {
+            if pair.value.value != nil {
+                Button("Clear value", role: .destructive) {
+                    Task { await store.clearFieldValue(itemID: pair.item.id, nodeID: nodeID) }
+                }
+            }
+            Button("Remove field", role: .destructive) {
+                Task { await store.removeField(itemID: pair.item.id, nodeID: nodeID) }
             }
         }
     }
@@ -46,6 +79,10 @@ struct FieldPairCell: View {
     let value: FieldValue
     let definition: FieldDefinition
     let resolveNodeTitle: (String) -> String?
+    /// Stage 5.3 — direct-manipulation write (boolean toggles; rating taps land
+    /// in C2). Sheet-kinds route through `onRequestEdit` instead.
+    var onDirectSet: (FieldPayload) -> Void = { _ in }
+    var onRequestEdit: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -57,6 +94,23 @@ struct FieldPairCell: View {
             valueView
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { handleTap() }
+    }
+
+    /// Tapping a value edits it: boolean toggles in place (nil → Yes → No → Yes);
+    /// the sheet-kinds open the editor. rating (C2) + the config kinds (C2) +
+    /// vocabulary/nodeReference (C3) are wired in their commits.
+    private func handleTap() {
+        switch definition.kind {
+        case .boolean:
+            let current: Bool = { if case .boolean(let b)? = value.value { return b }; return false }()
+            onDirectSet(.boolean(!current))
+        case .number, .text, .url, .date, .location:
+            onRequestEdit()
+        case .measurement, .duration, .money, .rating, .vocabulary, .nodeReference:
+            break   // wired in C2 / C3
+        }
     }
 
     @ViewBuilder

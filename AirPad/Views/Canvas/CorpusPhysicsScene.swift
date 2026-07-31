@@ -109,6 +109,28 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
+    /// #3 focus highlight on Map — the same primitive as the batch-select ring
+    /// (`applySelectionOutline`) that T asked us to leverage, but in the focus
+    /// colour (electric cyan `#00BFFF`) and slightly wider, so a focused orb
+    /// reads as "focused" not "selected". Single-focus: any prior focus ring is
+    /// removed first. `nil` clears it. Persists (a named child tracks the orb)
+    /// until CanvasView clears it on the user's next touch — same
+    /// `focusedHighlightNodeID` semantics as the card/tile glow.
+    func applyFocusOutline(nodeID: String?) {
+        for (_, sprite) in nodeSprites {
+            sprite.children.first(where: { $0.name == "focusOutline" })?.removeFromParent()
+        }
+        guard let nodeID, let sprite = nodeSprites[nodeID] else { return }
+        let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
+        let outline = SKShapeNode(circleOfRadius: radius + 6)
+        outline.strokeColor = UIColor(red: 0x00 / 255.0, green: 0xBF / 255.0, blue: 0xFF / 255.0, alpha: 1)
+        outline.fillColor = .clear
+        outline.lineWidth = 4
+        outline.zPosition = 1.0
+        outline.name = "focusOutline"
+        sprite.addChild(outline)
+    }
+
     /// Animate all existing sprites to new positions (view-only rearrangement; does not
     /// mutate canvasLayout). Positions use SpriteKit convention (y-up from center).
     func rearrangeToPositions(_ positions: [String: CGPoint]) {
@@ -174,7 +196,7 @@ final class CorpusPhysicsScene: SKScene {
     /// #3 (search-navigates-by-view) — fly the camera to a node's orb WITHOUT
     /// the detail-preview treatment `centerAndZoomNode` does: no node scale-up,
     /// no fade-to-α0, no overlay, no physics removal. This is the Map consumer
-    /// of the shared `pendingFocusNodeID` signal — "show me where it lives, in
+    /// of the shared focus request (`requestFocus`) — "show me where it lives, in
     /// the view I'm already in." Same 0.38s ease as the grid scroll so the four
     /// views feel consistent. A scale-pulse emphasis is deliberately omitted:
     /// `applyOrbScales` rewrites each orb's scale every frame, so a hardcoded

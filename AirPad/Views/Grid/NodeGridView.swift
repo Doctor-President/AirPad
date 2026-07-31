@@ -238,6 +238,8 @@ struct NodeGridView: View {
                                     navigationPath.append(node)
                                 }
                             }
+                            // #3 — shared focus glow (matches the tile's 14pt clip).
+                            .focusHighlight(nodeID: node.id, cornerRadius: 14)
                         }
                     }
                     .padding(.leading, tileSpacing)
@@ -252,10 +254,8 @@ struct NodeGridView: View {
                         .frame(width: 0, height: 0)
                 }
                 // #3 — shared focus signal: scroll the grid to the focused tile.
-                .onChange(of: router.pendingFocusNodeID) { _, id in
-                    guard let id else { return }
+                .onFocusRequest { id in
                     withAnimation { proxy.scrollTo(id, anchor: .center) }
-                    router.pendingFocusNodeID = nil
                 }
                 .overlay { scrubberOverlay(proxy: proxy) }
             }

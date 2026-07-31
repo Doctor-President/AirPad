@@ -178,6 +178,8 @@ struct VerticalScrollView: View {
                             presentation: .vertical
                         )
                         .frame(height: cardHeight)
+                        // #3 — shared focus glow (matches NodeCardView's 30pt face).
+                        .focusHighlight(nodeID: node.id, cornerRadius: 30)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .animation(.easeInOut(duration: 0.18), value: selection.isActive)
                         .id(node.id)
@@ -246,13 +248,10 @@ struct VerticalScrollView: View {
             }
             // #3 — shared focus signal: scroll the card stack to the focused node
             // in place (cards are keyed by node id).
-            .onChange(of: router.pendingFocusNodeID) { _, id in
-                guard let id,
-                      let target = displayItems.first(where: { $0.id == id })?.id
-                else { return }
-                router.pendingFocusNodeID = nil
+            .onFocusRequest { id in
+                guard displayItems.contains(where: { $0.id == id }) else { return }
                 withAnimation(.spring(response: 0.4)) {
-                    proxy.scrollTo(target, anchor: .center)
+                    proxy.scrollTo(id, anchor: .center)
                 }
             }
         }

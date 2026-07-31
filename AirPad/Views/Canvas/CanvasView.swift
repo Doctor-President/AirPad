@@ -382,11 +382,16 @@ struct CanvasView: View {
             }
             // #3 — shared focus signal: Map flies the camera to the node's orb
             // in place (no view-mode switch, no Detail push).
-            .onChange(of: router.pendingFocusNodeID) { _, id in
-                guard let id else { return }
+            .onFocusRequest { id in
                 scene.focusNode(id)
-                router.pendingFocusNodeID = nil
             }
+            // #3 focus highlight on Map — a persistent cyan ring around the
+            // focused orb (leverages the batch-select ring primitive). Shown
+            // while `focusedHighlightNodeID` is set, cleared (nil) on next touch.
+            .onChange(of: router.focusedHighlightNodeID) { _, id in
+                scene.applyFocusOutline(nodeID: id)
+            }
+            .onAppear { scene.applyFocusOutline(nodeID: router.focusedHighlightNodeID) }
             .onChange(of: navigationPath.count) { _, newCount in
                 // Authoritative depth signal. `navigationPath` only ever
                 // contains Node values (the sole `.navigationDestination

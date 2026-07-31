@@ -1,7 +1,5 @@
 import SwiftUI
-#if DEBUG
 import UIKit
-#endif
 
 /// Full canvas surface — body switcher (5 view modes) + overlay chrome
 /// (top row, selection header, batch bar, banners) + chrome-driven sheets
@@ -331,6 +329,13 @@ struct CanvasChrome: View {
             }
             #endif
         }
+        // #3 — clear the persistent focus highlight on the user's next touch
+        // anywhere. Installed once on the window; observes touches without
+        // consuming them (see FocusDismissTouchProbe).
+        .background(
+            FocusDismissTouchProbe { router.clearFocusHighlight() }
+                .frame(width: 0, height: 0)
+        )
         .animation(.spring(response: 0.35), value: store.iCloudUnavailable)
         .sheet(isPresented: $showFilterPanel) {
             FilterPanelView(scope: scope)
@@ -1045,6 +1050,166 @@ extension View {
             glassEffect(.regular.interactive(), in: shape)
         } else {
             background(.thinMaterial, in: shape)
+        }
+    }
+}
+
+// MARK: - #3 focus request (shared plumbing)
+// The move handler + the glow live here beside `chromeSurface` because, like
+// it, they are ONE treatment every canvas surface (Map / List / Grid /
+// CoverFlow / vertical Card stack) reuses — the modifier owns the tricky parts
+// so no surface re-implements them (and drifts, the BUG-10 failure mode).
+
+/// The shared #3 focus-request handler. Each surface applies
+/// `.onFocusRequest { id in … }` with its own move action (fly the camera /
+/// scroll to the row). This modifier owns the parts identical across all of
+/// them:
+///   - observe `router.focusRequest?.token` so a repeat request for the SAME
+///     node still fires (the token advances even when the nodeID repeats);
+///   - ALSO run on `.onAppear`, so a surface that MOUNTS with an unhandled
+///     request still lands it (capture-return sets the request before the
+///     origin view re-appears; `.onChange` never fires for a value set before
+///     mount — the exact silent miss this replaces);
+///   - dedupe via a per-surface `lastHandledToken` so re-appearing after
+///     already handling the current token does nothing;
+///   - defer the move ONE runloop so a panel resize riding along with the
+///     request (Librarian raiseToPeek) has applied its layout before a
+///     `scrollTo` computes offsets — otherwise the scroll mis-lands.
+private struct FocusRequestHandler: ViewModifier {
+    @Environment(AppRouter.self) private var router
+    let perform: (String) -> Void
+    @State private var lastHandledToken = 0
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: router.focusRequest?.token) { _, _ in handle() }
+            .onAppear { handle() }
+    }
+
+    private func handle() {
+        guard let request = router.focusRequest,
+              request.token != lastHandledToken else { return }
+        lastHandledToken = request.token
+        let nodeID = request.nodeID
+        // One-runloop defer — see the doc comment (panel resize must land first).
+        DispatchQueue.main.async { perform(nodeID) }
+    }
+}
+
+extension View {
+    /// Handle the shared #3 focus request with a per-surface move action.
+    /// `perform` receives the node id to move the viewport to.
+    func onFocusRequest(_ perform: @escaping (String) -> Void) -> some View {
+        modifier(FocusRequestHandler(perform: perform))
+    }
+}
+
+/// The shared focus HIGHLIGHT — a PERSISTENT Klein-blue → electric-cyan
+/// gradient outline over the focused node's card/tile on the scrolling
+/// surfaces (Grid, CoverFlow, vertical Card stack). List uses a full-strip fill
+/// and Map a cyan orb ring (`CorpusPhysicsScene.applyFocusOutline`) instead —
+/// same identity, per-surface treatment. Bound declaratively to
+/// `router.focusedHighlightNodeID`, so it fades IN when this node becomes the
+/// focus target and fades OUT when the user's next touch clears it (T: "persist
+/// until the user's next touch"). A landed focus glows, a dropped one shows
+/// nothing — still the diagnostic. Sensible defaults; T dials on device.
+private struct FocusHighlight: ViewModifier {
+    @Environment(AppRouter.self) private var router
+    let nodeID: String
+    var cornerRadius: CGFloat = 20
+    private var isHighlighted: Bool { router.focusedHighlightNodeID == nodeID }
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color(hexString: "1B59C2"), Color(hexString: "00BFFF")],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 3
+                    )
+                    .shadow(color: Color(hexString: "00BFFF").opacity(isHighlighted ? 0.7 : 0), radius: 10)
+                    .opacity(isHighlighted ? 1 : 0)
+                    .allowsHitTesting(false)
+            }
+            .animation(.easeInOut(duration: 0.25), value: isHighlighted)
+    }
+}
+
+extension View {
+    /// Draw the shared #3 focus glow on this node's cell while it is the focus
+    /// target. `cornerRadius` should match the cell's own rounding.
+    func focusHighlight(nodeID: String, cornerRadius: CGFloat) -> some View {
+        modifier(FocusHighlight(nodeID: nodeID, cornerRadius: cornerRadius))
+    }
+}
+
+/// Process-lifetime, window-level, non-consuming touch observer that clears the
+/// persistent focus highlight on the user's next touch anywhere (T: "persist
+/// until the user's next touch"). A 0-duration long-press fires on touch-DOWN;
+/// `cancelsTouchesInView = false` + a simultaneous-recognition delegate mean it
+/// only OBSERVES — it never steals a tap, a scroll, or a map pan. The creating
+/// tap is safe: search / capture set the highlight on touch-UP, so this
+/// recogniser's touch-DOWN for that same tap sees no highlight yet, and only a
+/// SUBSEQUENT touch clears.
+///
+/// A SINGLETON (not a per-view coordinator) so exactly ONE recogniser is ever
+/// installed per window — a per-mount coordinator would accumulate recognisers
+/// as CanvasChrome remounts, since the window outlives each mount. Its `onTouch`
+/// is refreshed each body eval to the current closure (which captures the stable
+/// AppRouter singleton), and it lives for the process, so target lifetime is
+/// never in question.
+final class FocusDismissTouchMonitor: NSObject, UIGestureRecognizerDelegate {
+    static let shared = FocusDismissTouchMonitor()
+    var onTouch: (() -> Void)?
+    private weak var installedWindow: UIWindow?
+
+    func install(on window: UIWindow?) {
+        guard let window, window !== installedWindow else { return }
+        installedWindow = window
+        let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(fire(_:)))
+        recognizer.minimumPressDuration = 0
+        recognizer.cancelsTouchesInView = false
+        recognizer.delaysTouchesBegan = false
+        recognizer.delaysTouchesEnded = false
+        recognizer.delegate = self
+        window.addGestureRecognizer(recognizer)
+    }
+
+    @objc private func fire(_ recognizer: UIGestureRecognizer) {
+        if recognizer.state == .began { onTouch?() }
+    }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+/// Zero-size bridge that hands the current window to `FocusDismissTouchMonitor`
+/// and keeps its `onTouch` closure current. Mounted once in `CanvasChrome`.
+struct FocusDismissTouchProbe: UIViewRepresentable {
+    let onTouch: () -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = ProbeView()
+        view.isUserInteractionEnabled = false
+        view.onWindowChange = { window in
+            FocusDismissTouchMonitor.shared.install(on: window)
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        FocusDismissTouchMonitor.shared.onTouch = onTouch
+    }
+
+    final class ProbeView: UIView {
+        var onWindowChange: ((UIWindow?) -> Void)?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            onWindowChange?(window)
         }
     }
 }

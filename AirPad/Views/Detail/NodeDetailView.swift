@@ -2084,12 +2084,49 @@ private struct AttributesSection: View {
         return [NodeItemType.rating].filter { !present.contains($0) }
     }
 
+    /// Stage 5.1 C6 — resolved `.field` atomics for the stacked-pairs grid.
+    /// Orphaned references (definition deleted / not yet synced) drop out here
+    /// so the grid never places an empty cell.
+    private var fieldPairs: [(item: NodeItem, value: FieldValue, definition: FieldDefinition)] {
+        atomicItems.compactMap { item in
+            guard item.type == .field,
+                  let fv = item.field,
+                  let def = store.fieldDefinition(id: fv.definitionID)
+            else { return nil }
+            return (item, fv, def)
+        }
+    }
+
+    /// Non-field atomics (today: legacy `.rating`) that keep their full-width row.
+    private var nonFieldAtomics: [NodeItem] {
+        atomicItems.filter { $0.type != .field }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             sectionHeader
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(atomicItems) { item in
-                    rowFor(item)
+            // Stage 5.1 C6 — .field atomics render as stacked pairs (label above
+            // value, value emphasised) flowing into a width-derived wrapping grid
+            // (columns from available width — one-primitive, no detail-vs-card
+            // branch). Legacy .rating keeps its full-width row (RatingAttributeRow,
+            // untouched) below the grid: transitional coexistence, the old row
+            // style directly beside the new pairs.
+            if !fieldPairs.isEmpty {
+                StackedPairsFlow(minColumnWidth: 150, columnSpacing: 24, rowSpacing: 18) {
+                    ForEach(fieldPairs, id: \.item.id) { pair in
+                        FieldPairCell(
+                            value: pair.value,
+                            definition: pair.definition,
+                            resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
+                        )
+                    }
+                }
+            }
+            if !nonFieldAtomics.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(nonFieldAtomics) { item in
+                        rowFor(item)
+                    }
                 }
             }
         }
@@ -2152,19 +2189,10 @@ private struct AttributesSection: View {
                     Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
                 }
             )
-        case .field:
-            // Stage 5.1 — resolve the corpus-level definition; render nothing
-            // for an orphaned reference (definition deleted / not yet synced).
-            if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
-                FieldAttributeRow(
-                    value: fv,
-                    definition: def,
-                    resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
-                )
-            }
         default:
-            // No other atomic types. When new atomic kinds land, add their
-            // renderer cases here.
+            // Stage 5.1 C6 — `.field` renders in the stacked-pairs grid (see
+            // `body`), not as a full-width row. Any other atomic kind falls
+            // through here until it gets a renderer.
             EmptyView()
         }
     }
@@ -2232,34 +2260,33 @@ private struct RatingAttributeRow: View {
     }
 }
 
-/// Stage 5.1 — read-only Attributes-section row for a `.field` atomic. Leading
-/// user-owned display name (from the definition), trailing formatted value:
-/// stars for a rating-kind field in the star style, the shared formatter's
-/// string otherwise, and an em dash for a present-but-unfilled value (nullable
-/// value, distinct from the field being absent). No edit sheet or delete
-/// affordance yet — Stage 1 renders existing values; creation / editing / the
-/// three-operation delete are later stages.
-private struct FieldAttributeRow: View {
+/// Stage 5.1 C6 — read-only STACKED PAIR for a `.field` atomic: caption label
+/// ABOVE, value BELOW, both left-aligned. The VALUE carries the weight (larger,
+/// primary ink); the label recedes (small, uppercase, letterspaced, dimmed).
+/// Hierarchy is size + weight + spacing, never hue (T is colorblind — a
+/// tint-based hierarchy is unreadable). Rendered inside `StackedPairsFlow`,
+/// which sizes the cell; a value wider than one column takes a full row.
+/// Unfilled value → em dash in the value position. No edit/delete yet (Stage 1).
+private struct FieldPairCell: View {
 
     let value: FieldValue
     let definition: FieldDefinition
     let resolveNodeTitle: (String) -> String?
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(definition.displayName)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(AppearancePalette.ink)
-
-            Spacer(minLength: 12)
-
-            trailing
+        VStack(alignment: .leading, spacing: 3) {
+            Text(definition.displayName.uppercased())
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .tracking(0.7)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .lineLimit(1)
+            valueView
         }
-        .frame(minHeight: 44)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private var trailing: some View {
+    private var valueView: some View {
         if definition.kind == .rating,
            (definition.config.ratingStyle ?? .stars) == .stars,
            case .rating(let v)? = value.value {
@@ -2268,12 +2295,13 @@ private struct FieldAttributeRow: View {
             value, definition: definition, resolveNodeTitle: resolveNodeTitle
         ) {
             Text(text)
-                .font(.subheadline)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
-                .multilineTextAlignment(.trailing)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+                .lineLimit(1)
+                .truncationMode(.tail)
         } else {
             Text("\u{2014}")   // em dash — present but unfilled
-                .font(.subheadline)
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
@@ -2282,7 +2310,7 @@ private struct FieldAttributeRow: View {
         HStack(spacing: 4) {
             ForEach(0..<scale, id: \.self) { idx in
                 Image(systemName: idx < v ? "star.fill" : "star")
-                    .font(.subheadline.weight(.medium))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(
                         idx < v
                             ? Color(hexString: "FACC15")
@@ -2290,6 +2318,82 @@ private struct FieldAttributeRow: View {
                     )
             }
         }
+    }
+}
+
+/// Stage 5.1 C6 — a width-derived wrapping flow for stacked-pair cells. Column
+/// count comes from AVAILABLE WIDTH, never a context flag: as many uniform
+/// columns of >= `minColumnWidth` as fit. A cell whose intrinsic width exceeds
+/// one column (a long URL value) spans the FULL row instead of breaking
+/// mid-token. This is the one-primitive rule (`ws-card-primitive.md`) — the
+/// same layout gives two columns at 390pt and one at 190pt because the width
+/// says so, with no detail-vs-card branch.
+private struct StackedPairsFlow: Layout {
+    var minColumnWidth: CGFloat
+    var columnSpacing: CGFloat
+    var rowSpacing: CGFloat
+
+    private func columnMetrics(for width: CGFloat) -> (count: Int, colWidth: CGFloat) {
+        guard width > 0 else { return (1, minColumnWidth) }
+        let count = max(1, Int((width + columnSpacing) / (minColumnWidth + columnSpacing)))
+        let colWidth = (width - CGFloat(count - 1) * columnSpacing) / CGFloat(count)
+        return (count, colWidth)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minColumnWidth
+        let frames = frames(for: subviews, width: width)
+        let height = frames.map(\.maxY).max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let frames = frames(for: subviews, width: bounds.width)
+        for (i, f) in frames.enumerated() {
+            subviews[i].place(
+                at: CGPoint(x: bounds.minX + f.minX, y: bounds.minY + f.minY),
+                proposal: ProposedViewSize(width: f.width, height: f.height)
+            )
+        }
+    }
+
+    /// Computes each subview's frame (origin + size) in a local coordinate space
+    /// starting at (0, 0). Cells narrower than a column pack `count` per row; a
+    /// cell wider than one column takes the full container width on its own row.
+    private func frames(for subviews: Subviews, width: CGFloat) -> [CGRect] {
+        let (cols, colWidth) = columnMetrics(for: width)
+        var result: [CGRect] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var colInRow = 0
+
+        func closeRow() {
+            x = 0
+            y += rowHeight + rowSpacing
+            rowHeight = 0
+            colInRow = 0
+        }
+
+        for sv in subviews {
+            let ideal = sv.sizeThatFits(.unspecified)
+            let fullRow = ideal.width > colWidth + 0.5
+            if fullRow {
+                if colInRow != 0 { closeRow() }
+                let h = sv.sizeThatFits(ProposedViewSize(width: width, height: nil)).height
+                result.append(CGRect(x: 0, y: y, width: width, height: h))
+                rowHeight = h
+                closeRow()
+            } else {
+                if colInRow >= cols { closeRow() }
+                let h = sv.sizeThatFits(ProposedViewSize(width: colWidth, height: nil)).height
+                result.append(CGRect(x: x, y: y, width: colWidth, height: h))
+                rowHeight = max(rowHeight, h)
+                x += colWidth + columnSpacing
+                colInRow += 1
+            }
+        }
+        return result
     }
 }
 

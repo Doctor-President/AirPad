@@ -155,6 +155,17 @@ enum FieldValueSelfTest {
             expect(fmt(.text, .text("")), nil, "textEmpty")
             expect(fmt(.number, nil), nil, "unfilled")
             expect(fmt(.nodeReference, .nodeReference(nodeID: "n1"), resolve: { $0 == "n1" ? "Charmander" : nil }), "Charmander", "nodeRef")
+            // .url — DISPLAY strips scheme / www / trailing slash on a bare host…
+            expect(fmt(.url, .url("https://www.example.com/")), "example.com", "urlStrip")
+            expect(fmt(.url, .url("http://example.com/recipes/soup")), "example.com/recipes/soup", "urlPath")
+            expect(FieldValueFormatter.prettyURL("not a url"), "not a url", "urlUnparseable")
+            // …but the STORED value keeps the full URL VERBATIM (display != storage).
+            do {
+                let raw = "https://www.example.com/"
+                let fv = FieldValue(definitionID: byKind[.url]!.id, value: .url(raw))
+                let back = try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(fv))
+                if back.value != .url(raw) { failures.append("T5[urlStore]: stored URL changed — display leaked into storage") }
+            } catch { failures.append("T5[urlStore]: threw \(error)") }
             // money + date are locale-dependent; assert only non-empty presence.
             if (fmt(.money, .money(amount: 12, currencyCode: "USD")) ?? "").isEmpty { failures.append("T5[money]: empty") }
             if (fmt(.date, .date(date0, hasTime: false)) ?? "").isEmpty { failures.append("T5[date]: empty") }
@@ -227,7 +238,7 @@ enum FieldValueSelfTest {
             makeField(byKind[.text]!, value: .text("crispy edges")),
             makeField(byKind[.vocabulary]!, value: .vocabulary(valueIDs: ["v-fire", "v-flying"])),  // multi
             makeField(byKind[.boolean]!, value: .boolean(true)),
-            makeField(byKind[.url]!, value: .url("https://example.com")),
+            makeField(byKind[.url]!, value: .url("https://www.example.com/recipes/roasted-tomato-soup")),
             makeField(byKind[.nodeReference]!, value: .nodeReference(nodeID: "target"))
         ]
         // one present-but-unfilled value, to exercise the nullable state

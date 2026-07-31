@@ -39,4 +39,36 @@ extension FieldKind {
             return false
         }
     }
+
+    /// Stage 5.2 — human label for the kind picker. The "New Field" section is
+    /// the first place a user meets the actual kind vocabulary.
+    var pickerName: String {
+        switch self {
+        case .number:        return "Number"
+        case .measurement:   return "Measurement"
+        case .duration:      return "Duration"
+        case .date:          return "Date"
+        case .money:         return "Money"
+        case .rating:        return "Rating"
+        case .location:      return "Location"
+        case .text:          return "Text"
+        case .vocabulary:    return "Vocabulary"
+        case .boolean:       return "Yes / No"
+        case .url:           return "Link"
+        case .nodeReference: return "Node reference"
+        }
+    }
+
+    /// A plain-CONSEQUENCE note for the picker (not a definition), where one
+    /// helps the choice — written as consequences per the workstream
+    /// (*"won't be sortable"* lands; *"unstructured string"* does not).
+    var pickerNote: String? {
+        switch self {
+        case .text:        return "Free text — won't be sortable or filterable."
+        case .vocabulary:  return "Pick from a reusable list — stays sortable and filterable."
+        case .measurement: return "You'll choose what it measures next."
+        case .boolean:     return "A simple yes or no."
+        default:           return nil
+        }
+    }
 }

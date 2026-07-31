@@ -2073,12 +2073,6 @@ private struct AttributesSection: View {
         return Array(node.items.prefix(atomicCount))
     }
 
-    /// Whether this node already carries a legacy `.rating` atomic — gates the
-    /// section "+"'s Rating item (the singleton contract for the deliberately
-    /// unconverted legacy path).
-    private var hasRating: Bool {
-        atomicItems.contains { $0.type == .rating }
-    }
 
     /// Stage 5.1 C6 — resolved `.field` atomics for the stacked-pairs grid.
     /// Orphaned references (definition deleted / not yet synced) drop out here
@@ -2147,26 +2141,16 @@ private struct AttributesSection: View {
                 .tracking(0.6)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Spacer(minLength: 0)
-            // Stage 5.2 C7 — the section "+" opens the SAME Add Field sheet as
-            // the flyout's "More…" (via the shared `showFieldSheet` binding: one
-            // component, two entry points). The legacy `.rating` add stays
-            // reachable as a sibling menu item — deliberately unconverted, and
-            // NOT folded into the field-definition sheet (which would
-            // misrepresent it as a field). The Attributes section renders only
-            // when it has ≥1 atomic, so this "+" inherently exists only after
-            // the first field — no overlap with the flyout's first-field path.
-            Menu {
-                Button {
-                    showFieldSheet = true
-                } label: {
-                    Label("Add Field…", systemImage: "plus")
-                }
-                Button {
-                    Task { await store.appendRatingItem(nodeID: nodeID) }
-                } label: {
-                    Label("Rating", systemImage: "star.fill")
-                }
-                .disabled(hasRating)
+            // Stage 5.2 C8 — the section "+" opens the Add Field sheet DIRECTLY
+            // (one tap, no intermediate menu), via the shared `showFieldSheet`
+            // binding. The legacy `.rating` CREATION path was removed here to
+            // end the two-vocabularies redundancy: a NEW rating is now the
+            // "Rating" preset (a `.field`, kind rating) in the sheet — the one
+            // place ratings are minted. Existing legacy `.rating` items still
+            // render via RatingAttributeRow and stay editable via RatingEditSheet
+            // (a tap on the row); only new-rating creation is gone.
+            Button {
+                showFieldSheet = true
             } label: {
                 Image(systemName: "plus")
                     .font(.caption.weight(.semibold))

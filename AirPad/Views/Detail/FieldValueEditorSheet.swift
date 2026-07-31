@@ -1,14 +1,15 @@
 import SwiftUI
 
 /// Stage 5.3 — the ONE editor sheet for field values that need input (everything
-/// except `boolean` + `rating`, which are direct-manipulation in the cell). One
-/// presentation, one dismissal, one save path — every sheet-kind routes through
-/// here. ★ Binds the RAW payload, never a display string (landmine 3):
-/// `FieldValueFormatter` is display-only. Clear-to-unfilled (a genuinely null
-/// value) and remove-field-from-this-note are both reachable here.
+/// except `boolean` + star-style `rating`, which are direct-manipulation in the
+/// cell). One presentation, one dismissal, one save path — every sheet-kind
+/// routes through here. ★ Binds the RAW payload, never a display string
+/// (landmine 3): `FieldValueFormatter` is display-only. Clear-to-unfilled (a
+/// genuinely null value) and remove-field-from-this-note are both reachable here.
 ///
-/// C1 kinds: number · text · url · date · location. C2 adds duration · money ·
-/// measurement + ranges; C3 adds vocabulary · nodeReference.
+/// C1 kinds: number · text · url · date · location.
+/// C2 kinds: duration · money · measurement · numeric rating · + RANGES on the
+/// four scalars. C3 adds vocabulary · nodeReference.
 struct FieldValueEditorSheet: View {
 
     let nodeID: String
@@ -18,23 +19,56 @@ struct FieldValueEditorSheet: View {
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
-    // Drafts, seeded from the current RAW value. Grown in C2/C3.
-    @State private var text: String        // text · url · location name · number
+    // Drafts, seeded from the current RAW value / upperValue.
+    @State private var text: String          // text · url · location name · number
     @State private var dateValue: Date
+    @State private var amount: String        // money · measurement amount
+    @State private var currencyCode: String
+    @State private var unit: String
+    @State private var hours: Int
+    @State private var minutes: Int
+    @State private var ratingValue: Int      // numeric rating
+    // Range (upper value) — the four scalar kinds only.
+    @State private var hasRange: Bool
+    @State private var upperText: String
+    @State private var upperAmount: String
+    @State private var upperHours: Int
+    @State private var upperMinutes: Int
 
     init(nodeID: String, item: NodeItem, definition: FieldDefinition) {
         self.nodeID = nodeID
         self.item = item
         self.definition = definition
-        let payload = item.field?.value
-        _text = State(initialValue: Self.seedText(payload))
-        _dateValue = State(initialValue: Self.seedDate(payload))
+        let v = item.field?.value
+        let u = item.field?.upperValue
+        _text = State(initialValue: Self.seedText(v))
+        _dateValue = State(initialValue: Self.seedDate(v))
+        _amount = State(initialValue: Self.seedAmount(v))
+        _currencyCode = State(initialValue: Self.seedCurrency(v))
+        _unit = State(initialValue: Self.seedUnit(v, definition: definition))
+        _hours = State(initialValue: Self.seedHours(v))
+        _minutes = State(initialValue: Self.seedMinutes(v))
+        _ratingValue = State(initialValue: Self.seedRating(v))
+        _hasRange = State(initialValue: u != nil)
+        _upperText = State(initialValue: Self.seedText(u))
+        _upperAmount = State(initialValue: Self.seedAmount(u))
+        _upperHours = State(initialValue: Self.seedHours(u))
+        _upperMinutes = State(initialValue: Self.seedMinutes(u))
     }
+
+    private var isScalar: Bool { [.number, .duration, .measurement, .money].contains(definition.kind) }
+    private var rangeAvailable: Bool { isScalar && definition.config.rangeEnabled }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section { editor }
+                Section { primaryEditor }
+                if rangeAvailable {
+                    Section("Range") {
+                        Toggle("Add an upper value", isOn: $hasRange)
+                        if hasRange { upperEditor }
+                    }
+                }
                 Section {
                     if item.field?.value != nil {
                         Button("Clear value", role: .destructive) { commitClear() }
@@ -52,69 +86,132 @@ struct FieldValueEditorSheet: View {
         .presentationDetents([.medium, .large])
     }
 
+    // MARK: - Editors
+
     @ViewBuilder
-    private var editor: some View {
+    private var primaryEditor: some View {
         switch definition.kind {
         case .number:
-            TextField("Value", text: $text)
-                .keyboardType(.decimalPad)
+            decimalField($text)
         case .text:
-            TextField("Value", text: $text, axis: .vertical)
-                .lineLimit(1...6)
+            TextField("Value", text: $text, axis: .vertical).lineLimit(1...6)
         case .url:
             TextField("https://…", text: $text)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
         case .date:
-            DatePicker(
-                "Date",
-                selection: $dateValue,
-                displayedComponents: definition.config.dateHasTime ? [.date, .hourAndMinute] : [.date]
-            )
-            .datePickerStyle(.graphical)
+            DatePicker("Date", selection: $dateValue,
+                       displayedComponents: definition.config.dateHasTime ? [.date, .hourAndMinute] : [.date])
+                .datePickerStyle(.graphical)
         case .location:
             TextField("Place", text: $text)
-        default:
-            // C2/C3 kinds — their editor lands in a later commit; unreachable in
-            // C1 because the cell only routes these five kinds to the sheet.
+        case .duration:
+            durationFields($hours, $minutes)
+        case .money:
+            decimalField($amount)
+            Picker("Currency", selection: $currencyCode) {
+                ForEach(FieldCurrency.options, id: \.self) { Text($0).tag($0) }
+            }
+        case .measurement:
+            decimalField($amount)
+            Picker("Unit", selection: $unit) {
+                ForEach(definition.config.dimension?.units ?? [], id: \.self) { Text($0).tag($0) }
+            }
+        case .rating:
+            // Reached only for the NUMERIC style; star style is direct-manip in the cell.
+            Stepper("\(ratingValue) / \(definition.config.ratingScale ?? 5)", value: $ratingValue,
+                    in: 0...(definition.config.ratingScale ?? 5))
+        case .boolean, .vocabulary, .nodeReference:
             Text("Editing for \(definition.kind.pickerName) lands in a later commit.")
                 .foregroundStyle(.secondary)
         }
     }
 
-    /// Build the RAW payload from the drafts. Empty input → nil (unfilled).
+    @ViewBuilder
+    private var upperEditor: some View {
+        switch definition.kind {
+        case .number:      decimalField($upperText)
+        case .money:       decimalField($upperAmount)
+        case .measurement: decimalField($upperAmount)
+        case .duration:    durationFields($upperHours, $upperMinutes)
+        default:           EmptyView()
+        }
+    }
+
+    private func decimalField(_ binding: Binding<String>) -> some View {
+        TextField("0", text: binding).keyboardType(.decimalPad)
+    }
+
+    private func durationFields(_ h: Binding<Int>, _ m: Binding<Int>) -> some View {
+        HStack {
+            TextField("hr", value: h, format: .number).keyboardType(.numberPad).frame(width: 60)
+            Text("hr").foregroundStyle(.secondary)
+            TextField("min", value: m, format: .number).keyboardType(.numberPad).frame(width: 60)
+            Text("min").foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Build payloads (RAW)
+
     private func buildPayload() -> FieldPayload? {
         switch definition.kind {
         case .number:
-            let t = text.trimmingCharacters(in: .whitespaces)
-            guard !t.isEmpty, let d = Decimal(string: t) else { return nil }
-            return .number(d)
+            return decimal(text).map { .number($0) }
         case .text:
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? nil : .text(t)
         case .url:
             let t = text.trimmingCharacters(in: .whitespaces)
-            return t.isEmpty ? nil : .url(t)   // ★ verbatim — prettyURL is display only
+            return t.isEmpty ? nil : .url(t)   // ★ verbatim
         case .date:
             return .date(dateValue, hasTime: definition.config.dateHasTime)
         case .location:
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !t.isEmpty else { return nil }
-            // Preserve any existing coordinate; C1 edits the NAME only.
             if case .location(_, let lat, let lon)? = item.field?.value {
                 return .location(name: t, latitude: lat, longitude: lon)
             }
             return .location(name: t, latitude: nil, longitude: nil)
-        default:
-            return item.field?.value   // unimplemented kinds: leave unchanged
+        case .duration:
+            let secs = Double(max(0, hours) * 3600 + max(0, minutes) * 60)
+            return secs == 0 ? nil : .duration(seconds: secs)
+        case .money:
+            return decimal(amount).map { .money(amount: $0, currencyCode: currencyCode) }
+        case .measurement:
+            guard let d = decimal(amount) else { return nil }
+            return .measurement(amount: d, unit: unit)
+        case .rating:
+            return .rating(ratingValue)
+        case .boolean, .vocabulary, .nodeReference:
+            return item.field?.value   // unimplemented here: leave unchanged
         }
     }
 
+    private func buildUpper() -> FieldPayload? {
+        guard hasRange else { return nil }
+        switch definition.kind {
+        case .number:      return decimal(upperText).map { .number($0) }
+        case .money:       return decimal(upperAmount).map { .money(amount: $0, currencyCode: currencyCode) }
+        case .measurement: return decimal(upperAmount).map { .measurement(amount: $0, unit: unit) }
+        case .duration:
+            let secs = Double(max(0, upperHours) * 3600 + max(0, upperMinutes) * 60)
+            return secs == 0 ? nil : .duration(seconds: secs)
+        default:           return nil
+        }
+    }
+
+    private func decimal(_ s: String) -> Decimal? {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        guard !t.isEmpty else { return nil }
+        return Decimal(string: t)
+    }
+
+    // MARK: - Commit
+
     private func commitSave() {
         let payload = buildPayload()
+        let upper = buildUpper()
         Task {
-            await store.setFieldValue(itemID: item.id, nodeID: nodeID, value: payload, upperValue: item.field?.upperValue)
+            await store.setFieldValue(itemID: item.id, nodeID: nodeID, value: payload, upperValue: upper)
             dismiss()
         }
     }
@@ -129,18 +226,44 @@ struct FieldValueEditorSheet: View {
 
     // MARK: - Seeds (raw → draft)
 
-    private static func seedText(_ payload: FieldPayload?) -> String {
-        switch payload {
-        case .number(let d)?:          return "\(d)"
-        case .text(let s)?:            return s
-        case .url(let s)?:             return s
+    private static func seedText(_ p: FieldPayload?) -> String {
+        switch p {
+        case .number(let d)?:            return "\(d)"
+        case .text(let s)?:              return s
+        case .url(let s)?:               return s
         case .location(let name, _, _)?: return name
-        default:                       return ""
+        default:                         return ""
         }
     }
-
-    private static func seedDate(_ payload: FieldPayload?) -> Date {
-        if case .date(let d, _)? = payload { return d }
+    private static func seedDate(_ p: FieldPayload?) -> Date {
+        if case .date(let d, _)? = p { return d }
         return Date()
+    }
+    private static func seedAmount(_ p: FieldPayload?) -> String {
+        switch p {
+        case .money(let a, _)?:       return "\(a)"
+        case .measurement(let a, _)?: return "\(a)"
+        default:                      return ""
+        }
+    }
+    private static func seedCurrency(_ p: FieldPayload?) -> String {
+        if case .money(_, let code)? = p { return code }
+        return FieldCurrency.localeDefault
+    }
+    private static func seedUnit(_ p: FieldPayload?, definition: FieldDefinition) -> String {
+        if case .measurement(_, let u)? = p { return u }
+        return definition.config.dimension?.defaultUnit ?? ""
+    }
+    private static func seedHours(_ p: FieldPayload?) -> Int {
+        if case .duration(let s)? = p { return Int(s) / 3600 }
+        return 0
+    }
+    private static func seedMinutes(_ p: FieldPayload?) -> Int {
+        if case .duration(let s)? = p { return (Int(s) % 3600) / 60 }
+        return 0
+    }
+    private static func seedRating(_ p: FieldPayload?) -> Int {
+        if case .rating(let v)? = p { return v }
+        return 0
     }
 }

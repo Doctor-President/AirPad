@@ -106,18 +106,24 @@ struct FieldPairCell: View {
         case .boolean:
             let current: Bool = { if case .boolean(let b)? = value.value { return b }; return false }()
             onDirectSet(.boolean(!current))
-        case .number, .text, .url, .date, .location:
+        case .number, .text, .url, .date, .location, .duration, .money, .measurement:
             onRequestEdit()
-        case .measurement, .duration, .money, .rating, .vocabulary, .nodeReference:
-            break   // wired in C2 / C3
+        case .rating:
+            // Star style is DIRECT MANIPULATION per-star (see `stars`); the
+            // whole-cell tap is a no-op there. Numeric style opens the sheet.
+            if (definition.config.ratingStyle ?? .stars) != .stars { onRequestEdit() }
+        case .vocabulary, .nodeReference:
+            break   // wired in C3
         }
     }
 
     @ViewBuilder
     private var valueView: some View {
         if definition.kind == .rating,
-           (definition.config.ratingStyle ?? .stars) == .stars,
-           case .rating(let v)? = value.value {
+           (definition.config.ratingStyle ?? .stars) == .stars {
+            // Stage 5.3 — a star-style rating ALWAYS shows its stars (empty when
+            // unfilled), not the em dash, so direct-manip has a target to tap.
+            let v: Int = { if case .rating(let n)? = value.value { return n }; return 0 }()
             stars(v, scale: definition.config.ratingScale ?? 5)
         } else if let text = FieldValueFormatter.display(
             value, definition: definition, resolveNodeTitle: resolveNodeTitle
@@ -154,6 +160,10 @@ struct FieldPairCell: View {
                             ? Color(hexString: "FACC15")
                             : AppearancePalette.ink.opacity(0.25)
                     )
+                    .contentShape(Rectangle())
+                    // Stage 5.3 — DIRECT MANIPULATION: tap star n → set n; tap the
+                    // current top star again → clear to 0.
+                    .onTapGesture { onDirectSet(.rating(idx + 1 == v ? 0 : idx + 1)) }
             }
         }
     }

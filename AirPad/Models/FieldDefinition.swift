@@ -8,6 +8,35 @@ enum MeasurementDimension: String, Codable, Equatable, CaseIterable {
     case weight
     case distance
     case temperature
+
+    /// Closed unit list for this dimension (Stage 5.3). A typed structure (a
+    /// switch), NOT a string-keyed dict — the editor offers ONLY these, so a
+    /// volume field can never store grams. The value stores the chosen unit as a
+    /// `String` (matching `FieldPayload.measurement`).
+    var units: [String] {
+        switch self {
+        case .volume:      return ["ml", "L", "tsp", "tbsp", "cup", "fl oz", "pt", "qt", "gal"]
+        case .weight:      return ["g", "kg", "oz", "lb"]
+        case .distance:    return ["mm", "cm", "m", "km", "in", "ft", "yd", "mi"]
+        case .temperature: return ["°C", "°F", "K"]
+        }
+    }
+
+    var defaultUnit: String { units.first ?? "" }
+}
+
+/// Stage 5.3 — the closed currency set for the `money` editor. A curated list of
+/// common ISO 4217 codes (typed structure, not a dict), with the user's locale
+/// currency guaranteed present and first.
+enum FieldCurrency {
+    static let common = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF", "CNY", "INR", "MXN", "BRL", "KRW"]
+
+    static var localeDefault: String { Locale.current.currency?.identifier ?? "USD" }
+
+    static var options: [String] {
+        let d = localeDefault
+        return common.contains(d) ? common : [d] + common
+    }
 }
 
 /// Stage 5.1 — how a `rating` field renders. Scale + style live on the

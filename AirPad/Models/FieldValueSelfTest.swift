@@ -240,6 +240,32 @@ enum FieldValueSelfTest {
             } catch { failures.append("T8: threw \(error)") }
         }
 
+        // T9 — Stage 3 C2: a RANGE survives edit+reload; measurement units are a
+        // closed set; money/duration values round-trip.
+        do {
+            ran += 1
+            do {
+                let ranged = FieldValue(definitionID: "d", value: .number(4), upperValue: .number(6))
+                let rback = try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(ranged))
+                if rback.value != .number(4) || rback.upperValue != .number(6) { failures.append("T9: range lost across round-trip") }
+                for dim in MeasurementDimension.allCases where dim.units.isEmpty {
+                    failures.append("T9: \(dim.rawValue) has an empty unit list")
+                }
+                let meas = FieldValue(definitionID: "d", value: .measurement(amount: 500, unit: "ml"))
+                if try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(meas)).value != .measurement(amount: 500, unit: "ml") {
+                    failures.append("T9: measurement value lost")
+                }
+                let money = FieldValue(definitionID: "d", value: .money(amount: 12, currencyCode: "USD"))
+                if try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(money)).value != .money(amount: 12, currencyCode: "USD") {
+                    failures.append("T9: money value lost")
+                }
+                let dur = FieldValue(definitionID: "d", value: .duration(seconds: 2700))
+                if try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(dur)).value != .duration(seconds: 2700) {
+                    failures.append("T9: duration value lost")
+                }
+            } catch { failures.append("T9: threw \(error)") }
+        }
+
         if failures.isEmpty {
             return "FieldValue: \(ran)/\(ran) passed"
         } else {

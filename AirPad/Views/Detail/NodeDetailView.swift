@@ -146,6 +146,7 @@ struct NodeDetailView: View {
     @State private var showLinkAddAlert = false
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
+    @State private var showFieldSheet = false   // Stage 5.2 — "+" → More…
 
     /// hero-empty-picker (H1, revised) — drives the file-local
     /// `HeroImagePickerSheet`. Triggered from the `•••` menu's
@@ -294,6 +295,9 @@ struct NodeDetailView: View {
                     Task { await store.addDocumentEntry(nodeID: nodeID, sourceURLs: urls) }
                 }
             }
+        }
+        .sheet(isPresented: $showFieldSheet) {
+            FieldCreationSheet(nodeID: nodeID)
         }
         .confirmationDialog(
             "Append to existing Documents entry?",
@@ -1018,15 +1022,14 @@ struct NodeDetailView: View {
                 Label("Document", systemImage: "doc.fill")
             }
             Divider()
-            // Stage 4.8 — More… houses the typed-entry catalog (Rating first);
-            // gated by `hasRating` so the singleton contract holds.
-            Menu {
-                Button {
-                    Task { await store.appendRatingItem(nodeID: nodeID) }
-                } label: {
-                    Label("Rating", systemImage: "star.fill")
-                }
-                .disabled(hasRating)
+            // Stage 5.2 — More… opens the field creation sheet (User-Created /
+            // Presets / New Field). Supersedes the Stage 4.8 nested Rating seat:
+            // rating is now the "Rating" preset (a rating FIELD in the new
+            // stacked-pairs style); existing legacy `.rating` items are untouched
+            // (coexistence). `appendRatingItem` stays in the store, now unused by
+            // the flyout — left in place, not deleted.
+            Button {
+                showFieldSheet = true
             } label: {
                 Label("More…", systemImage: "ellipsis")
             }
@@ -1041,16 +1044,8 @@ struct NodeDetailView: View {
         }
     }
 
-    // MARK: - Rating singleton gate
-
-    /// Stage 4.8 — true when the node already has a `.rating` entry. The
-    /// "+" → More… → Rating menu item is `.disabled(hasRating)` so the
-    /// user can't stack a second one. The store's `appendRatingItem`
-    /// also bails on duplicate for the race where the menu was opened
-    /// on stale state.
-    private var hasRating: Bool {
-        node?.items.contains { $0.type == .rating } ?? false
-    }
+    // (Stage 4.8's `hasRating` singleton gate removed in 5.2 — rating is now
+    // the "Rating" preset field, added through the creation sheet.)
 
     // MARK: - Display / Edit mode (ws-display-edit-mode)
 

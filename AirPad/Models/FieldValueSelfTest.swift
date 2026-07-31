@@ -266,6 +266,28 @@ enum FieldValueSelfTest {
             } catch { failures.append("T9: threw \(error)") }
         }
 
+        // T10 — Stage 3 C3: a vocabulary value has a STABLE, unique id; the
+        // add-value dedup predicate is case-insensitive (what addVocabularyValue
+        // matches on); vocabulary + nodeReference values round-trip.
+        do {
+            ran += 1
+            do {
+                let a = VocabularyValue(label: "Fire")
+                let b = VocabularyValue(label: "Fire")
+                if a.id.isEmpty || a.id == b.id { failures.append("T10: VocabularyValue id not stable/unique") }
+                let existing = [a].first { $0.label.lowercased() == "FIRE".lowercased() }
+                if existing?.id != a.id { failures.append("T10: case-insensitive dedup predicate missed") }
+                let vocab = FieldValue(definitionID: "d", value: .vocabulary(valueIDs: [a.id, b.id]))
+                if try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(vocab)).value != .vocabulary(valueIDs: [a.id, b.id]) {
+                    failures.append("T10: vocabulary value lost")
+                }
+                let ref = FieldValue(definitionID: "d", value: .nodeReference(nodeID: "target-x"))
+                if try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(ref)).value != .nodeReference(nodeID: "target-x") {
+                    failures.append("T10: nodeReference value lost")
+                }
+            } catch { failures.append("T10: threw \(error)") }
+        }
+
         if failures.isEmpty {
             return "FieldValue: \(ran)/\(ran) passed"
         } else {

@@ -59,19 +59,26 @@ struct FieldConfig: Codable, Equatable {
     /// The four scalar kinds (`number`/`duration`/`measurement`/`money`) —
     /// whether a range (optional second value) is offered. Defaults false.
     var rangeEnabled: Bool
+    /// `date` — whether the field includes a time-of-day (Stage 5.3). "Time is a
+    /// FLAG on the kind, decided once at creation" — a FIELD-level flag, not a
+    /// per-value one; the editor and the value's `hasTime` honour it. Additive,
+    /// defaults false (date-only).
+    var dateHasTime: Bool
 
     init(
         dimension: MeasurementDimension? = nil,
         ratingScale: Int? = nil,
         ratingStyle: RatingStyle? = nil,
         vocabularyValues: [VocabularyValue]? = nil,
-        rangeEnabled: Bool = false
+        rangeEnabled: Bool = false,
+        dateHasTime: Bool = false
     ) {
         self.dimension = dimension
         self.ratingScale = ratingScale
         self.ratingStyle = ratingStyle
         self.vocabularyValues = vocabularyValues
         self.rangeEnabled = rangeEnabled
+        self.dateHasTime = dateHasTime
     }
 
     enum CodingKeys: String, CodingKey {
@@ -80,6 +87,7 @@ struct FieldConfig: Codable, Equatable {
         case ratingStyle = "rating_style"
         case vocabularyValues = "vocabulary_values"
         case rangeEnabled = "range_enabled"
+        case dateHasTime = "date_has_time"
     }
 
     init(from decoder: Decoder) throws {
@@ -89,6 +97,7 @@ struct FieldConfig: Codable, Equatable {
         ratingStyle      = try c.decodeIfPresent(RatingStyle.self, forKey: .ratingStyle)
         vocabularyValues = try c.decodeIfPresent([VocabularyValue].self, forKey: .vocabularyValues)
         rangeEnabled     = try c.decodeIfPresent(Bool.self, forKey: .rangeEnabled) ?? false
+        dateHasTime      = try c.decodeIfPresent(Bool.self, forKey: .dateHasTime) ?? false
     }
 }
 

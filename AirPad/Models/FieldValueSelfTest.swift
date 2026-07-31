@@ -216,7 +216,28 @@ enum FieldValueSelfTest {
                 if back.definitions.first?.lastUsedAt != date0 { failures.append("T7: lastUsedAt lost across store round-trip") }
                 if back.definitions.first?.config.rangeEnabled != true { failures.append("T7: config lost across store round-trip") }
                 if back.definitions.first?.id != stamped.id { failures.append("T7: definition id changed across round-trip") }
+                // Stage 5.3 — dateHasTime config round-trips.
+                let dateDef = FieldDefinition(displayName: "When", kind: .date, config: FieldConfig(dateHasTime: true))
+                let dback = try JSONDecoder.airPad.decode(FieldDefinitionStore.self, from: JSONEncoder.airPad.encode(FieldDefinitionStore(definitions: [dateDef])))
+                if dback.definitions.first?.config.dateHasTime != true { failures.append("T7: dateHasTime lost across round-trip") }
             } catch { failures.append("T7: store round-trip threw \(error)") }
+        }
+
+        // T8 — Stage 3: clear-to-unfilled is a genuinely NULL value (not "" / a
+        // sentinel) and round-trips as null; a filled url value is stored VERBATIM
+        // (display-only prettyURL never leaks into storage).
+        do {
+            ran += 1
+            do {
+                var fv = FieldValue(definitionID: "d", value: .text("hi"))
+                fv.value = nil   // the clear-to-unfilled path
+                let back = try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(fv))
+                if back.value != nil { failures.append("T8: cleared value is not nil after round-trip") }
+                let raw = "https://WWW.Example.com/Path?q=1"
+                let urlFV = FieldValue(definitionID: "d", value: .url(raw))
+                let urlBack = try JSONDecoder.airPad.decode(FieldValue.self, from: JSONEncoder.airPad.encode(urlFV))
+                if urlBack.value != .url(raw) { failures.append("T8: url value not stored verbatim") }
+            } catch { failures.append("T8: threw \(error)") }
         }
 
         if failures.isEmpty {

@@ -238,6 +238,7 @@
 		D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
+		DD5A3F5D7E79BF3FCF6DE55D /* FieldValueEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */; };
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
 		DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */; };
 		E015CC503DCD0442457638C9 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
@@ -528,6 +529,7 @@
 		FB7866DE5FB6758202EA3AB1 /* CameraCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraCaptureView.swift; sourceTree = "<group>"; };
 		FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkSnapshotService.swift; sourceTree = "<group>"; };
 		FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelRouter.swift; sourceTree = "<group>"; };
+		FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueEditorSheet.swift; sourceTree = "<group>"; };
 		FD659A40CE161F15D371C285 /* NodeCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeCardView.swift; sourceTree = "<group>"; };
 		FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeekPillStyle.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -721,6 +723,7 @@
 				187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */,
 				2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */,
 				217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */,
+				FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
 				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
 				88A13C2113DC9781B455DF42 /* PastePadView.swift */,
@@ -1333,6 +1336,7 @@
 				F6CAEE543F6F38B6B7198993 /* FieldPairsGrid.swift in Sources */,
 				C2FDA9A2A99BDA1CA9FC2281 /* FieldPreset.swift in Sources */,
 				E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */,
+				DD5A3F5D7E79BF3FCF6DE55D /* FieldValueEditorSheet.swift in Sources */,
 				3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */,
 				BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,

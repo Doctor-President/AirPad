@@ -974,7 +974,7 @@ private struct QuikCaptureAttributesSection: View {
             // one-primitive property). Legacy `.rating` keeps its own full-width
             // row + edit sheet.
             if !fieldItems.isEmpty {
-                FieldPairsGrid(fieldItems: fieldItems)
+                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems)
             }
             if !nonFieldAtomics.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {

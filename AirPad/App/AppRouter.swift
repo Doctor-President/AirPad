@@ -66,16 +66,73 @@ final class AppRouter {
     var pendingNodeNavigationID: String? = nil
 
     /// #3 (search-navigates-by-view) — the ONE shared "focus a node in the
-    /// user's CURRENT view" signal. Set a node ID; whichever canvas view is
-    /// mounted observes it and moves its viewport to that node — Map flies the
-    /// camera to the orb, List/Card scroll to the row/card, Grid scrolls to the
-    /// tile — then clears it (fires exactly once). Consumers are per-view (a
-    /// list scrolls, a camera flies) but the SIGNAL is single, so a new view
-    /// mode wires itself in by observing this one property. Two producers today:
-    /// a search-result row tap (focus-in-place) and capture-return (Done →
-    /// focus the new node). Was `pendingGridScrollNodeID` (Grid-only) —
-    /// generalized so focus can't drift per-surface (BUG 10's failure mode).
-    var pendingFocusNodeID: String? = nil
+    /// user's CURRENT view" request. Whichever canvas view is mounted moves its
+    /// viewport to the node — Map flies the camera to the orb, List/Card/Grid/
+    /// CoverFlow scroll to the row/card/tile. Consumers are per-view (a list
+    /// scrolls, a camera flies) but the REQUEST is single, so a new view mode
+    /// wires itself in by handling this one value. Two producers today: a
+    /// search-result row tap (focus-in-place) and capture-return (Done → focus
+    /// the new node). Was `pendingGridScrollNodeID` (Grid-only), then a bare
+    /// `pendingFocusNodeID: String?` set-and-consumed via `.onChange`.
+    ///
+    /// It is now a MONOTONIC request `{nodeID, token}` — NOT a self-clearing
+    /// flag — because the flag had two silent-miss failure modes (and the
+    /// FAILING view moved on unchanged code, which is what made it look like a
+    /// mount race):
+    ///   1. A view that MOUNTS with the flag already set never sees an
+    ///      `.onChange` (no value change while mounted) → miss. This is exactly
+    ///      capture-return (the producer sets the flag, THEN the origin view
+    ///      re-appears) and the CoverFlow regression: CoverFlow never had a
+    ///      consumer, so it left the shared flag dirty for the NEXT view.
+    ///   2. Re-focusing the SAME node isn't a value change → `.onChange`
+    ///      doesn't fire → miss.
+    /// The `token` advances on every request even when the nodeID repeats, so
+    /// consumers key on the token (fixes #2) AND re-check on `.onAppear` (fixes
+    /// #1). Consumers dedupe by the token themselves (`onFocusRequest`), so an
+    /// un-wired or not-yet-mounted surface can't leave anything dirty for the
+    /// next one. Companion's "multiple mounted observers racing" hypothesis was
+    /// disproven — the observers live in an EXCLUSIVE `switch` (CanvasChrome),
+    /// only one is ever mounted; the real root was dirty-flag + `.onChange`
+    /// semantics.
+    struct FocusRequest: Equatable {
+        let nodeID: String
+        /// Monotonic — advances on every `requestFocus`, so a repeat request
+        /// for the same node is still observably a change.
+        let token: Int
+    }
+
+    /// The current focus request, or nil if none has been made this session.
+    /// Read-only to the outside; produce requests via `requestFocus(_:)`.
+    private(set) var focusRequest: FocusRequest? = nil
+
+    @ObservationIgnored private var focusRequestCounter = 0
+
+    /// The node currently wearing the focus HIGHLIGHT (the persistent glow /
+    /// ring). Set by `requestFocus`, it PERSISTS — unlike the one-shot scroll
+    /// request — until the user's next touch clears it (a window-level touch
+    /// observer in `CanvasChrome` calls `clearFocusHighlight`) or the next focus
+    /// replaces it. Observed (read from each surface's highlight), so
+    /// setting/clearing it fades the glow in/out declaratively. Persisting also
+    /// means a node scrolled off and back re-shows its glow correctly — it IS
+    /// still the focused node — with no per-cell token bookkeeping.
+    var focusedHighlightNodeID: String? = nil
+
+    /// Ask the CURRENT canvas view to move its viewport to `nodeID` in place
+    /// (no view-mode switch, no Detail push) AND light the persistent focus
+    /// highlight on it. Monotonic scroll request: a repeat for the same node
+    /// still fires because the token advances.
+    func requestFocus(_ nodeID: String) {
+        focusRequestCounter += 1
+        focusRequest = FocusRequest(nodeID: nodeID, token: focusRequestCounter)
+        focusedHighlightNodeID = nodeID
+    }
+
+    /// Clear the persistent focus highlight (the user touched something). A
+    /// no-op when nothing is highlighted, so the window-level touch observer
+    /// that calls this on every touch stays cheap.
+    func clearFocusHighlight() {
+        if focusedHighlightNodeID != nil { focusedHighlightNodeID = nil }
+    }
 
     /// Librarian session state — the morphing query / synthesis surface.
     /// Travels across canvas, list, and (future) detail-view mounts so an

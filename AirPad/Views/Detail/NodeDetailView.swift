@@ -57,12 +57,13 @@ struct NodeDetailView: View {
     /// `entryMode`), so `dismiss()` pops back to it — no forced Recents reset.
     /// The node is already persisted; `isCapturing` / `captureNodeID` are cleared
     /// by ContentView's detail-exit handler. Tier 2: hand the new node to the
-    /// shared focus-a-node seam so the origin view focuses the new node on
-    /// return — the grid scrolls to its tile, Map flies the camera to its orb,
-    /// List/Card scroll to it. One-shot; harmless for a view without a consumer
-    /// yet — SwiftUI `.onChange` won't fire for a value set before mount.
+    /// shared focus request so the origin view focuses the new node on return —
+    /// the grid scrolls to its tile, Map flies the camera to its orb, List/Card
+    /// scroll to it. The request is set HERE, before `dismiss()` re-reveals the
+    /// origin view, so `.onChange` would never fire (value set before mount) —
+    /// but the origin's `onFocusRequest` re-checks on `.onAppear`, so it lands.
     private func finishCapture(node: Node) {
-        router.pendingFocusNodeID = node.id
+        router.requestFocus(node.id)
         router.captureDraftHasText = false
         dismiss()
     }

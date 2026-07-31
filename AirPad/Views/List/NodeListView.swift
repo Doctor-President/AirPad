@@ -121,12 +121,26 @@ struct NodeListView: View {
                         // clean lift. DARK: unchanged — the frosted material with
                         // `listRowLift` resolving `.clear`, BYTE-IDENTICAL to the
                         // pre-#13 rows (dark had no shadow and no elevated fill).
+                        // #3 focus highlight (List) — the FOCUSED row's WHOLE
+                        // STRIP fills with the Klein→cyan focus gradient rather
+                        // than an outline (T: the outline didn't hug the row —
+                        // make the strip blue). Persists until the next touch.
                         .listRowBackground(
-                            Rectangle()
-                                .fill(colorScheme == .dark
-                                      ? AnyShapeStyle(.ultraThinMaterial)
-                                      : AnyShapeStyle(AppearancePalette.bgElevated))
-                                .shadow(color: AppearancePalette.listRowLift, radius: 26, x: 0, y: 11)
+                            Group {
+                                if router.focusedHighlightNodeID == node.id {
+                                    LinearGradient(
+                                        colors: [Color(hexString: "1B59C2"), Color(hexString: "00BFFF")],
+                                        startPoint: .leading, endPoint: .trailing
+                                    )
+                                } else {
+                                    Rectangle()
+                                        .fill(colorScheme == .dark
+                                              ? AnyShapeStyle(.ultraThinMaterial)
+                                              : AnyShapeStyle(AppearancePalette.bgElevated))
+                                        .shadow(color: AppearancePalette.listRowLift, radius: 26, x: 0, y: 11)
+                                }
+                            }
+                            .animation(.easeInOut(duration: 0.25), value: router.focusedHighlightNodeID == node.id)
                         )
                     }
                 } header: {
@@ -146,11 +160,10 @@ struct NodeListView: View {
         // bottom sort+capture floaters + Librarian peek.
         .contentMargins(.top, 96, for: .scrollContent)
         .contentMargins(.bottom, LibrarianPanelLayout.peekDetentHeight + 72, for: .scrollContent)
-        // #3 — shared focus signal: scroll the list to the focused row in place.
-        .onChange(of: router.pendingFocusNodeID) { _, id in
-            guard let id else { return }
-            withAnimation { proxy.scrollTo(id, anchor: .top) }
-            router.pendingFocusNodeID = nil
+        // #3 — shared focus signal: scroll the list so the focused row lands
+        // CENTERED (was .top — it snapped under the top chrome bar).
+        .onFocusRequest { id in
+            withAnimation { proxy.scrollTo(id, anchor: .center) }
         }
         }
     }

@@ -1349,19 +1349,23 @@ struct LibrarianSurface: View {
     }
 
     /// #3 (search-navigates-by-view) — focus the node in the user's CURRENT
-    /// view instead of pushing Detail: fire the shared `pendingFocusNodeID`
-    /// signal (Map flies the camera to the orb, List/Card/Grid scroll to it)
-    /// and drop the panel to PEEK so the whole canvas is visible for the
-    /// landing — dropToHalf would cover screen-center, exactly where Map
-    /// centers the orb. Search never switches view mode. Same keyboard/panel
-    /// teardown as `openNode`. The row's tail "Open" button still calls
-    /// `openNode` for the direct route to Detail.
+    /// view instead of pushing Detail: fire the shared focus request
+    /// (`requestFocus`; Map flies the camera to the orb, List/Card/Grid/
+    /// CoverFlow scroll to it) and raise the panel to PEEK so the whole canvas
+    /// is visible for the landing — dropToHalf would cover screen-center,
+    /// exactly where Map centers the orb. Search never switches view mode. Same
+    /// keyboard/panel teardown as `openNode`. The row's tail "Open" button still
+    /// calls `openNode` for the direct route to Detail.
     private func focusNode(_ nodeID: String) {
         isInputFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
+        // Request focus BEFORE the panel resize: `onFocusRequest` defers its
+        // scroll one runloop so the raiseToPeek layout lands first, and any
+        // surface that remounts across the resize catches the request on
+        // `.onAppear`. (See `AppRouter.requestFocus` / `FocusRequestHandler`.)
+        router.requestFocus(nodeID)
         panelModel.raiseToPeek(animated: true)
-        router.pendingFocusNodeID = nodeID
     }
 
     // MARK: - Chat layout (c14)
@@ -2023,7 +2027,7 @@ struct LibrarianSurface: View {
 /// summary preview without navigation.
 /// #3 (search-navigates-by-view) — two-target wrapper for a search result row.
 /// The body is a large tap target that **focuses the node in the user's current
-/// view** (`onFocus` → `router.pendingFocusNodeID`); the tail "Open" button
+/// view** (`onFocus` → `router.requestFocus`); the tail "Open" button
 /// **pushes the Detail view** (`onOpen` → `openNode`). Search never switches
 /// view mode — see `ws-instant-search.md` § NAVIGATION BEHAVIOUR ON TAP. Used
 /// by both MATCHES and RELATED rows so the two targets stay consistent.

@@ -222,6 +222,14 @@ struct CoverFlowView: View {
             .onChange(of: snappedID) { _, newID in
                 if newID != nil { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
             }
+            // #3 — shared focus signal. CoverFlow never had a consumer, so it
+            // used to leave the shared flag dirty for the NEXT view — the root
+            // of the intermittent misses. Cards are keyed by node id via
+            // `.scrollPosition(id:)`, so setting `snappedID` scrolls to the card.
+            .onFocusRequest { id in
+                guard nodes.contains(where: { $0.id == id }) else { return }
+                withAnimation { snappedID = id }
+            }
             .frame(height: cardHeight)
             .overlay {
                 // Visual deck — windowed, positioned + raked by centerFraction,
@@ -349,6 +357,9 @@ private struct CoverFlowCell: View {
             animateEntry: false
         )
         .frame(width: cardWidth, height: cardHeight)
+        // #3 — shared focus glow. Applied before the rake so it transforms with
+        // the card face (matches NodeCardView's 30pt rounding).
+        .focusHighlight(nodeID: node.id, cornerRadius: 30)
         .scaleEffect(scale)
         .rotation3DEffect(
             .degrees(degrees),

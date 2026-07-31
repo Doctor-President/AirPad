@@ -167,6 +167,16 @@ struct NodeItem: Codable, Identifiable, Equatable {
     // legacy `node.json` files cleanly, no entrySchemaVersion bump.
     var rating: Rating?
 
+    // Stage 5.1 — typed value for a `.field` entry (atomic). References a
+    // corpus-level `FieldDefinition` by stable ID and carries the value
+    // (nullable = "present but unfilled"). Unlike `.rating`, fields are
+    // MULTI per node — no singleton guard. Additive optional; the synthesized
+    // Codable emits the key only when non-nil (`encodeIfPresent`) and reads a
+    // missing key as nil, so legacy `node.json` decodes clean with NO
+    // `entrySchemaVersion` bump — same precedent as `rating` / `viewMode`.
+    // Nil on every non-field entry.
+    var field: FieldValue?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -187,6 +197,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case documentItems = "document_items"
         case documentViewMode = "document_view_mode"
         case rating
+        case field
     }
 }
 

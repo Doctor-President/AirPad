@@ -1306,11 +1306,11 @@ private struct ItemCountsRow: View {
             case .link:     l += 1
             case .document: d += 1
             case .imageVideo: i += 1
-            // Stage 4.8 — Rating is a typed atomic and doesn't slot
-            // into the legacy six-bucket count chip row; skipped here.
+            // Stage 4.8 / 5.1 — Rating and fields are typed atomics and don't
+            // slot into the legacy six-bucket count chip row; skipped here.
             // If the canvas grows a typed-entry chip later it can read
-            // off `.rating` directly.
-            case .rating:   break
+            // off `.rating` / `.field` directly.
+            case .rating, .field:   break
             }
         }
         return (t, i, a, v, l, d)

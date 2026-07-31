@@ -513,7 +513,9 @@ struct NodeCardView: View {
             placeholderRow("Image", systemImage: "photo")
         case .video:
             placeholderRow("Video", systemImage: "video")
-        case .rating:
+        case .rating, .field:
+            // Atomic — rendered in the stat line via `atomicGlyph`, never as
+            // a payload card form.
             EmptyView()
         }
     }
@@ -689,7 +691,7 @@ struct NodeCardView: View {
         case .audio:       return 52
         case .image:       return 28
         case .video:       return 28
-        case .rating:      return 0
+        case .rating, .field:  return 0
         }
     }
 

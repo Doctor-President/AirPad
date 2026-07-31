@@ -408,11 +408,11 @@ struct EntryCard: View {
             } else {
                 EmptyMediaPlaceholder()
             }
-        case .rating:
-            // Atomic — rating renders in the pinned Attributes section
-            // (Commit B), not in the payload list. `NodeDetailView`
-            // filters atomics out of the payload ForEach so this
-            // branch is unreachable; present only to satisfy switch
+        case .rating, .field:
+            // Atomic — rating and fields render in the pinned Attributes
+            // section (`AttributesSection`), not in the payload list.
+            // `NodeDetailView` filters atomics out of the payload ForEach so
+            // this branch is unreachable; present only to satisfy switch
             // exhaustiveness.
             EmptyView()
         }
@@ -518,6 +518,11 @@ struct EntryCard: View {
             let value = item.rating?.value ?? 0
             let scale = item.rating?.scale ?? 5
             return "\(value)/\(scale)"
+        case .field:
+            // Atomic — filtered out of the payload list, so this copy-text
+            // path is an unreachable exhaustiveness stub. The rich formatted
+            // value belongs to the Attributes-section render (commit 3).
+            return displayName
         }
     }
 }

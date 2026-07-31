@@ -117,8 +117,8 @@ enum BlockChunker {
                 return chunkText(text, itemID: doc.id, minChars: minChars)
             }
 
-        case .rating:
-            // Stage 4.8 — atomic numeric value, no text contribution.
+        case .rating, .field:
+            // Stage 4.8 / 5.1 — atomic value, no text contribution in Stage 1.
             return []
         }
     }

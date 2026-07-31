@@ -466,7 +466,7 @@ struct NodeDetailView: View {
                 // No rule above or inside the section (the tags→content
                 // divider was removed 2026-07-18).
                 if atomicCount > 0 {
-                    AttributesSection(nodeID: nodeID)
+                    AttributesSection(nodeID: nodeID, showFieldSheet: $showFieldSheet)
                         .padding(.top, visualSettings.dividerToEntries)
                 }
 
@@ -2045,6 +2045,9 @@ private struct MetaNodeBanner: View {
 private struct AttributesSection: View {
 
     let nodeID: String
+    /// Stage 5.2 C7 — the parent's Add Field sheet flag, so the section "+" opens
+    /// the SAME sheet (same state, same remembered section) as the flyout's More…
+    @Binding var showFieldSheet: Bool
 
     @Environment(CorpusStore.self) private var store
     @State private var editingItem: NodeItem? = nil
@@ -2070,13 +2073,11 @@ private struct AttributesSection: View {
         return Array(node.items.prefix(atomicCount))
     }
 
-    /// Atomic types not yet present on this node. Drives the section-
-    /// local "+" menu; empty → trigger hidden. Today the catalog is
-    /// `[.rating]` only, so when the section is visible (which means
-    /// rating is present) this is always empty.
-    private var addable: [NodeItemType] {
-        let present = Set(atomicItems.map { $0.type })
-        return [NodeItemType.rating].filter { !present.contains($0) }
+    /// Whether this node already carries a legacy `.rating` atomic — gates the
+    /// section "+"'s Rating item (the singleton contract for the deliberately
+    /// unconverted legacy path).
+    private var hasRating: Bool {
+        atomicItems.contains { $0.type == .rating }
     }
 
     /// Stage 5.1 C6 — resolved `.field` atomics for the stacked-pairs grid.
@@ -2146,29 +2147,32 @@ private struct AttributesSection: View {
                 .tracking(0.6)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Spacer(minLength: 0)
-            if !addable.isEmpty {
-                Menu {
-                    ForEach(addable, id: \.self) { type in
-                        // Future per-type append routes here. With
-                        // only Rating in the catalog today (and Rating
-                        // owned by the floating-+'s first-add path),
-                        // this loop body is never reached at runtime
-                        // — the `if !addable.isEmpty` gate above hides
-                        // the trigger. Wired so the next atomic type
-                        // (cook time / servings) only needs to add a
-                        // case below.
-                        Button {} label: {
-                            Label(type.defaultDisplayName, systemImage: "plus")
-                        }
-                        .disabled(true)
-                    }
+            // Stage 5.2 C7 — the section "+" opens the SAME Add Field sheet as
+            // the flyout's "More…" (via the shared `showFieldSheet` binding: one
+            // component, two entry points). The legacy `.rating` add stays
+            // reachable as a sibling menu item — deliberately unconverted, and
+            // NOT folded into the field-definition sheet (which would
+            // misrepresent it as a field). The Attributes section renders only
+            // when it has ≥1 atomic, so this "+" inherently exists only after
+            // the first field — no overlap with the flyout's first-field path.
+            Menu {
+                Button {
+                    showFieldSheet = true
                 } label: {
-                    Image(systemName: "plus")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
+                    Label("Add Field…", systemImage: "plus")
                 }
+                Button {
+                    Task { await store.appendRatingItem(nodeID: nodeID) }
+                } label: {
+                    Label("Rating", systemImage: "star.fill")
+                }
+                .disabled(hasRating)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
         }
     }

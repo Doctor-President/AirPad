@@ -961,11 +961,6 @@ private struct QuikCaptureAttributesSection: View {
         return Array(node.items.prefix(atomicCount))
     }
 
-    private var addable: [NodeItemType] {
-        let present = Set(atomicItems.map { $0.type })
-        return [NodeItemType.rating].filter { !present.contains($0) }
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeader
@@ -990,28 +985,20 @@ private struct QuikCaptureAttributesSection: View {
     }
 
     private var sectionHeader: some View {
+        // Stage 5.2 C9 — QuickCapture's vestigial rating "+" removed. It was a
+        // disabled, empty-action stub (a copy of the pre-C8 NodeDetailView dead
+        // stub) — it never actually minted a rating. QuickCapture is a
+        // fast-capture surface, so it deliberately does NOT carry the
+        // three-section Add Field sheet (CC's recommendation; T's call): field
+        // creation is a deliberate act for the full detail view. Existing
+        // atomics still render below, and an existing rating still edits via
+        // QuikCaptureRatingEditSheet.
         HStack(spacing: 8) {
             Text("ATTRIBUTES")
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .tracking(0.6)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
             Spacer(minLength: 0)
-            if !addable.isEmpty {
-                Menu {
-                    ForEach(addable, id: \.self) { type in
-                        Button {} label: {
-                            Label(type.defaultDisplayName, systemImage: "plus")
-                        }
-                        .disabled(true)
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-            }
         }
     }
 

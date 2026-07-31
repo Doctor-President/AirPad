@@ -478,8 +478,42 @@ struct NodeCardView: View {
                         .foregroundColor(Self.inkMeta)
                 }
             }
+        case .field:
+            fieldGlyph(item)
         default:
             EmptyView()
+        }
+    }
+
+    /// Stage 5.1 — the card stat-line glyph for a `.field` atomic. Resolves the
+    /// corpus-level definition; a rating-kind field in the star style renders
+    /// stars (mirroring the legacy `.rating` glyph), every other kind renders
+    /// the shared formatter's compact value. Unfilled value / orphaned
+    /// definition → renders nothing (the middot separator is suppressed by the
+    /// empty glyph collapsing).
+    @ViewBuilder
+    private func fieldGlyph(_ item: NodeItem) -> some View {
+        if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
+            if def.kind == .rating,
+               (def.config.ratingStyle ?? .stars) == .stars,
+               case .rating(let v)? = fv.value {
+                let scale = def.config.ratingScale ?? 5
+                HStack(spacing: 2) {
+                    ForEach(0..<scale, id: \.self) { idx in
+                        Image(systemName: idx < v ? "star.fill" : "star")
+                            .font(.system(size: 11))
+                            .foregroundColor(Self.inkMeta)
+                    }
+                }
+            } else if let text = FieldValueFormatter.display(
+                fv, definition: def,
+                resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
+            ) {
+                Text(text)
+                    .font(.system(size: 12, design: .serif))
+                    .foregroundColor(Self.inkMeta)
+                    .lineLimit(1)
+            }
         }
     }
 

@@ -72,6 +72,7 @@
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
 		3DC90C70C32E6337A8F9EF74 /* KokoroVoiceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E13B726C9EB9C50D85D1F23 /* KokoroVoiceCatalog.swift */; };
 		3E395C3D1D01816EA4255C62 /* Fraunces_72pt-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */; };
+		3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
 		423D97121CD075A9C4114F49 /* Lora-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7910DE998349210AB2623D42 /* Lora-Italic.ttf */; };
 		460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
@@ -236,6 +237,7 @@
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
 		DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */; };
+		E015CC503DCD0442457638C9 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
 		E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8587B8FB965733F87A837170 /* FieldValue.swift */; };
 		E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */; };
 		E3407B345AD8EB8E5775944D /* QuikCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */; };
@@ -493,6 +495,7 @@
 		E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryBody.swift; sourceTree = "<group>"; };
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueFormatter.swift; sourceTree = "<group>"; };
 		E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateRelaxationPass.swift; sourceTree = "<group>"; };
 		E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridView.swift; sourceTree = "<group>"; };
 		EB1C4F8AC8EFA42414AB9073 /* VoiceEntryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntryBody.swift; sourceTree = "<group>"; };
@@ -841,6 +844,7 @@
 				003CEDBA7C8C183191D81F3E /* FieldDefinition.swift */,
 				6EDDB291F9F6170B93CE084E /* FieldKind.swift */,
 				8587B8FB965733F87A837170 /* FieldValue.swift */,
+				E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */,
 				AE402981E931009EBB3F93EE /* Neighborhood.swift */,
 				1866B7173FCC4A9B1AE81AF1 /* Node.swift */,
 				376265F2CCAF46EDE2216E54 /* NodeBlock.swift */,
@@ -1313,6 +1317,7 @@
 				53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */,
 				8C816C9A65368BD8D812CFFB /* FieldKind.swift in Sources */,
 				E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */,
+				3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
 				71A9DACF5563A23D695206FE /* FluidKokoroTTSEngine.swift in Sources */,
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
@@ -1453,6 +1458,7 @@
 				1A4B4683A0B01732DEC94DBF /* FieldDefinition.swift in Sources */,
 				C778ACC9CC63354AC17A3744 /* FieldKind.swift in Sources */,
 				D2F3CB50F971A325ED172AD3 /* FieldValue.swift in Sources */,
+				E015CC503DCD0442457638C9 /* FieldValueFormatter.swift in Sources */,
 				1AB937D63FE8F452D767344B /* Neighborhood.swift in Sources */,
 				0498E0EE7559CBC6D217A2AA /* Node.swift in Sources */,
 				07C8518A53FA5439187CAE4B /* NodeBlock.swift in Sources */,

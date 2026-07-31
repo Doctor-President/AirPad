@@ -2152,9 +2152,19 @@ private struct AttributesSection: View {
                     Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
                 }
             )
+        case .field:
+            // Stage 5.1 — resolve the corpus-level definition; render nothing
+            // for an orphaned reference (definition deleted / not yet synced).
+            if let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) {
+                FieldAttributeRow(
+                    value: fv,
+                    definition: def,
+                    resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title }
+                )
+            }
         default:
-            // No other atomic types yet. When cook time / servings
-            // land, add their renderer cases here.
+            // No other atomic types. When new atomic kinds land, add their
+            // renderer cases here.
             EmptyView()
         }
     }
@@ -2214,6 +2224,67 @@ private struct RatingAttributeRow: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(
                         filled
+                            ? Color(hexString: "FACC15")
+                            : AppearancePalette.ink.opacity(0.25)
+                    )
+            }
+        }
+    }
+}
+
+/// Stage 5.1 — read-only Attributes-section row for a `.field` atomic. Leading
+/// user-owned display name (from the definition), trailing formatted value:
+/// stars for a rating-kind field in the star style, the shared formatter's
+/// string otherwise, and an em dash for a present-but-unfilled value (nullable
+/// value, distinct from the field being absent). No edit sheet or delete
+/// affordance yet — Stage 1 renders existing values; creation / editing / the
+/// three-operation delete are later stages.
+private struct FieldAttributeRow: View {
+
+    let value: FieldValue
+    let definition: FieldDefinition
+    let resolveNodeTitle: (String) -> String?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(definition.displayName)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppearancePalette.ink)
+
+            Spacer(minLength: 12)
+
+            trailing
+        }
+        .frame(minHeight: 44)
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        if definition.kind == .rating,
+           (definition.config.ratingStyle ?? .stars) == .stars,
+           case .rating(let v)? = value.value {
+            stars(v, scale: definition.config.ratingScale ?? 5)
+        } else if let text = FieldValueFormatter.display(
+            value, definition: definition, resolveNodeTitle: resolveNodeTitle
+        ) {
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                .multilineTextAlignment(.trailing)
+        } else {
+            Text("\u{2014}")   // em dash — present but unfilled
+                .font(.subheadline)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+        }
+    }
+
+    private func stars(_ v: Int, scale: Int) -> some View {
+        HStack(spacing: 4) {
+            ForEach(0..<scale, id: \.self) { idx in
+                Image(systemName: idx < v ? "star.fill" : "star")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(
+                        idx < v
                             ? Color(hexString: "FACC15")
                             : AppearancePalette.ink.opacity(0.25)
                     )

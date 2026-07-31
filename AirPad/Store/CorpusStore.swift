@@ -123,6 +123,14 @@ final class CorpusStore {
     /// list if they delete them all in a later stage.
     var collections: [NodeCollection] = []
 
+    /// Stage 5.1 (atomic fields) — corpus-level field definitions loaded from
+    /// the single `field_definitions.json`. Nodes reference these by stable ID
+    /// (`FieldValue.definitionID`); the render path resolves through
+    /// `fieldDefinition(id:)`. Empty on first launch (absent file) with nothing
+    /// seeded — a corpus with no field definitions is the normal starting
+    /// state, not an error.
+    var fieldDefinitions: [FieldDefinition] = []
+
     /// Dashboard Stage 4 — id of the collection the user most recently
     /// captured into or scoped into. Drives the QuikCapture pill's initial
     /// selection when reopened from the Dashboard "+". Persisted to
@@ -739,6 +747,15 @@ final class CorpusStore {
             } else {
                 collections = Self.defaultUserCollections()
                 await persistCollections()
+            }
+            // Stage 5.1 — corpus-level field definitions. Absent file (nil) is
+            // the normal first-run state: no definitions yet, nothing to seed
+            // (unlike collections/tags). Leave the file unwritten until the
+            // first definition is created (a later stage).
+            if let loadedFieldDefs = try await service.loadFieldDefinitions() {
+                fieldDefinitions = loadedFieldDefs.definitions
+            } else {
+                fieldDefinitions = []
             }
         } catch {
             print("[CorpusStore] Load error: \(error)")
@@ -3651,6 +3668,16 @@ final class CorpusStore {
         } catch {
             print("[CorpusStore] Collections save error: \(error)")
         }
+    }
+
+    // MARK: - Field definitions (Stage 5.1 — atomic fields)
+
+    /// Resolve a `FieldValue.definitionID` to its corpus-level definition.
+    /// The single lookup seam the render path uses; returns nil for an
+    /// orphaned reference (definition deleted / not yet synced) so callers
+    /// render nothing rather than crash.
+    func fieldDefinition(id: String) -> FieldDefinition? {
+        fieldDefinitions.first { $0.id == id }
     }
 
     /// Collections reorder — reorders the user collections to match `orderedIDs`

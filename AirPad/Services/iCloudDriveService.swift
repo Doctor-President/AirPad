@@ -239,6 +239,32 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode([NodeCollection].self, from: data)
     }
 
+    // MARK: - Field definitions (Stage 5.1 — atomic fields)
+
+    /// Write half of the corpus-level field-definition store, at
+    /// `<root>/field_definitions.json`. Mirrors `saveCollections` — a single
+    /// top-level file beside `nodes/`, one atomic write per change. (No caller
+    /// in Stage 1: field creation is a later stage. The symmetric pair lives
+    /// here so the I/O layer is complete, matching every other store object.)
+    func saveFieldDefinitions(_ store: FieldDefinitionStore) throws {
+        let root = try requireRoot()
+        let data = try JSONEncoder.airPad.encode(store)
+        try data.write(to: root.appendingPathComponent("field_definitions.json"), options: .atomic)
+    }
+
+    /// Returns nil when the file is absent — the normal first-run state (a
+    /// corpus with no field definitions yet). CorpusStore treats nil as an
+    /// empty definition set and does NOT seed or write anything (unlike
+    /// collections/tags, there are no default fields to seed). Mirrors
+    /// `loadCollections`.
+    func loadFieldDefinitions() throws -> FieldDefinitionStore? {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("field_definitions.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode(FieldDefinitionStore.self, from: data)
+    }
+
     // MARK: - Chats (clean Chat lane)
 
     /// Single-file blob at `<root>/chats.json`. Mirrors `collections.json`

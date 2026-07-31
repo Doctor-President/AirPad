@@ -155,9 +155,10 @@ enum FieldValueSelfTest {
             expect(fmt(.text, .text("")), nil, "textEmpty")
             expect(fmt(.number, nil), nil, "unfilled")
             expect(fmt(.nodeReference, .nodeReference(nodeID: "n1"), resolve: { $0 == "n1" ? "Charmander" : nil }), "Charmander", "nodeRef")
-            // .url — DISPLAY strips scheme / www / trailing slash on a bare host…
+            // .url — DISPLAY is HOST + TLD only (scheme, www, AND path dropped)…
             expect(fmt(.url, .url("https://www.example.com/")), "example.com", "urlStrip")
-            expect(fmt(.url, .url("http://example.com/recipes/soup")), "example.com/recipes/soup", "urlPath")
+            expect(fmt(.url, .url("https://www.example.com/recipes/roasted-tomato-soup")), "example.com", "urlDropPath")
+            expect(fmt(.url, .url("http://example.com/recipes/soup")), "example.com", "urlDropPath2")
             expect(FieldValueFormatter.prettyURL("not a url"), "not a url", "urlUnparseable")
             // …but the STORED value keeps the full URL VERBATIM (display != storage).
             do {
@@ -186,6 +187,36 @@ enum FieldValueSelfTest {
             ]
             let after = FieldValueFormatter.display(value, definition: vdef)
             if after != "Fire type, Flying" { failures.append("T6: post-rename '\(after ?? "nil")' != 'Fire type, Flying' — value not ID-addressed") }
+        }
+
+        // T7 — Stage 2: preset REUSE predicate (a preset tapped twice resolves to
+        // the SAME definition) + a definition SURVIVES A RELAUNCH (store
+        // round-trip, incl. lastUsedAt + config). The predicate here is exactly
+        // what `CorpusStore.resolvePreset` matches on; the live store path is
+        // device-verified.
+        do {
+            ran += 1
+            let cook = FieldPreset.seeded.first { $0.kind == .duration }!
+            // both a preset-made def and a differently-cased manual def match the
+            // find-or-create predicate → no second definition is minted.
+            let made = cook.makeDefinition()
+            let manual = FieldDefinition(displayName: cook.displayName.uppercased(), kind: cook.kind)
+            for candidate in [made, manual] {
+                let hit = [candidate].first {
+                    $0.kind == cook.kind && $0.displayName.lowercased() == cook.displayName.lowercased()
+                }
+                if hit?.id != candidate.id { failures.append("T7: preset reuse predicate missed '\(candidate.displayName)'") }
+            }
+            // relaunch survival: persisted form decodes back intact.
+            do {
+                let stamped = FieldDefinition(displayName: "Serves", kind: .number,
+                                              config: FieldConfig(rangeEnabled: true), lastUsedAt: date0)
+                let store = FieldDefinitionStore(definitions: [stamped])
+                let back = try JSONDecoder.airPad.decode(FieldDefinitionStore.self, from: JSONEncoder.airPad.encode(store))
+                if back.definitions.first?.lastUsedAt != date0 { failures.append("T7: lastUsedAt lost across store round-trip") }
+                if back.definitions.first?.config.rangeEnabled != true { failures.append("T7: config lost across store round-trip") }
+                if back.definitions.first?.id != stamped.id { failures.append("T7: definition id changed across round-trip") }
+            } catch { failures.append("T7: store round-trip threw \(error)") }
         }
 
         if failures.isEmpty {

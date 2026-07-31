@@ -66,23 +66,21 @@ enum FieldValueFormatter {
         }
     }
 
-    /// ★ DISPLAY-ONLY prettifier for a URL value: drops the scheme
-    /// ("https://"/"http://"), a leading "www.", and a trailing slash on a bare
-    /// host — so `https://www.example.com/` shows as `example.com`. The STORED
-    /// `FieldPayload.url` keeps the full string verbatim; anything that OPENS
-    /// the link must use the stored value, never this. A string that doesn't
-    /// parse as a URL (no host) is returned unchanged rather than mangled.
+    /// ★ DISPLAY-ONLY prettifier for a URL value: HOST + TLD only. Drops the
+    /// scheme, a leading "www.", AND the entire path — so
+    /// `https://www.example.com/recipes/roasted-tomato-soup` shows as
+    /// `example.com` (Wikipedia's convention). Because the value is now bare,
+    /// the renderer pairs it with an external-link glyph so it still reads as a
+    /// link. The STORED `FieldPayload.url` keeps the full string verbatim;
+    /// anything that OPENS the link must use the stored value, never this. A
+    /// string that doesn't parse as a URL (no host) is returned unchanged.
     static func prettyURL(_ raw: String) -> String {
         guard let comps = URLComponents(string: raw), let host = comps.host else {
             return raw
         }
-        var host2 = host
-        if host2.hasPrefix("www.") { host2 = String(host2.dropFirst(4)) }
-        var path = comps.path
-        if path == "/" { path = "" }   // trailing slash on a bare host only
-        var out = host2 + path
-        if let q = comps.query, !q.isEmpty { out += "?" + q }
-        return out.isEmpty ? raw : out
+        var h = host
+        if h.hasPrefix("www.") { h = String(h.dropFirst(4)) }
+        return h.isEmpty ? raw : h
     }
 
     // MARK: - Per-kind helpers (locale-aware, plain)

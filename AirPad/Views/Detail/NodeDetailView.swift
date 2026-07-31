@@ -2289,11 +2289,21 @@ private struct FieldPairCell: View {
         } else if let text = FieldValueFormatter.display(
             value, definition: definition, resolveNodeTitle: resolveNodeTitle
         ) {
-            Text(text)
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            HStack(spacing: 5) {
+                Text(text)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                // Stage 5.2 — url shows HOST only (via prettyURL), so it needs a
+                // link affordance to still read as a link. DISPLAY glyph only;
+                // opening the link (using the STORED verbatim url) is Stage 3.
+                if definition.kind == .url {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                }
+            }
         } else {
             Text("\u{2014}")   // em dash — present but unfilled
                 .font(.system(size: 17, weight: .semibold))

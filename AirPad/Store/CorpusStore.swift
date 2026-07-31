@@ -757,6 +757,25 @@ final class CorpusStore {
             } else {
                 fieldDefinitions = []
             }
+            #if DEBUG
+            // Stage 5.1 — headless objective verification hooks (DEBUG only,
+            // launch-arg gated → zero cost in normal runs). `-FieldSelfTest`
+            // prints the schema/formatter self-test result; `-FieldFixtureNode`
+            // injects the twelve-kind fixture (definitions + one node) so the
+            // card stat line and Attributes section can be screenshotted.
+            if #available(iOS 17.0, *) {
+                if ProcessInfo.processInfo.arguments.contains("-FieldSelfTest") {
+                    // NSLog (not print) so the result flushes unbuffered to the
+                    // console even when the harness kills the app before exit.
+                    NSLog("[FieldValueSelfTest] %@", FieldValueSelfTest.run())
+                }
+                if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
+                    let defs = FieldValueSelfTest.fixtureDefinitions()
+                    fieldDefinitions = defs
+                    nodes.insert(FieldValueSelfTest.fixtureNode(defs: defs), at: 0)
+                }
+            }
+            #endif
         } catch {
             print("[CorpusStore] Load error: \(error)")
         }
@@ -2596,7 +2615,11 @@ final class CorpusStore {
     /// the split (or saved by older clients in a future-sync world)
     /// migrate quietly into the new layout. No-op when the node is
     /// already normalized.
-    private static func normalizeAtomicsToFront(_ node: inout Node) {
+    ///
+    /// Internal (not private) so `FieldValueSelfTest` can assert the invariant
+    /// holds for the Stage 5.1 `.field` atomic; the function is generic over
+    /// `type.isAtomic`, so it absorbed `.field` with no change.
+    static func normalizeAtomicsToFront(_ node: inout Node) {
         let alreadyOrdered: Bool = {
             var seenPayload = false
             for item in node.items {

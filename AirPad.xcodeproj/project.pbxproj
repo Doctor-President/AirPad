@@ -206,6 +206,7 @@
 		B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC513418FD53025E45C9B6 /* BlockChunker.swift */; };
 		B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */; };
 		BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F66121EACBDE4B0316AC715 /* MSDFLabel.swift */; };
+		BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3555E8AE351646CB6D4A2886 /* FieldValueSelfTest.swift */; };
 		BC4D8EDC2E3EC93B74EF342F /* PeekPillStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF5E2E9E140FAB95C76681A3 /* PeekPillStyle.swift */; };
 		BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7357D7DC38554C54BB982B6E /* LibrarianSheetDetentState.swift */; };
 		C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */; };
@@ -336,6 +337,7 @@
 		338373B19F63427D62FB1D74 /* UMAPSGD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSGD.swift; sourceTree = "<group>"; };
 		33AB8A695AFDD807BC72EBE9 /* SolarFlareTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarFlareTuning.swift; sourceTree = "<group>"; };
 		34AC513418FD53025E45C9B6 /* BlockChunker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChunker.swift; sourceTree = "<group>"; };
+		3555E8AE351646CB6D4A2886 /* FieldValueSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueSelfTest.swift; sourceTree = "<group>"; };
 		360B7A6DADF89ED7B6D1DD3E /* MarkdownBlockParserSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlockParserSelfTest.swift; sourceTree = "<group>"; };
 		36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomableImageView.swift; sourceTree = "<group>"; };
 		376265F2CCAF46EDE2216E54 /* NodeBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeBlock.swift; sourceTree = "<group>"; };
@@ -845,6 +847,7 @@
 				6EDDB291F9F6170B93CE084E /* FieldKind.swift */,
 				8587B8FB965733F87A837170 /* FieldValue.swift */,
 				E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */,
+				3555E8AE351646CB6D4A2886 /* FieldValueSelfTest.swift */,
 				AE402981E931009EBB3F93EE /* Neighborhood.swift */,
 				1866B7173FCC4A9B1AE81AF1 /* Node.swift */,
 				376265F2CCAF46EDE2216E54 /* NodeBlock.swift */,
@@ -1318,6 +1321,7 @@
 				8C816C9A65368BD8D812CFFB /* FieldKind.swift in Sources */,
 				E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */,
 				3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */,
+				BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
 				71A9DACF5563A23D695206FE /* FluidKokoroTTSEngine.swift in Sources */,
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,

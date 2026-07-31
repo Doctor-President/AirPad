@@ -55,6 +55,7 @@ struct SubstrateInspectView: View {
     @State private var umapSelfTestResult: String? = nil
     @State private var hdbscanSelfTestResult: String? = nil
     @State private var entryMigrationSelfTestResult: String? = nil
+    @State private var fieldValueSelfTestResult: String? = nil
     @State private var markdownBlockSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestInProgress: Bool = false
@@ -657,6 +658,24 @@ struct SubstrateInspectView: View {
             }
             .buttonStyle(.plain)
             if let r = entryMigrationSelfTestResult {
+                Text(r)
+                    .font(.caption2)
+                    .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                if #available(iOS 17.0, *) { fieldValueSelfTestResult = FieldValueSelfTest.run() }
+            } label: {
+                Text("Run field-value self-tests")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(AppearancePalette.ink.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            if let r = fieldValueSelfTestResult {
                 Text(r)
                     .font(.caption2)
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))

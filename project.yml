@@ -265,6 +265,9 @@ targets:
           - "EntryMigrationSelfTest.swift"
           - "EntryDeletionDiagnostic.swift"
           - "ClipboardContentRouterDiagnostic.swift"
+          # References CorpusStore (app-target only) for the normalize-invariant
+          # assertion — same reason the other self-tests are excluded here.
+          - "FieldValueSelfTest.swift"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share

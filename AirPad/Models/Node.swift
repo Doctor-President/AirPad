@@ -71,18 +71,35 @@ extension TagOrigin {
 /// TYPED (schema-foresight) so future crop controls — `zoom` / `scale`, an
 /// explicit `focalPoint`, or per-surface overrides — can be added as additive,
 /// decode-tolerant fields with NO further migration.
+/// #7 (BUG 24) — how the hero image sits inside its zone. `fill` (default) is
+/// the shipped `scaledToFill` cover cropped by `offset`; `fullHeight` shows the
+/// WHOLE image (`scaledToFit`) — the detail hero grows its zone to the image's
+/// natural height (capped), the card / grid tiles letterbox it inside their
+/// FIXED zone. NODE-owned per ws-templates (template owns the zone, node owns
+/// the fit). Additive: the matte / blur-fill / letterbox variants can arrive
+/// later as new cases with no migration.
+enum HeroFit: String, Codable, Hashable {
+    case fill
+    case fullHeight
+}
+
 struct HeroCrop: Codable, Hashable {
     /// Pan offset as a FRACTION of the rendered image's width / height. `.zero`
     /// = the centered crop (default). Roughly ±0.5; clamped to the actual image
-    /// overflow at render so it can never expose an edge.
+    /// overflow at render so it can never expose an edge. Only meaningful in
+    /// `.fill` — `.fullHeight` shows the whole image, so there is no overflow to pan.
     var offset: CGPoint
+    /// BUG 24 — fill (crop) vs fullHeight (whole image). Additive; legacy nodes
+    /// (and any encode without this key) decode as `.fill`.
+    var fit: HeroFit
 
-    init(offset: CGPoint = .zero) {
+    init(offset: CGPoint = .zero, fit: HeroFit = .fill) {
         self.offset = offset
+        self.fit = fit
     }
 
     enum CodingKeys: String, CodingKey {
-        case offset
+        case offset, fit
     }
 }
 
@@ -93,6 +110,7 @@ extension HeroCrop {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init()
         offset = try c.decodeIfPresent(CGPoint.self, forKey: .offset) ?? offset
+        fit = try c.decodeIfPresent(HeroFit.self, forKey: .fit) ?? fit
     }
 
     // MARK: - Crop → points geometry (ONE source for every surface)

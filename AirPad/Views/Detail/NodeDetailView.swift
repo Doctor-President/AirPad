@@ -749,11 +749,29 @@ struct NodeDetailView: View {
                         } label: {
                             Label("Change Hero Image…", systemImage: "photo.badge.plus")
                         }
-                        // #7 — enter reposition mode for the current hero.
-                        Button {
-                            isAdjustingHero = true
-                        } label: {
-                            Label("Reposition Hero…", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                        // BUG 24 — per-node fit. fullHeight shows the whole image
+                        // (detail zone grows; card/grid tiles letterbox). Stored in
+                        // `heroCrop.fit` so ALL surfaces honour it and it survives a
+                        // future template apply. Sibling of Reposition, same menu.
+                        Toggle(isOn: Binding(
+                            get: { node.heroCrop?.fit == .fullHeight },
+                            set: { on in
+                                var c = node.heroCrop ?? HeroCrop()
+                                c.fit = on ? .fullHeight : .fill
+                                if on { isAdjustingHero = false }   // reposition is meaningless in fullHeight
+                                Task { await store.setHeroCrop(c, nodeID: node.id) }
+                            }
+                        )) {
+                            Label("Show Full Height", systemImage: "arrow.up.and.down")
+                        }
+                        // #7 — enter reposition mode for the current hero. Hidden in
+                        // fullHeight: there's no overflow to pan (Watch-for #1).
+                        if node.heroCrop?.fit != .fullHeight {
+                            Button {
+                                isAdjustingHero = true
+                            } label: {
+                                Label("Reposition Hero…", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
+                            }
                         }
                         Button {
                             isAdjustingHero = false
@@ -851,7 +869,7 @@ struct NodeDetailView: View {
                     )
                 )
         } else {
-            HeroImageBanner(node: node, topInset: topInset, width: width, isAdjusting: $isAdjustingHero)
+            HeroImageBanner(node: node, heroCrop: node.heroCrop, topInset: topInset, width: width, isAdjusting: $isAdjustingHero)
                 // Force a fresh view identity whenever the source path
                 // flips so the `.task(id:)` inside actually re-fires.
                 // Without this the banner's identity is reused across
@@ -2666,6 +2684,15 @@ private struct GlassRowContainer<Content: View>: View {
 private struct HeroImageBanner: View {
 
     let node: Node
+    /// BUG 24 round 2 — passed as an EXPLICIT value prop (not read off `node`)
+    /// so a `heroCrop` change actually invalidates this child. `Node.==` is
+    /// id-only (5b2d02d), so binding the banner to `node` alone leaves the
+    /// fit/offset stale until the view remounts (the "toggle does nothing until
+    /// I leave and come back" symptom). A full `Equatable` + `.equatable()` can't
+    /// be used here because the `@Binding` below would compare equal on both
+    /// sides and stop reposition mode from updating — so bind to the value
+    /// directly instead (the fix shape the brief's second option names).
+    let heroCrop: HeroCrop?
     let topInset: CGFloat
     let width: CGFloat
     /// #7 (launch list) — reposition mode. While true, a drag on the banner
@@ -2692,30 +2719,117 @@ private struct HeroImageBanner: View {
     /// #7 — committed crop in effect right now (optimistic local wins, then the
     /// persisted node value, then centered). `offset` is NORMALIZED — a fraction
     /// of the rendered image, converted to points against the live frame below.
-    private var baseCrop: HeroCrop { localCrop ?? node.heroCrop ?? HeroCrop() }
+    /// Fit ALWAYS comes from the persisted `heroCrop` prop (the source of truth
+    /// the ••• toggle writes); only the OFFSET is optimistic (`localCrop`, set by
+    /// a reposition drag). Otherwise a prior drag's `localCrop` (always `.fill`)
+    /// would mask a just-toggled `.fullHeight`.
+    private var baseCrop: HeroCrop {
+        let offset = (localCrop ?? heroCrop ?? HeroCrop()).offset
+        return HeroCrop(offset: offset, fit: heroCrop?.fit ?? .fill)
+    }
 
     var body: some View {
         Group {
             if let image, let aspect {
-                let visibleHeight = max(200, min(visualSettings.heroMaxHeight, width / max(aspect, 0.01)))
-                let totalHeight = visibleHeight + topInset
-                // #7 — `scaledToFill` covers width×totalHeight, overflowing on
-                // the longer axis; the crop's NORMALIZED offset (+ the live drag)
-                // shifts which slice shows, clamped to the overflow so an edge
-                // gap can't appear. Shared math with the card / grid tiles
-                // (`HeroCrop.clampedPointOffset`).
-                let offset = HeroCrop.clampedPointOffset(
-                    normalizedOffset: baseCrop.offset, imageAspect: aspect,
-                    width: width, height: totalHeight, extraTranslation: dragTranslation)
-                Color.clear
-                    .frame(width: width, height: totalHeight)
-                    .overlay {
+                let naturalHeight = width / max(aspect, 0.01)
+                if baseCrop.fit == .fullHeight {
+                    // BUG 24 round 4 — TRUE top-edge mirror + chrome-clearing inset.
+                    // The crisp `scaledToFit` card fills width × its NATURAL height
+                    // (aspect-matched → no bars) and is bottom-aligned. Above it sits
+                    // an INSET whose height clears the top chrome (48pt back button)
+                    // + safe area, so the chrome floats over the MIRROR and the real
+                    // card begins BELOW it, unobstructed (finding 2 — one height rule,
+                    // no layout fork). The inset is a TRUE reflection of the card's
+                    // top EDGE STRIP: the top `mirrorSourceFraction` of the image,
+                    // vertically FLIPPED, stretched to fill the inset, blurred — so
+                    // the pixel row at the seam matches (yellow continues into yellow,
+                    // finding 1), NOT the round-3 whole-image blur that showed the
+                    // card's ambient body colour (purple). CAPPED at 0.72× screen; a
+                    // very tall image side-letterboxes, and those side bars keep the
+                    // ambient blurred fill (the mirror is a TOP-edge treatment). No
+                    // reposition (no overflow to pan; ••• hides it). `chromeClearance`
+                    // 64 / `mirrorSourceFraction` 0.06 / `0.72` ceiling = proposed dials.
+                    let ceiling = UIScreen.main.bounds.height * 0.72
+                    let contentHeight = min(naturalHeight, ceiling)
+                    let chromeClearance: CGFloat = 64            // 48pt back button + breathing
+                    let insetHeight = topInset + chromeClearance
+                    let bannerHeight = contentHeight + insetHeight
+                    let mirrorSourceFraction: CGFloat = 0.06     // top 6% — the card's border band
+                    // ROUND 6 — BOUND THE VERTICAL STRETCH to ≤3×. Round 5 sampled only
+                    // the top 6% and stretched it to fill the inset: ~8–10× on a wide
+                    // image, which turns the source into a directional vertical STREAK
+                    // no isotropic blur can undo (T: "zero blur … vertical streaking").
+                    // Sample at least `insetHeight/3` of source so the stretch never
+                    // exceeds 3× and the ramp blur can actually soften it.
+                    let mirrorSourcePts = max(mirrorSourceFraction * contentHeight, insetHeight / 3)
+                    let mirrorStretch = insetHeight / mirrorSourcePts    // ≤ 3
+                    let mirrorBlur = max(10, insetHeight * 0.26) // blur scales with inset (finding 1)
+                    // ROUND 7 — the blur must reach FULL opacity within the first
+                    // `mirrorRampEnd` of the strip above the seam, then HOLD. A plain
+                    // .clear→.white ramp (round 5/6) spread it evenly, so the strip was
+                    // ~50% sharp at its midpoint and full blur only landed at the very
+                    // top of the frame (T's report). A fast ramp also blurs away the
+                    // now-recognisable source (round 6's taller sample let T read
+                    // "BASIC" reflected) — recognisable is fine if it's gone by the
+                    // first fifth. Named so T can dial it. SHIPPED: 0.20.
+                    let mirrorRampEnd: CGFloat = 0.20
+                    ZStack(alignment: .bottom) {
+                        // Ambient blurred fill — only visible in the side bars when a
+                        // very tall image is capped; hidden behind the card + mirror
+                        // in the common full-width case.
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFill()
-                            .offset(x: offset.x, y: offset.y)
+                            .frame(width: width, height: bannerHeight)
+                            .clipped()
+                            .blur(radius: 24, opaque: true)
+                        // The crisp, WHOLE card — bottom-aligned, unobstructed.
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: width, height: contentHeight)
                     }
-                    .clipped()
+                    .overlay(alignment: .top) {
+                        // True top-edge mirror with a RAMPED blur. `strip` = the top
+                        // `mirrorSourcePts` of the image, stretched ≤3× (round 6) and
+                        // FLIPPED so its bottom row is the image's top edge — a seamless
+                        // butt against the card (round 4, matches actual pixel rows). The
+                        // SHARP copy sits in the inset; a BLURRED copy fades in via a ramp
+                        // that reaches full opacity within `mirrorRampEnd` above the seam,
+                        // then holds (round 7). Blur is a STATIC layer (GPU-cached, no
+                        // per-frame re-blur → no scroll cost). ★ The blur does NOT bleed
+                        // onto the card (round-8 overlap was reverted, T): softening the
+                        // image's own top re-obstructs the image this fix exists to reveal.
+                        // The residual seam is the 1×↔3× SCALE change, which is left as-is
+                        // — the prior-art bar (Music/Spotify/YouTube blurred backdrops
+                        // don't hide the boundary either) is already exceeded by matching
+                        // pixel rows at the seam.
+                        let strip = Image(uiImage: image)
+                            .resizable()
+                            .frame(width: width, height: contentHeight * mirrorStretch)
+                            .frame(width: width, height: insetHeight, alignment: .top)
+                            .clipped()
+                            .scaleEffect(x: 1, y: -1)
+                        ZStack {
+                            strip                                     // sharp at the seam
+                            strip
+                                .blur(radius: mirrorBlur, opaque: true)
+                                .mask(
+                                    // Full blur by `mirrorRampEnd` above the seam, then hold.
+                                    LinearGradient(
+                                        stops: [
+                                            .init(color: .clear, location: 0.0),
+                                            .init(color: .white, location: mirrorRampEnd),
+                                            .init(color: .white, location: 1.0)
+                                        ],
+                                        startPoint: .bottom, endPoint: .top
+                                    )
+                                )
+                        }
+                        .frame(width: width, height: insetHeight)
+                        .allowsHitTesting(false)
+                    }
+                    .frame(width: width, height: bannerHeight)
                     .clipShape(
                         UnevenRoundedRectangle(
                             bottomLeadingRadius: 30,
@@ -2723,17 +2837,45 @@ private struct HeroImageBanner: View {
                             style: .continuous
                         )
                     )
-                    .contentShape(Rectangle())
-                    // High-priority so a pan beats the enclosing ScrollView while
-                    // adjusting; masked off entirely otherwise so normal scrolling
-                    // over the hero is untouched.
-                    .highPriorityGesture(
-                        panGesture(width: width, height: totalHeight, aspect: aspect),
-                        including: isAdjusting ? .all : .none
-                    )
-                    .overlay(alignment: .bottomTrailing) {
-                        if isAdjusting { adjustDoneButton }
-                    }
+                } else {
+                    let visibleHeight = max(200, min(visualSettings.heroMaxHeight, naturalHeight))
+                    let totalHeight = visibleHeight + topInset
+                    // #7 — `scaledToFill` covers width×totalHeight, overflowing on
+                    // the longer axis; the crop's NORMALIZED offset (+ the live drag)
+                    // shifts which slice shows, clamped to the overflow so an edge
+                    // gap can't appear. Shared math with the card / grid tiles
+                    // (`HeroCrop.clampedPointOffset`).
+                    let offset = HeroCrop.clampedPointOffset(
+                        normalizedOffset: baseCrop.offset, imageAspect: aspect,
+                        width: width, height: totalHeight, extraTranslation: dragTranslation)
+                    Color.clear
+                        .frame(width: width, height: totalHeight)
+                        .overlay {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .offset(x: offset.x, y: offset.y)
+                        }
+                        .clipped()
+                        .clipShape(
+                            UnevenRoundedRectangle(
+                                bottomLeadingRadius: 30,
+                                bottomTrailingRadius: 30,
+                                style: .continuous
+                            )
+                        )
+                        .contentShape(Rectangle())
+                        // High-priority so a pan beats the enclosing ScrollView while
+                        // adjusting; masked off entirely otherwise so normal scrolling
+                        // over the hero is untouched.
+                        .highPriorityGesture(
+                            panGesture(width: width, height: totalHeight, aspect: aspect),
+                            including: isAdjusting ? .all : .none
+                        )
+                        .overlay(alignment: .bottomTrailing) {
+                            if isAdjusting { adjustDoneButton }
+                        }
+                }
             } else {
                 // Loading / resolve-or-decode failure: fall back to the
                 // gradient banner at its natural 200 + topInset height.

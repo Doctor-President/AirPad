@@ -30,8 +30,6 @@ struct NodeCardView: View {
     // node has been deleted.
     let nodeID: String
     let fallbackNode: Node
-    var isSelecting: Bool = false
-    var isPicked: Bool = false
     /// Grid context disables this — many tiny cards bouncing on viewport
     /// entry reads as noise. Default keeps carousel behavior unchanged.
     var animateEntry: Bool = true
@@ -61,14 +59,10 @@ struct NodeCardView: View {
 
     init(nodeID: String,
          fallbackNode: Node,
-         isSelecting: Bool = false,
-         isPicked: Bool = false,
          animateEntry: Bool = true,
          presentation: CardPresentation = .carousel) {
         self.nodeID = nodeID
         self.fallbackNode = fallbackNode
-        self.isSelecting = isSelecting
-        self.isPicked = isPicked
         self.animateEntry = animateEntry
         self.presentation = presentation
         #if DEBUG
@@ -150,25 +144,10 @@ struct NodeCardView: View {
     }
 
     private var cardBody: some View {
+        // Selection affordance (checkmark + Klein outline) is applied by the
+        // shared `.selectionHighlight` modifier at the call site (BUG 10), not
+        // rendered here — this face is selection-agnostic.
         HStack(spacing: 12) {
-            if isSelecting {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.55), lineWidth: 2)
-                        .frame(width: 26, height: 26)
-                    if isPicked {
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 26, height: 26)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(.black)
-                    }
-                }
-                .frame(width: 32)
-                .transition(.opacity.combined(with: .move(edge: .leading)))
-            }
-
             GeometryReader { geo in
                 let hasHero = node.coverImageRelativePath != nil
                 // Anchor the color blobs to the hero zone when no cover exists
@@ -210,10 +189,6 @@ struct NodeCardView: View {
                             lineWidth: Self.rimWidth
                         )
                         .allowsHitTesting(false)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Self.cornerRadius)
-                        .stroke(Color.white, lineWidth: isSelecting && isPicked ? 3 : 0)
                 )
                 // Warm, appearance-adaptive lift — shared AppearancePalette
                 // token (dark = the shipped black@0.32, byte-identical; light =

@@ -247,6 +247,8 @@ struct CoverFlowView: View {
                             rotationMaxDegrees: rotationMaxDegrees,
                             sideScale: sideScale,
                             perspective: perspective,
+                            isSelecting: selection.isActive,
+                            isPicked: selection.isSelected(node.id),
                             // Rake saturates at ±1 (edge cards look like the ±1
                             // neighbour, just pushed further out by the offset).
                             phase: max(-1, min(1, dist))
@@ -342,6 +344,8 @@ private struct CoverFlowCell: View {
     let rotationMaxDegrees: Double
     let sideScale: Double
     let perspective: Double
+    let isSelecting: Bool
+    let isPicked: Bool
     /// −1 (leading) … 0 (centre) … +1 (trailing). Left cards hinge on their
     /// right edge, right cards on their left — both rake inward toward centre.
     let phase: CGFloat
@@ -360,6 +364,9 @@ private struct CoverFlowCell: View {
         // #3 — shared focus glow. Applied before the rake so it transforms with
         // the card face (matches NodeCardView's 30pt rounding).
         .focusHighlight(nodeID: node.id, cornerRadius: 30)
+        // BUG 10 — shared selection treatment (checkmark + Klein outline), raked
+        // with the card like the focus glow.
+        .selectionHighlight(isSelecting: isSelecting, isPicked: isPicked, cornerRadius: 30)
         .scaleEffect(scale)
         .rotation3DEffect(
             .degrees(degrees),

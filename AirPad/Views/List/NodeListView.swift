@@ -102,12 +102,31 @@ struct NodeListView: View {
                 Section {
                     ForEach(section.nodes) { node in
                         Button {
-                            navHaptic.impactOccurred()
-                            navigationPath.append(node)
+                            // BUG 10 — THE functional fix: in selection mode the
+                            // row tap TOGGLES selection instead of pushing Detail.
+                            // Without this branch, batch Tag/Organize/Delete were
+                            // unreachable from List (tap always routed to Detail).
+                            if selection.isActive {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                selection.toggle(node.id)
+                            } else {
+                                navHaptic.impactOccurred()
+                                navigationPath.append(node)
+                            }
                         } label: {
                             RecentNodeRow(node: node, timestamp: node.updatedAt,
                                           ink: AppearancePalette.ink)
                                 .equatable()
+                                // BUG 10 — shared selection CHECKMARK (trailing;
+                                // the row's leading slot has the type dot). Outline
+                                // suppressed — List carries a whole-strip fill in
+                                // its listRowBackground instead (an inset outline
+                                // doesn't hug a full-width row band — T's note).
+                                .selectionHighlight(isSelecting: selection.isActive,
+                                                    isPicked: selection.isSelected(node.id),
+                                                    cornerRadius: 12,
+                                                    badgeAlignment: .trailing,
+                                                    outline: false)
                         }
                         // #13 (T-dialed) — LIGHT: a warm ELEVATED fill
                         // (`bgElevated`, the note-panel lift tone) + a heavy warm
@@ -127,7 +146,14 @@ struct NodeListView: View {
                         // make the strip blue). Persists until the next touch.
                         .listRowBackground(
                             Group {
-                                if router.focusedHighlightNodeID == node.id {
+                                if selection.isSelected(node.id) {
+                                    // BUG 10 — SELECTED row: whole-strip Klein fill
+                                    // (T asked for the focus-highlight treatment,
+                                    // not the inset outline). Solid Klein `#1B59C2`
+                                    // distinguishes it from focus's Klein→cyan
+                                    // gradient; the trailing checkmark is definitive.
+                                    Rectangle().fill(Color(hexString: "1B59C2"))
+                                } else if router.focusedHighlightNodeID == node.id {
                                     LinearGradient(
                                         colors: [Color(hexString: "1B59C2"), Color(hexString: "00BFFF")],
                                         startPoint: .leading, endPoint: .trailing
@@ -140,6 +166,7 @@ struct NodeListView: View {
                                         .shadow(color: AppearancePalette.listRowLift, radius: 26, x: 0, y: 11)
                                 }
                             }
+                            .animation(.easeInOut(duration: 0.25), value: selection.isSelected(node.id))
                             .animation(.easeInOut(duration: 0.25), value: router.focusedHighlightNodeID == node.id)
                         )
                     }

@@ -190,6 +190,7 @@ struct NodeGridView: View {
                         ForEach(nodes) { node in
                             NodeTileView(
                                 node: node,
+                                isSelecting: selection.isActive,
                                 isPicked: selection.isSelected(node.id),
                                 cellWidth: cellW,
                                 cellHeight: cellH,
@@ -328,6 +329,7 @@ struct NodeGridView: View {
 
 private struct NodeTileView: View, Equatable {
     let node: Node
+    let isSelecting: Bool
     let isPicked: Bool
     let cellWidth: CGFloat
     let cellHeight: CGFloat
@@ -340,6 +342,7 @@ private struct NodeTileView: View, Equatable {
     // NodeGridTile body) plus its layout/selection inputs, so a single node's
     // display change re-renders ONLY its tile — no whole-array storm.
     static func == (l: NodeTileView, r: NodeTileView) -> Bool {
+        l.isSelecting == r.isSelecting &&
         l.isPicked == r.isPicked &&
         l.cellWidth == r.cellWidth &&
         l.cellHeight == r.cellHeight &&
@@ -365,11 +368,8 @@ private struct NodeTileView: View, Equatable {
         )
         .frame(width: cellWidth, height: cellHeight)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay {
-            if isPicked {
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(.white, lineWidth: 3)
-            }
-        }
+        // BUG 10 — shared selection treatment (checkmark + Klein outline),
+        // replacing the low-contrast white stroke that didn't read on parchment.
+        .selectionHighlight(isSelecting: isSelecting, isPicked: isPicked, cornerRadius: 14)
     }
 }

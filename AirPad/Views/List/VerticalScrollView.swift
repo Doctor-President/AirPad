@@ -173,13 +173,15 @@ struct VerticalScrollView: View {
                         NodeCardView(
                             nodeID: node.id,
                             fallbackNode: node,
-                            isSelecting: selection.isActive,
-                            isPicked: selection.isSelected(node.id),
                             presentation: .vertical
                         )
                         .frame(height: cardHeight)
                         // #3 — shared focus glow (matches NodeCardView's 30pt face).
                         .focusHighlight(nodeID: node.id, cornerRadius: 30)
+                        // BUG 10 — shared selection treatment (checkmark + Klein outline).
+                        .selectionHighlight(isSelecting: selection.isActive,
+                                            isPicked: selection.isSelected(node.id),
+                                            cornerRadius: 30)
                         .animation(.spring(response: 0.38, dampingFraction: 0.72), value: dist)
                         .animation(.easeInOut(duration: 0.18), value: selection.isActive)
                         .id(node.id)

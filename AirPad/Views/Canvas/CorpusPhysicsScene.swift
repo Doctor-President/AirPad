@@ -85,7 +85,10 @@ final class CorpusPhysicsScene: SKScene {
         guard isSelected else { return }
         let radius = (sprite.userData?["radius"] as? CGFloat) ?? 30
         let outline = SKShapeNode(circleOfRadius: radius + 6)
-        outline.strokeColor = .white
+        // BUG 10 — unified selection outline colour: Klein Blue #1B59C2, raised
+        // contrast over the old white. Distinct from the focus ring's cyan #00BFFF
+        // (the two never coexist — entering selection is a touch that clears focus).
+        outline.strokeColor = UIColor(red: 0x1B / 255.0, green: 0x59 / 255.0, blue: 0xC2 / 255.0, alpha: 1)
         outline.fillColor = .clear
         outline.lineWidth = 3
         outline.zPosition = 1.0

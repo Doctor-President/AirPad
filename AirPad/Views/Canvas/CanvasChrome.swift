@@ -1213,3 +1213,91 @@ struct FocusDismissTouchProbe: UIViewRepresentable {
         }
     }
 }
+
+// MARK: - BUG 10: batch selection (ONE shared treatment)
+// The SIBLING of the #3 focus highlight above — same shape (persistent state →
+// a visual treatment) and the same Klein Blue identity, so the two can't drift.
+// Where they MUST NOT share: focus is a GLOBAL, SINGLE-node glow off
+// `AppRouter.focusedHighlightNodeID`, cleared on the next touch; selection is a
+// PER-SCOPE, MULTI-node mode off `SelectionService`, entered/exited explicitly.
+// Different state, different lifecycle — kept separate on purpose. The one
+// visual overlap (both can outline a card in blue) is disambiguated by the
+// CHECKMARK, which only selection draws.
+
+/// The shared selection checkmark badge. CHECKMARK PRIMARY: a SHAPE affordance
+/// that reads regardless of hue — T is colourblind, so a colour-only selection
+/// state is exactly the wrong pattern — and it matches the Photos convention.
+/// Picked → Klein-blue disc + white check; unpicked → an empty ring. Carries a
+/// dark scrim disc + shadow so BOTH states stay legible over every backdrop
+/// (bright photo thumbnails, gradient blobs, parchment) in either appearance.
+struct SelectionCheckBadge: View {
+    let isPicked: Bool
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(isPicked ? Color(hexString: "1B59C2") : Color.black.opacity(0.22))
+                .frame(width: 26, height: 26)
+            Circle()
+                .strokeBorder(Color.white.opacity(0.95), lineWidth: 2)
+                .frame(width: 26, height: 26)
+            if isPicked {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+    }
+}
+
+/// The ONE selection treatment applied to every card surface (Grid, List, Cover
+/// Flow, vertical Card stack) so the affordance can't drift per-view (BUG 10 —
+/// the disease was four call sites each inventing their own or none). Checkmark
+/// primary (above); a Klein Blue `#1B59C2` OUTLINE (a hex literal T can verify
+/// with a picker) is the raised-contrast secondary cue, shown on the picked
+/// cell. `isSelecting` / `isPicked` are passed in — unlike focus's global state,
+/// selection is per-scope, so the call site (which knows its scope) computes them.
+private struct SelectionHighlight: ViewModifier {
+    let isSelecting: Bool
+    let isPicked: Bool
+    var cornerRadius: CGFloat = 20
+    var badgeAlignment: Alignment = .topTrailing
+    /// The card surfaces draw the Klein outline; List sets this false because it
+    /// carries its own whole-strip fill (an inset rounded outline doesn't hug a
+    /// full-width row band — T's note). The checkmark stays either way.
+    var outline: Bool = true
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(Color(hexString: "1B59C2"),
+                                  lineWidth: outline && isSelecting && isPicked ? 3 : 0)
+                    .allowsHitTesting(false)
+            }
+            .overlay(alignment: badgeAlignment) {
+                if isSelecting {
+                    SelectionCheckBadge(isPicked: isPicked)
+                        .padding(8)
+                        .allowsHitTesting(false)
+                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: isSelecting)
+            .animation(.easeInOut(duration: 0.18), value: isPicked)
+    }
+}
+
+extension View {
+    /// Apply the shared BUG-10 selection treatment (checkmark primary + Klein
+    /// Blue outline secondary). `cornerRadius` should match the cell's rounding;
+    /// `badgeAlignment` places the checkmark (corner for cards, trailing for rows).
+    func selectionHighlight(isSelecting: Bool, isPicked: Bool,
+                            cornerRadius: CGFloat,
+                            badgeAlignment: Alignment = .topTrailing,
+                            outline: Bool = true) -> some View {
+        modifier(SelectionHighlight(isSelecting: isSelecting, isPicked: isPicked,
+                                    cornerRadius: cornerRadius, badgeAlignment: badgeAlignment,
+                                    outline: outline))
+    }
+}

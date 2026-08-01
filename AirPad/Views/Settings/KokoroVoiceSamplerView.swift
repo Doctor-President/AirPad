@@ -17,13 +17,9 @@ struct KokoroVoiceSamplerView: View {
     @State private var busyID: String?
     @State private var errorText: String?
 
-    // ── M1 dev-test hook for the ORT (ONNX Runtime, CPU) Kokoro engine. Minimal,
-    //    DEBUG-only, NOT production wiring (that's M2 — real read-aloud routing).
-    //    Lets T hear one sentence through MisakiSwift → ORT → PCM and read the
-    //    cold-load / RTF / active-EP telemetry from the log + this row.
-    @State private var ortEngine = ORTKokoroTTSEngine.shared
-    @State private var ortBusy = false
-    @State private var ortError: String?
+    // (The ORT ONNX-Runtime test tier was removed 2026-07-31 with the ORT
+    //  dependency — ITMS-90208 cleanup. This sampler now exercises the MLX
+    //  KokoroTTSEngine only. See ws-synthesized-voice.md to restore.)
 
     var body: some View {
         NavigationStack {
@@ -55,9 +51,6 @@ struct KokoroVoiceSamplerView: View {
 
     private var loadedBody: some View {
         List {
-            Section("ORT (ONNX Runtime · CPU) — M1 test") {
-                ortTestRow
-            }
             Section {
                 telemetryRow
             }
@@ -126,78 +119,6 @@ struct KokoroVoiceSamplerView: View {
             }
         }
         .font(.caption)
-    }
-
-    @ViewBuilder
-    private var ortTestRow: some View {
-        if ortEngine.isModelInstalled {
-            Picker("Model", selection: Binding(
-                get: { ortEngine.modelVariant },
-                set: { ortEngine.modelVariant = $0 }
-            )) {
-                ForEach(ORTModelVariant.allCases, id: \.self) { v in
-                    Text(v.label).tag(v)
-                }
-            }
-            .pickerStyle(.segmented)
-            // Intra-op thread count — M3-alongside measurement (default vs all cores).
-            Picker("Threads", selection: Binding(
-                get: { ortEngine.intraOpThreads ?? 0 },
-                set: { ortEngine.intraOpThreads = ($0 == 0) ? nil : $0 }
-            )) {
-                Text("threads: default").tag(0)
-                Text("all (\(ProcessInfo.processInfo.activeProcessorCount))").tag(ProcessInfo.processInfo.activeProcessorCount)
-            }
-            .pickerStyle(.segmented)
-            Button {
-                ortTest()
-            } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: ortBusy ? "stop.circle.fill" : "play.circle")
-                        .font(.title2)
-                        .foregroundStyle(ortBusy ? Color.orange : Color.accentColor)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Speak one sentence — af_heart")
-                            .font(.body)
-                        Text("MisakiSwift → ONNX Runtime (CPU) → PCM")
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    if let rtf = ortEngine.lastRTF {
-                        Text(String(format: "RTF %.2f", rtf))
-                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
-                    }
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if let cold = ortEngine.coldLoadSeconds {
-                Text(String(format: "cold-load %.1fs · see log (category kokoro-ort) for EP + footprint", cold))
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-            if let e = ortError {
-                Text(e).font(.caption2).foregroundStyle(.red)
-            }
-        } else {
-            Text("Drop kokoro-v1_0.onnx into Resources/Kokoro/ (see README) to test the ORT engine.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func ortTest() {
-        ortError = nil
-        if ortBusy { ortEngine.stop(); ortBusy = false; return }
-        ortBusy = true
-        Task {
-            do {
-                try await ortEngine.speak(text: sampleLine, voiceID: "af_heart") {
-                    ortBusy = false
-                }
-            } catch {
-                ortError = error.localizedDescription
-                ortBusy = false
-            }
-        }
     }
 
     private func metric(_ label: String, _ value: String) -> some View {

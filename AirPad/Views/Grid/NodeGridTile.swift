@@ -515,7 +515,13 @@ private struct GridTileHeroImage: View, Equatable {
                 // #7 — apply the node's hero crop so the tile framing matches
                 // the detail banner. Fast path (no GeometryReader) when there's
                 // no non-zero crop — the common case across a scrolling grid.
-                if let crop = node.heroCrop, crop.offset != .zero {
+                if node.heroCrop?.fit == .fullHeight {
+                    // BUG 24 — whole image letterboxed inside the FIXED tile zone;
+                    // the tile's gradient shows through the bars. Tiles never grow.
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else if let crop = node.heroCrop, crop.offset != .zero {
                     croppedFill(image: image, crop: crop)
                 } else {
                     Image(uiImage: image)

@@ -857,7 +857,13 @@ private struct CardHeroImage: View, Equatable {
                 // what the user dialed in the detail banner. Fast path (no
                 // GeometryReader) whenever there's no non-zero crop — the common
                 // case across a scrolling list/grid.
-                if let crop = node.heroCrop, crop.offset != .zero {
+                if node.heroCrop?.fit == .fullHeight {
+                    // BUG 24 — whole image letterboxed inside the FIXED hero zone;
+                    // the card's gradient shows through the bars. Tiles never grow.
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                } else if let crop = node.heroCrop, crop.offset != .zero {
                     croppedFill(image: image, crop: crop)
                 } else {
                     Image(uiImage: image)

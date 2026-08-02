@@ -190,7 +190,8 @@ final class LibrarianState {
     /// from this session. Drives the session-aware posture rule: the
     /// surface refuses to collapse to the pill while a session is
     /// live, so a transcript can't be hidden behind the pill by an
-    /// accidental tap or drag. Mirrors `endSessionFooter`'s gating.
+    /// accidental tap or drag. (Gates on the same session-history signal
+    /// the removed `endSessionFooter` used.)
     var hasActiveSession: Bool {
         !sessionHistory.isEmpty || compactedSummary != nil
     }
@@ -555,11 +556,12 @@ final class LibrarianState {
         ))
     }
 
-    /// Wipes the session — history, start time, last response, and
-    /// the input field. Called by the End-session "Clear" branch and
-    /// after a successful Save so the surface returns to a clean
-    /// pre-session state. `selectedScope` and `activeMode` survive so
-    /// the next session inherits the user's last working slice.
+    /// Wipes the session — history, start time, last response, and the
+    /// input field, returning the surface to a clean pre-session state.
+    /// `selectedScope` and `activeMode` survive so the next session
+    /// inherits the user's last working slice. (Its former caller, the
+    /// End-session "Clear" branch, was removed with `endSessionFooter`;
+    /// kept as the reset entry point for a future session-save re-wire.)
     func clearSession() {
         sessionHistory.removeAll()
         sessionStartedAt = nil
@@ -712,9 +714,13 @@ final class LibrarianState {
     // ChatSession lane; retrieval was replaced by `groundedSend` above (the one
     // live Ask path). Its prompt builders (buildAskUserPrompt, buildHistoryBlock)
     // are now deleted. `appendExchange` (the sessionHistory writer) and the
-    // compaction path are LEFT: they're the data source for the still-live
-    // session-save UI (`saveSessionAsNode`/`clearSession`), currently dormant
-    // because nothing calls `appendExchange` — re-wire or retire is a product call.
+    // compaction path are LEFT as the data source for a future session-save.
+    // The UI was REMOVED 2026-08-01: the End-session footer/dialog (dead since
+    // the ChatSession rewire — `appendExchange` uncalled ⇒ `sessionHistory`
+    // always empty ⇒ its "Save to corpus" always no-op'd) is gone. Ending a
+    // chat now flows through the active-chat pill × dialog (Save-to-Chats /
+    // Delete). `saveSessionAsNode`/`clearSession` are KEPT as the wired target
+    // for when `appendExchange` is reconnected; re-wire is a product call.
 
     /// Standing system prompt for Ask. Composed of the optional user-set
     /// personal voice (c7) followed by the baseline steering.

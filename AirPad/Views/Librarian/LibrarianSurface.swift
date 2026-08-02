@@ -41,8 +41,6 @@ struct LibrarianSurface: View {
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
     @State private var presentedCitation: PresentedCitation? = nil
-    @State private var showEndDialog = false
-    @State private var isSavingSession = false
     @State private var researchExportCopied = false
     /// Ask chat/home toggle. False → Librarian home (capability-tile
     /// launchpad + active-chat pill). True → the active `router.chat`
@@ -924,9 +922,10 @@ struct LibrarianSurface: View {
             // it rides with the transcript — shown only when the transcript
             // is (isViewingActiveChat && expanded). At half the home shows
             // "home only" with no stray Back pill. In the other modes it
-            // stays the quickfix panel-collapse affordance. The old
-            // `endSessionFooter` / End-session dialog remain dormant for a
-            // separate dead-code cleanup pass.
+            // stays the quickfix panel-collapse affordance. (The old
+            // `endSessionFooter` / End-session dialog — dead since the
+            // Ask→ChatSession rewire — were removed 2026-08-01; the live
+            // chat ends via the active-chat pill × dialog above.)
             if isViewingActiveChat {
                 backPill()
             }
@@ -972,21 +971,6 @@ struct LibrarianSurface: View {
             // that bypass focus.
             guard oldValue.isEmpty && !newValue.isEmpty else { return }
             panelModel.expandToFull(animated: true)
-        }
-        .confirmationDialog(
-            "End session?",
-            isPresented: $showEndDialog,
-            titleVisibility: .visible
-        ) {
-            Button("Save to corpus") {
-                Task { await saveSession(librarian: librarian) }
-            }
-            Button("Clear", role: .destructive) {
-                librarian.clearSession()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Save this session as a note, or clear it without saving.")
         }
         // Active-chat pill × → keep or discard the live chat. Save
         // persists it to the Chats list and resets to an empty session;
@@ -1149,58 +1133,6 @@ struct LibrarianSurface: View {
     private var titleCollapseOpacity: Double {
         guard cctTitleCollapse > 0 else { return 1 }
         return min(1, max(0, Double(chatScrollTopOffset) / cctTitleCollapse))
-    }
-
-    /// Footer row holding the End button. Visible whenever the session
-    /// has *anything* — either live turns or a compacted summary —
-    /// since post-compaction the live history is empty but the session
-    /// itself is very much in progress. Counter shows total turns
-    /// (compacted + live) so the user's sense of "how much have I done
-    /// this session" survives a compaction pass. Save is async
-    /// (`addNode` writes JSON + recomputes layout) so the button shows
-    /// a progress state while in flight.
-    @ViewBuilder
-    private func endSessionFooter(librarian: LibrarianState) -> some View {
-        let liveCount = librarian.sessionHistory.count
-        let totalCount = liveCount + librarian.compactedExchangeCount
-        let hasSession = liveCount > 0 || librarian.compactedSummary != nil
-        if hasSession {
-            HStack {
-                Spacer()
-                Button {
-                    showEndDialog = true
-                } label: {
-                    HStack(spacing: 6) {
-                        if isSavingSession {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .tint(AppearancePalette.ink.opacity(0.7))
-                        } else {
-                            Image(systemName: "stop.circle")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        Text(isSavingSession ? "Saving…" : "End session (\(totalCount))")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(AppearancePalette.ink.opacity(0.06))
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(isSavingSession)
-                Spacer()
-            }
-            .padding(.bottom, 10)
-        }
-    }
-
-    private func saveSession(librarian: LibrarianState) async {
-        isSavingSession = true
-        _ = await librarian.saveSessionAsNode(store: store)
-        librarian.clearSession()
-        isSavingSession = false
     }
 
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {

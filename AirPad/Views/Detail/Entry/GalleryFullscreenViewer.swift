@@ -78,6 +78,14 @@ struct GalleryFullscreenViewer: View {
     /// handlers; the play button on a poster page is a separate tap
     /// target that doesn't toggle.
     @State private var chromeVisible = true
+    /// Interactive swipe-down-to-dismiss (Photos-style). `dismissTranslation`
+    /// tracks the finger (both axes — the content may drift sideways; only
+    /// vertical decides dismissal); `isDraggingToDismiss` latches once the
+    /// vertical-dominant drag is claimed, so the transform + chrome fade only
+    /// engage for a real dismiss drag and never for a page swipe. ★ These do NOT
+    /// touch `chromeVisible` — that's user-toggled and must survive a spring-back.
+    @State private var dismissTranslation: CGSize = .zero
+    @State private var isDraggingToDismiss = false
     /// Set by a poster-page play tap → drives the `.fullScreenCover` that
     /// presents the modal AVPlayer. The pager itself never holds an
     /// AVPlayer (Option A — uniform image-shaped pages so paging snap
@@ -124,6 +132,38 @@ struct GalleryFullscreenViewer: View {
     private let glCaptionGap: Double = 40
     private let glScrimOpacity: Double = 1.0
     private let glScrimFade: Double = 120
+
+    // Interactive swipe-down-to-dismiss — plain `let`s, NO tuner (T judges the
+    // feel on device; a tuner is the second move only if the first round is off).
+    //   distanceRef  — drag distance mapped to full progress (1.0).
+    //   scaleAmount  — content shrinks to (1 - this) at full progress (→ 0.75).
+    //   maxCorner    — content corner radius at full progress (0 at rest).
+    //   chromeFade   — chrome opacity leaves this× faster than progress.
+    //   claimRatio   — dy must exceed |dx|×this to CLAIM the drag (vertical dominance).
+    //   commitDist / commitVel — release past either → dismiss.
+    //   spring*      — spring-back animation on a short release.
+    private let dismissDistanceRef: CGFloat = 240
+    private let dismissScaleAmount: CGFloat = 0.25
+    private let dismissMaxCorner: CGFloat = 28
+    private let dismissChromeFade: CGFloat = 4
+    private let dismissClaimRatio: CGFloat = 1.5
+    private let dismissMinDistance: CGFloat = 12
+    private let dismissCommitDistance: CGFloat = 140
+    private let dismissCommitVelocity: CGFloat = 300
+    private let dismissSpringResponse: Double = 0.32
+    private let dismissSpringDamping: Double = 0.86
+
+    /// 0…1, from the VERTICAL drag only (`dy / distanceRef`, clamped).
+    private var dismissProgress: CGFloat {
+        max(0, min(1, dismissTranslation.height / dismissDistanceRef))
+    }
+    private var dismissScale: CGFloat { 1 - dismissScaleAmount * dismissProgress }
+    private var dismissCornerRadius: CGFloat { dismissMaxCorner * dismissProgress }
+    /// Multiplied into the chrome's existing opacity so the chrome leaves fast as
+    /// the drag begins — without touching `chromeVisible`.
+    private var dismissChromeOpacity: CGFloat {
+        max(0, min(1, 1 - dismissProgress * dismissChromeFade))
+    }
 
     init(
         galleryItems: [GalleryItem],
@@ -185,6 +225,48 @@ struct GalleryFullscreenViewer: View {
         )
     }
 
+    /// Photos-style interactive swipe-down-to-dismiss. Claims only a clearly
+    /// vertical downward drag (so horizontal page swipes are untouched); bails
+    /// on a zoomed page (its inner scroll view pans) or while editing a caption.
+    private var dismissDragGesture: some Gesture {
+        DragGesture(minimumDistance: dismissMinDistance)
+            .onChanged { value in
+                // Zoomed pages pan via the inner UIScrollView; caption editing
+                // owns the keyboard — leave both entirely alone.
+                guard !isCurrentPageZoomed, !isEditingCaption else { return }
+                let dx = value.translation.width
+                let dy = value.translation.height
+                if !isDraggingToDismiss {
+                    // Claim ONLY a clearly-vertical downward drag; until claimed,
+                    // do nothing (no transform, no state write) so the horizontal
+                    // pager keeps clean sideways swipes.
+                    guard dy > 0, dy > abs(dx) * dismissClaimRatio else { return }
+                    isDraggingToDismiss = true
+                }
+                // Track both axes — the content may drift sideways with the thumb;
+                // only vertical (`dismissProgress`) decides dismissal.
+                dismissTranslation = value.translation
+            }
+            .onEnded { value in
+                guard isDraggingToDismiss else {
+                    dismissTranslation = .zero
+                    return
+                }
+                if value.translation.height > dismissCommitDistance
+                    || value.predictedEndTranslation.height > dismissCommitVelocity {
+                    dismiss()
+                } else {
+                    // Short release → spring back to rest, chrome restored (its
+                    // opacity keys off `chromeVisible`, which we never touched).
+                    withAnimation(.spring(response: dismissSpringResponse,
+                                          dampingFraction: dismissSpringDamping)) {
+                        dismissTranslation = .zero
+                        isDraggingToDismiss = false
+                    }
+                }
+            }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -233,8 +315,12 @@ struct GalleryFullscreenViewer: View {
             // the image rather than the outer ScrollView paging.
             // (Validated in `briefs/spike-zoom-paging.md`.)
             // Also gate paging OFF while editing a caption — the current item
-            // must stay put so the commit-on-blur writes to the right page.
-            .scrollDisabled(isCurrentPageZoomed || isEditingCaption)
+            // must stay put so the commit-on-blur writes to the right page — and
+            // once a dismiss drag is claimed (folded into the ONE gate, not a
+            // second). ★ SIM-VERIFY: flipping this mid-gesture may cancel the
+            // in-flight drag; if it does, report it (fallback: drop the
+            // `isDraggingToDismiss` term and rely on vertical-dominance alone).
+            .scrollDisabled(isCurrentPageZoomed || isEditingCaption || isDraggingToDismiss)
             .ignoresSafeArea()
             // One-shot: flip the scroll-position gate on the next runloop
             // so the binding transitions from `nil → currentIndex` AFTER
@@ -258,12 +344,19 @@ struct GalleryFullscreenViewer: View {
                     pageZoomed[i] = false
                 }
             }
+            // Swipe-down-to-dismiss transform — applied to the PAGES only, not
+            // `Color.black`: the black stays full-bleed behind the shrinking,
+            // rounding, drifting content, which is what makes the scale read.
+            // Identity at rest (progress 0 → scale 1, corner 0, offset .zero).
+            .clipShape(RoundedRectangle(cornerRadius: dismissCornerRadius, style: .continuous))
+            .scaleEffect(dismissScale, anchor: .center)
+            .offset(dismissTranslation)
 
             VStack {
                 // Top bar hides entirely while editing a caption (focus the
                 // field, nothing competing above it).
                 topBar
-                    .opacity(chromeVisible && !isEditingCaption ? 1 : 0)
+                    .opacity((chromeVisible && !isEditingCaption ? 1 : 0) * Double(dismissChromeOpacity))
                     .animation(.easeInOut, value: chromeVisible)
                     .animation(.easeInOut, value: isEditingCaption)
                 Spacer()
@@ -275,11 +368,16 @@ struct GalleryFullscreenViewer: View {
                 // don't ride up with it.
                 if let current = currentItem {
                     bottomChrome(for: current)
-                        .opacity(chromeVisible ? 1 : 0)
+                        .opacity((chromeVisible ? 1 : 0) * Double(dismissChromeOpacity))
                         .animation(.easeInOut, value: chromeVisible)
                 }
             }
         }
+        // Interactive swipe-down-to-dismiss (Photos-style). On the ZStack so it
+        // sees touches anywhere on the page; `.simultaneousGesture` so it coexists
+        // with the pager / zoom / tap-to-toggle. Vertical-dominance gate keeps it
+        // off horizontal page swipes; zoom + caption editing bail entirely.
+        .simultaneousGesture(dismissDragGesture)
         // ws-dark-light-mode — the media viewer is a LIGHTBOX, not an app
         // surface. Its background is the user's arbitrary photo/video, so its
         // chrome's contrast is against unknown imagery, not the palette — it

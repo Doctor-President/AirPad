@@ -96,31 +96,34 @@ struct GalleryFullscreenViewer: View {
     /// pans the image instead of turning the page. Off-screen pages are
     /// reset to `false` defensively when `currentIndex` changes.
     @State private var pageZoomed: [Bool]
-    /// #6 (launch list) — caption editing. `captionDraft` backs the edit alert;
-    /// `isEditingCaption` presents it. `captionOverrides` is a session-local
-    /// echo of just-saved captions (keyed by gallery-item id) so the caption
-    /// line updates immediately — `galleryItems` is a snapshot captured at
-    /// presentation and won't reflect the store write until the viewer reopens.
+    /// #6 (launch list) — caption editing, now INLINE (was a modal alert). Tap
+    /// the caption line → it becomes an in-place `TextField` (`isEditingCaption`
+    /// swaps display→edit; `captionFocused` drives the keyboard). `captionDraft`
+    /// is the edit buffer; `captionOverrides` is a session-local echo of just-
+    /// saved captions (keyed by gallery-item id) so the line updates immediately
+    /// — `galleryItems` is a snapshot and won't reflect the store write until the
+    /// viewer reopens. Commit is on blur / Done; the actions hide while editing
+    /// so they don't ride up with the keyboard, and the caption lifts above it.
     @State private var captionDraft = ""
     @State private var isEditingCaption = false
+    @FocusState private var captionFocused: Bool
     @State private var captionOverrides: [String: String?] = [:]
 
-    // Lightbox chrome dials. DEBUG: @AppStorage so the tuner dials them live on
-    // device. Release: `let` literals — ZERO UserDefaults reads (see
-    // feedback_release_gate_dev_tuner_reads). Bake into the literals + delete
-    // the tuner once T settles them.
-    #if DEBUG
-    @AppStorage("glbx.topPad")    private var glTopPad: Double = 8
-    @AppStorage("glbx.bottomPad") private var glBottomPad: Double = 24
-    @AppStorage("glbx.chromeGap") private var glChromeGap: Double = 10
-    @AppStorage("glbx.actionGap") private var glActionGap: Double = 24
-    @State private var showLightboxTuner = false
-    #else
-    private let glTopPad: Double = 8
-    private let glBottomPad: Double = 24
-    private let glChromeGap: Double = 10
-    private let glActionGap: Double = 24
-    #endif
+    // Lightbox chrome — BAKED LITERALS (T device-dialed on TF 202608021326,
+    // "reads clean"); the DEBUG tuner is deleted per tuner discipline. Plain
+    // `let`s → zero UserDefaults reads in any config.
+    //   topPad/bottomPad — chrome insets from the top / bottom screen edges.
+    //   captionGap       — separation between caption and the action row.
+    //   scrimOpacity     — the caption scrim's max darkness.
+    //   scrimFade        — height of the soft clear→dark fade at the TOP of the
+    //                      scrim; below it the scrim holds solid dark down past
+    //                      the screen bottom (no hard edge when the caption lifts
+    //                      for editing).
+    private let glTopPad: Double = 0
+    private let glBottomPad: Double = 14
+    private let glCaptionGap: Double = 40
+    private let glScrimOpacity: Double = 1.0
+    private let glScrimFade: Double = 120
 
     init(
         galleryItems: [GalleryItem],
@@ -203,8 +206,15 @@ struct GalleryFullscreenViewer: View {
                             parentItem: parentItem,
                             isZoomed: pageZoomBinding(for: idx),
                             onSingleTap: {
-                                withAnimation(.easeInOut) {
-                                    chromeVisible.toggle()
+                                // While editing a caption, a tap on the image
+                                // commits + dismisses the keyboard rather than
+                                // toggling chrome.
+                                if captionFocused {
+                                    captionFocused = false
+                                } else {
+                                    withAnimation(.easeInOut) {
+                                        chromeVisible.toggle()
+                                    }
                                 }
                             },
                             onRequestPlay: { playingItem = gItem }
@@ -222,7 +232,9 @@ struct GalleryFullscreenViewer: View {
             // its inner UIScrollView swallows horizontal drag to pan
             // the image rather than the outer ScrollView paging.
             // (Validated in `briefs/spike-zoom-paging.md`.)
-            .scrollDisabled(isCurrentPageZoomed)
+            // Also gate paging OFF while editing a caption — the current item
+            // must stay put so the commit-on-blur writes to the right page.
+            .scrollDisabled(isCurrentPageZoomed || isEditingCaption)
             .ignoresSafeArea()
             // One-shot: flip the scroll-position gate on the next runloop
             // so the binding transitions from `nil → currentIndex` AFTER
@@ -248,27 +260,26 @@ struct GalleryFullscreenViewer: View {
             }
 
             VStack {
+                // Top bar hides entirely while editing a caption (focus the
+                // field, nothing competing above it).
                 topBar
-                    .opacity(chromeVisible ? 1 : 0)
+                    .opacity(chromeVisible && !isEditingCaption ? 1 : 0)
                     .animation(.easeInOut, value: chromeVisible)
+                    .animation(.easeInOut, value: isEditingCaption)
                 Spacer()
-                // Option A unifies the action bar across types — video
-                // pages are posters (no inline player chrome to occlude),
-                // so the same bottom bar serves both. Per-action gating
-                // (Copy / Set-Hero disabled for video) lives inside
-                // `bottomBar(for:)`.
+                // Bottom chrome — ONE vertical group: caption (an in-place
+                // editable field) above, glass action glyphs below, over a
+                // caption-sized gradient scrim. Fades together with
+                // `chromeVisible`. While editing, the caption lifts above the
+                // keyboard and the actions hide (inside `bottomChrome`) so they
+                // don't ride up with it.
                 if let current = currentItem {
-                    VStack(spacing: CGFloat(glChromeGap)) {
-                        captionLine(for: current)
-                        bottomBar(for: current)
-                    }
-                    .opacity(chromeVisible ? 1 : 0)
-                    .animation(.easeInOut, value: chromeVisible)
+                    bottomChrome(for: current)
+                        .opacity(chromeVisible ? 1 : 0)
+                        .animation(.easeInOut, value: chromeVisible)
                 }
             }
         }
-        // Lightbox chrome dials (DEBUG tuner; empty in Release).
-        .overlay(alignment: .topLeading) { lightboxTunerOverlay }
         // ws-dark-light-mode — the media viewer is a LIGHTBOX, not an app
         // surface. Its background is the user's arbitrary photo/video, so its
         // chrome's contrast is against unknown imagery, not the palette — it
@@ -312,16 +323,17 @@ struct GalleryFullscreenViewer: View {
         // back up the moment the viewer is gone. See
         // `PlaybackAudioSession` for the why-it's-shared rationale.
         .onDisappear { PlaybackAudioSession.deactivate() }
-        // #6 — caption editor. Alert TextField keeps editing robust over the
-        // lightbox (no inline keyboard-in-ScrollView complexity).
-        .alert("Caption", isPresented: $isEditingCaption) {
-            TextField("Caption", text: $captionDraft)
-            Button("Save") { saveCaption() }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text(currentItem?.mediaType == .video
-                 ? "Describe this video."
-                 : "Describe this photo.")
+        // #6 — inline caption editing. The Done button rides the keyboard (the
+        // caption is multiline, so Return inserts a newline rather than
+        // committing); tapping the image also commits (see `onSingleTap`).
+        .toolbar {
+            if isEditingCaption {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") { captionFocused = false }
+                        .fontWeight(.semibold)
+                }
+            }
         }
     }
 
@@ -329,21 +341,43 @@ struct GalleryFullscreenViewer: View {
 
     private var topBar: some View {
         HStack {
-            chromeIconButton(systemImage: "xmark") { dismiss() }
+            chromeGlyphButton("xmark") { dismiss() }
             Spacer()
-            Text("\(currentIndex + 1) / \(galleryItems.count)")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .frame(height: 44)
-                .modifier(ViewerGlassCapsule())
+            counterLabel
             Spacer()
-            // Balance the close-X so the index sits visually centered.
-            // No video-only `•••` — actions live in the unified bottom bar.
-            Color.clear.frame(width: 56, height: 56)
+            // ••• — the labelled overflow actions (Copy, Set as Hero), moved off
+            // the bottom bar (Photos split: only universally-legible glyphs stay
+            // at the bottom). Both are image-only, so for a video item the menu
+            // would be empty — hide it and balance the × with a spacer so the
+            // counter stays centered.
+            if let item = currentItem, item.mediaType == .image {
+                Menu {
+                    Button {
+                        Task { await resolveAndCopy(item) }
+                    } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    Button {
+                        Task { await store.setCoverImage(relativePath: item.file, nodeID: nodeID) }
+                    } label: { Label("Set as Hero", systemImage: "photo.badge.checkmark") }
+                } label: {
+                    chromeGlyph("ellipsis")
+                }
+            } else {
+                Color.clear.frame(width: 44, height: 44)
+            }
         }
         .padding(.horizontal)
         .padding(.top, CGFloat(glTopPad))
+    }
+
+    /// Centered page counter — bare white text with a soft shadow, the way
+    /// Photos renders its date/time label (no container). The interactive glyphs
+    /// carry the liquid-glass plates; the counter isn't a control.
+    private var counterLabel: some View {
+        Text("\(currentIndex + 1) / \(galleryItems.count)")
+            .font(.callout.weight(.medium))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+            .frame(height: 44)
     }
 
     /// #6 — caption for `item`, preferring a just-saved session override over
@@ -353,32 +387,54 @@ struct GalleryFullscreenViewer: View {
         return item.caption
     }
 
-    /// #6 — tappable caption line above the action bar. Shows the caption, or a
-    /// muted "Add caption…" affordance when empty. Works for images and videos.
+    /// #6 — INLINE caption line. Displays the caption (or a muted "Add caption…"
+    /// affordance) as tappable text; tapping swaps it to an in-place multiline
+    /// `TextField` and raises the keyboard, so the type appears directly on the
+    /// caption area. Commit is on blur. Works for images and videos.
+    @ViewBuilder
     private func captionLine(for item: GalleryItem) -> some View {
         let caption = effectiveCaption(for: item)
         let hasCaption = !(caption ?? "").isEmpty
-        return Button {
-            captionDraft = caption ?? ""
-            isEditingCaption = true
-        } label: {
-            Group {
-                if hasCaption {
-                    Text(caption ?? "")
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.leading)
-                        .lineLimit(3)
-                } else {
-                    Label("Add caption…", systemImage: "text.badge.plus")
-                        .foregroundStyle(.white.opacity(0.6))
-                }
+        Group {
+            if isEditingCaption {
+                TextField("Add caption…", text: $captionDraft, axis: .vertical)
+                    .focused($captionFocused)
+                    .foregroundStyle(.white)
+                    .tint(.white)
+                    .lineLimit(1...6)
+                    // Commit on blur (Done, tap-away, or interactive dismiss) and
+                    // drop back to display mode. Fires while the field is still
+                    // mounted (isEditingCaption flips only here).
+                    .onChange(of: captionFocused) { _, focused in
+                        if !focused {
+                            saveCaption()
+                            isEditingCaption = false
+                        }
+                    }
+            } else if hasCaption {
+                Text(caption ?? "")
+                    .foregroundStyle(.white)
+                    .lineLimit(3)
+                    .onTapGesture { beginEditingCaption(item) }
+            } else {
+                Label("Add caption…", systemImage: "text.badge.plus")
+                    .foregroundStyle(.white.opacity(0.6))
+                    .onTapGesture { beginEditingCaption(item) }
             }
-            .font(.callout)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 22)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .font(.callout)
+        .multilineTextAlignment(.leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+    }
+
+    /// Seeds the edit buffer from the current caption and focuses the field on
+    /// the next runloop (so the just-swapped-in TextField exists to receive focus).
+    private func beginEditingCaption(_ item: GalleryItem) {
+        captionDraft = effectiveCaption(for: item) ?? ""
+        isEditingCaption = true
+        DispatchQueue.main.async { captionFocused = true }
     }
 
     /// #6 — commits the draft to the store and echoes it locally so the caption
@@ -397,111 +453,88 @@ struct GalleryFullscreenViewer: View {
         }
     }
 
-    private func bottomBar(for item: GalleryItem) -> some View {
-        HStack(spacing: CGFloat(glActionGap)) {
-            actionButton(systemImage: "square.and.arrow.up", label: "Share") {
+    /// The bottom chrome group: caption above, glass action glyphs below, over a
+    /// caption-sized gradient scrim. ONE vertical group with real separation
+    /// (`glCaptionGap`) so the caption never competes with the actions. The scrim
+    /// is a `.background` so it's SIZED TO THE CONTENT and bleeds to the screen
+    /// bottom via `ignoresSafeArea`. While editing, the ACTIONS HIDE (so they
+    /// don't ride up with the keyboard) and the caption field lifts above it.
+    private func bottomChrome(for item: GalleryItem) -> some View {
+        let hasCaption = !(effectiveCaption(for: item) ?? "").isEmpty
+        return VStack(spacing: CGFloat(glCaptionGap)) {
+            captionLine(for: item)
+            if !isEditingCaption {
+                actionRow(for: item)
+            }
+        }
+        .padding(.top, 18)                        // fade headroom above the caption
+        .padding(.bottom, CGFloat(glBottomPad))
+        .background(alignment: .top) {
+            // Caption scrim — a GRADIENT (not a material). A soft clear→dark fade
+            // (`glScrimFade` tall) over the caption, then SOLID dark held all the
+            // way down past the screen bottom via `ignoresSafeArea(.all)` — so the
+            // dark end is never a hard mid-screen edge when the caption lifts above
+            // the keyboard for editing (it's off-screen / under the keyboard).
+            // Shown for a real caption OR while editing; an empty, non-editing
+            // caption gets no scrim (chrome for nothing).
+            if hasCaption || isEditingCaption {
+                VStack(spacing: 0) {
+                    LinearGradient(
+                        colors: [.clear, .black.opacity(glScrimOpacity)],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                    .frame(height: CGFloat(glScrimFade))
+                    Rectangle()
+                        .fill(Color.black.opacity(glScrimOpacity))
+                        .frame(maxHeight: .infinity)
+                }
+                .ignoresSafeArea(.all, edges: .bottom)
+                .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Bare Share + Delete glyphs — no labels (the label stacking is what made
+    /// the old bar tall), no glass. Share leads, Delete trails, aligned to the
+    /// caption's horizontal inset. Copy + Set-as-Hero now live in the top ••• menu.
+    private func actionRow(for item: GalleryItem) -> some View {
+        HStack {
+            chromeGlyphButton("square.and.arrow.up") {
                 Task { await resolveAndShare(item) }
             }
-            actionButton(systemImage: "doc.on.doc", label: "Copy") {
-                Task { await resolveAndCopy(item) }
-            }
-            .disabled(item.mediaType == .video)
-            .opacity(item.mediaType == .video ? 0.35 : 1.0)
-            // hero-image v1 — image-only (mirrors Copy's video gate).
-            // `item.file` IS the relative path so we skip the URL
-            // resolve and hand it directly to the store. Sets without
-            // dismissing — viewer-dismiss is reserved for Delete (see
-            // top-of-file delete-timing section).
-            actionButton(systemImage: "photo.badge.checkmark", label: "Set as Hero") {
-                Task { await store.setCoverImage(relativePath: item.file, nodeID: nodeID) }
-            }
-            .disabled(item.mediaType == .video)
-            .opacity(item.mediaType == .video ? 0.35 : 1.0)
-            actionButton(systemImage: "trash", label: "Delete", tint: .red) {
+            Spacer()
+            chromeGlyphButton("trash", tint: .red) {
                 pendingDelete = item
             }
         }
-        .padding(.vertical, 12)
         .padding(.horizontal, 22)
-        .modifier(ViewerGlassCapsule())
-        .padding(.bottom, CGFloat(glBottomPad))
     }
 
-    /// Lightbox chrome dials — DEBUG-only tuner (empty in Release). Toggled by a
-    /// slider button top-left; the lightbox is a modal (not the FloatingPanel),
-    /// so a plain overlay receives touches fine. Bake the dialed values into the
-    /// `gl*` literals and delete this once T settles them.
-    @ViewBuilder
-    private var lightboxTunerOverlay: some View {
-        #if DEBUG
-        VStack(alignment: .leading, spacing: 8) {
-            Button { showLightboxTuner.toggle() } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.4), in: Circle())
-            }
-            .buttonStyle(.plain)
-            if showLightboxTuner {
-                lightboxTunerPanel
-            }
-        }
-        .padding(.leading, 16)
-        .padding(.top, 64)
-        #endif
+    /// A single chrome glyph in a LIQUID-GLASS circle — Photos-parity container,
+    /// and image-aware for free: the glass is a live material that frosts/adapts
+    /// to whatever's behind it, so the white glyph stays legible over a bright or
+    /// dark image without hand-tinting. `.glassEffect` on iOS 26, `.ultraThinMaterial`
+    /// fallback below (via `ViewerGlassCircle`). The glass sits INSIDE the fading
+    /// `chromeVisible` group — this is the pattern the gallery's original chrome
+    /// used and that fades fine (glass-on-content in a fading ancestor); the band
+    /// finding was the different `Color.clear`-background-plate case. 44×44 tap
+    /// target. Shared by × · ••• · Share · Delete and used as the ••• Menu label.
+    private func chromeGlyph(_ systemImage: String, tint: Color = .white) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 18, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+            .modifier(ViewerGlassCircle())
     }
 
-    #if DEBUG
-    private var lightboxTunerPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Lightbox chrome").font(.caption.weight(.bold))
-            lightboxTunerSlider("Top pad", $glTopPad, 0...48)
-            lightboxTunerSlider("Bottom pad", $glBottomPad, 0...80)
-            lightboxTunerSlider("Caption↔bar gap", $glChromeGap, 0...40)
-            lightboxTunerSlider("Action gap", $glActionGap, 8...48)
-        }
-        .padding(12)
-        .frame(width: 240)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func lightboxTunerSlider(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("\(label): \(value.wrappedValue, specifier: "%.0f")")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.8))
-            Slider(value: value, in: range)
-        }
-    }
-    #endif
-
-    private func chromeIconButton(systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 56, height: 56)
-                .modifier(ViewerGlassCircle())
-        }
-    }
-
-    private func actionButton(
-        systemImage: String,
-        label: String,
+    private func chromeGlyphButton(
+        _ systemImage: String,
         tint: Color = .white,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(.title3)
-                Text(label)
-                    .font(.caption2.weight(.medium))
-            }
-            .foregroundStyle(tint)
-            .frame(minWidth: 56)
-        }
+        Button(action: action) { chromeGlyph(systemImage, tint: tint) }
+            .buttonStyle(.plain)
     }
 
     // MARK: - Actions
@@ -725,14 +758,15 @@ private struct FullscreenVideoPlayer: View {
     }
 }
 
-/// Liquid-glass treatment for the viewer's chrome, mirroring the detail
-/// view's custom toolbar (`NodeDetailView`'s `InteractiveGlassCircle` /
-/// `InteractiveGlassCapsule`, declared private there). Duplicated here
-/// rather than promoted to a shared module — both call-sites are still
-/// the only two using this pattern and the brief asked for lean.
+/// Liquid-glass circle for the video poster's PLAY button — the one piece of
+/// viewer chrome that is page content, always visible, and never inside the
+/// fading `chromeVisible` group. (The toggleable chrome deliberately does NOT
+/// use `.glassEffect`: it wouldn't fade with the opacity ramp — see the glass
+/// finding in ws-detail-view-as-workspace. The capsule variant was retired with
+/// the Photos-style chrome restructure.)
 ///
-/// iOS 26 gets the real `.glassEffect(.regular.interactive(), in:)`
-/// lensing; earlier targets fall back to `.ultraThinMaterial`.
+/// iOS 26 gets the real `.glassEffect(.regular.interactive(), in:)` lensing;
+/// earlier targets fall back to `.ultraThinMaterial`.
 private struct ViewerGlassCircle: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -740,17 +774,6 @@ private struct ViewerGlassCircle: ViewModifier {
             content.glassEffect(.regular.interactive(), in: .circle)
         } else {
             content.background(Circle().fill(.ultraThinMaterial))
-        }
-    }
-}
-
-private struct ViewerGlassCapsule: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: .capsule)
-        } else {
-            content.background(Capsule().fill(.ultraThinMaterial))
         }
     }
 }

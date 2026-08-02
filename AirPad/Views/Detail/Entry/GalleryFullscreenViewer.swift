@@ -133,17 +133,17 @@ struct GalleryFullscreenViewer: View {
     private let glScrimOpacity: Double = 1.0
     private let glScrimFade: Double = 120
 
-    // Interactive swipe-down-to-dismiss — plain `let`s, NO tuner (T judges the
-    // feel on device; a tuner is the second move only if the first round is off).
+    // Interactive swipe-down-to-dismiss — SETTLED (device-judged) fixed `let`s.
+    // These are NOT in the tuner: corner radius, spring, and dismiss thresholds
+    // were dialed on device and are closed — exposing them re-opens a settled
+    // question.
     //   distanceRef  — drag distance mapped to full progress (1.0).
-    //   scaleAmount  — content shrinks to (1 - this) at full progress (→ 0.75).
     //   maxCorner    — content corner radius at full progress (0 at rest).
     //   chromeFade   — chrome opacity leaves this× faster than progress.
     //   claimRatio   — dy must exceed |dx|×this to CLAIM the drag (vertical dominance).
     //   commitDist / commitVel — release past either → dismiss.
     //   spring*      — spring-back animation on a short release.
     private let dismissDistanceRef: CGFloat = 240
-    private let dismissScaleAmount: CGFloat = 0.25
     private let dismissMaxCorner: CGFloat = 28
     private let dismissChromeFade: CGFloat = 4
     private let dismissClaimRatio: CGFloat = 1.5
@@ -153,11 +153,39 @@ struct GalleryFullscreenViewer: View {
     private let dismissSpringResponse: Double = 0.32
     private let dismissSpringDamping: Double = 0.86
 
+    // See-through dimming — BAKED LITERALS (T device-dialed on TF 202608021605);
+    // the DEBUG tuner is deleted per tuner discipline. Plain `let`s → Debug and
+    // Release identical, zero UserDefaults reads in any config. `Color.black` is
+    // no longer opaque; the presenter (detail view / gallery) renders behind via
+    // `.presentationBackground(.clear)`, and the black FADES with the drag. Both
+    // blacks — the outer plate AND each page's own black slab — ride ONE shared
+    // clock (`dismissFalloff`) so they can't drift apart (round-1's "two blacks on
+    // two clocks" bug).
+    //   dimAtRest      — outer plate opacity at rest (page black is always 1.0 at rest).
+    //   dimFalloffRate — how fast both blacks fade; both hit 0 at progress 1/rate (≈0.385).
+    //   scaleFloor     — content scale at full pull (1.0 at rest → this).
+    // ★ KNOWN + ACCEPTED (T, do NOT "fix"): a hard FLICK dismiss (predictedEnd > 300
+    // can commit at ~21% progress) can still flash a little page black — the drag-
+    // distance falloff can't reach that case, and fully closing it would require
+    // fading the black in the RELEASE animation instead. T weighed it and chose to
+    // stop. Not an open bug.
+    private let dimAtRest: Double = 1.00
+    private let dimFalloffRate: Double = 2.60
+    private let scaleFloor: Double = 0.53
+
     /// 0…1, from the VERTICAL drag only (`dy / distanceRef`, clamped).
     private var dismissProgress: CGFloat {
         max(0, min(1, dismissTranslation.height / dismissDistanceRef))
     }
-    private var dismissScale: CGFloat { 1 - dismissScaleAmount * dismissProgress }
+    /// ★ THE ONE SHARED CLOCK for BOTH blacks: 1.0 at rest → 0 at progress 1/rate
+    /// (default 0.625, before the dismiss threshold). The outer plate scales it by
+    /// `dimAtRest`; each page's black slab consumes it directly (page rest = 1.0).
+    private var dismissFalloff: Double {
+        max(0, min(1, 1 - Double(dismissProgress) * dimFalloffRate))
+    }
+    /// The outer dimming plate's opacity — `dimAtRest` at rest → 0 (same clock).
+    private var dimOpacity: Double { dimAtRest * dismissFalloff }
+    private var dismissScale: CGFloat { CGFloat(1 - (1 - scaleFloor) * Double(dismissProgress)) }
     private var dismissCornerRadius: CGFloat { dismissMaxCorner * dismissProgress }
     /// Multiplied into the chrome's existing opacity so the chrome leaves fast as
     /// the drag begins — without touching `chromeVisible`.
@@ -269,7 +297,7 @@ struct GalleryFullscreenViewer: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Color.black.opacity(dimOpacity).ignoresSafeArea()   // drag-driven dimming plate (see-through)
 
             // No GeometryReader: each page sizes itself with
             // `.containerRelativeFrame([.horizontal, .vertical])`, the
@@ -287,6 +315,10 @@ struct GalleryFullscreenViewer: View {
                             nodeID: nodeID,
                             parentItem: parentItem,
                             isZoomed: pageZoomBinding(for: idx),
+                            // FIX 1 — the page's own black slab rides the SAME
+                            // shared clock as the outer plate (1.0 at rest → 0),
+                            // so the two blacks can't fade at different rates.
+                            blackOpacity: dismissFalloff,
                             onSingleTap: {
                                 // While editing a caption, a tap on the image
                                 // commits + dismisses the keyboard rather than
@@ -385,6 +417,13 @@ struct GalleryFullscreenViewer: View {
         // dark scrim `Color.black` above + permanent light chrome, Apple-Photos
         // style) so the bottom action bar never renders as a light frosted bar.
         .preferredColorScheme(.dark)
+        // See-through presentation — applied ONCE here inside the viewer (not at
+        // both call sites): the presenter (the detail view / gallery) renders
+        // behind, so the lightbox lifts off it Photos-style rather than sitting
+        // on a black plate. Confirmed on the literal viewer in the Simulator over
+        // a seeded real gallery node — the detail view's hero gradient bleeds
+        // through the dimming plate.
+        .presentationBackground(.clear)
         // Modal native player for video posters. AVPlayerViewController
         // gets the entire screen — its own transport, fullscreen, and PiP
         // surfaces all light up; nothing in the AirPad pager competes for
@@ -686,6 +725,12 @@ private struct GalleryFullscreenPage: View {
     let nodeID: String
     let parentItem: NodeItem
     @Binding var isZoomed: Bool
+    /// FIX 1 (see-through dismiss) — the page's own black slab opacity, driven by
+    /// the host's shared `dismissFalloff` clock: 1.0 at rest (byte-identical to
+    /// the old opaque `Color.black`) → 0 as the photo is pulled down, on the SAME
+    /// curve as the outer plate. A plain parameter (this struct is file-private) —
+    /// no environment, no observable.
+    let blackOpacity: Double
     /// Background-tap → toggle viewer chrome. Wired for both image pages
     /// (via `ZoomableImageView`'s tap-with-double-tap-fail recognizer) and
     /// video poster pages (via a transparent overlay below the play button).
@@ -702,7 +747,7 @@ private struct GalleryFullscreenPage: View {
 
     var body: some View {
         ZStack {
-            Color.black
+            Color.black.opacity(blackOpacity)   // FIX 1 — fades with the drag (shared clock)
             if url != nil {
                 switch galleryItem.mediaType {
                 case .image:

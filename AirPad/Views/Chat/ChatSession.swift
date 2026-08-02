@@ -115,6 +115,25 @@ final class ChatSession {
     @ObservationIgnored
     private var didRestore: Bool = false
 
+    /// Persisted id (uuidString) of the ACTIVE, unended chat. Set whenever a
+    /// non-empty session is flushed (each turn + scene-background); CLEARED by
+    /// `reset()` — which Save / Delete / New all route through. A cold launch
+    /// resumes ONLY this chat, so a chat the user explicitly ended stays in the
+    /// Chats list without coming back as a live active-chat pill. nil ⇒ no
+    /// active chat ⇒ launch starts fresh. (Was: resume `mostRecent()`
+    /// unconditionally, which resurrected a just-saved chat on relaunch.)
+    private static let activeChatIDKey = "librarian.activeChatID"
+    private static var persistedActiveChatID: String? {
+        get { UserDefaults.standard.string(forKey: activeChatIDKey) }
+        set {
+            if let newValue {
+                UserDefaults.standard.set(newValue, forKey: activeChatIDKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: activeChatIDKey)
+            }
+        }
+    }
+
     /// One-shot FM title generation guard. Flipped to `true` the moment
     /// a title gen is dispatched (so a fast second turn doesn't double-
     /// fire) OR when an already-titled chat is loaded (don't overwrite
@@ -474,6 +493,10 @@ final class ChatSession {
         // Fresh chat → its first complete turn should trigger a new
         // title generation.
         didGenerateTitle = false
+        // Ended (Save / Delete / New): no active chat to resume next launch.
+        // The flush() above already persisted the outgoing chat to the Chats
+        // list; clearing the pointer keeps it there without resurrecting it.
+        Self.persistedActiveChatID = nil
     }
 
     // MARK: - Chats-list handoff
@@ -497,6 +520,8 @@ final class ChatSession {
         // user has already seen the FM (or fallback) title in the list
         // and overwriting it on every reopen would be churn.
         didGenerateTitle = true
+        // The opened chat is now the active session → resume it next launch.
+        Self.persistedActiveChatID = id.uuidString
     }
 
     /// "New chat" affordance. Identical to `reset()` — kept as a named
@@ -521,6 +546,9 @@ final class ChatSession {
     /// also closed at the store layer (belt + suspenders).
     func flush() {
         guard let store, !messages.isEmpty else { return }
+        // This non-empty session IS the active chat — mark it so a cold launch
+        // resumes it. Cleared by reset() when the user ends the chat.
+        Self.persistedActiveChatID = id.uuidString
         let snapshotID = id
         let snapshotCreatedAt = createdAt
         let snapshotMessages = messages
@@ -546,10 +574,15 @@ final class ChatSession {
         guard !didRestore, !isStreaming, messages.isEmpty, let store else { return }
         didRestore = true
         await store.loadIfNeeded()
-        guard let recent = store.mostRecent() else { return }
-        id = recent.id
-        createdAt = recent.createdAt
-        messages = recent.messages
+        // Resume ONLY the explicitly-active (unended) chat. Save / Delete / New
+        // route through reset(), which clears the pointer — so an ended chat
+        // stays in the Chats list without returning as a live session. No
+        // pointer (fresh launch, or last chat was ended) ⇒ start empty.
+        guard let activeID = Self.persistedActiveChatID,
+              let chat = store.chats.first(where: { $0.id.uuidString == activeID }) else { return }
+        id = chat.id
+        createdAt = chat.createdAt
+        messages = chat.messages
     }
 
     /// Header / list display title. Reads the stored title from

@@ -37,10 +37,9 @@ struct SettingsView: View {
     @State private var showClearConfirmation = false
     #if DEBUG
     // Dev diagnostics — SubstrateInspectView carries a DESTRUCTIVE "Reset cluster
-    // registry"; it must not be reachable in a shipping build. DEBUG-gated to
-    // match the Kokoro sampler pattern below (state + gesture + sheet all gated).
+    // registry"; it must not be reachable in a shipping build. DEBUG-gated
+    // (state + gesture + sheet all gated).
     @State private var showSubstrateInspect = false
-    @State private var showKokoroSampler = false
     #endif
 
     var body: some View {
@@ -420,31 +419,14 @@ struct SettingsView: View {
     // Diagnostic Test" (read a ~/Desktop path absent on device, deleted) are
     // gone. What remains is dev-only: corpus maintenance (Reprocess / Backfill —
     // no honest user-facing home yet; promote to a real Settings "Maintenance"
-    // section if ever user-exposed), the SB126 experimental tagging flag, the
-    // Kokoro sampler, and the substrate-inspect long-press.
+    // section if ever user-exposed), the SB126 experimental tagging flag, and
+    // the substrate-inspect long-press.
     #if DEBUG
     private var developerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             reprocessRow
 
             backfillEmbeddingRow
-
-            #if DEBUG
-            // Kokoro on-device TTS voice spike — DEBUG only, never ships.
-            Button {
-                showKokoroSampler = true
-            } label: {
-                Text("Kokoro Voice Sampler")
-                    .font(.caption2)
-                    .foregroundStyle(.orange.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .center)
-
-            // Read-aloud voice: pick the Kokoro voice that real Librarian/Note
-            // read-aloud uses (or the System voice). This is T's A/B tool.
-            kokoroVoicePicker
-            #endif
 
             Toggle(isOn: $useCorpusAwareTagging) {
                 Text("SB126 Stage 2 — corpus-aware tagging")
@@ -478,48 +460,7 @@ struct SettingsView: View {
                     .environment(store)
             }
         }
-        .sheet(isPresented: $showKokoroSampler) {
-            KokoroVoiceSamplerView()
-        }
         #endif
-    }
-    #endif
-
-    #if DEBUG
-    /// Read-aloud voice picker (Kokoro spike). Drives
-    /// `SpeechSynthesisService.selectedKokoroVoiceID` — the voice real Librarian
-    /// answer + Note read-aloud plays through. "" = System (AVSpeech). Shortlist
-    /// marked with ★. Never ships (DEBUG only; model is a dev asset).
-    private var kokoroVoicePicker: some View {
-        let speech = SpeechSynthesisService.shared
-        let binding = Binding<String>(
-            get: { speech.selectedKokoroVoiceID ?? "" },
-            set: { speech.selectedKokoroVoiceID = $0.isEmpty ? nil : $0 }
-        )
-        let extras = KokoroVoiceCatalog.allEnglishVoiceIDs
-            .filter { !KokoroVoiceCatalog.shortlist.contains($0) }
-        return VStack(alignment: .leading, spacing: 2) {
-            Picker(selection: binding) {
-                Text("System voice (AVSpeech)").tag("")
-                ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
-                    Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))").tag(id)
-                }
-                ForEach(extras, id: \.self) { id in
-                    Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))").tag(id)
-                }
-            } label: {
-                Text("Read-aloud voice")
-            }
-            .pickerStyle(.menu)
-            .font(.caption2)
-            .tint(.orange)
-            if !KokoroTTSEngine.shared.isModelInstalled {
-                Text("Kokoro model not installed — read-aloud uses the System voice.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
     }
     #endif
 

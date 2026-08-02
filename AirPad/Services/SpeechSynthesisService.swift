@@ -40,65 +40,9 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
     }
     private static let voiceKey = "tts.selectedVoiceIdentifier"
 
-    /// User-chosen Kokoro voice id (e.g. "af_heart"). nil = use the system
-    /// AVSpeech voice (the default). Persisted. Changing it stops any in-flight
-    /// speech so the next play starts cleanly on the newly-chosen engine/voice.
-    var selectedKokoroVoiceID: String? {
-        didSet {
-            UserDefaults.standard.set(selectedKokoroVoiceID, forKey: Self.kokoroVoiceKey)
-            if isSpeaking { stop() }
-        }
-    }
-    private static let kokoroVoiceKey = "tts.selectedKokoroVoiceID"
-
-    /// When true, a chosen Kokoro voice routes through the **ANE** engine
-    /// (`FluidKokoroTTSEngine`, Core ML, no GPU) instead of the MLX engine — the
-    /// background-survival spike. Persisted. Set by the "ANE Voices" picker tier.
-    /// Changing it stops any in-flight speech so the next play starts on the
-    /// newly-chosen engine.
-    var useANEKokoro: Bool = false {
-        didSet {
-            UserDefaults.standard.set(useANEKokoro, forKey: Self.aneKokoroKey)
-            if isSpeaking { stop() }
-        }
-    }
-    private static let aneKokoroKey = "tts.useANEKokoro"
-
-    /// Which engine owns the CURRENTLY-active utterance. Fixed at speak-time (the
-    /// selection can change mid-utterance) so pause/resume/stop/remote-commands
-    /// route to the right engine.
-    private var activeEngineIsKokoro = false
-    /// Same, for the ANE engine. Mutually exclusive with `activeEngineIsKokoro`.
-    private var activeEngineIsANE = false
-    /// ★★ SHELVED 2026-07-28 (T): synthesized voice (Kokoro on MLX/ANE) is dormant behind
-    /// the `TTSEngine` seam — **AVSpeechSynthesizer is the shipped read-aloud engine.** This
-    /// master flag makes ALL Kokoro routing unreachable from production without deleting any
-    /// engine (both stay in-tree, compiling). Flip to `true` (with the DEBUG sampler /
-    /// picker tiers) to resume. See decisions.md 2026-07-28 + ws-synthesized-voice.md.
-    ///
-    /// ★ 2026-07-31 — the THIRD engine, ORT (ONNX Runtime CPU), was REMOVED to clear the
-    /// TestFlight ITMS-90208 blocker: its ~39 MB static library linked into the shipping binary
-    /// regardless of this flag (the flag gates EXECUTION, not LINKING) and nothing shipping could
-    /// reach it. RESTORE when ORT unshelves: re-add the `onnxruntime` SPM dep in `project.yml` +
-    /// `xcodegen`; `git show c1ddf9e:AirPad/Services/TTS/ORTKokoroTTSEngine.swift` back into place;
-    /// re-add the ORT branch here (`shouldUseORT` / `activeEngineIsORT` / `speakViaORT`) and the
-    /// DEBUG sampler's ORT tier — all in commit `c1ddf9e`. See ws-synthesized-voice.md.
-    static let kokoroEnginesEnabled = false
-
-    /// Route to the ANE Kokoro engine when a Kokoro voice is chosen AND the ANE
-    /// spike is enabled. Models download on demand, so there's no bundled-asset
-    /// gate; a setup failure falls back to AVSpeech (see `speakViaANEKokoro`).
-    /// Checked BEFORE `shouldUseKokoro` so ANE wins when enabled.
-    private var shouldUseANE: Bool {
-        Self.kokoroEnginesEnabled && useANEKokoro && selectedKokoroVoiceID != nil
-    }
-
-    /// Route to the MLX Kokoro engine only when a Kokoro voice is chosen AND its
-    /// model is actually installed — otherwise fall back to AVSpeech (a Release
-    /// build with no bundled model, or the dev asset absent, must still read aloud).
-    private var shouldUseKokoro: Bool {
-        Self.kokoroEnginesEnabled && selectedKokoroVoiceID != nil && KokoroTTSEngine.shared.isModelInstalled
-    }
+    // Synthesized-voice engines (Kokoro on MLX/ANE, and ORT) were REMOVED from
+    // the build 2026-08-02 — AVSpeechSynthesizer is now the sole read-aloud
+    // engine. Restore notes (files, packages, branches) in ws-synthesized-voice.md.
 
     private let synthesizer = AVSpeechSynthesizer()
     private var remoteCommandsConfigured = false
@@ -115,17 +59,14 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         super.init()
         synthesizer.delegate = self
         selectedVoiceIdentifier = UserDefaults.standard.string(forKey: Self.voiceKey)
-        selectedKokoroVoiceID = UserDefaults.standard.string(forKey: Self.kokoroVoiceKey)
-        useANEKokoro = UserDefaults.standard.bool(forKey: Self.aneKokoroKey)
         registerInterruptionObserver()
     }
 
     /// Handle audio-session interruptions (phone call, another app taking the
-    /// session). AVSpeech manages its own resume, but the Kokoro AVAudioEngine
-    /// path does not — so on `.began` we pause the active utterance, and on
-    /// `.ended` with `.shouldResume` we re-assert `.playback` and resume it.
-    /// Block-based observer so the callback can hop to the main actor cleanly
-    /// (the notification is posted on an arbitrary thread).
+    /// session): on `.began` pause the active utterance, and on `.ended` with
+    /// `.shouldResume` re-assert `.playback` and resume it. Block-based observer
+    /// so the callback can hop to the main actor cleanly (the notification is
+    /// posted on an arbitrary thread).
     private func registerInterruptionObserver() {
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: nil
@@ -284,22 +225,18 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
-    /// Pause the active utterance on whichever engine owns it.
+    /// Pause the active utterance.
     private func pauseCurrent() {
         guard isSpeaking, !isPaused else { return }
-        if activeEngineIsANE { FluidKokoroTTSEngine.shared.pause() }
-        else if activeEngineIsKokoro { KokoroTTSEngine.shared.pause() }
-        else { synthesizer.pauseSpeaking(at: .word) }
+        synthesizer.pauseSpeaking(at: .word)
         isPaused = true
         updateNowPlayingPlaybackState()
     }
 
-    /// Resume the active utterance on whichever engine owns it.
+    /// Resume the active utterance.
     private func resumeCurrent() {
         guard isSpeaking, isPaused else { return }
-        if activeEngineIsANE { FluidKokoroTTSEngine.shared.resume() }
-        else if activeEngineIsKokoro { KokoroTTSEngine.shared.resume() }
-        else { synthesizer.continueSpeaking() }
+        synthesizer.continueSpeaking()
         isPaused = false
         updateNowPlayingPlaybackState()
     }
@@ -308,10 +245,8 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        // Stop whatever is currently playing on ANY engine before starting.
+        // Stop whatever is currently playing before starting.
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
-        KokoroTTSEngine.shared.stop()
-        FluidKokoroTTSEngine.shared.stop()
 
         // Reclaim playback — dictation/capture may have left .record.
         PlaybackAudioSession.configure()
@@ -322,84 +257,17 @@ final class SpeechSynthesisService: NSObject, AVSpeechSynthesizerDelegate {
         configureRemoteCommandsIfNeeded()
         setNowPlaying(title: "AirPad")
 
-        // Reset engine ownership, then set the winner. Both Kokoro engines are
-        // gated off (kokoroEnginesEnabled=false) → always the AVSpeech else-branch.
-        activeEngineIsANE = false
-        activeEngineIsKokoro = false
-        if shouldUseANE, let voiceID = selectedKokoroVoiceID {
-            activeEngineIsANE = true
-            activeUtterance = nil          // AVSpeech delegates key off this; nil = "not mine"
-            speakViaANEKokoro(token: token, text: trimmed, voiceID: voiceID)
-        } else if shouldUseKokoro, let voiceID = selectedKokoroVoiceID {
-            activeEngineIsKokoro = true
-            activeUtterance = nil          // AVSpeech delegates key off this; nil = "not mine"
-            speakViaKokoro(token: token, text: trimmed, voiceID: voiceID)
-        } else {
-            let utterance = AVSpeechUtterance(string: trimmed)
-            if let voice = resolvedVoice { utterance.voice = voice }
-            // Defaults (rate 0.5, pitch 1.0) — dial later if Tom wants.
-            activeUtterance = utterance
-            synthesizer.speak(utterance)
-        }
-    }
-
-    /// ANE Kokoro path: streaming chunked Core ML synthesis → PCM → AVAudioEngine.
-    /// Same contract as `speakViaKokoro`; on a setup failure (offline first run,
-    /// unsupported OS) it falls back to AVSpeech so the answer still reads.
-    private func speakViaANEKokoro(token: String, text: String, voiceID: String) {
-        Task { @MainActor in
-            do {
-                try await FluidKokoroTTSEngine.shared.speak(text: text, voiceID: voiceID) { [weak self] in
-                    guard let self, self.activeEngineIsANE, self.activeToken == token else { return }
-                    self.isSpeaking = false
-                    self.isPaused = false
-                    self.activeToken = nil
-                    self.endPlaybackSession()
-                }
-            } catch {
-                guard self.activeToken == token else { return }
-                self.activeEngineIsANE = false
-                let utterance = AVSpeechUtterance(string: text)
-                if let voice = self.resolvedVoice { utterance.voice = voice }
-                self.activeUtterance = utterance
-                self.synthesizer.speak(utterance)
-            }
-        }
-    }
-
-    /// Kokoro path: streaming chunked synthesis → PCM → AVAudioEngine. Returns
-    /// after the producer is launched; `onFinish` fires at natural end. On a
-    /// setup failure (cold-load/engine-start) it falls back to AVSpeech so the
-    /// answer still reads. State resets are guarded on the owning token.
-    private func speakViaKokoro(token: String, text: String, voiceID: String) {
-        Task { @MainActor in
-            do {
-                try await KokoroTTSEngine.shared.speak(text: text, voiceID: voiceID) { [weak self] in
-                    guard let self, self.activeEngineIsKokoro, self.activeToken == token else { return }
-                    self.isSpeaking = false
-                    self.isPaused = false
-                    self.activeToken = nil
-                    self.endPlaybackSession()
-                }
-            } catch {
-                guard self.activeToken == token else { return }
-                self.activeEngineIsKokoro = false
-                let utterance = AVSpeechUtterance(string: text)
-                if let voice = self.resolvedVoice { utterance.voice = voice }
-                self.activeUtterance = utterance
-                self.synthesizer.speak(utterance)
-            }
-        }
+        let utterance = AVSpeechUtterance(string: trimmed)
+        if let voice = resolvedVoice { utterance.voice = voice }
+        // Defaults (rate 0.5, pitch 1.0) — dial later if Tom wants.
+        activeUtterance = utterance
+        synthesizer.speak(utterance)
     }
 
     func stop() {
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }
-        KokoroTTSEngine.shared.stop()
-        FluidKokoroTTSEngine.shared.stop()
-        activeEngineIsKokoro = false
-        activeEngineIsANE = false
         isSpeaking = false
         isPaused = false
         activeToken = nil

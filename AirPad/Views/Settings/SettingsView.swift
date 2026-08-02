@@ -35,8 +35,11 @@ struct SettingsView: View {
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
-    @State private var showSubstrateInspect = false
     #if DEBUG
+    // Dev diagnostics — SubstrateInspectView carries a DESTRUCTIVE "Reset cluster
+    // registry"; it must not be reachable in a shipping build. DEBUG-gated to
+    // match the Kokoro sampler pattern below (state + gesture + sheet all gated).
+    @State private var showSubstrateInspect = false
     @State private var showKokoroSampler = false
     #endif
 
@@ -57,7 +60,9 @@ struct SettingsView: View {
                     corpusSection
                     Divider().background(AppearancePalette.ink.opacity(0.1))
                     aboutSection
+                    #if DEBUG
                     developerSection
+                    #endif
                 }
                 .padding(20)
                 .dismissKeyboardOnTapOutside()
@@ -407,34 +412,19 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Developer (hidden)
+    // MARK: - Developer (DEBUG-only)
 
+    // ★ Whole section is `#if DEBUG` — it never ships. Stripped 2026-08-01:
+    // "Simulate thread" (fabricated a fake ThreadSuggestion into the review
+    // queue — a privacy-oath violation, deleted outright) and "Run Gate
+    // Diagnostic Test" (read a ~/Desktop path absent on device, deleted) are
+    // gone. What remains is dev-only: corpus maintenance (Reprocess / Backfill —
+    // no honest user-facing home yet; promote to a real Settings "Maintenance"
+    // section if ever user-exposed), the SB126 experimental tagging flag, the
+    // Kokoro sampler, and the substrate-inspect long-press.
+    #if DEBUG
     private var developerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // TODO: remove before App Store release
-            Button {
-                simulateThread()
-            } label: {
-                Text("Simulate thread")
-                    .font(.caption2)
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.2))
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 8)
-
-            Button {
-                Task {
-                    await store.runGateDiagnosticTest()
-                }
-            } label: {
-                Text("Run Gate Diagnostic Test")
-                    .font(.caption2)
-                    .foregroundStyle(.orange.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .center)
-
             reprocessRow
 
             backfillEmbeddingRow
@@ -473,24 +463,27 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 12)
                 .contentShape(Rectangle())
+                #if DEBUG
                 .onLongPressGesture(minimumDuration: 1.0) {
                     if #available(iOS 17.0, *) {
                         showSubstrateInspect = true
                     }
                 }
+                #endif
         }
+        #if DEBUG
         .sheet(isPresented: $showSubstrateInspect) {
             if #available(iOS 17.0, *) {
                 SubstrateInspectView()
                     .environment(store)
             }
         }
-        #if DEBUG
         .sheet(isPresented: $showKokoroSampler) {
             KokoroVoiceSamplerView()
         }
         #endif
     }
+    #endif
 
     #if DEBUG
     /// Read-aloud voice picker (Kokoro spike). Drives
@@ -594,18 +587,6 @@ struct SettingsView: View {
             return "\(s.total) attempted · \(s.populated) populated · \(s.skippedNoContent) skipped"
         }
         return "\(s.current)/\(s.total) · \(s.populated) populated · \(s.skippedNoContent) skipped"
-    }
-
-    private func simulateThread() {
-        guard store.nodes.count >= 2 else { return }
-        let ids = Array(store.nodes.prefix(2).map { $0.id })
-        let fake = ThreadSuggestion(
-            id: UUID(),
-            nodeIDs: ids,
-            description: "Simulated connection between first two nodes",
-            confidence: 0.99
-        )
-        store.pendingThreads.append(fake)
     }
 
     // MARK: - Corpus

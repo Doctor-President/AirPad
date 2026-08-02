@@ -59,57 +59,15 @@ packages:
   FloatingPanel:
     url: https://github.com/scenee/FloatingPanel
     exactVersion: 3.2.2
-  # Kokoro on-device TTS (voice spike). MLX-Swift-based text→audio with the Misaki
-  # G2P built in (proven iOS-clean). Pulls mlx-swift + MisakiSwift + MLXUtilsLibrary
-  # transitively. DEV/PERSONAL spike — model weights dev-bundled; ODR for production.
-  KokoroSwift:
-    url: https://github.com/adriancmurray/kokoro-ios
-    revision: 2c1e7c41ff0e2160617cc90b8ac25287a1cd6451
-  # Pin mlx-swift to the version KokoroSwift's own Package.resolved was built against
-  # (0.29.1). AirPad otherwise re-resolves to 0.31.6, which ships a `CudaBuild`
-  # build-tool plugin that xcodebuild blocks (plugin-validation) headlessly + on
-  # TestFlight. 0.29.1 has no such plugin and is the author-tested version.
-  mlx-swift:
-    url: https://github.com/ml-explore/mlx-swift
-    exactVersion: 0.29.1
-  # NpyzReader (.npz → [String: MLXArray]) for loading Kokoro voice styles — the app
-  # owns voices (moved out of KokoroSwift in 1.0.5). Transitive via KokoroSwift; linked
-  # directly so AirPad can `import MLXUtilsLibrary`.
-  # 0.0.6 is the version KokoroSwift's own Package.resolved uses; it requires
-  # mlx-swift `from: 0.29.1` (compatible with our exact 0.29.1 pin). 0.0.7 bumps
-  # its floor to mlx 0.30.3, which would fight the pin.
-  MLXUtilsLibrary:
-    url: https://github.com/mlalma/MLXUtilsLibrary
-    exactVersion: 0.0.6
-  # FluidAudio — Kokoro TTS on the Apple Neural Engine via a 7-stage Core ML chain
-  # (background-survival SPIKE, parallel to the MLX KokoroSwift path which stays as
-  # fallback). We drive it with the `.allAne` compute-unit routing so every stage
-  # requests the ANE and the ANE-incompatible iSTFT/noise ops fall back to CPU
-  # (NOT the GPU the default routing uses) → no Metal → not killed by the
-  # Metal-in-background ban that forced the MLX park-while-backgrounded workaround.
-  # Apache-2.0, iOS 17+. No external SPM deps (internal targets + a prebuilt
-  # NemoTextProcessing.xcframework carrying ios-arm64 + ios-arm64-simulator slices)
-  # → zero conflict with the mlx-swift 0.29.1 pin. Models download on first use to
-  # the app cache (not dev-bundled like the MLX weights). We link only the FluidAudio
-  # LIBRARY product; the macOS-only fluidaudiocli executable stays unlinked.
-  FluidAudio:
-    url: https://github.com/FluidInference/FluidAudio
-    exactVersion: 0.15.5
-  # ── ONNX Runtime (ORT) — REMOVED 2026-07-31 to clear TestFlight ITMS-90208 ──
-  # The onnxruntime SPM package (microsoft/onnxruntime-swift-package-manager,
-  # exactVersion 1.24.2) was the CPU inference backend for the SHELVED Kokoro TTS.
-  # Its embedded onnxruntime.framework shipped Info.plist MinimumOSVersion 15.1 vs a
-  # binary minos 18.0 → ingestion rejection (the documented SPM caveat, onnxruntime
-  # #27396). It was also a ~39 MB (arm64) static lib that linked into the app binary
-  # REGARDLESS of `kokoroEnginesEnabled` (that flag gates execution, not linking),
-  # and nothing shipping could reach it (AVSpeech is the read-aloud engine).
-  # RESTORE when ORT/Kokoro unshelves:
-  #   1. re-add the `onnxruntime:` package here + the `- package: onnxruntime` dep below
-  #   2. `xcodegen generate`
-  #   3. git show c1ddf9e:AirPad/Services/TTS/ORTKokoroTTSEngine.swift > that path
-  #   4. re-add the ORT branch in SpeechSynthesisService + the DEBUG sampler's ORT tier
-  #      (all preserved in commit c1ddf9e). See ws-synthesized-voice.md.
-  # ★ Pin the CPU EP on restore — NEVER the CoreML EP (re-enters Espresso/BNNS = the crash).
+  # ── Synthesized-voice (Kokoro MLX/ANE + ORT) SPM packages REMOVED 2026-08-02 ──
+  # The whole shelved TTS runtime was removed from the build — AVSpeechSynthesizer is
+  # the sole read-aloud engine. Removed here: KokoroSwift, mlx-swift (0.29.1),
+  # MLXUtilsLibrary (0.0.6), FluidAudio (0.15.5) — plus onnxruntime (ORT) removed
+  # earlier 2026-07-31. FULL RESTORE STEPS (packages + exact versions/revisions, the
+  # deleted source files, the int8 weight, and the SpeechSynthesisService/ChatTranscript
+  # /SettingsView branches) live in Ops/workstreams/ws-synthesized-voice.md → sections
+  # "WHOLE KOKORO STACK REMOVED" (MLX/ANE, commit-preserved at 45ab69f) + "ORT REMOVED"
+  # (ORT engine at commit c1ddf9e). ★ On ORT restore pin the CPU EP — NEVER CoreML (BNNS crash).
 
 targets:
   AirPad:
@@ -137,20 +95,9 @@ targets:
       - target: AirPadShare
         embed: true
       - package: FloatingPanel
-      - package: KokoroSwift
-        product: KokoroSwift
-      # MLX (MLXArray + loadArrays) and NpyzReader (.npz voice styles) are
-      # transitive via KokoroSwift; linked directly so KokoroTTSEngine can
-      # `import MLX` / `import MLXUtilsLibrary`.
-      - package: mlx-swift
-        product: MLX
-      - package: MLXUtilsLibrary
-        product: MLXUtilsLibrary
-      # FluidAudio (ANE Kokoro spike). Library product only — never fluidaudiocli.
-      - package: FluidAudio
-        product: FluidAudio
-      # ONNX Runtime dep REMOVED 2026-07-31 (ITMS-90208) — restore steps in the
-      # `packages:` section above. Was: `- package: onnxruntime` / `product: onnxruntime`.
+      # Synthesized-voice deps (KokoroSwift / mlx-swift / MLXUtilsLibrary / FluidAudio,
+      # + ORT earlier) REMOVED 2026-08-02 — AVSpeech is the sole read-aloud engine.
+      # Restore steps in Ops/workstreams/ws-synthesized-voice.md.
       - sdk: SpriteKit.framework
       - sdk: AVFoundation.framework
       - sdk: Speech.framework
@@ -168,9 +115,9 @@ targets:
         # settings.base up top) is OUTRANKED by xcodegen's per-target auto-default
         # of CODE_SIGN_IDENTITY="iPhone Developer", which the CoreDevice installer
         # rejects on device ("executable is not codesigned"). A target-level pin
-        # wins. Regenerating after adding the FluidAudio package surfaced this —
-        # the app target's Debug+Release flipped to "iPhone Developer". Re-verify a
-        # DEVICE install after any `xcodegen generate`.
+        # wins. A package-set change once surfaced this — the app target's
+        # Debug+Release flipped to "iPhone Developer". Re-verify a DEVICE install
+        # after any `xcodegen generate`.
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
         # App icon = the Icon Composer bundle AirPad/AirPad.icon (a standalone

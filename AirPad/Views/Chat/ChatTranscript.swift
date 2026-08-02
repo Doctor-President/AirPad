@@ -382,38 +382,12 @@ struct ChatTranscript: View {
             let token = message.id.uuidString
             let isActive = speech.activeToken == token
             let showPause = isActive && speech.isSpeaking && !speech.isPaused
-            // System voices set the AVSpeech identifier AND clear any Kokoro
-            // selection so read-aloud actually uses AVSpeech. Kokoro (“AirPad”)
-            // voices set selectedKokoroVoiceID — the same setting the service
-            // already routes on — so this footer IS the real control, not a
-            // parallel one.
+            // Drives the AVSpeech voice the service reads aloud with — this
+            // footer IS the real control, not a parallel one.
             let systemSelection = Binding<String?>(
-                get: { speech.selectedKokoroVoiceID == nil ? speech.selectedVoiceIdentifier : nil },
-                set: {
-                    speech.selectedVoiceIdentifier = $0
-                    speech.selectedKokoroVoiceID = nil
-                }
+                get: { speech.selectedVoiceIdentifier },
+                set: { speech.selectedVoiceIdentifier = $0 }
             )
-            // MLX ("AirPad Voices") and ANE ("ANE Voices") share selectedKokoroVoiceID
-            // but differ on the engine flag, so each binding shows its checkmark only
-            // when its engine is active, and picking one flips useANEKokoro accordingly.
-            let kokoroSelection = Binding<String?>(
-                get: { !speech.useANEKokoro ? speech.selectedKokoroVoiceID : nil },
-                set: {
-                    speech.selectedKokoroVoiceID = $0
-                    speech.useANEKokoro = false
-                }
-            )
-            let aneSelection = Binding<String?>(
-                get: { speech.useANEKokoro ? speech.selectedKokoroVoiceID : nil },
-                set: {
-                    speech.selectedKokoroVoiceID = $0
-                    speech.useANEKokoro = true
-                }
-            )
-            let kokoroInstalled = KokoroTTSEngine.shared.isModelInstalled
-            let kokoroExtras = KokoroVoiceCatalog.allEnglishVoiceIDs
-                .filter { !KokoroVoiceCatalog.shortlist.contains($0) }
             HStack(spacing: 14) {
                 Button {
                     speech.toggle(token: token, text: message.text)
@@ -428,44 +402,10 @@ struct ChatTranscript: View {
                 .accessibilityLabel(showPause ? "Pause" : "Play")
 
                 Menu {
-                    Menu("System Voices") {
-                        Picker("System Voice", selection: systemSelection) {
-                            Text("Best available").tag(String?.none)
-                            ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
-                                Text(Self.voiceLabel(v)).tag(Optional(v.identifier))
-                            }
-                        }
-                    }
-                    // ★★ SHELVED 2026-07-28 (T): the synthesized-voice (Kokoro) tiers are gated
-                    // OFF behind `kokoroEnginesEnabled` — production offers System (AVSpeech)
-                    // voices only. The tiers + engines stay in-tree (dormant), pickable again
-                    // by flipping the flag. See decisions.md 2026-07-28.
-                    if SpeechSynthesisService.kokoroEnginesEnabled {
-                        if kokoroInstalled {
-                            Menu("AirPad Voices") {
-                                Picker("AirPad Voice", selection: kokoroSelection) {
-                                    ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
-                                        Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
-                                            .tag(Optional(id))
-                                    }
-                                    ForEach(kokoroExtras, id: \.self) { id in
-                                        Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
-                                            .tag(Optional(id))
-                                    }
-                                }
-                            }
-                        }
-                        Menu("ANE Voices (β)") {
-                            Picker("ANE Voice", selection: aneSelection) {
-                                ForEach(KokoroVoiceCatalog.shortlist, id: \.self) { id in
-                                    Text("★ \(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
-                                        .tag(Optional(id))
-                                }
-                                ForEach(kokoroExtras, id: \.self) { id in
-                                    Text("\(KokoroVoiceCatalog.displayName(for: id)) · \(KokoroVoiceCatalog.accentTag(for: id))")
-                                        .tag(Optional(id))
-                                }
-                            }
+                    Picker("Voice", selection: systemSelection) {
+                        Text("Best available").tag(String?.none)
+                        ForEach(SpeechSynthesisService.availableVoices, id: \.identifier) { v in
+                            Text(Self.voiceLabel(v)).tag(Optional(v.identifier))
                         }
                     }
                 } label: {

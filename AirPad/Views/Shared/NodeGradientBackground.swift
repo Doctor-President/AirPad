@@ -149,16 +149,31 @@ struct NodeGradientLayer: View {
     /// warm off-white on a dark one. Pair with `legibleHalo` for a contrast
     /// outline so mid-luminance palettes read too.
     static func legibleInk(for node: Node) -> Color {
-        representativeLuminance(for: node) > 0.62
-            ? Color(red: 0.08, green: 0.07, blue: 0.06)
-            : Color(red: 1.0, green: 0.98, blue: 0.95)
+        legibleInk(forLuminance: representativeLuminance(for: node))
     }
 
     /// Contrast halo behind the ink — the OPPOSITE luminance, applied as a text
     /// shadow so the type separates from a mid-tone gradient where neither pure
     /// ink has strong contrast on its own (the bubble carries no scrim).
     static func legibleHalo(for node: Node) -> Color {
-        representativeLuminance(for: node) > 0.62
+        legibleHalo(forLuminance: representativeLuminance(for: node))
+    }
+
+    /// Luminance-parameterized ink — the SAME rule + ink values as
+    /// `legibleInk(for:)` / `AppearancePalette.legibleInk(onFillHex:)` (map orbs,
+    /// tag pills, chat bubbles), but driven by ANY sampled luminance. Used by the
+    /// scroll-collapsed band, which samples the blurred hero IMAGE under the title
+    /// rather than the gradient palette — one rule, two luminance sources.
+    /// `threshold` defaults to the shared 0.62 so existing callers stay
+    /// byte-identical.
+    static func legibleInk(forLuminance lum: Double, threshold: Double = 0.62) -> Color {
+        lum > threshold
+            ? Color(red: 0.08, green: 0.07, blue: 0.06)
+            : Color(red: 1.0, green: 0.98, blue: 0.95)
+    }
+
+    static func legibleHalo(forLuminance lum: Double, threshold: Double = 0.62) -> Color {
+        lum > threshold
             ? Color.white.opacity(0.55)     // dark ink → light halo
             : Color.black.opacity(0.60)     // light ink → dark halo
     }

@@ -184,6 +184,79 @@ struct NodeDetailView: View {
     /// in commit 3 when the dev panel is deleted.
     @State private var visualSettings = EntryVisualSettings.shared
 
+    // MARK: - Scroll-collapsed hero → title band (Twitter-profile-header collapse)
+    //
+    // Purely scroll-driven, no gesture. Scroll down → the hero blurs out into a
+    // pinned nav BAND and the node title hands off into the chrome; scroll up
+    // reverses. Reuses the two shipped pieces: the collapse primitive from the
+    // chat chrome (`onScrollGeometryChange`-driven offset → a ramped opacity —
+    // same shape as LibrarianSurface's `titleCollapseOpacity`) and BUG 24's
+    // blurred-hero backdrop. This adds only the coupling + the title hand-off.
+    //
+    // CONTINUOUS backdrop, DISCRETE title: the backdrop opacity ramps with
+    // scroll; the title SWITCHES at a threshold (no both-titles-half state).
+
+    /// Live scroll distance from the top (`visibleRect.minY`), same reader the
+    /// chat transcript uses. 0 at scroll-top; grows as content moves up.
+    @State private var heroScrollOffset: CGFloat = 0
+    /// The hero's own VISIBLE content height, reported up from `heroZone` /
+    /// `HeroImageBanner` (gradient → 200; `.fill` → its clamped visible height;
+    /// `.fullHeight` → the crisp `contentHeight`, NOT the mirror-inset banner
+    /// height). The collapse threshold is RELATIVE to this so it feels identical
+    /// on every node whatever the hero's height. 0 until the hero reports.
+    @State private var heroVisibleHeight: CGFloat = 0
+    /// DISCRETE title state, driven by `bandProgress` with hysteresis so a slow
+    /// scroll across the threshold can't flicker the title back and forth.
+    @State private var bandTitleShown = false
+    /// Round 2 — luminance sampled under the band title (image nodes), reported
+    /// by `BandHeroBackdrop`. Gradient nodes derive it from the palette instead
+    /// (`representativeLuminance`). Computed ONCE per cover and held (static
+    /// backdrop → no re-sample during scroll → no ink flicker). `nil` until the
+    /// image samples; the title is hidden until the hero clears, by which point
+    /// the hero (long since on screen) has decoded.
+    @State private var bandTitleLuminance: Double? = nil
+    /// Round 2 — measured width of the RIGHT chrome group (EDIT+••• capsule, or
+    /// "Done" in reorder). The band title's trailing inset is derived from this
+    /// so it truncates BEFORE the pill whatever the ••• menu's width — not a
+    /// magic number. Seeded at the eye+••• capsule's resting width.
+    @State private var rightChromeWidth: CGFloat = 96
+
+    // Dials (TASTE — sensible defaults; T dials on device, then baked).
+    /// Fraction of the hero's visible height the backdrop ramps over. 1.0 = the
+    /// band reaches full as the hero fully clears.
+    private let bandCollapseFraction: CGFloat = 1.0
+    /// `bandProgress` at which the title discretely swaps into the chrome —
+    /// "as the hero clears."
+    private let bandTitleSwapPoint: CGFloat = 0.96
+    /// Hysteresis below the swap point at which the title swaps back out. The
+    /// deadband is the anti-jitter margin around the discrete switch.
+    private let bandTitleSwapDeadband: CGFloat = 0.14
+    /// The band's chrome-row height below the status bar (houses the title,
+    /// aligned with the back button + ••• capsule).
+    private let bandContentHeight: CGFloat = 52
+    /// Backdrop blur radius (static, GPU-cached — no per-frame re-blur).
+    private let bandBackdropBlur: CGFloat = 18
+    /// Round 2 — the title's leading inset: clears the back button (16pt outer +
+    /// 48pt button) plus a gap. Left-aligned starts here, after the back button.
+    private let bandTitleLeadingInset: CGFloat = 72
+    /// Round 2 — gap between the title's truncation edge and the right chrome
+    /// group (added to the measured `rightChromeWidth` + the 16pt outer inset).
+    private let bandChromeTitleGap: CGFloat = 10
+    /// Round 2 — luminance > this → dark ink, else light ink (the map-orb /
+    /// tag-pill / chat-bubble value; shared via `legibleInk(forLuminance:)`).
+    private let bandInkLuminanceThreshold: Double = 0.62
+    /// Round 2 — fraction of the hero image width (from the leading edge)
+    /// averaged for the ink decision — the region the left-aligned title covers.
+    private let bandInkSampleLeftFraction: CGFloat = 0.66
+
+    /// Continuous collapse progress 0…1, RELATIVE to the hero's own visible
+    /// height. 0 until the hero reports a height (guards the divide).
+    private var bandProgress: CGFloat {
+        let denom = heroVisibleHeight * bandCollapseFraction
+        guard denom > 1 else { return 0 }
+        return min(1, max(0, heroScrollOffset / denom))
+    }
+
     /// In-node capture surfaces. `.text` is intentionally absent: the "+"
     /// menu's Text action now appends an empty entry card inline (see
     /// `store.appendEmptyTextItem`) rather than presenting a sheet. Voice
@@ -376,7 +449,8 @@ struct NodeDetailView: View {
         ScrollViewReader { scrollProxy in
         ScrollView {
             VStack(spacing: 0) {
-                heroZone(node: node, topInset: topInset, width: proxy.size.width)
+                heroZone(node: node, topInset: topInset, width: proxy.size.width,
+                         onVisibleHeight: { heroVisibleHeight = $0 })
                 VStack(alignment: .leading, spacing: 0) {
                 // Detail-View outer rhythm — spacing:0 + explicit per-gap padding
                 // (gap-before), each default 24 so this is BYTE-IDENTICAL to the
@@ -394,6 +468,11 @@ struct NodeDetailView: View {
                     .foregroundStyle(AppearancePalette.ink)
                     .tint(AppearancePalette.ink)
                     .focused($focusedField)
+                    // Scroll-collapsed band — the in-flow title hands OFF to the
+                    // band title at the discrete swap (never both visible). Gated
+                    // on `!focusedField` so editing (which happens at scroll-top,
+                    // band absent) can never hide the field under the caret.
+                    .opacity(bandTitleShown && !focusedField ? 0 : 1)
 
                 // Summary — Stage 4.4 addendum 1a-i: Node Summary role.
                 // Default mirrors the prior `.body` exactly.
@@ -601,6 +680,24 @@ struct NodeDetailView: View {
         // rim), not colour. Replaces the fixed near-black #070709.
         .background { AppearancePalette.bgBase.ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
+        // Scroll-collapsed band — same reader the chat transcript uses
+        // (`visibleRect.minY` = distance scrolled from the top). Drives the
+        // continuous backdrop ramp; the discrete title swap keys off it below.
+        .onScrollGeometryChange(for: CGFloat.self) { geo in
+            geo.visibleRect.minY
+        } action: { _, offset in
+            heroScrollOffset = offset
+        }
+        // DISCRETE title hand-off with hysteresis: swap IN at the swap point,
+        // back OUT only after dropping a full deadband below it, so a slow
+        // scroll across the threshold can't flicker the title.
+        .onChange(of: bandProgress) { _, p in
+            if !bandTitleShown, p >= bandTitleSwapPoint {
+                withAnimation(.easeOut(duration: 0.16)) { bandTitleShown = true }
+            } else if bandTitleShown, p <= bandTitleSwapPoint - bandTitleSwapDeadband {
+                withAnimation(.easeOut(duration: 0.16)) { bandTitleShown = false }
+            }
+        }
         .onAppear {
             guard let focusEntryID else { return }
             // Defer past first layout so the target entry's anchor exists.
@@ -611,6 +708,11 @@ struct NodeDetailView: View {
             }
         }
         }  // ScrollViewReader
+
+        // Scroll-collapsed hero → title band. Sibling of the ScrollView in the
+        // ZStack, z-BELOW the chrome (declared before GlassRowContainer) so the
+        // back button + ••• capsule float over it and stay tappable.
+        collapsedBand(node: node, topInset: topInset, width: proxy.size.width)
 
         // hero-custom-toolbar-overlay — sibling of the ScrollView inside
         // the ZStack, not an overlay on it. The ZStack respects the top
@@ -643,6 +745,10 @@ struct NodeDetailView: View {
                     .modifier(InteractiveGlassCircle())
             }
             Spacer()
+            // Round 2 (scroll-collapsed band) — measure the RIGHT chrome group's
+            // width (both branches: Done + EDIT/••• capsule) so the band title's
+            // trailing inset truncates BEFORE it, whatever the ••• menu width.
+            Group {
             if reorderController.isReorderActive {
                 // Stage 3.1b — Done swaps in while reorder mode is
                 // active. Exits the controller cleanly with no
@@ -796,6 +902,8 @@ struct NodeDetailView: View {
                 }  // close ws-chrome-pill HStack
                 .modifier(InteractiveGlassCapsule())
             }
+            }  // close Round-2 measure Group
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rightChromeWidth = $0 }
         }
         .padding(.horizontal, 16)
         } // close GlassRowContainer
@@ -843,7 +951,8 @@ struct NodeDetailView: View {
     // MARK: - Hero zone
 
     @ViewBuilder
-    private func heroZone(node: Node, topInset: CGFloat, width: CGFloat) -> some View {
+    private func heroZone(node: Node, topInset: CGFloat, width: CGFloat,
+                          onVisibleHeight: @escaping (CGFloat) -> Void) -> some View {
         // Compact banner — top full-bleeds under the status bar (y=0),
         // bottom is a defined edge via rounded corners that match the
         // ~30pt card-family radius. No fade and no mask: the rounded
@@ -868,8 +977,13 @@ struct NodeDetailView: View {
                         style: .continuous
                     )
                 )
+                // No-hero node → the gradient IS the band backdrop (one
+                // treatment, two sources); its visible height is the fixed 200.
+                .onAppear { onVisibleHeight(200) }
         } else {
-            HeroImageBanner(node: node, heroCrop: node.heroCrop, topInset: topInset, width: width, isAdjusting: $isAdjustingHero)
+            HeroImageBanner(node: node, heroCrop: node.heroCrop, topInset: topInset,
+                            width: width, isAdjusting: $isAdjustingHero,
+                            onVisibleHeight: onVisibleHeight)
                 // Force a fresh view identity whenever the source path
                 // flips so the `.task(id:)` inside actually re-fires.
                 // Without this the banner's identity is reused across
@@ -877,6 +991,94 @@ struct NodeDetailView: View {
                 // never restarts (Case A: heroZone re-evals with the
                 // new path, but `task fired` never logs).
                 .id(node.coverImageRelativePath)
+        }
+    }
+
+    // MARK: - Scroll-collapsed band
+
+    /// The pinned band the hero collapses into. Backdrop = the hero BLURRED
+    /// (image nodes) or a static blurred gradient (no-hero nodes) — one
+    /// treatment, two sources; a fixed identity field, position-locked (does
+    /// NOT scroll), its opacity ramping continuously with `bandProgress`. The
+    /// title switches in discretely (`bandTitleShown`). Full-bleeds to y=0 like
+    /// the hero; the title sits in the chrome row below the status bar.
+    @ViewBuilder
+    private func collapsedBand(node: Node, topInset: CGFloat, width: CGFloat) -> some View {
+        let bandHeight = topInset + bandContentHeight
+        // VStack + Spacer pins the fixed-height band to y=0 (top) and lets the
+        // rest fall away; `ignoresSafeArea(.top)` bleeds the backdrop under the
+        // status bar exactly like the hero. The chrome (GlassRowContainer,
+        // declared later → z-above) floats over it.
+        // Round 2 — ink from the SAMPLED backdrop luminance, NOT appearance
+        // mode: the band backdrop is node content (unpredictable brightness), the
+        // one place following light/dark mode is wrong. Image nodes sample the
+        // blurred hero under the title; gradient nodes reuse the palette rule the
+        // map orbs use. ONE rule (`legibleInk` @ 0.62), TWO luminance sources.
+        // Computed once and HELD (static backdrop → no re-sample, no flicker).
+        let bandLuminance: Double = node.coverImageRelativePath == nil
+            ? NodeGradientLayer.representativeLuminance(for: node)
+            : (bandTitleLuminance ?? 0.0)   // pre-sample: dark→light ink (transient; title hidden until decode)
+        let titleInk = NodeGradientLayer.legibleInk(forLuminance: bandLuminance, threshold: bandInkLuminanceThreshold)
+        let titleHalo = NodeGradientLayer.legibleHalo(forLuminance: bandLuminance, threshold: bandInkLuminanceThreshold)
+        // Round 2 — trailing inset = 16pt outer chrome inset + MEASURED right
+        // group width + gap, so the title truncates BEFORE the pill whatever the
+        // ••• menu width, never under it.
+        let titleTrailingInset = 16 + rightChromeWidth + bandChromeTitleGap
+        VStack(spacing: 0) {
+            ZStack(alignment: .top) {
+                bandBackdrop(node: node, width: width, height: bandHeight)
+                // Round 2 — LEFT-ALIGNED single-line title in the chrome row.
+                // Starts after the back button (fixed), truncates before the
+                // right chrome group (derived). Never two lines (the band must
+                // stay a quiet fixed strip); never centred (asymmetric chrome
+                // makes "centre" drift with the ••• width).
+                Text(node.title)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(titleInk)
+                    .shadow(color: titleHalo, radius: 1.5)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, bandTitleLeadingInset)
+                    .padding(.trailing, titleTrailingInset)
+                    .frame(height: bandContentHeight)
+                    .padding(.top, topInset)
+                    .opacity(bandTitleShown ? 1 : 0)
+            }
+            .frame(height: bandHeight)
+            .clipped()
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .opacity(bandProgress)                 // CONTINUOUS backdrop ramp
+        .allowsHitTesting(false)               // chrome (z-above) keeps its taps
+        .ignoresSafeArea(.container, edges: .top)
+    }
+
+    /// The band's blurred identity field. Static (no `TimelineView` under the
+    /// blur / drawingGroup — see the SwiftUI blur perf rule): the gradient
+    /// backdrop is rendered with `animated: false` so it's a still image the
+    /// GPU caches once, never a per-frame re-blur during scroll.
+    @ViewBuilder
+    private func bandBackdrop(node: Node, width: CGFloat, height: CGFloat) -> some View {
+        Group {
+            if let path = node.coverImageRelativePath {
+                // The hero image, blurred to fill the band. Re-derived from the
+                // source (independent of the hero's fit) so a fullHeight hero's
+                // crisp-card + mirror + letterbox composition never leaks in —
+                // blur is an identity wash, not a thumbnail.
+                BandHeroBackdrop(node: node, coverPath: path, width: width,
+                                 height: height, blur: bandBackdropBlur,
+                                 sampleLeftFraction: bandInkSampleLeftFraction,
+                                 onLuminance: { bandTitleLuminance = $0 })
+            } else {
+                NodeGradientLayer(node: node, circleScale: 1.3,
+                                  undulation: 1.0, animated: false)
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .blur(radius: bandBackdropBlur, opaque: true)
+                    .drawingGroup()
+            }
         }
     }
 
@@ -2699,6 +2901,13 @@ private struct HeroImageBanner: View {
     /// pans the crop (see `panGesture`) instead of scrolling the detail view,
     /// and a "Done" affordance is shown. Owned by `NodeDetailView`.
     @Binding var isAdjusting: Bool
+    /// Scroll-collapsed band — reports this banner's VISIBLE content height so
+    /// the host's collapse threshold is RELATIVE to it. `.fill` → the clamped
+    /// visible height; `.fullHeight` → the crisp `contentHeight`, NOT the
+    /// mirror-inset banner height (the inset sits behind the chrome, so counting
+    /// it would fire the swap late on tall nodes). 200 while loading / on
+    /// fallback (matches the gradient placeholder).
+    let onVisibleHeight: (CGFloat) -> Void
 
     @Environment(CorpusStore.self) private var store
 
@@ -2726,6 +2935,22 @@ private struct HeroImageBanner: View {
     private var baseCrop: HeroCrop {
         let offset = (localCrop ?? heroCrop ?? HeroCrop()).offset
         return HeroCrop(offset: offset, fit: heroCrop?.fit ?? .fill)
+    }
+
+    /// Scroll-collapsed band — the VISIBLE content height for the current mode
+    /// (the threshold basis). 200 (the gradient placeholder height) until the
+    /// image decodes. Mirrors the height math in `body` exactly.
+    private var heroVisibleContentHeight: CGFloat {
+        guard let aspect else { return 200 }
+        let naturalHeight = width / max(aspect, 0.01)
+        switch baseCrop.fit {
+        case .fullHeight:
+            // The crisp card only — the mirror inset (topInset + 64) is chrome
+            // clearance behind the band, deliberately excluded.
+            return min(naturalHeight, UIScreen.main.bounds.height * 0.72)
+        case .fill:
+            return max(200, min(visualSettings.heroMaxHeight, naturalHeight))
+        }
     }
 
     var body: some View {
@@ -2891,6 +3116,13 @@ private struct HeroImageBanner: View {
                     )
             }
         }
+        // Scroll-collapsed band — report the visible content height (and keep it
+        // current as the image decodes or the fit toggles). `initial: true` fires
+        // the 200 placeholder immediately so the host has a threshold before the
+        // decode lands.
+        .onChange(of: heroVisibleContentHeight, initial: true) { _, h in
+            onVisibleHeight(h)
+        }
         .task(id: node.coverImageRelativePath) {
             // Drop stale bytes the moment the source path changes so the
             // fallback gradient bridges the gap instead of the previous
@@ -2963,6 +3195,99 @@ private struct HeroImageBanner: View {
         }
         .buttonStyle(.plain)
         .padding(12)
+    }
+}
+
+// MARK: - BandHeroBackdrop (scroll-collapsed band)
+
+/// The blurred hero image behind the scroll-collapsed band — a small, STATIC
+/// identity field, position-locked, GPU-cached via `.drawingGroup()` so a
+/// scroll never re-blurs it. Re-derives from the source image (independent of
+/// the hero's fit), so a `.fullHeight` hero's crisp-card + mirror + letterbox
+/// composition never leaks in — blur is a wash, not a thumbnail. Decodes the
+/// same ImageIO-downsample way as `HeroImageBanner`, keyed on the cover path;
+/// bridges the decode with the node's static gradient wash so the band is
+/// never empty.
+private struct BandHeroBackdrop: View {
+    let node: Node
+    let coverPath: String
+    let width: CGFloat
+    let height: CGFloat
+    let blur: CGFloat
+    /// Fraction of the image WIDTH (from the leading edge) to average for the
+    /// title-ink luminance — the region the left-aligned title sits over.
+    let sampleLeftFraction: CGFloat
+    /// Reports the sampled left-region luminance (0…1) ONCE per cover, computed
+    /// off-main alongside the decode. Host holds it (the backdrop is static, so
+    /// it never re-samples during scroll → no ink flicker).
+    let onLuminance: (Double) -> Void
+
+    @Environment(CorpusStore.self) private var store
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .blur(radius: blur, opaque: true)
+                    .drawingGroup()
+            } else {
+                NodeGradientLayer(node: node, circleScale: 1.3,
+                                  undulation: 1.0, animated: false)
+                    .frame(width: width, height: height)
+                    .clipped()
+                    .blur(radius: blur, opaque: true)
+                    .drawingGroup()
+            }
+        }
+        .task(id: coverPath) {
+            image = nil
+            guard let url = await store.coverImageURL(for: node) else { return }
+            let scale = UIScreen.main.scale
+            // The band is short; downsample to its own pixel box (blurred anyway).
+            let maxPixel = Int(max(width, height) * scale)
+            let leftFraction = sampleLeftFraction
+            let decoded: (UIImage, Double?)? = await Task.detached(priority: .userInitiated) {
+                guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+                let opts: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceShouldCacheImmediately: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixel
+                ]
+                guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary),
+                      cg.height > 0 else { return nil }
+                let lum = Self.averageLuminance(of: cg, leftFraction: leftFraction)
+                return (UIImage(cgImage: cg, scale: scale, orientation: .up), lum)
+            }.value
+            guard let decoded else { return }
+            image = decoded.0
+            if let lum = decoded.1 { onLuminance(lum) }
+        }
+    }
+
+    /// Average relative luminance of the left `leftFraction` of a CGImage. Draws
+    /// the crop into a 1×1 context (hardware-averaged) and reads the pixel — no
+    /// per-pixel loop, no second render pass. Rec.709 luma, matching
+    /// `NodeGradientLayer.legibleInk`'s coefficients.
+    static func averageLuminance(of cg: CGImage, leftFraction: CGFloat) -> Double? {
+        let w = cg.width, h = cg.height
+        guard w > 0, h > 0 else { return nil }
+        let cropW = max(1, Int((CGFloat(w) * leftFraction).rounded()))
+        guard let crop = cg.cropping(to: CGRect(x: 0, y: 0, width: cropW, height: h)) else { return nil }
+        var px: [UInt8] = [0, 0, 0, 0]
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8,
+                                  bytesPerRow: 4, space: cs, bitmapInfo: info) else { return nil }
+        ctx.interpolationQuality = .medium
+        ctx.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let r = Double(px[0]) / 255, g = Double(px[1]) / 255, b = Double(px[2]) / 255
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
     }
 }
 

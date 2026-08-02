@@ -1,8 +1,11 @@
+#if DEBUG
 import SwiftUI
 
 /// SB139 Stage 1 — dev-only substrate inspect view. Gated behind a hidden
 /// long-press in `SettingsView`'s developer section. Not for end users — must
 /// be honest about real numbers, real failures, no friendly facades.
+/// ★ The ENTIRE file is `#if DEBUG`-gated: it carries a DESTRUCTIVE
+/// "Reset cluster registry" and must be compiled out of any shipping build.
 ///
 /// Sections:
 /// 1. Coverage stats — full / partial / failed / unprocessed; per-reason histogram.
@@ -2969,3 +2972,4 @@ struct ClusterDiagnosticExportPayload: Encodable {
         case clusterSummaries = "cluster_summaries"
     }
 }
+#endif

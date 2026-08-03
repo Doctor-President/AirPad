@@ -2,7 +2,6 @@ import SwiftUI
 import PhotosUI
 import UIKit
 import AVFoundation
-import Vision
 import UniformTypeIdentifiers
 
 /// Camera/photo-library capture sheet.
@@ -137,7 +136,7 @@ struct CameraCaptureView: View {
         isSaving = true
 
         var pending: [CorpusStore.PendingMediaItem] = []
-        var firstImage: (data: Data, uiImage: UIImage)? = nil
+        var firstImageData: Data? = nil
 
         for result in results {
             if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
@@ -153,7 +152,7 @@ struct CameraCaptureView: View {
                     continue
                 }
                 pending.append(.init(itemID: itemID, mediaType: .image, sourceURL: tmpURL, fileExtension: "jpg"))
-                if firstImage == nil { firstImage = (data, image) }
+                if firstImageData == nil { firstImageData = data }
             } else if result.itemProvider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) {
                 guard let (tmpURL, ext) = await MediaPickerWrapper.loadVideo(from: result.itemProvider) else { continue }
                 pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext))
@@ -166,16 +165,19 @@ struct CameraCaptureView: View {
             return
         }
 
+        // Image OCR is NOT written here as a sibling `.text` item anymore. It now
+        // lives on `GalleryItem.analysis` (via `addMediaItems` → deferred
+        // `enqueueImageOCR`) and reaches the search index through
+        // `BlockChunker.chunk`. Appending it here too double-counted the words
+        // (a text block AND an image block) and — worse — the sibling paragraph
+        // was UNLABELED machine output, indistinguishable from something the user
+        // typed. (`describeImage` is still a stub; the `description` seed stays.)
         let isSingleImage = pending.count == 1 && pending[0].mediaType == .image
         var description = ""
-        var ocrText = ""
-        if isSingleImage, let firstImage {
+        if isSingleImage, let firstImageData {
             if #available(iOS 26.0, *) {
-                description = await AIService().describeImage(firstImage.data) ?? ""
+                description = await AIService().describeImage(firstImageData) ?? ""
             }
-            ocrText = await Task.detached(priority: .userInitiated) {
-                Self.extractText(from: firstImage.uiImage)
-            }.value
         }
 
         let position = CGPoint(x: Double.random(in: -80...80), y: Double.random(in: -80...80))
@@ -186,13 +188,6 @@ struct CameraCaptureView: View {
             position: position,
             targetCollectionID: targetCollectionID
         )
-
-        if !ocrText.isEmpty {
-            let affectedNodeID = targetNodeID ?? store.nodes.first?.id
-            if let nodeID = affectedNodeID {
-                await store.appendItemToNode(nodeID: nodeID, item: .text(content: ocrText))
-            }
-        }
 
         if let nodeID = targetNodeID {
             await store.processNodeWithAI(nodeID: nodeID)
@@ -237,10 +232,10 @@ struct CameraCaptureView: View {
             description = ""
         }
 
-        let ocrText = await Task.detached(priority: .userInitiated) {
-            Self.extractText(from: image)
-        }.value
-
+        // OCR is not written as a sibling `.text` item — it lands on
+        // `GalleryItem.analysis` via `addMediaItems` → `enqueueImageOCR` and is
+        // indexed through `BlockChunker` (see handlePickerResults for why the
+        // sibling write was removed: double-counting + unlabeled machine text).
         let pending = CorpusStore.PendingMediaItem(
             itemID: itemID,
             mediaType: .image,
@@ -256,13 +251,6 @@ struct CameraCaptureView: View {
             targetCollectionID: targetCollectionID
         )
 
-        if !ocrText.isEmpty {
-            let affectedNodeID = targetNodeID ?? store.nodes.first?.id
-            if let nodeID = affectedNodeID {
-                await store.appendItemToNode(nodeID: nodeID, item: .text(content: ocrText))
-            }
-        }
-
         if let nodeID = targetNodeID {
             await store.processNodeWithAI(nodeID: nodeID)
         } else if let newest = store.nodes.first {
@@ -277,16 +265,6 @@ struct CameraCaptureView: View {
         dismiss()
     }
 
-    private static func extractText(from image: UIImage) -> String {
-        guard let cgImage = image.cgImage else { return "" }
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        let handler = VNImageRequestHandler(cgImage: cgImage)
-        try? handler.perform([request])
-        let lines = request.results?.compactMap { $0.topCandidates(1).first?.string } ?? []
-        return lines.joined(separator: " ")
-    }
 }
 
 // MARK: - Source button

@@ -95,13 +95,21 @@ enum BlockChunker {
             return singleBlock(item.description ?? "", itemID: item.id)
 
         case .imageVideo:
-            // Post-4.2 multi-image entries store media in `mediaItems`;
-            // `GalleryItem` carries no per-item text today. Migrated single-
-            // image entries still preserve the parent `description` as a
-            // diagnostic breadcrumb — surface that as a single block so
-            // legacy text isn't silently lost. Multi-image entries created
-            // post-4.2 with no parent description emit nothing.
-            return singleBlock(item.description ?? "", itemID: item.id)
+            // Two text sources feed the search index:
+            //  • the legacy parent `description` (migrated single-image
+            //    breadcrumb / FM description), keyed by the entry id.
+            //  • each image's OCR text (`GalleryItem.analysis.recognizedText`),
+            //    keyed by the GALLERYITEM id — so re-OCR of one image
+            //    invalidates only its own blocks (mirrors per-DocumentItem
+            //    keying). This is the wire that makes a screenshot's / receipt's
+            //    / whiteboard's text findable.
+            var specs = singleBlock(item.description ?? "", itemID: item.id)
+            for media in item.mediaItems ?? [] {
+                if let text = media.analysis?.recognizedText, !text.isEmpty {
+                    specs += chunkText(text, itemID: media.id, minChars: minChars)
+                }
+            }
+            return specs
 
         case .link:
             if let links = item.linkItems, !links.isEmpty {

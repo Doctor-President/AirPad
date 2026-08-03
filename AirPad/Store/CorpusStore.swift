@@ -3125,9 +3125,11 @@ final class CorpusStore {
             viewMode: initialViewMode
         )
 
+        let affectedNodeID: String
         if let nodeID = targetNodeID, nodes.contains(where: { $0.id == nodeID }) {
             await persistMediaFiles(media, nodeID: nodeID)
             await appendItemToNode(nodeID: nodeID, item: entry)
+            affectedNodeID = nodeID
         } else {
             let title = defaultMediaTitle(for: media, description: description)
             let stamp = NodeCollection.captureStamp(forCollectionID: targetCollectionID)
@@ -3152,7 +3154,14 @@ final class CorpusStore {
             )
             await persistMediaFiles(media, nodeID: node.id)
             await addNode(node, position: position)
+            affectedNodeID = node.id
         }
+
+        // Deferred, idempotent OCR enrichment — enqueue, never await, so import
+        // stays fast (the byte-copy path is unchanged). Recognized text is
+        // written back onto each GalleryItem, which the block-embedding rebuild
+        // then indexes → gallery images become searchable.
+        enqueueImageOCR(nodeID: affectedNodeID)
     }
 
     /// Stage 4.2 commit 3 — appends gallery items to an EXISTING `.imageVideo`
@@ -3227,6 +3236,10 @@ final class CorpusStore {
         updated.items[itemIdx].updatedAt = now
         updated.updatedAt = now
         await updateNode(updated)
+
+        // Deferred, idempotent OCR enrichment (see addMediaItems) — enqueue,
+        // never await, so the "+" add stays fast.
+        enqueueImageOCR(nodeID: nodeID)
     }
 
     /// Stage 4.2 commit 5 — persists the renderer-measured aspect ratio of
@@ -3260,6 +3273,77 @@ final class CorpusStore {
         // would surface a "5 seconds ago" timestamp on the title row every
         // time a user opens a node, which is the wrong UX signal.
         await updateNode(updated)
+    }
+
+    // MARK: - Image OCR enrichment (searchable-image substrate)
+
+    /// In-flight OCR tasks per node, coalesced by cancel+re-arm (mirrors
+    /// `cardRefreshTasks` / `enrichmentTasks`).
+    private var ocrTasks: [String: Task<Void, Never>] = [:]
+
+    /// Writes machine-derived `ImageAnalysis` onto one gallery item. Like
+    /// `setGalleryItemAspectRatio`, this is an enrichment write, NOT a user
+    /// edit, so it deliberately does not bump `updatedAt`. Idempotent (no-op
+    /// when the stored analysis already matches). The `updateNode` it calls
+    /// re-runs the block-embedding rebuild — that is how the OCR text reaches
+    /// the search index.
+    func setGalleryItemAnalysis(entryID: String, nodeID: String, galleryItemID: String, analysis: ImageAnalysis) async {
+        guard let nodeIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nodeIdx]
+        guard let itemIdx = updated.items.firstIndex(where: { $0.id == entryID }),
+              var items = updated.items[itemIdx].mediaItems,
+              let galleryIdx = items.firstIndex(where: { $0.id == galleryItemID }) else { return }
+        if items[galleryIdx].analysis == analysis { return }
+        items[galleryIdx].analysis = analysis
+        updated.items[itemIdx].mediaItems = items
+        await updateNode(updated)
+    }
+
+    /// Enqueue (never await) deferred OCR enrichment for a node's gallery
+    /// images. Called by the media-add paths so import stays fast.
+    func enqueueImageOCR(nodeID: String) {
+        ocrTasks[nodeID]?.cancel()
+        ocrTasks[nodeID] = Task(priority: .utility) { @MainActor [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            defer { self.ocrTasks[nodeID] = nil }
+            await self.runImageOCR(nodeID: nodeID)
+        }
+    }
+
+    /// OCR every image gallery-item in the node that lacks `recognizedText` at
+    /// the current `extractorVersion` (idempotent). The cheap parts (gather,
+    /// URL resolve, write-back) stay on the main actor; the decode + Vision run
+    /// OFF main via `Task.detached`. Serial — tens of ms per image; no
+    /// `TaskGroup` until measurement shows it's needed.
+    private func runImageOCR(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        struct Job { let entryID: String; let media: GalleryItem }
+        var jobs: [Job] = []
+        for entry in node.items where entry.type == .imageVideo {
+            for media in entry.mediaItems ?? [] where media.mediaType == .image {
+                if media.analysis?.recognizedText != nil,
+                   media.analysis?.extractorVersion == ImageOCRService.extractorVersion { continue }
+                jobs.append(Job(entryID: entry.id, media: media))
+            }
+        }
+        guard !jobs.isEmpty else { return }
+        for job in jobs {
+            if Task.isCancelled { return }
+            guard let url = await resolveGalleryItemURL(job.media, nodeID: nodeID) else { continue }
+            let text = await Task.detached(priority: .utility) {
+                ImageOCRService.recognizeText(fileURL: url)
+            }.value
+            await setGalleryItemAnalysis(
+                entryID: job.entryID,
+                nodeID: nodeID,
+                galleryItemID: job.media.id,
+                analysis: ImageAnalysis(
+                    recognizedText: text,
+                    extractedAt: Date(),
+                    extractorVersion: ImageOCRService.extractorVersion
+                )
+            )
+        }
     }
 
     /// #6 (launch list) — sets (or clears) the user caption on one gallery

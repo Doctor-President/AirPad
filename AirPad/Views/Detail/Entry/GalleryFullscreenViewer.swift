@@ -416,7 +416,18 @@ struct GalleryFullscreenViewer: View {
         // must NOT follow the app theme. Pin it dark in BOTH modes (permanent
         // dark scrim `Color.black` above + permanent light chrome, Apple-Photos
         // style) so the bottom action bar never renders as a light frosted bar.
-        .preferredColorScheme(.dark)
+        //
+        // ★ Use `.environment(\.colorScheme, .dark)`, NOT `.preferredColorScheme`.
+        // `.preferredColorScheme` is a WINDOW/scene-level preference: presenting
+        // flipped the whole window to dark and dismissing flipped it back, which
+        // — once `.presentationBackground(.clear)` (below) let the presenter
+        // render during the transition — showed as a 1–2 frame DARK-THEME flash
+        // of the detail view in light mode (invisible in dark: presenter already
+        // dark). `.environment(\.colorScheme,)` styles only THIS subtree (the
+        // lightbox chrome) and expresses no scene preference, so the presenting
+        // window's appearance is untouched. Do NOT "correct" this back to
+        // `.preferredColorScheme` — it reintroduces the flash.
+        .environment(\.colorScheme, .dark)
         // See-through presentation — applied ONCE here inside the viewer (not at
         // both call sites): the presenter (the detail view / gallery) renders
         // behind, so the lightbox lifts off it Photos-style rather than sitting

@@ -3085,8 +3085,10 @@ final class CorpusStore {
         // is the only writer. Single-item creations leave viewMode nil so
         // a later "+" → 2 items transition (in `appendMediaItems`) gets a
         // first-time default applied at THAT moment, not now.
+        // 3-mode restore (T's rule): ≤3 → strip, ≥4 → HORIZONTAL bento. Vertical
+        // bento is OPT-IN only — never auto-selected — so it is not written here.
         let initialViewMode: GalleryViewMode? = media.count >= 2
-            ? (media.count <= 3 ? .carousel : .bento)
+            ? (media.count <= 3 ? .carousel : .horizontalBento)
             : nil
 
         // Stage 4.2 commit 8 — upward auto-rename at the creation moment.
@@ -3194,7 +3196,9 @@ final class CorpusStore {
         //   - combined.count still 1 → entry is still single-presentation,
         //     `SingleMediaBody` renders it, viewMode stays nil.
         if updated.items[itemIdx].viewMode == nil && combined.count >= 2 {
-            updated.items[itemIdx].viewMode = combined.count <= 3 ? .carousel : .bento
+            // 3-mode restore: first-time default is strip (≤3) / horizontal bento
+            // (≥4). Vertical bento is opt-in only, so never written as a default.
+            updated.items[itemIdx].viewMode = combined.count <= 3 ? .carousel : .horizontalBento
         }
 
         // Stage 4.2 commit 8 — upward auto-rename trigger. Fires once, at

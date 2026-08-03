@@ -138,10 +138,14 @@ final class LibrarianState {
     /// `contains` (substring is load-bearing — noisy OCR like "WARY PoPPINS"
     /// still has to be reachable via "poppins").
     struct SearchImageMatch: Identifiable, Sendable {
-        let id: String          // GalleryItem.id
+        let id: String          // GalleryItem.id, or "hero:<nodeID>" for a hero
         let nodeID: String
-        let entryID: String     // the .imageVideo NodeItem.id (parentItem for the tile)
         let recognizedText: String
+        let source: Source
+        enum Source: Sendable {
+            case gallery(entryID: String)   // the .imageVideo NodeItem.id (tile parentItem)
+            case hero                        // renders from the node's coverImageRelativePath
+        }
     }
     var searchImageMatches: [SearchImageMatch] = []
 
@@ -322,10 +326,21 @@ final class LibrarianState {
                     if let text = media.analysis?.recognizedText,
                        text.lowercased().contains(q) {
                         imageHits.append(SearchImageMatch(
-                            id: media.id, nodeID: node.id, entryID: item.id, recognizedText: text
+                            id: media.id, nodeID: node.id, recognizedText: text,
+                            source: .gallery(entryID: item.id)
                         ))
                     }
                 }
+            }
+            // Hero — ONLY a directly-picked hero (no gallery entry). DEDUPE: a
+            // gallery-derived hero is already covered by its gallery item above,
+            // so `directlyPickedHeroPath` returns nil for it → no second row.
+            if node.directlyPickedHeroPath != nil,
+               let text = node.heroAnalysis?.recognizedText,
+               text.lowercased().contains(q) {
+                imageHits.append(SearchImageMatch(
+                    id: "hero:\(node.id)", nodeID: node.id, recognizedText: text, source: .hero
+                ))
             }
         }
         searchMatches = titleHits + bodyHits + summaryTagHits

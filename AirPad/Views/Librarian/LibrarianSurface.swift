@@ -1182,6 +1182,17 @@ struct LibrarianSurface: View {
         .padding(.vertical, 8)
         .background(AppearancePalette.ink.opacity(0.06))
         .clipShape(Capsule())
+        .background {
+            // Substrate reconciler — ambient "still finding things" glow. Shown
+            // only while the reconciler has work (self-hiding), BEHIND the capsule
+            // so it reads as a soft halo, not a control. Placed here — a property
+            // of the CORPUS's completeness — not the RELATED header (that spinner
+            // is per-query). The signal is PRESENCE + MOTION (colorblind-safe);
+            // the hue is decorative.
+            if store.isReconcilingSubstrate {
+                ReconcilerGlow()
+            }
+        }
     }
 
     /// MATCHES (text) and RELATED (semantic) sections rendered when
@@ -1237,15 +1248,21 @@ struct LibrarianSurface: View {
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, !matches.isEmpty ? 8 : 4)
                     ForEach(imageMatches) { m in
-                        if let node = byID[m.nodeID],
-                           let entry = node.items.first(where: { $0.id == m.entryID }),
-                           let media = entry.mediaItems?.first(where: { $0.id == m.id }) {
+                        if let node = byID[m.nodeID] {
                             SearchResultRow(
                                 onFocus: { focusNode(m.nodeID) },
                                 onOpen: { openNode(m.nodeID) }
                             ) {
-                                SearchImageRow(node: node, entry: entry,
-                                               galleryItem: media, matchedText: m.recognizedText)
+                                switch m.source {
+                                case .gallery(let entryID):
+                                    if let entry = node.items.first(where: { $0.id == entryID }),
+                                       let media = entry.mediaItems?.first(where: { $0.id == m.id }) {
+                                        SearchImageRow(node: node, entry: entry,
+                                                       galleryItem: media, matchedText: m.recognizedText)
+                                    }
+                                case .hero:
+                                    SearchHeroRow(node: node, matchedText: m.recognizedText)
+                                }
                             }
                         }
                     }
@@ -2011,6 +2028,34 @@ private struct SearchResultRow<Label: View>: View {
     }
 }
 
+/// Ambient reconciler signal — a soft radial gradient that gently PULSES behind
+/// the search field while the substrate reconciler enriches images. NOT a spinner
+/// or progress bar: nothing is blocked (search works throughout), so a "pending"
+/// affordance would be a lie. The signal is PRESENCE + MOTION, which survives
+/// colorblindness; the hue is decorative (Klein Blue #1B59C2, a hex literal so it
+/// can be verified with a picker). Baked defaults — no tuner on the first round.
+private struct ReconcilerGlow: View {
+    @State private var pulse = false
+    /// #1B59C2
+    private let glow = Color(red: Double(0x1B) / 255, green: Double(0x59) / 255, blue: Double(0xC2) / 255)
+
+    var body: some View {
+        RadialGradient(
+            gradient: Gradient(colors: [glow.opacity(0.30), .clear]),
+            center: .center, startRadius: 2, endRadius: 130
+        )
+        .scaleEffect(pulse ? 1.12 : 0.85)
+        .opacity(pulse ? 0.85 : 0.30)
+        .blur(radius: 9)
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+    }
+}
+
 private struct SearchMatchRow: View {
     let node: Node
     /// Entry-BODY hit → a pull quote around the match. nil for title/summary/tag
@@ -2038,6 +2083,53 @@ private struct SearchMatchRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)
+    }
+}
+
+/// IMAGE result row for a directly-picked HERO hit — the hero thumbnail, resolved
+/// via the store's `coverImageURL` (the SAME source the hero banner uses), with the
+/// matched OCR text as caption. Same shape as `SearchImageRow`; a hero just has no
+/// `GalleryItem`, so the thumbnail loads from `coverImageRelativePath`.
+private struct SearchHeroRow: View {
+    let node: Node
+    let matchedText: String
+    @Environment(CorpusStore.self) private var store
+    @State private var image: UIImage? = nil
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Rectangle().fill(AppearancePalette.ink.opacity(0.08))
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "photo").foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                }
+            }
+            .frame(width: 52, height: 52)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(node.title.isEmpty ? "Untitled" : node.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.95))
+                    .lineLimit(1)
+                Text(matchedText)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+        .task(id: node.coverImageRelativePath) {
+            guard let url = await store.coverImageURL(for: node) else { return }
+            let decoded: UIImage? = await Task.detached(priority: .userInitiated) {
+                guard let data = try? Data(contentsOf: url) else { return nil }
+                return UIImage(data: data)
+            }.value
+            image = decoded
+        }
     }
 }
 

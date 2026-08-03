@@ -706,6 +706,10 @@ final class CorpusStore {
         // ws-card-catalog step 2c — kick the catalog backfill after corpus load,
         // off the launch path (foreground-idle, low priority). Not awaited.
         armCatalogBackfill()
+        // Substrate reconciler — enrich any images still lacking current analysis
+        // (interrupted runs, un-downloaded iCloud photos, extractorVersion bumps).
+        // After load, off the launch path, non-blocking. Not a backfill.
+        startSubstrateReconciler()
     }
 
     // MARK: - Load
@@ -3162,6 +3166,9 @@ final class CorpusStore {
         // written back onto each GalleryItem, which the block-embedding rebuild
         // then indexes → gallery images become searchable.
         enqueueImageOCR(nodeID: affectedNodeID)
+        // …and resume the standing reconciler for any stragglers (guarded; a
+        // no-op if it's already running).
+        startSubstrateReconciler()
     }
 
     /// Stage 4.2 commit 3 — appends gallery items to an EXISTING `.imageVideo`
@@ -3240,6 +3247,7 @@ final class CorpusStore {
         // Deferred, idempotent OCR enrichment (see addMediaItems) — enqueue,
         // never await, so the "+" add stays fast.
         enqueueImageOCR(nodeID: nodeID)
+        startSubstrateReconciler()   // resume the standing reconciler (guarded)
     }
 
     /// Stage 4.2 commit 5 — persists the renderer-measured aspect ratio of
@@ -3299,6 +3307,20 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    /// Writes machine-derived `ImageAnalysis` for a node's DIRECTLY-PICKED hero
+    /// image (parallel to `setGalleryItemAnalysis`; an enrichment write, no
+    /// `updatedAt` bump). Idempotent. Instant Search's IMAGES section reads this
+    /// directly off `heroAnalysis`; it is NOT chunked into the block-embedding
+    /// index (that indexes node ITEMS — a hero is node-level, and heroes are
+    /// scoped to the literal IMAGES section).
+    func setNodeHeroAnalysis(nodeID: String, analysis: ImageAnalysis) async {
+        guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[idx]
+        if updated.heroAnalysis == analysis { return }
+        updated.heroAnalysis = analysis
+        await updateNode(updated)
+    }
+
     /// Enqueue (never await) deferred OCR enrichment for a node's gallery
     /// images. Called by the media-add paths so import stays fast.
     func enqueueImageOCR(nodeID: String) {
@@ -3317,6 +3339,7 @@ final class CorpusStore {
     /// `TaskGroup` until measurement shows it's needed.
     private func runImageOCR(nodeID: String) async {
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        // Gallery items.
         struct Job { let entryID: String; let media: GalleryItem }
         var jobs: [Job] = []
         for entry in node.items where entry.type == .imageVideo {
@@ -3326,7 +3349,6 @@ final class CorpusStore {
                 jobs.append(Job(entryID: entry.id, media: media))
             }
         }
-        guard !jobs.isEmpty else { return }
         for job in jobs {
             if Task.isCancelled { return }
             guard let url = await resolveGalleryItemURL(job.media, nodeID: nodeID) else { continue }
@@ -3344,6 +3366,104 @@ final class CorpusStore {
                 )
             )
         }
+        // Directly-picked hero (no gallery entry) — SAME OCR path, SAME version
+        // gate. `directlyPickedHeroPath != nil` is the dedupe gate: a gallery-
+        // derived hero is already OCR'd via its GalleryItem, so it's skipped here.
+        if !Task.isCancelled, node.directlyPickedHeroPath != nil {
+            let a = node.heroAnalysis
+            if a?.recognizedText == nil || a?.extractorVersion != ImageOCRService.extractorVersion,
+               let url = await coverImageURL(for: node) {
+                let text = await Task.detached(priority: .utility) {
+                    ImageOCRService.recognizeText(fileURL: url)
+                }.value
+                await setNodeHeroAnalysis(
+                    nodeID: nodeID,
+                    analysis: ImageAnalysis(
+                        recognizedText: text,
+                        extractedAt: Date(),
+                        extractorVersion: ImageOCRService.extractorVersion
+                    )
+                )
+            }
+        }
+    }
+
+    // MARK: - Substrate reconciler (image analysis)
+
+    /// True while the reconciler has un-analyzed images to work through. Drives
+    /// the ambient search-field signal — PRESENCE/ABSENCE (not a count): the
+    /// signal says "still finding things", never "please wait" (search works
+    /// throughout). Self-clears when caught up.
+    var isReconcilingSubstrate = false
+
+    private var reconcileTask: Task<Void, Never>?
+
+    /// Pacing between nodes. Each item's analysis write triggers a whole-node
+    /// JSON save + a (debounced) block-embedding rebuild, so a naive tight loop
+    /// over the whole corpus would STORM the embedding queue and iCloud. ~200 ms
+    /// between nodes bounds the churn to ~5 nodes/sec: T's first ~201-node run
+    /// spreads over ~40-60 s in the background; steady state (a few new photos)
+    /// finishes in ~1 s. Same code path — volume is just the input.
+    private static let reconcilePacingNanoseconds: UInt64 = 200_000_000
+
+    /// Standing enrichment reconciler — NOT a backfill/migration and NOT gated by
+    /// any "has run" flag. Finds gallery images lacking analysis at the current
+    /// `extractorVersion` and works through them, THROTTLED + RESUMABLE + off the
+    /// main actor at background QoS so it never competes with typing/scroll/search.
+    /// Idempotent (the extractorVersion check), so re-running is always safe; the
+    /// corpus is simply its input each pass — 201 nodes on the first run, three
+    /// photos on the tenth, one code path. No-op if already running; self-hides
+    /// when caught up. Runs on launch (after load) and after imports.
+    func startSubstrateReconciler() {
+        guard reconcileTask == nil else { return }
+        reconcileTask = Task.detached(priority: .background) { [weak self] in
+            await self?.reconcileLoop()
+        }
+    }
+
+    private func reconcileLoop() async {
+        // Let launch settle first (mirrors armCatalogBackfill) so a cold start's
+        // first scroll/search is never contended.
+        try? await Task.sleep(for: .seconds(5))
+        // Snapshot the pending set ONCE per pass: a node that can't complete this
+        // pass (e.g. an iCloud original not yet downloaded → resolveGalleryItemURL
+        // returns nil) is NOT re-picked in a tight spin — it simply remains
+        // un-analyzed and is caught by the next pass (next launch / import), when
+        // it may have downloaded. runImageOCR is idempotent, so any node already
+        // done between snapshot and processing is a no-op.
+        let pending = await nodesNeedingImageAnalysis()
+        guard !pending.isEmpty else {
+            await MainActor.run { self.reconcileTask = nil }
+            return
+        }
+        await MainActor.run { self.isReconcilingSubstrate = true }
+        for nodeID in pending {
+            if Task.isCancelled { break }
+            await runImageOCR(nodeID: nodeID)   // reuse the ONE OCR path
+            try? await Task.sleep(nanoseconds: Self.reconcilePacingNanoseconds)
+        }
+        await MainActor.run {
+            self.isReconcilingSubstrate = false
+            self.reconcileTask = nil
+        }
+    }
+
+    /// Node IDs with at least one image gallery-item lacking analysis at the
+    /// current `extractorVersion`. O(nodes) read on the main actor; cheap.
+    private func nodesNeedingImageAnalysis() -> [String] {
+        nodes.filter { node in
+            let galleryNeeds = node.items.contains { item in
+                item.type == .imageVideo && (item.mediaItems ?? []).contains { media in
+                    media.mediaType == .image
+                        && (media.analysis?.recognizedText == nil
+                            || media.analysis?.extractorVersion != ImageOCRService.extractorVersion)
+                }
+            }
+            let heroNeeds = node.directlyPickedHeroPath != nil
+                && (node.heroAnalysis?.recognizedText == nil
+                    || node.heroAnalysis?.extractorVersion != ImageOCRService.extractorVersion)
+            return galleryNeeds || heroNeeds
+        }.map { $0.id }
     }
 
     /// #6 (launch list) — sets (or clears) the user caption on one gallery

@@ -152,6 +152,7 @@
 		933F90BAF8522AC82045E273 /* CanvasSlideOutMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0FDB237F677A326AE033DF /* CanvasSlideOutMenu.swift */; };
 		9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D92B43ACAA1EFEADD262281A /* ChatStore.swift */; };
 		9427669EFA4ECACBF0439D06 /* Collection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909B3DB690784E89652659ED /* Collection.swift */; };
+		944943AC122C424F12D0E8BA /* ImageOCRService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5035C30AE70E1C4E361CF86 /* ImageOCRService.swift */; };
 		9453BD22FBCF63BB83151ABE /* QuarantineReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9627DA5A37E1126FD4446D /* QuarantineReviewSheet.swift */; };
 		94765E10145D5017BDE18696 /* CanvasState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9348EE6BAC36DA4236BB5780 /* CanvasState.swift */; };
 		94A537D61439FE71622A5EF2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8EC521B24C7F8F9283E16AF2 /* Assets.xcassets */; };
@@ -486,6 +487,7 @@
 		E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardDismissModifier.swift; sourceTree = "<group>"; };
 		E2EFF0C3EADAB643BFED4C8F /* LinkGalleryBody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkGalleryBody.swift; sourceTree = "<group>"; };
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
+		E5035C30AE70E1C4E361CF86 /* ImageOCRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageOCRService.swift; sourceTree = "<group>"; };
 		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
 		E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueFormatter.swift; sourceTree = "<group>"; };
 		E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateRelaxationPass.swift; sourceTree = "<group>"; };
@@ -625,6 +627,7 @@
 				39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */,
 				04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */,
 				B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */,
+				E5035C30AE70E1C4E361CF86 /* ImageOCRService.swift */,
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
 				FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */,
@@ -1302,6 +1305,7 @@
 				F39A0B2613577ADDA29F4230 /* HDBSCANTree.swift in Sources */,
 				AB1987E40736EECE7D0FDD13 /* HistoryPanel.swift in Sources */,
 				299AECA5A73FE92E7FB0378B /* ImageEntryBody.swift in Sources */,
+				944943AC122C424F12D0E8BA /* ImageOCRService.swift in Sources */,
 				9E5FA56AC337A7A5ADF61EE7 /* ImportIdeasSheet.swift in Sources */,
 				5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,

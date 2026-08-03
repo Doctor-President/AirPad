@@ -300,12 +300,36 @@ struct GalleryItem: Codable, Identifiable, Equatable {
     /// scalar String, not a wrapper — future per-image metadata (Vision labels,
     /// OCR text) will be *separate* sibling fields, not sub-fields of this one.
     var caption: String? = nil
+    /// Image OCR / analysis — machine-facing SUBSTRATE (not the user's content
+    /// layer). Populated by deferred background enrichment
+    /// (`CorpusStore.enqueueImageOCR`) so gallery images become searchable. A
+    /// typed struct (not a bare string) so later analysis fields — e.g. an
+    /// iOS-27-gated FM description — slot in alongside without a migration.
+    /// Optional + decode-tolerant: absent on every existing item.
+    var analysis: ImageAnalysis? = nil
 
     enum CodingKeys: String, CodingKey {
         case id, file, caption
         case mediaType = "media_type"
         case aspectRatio = "aspect_ratio"
         case capturedAt = "captured_at"
+        case analysis = "image_analysis"
+    }
+}
+
+/// Machine-derived analysis of a single gallery image. Additive-only: new
+/// fields are optional so a schema-forward node JSON stays decode-tolerant and
+/// needs no migration. `extractorVersion` lets a Vision-revision bump re-trigger
+/// enrichment on already-analyzed items.
+struct ImageAnalysis: Codable, Equatable {
+    var recognizedText: String?
+    var extractedAt: Date?
+    var extractorVersion: String?
+
+    enum CodingKeys: String, CodingKey {
+        case recognizedText = "recognized_text"
+        case extractedAt = "extracted_at"
+        case extractorVersion = "extractor_version"
     }
 }
 

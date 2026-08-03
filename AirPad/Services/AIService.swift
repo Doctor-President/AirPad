@@ -664,7 +664,17 @@ actor AIService {
             case .audio, .video:     return item.transcript
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
-            case .imageVideo:        return nil
+            case .imageVideo:
+                // Gallery OCR (substrate) + legacy parent description feed AI
+                // content extraction (title/summary/tags), mirroring what
+                // BlockChunker feeds the search index. Previously nil — gallery
+                // entries contributed nothing to the intelligence layer.
+                let ocr = (item.mediaItems ?? [])
+                    .compactMap { $0.analysis?.recognizedText }
+                    .filter { !$0.isEmpty }
+                let desc = (item.description?.isEmpty == false) ? [item.description!] : []
+                let parts = desc + ocr
+                return parts.isEmpty ? nil : parts.joined(separator: "\n")
             // Stage 4.8 — Rating is an atomic numeric value, not text;
             // contributes nothing to AI content extraction. Stage 5.1 —
             // fields are atomic too; no free text to extract in Stage 1.

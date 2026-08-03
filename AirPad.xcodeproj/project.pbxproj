@@ -70,6 +70,7 @@
 		3B496945356A064AD86E3547 /* DocumentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D06AD49C19B1632AA4F8E29C /* DocumentPickerView.swift */; };
 		3E395C3D1D01816EA4255C62 /* Fraunces_72pt-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */; };
 		3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */; };
+		40E9C78B407BED0018A5D607 /* ChatPinning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35140138304B4308B90A0F6 /* ChatPinning.swift */; };
 		423D97121CD075A9C4114F49 /* Lora-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7910DE998349210AB2623D42 /* Lora-Italic.ttf */; };
 		460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
@@ -454,6 +455,7 @@
 		BD02B64092A916BBD65260B0 /* AppearancePalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePalette.swift; sourceTree = "<group>"; };
 		BD12D156A4CBC12E872BDEC7 /* BlobField.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = BlobField.metal; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
+		C35140138304B4308B90A0F6 /* ChatPinning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPinning.swift; sourceTree = "<group>"; };
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
 		C49FE808E3476860F4E68D4F /* CoverFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverFlowView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
@@ -669,6 +671,7 @@
 		3CE3C621B79444C7292BABAE /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				C35140138304B4308B90A0F6 /* ChatPinning.swift */,
 				0C38EEC0DB9F051F85839CCE /* ChatSession.swift */,
 				3B63639E3606E8D188FB55AD /* ChatsListView.swift */,
 				8E377DA84FC9332E02C687FB /* ChatTranscript.swift */,
@@ -1245,6 +1248,7 @@
 				B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */,
 				17F85DF35043F1C03EB655BD /* CaretMeasure.swift in Sources */,
 				B11CC0100B96616EFF31AF9F /* CatalogCard.swift in Sources */,
+				40E9C78B407BED0018A5D607 /* ChatPinning.swift in Sources */,
 				EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */,
 				9394B0EF8F3F438C1397995A /* ChatStore.swift in Sources */,
 				915B830CFFFC2611CD365776 /* ChatTranscript.swift in Sources */,

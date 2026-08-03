@@ -1351,7 +1351,8 @@ struct SubstrateInspectView: View {
             case .imageVideo:        return nil
             // Stage 4.8 / 5.1 — Rating and fields are atomic values, not text;
             // contribute nothing to the substrate's text extraction in Stage 1.
-            case .rating, .field:    return nil
+            // ws-chat-lane — .chats is a reference (no extraction in V1).
+            case .rating, .field, .chats:  return nil
             }
         }
         .filter { !$0.isEmpty }

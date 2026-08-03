@@ -678,7 +678,8 @@ actor AIService {
             // Stage 4.8 — Rating is an atomic numeric value, not text;
             // contributes nothing to AI content extraction. Stage 5.1 —
             // fields are atomic too; no free text to extract in Stage 1.
-            case .rating, .field:    return nil
+            // ws-chat-lane — .chats is a reference (no extraction in V1).
+            case .rating, .field, .chats:  return nil
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
     }

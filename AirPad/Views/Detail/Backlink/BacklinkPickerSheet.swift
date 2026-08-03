@@ -232,6 +232,7 @@ enum BacklinkLabels {
         case .document:           return "Document"
         case .rating:             return "Rating"
         case .field:              return "Field"
+        case .chats:              return "Chats"
         }
     }
 
@@ -244,6 +245,7 @@ enum BacklinkLabels {
         case .document:           return "doc"
         case .rating:             return "star"
         case .field:              return "number"
+        case .chats:              return "bubble.left.and.bubble.right"
         }
     }
 }

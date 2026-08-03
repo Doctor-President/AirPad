@@ -160,6 +160,12 @@ final class AppRouter {
     /// the sheet owns its own stack.
     var showChatsList: Bool = false
 
+    /// ws-chat-lane — deep-link target for the chats sheet. Set alongside
+    /// `showChatsList = true` and `ChatsListView` loads that chat and pushes
+    /// straight into it (a node's pinned-chat row taps here), then clears this.
+    /// nil = open the list itself.
+    var pendingChatToOpen: UUID? = nil
+
     init() {
         AppRouter.shared = self
         // Wire the persistence seam once. ChatSession holds the store

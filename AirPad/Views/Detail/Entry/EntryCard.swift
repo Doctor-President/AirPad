@@ -361,6 +361,7 @@ struct EntryCard: View {
         case .audio:    VoiceEntryBody(item: item, nodeID: nodeID)
         case .image:    ImageEntryBody(item: item, nodeID: nodeID)
         case .video:    VideoEntryBody(item: item, nodeID: nodeID)
+        case .chats:    ChatsEntryBody(item: item, nodeID: nodeID)
         case .link:
             // Stage 4.5 commit 3 — count-based dispatch on linkItems:
             //   ≥2    → `LinkGalleryBody` (chrome shell + carousel +
@@ -522,6 +523,10 @@ struct EntryCard: View {
             // Atomic — filtered out of the payload list, so this copy-text
             // path is an unreachable exhaustiveness stub. The rich formatted
             // value belongs to the Attributes-section render (commit 3).
+            return displayName
+        case .chats:
+            // ws-chat-lane — a REFERENCE entry; nothing meaningful to place on
+            // the pasteboard (the chats live elsewhere). Fall back to the name.
             return displayName
         }
     }

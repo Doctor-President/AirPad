@@ -362,8 +362,9 @@ final class LibrarianState {
             case .audio, .video:     text = item.transcript ?? ""
             case .link:              text = [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             case .document:          text = item.description ?? ""
-            case .image, .imageVideo, .rating, .field:
-                text = ""   // no free text (image OCR is the separate section)
+            case .image, .imageVideo, .rating, .field, .chats:
+                text = ""   // no free text (image OCR is the separate section;
+                            // .chats is a reference — no extraction in V1)
             }
             if !text.isEmpty, text.lowercased().contains(q) {
                 return pullQuote(from: text, query: query)

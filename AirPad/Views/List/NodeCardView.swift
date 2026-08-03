@@ -526,6 +526,11 @@ struct NodeCardView: View {
             // Atomic — rendered in the stat line via `atomicGlyph`, never as
             // a payload card form.
             EmptyView()
+        case .chats:
+            // ws-chat-lane — compact count in the card preview; the full list
+            // lives in the detail view's Chats entry.
+            let n = item.chatSessionIDs?.count ?? 0
+            placeholderRow(n == 1 ? "1 Chat" : "\(n) Chats", systemImage: "bubble.left.and.bubble.right")
         }
     }
 
@@ -701,6 +706,7 @@ struct NodeCardView: View {
         case .image:       return 28
         case .video:       return 28
         case .rating, .field:  return 0
+        case .chats:       return 28
         }
     }
 

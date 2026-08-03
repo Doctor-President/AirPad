@@ -128,6 +128,10 @@ enum BlockChunker {
         case .rating, .field:
             // Stage 4.8 / 5.1 — atomic value, no text contribution in Stage 1.
             return []
+        case .chats:
+            // ws-chat-lane — a reference entry; no extraction in V1, so pinned
+            // chats contribute nothing to the search index.
+            return []
         }
     }
 

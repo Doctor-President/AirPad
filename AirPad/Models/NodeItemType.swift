@@ -25,6 +25,11 @@ enum NodeItemType: String, Codable, Equatable {
     /// NOT on this enum — `NodeItemType` still answers exactly one question,
     /// `isAtomic`. Unlike `.rating`, fields are MULTI per node.
     case field
+    /// ws-chat-lane §1–3 — a REFERENCE entry (shape mirrors `.link`) that pins
+    /// chats to this node. Payload is `NodeItem.chatSessionIDs` (chat UUIDs); the
+    /// chats live in `ChatStore`, unmoved. ONE grouped entry per node lists all
+    /// its pinned chats. V1 is pinning only — no extraction.
+    case chats
 }
 
 extension NodeItemType {
@@ -52,6 +57,7 @@ extension NodeItemType {
         // not the type. This generic fallback is used only where no definition
         // is resolvable; the render path prefers `FieldDefinition.displayName`.
         case .field:      return "Field"
+        case .chats:      return "Chats"
         }
     }
 
@@ -69,7 +75,7 @@ extension NodeItemType {
         switch self {
         case .rating, .field:
             return true
-        case .text, .image, .audio, .video, .link, .document, .imageVideo:
+        case .text, .image, .audio, .video, .link, .document, .imageVideo, .chats:
             return false
         }
     }

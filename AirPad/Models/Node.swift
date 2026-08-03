@@ -379,6 +379,28 @@ struct Node: Codable, Identifiable, Hashable {
     /// migration (v1 points can't be converted without the image + frame).
     var heroCrop: HeroCrop?
 
+    /// OCR / analysis of a DIRECTLY-PICKED hero image — one with no corresponding
+    /// gallery item (heroes set FROM a gallery item are OCR'd via that item's
+    /// `GalleryItem.analysis`). Reuses the SAME `ImageAnalysis` struct as gallery
+    /// items and is populated by the SAME reconciler. Optional + decode-tolerant,
+    /// absent on existing nodes, no migration. See `directlyPickedHeroPath`.
+    var heroAnalysis: ImageAnalysis?
+
+    /// The hero's relative path IFF the hero is a directly-picked image with NO
+    /// corresponding gallery item — the only case that needs its own OCR and its
+    /// own search row. `nil` when there's no hero, or when the hero IS one of this
+    /// node's gallery items (that image is already OCR'd via its
+    /// `GalleryItem.analysis` and searchable through it, so a separate hero row
+    /// would double-count). This single check DEDUPES at the source — the
+    /// reconciler and Instant Search both consult it.
+    var directlyPickedHeroPath: String? {
+        guard let path = coverImageRelativePath else { return nil }
+        let isGalleryFile = items.contains { item in
+            (item.mediaItems ?? []).contains { $0.file == path }
+        }
+        return isGalleryFile ? nil : path
+    }
+
     /// Dashboard "Priority" working set membership (`nil` = not prioritized).
     /// See `PriorityState`. Additive + decode-tolerant; no schema-version bump.
     var priority: PriorityState?
@@ -415,6 +437,7 @@ struct Node: Codable, Identifiable, Hashable {
         case titleSource = "title_source"
         case coverImageRelativePath = "cover_image_relative_path"
         case heroCrop = "hero_crop"
+        case heroAnalysis = "hero_analysis"
         case priority
     }
 
@@ -465,6 +488,7 @@ struct Node: Codable, Identifiable, Hashable {
         titleSource: TagSource? = nil,
         coverImageRelativePath: String? = nil,
         heroCrop: HeroCrop? = nil,
+        heroAnalysis: ImageAnalysis? = nil,
         priority: PriorityState? = nil
     ) {
         self.id                          = id
@@ -508,6 +532,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.titleSource                 = titleSource
         self.coverImageRelativePath      = coverImageRelativePath
         self.heroCrop                    = heroCrop
+        self.heroAnalysis                = heroAnalysis
         self.priority                    = priority
     }
 }
@@ -565,6 +590,7 @@ extension Node {
         titleSource                = try c.decodeIfPresent(TagSource.self, forKey: .titleSource)
         coverImageRelativePath     = try c.decodeIfPresent(String.self,   forKey: .coverImageRelativePath) ?? nil
         heroCrop                   = try c.decodeIfPresent(HeroCrop.self,  forKey: .heroCrop)
+        heroAnalysis               = try c.decodeIfPresent(ImageAnalysis.self, forKey: .heroAnalysis) ?? nil
         priority                   = try c.decodeIfPresent(PriorityState.self, forKey: .priority)
     }
 }

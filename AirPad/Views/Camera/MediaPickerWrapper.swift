@@ -87,4 +87,61 @@ struct MediaPickerWrapper: UIViewControllerRepresentable {
             }
         }
     }
+
+    /// True when the provider carries an image representation (HEIC / JPEG / PNG
+    /// / RAW-DNG / Live-Photo still). Checked against `registeredTypeIdentifiers`
+    /// conforming to `public.image` rather than `canLoadObject(UIImage.self)` so
+    /// RAW/ProRAW — which we copy as bytes, never decode — is still classified as
+    /// an image and not dropped to the video branch.
+    static func isImageProvider(_ provider: NSItemProvider) -> Bool {
+        provider.registeredTypeIdentifiers.contains { UTType($0)?.conforms(to: .image) == true }
+    }
+
+    /// Copies the ORIGINAL image file bytes to a fresh temp URL — no decode, no
+    /// `UIImage`, no re-encode — so an imported photo keeps its source format and
+    /// full quality (HEIC stays HEIC, RAW stays RAW). The shared picker-image
+    /// import path for `GalleryBody` and `SingleMediaBody`.
+    ///
+    /// Requests the provider's NATIVE image type (the first registered identifier
+    /// conforming to `public.image`), which returns the original representation
+    /// instead of transcoding; falls back to the abstract `public.image`. The
+    /// extension is derived from the returned URL (or the type's preferred
+    /// extension) — never hardcoded — and flows straight to
+    /// `PendingMediaItem.fileExtension`; `GalleryItem.file` already persists the
+    /// full `items/<id>.<ext>`, so there is no schema/read-path change.
+    ///
+    /// Mirrors `loadVideo`'s reclaim discipline: the provider's URL is invalidated
+    /// the moment the completion returns, so the bytes are copied SYNCHRONOUSLY
+    /// inside the callback before the continuation resumes. Returns nil on
+    /// failure (e.g. an iCloud-hosted original that couldn't be downloaded); the
+    /// caller COUNTS the failure and surfaces it — it must not be swallowed.
+    static func loadOriginalImageFile(from provider: NSItemProvider) async -> (URL, String)? {
+        let typeID = provider.registeredTypeIdentifiers.first {
+            UTType($0)?.conforms(to: .image) == true
+        } ?? UTType.image.identifier
+        return await withCheckedContinuation { continuation in
+            provider.loadFileRepresentation(forTypeIdentifier: typeID) { url, error in
+                guard let url else {
+                    if let error {
+                        print("[MediaPicker] Image original load failed (\(typeID)): \(error.localizedDescription)")
+                    }
+                    continuation.resume(returning: nil)
+                    return
+                }
+                let derived = url.pathExtension.isEmpty
+                    ? (UTType(typeID)?.preferredFilenameExtension ?? "img")
+                    : url.pathExtension
+                let ext = derived.lowercased()
+                let destURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("\(UUID().uuidString).\(ext)")
+                do {
+                    try FileManager.default.copyItem(at: url, to: destURL)
+                    continuation.resume(returning: (destURL, ext))
+                } catch {
+                    print("[MediaPicker] Image original copy failed: \(error.localizedDescription)")
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
 }

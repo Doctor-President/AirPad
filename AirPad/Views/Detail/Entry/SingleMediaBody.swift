@@ -67,6 +67,11 @@ struct SingleMediaBody: View {
     /// Whether the inline player was playing when the lightbox took over, so
     /// dismiss can restore it.
     @State private var inlineWasPlaying = false
+    /// Import-failure surface — set when picked photos couldn't be copied (e.g.
+    /// iCloud-hosted originals that failed to download). Failures are counted,
+    /// not silently dropped.
+    @State private var importFailureCount = 0
+    @State private var showImportFailure = false
 
     private var primaryItem: GalleryItem? { item.mediaItems?.first }
 
@@ -112,6 +117,12 @@ struct SingleMediaBody: View {
         }
         // Leaving the entry entirely (nav pop) also stops the inline audio.
         .onDisappear { inlinePlayer?.pause() }
+        .alert("Couldn’t add \(importFailureCount) \(importFailureCount == 1 ? "item" : "items")",
+               isPresented: $showImportFailure) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("They may be stored in iCloud and need to be downloaded first. Try again once they’ve finished downloading.")
+        }
         .fullScreenCover(item: $viewerStart, onDismiss: handleViewerDismiss) { start in
             GalleryFullscreenViewer(
                 galleryItems: item.mediaItems ?? [],
@@ -258,23 +269,28 @@ struct SingleMediaBody: View {
         guard !results.isEmpty else { return }
 
         var pending: [CorpusStore.PendingMediaItem] = []
+        var failures = 0
         for result in results {
-            if result.itemProvider.canLoadObject(ofClass: UIImage.self) {
-                guard let image = await MediaPickerWrapper.loadImage(from: result.itemProvider),
-                      let data = image.jpegData(compressionQuality: 0.85) else { continue }
-                let itemID = UUID().uuidString
-                let tmpURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent("\(itemID).jpg")
-                do {
-                    try data.write(to: tmpURL)
-                } catch {
-                    print("[SingleMediaBody] Image temp write error: \(error)")
-                    continue
+            let provider = result.itemProvider
+            if MediaPickerWrapper.isImageProvider(provider) {
+                // Copy the ORIGINAL bytes — no decode, no re-encode. The photo
+                // keeps its source format (HEIC/JPEG/PNG/RAW) at full quality.
+                if let (tmpURL, ext) = await MediaPickerWrapper.loadOriginalImageFile(from: provider) {
+                    pending.append(.init(itemID: UUID().uuidString, mediaType: .image, sourceURL: tmpURL, fileExtension: ext))
+                } else {
+                    failures += 1   // e.g. iCloud-hosted original that failed to download
                 }
-                pending.append(.init(itemID: itemID, mediaType: .image, sourceURL: tmpURL, fileExtension: "jpg"))
-            } else if let (tmpURL, ext) = await MediaPickerWrapper.loadVideo(from: result.itemProvider) {
+            } else if let (tmpURL, ext) = await MediaPickerWrapper.loadVideo(from: provider) {
                 pending.append(.init(itemID: UUID().uuidString, mediaType: .video, sourceURL: tmpURL, fileExtension: ext))
+            } else {
+                failures += 1
             }
+        }
+
+        // Never lose a picked item silently — surface the count.
+        if failures > 0 {
+            importFailureCount = failures
+            showImportFailure = true
         }
 
         guard !pending.isEmpty else { return }

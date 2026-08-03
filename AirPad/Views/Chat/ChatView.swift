@@ -10,10 +10,13 @@ import SwiftUI
 struct ChatView: View {
 
     @Environment(AppRouter.self) private var router
+    @Environment(CorpusStore.self) private var store
     @Environment(\.scenePhase) private var scenePhase
     @State private var didRestoreOnAppear: Bool = false
+    @State private var showingPinSheet: Bool = false
 
     private var session: ChatSession { router.chat }
+    private var isPinned: Bool { store.nodePinned(forChatID: session.id) != nil }
 
     var body: some View {
         ZStack {
@@ -32,6 +35,20 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                // Pin this chat to a node (ws-chat-lane). Filled = already pinned
+                // (shape, not hue — T is colorblind). Flush first so the chat is
+                // persisted in ChatStore and resolves in the node's Chats entry.
+                Button {
+                    session.flush()
+                    showingPinSheet = true
+                } label: {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink)
+                }
+                .accessibilityLabel(isPinned ? "Change pinned node" : "Pin chat to a node")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     session.reset()
                 } label: {
@@ -43,5 +60,8 @@ struct ChatView: View {
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)
+        .sheet(isPresented: $showingPinSheet) {
+            PinChatSheet(chatID: session.id).environment(store)
+        }
     }
 }

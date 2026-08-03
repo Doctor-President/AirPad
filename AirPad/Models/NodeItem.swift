@@ -177,6 +177,14 @@ struct NodeItem: Codable, Identifiable, Equatable {
     // Nil on every non-field entry.
     var field: FieldValue?
 
+    /// ws-chat-lane — payload for a `.chats` entry: the pinned chats' session
+    /// UUIDs (as strings), in display order. The chats live in `ChatStore`; this
+    /// is a REFERENCE (like `linkItems`), never a copy. A session id that no
+    /// longer resolves renders as ABSENT (the render path drops it) — never a
+    /// ghost row or a crash. Additive optional, decode-tolerant; nil on every
+    /// non-chats entry and on legacy JSON — no `entrySchemaVersion` bump.
+    var chatSessionIDs: [String]?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -197,6 +205,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case documentItems = "document_items"
         case documentViewMode = "document_view_mode"
         case rating
+        case chatSessionIDs = "chat_session_ids"
         case field
     }
 }

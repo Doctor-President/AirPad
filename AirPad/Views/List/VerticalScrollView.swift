@@ -368,6 +368,8 @@ private struct NodeCardItemCounts: View {
             // Stage 4.8 / 5.1 — Rating and fields don't surface in the legacy
             // six-bucket chip row; skipped (no dedicated chip yet).
             case .rating, .field:   break
+            // ws-chat-lane — pinned-chats entry gets no legacy six-bucket chip.
+            case .chats:            break
             }
         }
         return (t, i, a, v, l, d)

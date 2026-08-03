@@ -10,6 +10,7 @@ import SwiftUI
 struct ChatsListView: View {
 
     @Environment(AppRouter.self) private var router
+    @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
     /// Local push stack — independent of the host's NavigationStack. Each
@@ -21,6 +22,11 @@ struct ChatsListView: View {
     /// editable buffer (seeded from the chat's current display title).
     @State private var renamingChatID: UUID? = nil
     @State private var renameText: String = ""
+    /// Pin flow — non-nil id presents the node picker (`PinChatSheet`).
+    @State private var pinningChatID: UUID? = nil
+    /// Delete-a-PINNED-chat warning: holds the chat + the node it's pinned to.
+    @State private var pendingDeleteChat: Chat? = nil
+    @State private var pendingDeleteNodeName: String = ""
 
     private var session: ChatSession { router.chat }
     private var chatStore: ChatStore { router.chatStore }
@@ -48,6 +54,15 @@ struct ChatsListView: View {
             // but the list needs to render with rows BEFORE the user
             // pushes into a chat.
             await chatStore.loadIfNeeded()
+            // Deep-link: a node's pinned-chat row set `pendingChatToOpen` before
+            // presenting this sheet — push straight into that chat.
+            if let openID = router.pendingChatToOpen {
+                router.pendingChatToOpen = nil
+                if let chat = chatStore.chats.first(where: { $0.id == openID }) {
+                    session.load(chat)
+                    path = [openID]
+                }
+            }
         }
     }
 
@@ -107,6 +122,12 @@ struct ChatsListView: View {
                     } label: {
                         Label("Rename", systemImage: "pencil")
                     }
+                    Button {
+                        pinningChatID = chat.id
+                    } label: {
+                        Label(store.nodePinned(forChatID: chat.id) != nil ? "Change pin…" : "Pin to node…",
+                              systemImage: "pin")
+                    }
                     Button(role: .destructive) {
                         delete(chat)
                     } label: {
@@ -125,12 +146,36 @@ struct ChatsListView: View {
         } message: {
             Text("Renaming keeps this title — the model won't overwrite it.")
         }
+        // Delete-a-PINNED-chat confirmation — names the actual node so the user
+        // knows what else the delete touches. Unpinned chats skip this entirely.
+        .alert("Delete pinned chat?", isPresented: deleteWarningPresented) {
+            Button("Cancel", role: .cancel) { pendingDeleteChat = nil }
+            Button("Delete", role: .destructive) {
+                if let c = pendingDeleteChat { performDelete(c) }
+                pendingDeleteChat = nil
+            }
+        } message: {
+            Text("This chat is pinned to \(pendingDeleteNodeName). Deleting it removes it from that node too.")
+        }
+        .sheet(isPresented: pinSheetPresented) {
+            if let id = pinningChatID {
+                PinChatSheet(chatID: id).environment(store)
+            }
+        }
     }
 
     /// Drives the rename alert off `renamingChatID`; dismissing clears the id.
     private var renameAlertPresented: Binding<Bool> {
         Binding(get: { renamingChatID != nil },
                 set: { if !$0 { renamingChatID = nil } })
+    }
+    private var deleteWarningPresented: Binding<Bool> {
+        Binding(get: { pendingDeleteChat != nil },
+                set: { if !$0 { pendingDeleteChat = nil } })
+    }
+    private var pinSheetPresented: Binding<Bool> {
+        Binding(get: { pinningChatID != nil },
+                set: { if !$0 { pinningChatID = nil } })
     }
 
     private func commitRename() {
@@ -215,10 +260,27 @@ struct ChatsListView: View {
     /// then `delete(id:)` removes it by id. Reversing the order would
     /// leave the still-live session holding a dangling id, and its
     /// next flush would resurrect the deleted chat under that id.
+    /// A PINNED chat routes through a confirmation naming its node; an unpinned
+    /// chat deletes immediately (today's behaviour). Both delete paths — the
+    /// trailing swipe and the long-press context menu — call this, so the
+    /// warning gates both.
     private func delete(_ chat: Chat) {
+        if let node = store.nodePinned(forChatID: chat.id) {
+            pendingDeleteNodeName = node.title.isEmpty ? "Untitled" : node.title
+            pendingDeleteChat = chat
+        } else {
+            performDelete(chat)
+        }
+    }
+
+    private func performDelete(_ chat: Chat) {
         if chat.id == session.id {
             session.startNew()
         }
         chatStore.delete(id: chat.id)
+        // Detach from its node too, if pinned (no-op otherwise). The chat SURVIVES
+        // nowhere now — it's a user delete — but the node's .chats entry must not
+        // keep a dangling reference / ghost row.
+        Task { await store.unpinChat(chatID: chat.id) }
     }
 }

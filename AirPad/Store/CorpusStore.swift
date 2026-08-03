@@ -1230,6 +1230,76 @@ final class CorpusStore {
         scheduleEnrichment(nodeID: nodeID)
     }
 
+    // MARK: - Chat pinning (ws-chat-lane §1–3)
+
+    /// The node a chat is pinned to — its session id appears in that node's
+    /// `.chats` entry. `nil` = unpinned. DERIVED by scanning: the `.chats` entry
+    /// is the single source of truth (no back-reference that could go stale), and
+    /// a scan is cheap at corpus scale. Enforces one-node-per-chat on read.
+    func nodePinned(forChatID chatID: UUID) -> Node? {
+        let idString = chatID.uuidString
+        return nodes.first { node in
+            node.items.contains { $0.type == .chats && ($0.chatSessionIDs ?? []).contains(idString) }
+        }
+    }
+
+    /// Pins a chat to a node — a REFERENCE, not a move (the chat stays in
+    /// `ChatStore`). Enforces ONE node per chat: the session id is removed from
+    /// any OTHER node's `.chats` entry first. Idempotent. Creates the node's
+    /// `.chats` entry at the TOP of the entry stream (above the user's payload —
+    /// a pinned chat is an active thread, not a footnote) when absent.
+    func pinChat(chatID: UUID, toNodeID nodeID: String) async {
+        let idString = chatID.uuidString
+        for other in nodes where other.id != nodeID {
+            if other.items.contains(where: { $0.type == .chats && ($0.chatSessionIDs ?? []).contains(idString) }) {
+                await removeChatSessionID(idString, fromNodeID: other.id)
+            }
+        }
+        guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[idx]
+        if let entryIdx = updated.items.firstIndex(where: { $0.type == .chats }) {
+            var ids = updated.items[entryIdx].chatSessionIDs ?? []
+            guard !ids.contains(idString) else { return }
+            ids.append(idString)
+            updated.items[entryIdx].chatSessionIDs = ids
+        } else {
+            let entry = NodeItem(id: UUID().uuidString, type: .chats, createdAt: Date(), chatSessionIDs: [idString])
+            // TOP of the payload: after the atomic prefix (rating/field are always
+            // card-visible), before the user's first content entry.
+            let insertAt = updated.items.firstIndex(where: { !$0.type.isAtomic }) ?? updated.items.count
+            updated.items.insert(entry, at: insertAt)
+        }
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Removes a chat's session id from a node's `.chats` entry; drops the entry
+    /// entirely when it becomes empty (no ghost row). No-op if absent.
+    func removeChatSessionID(_ idString: String, fromNodeID nodeID: String) async {
+        guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[idx]
+        guard let entryIdx = updated.items.firstIndex(where: { $0.type == .chats }) else { return }
+        var ids = updated.items[entryIdx].chatSessionIDs ?? []
+        let before = ids.count
+        ids.removeAll { $0 == idString }
+        guard ids.count != before else { return }
+        if ids.isEmpty {
+            updated.items.remove(at: entryIdx)
+        } else {
+            updated.items[entryIdx].chatSessionIDs = ids
+        }
+        updated.updatedAt = Date()
+        await updateNode(updated)
+    }
+
+    /// Unpins a chat wherever it's pinned. Used by the delete-a-pinned-chat path.
+    /// (Deleting the NODE needs no unpin call — the `.chats` entry is part of the
+    /// node, so it's removed with the node; the chat survives in `ChatStore`.)
+    func unpinChat(chatID: UUID) async {
+        guard let node = nodePinned(forChatID: chatID) else { return }
+        await removeChatSessionID(chatID.uuidString, fromNodeID: node.id)
+    }
+
     /// Updates the text content of an existing text-type item in a node.
     /// No-op if the node or item is missing, or the content is unchanged.
     /// Bumps the item's `updatedAt` alongside the node's — the per-entry
@@ -4355,7 +4425,7 @@ final class CorpusStore {
                     case .text:          return item.content
                     case .audio, .video: return item.transcript
                     case .link:          return item.title ?? item.url
-                    case .image, .document, .imageVideo, .rating, .field: return nil
+                    case .image, .document, .imageVideo, .rating, .field, .chats: return nil
                     }
                 }.first(where: { !$0.isEmpty })
                 if let fallback, n.title.isEmpty || n.title == "Photo" || n.title == "Voice note" {
@@ -5022,7 +5092,7 @@ final class CorpusStore {
             case .link:
                 if let title = item.title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
                 if let url = item.url, !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-            case .image, .video, .document, .imageVideo, .rating, .field:
+            case .image, .video, .document, .imageVideo, .rating, .field, .chats:
                 continue
             }
         }
@@ -5084,7 +5154,8 @@ final class CorpusStore {
                             case .imageVideo: return nil
                             // Stage 4.8 / 5.1 — Rating and fields are atomic
                             // values, no text contribution to FM coherence.
-                            case .rating, .field: return nil
+                            // ws-chat-lane — .chats is a reference (no extraction).
+                            case .rating, .field, .chats: return nil
                             }
                         }.filter { !$0.isEmpty }.joined(separator: "\n")
 
@@ -6449,7 +6520,7 @@ final class CorpusStore {
             case .image, .document:  return item.description
             case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
             case .imageVideo:        return nil
-            case .rating, .field:    return nil
+            case .rating, .field, .chats:  return nil
             }
         }.filter { !$0.isEmpty }.joined(separator: "\n")
     }

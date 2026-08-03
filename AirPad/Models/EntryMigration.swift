@@ -137,11 +137,12 @@ private func migrateEntrySchemaV1ToV2(_ node: inout Node) {
                 node.items[i].mediaItems = []
             }
             node.items[i].type = .imageVideo
-        case .text, .audio, .link, .document, .imageVideo, .rating, .field:
+        case .text, .audio, .link, .document, .imageVideo, .rating, .field, .chats:
             // Untouched by this step. `.imageVideo` only appears if a
             // future schema step lands on top of an already-migrated node;
             // skipping here is safe. `.rating` (Stage 4.8) is also a
-            // post-v1 type and never appears on a node still at v1.
+            // post-v1 type and never appears on a node still at v1. `.chats`
+            // (ws-chat-lane) is post-v1 too.
             continue
         }
     }

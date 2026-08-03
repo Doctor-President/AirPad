@@ -223,6 +223,9 @@ final class LayoutService {
             case .rating, .field:
                 // Stage 4.8 / 5.1 — atomic value, no text contribution in Stage 1.
                 text = nil
+            case .chats:
+                // ws-chat-lane — a reference entry; no extraction in V1.
+                text = nil
             }
             if let t = text {
                 wordCount += t.split(separator: " ").count

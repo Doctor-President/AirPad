@@ -1316,6 +1316,8 @@ private struct ItemCountsRow: View {
             // If the canvas grows a typed-entry chip later it can read
             // off `.rating` / `.field` directly.
             case .rating, .field:   break
+            // ws-chat-lane — pinned-chats entry gets no legacy six-bucket chip.
+            case .chats:            break
             }
         }
         return (t, i, a, v, l, d)

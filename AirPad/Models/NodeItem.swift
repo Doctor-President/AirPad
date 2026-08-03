@@ -219,13 +219,31 @@ struct Rating: Codable, Equatable {
 /// Stage 4.2 commit 4 — gallery presentation mode for an `.imageVideo` entry
 /// with ≥2 items. Persisted on `NodeItem.viewMode`. Raw values are
 /// snake_case-stable for the JSON encoding.
+/// Gallery presentation. **Persisted `Codable` on `NodeItem.viewMode` — the
+/// rawValues are a storage contract; renaming any orphans saved entries.**
+/// Three modes as of the 3-mode restore (T's device call): the uniform STRIP,
+/// the horizontal BENTO, and the vertical BENTO.
+///
+/// | rawValue    | mode                                    |
+/// |-------------|-----------------------------------------|
+/// | `"carousel"`| uniform-height horizontal STRIP (snap)  |
+/// | `"hbento"`  | horizontal bento (free scroll, packed)  |
+/// | `"bento"`   | vertical bento (packed grid, fills width)|
+///
+/// ★ `"carousel"` and `"bento"` predate the split and MUST NOT be repointed:
+/// every entry authored under the earlier two-mode builds decodes to one of
+/// them, and both of those were the STRIP and the VERTICAL grid respectively —
+/// so old `"carousel"` correctly lands on the strip. `"hbento"` is the NEW
+/// rawValue added for the split; no existing string was reused.
 enum GalleryViewMode: String, Codable, Equatable {
-    /// Horizontal scrollable strip. Default for entries with ≤3 items at the
-    /// moment they first become multi-item.
-    case carousel
-    /// Tiled grid with variable-size cells. Default for entries with ≥4
-    /// items at the moment they first become multi-item.
-    case bento
+    /// Uniform-height horizontal STRIP (snap-to-tile). Default for ≤3 items.
+    case carousel                     // rawValue "carousel" — do NOT rename
+    /// Horizontal BENTO — free-scroll, tall-promotion + 2-deep columns over a
+    /// fixed 220pt band. Default for ≥4 items.
+    case horizontalBento = "hbento"   // NEW rawValue
+    /// Vertical BENTO — packed grid filling the card width. OPT-IN only; never
+    /// an auto-selected default.
+    case bento                        // rawValue "bento" — do NOT rename
 }
 
 extension NodeItem {

@@ -6,11 +6,12 @@ import PhotosUI
 /// left, `ViewModeToggle` on the right) and a media area that branches on
 /// the resolved view mode.
 ///
-/// Commit 5 fills the carousel media area with `GalleryCarousel` — a proper
-/// horizontal renderer with aspect-aware variable-width tiles and snap-to-
-/// tile scrolling. Commit 6 fills the bento area with the deterministic
-/// packed grid. Both renderers share `GalleryItemTile` as the per-item
-/// primitive, sized externally by each parent.
+/// Two view modes: `.carousel` renders `GalleryHorizontalBento` (the vertical
+/// bento's packer rotated 90° — columns across a fixed 220pt band; superseded
+/// the original snap-to-tile carousel), `.bento` renders the vertical
+/// `GalleryBento` (deterministic packed grid filling the card width). Both
+/// share `GalleryItemTile` as the per-item primitive, sized externally by each
+/// parent.
 struct GalleryBody: View {
 
     let item: NodeItem
@@ -45,15 +46,19 @@ struct GalleryBody: View {
 
     private var galleryItems: [GalleryItem] { item.mediaItems ?? [] }
 
-    /// Defensive resolution of the active view mode. `appendMediaItems` and
-    /// `addMediaItems` already write a default at first transition, but a
-    /// migrated v1→v2 entry that grew via a code path we haven't covered
-    /// could in theory reach here with viewMode == nil — fall back to the
-    /// same count-based heuristic so the renderer never has to handle that
-    /// as an error state.
+    /// Resolution of the active view mode — a FALLBACK, never a migration: it
+    /// reads `item.viewMode` and only computes a default when it's nil. Nothing
+    /// here writes back; a persisted value (from `appendMediaItems` /
+    /// `addMediaItems` / an explicit toggle) always wins and is preserved.
+    ///
+    /// Default rule (T's call): ≤3 → strip, ≥4 → HORIZONTAL bento. Vertical bento
+    /// is OPT-IN only — never auto-selected — because it's too disruptive to the
+    /// efficient survey of a node to be a default. Un-set entries (nil viewMode —
+    /// a migrated v1→v2 entry that grew via an uncovered path) take this default;
+    /// their stored value stays nil (a default is not a write).
     private var effectiveViewMode: GalleryViewMode {
         if let viewMode = item.viewMode { return viewMode }
-        return galleryItems.count <= 3 ? .carousel : .bento
+        return galleryItems.count <= 3 ? .carousel : .horizontalBento
     }
 
     var body: some View {
@@ -169,6 +174,17 @@ struct GalleryBody: View {
                 },
                 onTapTile: openViewer
             )
+        case .horizontalBento:
+            GalleryHorizontalBento(
+                galleryItems: galleryItems,
+                nodeID: nodeID,
+                parentItem: item,
+                aspectFor: { aspectForTile($0) },
+                onMeasuredAspect: { itemID, aspect in
+                    recordMeasured(itemID: itemID, aspect: aspect)
+                },
+                onTapTile: openViewer
+            )
         case .bento:
             GalleryBento(
                 galleryItems: galleryItems,
@@ -252,29 +268,87 @@ struct GalleryBody: View {
     }
 }
 
-/// Stage 4.2 commit 5 — proper carousel renderer for the gallery presentation.
+/// Horizontal bento renderer — the `.horizontalBento` mode. The vertical bento's
+/// packer rotated 90° (`BentoLayout.planHorizontal`): columns march across a
+/// FIXED 220pt band, tall items get full-height columns, everything else stacks
+/// two-deep. (The uniform STRIP is a separate mode — `.carousel` →
+/// `GalleryCarousel`; both scroll horizontally and carry the scroll-edge fade.)
 ///
-/// Design points fixed in this commit:
-///   - **Variable-width tiles.** Each tile's width = 220pt × aspect. Portrait
-///     shots stay portrait, landscape stays landscape — the brief's "original
-///     aspect with a max height" stance. Height is uniform at 220pt so the
-///     row reads as a single horizontal strip; reflow only happens
-///     left-to-right, never vertically.
-///   - **Snap-to-tile.** `.scrollTargetBehavior(.viewAligned)` +
-///     `.scrollTargetLayout()` on the `LazyHStack`. The view aligns to a
-///     tile's leading edge on settle so a partial-tile-mid-stream rest
-///     state is impossible — matches Apple Photos' carousel feel.
-///   - **Lazy.** `LazyHStack` means a 50-tile gallery doesn't decode 50
-///     UIImages on first render. Tiles materialize as they scroll into view.
-///   - **Tap → fullscreen.** Per-tile tap routes to `GalleryFullscreenViewer`
-///     (the swipeable multi-item viewer added in commit 7).
+///   - **Fixed band = footprint invariant.** Always `bandHeight` (220, the
+///     strip's tile height), so a gallery occupies the same height with 3 images
+///     or 30 in ANY mode — nothing in the detail view shifts on toggle.
+///   - **FREE SCROLL.** No paging/snap: columns are variable-width and this mode
+///     exists to sweep the WHOLE gallery in one gesture.
+///   - **Scroll-edge fade** at both ends, only when there's off-screen content.
+///   - Reuses `GalleryItemTile` (parent-owned sizing), aspect resolution,
+///     tap-to-lightbox, and per-tile chrome — nothing forked.
 ///
-/// Out of scope (deferred):
-///   - Scroll-position memory across navigation / view-mode toggles. Polish
-///     value; the user always lands on the first tile when re-entering. If
-///     that proves disruptive on real corpora, commit 8 can persist the
-///     position as a transient (not Codable) state on `GalleryBody`.
-///   - Per-tile delete / reorder gestures (commit 7).
+/// Plan recomputes each redraw (cheap + deterministic); a landing measurement
+/// reflows in one pass. No GeometryReader — the band height is fixed.
+private struct GalleryHorizontalBento: View {
+
+    let galleryItems: [GalleryItem]
+    let nodeID: String
+    let parentItem: NodeItem
+    let aspectFor: (GalleryItem) -> Double
+    let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
+    let onTapTile: (GalleryItem) -> Void
+
+    /// The fixed gallery band height (the retired carousel's `tileHeight`) — the
+    /// footprint invariant across mode and count.
+    private static let bandHeight: CGFloat = 220
+
+    private var plan: BentoLayout.HorizontalPlan {
+        BentoLayout.planHorizontal(
+            items: galleryItems,
+            columnHeight: Self.bandHeight,
+            aspectFor: { aspectFor($0) }
+        )
+    }
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: BentoLayout.defaultGutter) {
+                ForEach(Array(plan.columns.enumerated()), id: \.offset) { _, column in
+                    VStack(spacing: BentoLayout.defaultGutter) {
+                        ForEach(column.indices, id: \.self) { itemIdx in
+                            let galleryItem = galleryItems[itemIdx]
+                            GalleryItemTile(
+                                galleryItem: galleryItem,
+                                nodeID: nodeID,
+                                parentItem: parentItem,
+                                showsCaption: true,
+                                onMeasuredAspect: { aspect in
+                                    onMeasuredAspect(galleryItem.id, aspect)
+                                }
+                            )
+                            .frame(
+                                width: column.width,
+                                height: BentoLayout.tileHeight(
+                                    forAspect: aspectFor(galleryItem),
+                                    columnWidth: column.width
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .contentShape(Rectangle())
+                            .onTapGesture { onTapTile(galleryItem) }
+                        }
+                    }
+                    .frame(width: column.width, height: Self.bandHeight)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .frame(height: Self.bandHeight)
+        .horizontalScrollEdgeFade()
+    }
+}
+
+/// Uniform-height horizontal STRIP — the `.carousel` mode (restored as a distinct
+/// mode alongside the horizontal bento, per T's 3-mode call). Snap-to-tile paging,
+/// uniform 220pt `tileHeight`, aspect-driven widths. Restored verbatim from
+/// `6d2a1a6`; the scroll-edge fade is the only addition (shared with the
+/// horizontal bento).
 private struct GalleryCarousel: View {
 
     let galleryItems: [GalleryItem]
@@ -284,10 +358,8 @@ private struct GalleryCarousel: View {
     let onMeasuredAspect: (_ itemID: String, _ aspect: Double) -> Void
     let onTapTile: (GalleryItem) -> Void
 
-    /// Uniform tile height. Matches the placeholder height shipped in
-    /// commit 4 so the visual transition from placeholder → real renderer
-    /// (and from real renderer → commit-6 bento on toggle) doesn't reflow
-    /// the entry card.
+    /// Uniform tile height — matches the horizontal bento's band and the
+    /// commit-4 placeholder so a mode toggle never reflows the entry card.
     private static let tileHeight: CGFloat = 220
 
     var body: some View {
@@ -317,6 +389,57 @@ private struct GalleryCarousel: View {
         }
         .frame(height: Self.tileHeight)
         .scrollTargetBehavior(.viewAligned)
+        .horizontalScrollEdgeFade()
+    }
+}
+
+/// Scroll-edge fade for a HORIZONTAL `ScrollView` — subtle leading/trailing fades
+/// implying off-screen content, DRIVEN BY SCROLL OFFSET (never always-on). The
+/// leading fade appears only when scrolled away from the start; the trailing only
+/// when content remains to the right; at rest with content that fits, NEITHER
+/// shows. Implemented as a `.mask` (a horizontal gradient), NOT an overlay of a
+/// background colour — the detail view behind isn't a flat fill, so an overlay
+/// would band. Offset/size read via `onScrollGeometryChange` (no GeometryReader
+/// wrapper). Shared by the strip and the horizontal bento (not the vertical bento).
+private struct HorizontalScrollEdgeFade: ViewModifier {
+    /// Baked fade width (single literal, no tuner).
+    var fadeWidth: CGFloat = 24
+    @State private var showLeading = false
+    @State private var showTrailing = false
+
+    private struct Edges: Equatable { var leading: Bool; var trailing: Bool }
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollGeometryChange(for: Edges.self) { geo in
+                let eps: CGFloat = 1
+                return Edges(
+                    leading: geo.visibleRect.minX > eps,
+                    trailing: geo.visibleRect.maxX < geo.contentSize.width - eps
+                )
+            } action: { _, e in
+                showLeading = e.leading
+                showTrailing = e.trailing
+            }
+            .mask {
+                HStack(spacing: 0) {
+                    Rectangle().fill(LinearGradient(
+                        colors: showLeading ? [.clear, .white] : [.white, .white],
+                        startPoint: .leading, endPoint: .trailing))
+                        .frame(width: fadeWidth)
+                    Rectangle().fill(.white)
+                    Rectangle().fill(LinearGradient(
+                        colors: showTrailing ? [.white, .clear] : [.white, .white],
+                        startPoint: .leading, endPoint: .trailing))
+                        .frame(width: fadeWidth)
+                }
+            }
+    }
+}
+
+private extension View {
+    func horizontalScrollEdgeFade() -> some View {
+        modifier(HorizontalScrollEdgeFade())
     }
 }
 

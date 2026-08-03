@@ -1,26 +1,23 @@
 import SwiftUI
 
-/// Stage 4.2 commit 4 — Carousel ↔ Bento switcher hosted in the trailing slot
-/// of `MediaEntryChrome` inside `GalleryBody`. Two-icon-row design (T's
-/// "Option I"): both icons always visible, the active mode is filled and
-/// brighter, the inactive is hairline and muted. Tapping the inactive icon
-/// switches the mode (taps on the already-active icon are no-ops).
+/// Strip ↔ Horizontal-bento ↔ Vertical-bento switcher, in the trailing slot of
+/// `MediaEntryChrome` inside `GalleryBody`. THREE-icon direct-select row (the
+/// two-icon design extended for the 3-mode restore): all three icons always
+/// visible, the active mode is filled + bold + brighter, the inactive are
+/// hairline + muted. Tapping an inactive icon switches; tapping the active one
+/// is a no-op. Kept a single control (an icon row), NOT a segmented picker or a
+/// menu.
 ///
-/// Why two icons and not a segmented control / single eye-and-label:
-///   - At-a-glance state: a user can read the current mode without first
-///     tapping to see options, matching Apple Photos' grid/list affordance.
-///   - Fits the chrome height contract (`MediaEntryChromeMetrics.height =
-///     44pt`) at a 32pt visual size with the chrome's vertical padding;
-///     a segmented control would crowd the row.
-///   - No label text means no localization seam.
+/// ★ T IS COLORBLIND. The active state is signalled by SHAPE (`.fill` variant),
+/// WEIGHT (`.bold` vs `.semibold`), and BRIGHTNESS (ink 0.95 vs 0.4) — NEVER by
+/// hue. The only colour is `AppearancePalette.ink` (adaptive ink, not a hue
+/// accent), so there's no hue channel carrying meaning.
 ///
-/// SF Symbols chosen:
-///   - Carousel: `rectangle.stack` — reads as "deck of cards / scroll one
-///     at a time," matching the horizontal-strip-with-snap behavior commit
-///     5 lands. (Tried `square.stack` — visually identical but `rectangle`
-///     keeps the wider, gallery-photo feel.)
-///   - Bento: `square.grid.2x2` — unambiguous 4-cell grid, matches what the
-///     commit-6 bento renderer will actually draw at small counts (≥4 items).
+/// SF Symbols (three distinct shapes):
+///   - Strip:            `rectangle.stack` — a deck / one-across scroll.
+///   - Horizontal bento: `rectangle.grid.1x2` — a stacked pair, the atomic
+///     column of the horizontal packer (2-deep columns marching across).
+///   - Vertical bento:   `square.grid.2x2` — an unambiguous 4-cell grid.
 struct ViewModeToggle: View {
 
     let active: GalleryViewMode
@@ -28,26 +25,21 @@ struct ViewModeToggle: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            iconButton(
-                systemName: active == .carousel ? "rectangle.stack.fill" : "rectangle.stack",
-                isActive: active == .carousel,
-                accessibilityLabel: "Carousel view",
-                action: { if active != .carousel { onChange(.carousel) } }
-            )
-            iconButton(
-                systemName: active == .bento ? "square.grid.2x2.fill" : "square.grid.2x2",
-                isActive: active == .bento,
-                accessibilityLabel: "Bento view",
-                action: { if active != .bento { onChange(.bento) } }
-            )
+            iconButton(base: "rectangle.stack",   mode: .carousel,
+                       accessibilityLabel: "Strip view")
+            iconButton(base: "rectangle.grid.1x2", mode: .horizontalBento,
+                       accessibilityLabel: "Horizontal bento view")
+            iconButton(base: "square.grid.2x2",   mode: .bento,
+                       accessibilityLabel: "Vertical bento view")
         }
     }
 
     @ViewBuilder
-    private func iconButton(systemName: String, isActive: Bool, accessibilityLabel: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.subheadline.weight(.semibold))
+    private func iconButton(base: String, mode: GalleryViewMode, accessibilityLabel: String) -> some View {
+        let isActive = active == mode
+        Button(action: { if active != mode { onChange(mode) } }) {
+            Image(systemName: isActive ? "\(base).fill" : base)
+                .font(.subheadline.weight(isActive ? .bold : .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(isActive ? 0.95 : 0.4))
                 .frame(width: 32, height: 32)
                 .contentShape(Rectangle())

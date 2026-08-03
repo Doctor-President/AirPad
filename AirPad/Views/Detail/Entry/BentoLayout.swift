@@ -204,4 +204,142 @@ enum BentoLayout {
     static func tileWidth(forAspect aspect: Double, rowHeight: CGFloat) -> CGFloat {
         rowHeight * CGFloat(aspect)
     }
+
+    // MARK: - Horizontal bento (the vertical packer, rotated 90°)
+
+    /// `plan(...)` rotated 90°: instead of filling a fixed WIDTH with rows that
+    /// stack DOWN, `planHorizontal(...)` fills a fixed HEIGHT (the 220pt gallery
+    /// band) with columns that march ACROSS. The two are one idea; the map is:
+    ///
+    /// | vertical `plan`            | horizontal `planHorizontal`      |
+    /// |----------------------------|----------------------------------|
+    /// | rowWidth (`cardWidth`)     | columnHeight (fixed band)        |
+    /// | `Row.height`               | `Column.width`                   |
+    /// | wide-hero promotion        | TALL promotion                   |
+    /// | row of k side-by-side      | column of k stacked              |
+    ///
+    /// ## Tall promotion — the load-bearing rule
+    /// A wide item gets a hero row; the rotation of "wide" is "tall", so a tall
+    /// item gets a full-HEIGHT column of its own. The threshold is DERIVED from
+    /// the vertical one (not a second magic constant): `tallAspectThreshold =
+    /// 1 / heroAspectThreshold` (≈ 0.588). At each COLUMN-START we peek the next
+    /// item; if its aspect ≤ that, it becomes a full-height column, `width =
+    /// columnHeight × aspect`. Promotion happens ONLY at column-start — same
+    /// determinism + respect-user-order rationale as the row-start hero rule; we
+    /// don't re-order to promote every tall item. This matters because most
+    /// gallery content is portrait: a naive two-deep stack of 9:16 shots yields
+    /// ~60pt slivers, and promotion is what prevents that (they read at full
+    /// band height instead).
+    ///
+    /// ## Within-column sizing
+    /// A column of `k` stacked items shares one WIDTH `w`; heights vary by aspect
+    /// (mirror of the vertical's shared-height / varying-width):
+    ///
+    ///     availableForTiles = columnHeight - (k - 1) * gutter
+    ///     w = availableForTiles / sum(1 / aspect_i)
+    ///     height_i = w / aspect_i
+    ///
+    /// so `sum(height_i) + (k-1)*gutter == columnHeight` exactly — every column
+    /// fills the band top-to-bottom.
+    ///
+    /// ## Partition — a SEPARATE table (do NOT reuse `partitionForRemaining`)
+    /// The vertical packs 3-per-row because 3 across a card width still read as
+    /// content; 3 stacked in a 220pt band is ~70pt each — too small. Horizontal
+    /// packs TWO (`partitionForRemainingHorizontal`). And unlike the vertical, a
+    /// trailing SINGLE is fine here — a lone full-height tile reads as emphasis,
+    /// not a bug — so the no-singleton rule does not carry over.
+    ///
+    /// ## Determinism
+    /// Same contract as `plan(...)`: a pure function of its inputs, no hashing /
+    /// sort / hidden state; identical input always yields an identical plan.
+
+    /// Items with aspect ≤ this get a full-height column. DERIVED from the
+    /// vertical hero threshold so the two rules can't drift apart (≈ 0.588).
+    static let tallAspectThreshold: Double = 1.0 / heroAspectThreshold
+
+    /// One column in the horizontal plan. `indices` reference back into the
+    /// source array (Int-based, mirroring `Row.indices`). `isTall` marks a
+    /// column promoted because its lead item is tall (the rotation of `isHero`).
+    struct Column: Equatable {
+        let indices: [Int]
+        let width: CGFloat
+        let isTall: Bool
+    }
+
+    /// Full horizontal plan. `totalWidth` = sum of column widths + inter-column
+    /// gutters; the band height is fixed by the caller (not stored here).
+    struct HorizontalPlan: Equatable {
+        let columns: [Column]
+        let totalWidth: CGFloat
+    }
+
+    /// Column partition for `remaining` items, **assuming no tall promotion** —
+    /// greedy 2s with a trailing `[1]` when `remaining` is odd. A trailing single
+    /// is intentional here (emphasis, not a bug), unlike `partitionForRemaining`.
+    static func partitionForRemainingHorizontal(_ remaining: Int) -> [Int] {
+        guard remaining >= 1 else { return [] }
+        var cols: [Int] = []
+        var left = remaining
+        while left >= 2 { cols.append(2); left -= 2 }
+        if left == 1 { cols.append(1) }
+        return cols
+    }
+
+    /// Build the horizontal plan. See the doc block above for the algorithm.
+    static func planHorizontal<Item>(
+        items: [Item],
+        columnHeight: CGFloat,
+        gutter: CGFloat = defaultGutter,
+        aspectFor: (Item) -> Double
+    ) -> HorizontalPlan {
+        guard !items.isEmpty, columnHeight > 0 else {
+            return HorizontalPlan(columns: [], totalWidth: 0)
+        }
+
+        var columns: [Column] = []
+        var cursor = 0
+        let n = items.count
+
+        while cursor < n {
+            // Tall check at the column-start position.
+            let leadAspect = aspectFor(items[cursor])
+            if leadAspect <= tallAspectThreshold {
+                let width = columnHeight * CGFloat(leadAspect)
+                columns.append(Column(indices: [cursor], width: width, isTall: true))
+                cursor += 1
+                continue
+            }
+
+            // Standard column — partition size depends on remaining count.
+            let remaining = n - cursor
+            let table = partitionForRemainingHorizontal(remaining)
+            let k = table.first ?? remaining
+            let colIndices = Array(cursor..<(cursor + k))
+            // Rotated from the vertical's `sum(aspects)`: here heights share the
+            // width, so the sizing key is `sum(1/aspect)`.
+            let inverseAspectSum = colIndices.reduce(CGFloat(0)) {
+                $0 + CGFloat(1.0 / aspectFor(items[$1]))
+            }
+            let availableForTiles = columnHeight - CGFloat(k - 1) * gutter
+            // Guarded like the vertical's `aspectSum > 0` (aspectFor is clamped
+            // ≥ 0.3, so 1/aspect ≤ 3.33 and the sum is > 0 in practice).
+            let width: CGFloat = inverseAspectSum > 0
+                ? availableForTiles / inverseAspectSum
+                : 0
+            columns.append(Column(indices: colIndices, width: width, isTall: false))
+            cursor += k
+        }
+
+        let columnWidths = columns.reduce(CGFloat(0)) { $0 + $1.width }
+        let interColumnGutters = CGFloat(max(0, columns.count - 1)) * gutter
+        return HorizontalPlan(columns: columns, totalWidth: columnWidths + interColumnGutters)
+    }
+
+    /// Height of `item` in a column of given `width` — `width / aspect`, the
+    /// rotation of `tileWidth(forAspect:rowHeight:)`. Works for every column kind
+    /// (tall single, standard multi, trailing single) since a full-height column
+    /// has `width = columnHeight × aspect`, so `width / aspect == columnHeight`.
+    static func tileHeight(forAspect aspect: Double, columnWidth: CGFloat) -> CGFloat {
+        columnWidth / CGFloat(aspect)
+    }
 }

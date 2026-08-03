@@ -1196,31 +1196,57 @@ struct LibrarianSurface: View {
             store.nodes.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
-        let matchNodes: [Node] = librarian.searchMatches.compactMap { byID[$0] }
+        let matches = librarian.searchMatches
+        let imageMatches = librarian.searchImageMatches
         let related = librarian.searchRelated
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if matchNodes.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
+                if matches.isEmpty && imageMatches.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
                     Text("No matches")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 12)
                 }
 
-                if !matchNodes.isEmpty {
+                if !matches.isEmpty {
                     Text("MATCHES")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                         .padding(.top, 4)
-                    ForEach(matchNodes, id: \.id) { node in
-                        // #3 — two targets: row body focuses in the current
-                        // view, the tail Open button pushes Detail.
-                        SearchResultRow(
-                            onFocus: { focusNode(node.id) },
-                            onOpen: { openNode(node.id) }
-                        ) {
-                            SearchMatchRow(node: node)
+                    ForEach(matches) { m in
+                        if let node = byID[m.id] {
+                            // #3 — two targets: row body focuses in the current
+                            // view, the tail Open button pushes Detail.
+                            SearchResultRow(
+                                onFocus: { focusNode(m.id) },
+                                onOpen: { openNode(m.id) }
+                            ) {
+                                SearchMatchRow(node: node, snippet: m.snippet)
+                            }
+                        }
+                    }
+                }
+
+                // IMAGES — literal OCR hits, their own section (self-hides when
+                // empty, the Collections/Priority idiom).
+                if !imageMatches.isEmpty {
+                    Text("IMAGES")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .padding(.top, !matches.isEmpty ? 8 : 4)
+                    ForEach(imageMatches) { m in
+                        if let node = byID[m.nodeID],
+                           let entry = node.items.first(where: { $0.id == m.entryID }),
+                           let media = entry.mediaItems?.first(where: { $0.id == m.id }) {
+                            SearchResultRow(
+                                onFocus: { focusNode(m.nodeID) },
+                                onOpen: { openNode(m.nodeID) }
+                            ) {
+                                SearchImageRow(node: node, entry: entry,
+                                               galleryItem: media, matchedText: m.recognizedText)
+                            }
                         }
                     }
                 }
@@ -1236,7 +1262,7 @@ struct LibrarianSurface: View {
                             .tint(AppearancePalette.ink.opacity(0.45))
                     }
                 }
-                .padding(.top, !matchNodes.isEmpty ? 8 : 4)
+                .padding(.top, (!matches.isEmpty || !imageMatches.isEmpty) ? 8 : 4)
 
                 ForEach(related) { rel in
                     if let node = byID[rel.nodeID] {
@@ -1987,8 +2013,12 @@ private struct SearchResultRow<Label: View>: View {
 
 private struct SearchMatchRow: View {
     let node: Node
+    /// Entry-BODY hit → a pull quote around the match. nil for title/summary/tag
+    /// hits, where the row falls back to the node summary.
+    var snippet: String? = nil
 
-    private var snippet: String {
+    private var displaySnippet: String {
+        if let snippet, !snippet.isEmpty { return snippet }
         if let s = node.substrateSummary, !s.isEmpty { return s }
         return node.summary
     }
@@ -1999,12 +2029,46 @@ private struct SearchMatchRow: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.95))
                 .lineLimit(1)
-            if !snippet.isEmpty {
-                Text(snippet)
+            if !displaySnippet.isEmpty {
+                Text(displaySnippet)
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.55))
                     .lineLimit(2)
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 6)
+    }
+}
+
+/// IMAGE result row — the gallery thumbnail (reusing `GalleryItemTile`'s own
+/// resolve+decode; no second thumbnail path) with the matched OCR text as a
+/// caption beneath. The picture is a better preview than a text snippet.
+/// ★ TAP RULING (flagged for T): opens the NODE DETAIL, same as every other row.
+/// Alternatives — the gallery entry, or the lightbox at this image — are
+/// defensible; this is the simplest.
+private struct SearchImageRow: View {
+    let node: Node
+    let entry: NodeItem
+    let galleryItem: GalleryItem
+    let matchedText: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            GalleryItemTile(galleryItem: galleryItem, nodeID: node.id, parentItem: entry)
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(node.title.isEmpty ? "Untitled" : node.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.95))
+                    .lineLimit(1)
+                Text(matchedText)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 6)

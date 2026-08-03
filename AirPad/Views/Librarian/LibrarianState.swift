@@ -121,7 +121,29 @@ final class LibrarianState {
     /// pattern). Recomputed synchronously on every `searchText`
     /// change — text filter is O(nodes) and stays well under a
     /// frame for typical corpus sizes.
-    var searchMatches: [String] = []
+    /// One MATCHES result. `snippet` is set only for ENTRY-BODY hits (a pull
+    /// quote built around the match); title/summary/tag hits leave it nil and
+    /// the row shows the node summary. A node appears at most once (its highest
+    /// tier).
+    struct SearchMatch: Identifiable, Sendable {
+        let id: String        // nodeID
+        var snippet: String?
+    }
+    var searchMatches: [SearchMatch] = []
+
+    /// Image (OCR) results — a SEPARATE section by INTENT: the user usually
+    /// knows whether they're hunting typed text or something inside a picture.
+    /// One row per matching gallery image; matched against
+    /// `GalleryItem.analysis.recognizedText` with the same literal substring
+    /// `contains` (substring is load-bearing — noisy OCR like "WARY PoPPINS"
+    /// still has to be reachable via "poppins").
+    struct SearchImageMatch: Identifiable, Sendable {
+        let id: String          // GalleryItem.id
+        let nodeID: String
+        let entryID: String     // the .imageVideo NodeItem.id (parentItem for the tile)
+        let recognizedText: String
+    }
+    var searchImageMatches: [SearchImageMatch] = []
 
     /// Semantic-search results (RELATED). Block-level granularity:
     /// multiple blocks from the same node each get their own row with
@@ -248,6 +270,7 @@ final class LibrarianState {
         searchMatchesTask?.cancel()
         if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             searchMatches = []
+            searchImageMatches = []
             return
         }
         searchMatchesTask = Task { @MainActor [weak self] in
@@ -261,28 +284,77 @@ final class LibrarianState {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else {
             searchMatches = []
+            searchImageMatches = []
             return
         }
         let q = query.lowercased()
-        var titleHits: [String] = []
-        var bodyHits: [String] = []
-        titleHits.reserveCapacity(8)
-        bodyHits.reserveCapacity(16)
+        // Three LITERAL tiers, in authorship order:
+        //   1. TITLE       — user-authored AND navigational.
+        //   2. ENTRY BODY  — what the USER actually wrote (notes, transcripts…).  ← NEW
+        //   3. SUMMARY+TAGS — the summary is a MACHINE paraphrase of the node;
+        //      ranking the paraphrase above the source inverts authorship. Today's
+        //      order (summary before body) was never a considered ranking — entry
+        //      bodies simply weren't searched, so the question never arose.
+        // Stays literal: lowercased substring `contains`, NO scoring. MATCHES is
+        // the instant half; RELATED is the strength-ranked one (two sections, two
+        // jobs). A scored blend would also reorder on every keystroke — instability
+        // on a surface the user watches change character by character.
+        var titleHits: [SearchMatch] = []
+        var bodyHits: [SearchMatch] = []
+        var summaryTagHits: [SearchMatch] = []
+        var imageHits: [SearchImageMatch] = []
         for node in store.nodes {
             if node.title.lowercased().contains(q) {
-                titleHits.append(node.id)
-                continue
+                titleHits.append(SearchMatch(id: node.id, snippet: nil))
+            } else if let snippet = Self.bodyMatchSnippet(node: node, q: q, query: query) {
+                bodyHits.append(SearchMatch(id: node.id, snippet: snippet))
+            } else {
+                let summary = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
+                if summary.lowercased().contains(q) || node.tags.contains(where: { $0.lowercased().contains(q) }) {
+                    summaryTagHits.append(SearchMatch(id: node.id, snippet: nil))
+                }
             }
-            let summary = (node.substrateSummary?.isEmpty == false ? node.substrateSummary! : node.summary)
-            if summary.lowercased().contains(q) {
-                bodyHits.append(node.id)
-                continue
-            }
-            if node.tags.contains(where: { $0.lowercased().contains(q) }) {
-                bodyHits.append(node.id)
+            // Images — scanned INDEPENDENTLY of the tier above (separate section
+            // by intent). A node can be a title MATCH and also carry a picture
+            // whose OCR matches, exactly as RELATED can co-occur with MATCHES.
+            for item in node.items where item.type == .imageVideo {
+                for media in item.mediaItems ?? [] {
+                    if let text = media.analysis?.recognizedText,
+                       text.lowercased().contains(q) {
+                        imageHits.append(SearchImageMatch(
+                            id: media.id, nodeID: node.id, entryID: item.id, recognizedText: text
+                        ))
+                    }
+                }
             }
         }
-        searchMatches = titleHits + bodyHits
+        searchMatches = titleHits + bodyHits + summaryTagHits
+        searchImageMatches = imageHits
+    }
+
+    /// Scans a node's TEXTUAL entries for `q` and returns a pull quote built
+    /// around the first match, else nil. Covers the entry types that carry text,
+    /// read straight off the item model (NOT `AIService.extractContent`, which is
+    /// the processNode path): `.text` content, `.audio`/`.video` transcript,
+    /// `.link` title/preview, `.document` description. Reuses `pullQuote` —
+    /// RELATED's snippet logic — so a hit inside a 900-word note shows the region
+    /// around the term, not the summary.
+    private static func bodyMatchSnippet(node: Node, q: String, query: String) -> String? {
+        for item in node.items {
+            let text: String
+            switch item.type {
+            case .text:              text = item.content ?? ""
+            case .audio, .video:     text = item.transcript ?? ""
+            case .link:              text = [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            case .document:          text = item.description ?? ""
+            case .image, .imageVideo, .rating, .field:
+                text = ""   // no free text (image OCR is the separate section)
+            }
+            if !text.isEmpty, text.lowercased().contains(q) {
+                return pullQuote(from: text, query: query)
+            }
+        }
+        return nil
     }
 
     /// Kicks off the semantic RELATED pass for the current `searchText`.

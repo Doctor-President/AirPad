@@ -1358,24 +1358,43 @@ final class CorpusStore {
             let content = node.items.compactMap { item -> String? in
                 item.type == .text ? item.content : item.transcript
             }.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            // ws-card-catalog step 1.1 — per-field need check instead of the old
-            // `title.isEmpty`-only gate. Fire when there's content AND any authored
-            // output is still missing: title, summary, or a substrate output
-            // (substrateSummary / folksonomy). The old gate skipped enrichment for
-            // a QuikCapture that had a user title, so summary + folksonomy never
-            // authored. The per-field titleSource/summarySource gates inside
-            // processNodeWithAI still protect user-authored text, and a fully
-            // filled node makes `needs` false — steady state doesn't re-fire.
-            let substrateMissing = (node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            // THE LEVER — Stage 1 (ws-lever.md § C4). The old single `needs`
+            // boolean did TWO unrelated jobs — "this node needs authored fields"
+            // and "this node needs substrate computed" — governed by different
+            // rules. Severed here so THE SENTENCE governs only the authorship half.
+            //
+            // ★ THE SENTENCE (the rule a user could predict, stated in code so the
+            // gate can't drift from it — if the gate and the sentence ever
+            // disagree, the gate is wrong):
+            //   "AirPad proposes titles, summaries, and tags for anything you've
+            //    left blank, and never changes what you've written."
+            // `needsAuthorship` is the "left blank" half. (The tags clause has no
+            // producer on the default path yet — ws-lever.md § THE TAG PRODUCER,
+            // its own arc — so Stage 1 proposes title + summary only; the sentence
+            // names tags because the rule, not this stage, is what it states.)
+            let needsAuthorship = title.isEmpty || summary.isEmpty
+            // Substrate computation is unconditional and NEVER user-governed
+            // (hybrid-authorship.md § SCOPING CORRECTION) — this half stays exactly
+            // the ws-card-catalog gate, only renamed. The per-field
+            // titleSource/summarySource gates inside processNodeWithAI still
+            // protect user-authored text; a fully filled node makes both false, so
+            // steady state doesn't re-fire.
+            let needsSubstrate = (node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
                 || (node.folksonomy?.isEmpty ?? true)
-            let needs = title.isEmpty || summary.isEmpty || substrateMissing
-            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) substrateMissing=\(substrateMissing) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs && !content.isEmpty)")
+            // Firing condition UNCHANGED — same set of nodes fire as before the
+            // split (the old `needs` was `title.isEmpty || summary.isEmpty ||
+            // substrateMissing`, exactly `needsAuthorship || needsSubstrate`).
+            let needs = needsAuthorship || needsSubstrate
+            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs && !content.isEmpty)")
             guard needs, !content.isEmpty else {
                 print("[Enrich] skip node=\(nodeID) needs=\(needs) contentLen=\(content.count)")
                 return
             }
-            print("[Enrich] firing node=\(nodeID) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) substrateMissing=\(substrateMissing) contentLen=\(content.count)")
-            await self.processNodeWithAI(nodeID: nodeID, suppressTagSheet: true)
+            print("[Enrich] firing node=\(nodeID) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) contentLen=\(content.count)")
+            await self.processNodeWithAI(nodeID: nodeID,
+                                         suppressTagSheet: true,
+                                         needsAuthorship: needsAuthorship,
+                                         needsSubstrate: needsSubstrate)
         }
     }
 
@@ -4380,8 +4399,25 @@ final class CorpusStore {
     /// Pass `suppressTagSheet: true` during batch import to auto-create new tags silently
     /// instead of presenting TagCreationSheet to the user.
     /// `forceCorpusAware` overrides the FeatureFlags default; nil falls through to the flag.
-    func processNodeWithAI(nodeID: String, suppressTagSheet: Bool = false, forceCorpusAware: Bool? = nil) async {
-        print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet)")
+    /// - Parameters:
+    ///   - needsAuthorship: THE LEVER Stage 1 SEAM (ws-lever.md § C4). Whether
+    ///     the node still needs authored fields (title/summary). Split from the
+    ///     old single enrichment gate so authorship and substrate are governed
+    ///     separately. Defaults `true` for the direct-capture callers (a fresh
+    ///     node needs both). **Stage 1 threads it but does NOT gate behaviour on
+    ///     it** — the write stays governed by `AuthorshipPosture` (defaulted
+    ///     `.automatic`) so this stage is invisible; Stage 3 is where posture +
+    ///     these flags decide what runs.
+    ///   - needsSubstrate: likewise — whether substrate outputs are missing.
+    ///     Substrate computation is unconditional (governed by
+    ///     `FeatureFlags.substrateOnCapture`, not by this flag); the flag is
+    ///     carried for the seam and the diagnostic only.
+    func processNodeWithAI(nodeID: String,
+                           suppressTagSheet: Bool = false,
+                           forceCorpusAware: Bool? = nil,
+                           needsAuthorship: Bool = true,
+                           needsSubstrate: Bool = true) async {
+        print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate)")
         guard #available(iOS 26.0, *) else {
             print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
             return

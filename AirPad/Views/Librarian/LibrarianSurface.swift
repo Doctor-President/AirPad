@@ -1189,17 +1189,10 @@ struct LibrarianSurface: View {
         .padding(.vertical, 8)
         .background(AppearancePalette.ink.opacity(0.06))
         .clipShape(Capsule())
-        .background {
-            // Substrate reconciler — ambient "still finding things" glow. Shown
-            // only while the reconciler has work (self-hiding), BEHIND the capsule
-            // so it reads as a soft halo, not a control. Placed here — a property
-            // of the CORPUS's completeness — not the RELATED header (that spinner
-            // is per-query). The signal is PRESENCE + MOTION (colorblind-safe);
-            // the hue is decorative.
-            if store.isReconcilingSubstrate {
-                ReconcilerGlow()
-            }
-        }
+        // (Reconciler signal moved to a status line beneath the launchpad search
+        // field — see `reconcilerStatusLine`. The old `.background` glow here
+        // never rendered: this `searchField(...)` is dead code, and even mounted
+        // it was occluded behind the field's fill inside the panel material.)
     }
 
     /// MATCHES (text) and RELATED (semantic) sections rendered when
@@ -1217,6 +1210,13 @@ struct LibrarianSurface: View {
         let matches = librarian.searchMatches
         let imageMatches = librarian.searchImageMatches
         let related = librarian.searchRelated
+        // Breathing room below the search field, matching `librarianHome`'s
+        // top inset. The home VStack carries `.padding(.vertical, 16)`, so its
+        // tiles sit 16pt below the pane top; the results VStack had none, so the
+        // first header (MATCHES) crowded the field. Pre-existing asymmetry — not
+        // introduced by the reconciler status line (which lives only in the home
+        // pane). 12pt here + MATCHES's own `.padding(.top, 4)` restores parity.
+        let searchResultsTopInset: CGFloat = 12
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if matches.isEmpty && imageMatches.isEmpty && related.isEmpty && !librarian.searchSemanticInFlight {
@@ -1300,6 +1300,7 @@ struct LibrarianSurface: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, searchResultsTopInset)
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
@@ -1690,6 +1691,17 @@ struct LibrarianSurface: View {
     private func librarianHome(librarian: LibrarianState) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // Reconciler status — a quiet line BENEATH the search field (which
+                // sits above this home), above the tiles. Self-hiding on
+                // `isReconcilingSubstrate`; inserting/removing pushes the tiles +
+                // pill down and back. No reserved space when absent.
+                if store.isReconcilingSubstrate {
+                    reconcilerStatusLine()
+                        .transition(.asymmetric(
+                            insertion: .push(from: .top).combined(with: .opacity),
+                            removal: .opacity))
+                }
+
                 capabilityTileGrid(librarian: librarian, singleRow: true)
 
                 // Active-chat pill — the one-tap breadcrumb back into the
@@ -1702,8 +1714,35 @@ struct LibrarianSurface: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(.easeInOut(duration: 0.35), value: store.isReconcilingSubstrate)
         }
         .floatingPanelScrollTracking(proxy: proxy)
+    }
+
+    /// ws-substrate — the reconciler's ambient signal, replacing the invisible
+    /// glow. A quiet status line: an animated SF Symbol (built-in
+    /// `.variableColor`, NOT a shimmer — shimmer is reserved for THE LEVER) plus
+    /// STATIC text. Says "search works, results are still filling in" — never
+    /// "wait". Signal = TEXT + MOTION (colorblind-safe; no hue carries meaning).
+    /// Baked defaults, no tuner.
+    private func reconcilerStatusLine() -> some View {
+        HStack(spacing: 7) {
+            // ellipsis — NOT sparkles/wand/magic iconography. App-wide ban:
+            // sparkles has become the industry's "AI" shorthand and reads as an
+            // empty promise; the Librarian is patient legible work, not performed
+            // wonder. Dots fill in sequence via the built-in variableColor
+            // animation — punctuation that reads as "ongoing" and nothing else.
+            // NOT a shimmer (shimmer is reserved for THE LEVER).
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .symbolEffect(.variableColor.iterative, options: .repeating)
+            // No trailing "…" — the glyph IS the ellipsis; the copy would say it twice.
+            Text("Still adding older items")
+                .font(.system(size: 12, weight: .regular))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Active-chat pill on the Ask home. Body tap resumes the live
@@ -2062,34 +2101,6 @@ private struct SearchResultRow<Label: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open in detail view")
-        }
-    }
-}
-
-/// Ambient reconciler signal — a soft radial gradient that gently PULSES behind
-/// the search field while the substrate reconciler enriches images. NOT a spinner
-/// or progress bar: nothing is blocked (search works throughout), so a "pending"
-/// affordance would be a lie. The signal is PRESENCE + MOTION, which survives
-/// colorblindness; the hue is decorative (Klein Blue #1B59C2, a hex literal so it
-/// can be verified with a picker). Baked defaults — no tuner on the first round.
-private struct ReconcilerGlow: View {
-    @State private var pulse = false
-    /// #1B59C2
-    private let glow = Color(red: Double(0x1B) / 255, green: Double(0x59) / 255, blue: Double(0xC2) / 255)
-
-    var body: some View {
-        RadialGradient(
-            gradient: Gradient(colors: [glow.opacity(0.30), .clear]),
-            center: .center, startRadius: 2, endRadius: 130
-        )
-        .scaleEffect(pulse ? 1.12 : 0.85)
-        .opacity(pulse ? 0.85 : 0.30)
-        .blur(radius: 9)
-        .allowsHitTesting(false)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
         }
     }
 }

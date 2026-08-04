@@ -343,6 +343,12 @@ struct CanvasView: View {
                 NodeDetailView(nodeID: node.id)
                     .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
             }
+            // In-detail link-following (backlinks, suggestion preview) STACKS
+            // here — a standard push (no zoom source) so back returns to the
+            // originating detail. See `NodeDetailRoute`.
+            .navigationDestination(for: NodeDetailRoute.self) { route in
+                NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
+            }
             .sheet(item: $localTagSuggestions) { context in
                 tagCreationSheet(context: context)
             }
@@ -365,6 +371,12 @@ struct CanvasView: View {
             }
             .onChange(of: store.pendingTagSuggestions) { _, new in
                 if let new, localTagSuggestions == nil { localTagSuggestions = new }
+            }
+            // §3 — Librarian search ROW tap pops the detail so the camera fly
+            // lands on the visible map (it flies UNDER a pushed detail otherwise).
+            // No-op at root.
+            .onChange(of: router.dismissDetailRequest) { _, _ in
+                navigationPath = NavigationPath()
             }
             .onChange(of: router.pendingNodeNavigationID) { _, newValue in
                 guard let id = newValue,

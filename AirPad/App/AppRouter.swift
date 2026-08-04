@@ -57,13 +57,29 @@ final class AppRouter {
     /// pill can't wait for that (else a "Cancel" tap could discard typed text).
     var captureDraftHasText: Bool = false
 
-    /// One-shot navigation handoff from the capture overlay. Set when the
-    /// user picks a node in `NodePickerSheet` or completes a capture that
-    /// should drop them into the detail view. Each NavigationStack-owning
-    /// surface (DashboardView, CanvasView, VerticalScrollView) observes this and
-    /// appends the matching node to its own path, then clears the field so
-    /// it fires exactly once.
+    /// Cross-context ENTRY handoff — set when the user enters a node's detail
+    /// from OUTSIDE any detail view: a capture "+" (drop into the new note), the
+    /// Librarian search "open into node" (trailing icon), a chat citation's
+    /// open-note. Each NavigationStack-owning surface observes this and lands the
+    /// node at a FRESH depth-1 (map/list/grid swap the path to `[node]`; Dashboard
+    /// appends onto its own stack). Landing at depth-1 is correct here because
+    /// there is no originating detail to return to — back goes to the surface.
+    ///
+    /// ★ This is NOT link-following. Following a backlink or a suggestion FROM
+    /// WITHIN a detail must STACK so back returns to the detail you were in — that
+    /// path uses `NodeDetailRoute` + `NavigationLink` instead (see below). Keeping
+    /// the two mechanisms distinct is deliberate: cross-context entry lands fresh;
+    /// in-detail links stack. Don't route link-following through this field.
     var pendingNodeNavigationID: String? = nil
+
+    /// Monotonic "pop the current surface's detail stack back to root" request.
+    /// Sole producer: a Librarian search-result ROW tap (`focusNode`) — it flies
+    /// the camera / scrolls to the node on the underlying surface, but that focus
+    /// lands UNDER a pushed detail view (invisible navigation) unless the detail
+    /// is dismissed first. Each NavigationStack-owning surface observes this and
+    /// clears its `navigationPath`. Monotonic so a repeat still fires.
+    var dismissDetailRequest: Int = 0
+    func requestDismissDetail() { dismissDetailRequest += 1 }
 
     /// #3 (search-navigates-by-view) — the ONE shared "focus a node in the
     /// user's CURRENT view" request. Whichever canvas view is mounted moves its
@@ -172,5 +188,20 @@ final class AppRouter {
         // weakly so the router stays the sole owner.
         chat.store = chatStore
     }
+}
+
+/// Stacking navigation value for FOLLOWING a link from WITHIN a detail view —
+/// a backlink row or a suggestion-preview tap. A `NavigationLink(value:)`
+/// carrying this appends to the enclosing surface's `NavigationStack`, so BACK
+/// returns to the originating detail (the difference between following a link
+/// and being teleported). Every surface registers
+/// `.navigationDestination(for: NodeDetailRoute.self)`. `entryID`, when non-nil,
+/// drives `NodeDetailView`'s scroll-to-entry on arrival.
+///
+/// Distinct from `pendingNodeNavigationID` (cross-context ENTRY, lands at a fresh
+/// depth-1) — see that field's note. One mechanism per intent, by design.
+struct NodeDetailRoute: Hashable {
+    let nodeID: String
+    let entryID: String?
 }
 

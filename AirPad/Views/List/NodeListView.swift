@@ -71,6 +71,16 @@ struct NodeListView: View {
             .navigationDestination(for: Node.self) { node in
                 NodeDetailView(nodeID: node.id)
             }
+            // In-detail link-following (backlinks, suggestion preview) STACKS
+            // here so back returns to the originating detail. See `NodeDetailRoute`.
+            .navigationDestination(for: NodeDetailRoute.self) { route in
+                NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
+            }
+            // §3 — Librarian search ROW tap pops the detail so the focus lands
+            // on the visible surface (no-op at root).
+            .onChange(of: router.dismissDetailRequest) { _, _ in
+                navigationPath = NavigationPath()
+            }
             .onChange(of: router.pendingNodeNavigationID) { _, newValue in
                 guard let id = newValue,
                       let node = store.nodes.first(where: { $0.id == id })

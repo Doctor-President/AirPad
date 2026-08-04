@@ -1343,6 +1343,11 @@ struct LibrarianSurface: View {
         isInputFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                         to: nil, from: nil, for: nil)
+        // §3 (search row must pop out visibly) — if the user is inside a detail
+        // view, the focus would fly the camera / scroll the list UNDERNEATH it,
+        // where they can't see it. Pop the current surface's detail stack to root
+        // first so the focus lands on the visible surface. No-op at depth 0.
+        router.requestDismissDetail()
         // Request focus BEFORE the panel resize: `onFocusRequest` defers its
         // scroll one runloop so the raiseToPeek layout lands first, and any
         // surface that remounts across the resize catches the request on

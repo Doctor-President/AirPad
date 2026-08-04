@@ -405,6 +405,17 @@ struct Node: Codable, Identifiable, Hashable {
     /// See `PriorityState`. Additive + decode-tolerant; no schema-version bump.
     var priority: PriorityState?
 
+    /// THE LEVER — Stage 1. Model-authored proposals for this node's
+    /// user-owned fields (title / summary / tags), recorded ALONGSIDE the
+    /// existing write. One `Proposal` per kind at most (a regeneration
+    /// replaces the prior of that kind). See `Proposal`. Model-authored
+    /// derived output living on the node — the established pattern here
+    /// (`substrateSummary`, `folksonomy`, the four `[Float]` embeddings) —
+    /// not a sidecar. Additive + decode-tolerant; legacy nodes decode as
+    /// `nil` (no `proposals` key), no schema-version bump — the `heroCrop` /
+    /// `priority` pattern.
+    var proposals: [Proposal]?
+
     enum CodingKeys: String, CodingKey {
         case id, title, summary, tags, mood, provenance, threads, location, items, domain, source
         case createdAt = "created_at"
@@ -439,6 +450,7 @@ struct Node: Codable, Identifiable, Hashable {
         case heroCrop = "hero_crop"
         case heroAnalysis = "hero_analysis"
         case priority
+        case proposals
     }
 
     // ID-based equality so Hashable synthesis doesn't require all properties to be Hashable.
@@ -489,7 +501,8 @@ struct Node: Codable, Identifiable, Hashable {
         coverImageRelativePath: String? = nil,
         heroCrop: HeroCrop? = nil,
         heroAnalysis: ImageAnalysis? = nil,
-        priority: PriorityState? = nil
+        priority: PriorityState? = nil,
+        proposals: [Proposal]? = nil
     ) {
         self.id                          = id
         self.createdAt                   = createdAt
@@ -534,6 +547,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.heroCrop                    = heroCrop
         self.heroAnalysis                = heroAnalysis
         self.priority                    = priority
+        self.proposals                   = proposals
     }
 }
 
@@ -592,6 +606,7 @@ extension Node {
         heroCrop                   = try c.decodeIfPresent(HeroCrop.self,  forKey: .heroCrop)
         heroAnalysis               = try c.decodeIfPresent(ImageAnalysis.self, forKey: .heroAnalysis) ?? nil
         priority                   = try c.decodeIfPresent(PriorityState.self, forKey: .priority)
+        proposals                  = try c.decodeIfPresent([Proposal].self, forKey: .proposals)
     }
 }
 

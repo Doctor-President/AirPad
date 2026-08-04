@@ -13,9 +13,9 @@ struct ThreadSuggestionCard: View {
         VStack(alignment: .leading, spacing: 12) {
 
             HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.purple)
+                // No sparkles. App-wide ban on sparkles/wand/magic iconography —
+                // it reads as an empty "AI" promise; AirPad's posture is patient,
+                // legible work. The "THREAD DETECTED" label carries the meaning.
                 Text("Thread detected")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white.opacity(0.45))
@@ -60,7 +60,8 @@ struct ThreadSuggestionCard: View {
                 .buttonStyle(.plain)
 
                 Button(action: onPull) {
-                    Text("Pull ✦")
+                    // No decorative ✦ — same magic-star family as sparkles (app-wide ban).
+                    Text("Pull")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.black)
                         .padding(.horizontal, 22)

@@ -783,6 +783,11 @@ final class CorpusStore {
                     // console even when the harness kills the app before exit.
                     NSLog("[FieldValueSelfTest] %@", FieldValueSelfTest.run())
                 }
+                // THE LEVER — Stage 1 (ws-lever.md § C6). Pure in-memory schema /
+                // recordProposal self-test; writes nothing to the corpus.
+                if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
+                    NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
+                }
                 if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
                     let defs = FieldValueSelfTest.fixtureDefinitions()
                     fieldDefinitions = defs

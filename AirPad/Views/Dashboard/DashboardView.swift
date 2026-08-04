@@ -125,6 +125,14 @@ struct DashboardView: View {
                     ChatView()
                 }
             }
+            // In-detail link-following (backlinks, suggestion preview) from a
+            // detail pushed on the dashboard stack STACKS here too, carrying the
+            // optional entryID. See `NodeDetailRoute`. (Dashboard's own handoff
+            // already appends, so it never had the swap defect — but backlinks
+            // still need this destination registered to resolve.)
+            .navigationDestination(for: NodeDetailRoute.self) { route in
+                NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
+            }
             .sheet(item: $renameTarget) { collection in
                 RenameCollectionSheet(collectionID: collection.id, currentName: collection.name)
             }

@@ -10,11 +10,9 @@ struct RelatedNodesSection: View {
     let nodeID: String
 
     @Environment(CorpusStore.self) private var store
-    @Environment(AppRouter.self) private var router
 
-    /// Entry-level tap target — non-nil presents the peek sheet.
-    private struct PeekTarget: Identifiable { let id: String; let nodeID: String; let entryID: String }
-    @State private var peek: PeekTarget?
+    /// Presents the node-level backlink authoring picker (see `relatedHeader`).
+    @State private var showLinkPicker = false
 
     /// System-suggestion channel — derived at view time from the substrate,
     /// NEVER persisted (enters `connections` only when the user accepts one).
@@ -47,25 +45,22 @@ struct RelatedNodesSection: View {
 
     var body: some View {
         let rows = resolved
-        let hasContent = !rows.isEmpty || !suggestions.isEmpty
-        // Always in the hierarchy (even empty) so `onAppear` fires and the
-        // suggestion compute runs for nodes with no authored backlinks yet.
+        // `userChannel` always renders — its header carries the "+ Link to node"
+        // authoring control, which must be reachable even on a node with no
+        // backlinks yet. Suggestions render only when present.
         VStack(alignment: .leading, spacing: 18) {
-            if !rows.isEmpty { userChannel(rows) }
+            userChannel(rows)
             if !suggestions.isEmpty { suggestionChannel }
         }
-        .padding(.horizontal, hasContent ? 16 : 0)
-        .padding(.top, hasContent ? 20 : 0)
+        .padding(.horizontal, 16)
+        .padding(.top, 20)
         .onAppear { refreshSuggestions() }
-        .sheet(item: $peek) { p in
-            // The REAL detail view, opened focused on the target entry — drag
-            // the sheet up for full. The underlying node stays put, so the user
-            // keeps their place (the peek's whole point).
-            NavigationStack {
-                NodeDetailView(nodeID: p.nodeID, focusEntryID: p.entryID)
-            }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+        .sheet(isPresented: $showLinkPicker) {
+            // The standard backlink creation flow with a WHOLE-NODE source
+            // (`sourceEntryID: nil`) — the case the entry "..." menu can't
+            // author. Screen 2's node-level option writes `entryID == nil`.
+            BacklinkPickerSheet(sourceNodeID: nodeID, sourceEntryID: nil)
+                .onDisappear { refreshSuggestions() }
         }
     }
 
@@ -73,32 +68,55 @@ struct RelatedNodesSection: View {
 
     private func userChannel(_ rows: [(conn: NodeConnection, target: Node)]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            channelHeader("Related Nodes", secondary: false)
-            VStack(spacing: 8) {
-                ForEach(rows, id: \.conn.id) { pair in
-                    Button {
-                        if let entryID = pair.conn.entryID {
-                            // Entry-level → peek sheet (keeps the user's place).
-                            peek = PeekTarget(id: pair.conn.id, nodeID: pair.target.id, entryID: entryID)
-                        } else {
-                            // Node-level → open directly via the cross-context
-                            // open-node handoff (canvas stack or Dashboard stack).
-                            router.pendingNodeNavigationID = pair.target.id
+            relatedHeader
+            if !rows.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(rows, id: \.conn.id) { pair in
+                        // A STACKING push (NavigationLink appends to the enclosing
+                        // surface's NavigationStack), so back returns to THIS detail
+                        // — following a link, not being teleported. `entryID` (nil
+                        // for node-level, set for entry-level) rides along and drives
+                        // NodeDetailView's scroll-to-entry on arrival.
+                        NavigationLink(value: NodeDetailRoute(nodeID: pair.target.id,
+                                                              entryID: pair.conn.entryID)) {
+                            row(pair.conn, pair.target)
                         }
-                    } label: {
-                        row(pair.conn, pair.target)
-                    }
-                    .buttonStyle(.plain)
-                    .contextMenu {
-                        Button("Remove Backlink", systemImage: "link.badge.minus", role: .destructive) {
-                            Task {
-                                await store.removeConnection(id: pair.conn.id, from: nodeID)
-                                refreshSuggestions()
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Remove Backlink", systemImage: "link.badge.minus", role: .destructive) {
+                                Task {
+                                    await store.removeConnection(id: pair.conn.id, from: nodeID)
+                                    refreshSuggestions()
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// "Related Nodes" header + a muted, secondary "+ Link to node" authoring
+    /// control. Node-level see-also links (`NodeConnection.entryID == nil`) were
+    /// representable but uncreatable — the entry "..." menu always fills in a
+    /// source entryID. This opens the standard picker with a whole-node source.
+    /// Kept quiet on purpose: the section was just de-glyphed, so the control
+    /// stays subordinate to the header, never a prominent button.
+    private var relatedHeader: some View {
+        HStack(spacing: 8) {
+            channelHeader("Related Nodes", secondary: false)
+            Spacer(minLength: 8)
+            Button { showLinkPicker = true } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("Link to node")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -145,9 +163,10 @@ struct RelatedNodesSection: View {
 
     private func suggestionRow(_ node: Node) -> some View {
         HStack(spacing: 10) {
-            Button {
-                router.pendingNodeNavigationID = node.id
-            } label: {
+            // Previewing a suggestion is link-following too — STACK it (back
+            // returns to this detail). Suggestions are whole-node candidates, so
+            // entryID is nil. The `+` accept button (below) is unchanged.
+            NavigationLink(value: NodeDetailRoute(nodeID: node.id, entryID: nil)) {
                 // No leading glyph. The SUGGESTED header + the trailing `+` already
                 // say "proposed, tap to add"; a third telling (and sparkles in
                 // particular) would brand the user's own node. App-wide ban on

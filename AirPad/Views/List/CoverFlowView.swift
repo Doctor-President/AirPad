@@ -100,6 +100,15 @@ struct CoverFlowView: View {
                 NodeDetailView(nodeID: node.id)
                     .navigationTransition(.zoom(sourceID: node.id, in: zoomNamespace))
             }
+            // In-detail link-following (backlinks, suggestion preview) STACKS
+            // here so back returns to the originating detail. See `NodeDetailRoute`.
+            .navigationDestination(for: NodeDetailRoute.self) { route in
+                NodeDetailView(nodeID: route.nodeID, focusEntryID: route.entryID)
+            }
+            // §3 — search ROW tap pops the detail so the focus is visible.
+            .onChange(of: router.dismissDetailRequest) { _, _ in
+                navigationPath = NavigationPath()
+            }
             .onChange(of: router.pendingNodeNavigationID) { _, newValue in
                 guard let id = newValue,
                       let node = store.nodes.first(where: { $0.id == id })

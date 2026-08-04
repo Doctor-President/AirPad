@@ -65,6 +65,9 @@ struct LibrarianSurface: View {
     private let cctBottomInset: Double = 10
     /// Drives the active-chat pill's × → "Save or Delete" dialog.
     @State private var showChatDisposition = false
+    /// ws-chat-lane — presents `PinChatSheet` for the active chat (the pill's pin
+    /// button; the Librarian is the third pin entry point).
+    @State private var showingLibrarianPinSheet = false
     @FocusState private var isInputFocused: Bool
     /// Live measured height of the Ask field (grows with wrapped lines). Drives
     /// the Messages-style corner: `min(height/2, singleLineHeight/2)` — a PILL at
@@ -972,18 +975,19 @@ struct LibrarianSurface: View {
             guard oldValue.isEmpty && !newValue.isEmpty else { return }
             panelModel.expandToFull(animated: true)
         }
-        // Active-chat pill × → keep or discard the live chat. Save
-        // persists it to the Chats list and resets to an empty session;
-        // Delete removes it for good. Both leave the session empty so the
-        // pill clears.
+        // Active-chat pill × (UNPINNED chats only — pinned ones clear without a
+        // dialog). Both non-cancel choices call `startNew()`, so BOTH clear the
+        // pill; the only difference is whether the old chat is then tombstoned.
+        // So the safe path is "Clear" (it stays in the Chats list), not "Save" —
+        // × exists because the user may not want this to be the active chat, not
+        // because saving is an opt-in.
         .confirmationDialog(
-            "Save or delete this chat?",
+            "Clear or delete this chat?",
             isPresented: $showChatDisposition,
             titleVisibility: .visible
         ) {
-            Button("Save") {
-                // Flush + persist the current chat, then reset to a fresh
-                // empty session. The chat stays in the Chats list.
+            Button("Clear") {
+                // Reset to a fresh empty session; the chat stays in the Chats list.
                 router.chat.startNew()
             }
             Button("Delete", role: .destructive) {
@@ -996,7 +1000,10 @@ struct LibrarianSurface: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Save keeps this chat in your Chats list. Delete removes it permanently.")
+            Text("Clear removes it from here; the chat stays in your Chats list. Delete removes it permanently.")
+        }
+        .sheet(isPresented: $showingLibrarianPinSheet) {
+            PinChatSheet(chatID: router.chat.id).environment(store)
         }
     }
 
@@ -1705,7 +1712,13 @@ struct LibrarianSurface: View {
     /// fallback before).
     @ViewBuilder
     private func activeChatPill() -> some View {
-        HStack(spacing: 10) {
+        // ws-librarian — pinned-chat pill height. Was vertical-10 (T: "very
+        // skinny, almost easy to ignore"); bumped so it holds its own against the
+        // launchpad tiles above. Baked default, no tuner — height is the only
+        // thing out of step; the rest of the visual vocabulary is unchanged.
+        let verticalPadding: CGFloat = 16
+        let isPinned = store.nodePinned(forChatID: router.chat.id) != nil
+        return HStack(spacing: 10) {
             Button {
                 // Resume the chat: raise to full so the transcript shows
                 // (transcript ⟺ isViewingActiveChat && expanded), never a
@@ -1732,18 +1745,43 @@ struct LibrarianSurface: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Resume chat: \(router.chat.displayTitle)")
 
+            // ws-chat-lane — pin the active chat to a node. The THIRD entry point
+            // (full chat toolbar + Chats-list context menu are the others): SAME
+            // `PinChatSheet`, SAME `pin`/`pin.fill` glyph, pinned state from the
+            // SAME derived source (`nodePinned`) — no third path, no local flag.
+            // Shape not hue (colorblind-safe).
             Button {
-                showChatDisposition = true
+                router.chat.flush()   // persist so the chat resolves in the node's entry
+                showingLibrarianPinSheet = true
+            } label: {
+                Image(systemName: isPinned ? "pin.fill" : "pin")
+                    .font(.system(size: 16))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPinned ? "Change pinned node" : "Pin chat to a node")
+
+            Button {
+                if isPinned {
+                    // A pinned chat is already persisted AND has a home on a node,
+                    // so "clear or delete?" would be the app forgetting what it was
+                    // just told. Clear the pill immediately — Delete stays available
+                    // from the Chats list, where the pinned-chat warning lives. This
+                    // also removes the pill's unguarded destructive path.
+                    router.chat.startNew()
+                } else {
+                    showChatDisposition = true
+                }
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close chat")
+            .accessibilityLabel(isPinned ? "Clear chat from here" : "Clear or delete chat")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, verticalPadding)
         .background(AppearancePalette.ink.opacity(0.06))
         .clipShape(Capsule())
     }

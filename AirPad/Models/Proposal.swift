@@ -82,3 +82,50 @@ enum AuthorshipPosture: String, Codable {
     /// the posture from anywhere but `AuthorshipPosture.current`.
     static let current: AuthorshipPosture = .automatic
 }
+
+extension Node {
+    /// THE LEVER — Stage 1 record-and-decide for ONE authored aspect (title or
+    /// summary; the mechanism is kind-generic so `.tags` works the day it has a
+    /// producer). Called at the FM write site (`CorpusStore.processNodeWithAI`)
+    /// once per aspect.
+    ///
+    /// - The user-beats-model gate lives HERE (relocated from the two inline
+    ///   `titleSource`/`summarySource` checks, unchanged in semantics — so it is
+    ///   the single source of truth the self-test exercises): when the user has
+    ///   authored the field (`currentSource == .user`) nothing is recorded and
+    ///   nothing is written, and it returns `false`.
+    /// - Otherwise it records a proposal of `kind` carrying `text` +
+    ///   `sourceEmbedding`, REPLACING any prior proposal of that same kind (one
+    ///   per kind per node — a regeneration replaces, never accumulates). Empty
+    ///   text records nothing (there is nothing to offer).
+    /// - It returns whether the posture says to WRITE the field now. The field
+    ///   write and `.model` stamp stay at the call site (they are field-specific).
+    ///   Under the Stage-1 default (`.automatic`) it returns `true` whenever the
+    ///   gate passes, so titles/summaries are written EXACTLY as before — the
+    ///   proposal record is purely additive. Stage 3 flips the posture and this
+    ///   body does not move.
+    ///
+    /// - Returns: `true` when the caller should write the field + stamp `.model`.
+    mutating func recordProposal(kind: Proposal.Kind,
+                                 text: String,
+                                 currentSource: TagSource?,
+                                 sourceEmbedding: [Float]?,
+                                 posture: AuthorshipPosture,
+                                 generatedAt: Date) -> Bool {
+        // User-beats-model. `nil` = legacy / never-processed (FM eligible);
+        // `.model` = a prior FM write (FM may refresh); `.user` = locked.
+        guard currentSource == nil || currentSource == .model else { return false }
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            var list = proposals ?? []
+            list.removeAll { $0.kind == kind }   // one per kind — regeneration replaces
+            list.append(Proposal(id: UUID(),
+                                 kind: kind,
+                                 text: text,
+                                 generatedAt: generatedAt,
+                                 sourceEmbedding: sourceEmbedding,
+                                 state: .fresh))
+            proposals = list
+        }
+        return posture == .automatic
+    }
+}

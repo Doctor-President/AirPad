@@ -4488,16 +4488,34 @@ final class CorpusStore {
         }
 
         await mutateNode(id: nodeID) { n in
-            // FM-respect gate on title (step 1): FM writes only when the user
-            // hasn't taken ownership. Re-checked against the FRESH node, so a
-            // user edit during the FM window wins.
-            if n.titleSource == nil || n.titleSource == .model {
+            // THE LEVER — Stage 1 (ws-lever.md § C5). Record a proposal for each
+            // model-authored aspect the user hasn't authored, ALONGSIDE the write.
+            // `recordProposal` carries the FM-respect gate that used to sit inline
+            // here (unchanged: a `.user` title/summary — including a deliberately
+            // empty one — is neither proposed to nor written) and, re-checked
+            // against the FRESH node, still lets a user edit during the FM window
+            // win. It returns whether the posture says to write now; under the
+            // Stage-1 default (`.automatic`) that is true whenever the gate passes,
+            // so title/summary are written EXACTLY as before — the proposal is
+            // purely additive and this stage is invisible on device.
+            //
+            // ★ sourceEmbedding = the vector THIS substrate pass produced (on the
+            // throwaway `working` copy), the same one copied onto `n` below, so
+            // Stage 4 can measure how far the node's meaning has drifted from it.
+            let posture = AuthorshipPosture.current
+            let generatedAt = Date()
+            let sourceEmbedding = working.contextualContentEmbedding
+            if n.recordProposal(kind: .title, text: result.title,
+                                currentSource: n.titleSource,
+                                sourceEmbedding: sourceEmbedding,
+                                posture: posture, generatedAt: generatedAt) {
                 n.title = result.title
                 n.titleSource = .model
             }
-            // FM-respect gate on summary (Commit 6): same user-beats-model rule;
-            // a `.user` summary (including a deliberately empty one) is untouched.
-            if n.summarySource == nil || n.summarySource == .model {
+            if n.recordProposal(kind: .summary, text: result.summary,
+                                currentSource: n.summarySource,
+                                sourceEmbedding: sourceEmbedding,
+                                posture: posture, generatedAt: generatedAt) {
                 n.summary = result.summary
                 n.summarySource = .model
             }
@@ -4533,7 +4551,7 @@ final class CorpusStore {
         // tagsEmitted is always NO: the pendingTagSuggestions emission was
         // removed in ws-card-catalog step 1 (see the comment just below).
         if let after = nodes.first(where: { $0.id == nodeID }) {
-            bug17Log.notice("WRITE node=\(nodeID, privacy: .public) summaryLen=\(after.summary.count) summarySource=\(String(describing: after.summarySource), privacy: .public) titleLen=\(after.title.count) titleSource=\(String(describing: after.titleSource), privacy: .public) tagsEmitted=NO")
+            bug17Log.notice("WRITE node=\(nodeID, privacy: .public) summaryLen=\(after.summary.count) summarySource=\(String(describing: after.summarySource), privacy: .public) titleLen=\(after.title.count) titleSource=\(String(describing: after.titleSource), privacy: .public) tagsEmitted=NO proposals=\(after.proposals?.count ?? 0)")
         }
 
         // ws-card-catalog step 1 — with no FM tags produced, the capture-time

@@ -23,8 +23,14 @@ struct ModelProcessingIndicator: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "sparkles")
+            // ellipsis, NOT sparkles. This means *working*, the same as the
+            // reconciler status line, so it uses the same built-in
+            // `.variableColor.iterative` treatment and reads the same. App-wide
+            // ban on sparkles/wand/magic iconography — it reads as an empty "AI"
+            // promise; AirPad's posture is patient, legible work.
+            Image(systemName: "ellipsis")
                 .font(.system(size: 11, weight: .semibold))
+                .symbolEffect(.variableColor.iterative, options: .repeating)
             Text("Thinking")
                 .font(.system(size: 12, weight: .semibold))
         }

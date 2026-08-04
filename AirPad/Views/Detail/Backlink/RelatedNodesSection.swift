@@ -22,6 +22,15 @@ struct RelatedNodesSection: View {
     /// and cached here rather than recomputed every render.
     @State private var suggestions: [Node] = []
 
+    /// Whether the Suggested channel is collapsed. A GLOBAL UI preference (one
+    /// tap quiets suggestions corpus-wide, not per node), persisted in
+    /// UserDefaults via @AppStorage and defaulting to EXPANDED. Deliberately NOT
+    /// a per-suggestion dismiss: a declined-set would be keyed to suggestion
+    /// identity and go stale as the corpus drifts. Collapse keys to nothing —
+    /// suggestions keep recomputing behind the closed door, so expanding always
+    /// shows CURRENT proposals rather than a frozen list of past declines.
+    @AppStorage("suggestionsCollapsed") private var suggestionsCollapsed = false
+
     /// Live connections on this node, newest first. Dangling edges (target
     /// deleted) are dropped by resolving against the live corpus.
     private var resolved: [(conn: NodeConnection, target: Node)] {
@@ -97,9 +106,31 @@ struct RelatedNodesSection: View {
 
     private var suggestionChannel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            channelHeader("Suggested", secondary: true)
-            VStack(spacing: 8) {
-                ForEach(suggestions) { suggestionRow($0) }
+            // The header doubles as the collapse control. Collapsed = the label
+            // plus an expand affordance and nothing else (the rows are gone, not
+            // dimmed). Global + persisted (see `suggestionsCollapsed`). This is
+            // presentation only — how suggestions are generated, ranked, and
+            // accepted is untouched; the `+` action below is unchanged.
+            Button {
+                withAnimation(.easeInOut(duration: 0.28)) { suggestionsCollapsed.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    channelHeader("Suggested", secondary: true)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                        .rotationEffect(.degrees(suggestionsCollapsed ? 0 : 90))
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if !suggestionsCollapsed {
+                VStack(spacing: 8) {
+                    ForEach(suggestions) { suggestionRow($0) }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
@@ -117,11 +148,12 @@ struct RelatedNodesSection: View {
             Button {
                 router.pendingNodeNavigationID = node.id
             } label: {
+                // No leading glyph. The SUGGESTED header + the trailing `+` already
+                // say "proposed, tap to add"; a third telling (and sparkles in
+                // particular) would brand the user's own node. App-wide ban on
+                // sparkles/wand/magic iconography — it reads as an empty "AI"
+                // promise; AirPad's posture is patient, legible work.
                 HStack(spacing: 10) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                        .frame(width: 22)
                     Text(BacklinkLabels.title(node))
                         .font(.system(size: 15))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.7))
@@ -169,11 +201,11 @@ struct RelatedNodesSection: View {
     }
 
     private func row(_ conn: NodeConnection, _ target: Node) -> some View {
+        // No leading link glyph. This section shows the user their OWN corpus,
+        // adjacent — the Librarian noticed proximity, it did not author these
+        // nodes. Marking that with a glyph claims credit for showing someone their
+        // own material. The trailing chevron already signals "opens".
         HStack(spacing: 10) {
-            Image(systemName: "link")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Color.blue)
-                .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text(BacklinkLabels.title(target))
                     .font(.system(size: 15, weight: .medium))

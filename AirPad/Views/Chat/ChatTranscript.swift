@@ -518,39 +518,18 @@ struct ChatTranscript: View {
     // MARK: - Error banner
 
     /// Transient endpoint-failure banner. Renders the session's non-message
-    /// `lastError` as a distinct state (amber, Retry + dismiss) so a failed
-    /// send never appears as an assistant bubble. Retry re-sends the trailing
-    /// user turn; × clears it.
+    /// `lastError` as a distinct state so a failed send never appears as an
+    /// assistant bubble. F4 — now the SHARED `FMFailureBanner` (one failure
+    /// vocabulary with THE LEVER's tray). Retry re-sends the trailing user turn;
+    /// × clears it.
     @ViewBuilder
     private func errorBanner(_ message: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(Color(hexString: "E8820A"))
-            Text(message)
-                .font(.system(size: 13))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.9))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Retry") {
-                Task { await session.retryLastUserTurn() }
-            }
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(Color(hexString: "00BFFF"))
-            .buttonStyle(.plain)
-            .disabled(session.isStreaming)
-            Button {
-                session.clearError()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Dismiss error")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Color(hexString: "E8820A").opacity(0.12))
+        FMFailureBanner(
+            message: message,
+            retryDisabled: session.isStreaming,
+            onRetry: { Task { await session.retryLastUserTurn() } },
+            onDismiss: { session.clearError() }
+        )
     }
 }
 

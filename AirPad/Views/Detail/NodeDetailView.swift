@@ -392,6 +392,10 @@ struct NodeDetailView: View {
         .sheet(isPresented: $showFieldSheet) {
             FieldCreationSheet(nodeID: nodeID)
         }
+        // THE LEVER — Stage 2 (§ C3). Partial-height proposals tray.
+        .sheet(isPresented: $showLeverTray) {
+            LeverTray(nodeID: nodeID)
+        }
         .confirmationDialog(
             "Append to existing Documents entry?",
             isPresented: $showDocumentAppendModal,

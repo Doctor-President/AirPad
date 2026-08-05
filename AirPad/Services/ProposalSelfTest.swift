@@ -156,6 +156,45 @@ enum ProposalSelfTest {
             }
         }
 
+        // 7 — Stage 2 F2: the SOLICITED bypass. On a user-authored field an
+        // UNSOLICITED generate records nothing (gate holds) and nothing is
+        // surfaced; a SOLICITED one records + surfaces, marks the proposal
+        // solicited, and STILL does not write (posture governs the write).
+        do {
+            ran += 1
+            // unsolicited on a `.user` title → no record, nothing surfaced.
+            var u = makeNode(title: "my title", summary: "", content: "content", titleSource: .user)
+            let wU = u.recordProposal(kind: .title, text: "model title", currentSource: u.titleSource,
+                                      sourceEmbedding: vec, posture: .propose, generatedAt: date0,
+                                      solicited: false)
+            if wU { failures.append("7: unsolicited .user must report write=false") }
+            if (u.proposals ?? []).contains(where: { $0.kind == .title }) {
+                failures.append("7: unsolicited generate must not record on a .user field")
+            }
+            // solicited on a `.user` title → records, marked solicited, surfaced,
+            // and STILL no write.
+            var s = makeNode(title: "my title", summary: "", content: "content", titleSource: .user)
+            let wS = s.recordProposal(kind: .title, text: "asked-for title", currentSource: s.titleSource,
+                                      sourceEmbedding: vec, posture: .propose, generatedAt: date0,
+                                      solicited: true)
+            if wS { failures.append("7: solicited must NEVER bypass the write (report false)") }
+            let sp = s.proposals?.first { $0.kind == .title }
+            if sp == nil { failures.append("7: solicited generate must record on a .user field") }
+            if sp?.solicited != true { failures.append("7: recorded proposal must be marked solicited") }
+            if s.surfacedProposal(kind: .title) == nil {
+                failures.append("7: a solicited proposal on a .user field must be surfaced")
+            }
+            // and an UNSOLICITED proposal that predates authorship stays hidden:
+            // record while nil, then the field becomes `.user`.
+            var e = makeNode(title: "", summary: "", content: "content")
+            _ = e.recordProposal(kind: .title, text: "auto title", currentSource: e.titleSource,
+                                 sourceEmbedding: vec, posture: .propose, generatedAt: date0)
+            e.titleSource = .user   // user then writes their own → authored
+            if e.surfacedProposal(kind: .title) != nil {
+                failures.append("7: an unsolicited proposal on a now-.user field must stay hidden (§ C3)")
+            }
+        }
+
         if failures.isEmpty {
             return "Proposal: \(ran)/\(ran) passed"
         } else {

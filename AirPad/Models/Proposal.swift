@@ -48,6 +48,14 @@ struct Proposal: Codable, Equatable, Identifiable {
     /// vector exists. Stage 4 compares it to the node's current embedding.
     var sourceEmbedding: [Float]?
     var state: State
+    /// Stage 2 F2 — whether the user EXPLICITLY asked for this proposal (tapped
+    /// generate) rather than the system offering it. The distinction is
+    /// load-bearing at display time: an UNSOLICITED proposal is never surfaced
+    /// for a field the user authored (§ C3 — the request model), but a SOLICITED
+    /// one always is (consent came from initiating). Defaults false; every
+    /// unsolicited path (capture enrichment, scheduleEnrichment, substrate
+    /// refires) leaves it false. Additive + decode-tolerant (see init(from:)).
+    var solicited: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -56,6 +64,23 @@ struct Proposal: Codable, Equatable, Identifiable {
         case generatedAt = "generated_at"
         case sourceEmbedding = "source_embedding"
         case state
+        case solicited
+    }
+}
+
+extension Proposal {
+    /// Decode-tolerant (codebase norm): `solicited` is additive, so a proposal
+    /// persisted before Stage 2 F2 (no key) decodes as `false` rather than
+    /// throwing. The memberwise init and synthesized `encode(to:)` are unchanged.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id              = try c.decode(UUID.self,   forKey: .id)
+        kind            = try c.decode(Kind.self,   forKey: .kind)
+        text            = try c.decode(String.self, forKey: .text)
+        generatedAt     = try c.decode(Date.self,   forKey: .generatedAt)
+        sourceEmbedding = try c.decodeIfPresent([Float].self, forKey: .sourceEmbedding)
+        state           = try c.decode(State.self,  forKey: .state)
+        solicited       = try c.decodeIfPresent(Bool.self, forKey: .solicited) ?? false
     }
 }
 
@@ -100,7 +125,7 @@ extension Node {
     ///   `titleSource`/`summarySource` checks, unchanged in semantics — so it is
     ///   the single source of truth the self-test exercises): when the user has
     ///   authored the field (`currentSource == .user`) nothing is recorded and
-    ///   nothing is written, and it returns `false`.
+    ///   nothing is written, and it returns `false` — UNLESS `solicited`.
     /// - Otherwise it records a proposal of `kind` carrying `text` +
     ///   `sourceEmbedding`, REPLACING any prior proposal of that same kind (one
     ///   per kind per node — a regeneration replaces, never accumulates). Empty
@@ -112,17 +137,30 @@ extension Node {
     ///   proposal record is purely additive. Stage 3 flips the posture and this
     ///   body does not move.
     ///
+    /// ★ Stage 2 F2 — `solicited`: the user tapped GENERATE. **CONSENT COMES FROM
+    /// INITIATING.** The system never OFFERS to rewrite what the user wrote, but
+    /// the user may always ASK it to — so a solicited call bypasses the
+    /// user-beats-model gate for PROPOSAL RECORDING ONLY. It NEVER bypasses the
+    /// write (the return is still posture-driven; under `.propose` nothing
+    /// auto-writes and the field changes only on accept). If unsolicited passes
+    /// could reach user-authored fields, THE SENTENCE would be broken — so ONLY
+    /// the tray's generate action passes `solicited: true`; every unsolicited path
+    /// keeps the gate at full strength.
+    ///
     /// - Returns: `true` when the caller should write the field + stamp `.model`.
     mutating func recordProposal(kind: Proposal.Kind,
                                  text: String,
                                  currentSource: TagSource?,
                                  sourceEmbedding: [Float]?,
                                  posture: AuthorshipPosture,
-                                 generatedAt: Date) -> Bool {
+                                 generatedAt: Date,
+                                 solicited: Bool = false) -> Bool {
         // User-beats-model. `nil` = legacy / never-processed (FM eligible);
-        // `.model` = a prior FM write (FM may refresh); `.user` = locked.
-        guard currentSource == nil || currentSource == .model else { return false }
-        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        // `.model` = a prior FM write (FM may refresh); `.user` = locked — UNLESS
+        // the user explicitly asked (`solicited`), in which case the gate opens
+        // for RECORDING only (never for the write; the return is unchanged).
+        let mayRecord = solicited || currentSource == nil || currentSource == .model
+        if mayRecord, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             var list = proposals ?? []
             list.removeAll { $0.kind == kind }   // one per kind — regeneration replaces
             list.append(Proposal(id: UUID(),
@@ -130,9 +168,31 @@ extension Node {
                                  text: text,
                                  generatedAt: generatedAt,
                                  sourceEmbedding: sourceEmbedding,
-                                 state: .fresh))
+                                 state: .fresh,
+                                 solicited: solicited))
             proposals = list
         }
+        // ★ The WRITE is never bypassed by `solicited`: user-authored fields still
+        // never auto-write, and under `.propose` nothing auto-writes at all.
+        guard currentSource == nil || currentSource == .model else { return false }
         return posture == .automatic
+    }
+
+    /// THE LEVER — the proposal to SURFACE for `kind` in the button + tray, or
+    /// nil. A fresh proposal shows unless the field is user-authored AND the
+    /// proposal was UNSOLICITED — the system never surfaces an unsolicited
+    /// proposal for a field the user wrote (§ C3), but a SOLICITED one always
+    /// shows (consent came from initiating). ONE predicate so the button and tray
+    /// can't disagree.
+    func surfacedProposal(kind: Proposal.Kind) -> Proposal? {
+        guard let p = proposals?.first(where: { $0.kind == kind && $0.state == .fresh }) else { return nil }
+        let source: TagSource?
+        switch kind {
+        case .title:   source = titleSource
+        case .summary: source = summarySource
+        case .tags:    source = nil
+        }
+        if source == .user && !p.solicited { return nil }
+        return p
     }
 }

@@ -4515,8 +4515,25 @@ final class CorpusStore {
             bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
         case .failure(let reason):
             bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
-            // Fallback title from raw content so the node isn't blank (unchanged).
-            // Race-safe read-modify-write; never touches `.items`.
+            // Fallback title from raw content so the node isn't blank on FM
+            // failure. Race-safe read-modify-write; never touches `.items`.
+            //
+            // THE LEVER — B1 (2026-08-05, T's ruling): the blank-title fill is
+            // POSTURE-GATED. Under `.automatic` the SYSTEM is the author, so a rough
+            // first-40-chars title beats a nameless node — today's behaviour,
+            // unchanged. Under `.propose` / `.off` the promise is that a field the
+            // user hasn't authored stays BLANK until they pull the lever, so a
+            // refusal must NOT stamp an unrequested mid-content fragment (it merely
+            // copies the note's own text up into its title — it duplicates, it does
+            // not degrade gracefully). A blank title reads as a deliberate
+            // "Untitled" at every list / grid / recents / search surface and as a
+            // content-preview label on the canvas — the SAME resting state a
+            // *successful* `.propose` capture already has (success proposes, never
+            // writes), so failure now matches success instead of contradicting the
+            // posture.
+            // ★ `"Photo"` / `"Voice note"` are STRUCTURAL media placeholders, not an
+            // enrichment fill of a blank field — they upgrade regardless of posture,
+            // exactly as before.
             await mutateNode(id: nodeID) { n in
                 let fallback = n.items.compactMap { item -> String? in
                     switch item.type {
@@ -4526,7 +4543,8 @@ final class CorpusStore {
                     case .image, .document, .imageVideo, .rating, .field, .chats: return nil
                     }
                 }.first(where: { !$0.isEmpty })
-                if let fallback, n.title.isEmpty || n.title == "Photo" || n.title == "Voice note" {
+                let mayFillBlank = n.title.isEmpty && AuthorshipPosture.current == .automatic
+                if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
                     n.title = String(fallback.prefix(40))
                 }
                 n.needsAIProcessing = false

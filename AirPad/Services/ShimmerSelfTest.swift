@@ -9,6 +9,12 @@ import Foundation
 ///   2. the firing decision: pending + visible + not-yet-shimmered + motion-on →
 ///      FIRES; and each gate (not-pending / off-screen / already-shimmered /
 ///      reduce-motion) suppresses it.
+///   3. PROPOSAL-ARRIVES-AFTER-RENDER (Stage 2c): a visit shimmers exactly once
+///      whether the proposal was present at first render OR arrived ~0.8s later
+///      (the capture path — node saved EMPTY, enrichment lands while the view is
+///      alive). The fire must not depend on the ORDER `pending` / `visible`
+///      settle; every earlier case seeded `pending` first, which is exactly why
+///      the after-render path shipped without a shimmer.
 ///
 /// Pure logic → config-independent, so a DEBUG run is valid for Release (the fix
 /// the app never got: exercise the shipped configuration). Run headless via
@@ -67,6 +73,63 @@ enum ShimmerSelfTest {
             }
             if LeverButton.shouldFire(pending: true, visible: true, hasShimmered: false, reduceMotion: true) {
                 failures.append("2: Reduce Motion must suppress the shimmer")
+            }
+        }
+
+        // 3 — PROPOSAL-ARRIVES-AFTER-RENDER. The regression the device round
+        // caught: the capture path saves the node EMPTY, renders the button
+        // (pending false), then enrichment records the proposal ~0.8s later while
+        // the view is alive. A visit must shimmer exactly ONCE regardless of the
+        // order `pending` / `visible` settle — the seeded-first path and the
+        // arrived-after path can't diverge. Models `attemptShimmer`'s
+        // once-per-visit guard over the sequence of arming events (viewport flips
+        // + the pending flip). The pending flip is the arming trigger Stage 2c
+        // added; before it, an already-visible button whose proposal arrived
+        // after render fired zero shimmers (the last case below would return 0).
+        do {
+            ran += 1
+
+            // Replay one visit as a sequence of arming attempts, each gated by
+            // `shouldFire`, firing at most once — the exact shape of
+            // `LeverButton.attemptShimmer` across a visit. Returns the fire count.
+            func firesInVisit(_ events: [(pending: Bool, visible: Bool)]) -> Int {
+                var hasShimmered = false
+                var plays = 0
+                for e in events {
+                    if LeverButton.shouldFire(pending: e.pending, visible: e.visible,
+                                              hasShimmered: hasShimmered, reduceMotion: false) {
+                        hasShimmered = true
+                        plays += 1
+                    }
+                }
+                return plays
+            }
+
+            // Seeded-before-render (detail view entered on a node that already
+            // has proposals): pending true at the first visibility event.
+            if firesInVisit([(pending: true, visible: true)]) != 1 {
+                failures.append("3: seeded proposal (pending at render) must fire once")
+            }
+            // Arrives-after-render (THE BUG): visible first with nothing pending,
+            // then the proposal lands (pending flips true) via the pending-arming
+            // trigger. Must STILL fire exactly once — the path that shipped broken.
+            if firesInVisit([(pending: false, visible: true),
+                             (pending: true, visible: true)]) != 1 {
+                failures.append("3: proposal arriving AFTER render must still fire once")
+            }
+            // Arrives while off-screen, then scrolls in: the viewport trigger
+            // closes it. Still exactly once.
+            if firesInVisit([(pending: false, visible: false),
+                             (pending: true, visible: false),
+                             (pending: true, visible: true)]) != 1 {
+                failures.append("3: proposal arriving off-screen fires when scrolled in")
+            }
+            // Never re-fires once shimmered, whatever later flips occur this visit.
+            if firesInVisit([(pending: false, visible: true),
+                             (pending: true, visible: true),
+                             (pending: true, visible: false),
+                             (pending: true, visible: true)]) != 1 {
+                failures.append("3: must not re-fire after the first shimmer in a visit")
             }
         }
 

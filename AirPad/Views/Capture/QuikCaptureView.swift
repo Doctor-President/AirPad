@@ -74,6 +74,12 @@ struct QuikCaptureView: View {
     @State private var pendingDocumentURLs: [URL] = []
     @State private var showDocumentAppendModal = false
 
+    // THE LEVER — Stage 2c. Reuses `LeverButton` + the existing `LeverTray`; the
+    // circle spans the MEASURED height of the two chip lanes (same `LaneStackHeightKey`
+    // mechanism as the detail view — not duplicated).
+    @State private var showLeverTray = false
+    @State private var laneStackHeight: CGFloat = 60
+
     /// Owns the entire transient drag-to-reorder UI state. Injected into
     /// entry cards via Environment so each card can read its own
     /// offset/lifted/parting treatment without prop-drilling through the
@@ -143,6 +149,10 @@ struct QuikCaptureView: View {
                             Task { await store.addNodes(ids: [id], toCollection: newCol.id) }
                             store.markCollectionUsed(newCol.id)
                         })
+                    }
+                    // THE LEVER — Stage 2c. The same proposals tray as the detail view.
+                    .sheet(isPresented: $showLeverTray) {
+                        LeverTray(nodeID: node.id)
                     }
                     .sheet(isPresented: $showDocumentPicker) {
                         DocumentPickerView { urls in
@@ -266,11 +276,30 @@ struct QuikCaptureView: View {
                         .focused($focusedField)
                 }
 
-                // Collections (membership chips above tags)
-                collectionsRow(node: node)
-
-                // Tags
-                tagsRow
+                // THE LEVER — Stage 2c. Mounted exactly as in NodeDetailView: the
+                // feather button LEFT, the two chip lanes (collections above tags)
+                // RIGHT, both scrolling to its right. Reuses `LeverButton` and the
+                // existing tray — one mechanism, a second mount point.
+                // ⚠️ Vertical rhythm BYTE-IDENTICAL: the HStack is ONE member of the
+                // enclosing `spacing: 24` VStack (so summary→lanes and tags→divider
+                // stay 24), and the inner lanes VStack keeps collections→tags at 24.
+                HStack(alignment: .center, spacing: 12) {
+                    LeverButton(nodeID: node.id, diameter: laneStackHeight,
+                                onTap: { showLeverTray = true })
+                    VStack(alignment: .leading, spacing: 24) {
+                        // Collections (membership chips above tags)
+                        collectionsRow(node: node)
+                        // Tags
+                        tagsRow
+                    }
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.preference(key: LaneStackHeightKey.self,
+                                                   value: g.size.height)
+                        }
+                    )
+                }
+                .onPreferenceChange(LaneStackHeightKey.self) { laneStackHeight = $0 }
 
                 Divider().background(AppearancePalette.ink.opacity(0.12))
 

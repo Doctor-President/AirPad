@@ -6,6 +6,16 @@ import UIKit
 import ImageIO
 import ObjectiveC.runtime
 
+/// THE LEVER — Stage 2. Reports the measured combined height of the two chip
+/// lanes so the feather circle can span exactly that (no hardcoded size that
+/// would drift if chip padding changes).
+private struct LaneStackHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
 /// All edits auto-save on disappear.
 struct NodeDetailView: View {
@@ -148,6 +158,15 @@ struct NodeDetailView: View {
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
     @State private var showFieldSheet = false   // Stage 5.2 — "+" → More…
+
+    // THE LEVER — Stage 2. `showLeverTray` presents the proposals sheet.
+    // `laneStackHeight` is the MEASURED combined height of the two chip lanes
+    // (collections + tags); the feather circle spans exactly that so it never
+    // needs a magic number that would drift if chip padding changes. The initial
+    // value is only a pre-measurement placeholder — `onPreferenceChange` overrides
+    // it on first layout.
+    @State private var showLeverTray = false
+    @State private var laneStackHeight: CGFloat = 60
 
     /// hero-empty-picker (H1, revised) — drives the file-local
     /// `HeroImagePickerSheet`. Triggered from the `•••` menu's
@@ -485,15 +504,35 @@ struct NodeDetailView: View {
                         .padding(.top, visualSettings.titleToSummary)
                 }
 
-                // Collections (membership chips above tags, mirrors
-                // tags-row layout but uses rounded-rect chips to read
-                // distinct from the capsule tag pills).
-                collectionsRow(node: node)
-                    .padding(.top, visualSettings.summaryToChips)
+                // THE LEVER — Stage 2 (§ C2). The feather button sits LEFT,
+                // spanning the combined height of the two chip lanes; the lanes
+                // (collections above tags) sit RIGHT, still scrolling
+                // horizontally to the button's right.
+                // ⚠️ The vertical rhythm is BYTE-IDENTICAL to before:
+                // `summaryToChips` is the gap from the summary to this block (was
+                // on collectionsRow), and `chipRowGap` is the gap between the two
+                // lanes (still on tagsRow). Neither spacing value is touched.
+                HStack(alignment: .center, spacing: 12) {
+                    leverButton(node: node)
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Collections (membership chips above tags, mirrors
+                        // tags-row layout but uses rounded-rect chips to read
+                        // distinct from the capsule tag pills).
+                        collectionsRow(node: node)
 
-                // Tags
-                tagsRow
-                    .padding(.top, visualSettings.chipRowGap)
+                        // Tags
+                        tagsRow
+                            .padding(.top, visualSettings.chipRowGap)
+                    }
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.preference(key: LaneStackHeightKey.self,
+                                                   value: g.size.height)
+                        }
+                    )
+                }
+                .padding(.top, visualSettings.summaryToChips)
+                .onPreferenceChange(LaneStackHeightKey.self) { laneStackHeight = $0 }
 
                 // Items — Stage 3.1a commit (b): every entry is rendered as
                 // an `EntryCard` regardless of type. Per-type rendering lives
@@ -1080,6 +1119,65 @@ struct NodeDetailView: View {
                     .drawingGroup()
             }
         }
+    }
+
+    // MARK: - THE LEVER — Stage 2 button
+
+    /// The lever: a feather circle spanning the combined height of the two chip
+    /// lanes. Gradient FILL = a fresh proposal is pending; monochrome = nothing
+    /// pending (still fully tappable — it is a REQUEST mechanism first, never
+    /// dead). ★ No shimmer / pulse / motion in this stage (its own round).
+    ///
+    /// Colours are stated as hex (T is colourblind, verifies with a picker): the
+    /// Klein family from the Ask feather (`#00BFFF` → `#1B59C2`); resting ink is
+    /// `#232A2E` (light) / `#FFFFFF` (dark) — the app-ink values, stated inline so
+    /// the button reads in both themes. The feather glyph is `AirPadLogo`, the
+    /// same asset the Ask field uses — no sparkle, nothing on the tip.
+    @ViewBuilder
+    private func leverButton(node: Node) -> some View {
+        let pending = !pendingProposalKinds(node: node).isEmpty
+        let kleinGrad = LinearGradient(
+            colors: [Color(hexString: "00BFFF"), Color(hexString: "1B59C2")],
+            startPoint: .top, endPoint: .bottom
+        )
+        let restingInk = Color(UIColor { t in
+            t.userInterfaceStyle == .dark
+                ? UIColor(Color(hexString: "FFFFFF"))
+                : UIColor(Color(hexString: "232A2E"))
+        })
+        Button {
+            showLeverTray = true
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(pending ? AnyShapeStyle(kleinGrad)
+                                  : AnyShapeStyle(restingInk.opacity(0.08)))
+                Image("AirPadLogo")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    // Feather sized to the circle (T: "twice the size" — was 0.5).
+                    .frame(width: laneStackHeight, height: laneStackHeight)
+                    .foregroundStyle(pending ? Color(hexString: "FFFFFF")
+                                             : restingInk.opacity(0.55))
+            }
+            .frame(width: laneStackHeight, height: laneStackHeight)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(pending ? "Review proposals" : "Ask for a proposal")
+    }
+
+    /// Surfaced fresh proposals — the exact set the button colour and the tray
+    /// share, via `Node.surfacedProposal` (ONE predicate so they can't disagree):
+    /// a fresh proposal counts unless it is an UNSOLICITED one on a user-authored
+    /// field (§ C3). A SOLICITED proposal (the user tapped generate) always
+    /// counts. `.tags` never lands here in Stage 2 (no producer).
+    private func pendingProposalKinds(node: Node) -> Set<Proposal.Kind> {
+        var kinds: Set<Proposal.Kind> = []
+        if node.surfacedProposal(kind: .title)   != nil { kinds.insert(.title) }
+        if node.surfacedProposal(kind: .summary) != nil { kinds.insert(.summary) }
+        return kinds
     }
 
     // MARK: - Collections row

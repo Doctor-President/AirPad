@@ -580,6 +580,20 @@ struct DebugScreenHost: View {
                  title: t, summary: "Field notes converging on one question.",
                  tags: [store.tags[i].name])
         }
+        // Capture node WITH content — a blank-title node holding one text entry, so
+        // `hasCaptured` is true and the shared `CaptureChromeBar` shows its Delete
+        // pill (the `quikcapturefull` / `capturemodefull` screens use this; the
+        // `quikcapture` / `capturemode` screens keep the empty "Cancel" state that
+        // guards BUG 9). The text item id lets `-CaptureKeyboard YES` autofocus it
+        // so the keyboard rises and the pinned-chrome layout can be verified UNDER
+        // the keyboard, which a static screenshot can't show.
+        store.nodes.append(
+            Node(id: "seed-cap", createdAt: Self.epoch, updatedAt: Self.epoch,
+                 title: "", summary: "", tags: [],
+                 items: [NodeItem(id: "seed-cap-text", type: .text, createdAt: Self.epoch,
+                                  content: "Notes on the pinned capture chrome.")],
+                 entrySchemaVersion: 1)
+        )
         // `-Screen librarian` renders the REAL ContentView; put it on the canvas
         // so the Librarian FloatingPanel is mounted over the map (the panel's real
         // home). `-LibrarianDetent tip|half|full` (handled in ContentView) drives
@@ -597,6 +611,24 @@ struct DebugScreenHost: View {
             router.isCapturing = true
             router.captureNodeID = "seed-0"
             router.captureDraftHasText = false   // empty draft → the "Cancel" state (BUG 9)
+        }
+        // ws-capture-chrome — the WITH-CONTENT capture states at BOTH surfaces, so
+        // the shared Delete pill + equidistant spacing + bottom-pinned chrome are
+        // exercised by the harness (item 4: catch the next divergence here, not on
+        // T's device). `quikcapturefull` = QuikCapture; `capturemodefull` = the
+        // detail-view capture mode. Both point at `seed-cap` (has content → Delete
+        // shows). `-CaptureKeyboard YES` additionally raises the keyboard to verify
+        // the pin holds UNDER it.
+        if screen == "quikcapturefull" {
+            router.entryMode = .quikCapture
+            router.captureNodeID = "seed-cap"
+        }
+        if screen == "capturemodefull" {
+            router.isCapturing = true
+            router.captureNodeID = "seed-cap"
+        }
+        if UserDefaults.standard.bool(forKey: "CaptureKeyboard") {
+            store.pendingAutoFocusItemID = "seed-cap-text"
         }
 
         // Chat content for `chatview` (and the Librarian if it surfaces the
@@ -641,6 +673,8 @@ struct DebugScreenHost: View {
         case "librarian":        ContentView()   // real app → canvas + Librarian panel
         case "quikcapture":      ContentView()   // real app → QuikCapture surface
         case "capturemode":      NavigationStack { NodeDetailView(nodeID: "seed-0") }   // capture-mode note editor (BUG 9)
+        case "quikcapturefull":  ContentView()   // QuikCapture WITH content → Delete pill + pinned chrome
+        case "capturemodefull":  NavigationStack { NodeDetailView(nodeID: "seed-cap") }   // detail capture WITH content
         case "chatview":         NavigationStack { ChatView() }   // real chat transcript
         default:                 Text("unknown -Screen: \(screen)")
         }

@@ -24,19 +24,6 @@ struct QuikCaptureView: View {
     /// `createCaptureNode()` returns.
     @State private var nodeID: String? = nil
 
-    // MARK: - Capture-chrome layout dials
-
-    /// Capture-chrome layout dials (T's eye is the spec — nudge these).
-    private enum CaptureChrome {
-        static let buttonSize: CGFloat = 48
-        static let buttonSpacing: CGFloat = 10   // tightened so the pill fits the row
-        static let barHPadding: CGFloat = 20
-        static let barBottomPadding: CGFloat = 10
-        /// Extra lift for the pill while the keyboard is up, so it clears the
-        /// rich-text formatting toolbar (a 56pt `inputAccessoryView`).
-        static let keyboardToolbarClearance: CGFloat = 56
-    }
-
     /// Whether anything has actually been captured yet (drives the "Done"
     /// control's appearance — it shows once there's something to keep). The
     /// fresh node opens with one empty text item; a non-empty note or any
@@ -61,7 +48,6 @@ struct QuikCaptureView: View {
     @State private var captureMode: CaptureMode? = nil
     @State private var showingNewTagSheet = false
     @State private var showingNewCollectionSheet = false
-    @State private var keyboardVisible = false
     @State private var showLinkAddAlert = false
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
@@ -73,6 +59,12 @@ struct QuikCaptureView: View {
     /// the modal entirely (`addDocumentEntry` runs directly).
     @State private var pendingDocumentURLs: [URL] = []
     @State private var showDocumentAppendModal = false
+
+    /// Keyboard visibility (drives the bottom reservation: bar height when down, a
+    /// small caret margin when up) and the pinned bar's MEASURED height (item 1 —
+    /// the reservation that keeps content clear of the bar).
+    @State private var keyboardVisible = false
+    @State private var barHeight: CGFloat = 0
 
     // THE LEVER — Stage 2c. Reuses `LeverButton` + the existing `LeverTray`; the
     // circle spans the MEASURED height of the two chip lanes (same `LaneStackHeightKey`
@@ -369,69 +361,61 @@ struct QuikCaptureView: View {
             .dismissKeyboardOnTapOutside()
             }
         }
-        // Capture chrome — the four entry-type circles + the Cancel/Done
-        // pill, always shown. `safeAreaInset` gets keyboard avoidance so the
-        // bar rides above the keyboard with the note live.
-        .safeAreaInset(edge: .bottom) {
-            captureChrome(node: node)
+        // Item 1 — reserve the pinned bar's MEASURED height so scroll content never
+        // sits under it (keyboard DOWN). Keyboard UP → reserve only a small caret
+        // margin (item 2), NOT the bar height: content already avoids the keyboard
+        // and the bar is behind it, so adding the bar height too would double-count.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: keyboardVisible ? CaptureChromeMetrics.caretBottomMargin : barHeight)
         }
         // Matched-gray detail surface: same warm tone as the note panel.
         .background { AppearancePalette.bgBase.ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
         } // close ZStack
         } // close GeometryReader
-    }
-
-    // MARK: - Capture chrome
-
-    /// The capture bar: the four primitive-type circles (Voice / Camera /
-    /// Document / Link) in thumb reach, plus a state-driven Cancel/Done pill
-    /// at the far right. The note itself (tap for text) and the PastePad
-    /// live in the scroll content.
-    ///
-    /// Pill: one button, two truths. Empty session → **Cancel** (bail,
-    /// discard the blank node). Any content → **Done** (exit to Recents,
-    /// node already persisted).
-    @ViewBuilder
-    private func captureChrome(node: Node) -> some View {
-        let hasContent = hasCaptured(node) || router.captureDraftHasText
-        HStack(spacing: CaptureChrome.buttonSpacing) {
-            captureTypeButton(symbol: "waveform", label: "Voice") { captureMode = .voice }
-            captureTypeButton(symbol: "camera.fill", label: "Camera") { captureMode = .camera }
-            captureTypeButton(symbol: "doc.fill", label: "Document") { showDocumentPicker = true }
-            captureTypeButton(symbol: "link", label: "Link") {
-                linkDraft = ""
-                showLinkAddAlert = true
+        // Capture chrome — SHARED `CaptureChromeBar`, applied to the OUTERMOST
+        // GeometryReader (NOT the inner ScrollView): the GeometryReader is what
+        // shrinks under the keyboard, so `.pinnedCaptureBar` (which ignores the
+        // keyboard safe area) must wrap IT to keep the surface full-height and the
+        // bar docked at the bottom while the keyboard passes over. The four
+        // primitives are QuikCapture-specific and passed as the leading slot.
+        .pinnedCaptureBar(height: $barHeight) {
+            CaptureChromeBar(
+                hasContent: hasCaptured(node) || router.captureDraftHasText,
+                onDone: { doneCapture() },
+                onDiscard: { cancelCapture() }
+            ) {
+                // The primitives — and ONLY the primitives — sit inside the muted
+                // pill (`.capturePrimitivesContainer`). The action pills stay bare in
+                // the shared bar. The detail surface passes nothing here, so it gets
+                // no container at all.
+                HStack(spacing: CaptureChromeMetrics.primitiveSpacing) {
+                    captureTypeButton(symbol: "waveform", label: "Voice") { captureMode = .voice }
+                    captureTypeButton(symbol: "camera.fill", label: "Camera") { captureMode = .camera }
+                    captureTypeButton(symbol: "doc.fill", label: "Document") { showDocumentPicker = true }
+                    captureTypeButton(symbol: "link", label: "Link") {
+                        linkDraft = ""
+                        showLinkAddAlert = true
+                    }
+                }
+                .capturePrimitivesContainer()
             }
-            Spacer(minLength: 8)
-            Button {
-                if hasContent { doneCapture() } else { cancelCapture() }
-            } label: {
-                Text(hasContent ? "Done" : "Cancel")
-                    .font(.headline)
-                    .foregroundStyle(hasContent ? AppearancePalette.onInk : AppearancePalette.ink)
-                    .padding(.horizontal, 18)
-                    .frame(height: 44)
-                    .background(hasContent ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.14), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .animation(.easeInOut(duration: 0.2), value: hasContent)
         }
-        .padding(.horizontal, CaptureChrome.barHPadding)
-        // Lift above the rich-text toolbar while writing; sit at the normal
-        // bottom on the launchpad (keyboard down).
-        .padding(.bottom, CaptureChrome.barBottomPadding
-            + (keyboardVisible ? CaptureChrome.keyboardToolbarClearance : 0))
-        .animation(.easeInOut(duration: 0.2), value: keyboardVisible)
     }
 
+    // MARK: - Capture primitives
+
+    /// A capture-type primitive: a plain glyph inside the shared primitives pill.
+    /// Its tap-frame + symbol size DERIVE from `CaptureChromeMetrics.barHeight` (the
+    /// one shared height), not an independent value — the frame fills the pill height,
+    /// the symbol sits inside with breathing room.
     private func captureTypeButton(symbol: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 22, weight: .semibold))
+                .font(.system(size: CaptureChromeMetrics.primitiveGlyphSize, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
-                .frame(width: CaptureChrome.buttonSize, height: CaptureChrome.buttonSize)
-                .background(AppearancePalette.ink.opacity(0.12), in: Circle())
+                .frame(width: CaptureChromeMetrics.primitiveWidth, height: CaptureChromeMetrics.barHeight)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

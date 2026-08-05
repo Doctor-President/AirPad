@@ -1403,6 +1403,39 @@ final class CorpusStore {
         }
     }
 
+    // MARK: - THE LEVER — Stage 2 (accept / ignore a proposal)
+
+    /// Accept a pending proposal: write its text into the user-owned field and
+    /// stamp `.model`, then drop the accepted proposal (one per kind). A later
+    /// user edit flips the source to `.user` via `NodeDetailView.saveIfChanged`,
+    /// so no subsequent pass overwrites it — that guarantee already holds and is
+    /// not reimplemented here. The detail view's `onChange(of: node?.title/summary)`
+    /// syncs the edited field bindings from the store write, so the visible
+    /// TextField updates without the tray touching it.
+    func acceptProposal(nodeID: String, kind: Proposal.Kind) async {
+        await mutateNode(id: nodeID) { n in
+            guard let p = n.proposals?.first(where: { $0.kind == kind && $0.state == .fresh }) else { return }
+            switch kind {
+            case .title:   n.title = p.text;   n.titleSource = .model
+            case .summary: n.summary = p.text; n.summarySource = .model
+            case .tags:    break   // no tag producer in Stage 2 — modeled, never produced
+            }
+            n.proposals?.removeAll { $0.kind == kind }
+            n.updatedAt = Date()
+        }
+    }
+
+    /// Ignore a proposal: mark it `.dismissed` WITHOUT touching the field. Kept
+    /// (not deleted) so its `sourceEmbedding` survives for the Stage 4 drift
+    /// decision; the button and tray count only `.fresh` proposals, so a
+    /// dismissed one stops showing. No `updatedAt` bump — no content changed.
+    func dismissProposal(nodeID: String, kind: Proposal.Kind) async {
+        await mutateNode(id: nodeID) { n in
+            guard let idx = n.proposals?.firstIndex(where: { $0.kind == kind && $0.state == .fresh }) else { return }
+            n.proposals?[idx].state = .dismissed
+        }
+    }
+
     // MARK: - ws-card-catalog step 2c — catalog derivation / embed / backfill
 
     /// Derivation (not authoring): the embedded card text is gist-only,

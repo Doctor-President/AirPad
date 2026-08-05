@@ -80,7 +80,14 @@ enum AuthorshipPosture: String, Codable {
 
     /// ★ THE SEAM. Stage 3 makes this a per-aspect stored setting. Do not read
     /// the posture from anywhere but `AuthorshipPosture.current`.
-    static let current: AuthorshipPosture = .automatic
+    ///
+    /// Stage 2 (T's explicit call): flipped `.automatic` → `.propose`. This is
+    /// the one-line change the Stage 1 seam was built for, and the real
+    /// behaviour change of the stage — blank captures STOP auto-filling; title
+    /// and summary wait for the user to pull the lever. `recordProposal` already
+    /// withholds the write and records the proposal under `.propose`, so nothing
+    /// else in the pipeline changes.
+    static let current: AuthorshipPosture = .propose
 }
 
 extension Node {

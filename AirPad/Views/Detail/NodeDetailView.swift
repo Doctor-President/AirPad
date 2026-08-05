@@ -6,16 +6,6 @@ import UIKit
 import ImageIO
 import ObjectiveC.runtime
 
-/// THE LEVER — Stage 2. Reports the measured combined height of the two chip
-/// lanes so the feather circle can span exactly that (no hardcoded size that
-/// would drift if chip padding changes).
-private struct LaneStackHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// Full node detail view. Entered via NavigationStack zoom transition from the canvas.
 /// All edits auto-save on disappear.
 struct NodeDetailView: View {
@@ -524,7 +514,7 @@ struct NodeDetailView: View {
                 // on collectionsRow), and `chipRowGap` is the gap between the two
                 // lanes (still on tagsRow). Neither spacing value is touched.
                 HStack(alignment: .center, spacing: 12) {
-                    LeverButton(node: node, diameter: laneStackHeight,
+                    LeverButton(nodeID: node.id, diameter: laneStackHeight,
                                 onTap: { showLeverTray = true })
                     VStack(alignment: .leading, spacing: 0) {
                         // Collections (membership chips above tags, mirrors

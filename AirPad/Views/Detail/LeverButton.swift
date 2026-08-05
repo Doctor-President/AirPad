@@ -102,6 +102,17 @@ enum InternalBuild {
     }()
 }
 
+/// Reports the measured combined height of the two chip lanes so the feather
+/// circle can span exactly that (no hardcoded size that would drift if chip
+/// padding changes). Shared by both mount points — `NodeDetailView` and
+/// `QuikCaptureView` (Stage 2c) — so the measurement mechanism isn't duplicated.
+struct LaneStackHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 // MARK: - The button
 
 /// The lever: a feather circle spanning the combined height of the two chip lanes.
@@ -111,10 +122,21 @@ enum InternalBuild {
 /// Glyph is `AirPadLogo` (the Ask feather — nothing on the tip). Stage 2b adds the
 /// shimmer (below).
 struct LeverButton: View {
-    let node: Node
+    /// Stage 2c fix — the button reads the node LIVE from the store by id, NOT
+    /// as a passed-in `Node` VALUE. It used to take `let node: Node`; a proposal
+    /// recorded AFTER this view first rendered (capture-time enrichment lands
+    /// ~0.8s in, WHILE the view is alive) never reached it, because `Node.==` is
+    /// id-only — so SwiftUI's view-diff saw the enriched node as unchanged (same
+    /// id) and skipped the update. Neither the gradient nor the shimmer fired,
+    /// while the tray — which reads the store directly — showed the proposal.
+    /// The asymmetry WAS the bug (button read a frozen prop, tray read the
+    /// store). Reading the `@Observable` store here is the SAME channel the tray
+    /// uses, so button and tray can no longer disagree, at BOTH mount points.
+    let nodeID: String
     let diameter: CGFloat
     let onTap: () -> Void
 
+    @Environment(CorpusStore.self) private var store
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var tuning = LeverShimmerTuning.shared
 
@@ -126,13 +148,20 @@ struct LeverButton: View {
     /// Bumped to play the shimmer once (drives the overlay's keyframe animator).
     @State private var shimmerPlays = 0
 
+    /// Live node from the `@Observable` store, resolved each body pass — the
+    /// same read `LeverTray` does. When enrichment records a proposal it rewrites
+    /// this node in `store.nodes`, which invalidates this body; that is what a
+    /// frozen `Node` prop could not deliver.
+    private var node: Node? { store.nodes.first { $0.id == nodeID } }
+
     /// ★ THE ONE predicate — shared with the gradient fill (and the tray) via
     /// `Node.surfacedProposal`, so shimmer and gradient can never disagree about
     /// whether something is pending. A user-authored field is already excluded
     /// there (an unsolicited proposal on it doesn't surface), so this never fires
     /// for a field the user wrote.
     private var pending: Bool {
-        node.surfacedProposal(kind: .title) != nil
+        guard let node else { return false }
+        return node.surfacedProposal(kind: .title) != nil
             || node.surfacedProposal(kind: .summary) != nil
     }
 
@@ -186,6 +215,17 @@ struct LeverButton: View {
         .onScrollVisibilityChange(threshold: 0.5) { visible in
             isVisible = visible
             attemptShimmer()
+        }
+        // PENDING GATE — the proposal can arrive AFTER first render: on the
+        // capture path the node is saved EMPTY and enrichment lands the proposal
+        // ~0.8s later, while this view is alive. Same shape as the viewport gate
+        // ("not visible yet → fire on scroll-in"): "not pending yet → fire when
+        // it becomes pending," provided the button is visible and hasn't already
+        // shimmered this visit (all re-checked in `attemptShimmer`). Without this
+        // the once-per-visit shimmer only ever armed on a visibility flip, so a
+        // proposal that arrived after the button was already visible got none.
+        .onChange(of: pending) { _, isPending in
+            if isPending { attemptShimmer() }
         }
         // DEBUG replay — the panel re-fires without re-navigating.
         .onChange(of: tuning.replayToken) { _, _ in

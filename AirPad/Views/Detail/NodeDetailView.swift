@@ -41,16 +41,6 @@ struct NodeDetailView: View {
         }
     }
 
-    /// Capture-chrome layout dials (T's eye is the spec — nudge these).
-    private enum CaptureChrome {
-        static let buttonSpacing: CGFloat = 10
-        static let barHPadding: CGFloat = 20
-        static let barBottomPadding: CGFloat = 10
-        /// Extra lift for the pill while the keyboard is up, so it clears the
-        /// rich-text formatting toolbar (a 56pt `inputAccessoryView`).
-        static let keyboardToolbarClearance: CGFloat = 56
-    }
-
     /// "Done" exit: return to the ORIGIN view — wherever capture was summoned
     /// from (Map / List / Grid / Recents / Dashboard). The origin is already the
     /// surface underneath this pushed capture detail (capture never changes
@@ -68,42 +58,10 @@ struct NodeDetailView: View {
         dismiss()
     }
 
-    /// The capture bar: a single state-driven Cancel/Done pill. Entry types
-    /// are added via the node's "+" flyout — the bar stays calm.
-    ///
-    /// Pill: one button, two truths. Empty session → **Cancel** (bail, discard
-    /// the blank node). Any content → **Done** (return to the origin view, node
-    /// captured — focused on return where the origin has a scroll-to-node hook).
-    @ViewBuilder
-    private func captureChrome(node: Node) -> some View {
-        let hasContent = hasCaptured(node) || router.captureDraftHasText
-        HStack(spacing: CaptureChrome.buttonSpacing) {
-            Spacer(minLength: 8)
-            Button {
-                if hasContent { finishCapture(node: node) } else { cancelCapture(nodeID: node.id) }
-            } label: {
-                Text(hasContent ? "Done" : "Cancel")
-                    .font(.headline)
-                    // BUG 9 — was hardcoded `.black`/`.white` literals, so Cancel
-                    // rendered white on parchment in light. Now adaptive, mirroring
-                    // the QuikCapture pill: Done = onInk on an ink pill, Cancel =
-                    // ink on a faint ink pill. Dark byte-identical (onInk dark
-                    // #000000 == .black; ink dark #FFFFFF == .white / Color.white).
-                    .foregroundStyle(hasContent ? AppearancePalette.onInk : AppearancePalette.ink)
-                    .padding(.horizontal, 18)
-                    .frame(height: 44)
-                    .background(hasContent ? AppearancePalette.ink : AppearancePalette.ink.opacity(0.14), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .animation(.easeInOut(duration: 0.2), value: hasContent)
-        }
-        .padding(.horizontal, CaptureChrome.barHPadding)
-        // Lift above the rich-text toolbar while writing; sit at the normal
-        // bottom on the launchpad (keyboard down).
-        .padding(.bottom, CaptureChrome.barBottomPadding
-            + (keyboardVisible ? CaptureChrome.keyboardToolbarClearance : 0))
-        .animation(.easeInOut(duration: 0.2), value: keyboardVisible)
-    }
+    // Capture chrome is the SHARED `CaptureChromeBar` (see the `.pinnedCaptureBar`
+    // mount in `content`). The detail surface passes NO leading primitives (entries
+    // are added via the node's "+" flyout); it gets the same Delete escape hatch +
+    // Cancel/Done morph + bottom pinning as QuikCapture, from one component.
 
     /// Cancel exit: discard the blank node (nothing was captured) and leave
     /// capture mode. The Librarian restores via ContentView on detail-exit.
@@ -144,6 +102,9 @@ struct NodeDetailView: View {
     @State private var showingNewCollectionSheet = false
     @State private var showDeleteConfirmation = false
     @State private var keyboardVisible = false
+    /// The pinned capture bar's MEASURED height (item 1 — drives the capture-mode
+    /// bottom reservation so content never sits under the bar).
+    @State private var barHeight: CGFloat = 0
     @State private var showLinkAddAlert = false
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
@@ -706,15 +667,6 @@ struct NodeDetailView: View {
                     .transition(.opacity)
             }
         }
-        // Capture chrome (QuikCapture stage 1) — type-buttons + Done above the
-        // keyboard while capturing. `safeAreaInset` gets keyboard avoidance so
-        // the bar rides above the keyboard with the note live. Placement is a
-        // first pass — dial via `CaptureChrome`.
-        .safeAreaInset(edge: .bottom) {
-            if isCaptureMode {
-                captureChrome(node: node)
-            }
-        }
         // Stage 2b — shimmer tuner: a small trigger (top-leading, under the chrome)
         // toggles the draggable variant/duration/replay widget so T picks the
         // shimmer KIND in one pass. Gated on `InternalBuild.showsDevTuners` (DEBUG
@@ -740,6 +692,15 @@ struct NodeDetailView: View {
                 ShimmerTuningPanel(isPresented: $showShimmerTuning, position: $shimmerTuningPos)
                     .padding(.bottom, 80)
             }
+        }
+        // Item 1 — in CAPTURE mode, reserve the pinned bar's MEASURED height so
+        // content never sits under it (keyboard DOWN); keyboard UP → a small caret
+        // margin (item 2), NOT the bar height (no double-count). Zero when not
+        // capturing (no bar), so normal detail viewing is unchanged.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear.frame(height: isCaptureMode
+                ? (keyboardVisible ? CaptureChromeMetrics.caretBottomMargin : barHeight)
+                : 0)
         }
         // Matched-gray detail surface: same warm tone as the note panel
         // (`NoteTypography.background` — #1A1A1A dark / white light, adaptive),
@@ -976,6 +937,23 @@ struct NodeDetailView: View {
         } // close GlassRowContainer
         } // close ZStack
         } // close GeometryReader
+        // Capture chrome — SHARED `CaptureChromeBar`, applied to the OUTERMOST
+        // GeometryReader (the surface that shrinks under the keyboard), so
+        // `.pinnedCaptureBar` docks it at the bottom while content still avoids the
+        // keyboard (note visible) and the format toolbar keeps riding it. Detail
+        // capture has NO leading primitives (entries come from the "+" flyout) —
+        // only the Delete + Cancel/Done pills. Present only in capture mode.
+        .pinnedCaptureBar(height: $barHeight) {
+            if isCaptureMode {
+                CaptureChromeBar(
+                    hasContent: hasCaptured(node) || router.captureDraftHasText,
+                    onDone: { finishCapture(node: node) },
+                    onDiscard: { cancelCapture(nodeID: node.id) }
+                ) {
+                    EmptyView()
+                }
+            }
+        }
         .background {
             // Restores interactive edge-swipe-to-pop killed by
             // `.toolbar(.hidden, for: .navigationBar)`. See SwipeBackProxy.

@@ -4,15 +4,11 @@ import FoundationModels
 // MARK: - SB126 Stage 2 — token instrumentation helper
 
 /// Logs a `[FM][<callSite>] tokens=<n> chars=<m>` line for token-budget
-/// visibility. Apple's FoundationModels SDK does not currently surface a
-/// stable public `tokenCount(for:)` method on `LanguageModelSession` (Xcode
-/// 26.5 beta + iOS 26.4), so the implementation falls back to `prompt.count`
-/// as a chars proxy with `tokens=-1` to mark the gap. When the SDK exposes
-/// the API, swap the body of `measureTokens` to call it and the four call
-/// sites pick up the real numbers without further changes.
+/// visibility. F5b — iOS 26.4 shipped `SystemLanguageModel.tokenCount(for:)`, so
+/// this now logs REAL tokens (was a `prompt.count` char proxy with `tokens=-1`).
 @available(iOS 26.0, *)
-fileprivate func logFMTokens(_ callSite: String, prompt: String) {
-    let tokens = measureTokens(prompt: prompt)
+fileprivate func logFMTokens(_ callSite: String, prompt: String) async {
+    let tokens = await measureTokens(prompt: prompt)
     let chars = prompt.count
     if tokens >= 0 {
         print("[FM][\(callSite)] tokens=\(tokens) chars=\(chars)")
@@ -21,12 +17,14 @@ fileprivate func logFMTokens(_ callSite: String, prompt: String) {
     }
 }
 
-/// Returns the prompt's token count if the SDK exposes one, else -1.
-/// Centralized here so flipping to the real API is a one-line change.
+/// The prompt's real token count via `SystemLanguageModel.tokenCount(for:)`
+/// (iOS 26.4+), else -1 on older OSes or if the count throws. Best-effort — a
+/// logging/measurement aid, never load-bearing.
 @available(iOS 26.0, *)
-fileprivate func measureTokens(prompt: String) -> Int {
-    // No public tokenCount(for:) on LanguageModelSession in the current beta.
-    // When Apple ships one, replace this body with the real call.
+fileprivate func measureTokens(prompt: String) async -> Int {
+    if #available(iOS 26.4, *) {
+        return (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
+    }
     return -1
 }
 
@@ -182,11 +180,11 @@ actor AIService {
     /// prompt and the structured result (`NodeAIResult`). Tier-2 tag assignment
     /// moves to a deferred reflection pass (step 5). `tagVocabulary` is retained
     /// for signature stability with the corpus-aware sibling but is no longer read.
-    func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutput? {
-        guard SystemLanguageModel.default.isAvailable else { return nil }
+    func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutcome {
+        guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
 
         let content = extractContent(from: node)
-        guard !content.isEmpty else { return nil }
+        guard !content.isEmpty else { return .failure(.noContent) }
 
         let prompt = """
         Analyze this captured idea and produce a concise title and summary.
@@ -195,24 +193,22 @@ actor AIService {
         \(content)
         """
 
-        logFMTokens("ProcessNode", prompt: prompt)
+        await logFMTokens("ProcessNode", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: NodeAIResult.self)
             let r = response.content
-            return NodeAIOutput(
+            return .success(NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
                 tags:    [],
                 mood:    nil,
                 domain:  nil,
                 neighborhoodID: nil
-            )
+            ))
         } catch {
             print("[FM][processNode] FAILURE: \(error)")
-            print("[FM][processNode] Error type: \(type(of: error))")
-            print("[FM][processNode] Localized: \(error.localizedDescription)")
-            return nil
+            return .failure(await nodeFailure(from: error, prompt: prompt))
         }
     }
 
@@ -228,11 +224,11 @@ actor AIService {
         neighborhoodDigests: [NeighborhoodDigest],
         tagDigests: [TagDigest],
         fullVocabulary: [String]
-    ) async -> NodeAIOutput? {
-        guard SystemLanguageModel.default.isAvailable else { return nil }
+    ) async -> NodeAIOutcome {
+        guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
 
         let raw = extractContent(from: node)
-        guard !raw.isEmpty else { return nil }
+        guard !raw.isEmpty else { return .failure(.noContent) }
         // ~4 chars per token proxy; truncate at ~3200 chars (≈800 tokens) so the
         // node-content slice stays inside its allocation in the token budget.
         let content: String
@@ -306,26 +302,45 @@ actor AIService {
         \(vocabLine)
         """
 
-        logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
+        await logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: ProcessNodeResult.self)
             let r = response.content
             let nbhd = r.neighborhoodID.trimmingCharacters(in: .whitespacesAndNewlines)
-            return NodeAIOutput(
+            return .success(NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
                 tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
                 mood:    r.mood.isEmpty ? nil : r.mood,
                 domain:  r.domain.isEmpty ? nil : r.domain,
                 neighborhoodID: nbhd.isEmpty ? nil : nbhd
-            )
+            ))
         } catch {
             print("[FM][processNodeCorpusAware] FAILURE: \(error)")
-            print("[FM][processNodeCorpusAware] Error type: \(type(of: error))")
-            print("[FM][processNodeCorpusAware] Localized: \(error.localizedDescription)")
-            return nil
+            return .failure(await nodeFailure(from: error, prompt: prompt))
         }
+    }
+
+    /// F4/F5b — turn a thrown FM error into a `NodeAIFailure`. The ONE recognised
+    /// case is `GenerationError.exceededContextWindowSize` (plainly distinguishable,
+    /// and actionable): carry the real `SystemLanguageModel` token / context
+    /// numbers so the tray can explain the SHARED window. Everything else —
+    /// refusals (`GenerationError.refusal`; this SDK has NO `LanguageModelError`),
+    /// decode failures, etc. — carries the error's OWN description verbatim, the
+    /// same derivation the chat surface uses. Do NOT re-add a bucketing classifier.
+    private func nodeFailure(from error: any Error, prompt: String) async -> NodeAIFailure {
+        if let g = error as? LanguageModelSession.GenerationError,
+           case .exceededContextWindowSize = g {
+            var tokens = -1
+            if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+                tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
+            }
+            return .contextOverflow(promptTokens: tokens,
+                                    contextSize: SystemLanguageModel.default.contextSize)
+        }
+        let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        return .failed(message: message)
     }
 
     /// Generates a structured corpus summary from the current index. Returns nil if the
@@ -383,7 +398,7 @@ actor AIService {
         \(topTags)
         """
 
-        logFMTokens("GenerateCorpusSummary", prompt: prompt)
+        await logFMTokens("GenerateCorpusSummary", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: CorpusSummaryResult.self)
@@ -440,7 +455,7 @@ actor AIService {
         Write a 1-2 sentence description (under ~80 tokens) capturing what unifies these ideas.
         Be concrete and specific to the actual content; avoid generic filler.
         """
-        logFMTokens("CharacterizeNeighborhood", prompt: prompt)
+        await logFMTokens("CharacterizeNeighborhood", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: NeighborhoodCharacterization.self)
@@ -484,7 +499,7 @@ actor AIService {
 
         Output a 2-4 word name that's distinct from the sibling names. Output only the name itself.
         """
-        logFMTokens("NameNeighborhood", prompt: prompt)
+        await logFMTokens("NameNeighborhood", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: NeighborhoodNaming.self)
@@ -528,7 +543,7 @@ actor AIService {
         \(truncated)
         """
 
-        logFMTokens("ProcessSubstrate", prompt: prompt)
+        await logFMTokens("ProcessSubstrate", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: SubstrateInterpretation.self)
@@ -617,7 +632,7 @@ actor AIService {
         Tags to compare: \(vocabLine)
         Respond ONLY with a JSON array. Example: [{"tag": "French Cooking", "score": 0.87}]
         """
-        logFMTokens("ComputeTagSimilarity", prompt: prompt)
+        await logFMTokens("ComputeTagSimilarity", prompt: prompt)
         do {
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt)
@@ -697,4 +712,43 @@ struct NodeAIOutput {
     /// legacy `processNode`. Stored on the node as metadata; not consumed in
     /// Stage 2 itself.
     let neighborhoodID: String?
+}
+
+// MARK: - THE LEVER — Stage 2 F3 · typed generate outcome
+
+/// Why a node's title/summary generation produced nothing. A bare `nil` used to
+/// collapse every reason into one silent failure. Deliberately PLAIN — it carries
+/// NO FoundationModels types — so the reason can surface all the way to the tray.
+///
+/// ★ F4 AMENDED (2026-08-04): do NOT re-classify framework throws into AirPad
+/// buckets — CLASSIFICATION is what lost the information. The chat surface shows
+/// the framework's own message ("Exceeded model context window size") because it
+/// displays what it is handed; the tray now does the same. Only `unavailable` and
+/// `noContent` stay typed — those are AirPad's OWN conditions, not the
+/// framework's — and everything the session throws renders its own text verbatim.
+enum NodeAIFailure: Equatable {
+    /// AirPad's own condition — the on-device model isn't available.
+    case unavailable
+    /// AirPad's own condition — nothing to extract from the node.
+    case noContent
+    /// The ONE framework case we recognise — `GenerationError.exceededContextWindowSize`.
+    /// It is plainly distinguishable (amendment) and actionable, so we carry the
+    /// measured numbers and explain the SHARED input+output window in copy: a
+    /// prompt that "fits" can still overflow because the reply has nowhere to go.
+    /// `promptTokens` / `contextSize` are the real `SystemLanguageModel` numbers
+    /// (F5b; -1 if the count was unavailable).
+    case contextOverflow(promptTokens: Int, contextSize: Int)
+    /// Everything else the session throws — carries the error's OWN description
+    /// (same derivation the chat surface uses), shown verbatim. Refusals arrive
+    /// here as `GenerationError.refusal` (there is NO separate `LanguageModelError`
+    /// type in this SDK); `GenerationError: LocalizedError`, so its text renders.
+    case failed(message: String)
+}
+
+/// The result of an authorship FM call: the produced fields, or the reason none
+/// were produced. Replaces the old `NodeAIOutput?` so the caller can tell WHY a
+/// generate came back empty. Node save is still never blocked on this.
+enum NodeAIOutcome {
+    case success(NodeAIOutput)
+    case failure(NodeAIFailure)
 }

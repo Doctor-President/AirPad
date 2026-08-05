@@ -4450,17 +4450,29 @@ final class CorpusStore {
     ///     Substrate computation is unconditional (governed by
     ///     `FeatureFlags.substrateOnCapture`, not by this flag); the flag is
     ///     carried for the seam and the diagnostic only.
+    ///   - solicited: Stage 2 F2 — the user explicitly asked (tapped the tray's
+    ///     generate). Passes through to `recordProposal`, opening the
+    ///     user-beats-model gate for PROPOSAL RECORDING ONLY (never the write).
+    ///     Defaults `false`: every unsolicited path (enrichment, batch import,
+    ///     substrate refires) keeps the gate at full strength. ONLY the tray sets
+    ///     it true. "Consent comes from initiating."
+    /// - Returns: `nil` when authorship succeeded (proposals recorded / fields
+    ///   written) or the call was a no-op; a `NodeAIFailure` (F3) when the
+    ///   authorship FM produced nothing, so the tray's generate can say WHY.
+    ///   `@discardableResult` — every unsolicited caller ignores it.
+    @discardableResult
     func processNodeWithAI(nodeID: String,
                            suppressTagSheet: Bool = false,
                            forceCorpusAware: Bool? = nil,
                            needsAuthorship: Bool = true,
-                           needsSubstrate: Bool = true) async {
-        print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate)")
+                           needsSubstrate: Bool = true,
+                           solicited: Bool = false) async -> NodeAIFailure? {
+        print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) solicited=\(solicited)")
         guard #available(iOS 26.0, *) else {
             print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
-            return
+            return .unavailable
         }
-        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
 
         let currentTags = tags
         let aiSvc = AIService()
@@ -4473,26 +4485,33 @@ final class CorpusStore {
         // neighborhood id.
         let useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
         let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
-        let aiResult: NodeAIOutput?
+        let aiOutcome: NodeAIOutcome
         bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
         if useCorpusAware {
             let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
             let tagDigests = topTagsForProcessNode(N: 12)
             let vocabulary = currentTags.map { $0.name }
             print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
-            aiResult = await aiSvc.processNodeCorpusAware(
+            aiOutcome = await aiSvc.processNodeCorpusAware(
                 node: node,
                 neighborhoodDigests: neighborhoodDigests,
                 tagDigests: tagDigests,
                 fullVocabulary: vocabulary
             )
         } else {
-            aiResult = await aiSvc.processNode(node, tagVocabulary: currentTags)
+            aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags)
         }
-        bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) nil=\(aiResult == nil) summaryLen=\(aiResult?.summary.count ?? -1) titleLen=\(aiResult?.title.count ?? -1)")
-        guard let result = aiResult else {
-            // AI unavailable — apply a fallback title from raw content so the node
-            // isn't blank. Race-safe read-modify-write; never touches `.items`.
+        // F3 — a failed authorship call no longer collapses into a bare nil: the
+        // reason travels back so the tray can say which one it was.
+        let result: NodeAIOutput
+        switch aiOutcome {
+        case .success(let r):
+            result = r
+            bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
+        case .failure(let reason):
+            bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
+            // Fallback title from raw content so the node isn't blank (unchanged).
+            // Race-safe read-modify-write; never touches `.items`.
             await mutateNode(id: nodeID) { n in
                 let fallback = n.items.compactMap { item -> String? in
                     switch item.type {
@@ -4507,7 +4526,7 @@ final class CorpusStore {
                 }
                 n.needsAIProcessing = false
             }
-            return
+            return reason
         }
 
         // ws-card-catalog Change A — the FM/substrate write is the worst clobber
@@ -4518,7 +4537,7 @@ final class CorpusStore {
         // fields), then persist via `mutateNode` — a FRESH read — re-applying ONLY
         // the FM-authored fields, with the source gates re-checked against the
         // fresh node. `.items` and every user-owned field come from the fresh read.
-        guard var working = nodes.first(where: { $0.id == nodeID }) else { return }
+        guard var working = nodes.first(where: { $0.id == nodeID }) else { return nil }
         if FeatureFlags.substrateOnCapture {
             // SB139 Stage 1 — one FM call → summary + folksonomy, then three
             // NLContextualEmbedding vectors. Mutates only substrate fields.
@@ -4546,14 +4565,16 @@ final class CorpusStore {
             if n.recordProposal(kind: .title, text: result.title,
                                 currentSource: n.titleSource,
                                 sourceEmbedding: sourceEmbedding,
-                                posture: posture, generatedAt: generatedAt) {
+                                posture: posture, generatedAt: generatedAt,
+                                solicited: solicited) {
                 n.title = result.title
                 n.titleSource = .model
             }
             if n.recordProposal(kind: .summary, text: result.summary,
                                 currentSource: n.summarySource,
                                 sourceEmbedding: sourceEmbedding,
-                                posture: posture, generatedAt: generatedAt) {
+                                posture: posture, generatedAt: generatedAt,
+                                solicited: solicited) {
                 n.summary = result.summary
                 n.summarySource = .model
             }
@@ -4604,6 +4625,7 @@ final class CorpusStore {
         if !suppressTagSheet, #available(iOS 17.0, *) {
             refreshSubstrateThreadCandidates()
         }
+        return nil   // F3 — authorship succeeded (proposals recorded / fields written)
     }
 
     /// One-time migration: re-runs AI processing on nodes that have empty tag

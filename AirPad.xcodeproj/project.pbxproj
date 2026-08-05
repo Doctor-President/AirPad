@@ -114,6 +114,7 @@
 		6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729D9028EBF447A0241ABFD /* KeychainHelper.swift */; };
 		6BAF912AA3AF57ED9A6F600B /* NodeGridTileTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */; };
 		6DA9E5E14E071618E0AEB602 /* PhotosUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0EAE9B78BB325C211A14551B /* PhotosUI.framework */; };
+		6F98C9A9D3DA0E6A178A022B /* FMFailureBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */; };
 		6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F135F708282671E607C7C84B /* RichTextEditor.swift */; };
 		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
 		729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F103085E0B3E0A4D0FAF79EC /* TagPickerMenu.swift */; };
@@ -232,6 +233,7 @@
 		D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
+		DCBC7827653EB1DD100A5A46 /* LeverTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F51F2790A2E3165CF44645 /* LeverTray.swift */; };
 		DD5A3F5D7E79BF3FCF6DE55D /* FieldValueEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */; };
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
 		DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */; };
@@ -354,6 +356,7 @@
 		4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockEmbeddingService.swift; sourceTree = "<group>"; };
 		4339BD7FF5450195EDF70A95 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		43F3E1E7BAA3B3C7B463E5D7 /* WordPieceTokenizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WordPieceTokenizer.swift; sourceTree = "<group>"; };
+		43F51F2790A2E3165CF44645 /* LeverTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeverTray.swift; sourceTree = "<group>"; };
 		4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesisService.swift; sourceTree = "<group>"; };
 		45A1B85265CDBCD7A2E66288 /* VerticalScrollView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VerticalScrollView.swift; sourceTree = "<group>"; };
 		463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RejectedBlock.swift; sourceTree = "<group>"; };
@@ -423,6 +426,7 @@
 		8BDD458C42AD717CBB2269BE /* ReviewQueueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewQueueSheet.swift; sourceTree = "<group>"; };
 		8BF1D622AE4FE341F4039341 /* LinkAppendSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkAppendSheet.swift; sourceTree = "<group>"; };
 		8C73593D5F5CF884769506DE /* BGEMicro.mlpackage */ = {isa = PBXFileReference; path = BGEMicro.mlpackage; sourceTree = "<group>"; };
+		8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FMFailureBanner.swift; sourceTree = "<group>"; };
 		8E377DA84FC9332E02C687FB /* ChatTranscript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTranscript.swift; sourceTree = "<group>"; };
 		8E4F251A686080806C62E071 /* NodeItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItem.swift; sourceTree = "<group>"; };
 		8EA8C82636A7D9E2E115A203 /* AVKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVKit.framework; path = System/Library/Frameworks/AVKit.framework; sourceTree = SDKROOT; };
@@ -710,6 +714,7 @@
 				2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */,
 				217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */,
 				FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */,
+				43F51F2790A2E3165CF44645 /* LeverTray.swift */,
 				3A582AE8DB1D9CEB0084017C /* LongPressDragRecognizer.swift */,
 				E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */,
 				88A13C2113DC9781B455DF42 /* PastePadView.swift */,
@@ -1006,6 +1011,7 @@
 				5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */,
 				B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */,
 				2D22141DDFC181FE31634680 /* CaretMeasure.swift */,
+				8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */,
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
 				497A2D223E494E948D445DFF /* NodeGradientBackground.swift */,
 				BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */,
@@ -1294,6 +1300,7 @@
 				05B10604308289E3B1B57BC2 /* EntryMigrationSelfTest.swift in Sources */,
 				FCF0EF49EFC72072CD23BFC4 /* EntryReorderController.swift in Sources */,
 				37C96334FF2E680609216C38 /* EntryVisualSettings.swift in Sources */,
+				6F98C9A9D3DA0E6A178A022B /* FMFailureBanner.swift in Sources */,
 				2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */,
 				3437F7F4A49EF84BA0BCB836 /* FieldCreationSheet.swift in Sources */,
 				53C50184B3A475F62CC9BDE2 /* FieldDefinition.swift in Sources */,
@@ -1321,6 +1328,7 @@
 				5A4ACFE6BDA35A2F9B792DDD /* KeyboardDismissModifier.swift in Sources */,
 				6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */,
 				F80AAF8B81F515034F4CAE93 /* LayoutService.swift in Sources */,
+				DCBC7827653EB1DD100A5A46 /* LeverTray.swift in Sources */,
 				62343BA6D7974D3B5B7001CF /* LibrarianFloatingPanel.swift in Sources */,
 				3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */,
 				BE627965C351C4931B1BB439 /* LibrarianSheetDetentState.swift in Sources */,

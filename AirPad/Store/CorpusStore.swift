@@ -788,6 +788,11 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-ProposalSelfTest") {
                     NSLog("[ProposalSelfTest] %@", ProposalSelfTest.run())
                 }
+                // THE LEVER — Stage 2b. Pure firing/variant-resolution self-test
+                // for the shipped-empty state (config-independent logic).
+                if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
+                    NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
+                }
                 if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
                     let defs = FieldValueSelfTest.fixtureDefinitions()
                     fieldDefinitions = defs

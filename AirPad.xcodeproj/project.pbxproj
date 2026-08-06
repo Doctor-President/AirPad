@@ -59,6 +59,7 @@
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
 		334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */; };
+		33C8BC43E31A449E6C51EB3E /* TagPhraseExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA5777E5BBBA04E5A5BA75C /* TagPhraseExtractor.swift */; };
 		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
 		3437F7F4A49EF84BA0BCB836 /* FieldCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */; };
 		348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */; };
@@ -454,6 +455,7 @@
 		9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterRegistry.swift; sourceTree = "<group>"; };
 		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Regular.ttf"; sourceTree = "<group>"; };
+		9EA5777E5BBBA04E5A5BA75C /* TagPhraseExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPhraseExtractor.swift; sourceTree = "<group>"; };
 		A1213E716A9E302D0B777EDD /* EntryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryCard.swift; sourceTree = "<group>"; };
 		A33874916B1B3854F08227C7 /* fraunces_msdf.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = fraunces_msdf.png; sourceTree = "<group>"; };
 		A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardEmbeddingParityTest.swift; sourceTree = "<group>"; };
@@ -678,6 +680,7 @@
 				5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */,
 				AA69D329E4CBB77BDB1B9345 /* SubstrateService.swift */,
 				FE1EBAEDC8000E69D6FA9699 /* TagNormalization.swift */,
+				9EA5777E5BBBA04E5A5BA75C /* TagPhraseExtractor.swift */,
 				9C20470AE11E1FAF10AF1071 /* TagSuggestionService.swift */,
 				219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */,
 				B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */,
@@ -1431,6 +1434,7 @@
 				8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */,
 				AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */,
 				D59B7E82494872EC3E65FC2D /* TagNormalization.swift in Sources */,
+				33C8BC43E31A449E6C51EB3E /* TagPhraseExtractor.swift in Sources */,
 				729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */,
 				AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */,
 				C903E8B2386E55E01245428C /* TagSelectionSheet.swift in Sources */,

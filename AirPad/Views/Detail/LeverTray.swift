@@ -11,8 +11,13 @@ import SwiftUI
 /// for that row alone) or a GENERATE action that asks for one. Same surface,
 /// same grammar, whether the system got there first or the user did.
 ///
-/// ★ No tags row (no producer — a permanently-dead row is worse than an absent
-/// one). ★ No badge count. ★ Selective per row, never all-or-nothing.
+/// ★ THE TAGS ROW (ws-lever.md § C3, Step 1 "already yours"): now present, gated
+/// on a real producer — the deterministic node-local matcher
+/// (`store.tagSuggestions(forNodeID:)`). UNLIKE title/summary (one proposal, all
+/// or nothing) it is SEVERAL candidate tags, each independently accept/dismiss.
+/// Accept reuses the existing add-tag path; dismiss persists so the tag isn't
+/// offered for THIS node again. Empty is a real row ("nothing to suggest"), not a
+/// missing one. ★ No badge count. ★ Selective per row, never all-or-nothing.
 struct LeverTray: View {
     let nodeID: String
 
@@ -26,6 +31,13 @@ struct LeverTray: View {
     /// One FM call does both aspects, so one reason covers the tray. Cleared at
     /// the start of every generate.
     @State private var failure: NodeAIFailure?
+
+    /// THE TAG PRODUCER — Step 1 (§ C3). Candidate tags THIS node's folksonomy is
+    /// close to, computed on demand (never a sweep). Held locally so accept /
+    /// dismiss can drop a chip without a re-query. `tagsLoaded` gates loading vs
+    /// empty-vs-populated so the empty state doesn't flash before the async match.
+    @State private var tagSuggestions: [TagSuggestion] = []
+    @State private var tagsLoaded = false
 
     private var node: Node? { store.nodes.first { $0.id == nodeID } }
 
@@ -55,11 +67,16 @@ struct LeverTray: View {
                     Divider().overlay(AppearancePalette.ink.opacity(0.12))
                     aspectRow(node: node, kind: .summary, label: "Summary",
                               current: node.summary)
+                    Divider().overlay(AppearancePalette.ink.opacity(0.12))
+                    tagsSection
                 }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // On-demand match for THIS node only (§ C2 — never a corpus sweep). Keyed
+        // on nodeID so re-opening the tray on a different node re-matches.
+        .task(id: nodeID) { await loadTagSuggestions() }
         // OPENS partial (`.height(360)`) so title / summary / chips stay visible
         // above, but is DRAGGABLE TO FULL — the grabber implies drag and the
         // content overflows a low detent. ★ § "Tap → a PARTIAL-HEIGHT SHEET" is
@@ -169,6 +186,124 @@ struct LeverTray: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: - Tags (§ C3 — the "already yours" row)
+
+    /// SEVERAL candidate tags, each independently acceptable or dismissable —
+    /// deliberately a different shape from the title / summary blocks above (which
+    /// are ONE proposal, accept-or-ignore). Loading → a quiet spinner; empty → a
+    /// real "nothing to suggest" row (§ C3, not a missing row); matches → outlined
+    /// chips (see `suggestionChip` for the applied-vs-suggested distinction).
+    @ViewBuilder
+    private var tagsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("TAGS")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+
+            if !tagsLoaded {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Looking for tags you already use…")
+                        .font(.subheadline)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+            } else if tagSuggestions.isEmpty {
+                // A real row, not a missing one (§ C3): ~37% of the corpus has no
+                // folksonomy, and a node with folksonomy can still match nothing.
+                Text("Nothing to suggest here.")
+                    .font(.subheadline)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            } else {
+                TagFlowLayout(spacing: 8) {
+                    ForEach(tagSuggestions) { suggestionChip($0) }
+                }
+            }
+        }
+    }
+
+    /// One suggested tag. OUTLINED (not filled) so it reads as "available, not yet
+    /// yours" against the FILLED applied chips in the detail view — tags are
+    /// reached for, not announced (§ C2). A leading ＋ is the accept affordance;
+    /// tapping it attaches the tag via the existing add-tag path. A trailing ✕
+    /// dismisses it for this node.
+    @ViewBuilder
+    private func suggestionChip(_ s: TagSuggestion) -> some View {
+        let color = tagColor(s.name)
+        HStack(spacing: 5) {
+            Button {
+                Task { await accept(s) }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(s.name)
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await dismissSuggestion(s) }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .overlay(Capsule().stroke(color.opacity(0.6), lineWidth: 1.5))
+        .contentShape(Capsule())
+    }
+
+    /// The tag's own color from the vocabulary (same source as `TagChip`); gray if
+    /// the tag isn't found (it always should be — suggestions are drawn FROM the
+    /// tag set).
+    private func tagColor(_ name: String) -> Color {
+        if let tag = store.tags.first(where: { $0.name == name }) {
+            return Color(hex: tag.colorHex) ?? .gray
+        }
+        return .gray
+    }
+
+    private func loadTagSuggestions() async {
+        tagsLoaded = false
+        #if DEBUG
+        // Sim fixture: `CardEmbeddingService`'s `.all` compute units return ZEROS
+        // on the Simulator (Step 0 finding), so the real matcher yields nothing
+        // there. `-TagSuggestFixture` seeds canned chips so the row renders for a
+        // device-parity screenshot. Off by default; never runs on device.
+        if ProcessInfo.processInfo.arguments.contains("-TagSuggestFixture") {
+            tagSuggestions = [
+                TagSuggestion(name: "creativity", score: 0.94),
+                TagSuggestion(name: "organization", score: 0.87),
+                TagSuggestion(name: "growth", score: 0.83),
+            ]
+            tagsLoaded = true
+            return
+        }
+        #endif
+        tagSuggestions = await store.tagSuggestions(forNodeID: nodeID)
+        tagsLoaded = true
+    }
+
+    /// Accept → attach via the SINGLE add-tag path (§ C3 — no second attach
+    /// written), then drop the chip. The detail view's own tag row picks the new
+    /// tag up from the store.
+    private func accept(_ s: TagSuggestion) async {
+        await store.addTag(s.name, toNodes: [nodeID])
+        tagSuggestions.removeAll { $0.id == s.id }
+    }
+
+    /// Dismiss → persist so this tag isn't offered for this node again (§ C3),
+    /// then drop the chip.
+    private func dismissSuggestion(_ s: TagSuggestion) async {
+        await store.dismissTagSuggestion(nodeID: nodeID, tagName: s.name)
+        tagSuggestions.removeAll { $0.id == s.id }
+    }
+
     // MARK: - Generate
 
     /// Route through the existing `processNodeWithAI` path. Under `.propose`,
@@ -209,6 +344,55 @@ struct LeverTray: View {
             return "This note fills the model's context window, leaving no room for a reply."
         case .failed(let msg):
             return msg
+        }
+    }
+}
+
+// MARK: - Flow layout
+
+/// Wrapping row layout for the suggestion chips — several small chips flowing to
+/// the next line, distinct from the stacked title/summary blocks. (Mirrors the
+/// `FlowLayout` in `TagCreationSheet`; kept file-private here so the tray is
+/// self-contained.)
+private struct TagFlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var height: CGFloat = 0
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if rowWidth + size.width + (rowWidth > 0 ? spacing : 0) > maxWidth {
+                height += rowHeight + spacing
+                rowWidth = size.width
+                rowHeight = size.height
+            } else {
+                rowWidth += size.width + (rowWidth > 0 ? spacing : 0)
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+        height += rowHeight
+        return CGSize(width: maxWidth == .infinity ? rowWidth : maxWidth, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
         }
     }
 }

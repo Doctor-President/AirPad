@@ -131,7 +131,7 @@ struct RichTextEditor: UIViewRepresentable {
     /// against the app's dark chrome.
     private static var defaultTypingAttributes: [NSAttributedString.Key: Any] {
         [
-            .font: UIFont.preferredFont(forTextStyle: .body),
+            .font: NoteTypographyHelper.bodyFont,
             .foregroundColor: UIColor.white
         ]
     }
@@ -1244,22 +1244,14 @@ struct RichTextEditor: UIViewRepresentable {
 
             // Update typingAttributes so the next keystroke inherits the new style.
             var typing = textView.typingAttributes
-            let existingFont = (typing[.font] as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+            let existingFont = (typing[.font] as? UIFont) ?? NoteTypographyHelper.bodyFont
             let italic = existingFont.fontDescriptor.symbolicTraits.contains(.traitItalic)
             if let level {
                 typing[.airpadHeadingLevel] = level.rawValue
-                let base = level.font
-                if italic,
-                   let desc = base.fontDescriptor.withSymbolicTraits(
-                    base.fontDescriptor.symbolicTraits.union(.traitItalic)
-                   ) {
-                    typing[.font] = UIFont(descriptor: desc, size: base.pointSize)
-                } else {
-                    typing[.font] = base
-                }
+                typing[.font] = NoteTypographyHelper.headingFont(level: level, italic: italic)
             } else {
                 typing.removeValue(forKey: .airpadHeadingLevel)
-                let body = UIFont.preferredFont(forTextStyle: .body)
+                let body = NoteTypographyHelper.bodyFont
                 if italic, let desc = body.fontDescriptor.withSymbolicTraits(.traitItalic) {
                     typing[.font] = UIFont(descriptor: desc, size: body.pointSize)
                 } else {
@@ -1546,7 +1538,7 @@ struct RichTextEditor: UIViewRepresentable {
         }
 
         private func buildBodyFont(bold: Bool, italic: Bool) -> UIFont {
-            let body = UIFont.preferredFont(forTextStyle: .body)
+            let body = NoteTypographyHelper.bodyFont
             var traits: UIFontDescriptor.SymbolicTraits = []
             if bold { traits.insert(.traitBold) }
             if italic { traits.insert(.traitItalic) }
@@ -1637,6 +1629,46 @@ enum RichTextHeadingLevel: Int {
         case .subheading:  return UIFont.systemFont(ofSize: 18, weight: .semibold)
         case .monospaced:  return UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
         }
+    }
+}
+
+// MARK: - Note font construction
+
+/// One source of truth for the fonts the note editor builds. Body font was
+/// previously constructed independently in four places (editor default typing
+/// attrs, decode-path `currentAttrs`, toggle-path `buildBodyFont`, and
+/// `NoteTypography.typingAttributes`); heading-with-italic in two
+/// (`Coordinator.applyHeading` + `MarkdownCodec.applyHeading`). Centralising
+/// both removes the drift (freshly-typed vs loaded text differing) and fixes a
+/// silent italic-on-heading failure — see `headingFont`.
+enum NoteTypographyHelper {
+
+    /// Body font for the editor and decoded text.
+    static var bodyFont: UIFont {
+        UIFont.preferredFont(forTextStyle: .body)
+    }
+
+    /// Heading font at `level`, optionally italic.
+    ///
+    /// The obvious `base.fontDescriptor.withSymbolicTraits(.traitItalic)` — which
+    /// both `applyHeading` sites used — frequently returns `nil` for the non-regular
+    /// system weights headings use (Title `.bold`, Heading/Subheading `.semibold`),
+    /// because the numeric weight isn't carried by the symbolic-trait bitmask. The
+    /// call then silently drops italic. Rebuild the descriptor's `.traits`
+    /// dictionary instead, preserving the concrete weight alongside the italic bit.
+    /// If the platform still can't synthesise the face, `UIFont(descriptor:size:)`
+    /// falls back to the closest match — i.e. the non-italic base, the prior
+    /// behaviour, so this never regresses.
+    static func headingFont(level: RichTextHeadingLevel, italic: Bool) -> UIFont {
+        let base = level.font
+        guard italic else { return base }
+        let descriptor = base.fontDescriptor
+        var symbolic = descriptor.symbolicTraits
+        symbolic.insert(.traitItalic)
+        var traits = (descriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]) ?? [:]
+        traits[.symbolic] = symbolic.rawValue
+        let italicDescriptor = descriptor.addingAttributes([.traits: traits])
+        return UIFont(descriptor: italicDescriptor, size: base.pointSize)
     }
 }
 
@@ -2397,20 +2429,12 @@ enum MarkdownCodec {
     ) {
         guard range.length > 0 else { return }
         attr.addAttribute(.airpadHeadingLevel, value: level.rawValue, range: range)
-        let base = level.font
         attr.enumerateAttribute(.font, in: range, options: []) { value, runRange, _ in
-            let existing = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
+            let existing = (value as? UIFont) ?? NoteTypographyHelper.bodyFont
             let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
-            let final: UIFont
-            if italic,
-               let desc = base.fontDescriptor.withSymbolicTraits(
-                base.fontDescriptor.symbolicTraits.union(.traitItalic)
-               ) {
-                final = UIFont(descriptor: desc, size: base.pointSize)
-            } else {
-                final = base
-            }
-            attr.addAttribute(.font, value: final, range: runRange)
+            attr.addAttribute(.font,
+                              value: NoteTypographyHelper.headingFont(level: level, italic: italic),
+                              range: runRange)
         }
     }
 
@@ -2783,7 +2807,7 @@ enum MarkdownCodec {
     }
 
     private static func currentAttrs(state: DecoderState, code: Bool, linkURL: URL?) -> [NSAttributedString.Key: Any] {
-        let body = UIFont.preferredFont(forTextStyle: .body)
+        let body = NoteTypographyHelper.bodyFont
         let font: UIFont
         if code {
             let mono = UIFont.monospacedSystemFont(ofSize: body.pointSize, weight: state.bold ? .bold : .regular)
@@ -2913,7 +2937,7 @@ enum NoteTypography {
     /// keystrokes render body-styled and in the adaptive foreground.
     static var typingAttributes: [NSAttributedString.Key: Any] {
         [
-            .font: UIFont.preferredFont(forTextStyle: .body),
+            .font: NoteTypographyHelper.bodyFont,
             .foregroundColor: foreground,
             .paragraphStyle: bodyParagraphStyle
         ]

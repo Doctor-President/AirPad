@@ -61,6 +61,20 @@ struct TextEntryBody: View {
                     )
                 }
             },
+            onChecklistMutated: {
+                // A checkbox tap updates the on-screen text but never defocuses
+                // the field, so onEndEditing (the usual save) never fires. Persist
+                // now so the tick survives an immediate app close / relaunch.
+                let text = editingText
+                guard text != (item.content ?? "") else { return }
+                Task {
+                    await store.updateTextItem(
+                        itemID: item.id,
+                        newContent: text,
+                        nodeID: nodeID
+                    )
+                }
+            },
             autoFocusOnAppear: shouldAutoFocus,
             documentStyle: true,
             // Source Serif 4 is the Note typography default (SB121). Lora stays

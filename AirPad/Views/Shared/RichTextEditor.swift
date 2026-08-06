@@ -26,6 +26,12 @@ struct RichTextEditor: UIViewRepresentable {
     var minHeight: CGFloat = 44
     var onBeginEditing: (() -> Void)? = nil
     var onEndEditing: (() -> Void)? = nil
+    /// Fired when a checklist glyph is toggled by a direct tap. A tap is not a
+    /// focus event, so it never reaches `onEndEditing` — the only other save
+    /// trigger — which is why a checkbox tick could be lost if the app was
+    /// closed before the field defocused. Consumers wire this to persist
+    /// immediately. See `Coordinator.toggleChecklistChecked`.
+    var onChecklistMutated: (() -> Void)? = nil
     /// When true, the editor calls `becomeFirstResponder` once on first appearance.
     /// Used by the in-node "+" → Text path so a newly appended empty entry lands
     /// the user directly in the editor with the keyboard up. Consumers should
@@ -1395,6 +1401,10 @@ struct RichTextEditor: UIViewRepresentable {
             // disruptor) must NOT run on a mere toggle.
             refreshActiveState(in: textView, restyle: false)
             pushBinding(from: textView)
+            // A tap toggle never fires onEndEditing (no focus change), so drive
+            // persistence explicitly — otherwise the tick is lost on relaunch if
+            // the app closes before the field defocuses.
+            parent.onChecklistMutated?()
         }
 
         // MARK: Checklist indent / outdent (Stage 2.3 commit 5)

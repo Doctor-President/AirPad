@@ -851,6 +851,11 @@ final class CorpusStore {
         // node has any vectors, the failure was on the FM side, not the
         // embedder load. One-time, idempotent migration.
         migrateEmbedderErrorLabels()
+        // ws-lever.md § C4b — one-time tag de-duplication (AI Ethics twin +
+        // any case-only collisions). Idempotent, run-once flagged; a
+        // collision-free corpus is a no-op. Runs before the substrate mean
+        // recompute below — it only rewrites tag strings, never vectors.
+        await dedupeTagsIfNeeded()
         // SB139 Stage 1 — recompute substrate corpus means from whatever
         // vectors landed in storage. Cheap (one pass over nodes) and avoids
         // persisting means to disk. Skipped silently if iOS < 17.
@@ -4123,6 +4128,86 @@ final class CorpusStore {
             }
         }
         await updateNode(updated)
+    }
+
+    private static let tagDedupeFlagKey = "tagDedupe.v1.done"
+
+    /// ws-lever.md § C4b — ONE-TIME tag de-duplication (T-approved 2026-08-06).
+    /// Collapses tags that fold to the same name IGNORING CASE into a single entry:
+    /// T's `AI Ethics` twin (two `Tag`s, one name) plus any case-only collisions
+    /// that have crept in. Survivor = most-used, tie-break earliest `createdAt`; it
+    /// keeps its spelling AND color, absorbing every loser's node memberships,
+    /// `useCount`, and `tagSources`. Casing is PRESERVED (§ CASING) — nothing is
+    /// lowercased. Idempotent + run-once (a collision-free corpus flips the flag and
+    /// does nothing). Recomputes against the LIVE corpus, so it covers whatever
+    /// duplicates the device actually holds — not just the Jun-18 snapshot.
+    func dedupeTagsIfNeeded() async {
+        guard !UserDefaults.standard.bool(forKey: Self.tagDedupeFlagKey) else { return }
+
+        var groups: [String: [Tag]] = [:]
+        for t in tags { groups[t.name.lowercased(), default: []].append(t) }
+        let collisions = groups.values.filter { $0.count > 1 }
+        guard !collisions.isEmpty else {
+            UserDefaults.standard.set(true, forKey: Self.tagDedupeFlagKey)
+            return
+        }
+
+        for group in collisions {
+            let survivor = group.max {
+                $0.useCount != $1.useCount ? $0.useCount < $1.useCount
+                                           : $0.createdAt > $1.createdAt
+            }!
+            let canonical = survivor.name
+            let losers = group.filter { $0.id != survivor.id }
+
+            // Repoint nodes from each loser SPELLING to the survivor's. Exact-name
+            // twins (loser.name == canonical, e.g. `AI Ethics`) need no node work —
+            // the string already matches; only the vocabulary entry collapses.
+            let renamable = Set(losers.map(\.name)).subtracting([canonical])
+            if !renamable.isEmpty {
+                for index in nodes.indices
+                where nodes[index].tags.contains(where: { renamable.contains($0) }) {
+                    var node = nodes[index]
+                    // Never downgrade a .user / .promoted membership to .model.
+                    var strongest = node.tagSources[canonical]?.source
+                    for old in renamable {
+                        if let s = node.tagSources[old]?.source {
+                            strongest = Self.strongerTagSource(strongest, s)
+                        }
+                        node.tags.removeAll { $0 == old }
+                        node.tagSources.removeValue(forKey: old)
+                    }
+                    if !node.tags.contains(canonical) { node.tags.append(canonical) }
+                    node.tagSources[canonical] = TagOrigin(source: strongest ?? .model)
+                    node.updatedAt = Date()
+                    nodes[index] = node
+                    do { try await saveAndEnqueue(node) }
+                    catch { print("[CorpusStore] tag dedupe saveNode \(node.id): \(error)") }
+                }
+            }
+
+            // Fold useCount into the survivor; drop losers from the vocabulary.
+            let mergedUse = group.reduce(0) { $0 + $1.useCount }
+            if let sidx = tags.firstIndex(where: { $0.id == survivor.id }) {
+                tags[sidx].useCount = mergedUse
+            }
+            for loser in losers {
+                tags.removeAll { $0.id == loser.id }
+                if loser.name != canonical { tagLastUsedAt.removeValue(forKey: loser.name) }
+            }
+            print("[CorpusStore] tag dedupe — '\(canonical)' absorbed \(losers.count) duplicate(s)")
+        }
+
+        await persistTags()
+        UserDefaults.standard.set(true, forKey: Self.tagDedupeFlagKey)
+    }
+
+    /// `.user` beats `.promoted` beats `.model` — used so a merge never downgrades
+    /// a user-endorsed membership.
+    private static func strongerTagSource(_ a: TagSource?, _ b: TagSource) -> TagSource {
+        func rank(_ s: TagSource) -> Int { switch s { case .user: 2; case .promoted: 1; case .model: 0 } }
+        guard let a else { return b }
+        return rank(a) >= rank(b) ? a : b
     }
 
     private func persistTags() async {

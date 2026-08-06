@@ -4019,6 +4019,10 @@ final class CorpusStore {
     // MARK: - Tag management
 
     func addTag(_ tag: Tag) async {
+        // CASE-PRESERVING uniqueness (ws-lever.md § CASING): if a tag with this
+        // name already exists ignoring case, the existing one wins — never a
+        // second entry. The first author's spelling and color are kept.
+        guard !tags.contains(where: { $0.name.lowercased() == tag.name.lowercased() }) else { return }
         tags.append(tag)
         await persistTags()
         computeTagSimilarityIfNeeded(for: tag.name)
@@ -4079,14 +4083,32 @@ final class CorpusStore {
         await persistTags()
     }
 
+    /// CASE-PRESERVING, CASE-INSENSITIVE tag resolution (ws-lever.md § CASING —
+    /// ⚠️ REVERSED 2026-08-06: "lowercase throughout" is superseded). If a tag
+    /// already exists whose name equals `input` ignoring case, return its EXISTING
+    /// canonical spelling; otherwise return the trimmed input as the new canonical
+    /// spelling. Pure — NOTHING is stored; the comparison is `.lowercased()` on
+    /// both sides at call time. THE single choke point every create / apply path
+    /// resolves through, so `Recipe` / `recipe` can never both enter the vocabulary
+    /// while `AI`, `3D Print`, `AI Ethics` keep the casing their author typed.
+    func canonicalTagName(_ input: String) -> String {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return trimmed }
+        let lower = trimmed.lowercased()
+        return tags.first(where: { $0.name.lowercased() == lower })?.name ?? trimmed
+    }
+
     /// Applies tag names to a node, merging with its existing tags (no duplicates).
     /// `source` records provenance in `tagSources` — never downgrades `.user` to `.model`.
     /// `.user`-sourced applies bump `tagLastUsedAt` for each name (drives the
     /// capture overlay's `TagPillRail` recency); `.model` applies do not.
+    /// Each name is resolved through `canonicalTagName` so a case-variant applies
+    /// the existing tag rather than introducing a twin (§ CASING).
     func applyTags(_ tagNames: [String], toNodeID nodeID: String, source: TagSource = .user) async {
         guard let idx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[idx]
-        for name in tagNames {
+        let names = tagNames.map(canonicalTagName)
+        for name in names {
             if !updated.tags.contains(name) {
                 updated.tags.append(name)
             }
@@ -4096,7 +4118,7 @@ final class CorpusStore {
         }
         if source == .user {
             let now = Date()
-            for name in tagNames {
+            for name in names {
                 tagLastUsedAt[name] = now
             }
         }
@@ -5830,17 +5852,21 @@ final class CorpusStore {
     /// unchanged. Registers `tagName` in the tag vocabulary if it isn't
     /// already there. Tags applied via this path carry `.user` provenance.
     func addTag(_ tagName: String, toNodes ids: Set<String>) async {
-        let trimmed = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !ids.isEmpty else { return }
+        // CASE-PRESERVING, CASE-INSENSITIVE (ws-lever.md § CASING): resolve to the
+        // existing canonical spelling if one matches ignoring case, so a case
+        // variant applies the existing tag instead of minting a twin.
+        let canonical = canonicalTagName(tagName)
+        guard !canonical.isEmpty, !ids.isEmpty else { return }
 
         // Defensive: caller is expected to have registered the tag via
         // TagEditorSheet (which assigns a chosen color). If somehow we receive
         // a name not yet in vocabulary, register it with the neutral color so
-        // the apply-to-nodes step doesn't drop the tag silently.
-        if !tags.contains(where: { $0.name == trimmed }) {
+        // the apply-to-nodes step doesn't drop the tag silently. (After
+        // canonicalization this only fires for a genuinely new name.)
+        if !tags.contains(where: { $0.name == canonical }) {
             let newTag = Tag(
                 id: UUID(),
-                name: trimmed,
+                name: canonical,
                 colorHex: Tag.neutralColorHex,
                 createdAt: Date(),
                 useCount: 0
@@ -5857,11 +5883,11 @@ final class CorpusStore {
         for index in nodes.indices {
             guard ids.contains(nodes[index].id) else { continue }
             var node = nodes[index]
-            if node.tags.contains(trimmed) {
+            if node.tags.contains(canonical) {
                 continue
             }
-            node.tags.append(trimmed)
-            node.tagSources[trimmed] = TagOrigin(source: .user)
+            node.tags.append(canonical)
+            node.tagSources[canonical] = TagOrigin(source: .user)
             node.updatedAt = Date()
             nodes[index] = node
             changedNodes.append(node)
@@ -5874,7 +5900,7 @@ final class CorpusStore {
             }
         }
 
-        tagLastUsedAt[trimmed] = Date()
+        tagLastUsedAt[canonical] = Date()
     }
 
     // MARK: - Batch collection membership

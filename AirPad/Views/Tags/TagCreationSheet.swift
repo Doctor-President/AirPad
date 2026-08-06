@@ -115,18 +115,23 @@ struct TagCreationSheet: View {
 
     private func confirm() {
         Task {
-            // Create Tag objects for accepted new tags and save to vocabulary
+            // Create Tag objects for accepted new tags and save to vocabulary.
+            // CASE-PRESERVING, CASE-INSENSITIVE (ws-lever.md § CASING): resolve
+            // each name to its canonical spelling so a model-proposed "new" tag
+            // that already exists (any case) reuses the existing one. `addTag`
+            // no-ops on a case match; `applyTags` canonicalizes on apply too.
             var newTagNames: [String] = []
             for pending in pendingTags where acceptedNames.contains(pending.name) {
+                let canonical = store.canonicalTagName(pending.name)
                 let tag = Tag(
                     id: UUID(),
-                    name: pending.name,
+                    name: canonical,
                     colorHex: pending.colorHex,
                     createdAt: Date(),
                     useCount: 1
                 )
                 await store.addTag(tag)
-                newTagNames.append(pending.name)
+                newTagNames.append(canonical)
             }
             // Apply all accepted tags (new + existing) to the node
             let all = newTagNames + context.existingTagNames

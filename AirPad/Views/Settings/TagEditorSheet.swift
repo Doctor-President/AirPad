@@ -166,15 +166,20 @@ struct TagEditorSheet: View {
                 updated.colorHex = colorHex
                 await store.updateTag(updated)
             } else {
+                // CASE-PRESERVING, CASE-INSENSITIVE (ws-lever.md § CASING): if this
+                // name already exists ignoring case, return the EXISTING canonical
+                // spelling — don't create a twin, don't rename the first. `addTag`
+                // no-ops on the case match; the caller applies the canonical name.
+                let canonical = store.canonicalTagName(trimmed)
                 let tag = Tag(
                     id: UUID(),
-                    name: trimmed,
+                    name: canonical,
                     colorHex: colorHex,
                     createdAt: Date(),
                     useCount: 0
                 )
                 await store.addTag(tag)
-                onCreated?(trimmed)
+                onCreated?(canonical)
             }
             dismiss()
         }

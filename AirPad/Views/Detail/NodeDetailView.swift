@@ -432,6 +432,7 @@ struct NodeDetailView: View {
             VStack(spacing: 0) {
                 heroZone(node: node, topInset: topInset, width: proxy.size.width,
                          onVisibleHeight: { heroVisibleHeight = $0 })
+                    .measureHeaderBound("hero")
                 VStack(alignment: .leading, spacing: 0) {
                 // Detail-View outer rhythm — spacing:0 + explicit per-gap padding
                 // (gap-before), each default 24 so this is BYTE-IDENTICAL to the
@@ -441,115 +442,50 @@ struct NodeDetailView: View {
                 // always-present (possibly empty) entries VStack keeps its
                 // gap-before + Related's, mirroring VStack spacing on BOTH sides
                 // of a zero-height member. Tail past Related is fixed 24.
-                // Title — Stage 4.4 addendum 1a-i: font sourced from the
-                // Node Title role in the dev-panel type scale. Default
-                // mirrors the prior `.title2.weight(.bold)` exactly.
-                TextField("Title", text: $editedTitle, axis: .vertical)
-                    .font(visualSettings.nodeTitle.resolvedFont())
-                    .foregroundStyle(AppearancePalette.ink)
-                    .tint(AppearancePalette.ink)
-                    .focused($focusedField)
-                    // Scroll-collapsed band — the in-flow title hands OFF to the
-                    // band title at the discrete swap (never both visible). Gated
-                    // on `!focusedField` so editing (which happens at scroll-top,
-                    // band absent) can never hide the field under the caret.
-                    .opacity(bandTitleShown && !focusedField ? 0 : 1)
-
-                // Summary — Stage 4.4 addendum 1a-i: Node Summary role.
-                // Default mirrors the prior `.body` exactly.
-                if !editedSummary.isEmpty || node.summary.isEmpty {
-                    TextField("Summary", text: $editedSummary, axis: .vertical)
-                        .font(visualSettings.nodeSummary.resolvedFont())
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.75))
-                        .tint(AppearancePalette.ink)
-                        .focused($focusedField)
-                        .padding(.top, visualSettings.titleToSummary)
-                }
-
-                // THE LEVER — Stage 2 (§ C2). The feather button sits LEFT,
-                // spanning the combined height of the two chip lanes; the lanes
-                // (collections above tags) sit RIGHT, still scrolling
-                // horizontally to the button's right.
-                // ⚠️ The vertical rhythm is BYTE-IDENTICAL to before:
-                // `summaryToChips` is the gap from the summary to this block (was
-                // on collectionsRow), and `chipRowGap` is the gap between the two
-                // lanes (still on tagsRow). Neither spacing value is touched.
-                HStack(alignment: .center, spacing: 12) {
-                    LeverButton(nodeID: node.id, diameter: laneStackHeight,
-                                onTap: { showLeverTray = true })
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Collections (membership chips above tags, mirrors
-                        // tags-row layout but uses rounded-rect chips to read
-                        // distinct from the capsule tag pills).
-                        collectionsRow(node: node)
-
-                        // Tags
-                        tagsRow
-                            .padding(.top, visualSettings.chipRowGap)
-                    }
-                    .background(
-                        GeometryReader { g in
-                            Color.clear.preference(key: LaneStackHeightKey.self,
-                                                   value: g.size.height)
-                        }
-                    )
-                }
-                .padding(.top, visualSettings.summaryToChips)
-                .onPreferenceChange(LaneStackHeightKey.self) { laneStackHeight = $0 }
-
-                // Items — Stage 3.1a commit (b): every entry is rendered as
-                // an `EntryCard` regardless of type. Per-type rendering lives
-                // in `Views/Detail/Entry/*EntryBody.swift`. Stage 3.1b: each
-                // card needs its index + a snapshot of sibling IDs so the
-                // reorder controller can do its parting math without
-                // re-reading the store mid-drag.
-                //
-                // Stage 4.4 — cards live in their own nested VStack so the
-                // dev panel's "inter-card spacing" slider only affects
-                // card-to-card distance, leaving the outer 24pt rhythm
-                // (title / summary / tags / divider) untouched. Regular
-                // VStack (not LazyVStack) so every card stays mounted —
-                // the reorder controller's lift/drag/release depends on
-                // all cards being present in the view tree.
-                // Stage 4.8 — atomic types (rating; cook time / serving
-                // size later) are presented in a pinned Attributes
-                // section above the payload list (Commit B). For now
-                // we split the rendering: payload entries flow through
-                // this VStack; atomics live at the front of
-                // `node.items` (normalized on load + insert) and are
-                // omitted from this iteration entirely. The raw-index
-                // pair `(rawIndex, item)` is preserved so EntryCard's
-                // existing fold / promote / reorder math (which works
-                // in raw `node.items` index space) keeps functioning
-                // without translation at the card layer. The reorder
-                // controller's snapshot is payload IDs only so
-                // `slotPitch` (92) snap math operates over the payload
-                // suffix; the card converts payload-relative
-                // `(from, to)` back to raw indices via `atomicCount`
-                // in its `onEnd` handler.
+                // Header + entry scaffolding: compute payload/atomic counts
+                // FIRST (the header's ATTRIBUTES gate reads `atomicCount`).
                 let payloadEntries = Array(node.items.enumerated()).filter { !$1.type.isAtomic }
                 let payloadSnapshot = payloadEntries.map { $0.element.id }
                 let atomicCount = node.items.count - payloadEntries.count
                 // Images inserted inline into a note render inside that note's
-                // flowing document (via `![](airpad-image:<id>)` tokens); hide
-                // them from the standalone list below so they don't also show as
-                // gallery cards. Kept in payloadEntries/snapshot so the reorder
-                // index math (a contiguous non-atomic suffix) is untouched.
+                // flowing document; hide them from the standalone list below.
                 let inlineImageIDs = Set(
                     node.items.compactMap { $0.type == .text ? $0.content : nil }
                         .flatMap { MarkdownCodec.referencedImageItemIDs(in: $0) }
                 )
 
-                // Stage 4.8 Commit B — pinned Attributes section.
-                // Renders only when the node has ≥1 atomic entry; zero
-                // atomics → section absent entirely. Sits between the tags
-                // row and the payload list (the "dead zone" called out in the
-                // Commit A handoff §3 — the section filling it is that fix).
-                // No rule above or inside the section (the tags→content
-                // divider was removed 2026-07-18).
-                if atomicCount > 0 {
-                    AttributesSection(nodeID: nodeID, showFieldSheet: $showFieldSheet)
-                        .padding(.top, visualSettings.dividerToEntries)
+                // Header region — the SHARED `CaptureHeader` (title . summary . lever
+                // + chip lanes . ATTRIBUTES). ONE component + ONE metrics source
+                // (`EntryVisualSettings`) with QuikCaptureView, so the rhythm can't
+                // drift. Normal viewing gates ATTRIBUTES on atomics; capture always
+                // shows it (its "+" is the first-field entry point).
+                CaptureHeader(
+                    nodeID: nodeID,
+                    showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
+                    showAttributes: isCaptureMode || atomicCount > 0,
+                    onLeverTap: { showLeverTray = true }
+                ) {
+                    TextField("Title", text: $editedTitle, axis: .vertical)
+                        .font(visualSettings.nodeTitle.resolvedFont())
+                        .foregroundStyle(AppearancePalette.ink)
+                        .tint(AppearancePalette.ink)
+                        .focused($focusedField)
+                        // Scroll-collapsed band — the in-flow title hands off to the
+                        // band title; gated on `!focusedField` so editing never hides
+                        // the field under the caret.
+                        .opacity(bandTitleShown && !focusedField ? 0 : 1)
+                } summary: {
+                    TextField("Summary", text: $editedSummary, axis: .vertical)
+                        .font(visualSettings.nodeSummary.resolvedFont())
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                        .tint(AppearancePalette.ink)
+                        .focused($focusedField)
+                } collections: {
+                    collectionsRow(node: node)
+                } tags: {
+                    tagsRow
+                } attributes: {
+                    CaptureAttributesSection(nodeID: nodeID, showFieldSheet: $showFieldSheet, measured: true)
                 }
 
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
@@ -581,7 +517,14 @@ struct NodeDetailView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
-                .padding(.top, visualSettings.dividerToEntries)
+                // #4 — ATTRIBUTES→first entry: the shared symmetric gap when the
+                // ATTRIBUTES section is present (capture / atomics); normal viewing
+                // with no atomics (no section) keeps its `dividerToEntries`. The
+                // measure tap sits before the padding so it reports the first card top.
+                .measureHeaderBound("firstEntry")
+                .padding(.top, (isCaptureMode || atomicCount > 0)
+                    ? CaptureHeaderMetrics.attributesToEntries
+                    : visualSettings.dividerToEntries)
 
                 // Backlinks v1 — Related Nodes (user channel). Renders nothing
                 // when the node has no connections. System-suggestion channel is
@@ -644,6 +587,9 @@ struct NodeDetailView: View {
             .padding(20)
             .dismissKeyboardOnTapOutside()
             }
+            // Header parity measurement (DEBUG, `-HeaderMeasure`): rendered boundary
+            // frames spanning hero → header → first entry.
+            .collectHeaderMeasurements(surface: "Detail")
         }
         .overlay(alignment: .bottomTrailing) {
             // Stage 3.1a commit (c) — floating "+" replaces the inline
@@ -2293,162 +2239,8 @@ private struct MetaNodeBanner: View {
     }
 }
 
-// MARK: - Attributes section (Stage 4.8 Commit B)
-
-/// Pinned block presenting atomic-typed entries (currently: Rating). Not
-/// part of the fold scheme, not reorderable, no chevrons. Renders only
-/// when at least one atomic item is present — zero atomics is absence,
-/// not an empty header. Atomics are guaranteed to occupy a contiguous
-/// prefix of `node.items` by `CorpusStore.normalizeAtomicsToFront`, so
-/// iteration uses `node.items.prefix(atomicCount)` directly (cheaper
-/// than re-filtering; invariant-guaranteed).
-///
-/// Per-type singleton: at most one row per atomic type. Add path for
-/// the *first* atomic of any type stays on `floatingAddButton` →
-/// More… (per T 2026-06-10, option 2 in the brief's open-decision
-/// resolution). The section-local "+" handles *additional* atomic
-/// types only — today the atomic catalog is just Rating, so the
-/// section-local "+" has nothing to offer and is suppressed. The
-/// floating-+'s More… → Rating seat therefore still owns Rating's
-/// first-add today; **flag**: this is the duplication the brief asks
-/// to surface — T to decide whether to remove the More… seat in a
-/// follow-up or leave it as the canonical first-add path forever.
-private struct AttributesSection: View {
-
-    let nodeID: String
-    /// Stage 5.2 C7 — the parent's Add Field sheet flag, so the section "+" opens
-    /// the SAME sheet (same state, same remembered section) as the flyout's More…
-    @Binding var showFieldSheet: Bool
-
-    @Environment(CorpusStore.self) private var store
-    @State private var editingItem: NodeItem? = nil
-
-    /// Reads the live node off the store inside body so the view
-    /// registers a dependency on `store.nodes` and re-renders the
-    /// moment `setRatingValue` lands a write. Passing `node` as an
-    /// init parameter (as Commit B originally did) made the parent
-    /// re-evaluate but didn't reliably propagate to this child's
-    /// rows after a sheet-driven edit — direct store access is the
-    /// pattern used by `EntryCard` for the same reason.
-    private var node: Node? {
-        store.nodes.first { $0.id == nodeID }
-    }
-
-    /// Normalized prefix slice. Equivalent to
-    /// `node.items.filter { $0.type.isAtomic }` thanks to
-    /// `normalizeAtomicsToFront`; using the prefix avoids a second
-    /// pass and signals reliance on the invariant.
-    private var atomicItems: [NodeItem] {
-        guard let node else { return [] }
-        let atomicCount = node.items.lazy.filter { $0.type.isAtomic }.count
-        return Array(node.items.prefix(atomicCount))
-    }
-
-
-    /// The node's `.field` atomics — rendered via the shared `FieldPairsGrid`
-    /// (Stage 5.2 C10), which resolves each definition off the store and drops
-    /// orphaned references so the grid never places an empty cell.
-    private var fieldItems: [NodeItem] {
-        atomicItems.filter { $0.type == .field }
-    }
-
-    /// Non-field atomics (today: legacy `.rating`) that keep their full-width row.
-    private var nonFieldAtomics: [NodeItem] {
-        atomicItems.filter { $0.type != .field }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader
-            // Stage 5.1 C6 — .field atomics render as stacked pairs (label above
-            // value, value emphasised) flowing into a width-derived wrapping grid
-            // (columns from available width — one-primitive, no detail-vs-card
-            // branch). Legacy .rating keeps its full-width row (RatingAttributeRow,
-            // untouched) below the grid: transitional coexistence, the old row
-            // style directly beside the new pairs.
-            if !fieldItems.isEmpty {
-                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems)
-            }
-            if !nonFieldAtomics.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(nonFieldAtomics) { item in
-                        rowFor(item)
-                    }
-                }
-            }
-        }
-        .sheet(item: $editingItem) { item in
-            if item.type == .rating, let rating = item.rating {
-                RatingEditSheet(
-                    itemID: item.id,
-                    nodeID: nodeID,
-                    initialValue: rating.value,
-                    scale: rating.scale
-                )
-                .presentationDetents([.height(260)])
-                .presentationDragIndicator(.visible)
-            }
-        }
-    }
-
-    private var sectionHeader: some View {
-        HStack(spacing: 8) {
-            Text("ATTRIBUTES")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-            Spacer(minLength: 0)
-            // Stage 5.2 C8 — the section "+" opens the Add Field sheet DIRECTLY
-            // (one tap, no intermediate menu), via the shared `showFieldSheet`
-            // binding. The legacy `.rating` CREATION path was removed here to
-            // end the two-vocabularies redundancy: a NEW rating is now the
-            // "Rating" preset (a `.field`, kind rating) in the sheet — the one
-            // place ratings are minted. Existing legacy `.rating` items still
-            // render via RatingAttributeRow and stay editable via RatingEditSheet
-            // (a tap on the row); only new-rating creation is gone.
-            Button {
-                showFieldSheet = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func rowFor(_ item: NodeItem) -> some View {
-        switch item.type {
-        case .rating:
-            RatingAttributeRow(
-                item: item,
-                onTap: { editingItem = item },
-                onDelete: {
-                    Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
-                }
-            )
-        default:
-            // Stage 5.1 C6 — `.field` renders in the stacked-pairs grid (see
-            // `body`), not as a full-width row. Any other atomic kind falls
-            // through here until it gets a renderer.
-            EmptyView()
-        }
-    }
-}
-
-/// Compact, borderless row — no card background, no stroke, no clip.
-/// Leading "Rating" label, trailing stars, then the same `•••`
-/// affordance grammar as entry cards (Delete only — no reorder, no
-/// promote, no fold actions). Tap anywhere on the row → edit sheet;
-/// the Menu sits above the tap gesture in the view tree so taps on
-/// the ellipsis open the menu and don't bleed through.
-///
-/// Meaning is carried by fill (`star.fill` vs `star`), never by hue
-/// (T is colorblind) — color tints are polish. Hex literals via the
-/// `Color(hexString:)` helper used elsewhere in the file.
-private struct RatingAttributeRow: View {
+// internal (not file-private): shared with `CaptureAttributesSection`.
+struct RatingAttributeRow: View {
 
     let item: NodeItem
     let onTap: () -> Void
@@ -2507,7 +2299,8 @@ private struct RatingAttributeRow: View {
 /// stage / commit on dismiss — the store call is the edit-commit
 /// path and clamps to `[0, scale]`). Sheet stays open for re-taps;
 /// user dismisses via the drag indicator.
-private struct RatingEditSheet: View {
+/// internal (not file-private): shared with `CaptureAttributesSection`.
+struct RatingEditSheet: View {
 
     let itemID: String
     let nodeID: String

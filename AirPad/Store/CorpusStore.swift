@@ -1469,24 +1469,30 @@ final class CorpusStore {
 
     /// Tags this node is close to, above the (dev-dialed) threshold, EXCLUDING tags
     /// it already has and tags dismissed for it. Deduped: several terms hitting one
-    /// tag yield ONE suggestion at the best score. Sorted best-first, then capped.
+    /// tag yield ONE suggestion at the best score. MMR-reranked, then capped.
     ///
-    /// ★ Step 2 (§ C2): the term set is the UNION of two deterministic sources —
-    /// normalized folksonomy terms AND noun phrases pulled from the node's RAW text
-    /// (`TagPhraseExtractor`). The phrase path lets a node with NO folksonomy (~37%
-    /// of the corpus) still match, and out-proposes folksonomy ~3.4× on nodes that
-    /// have both (§ STEP 1.5). No FM, no sweep — one on-demand match for this node.
+    /// ★ Step 3 (§ REVERSED ON DEVICE 2026-08-06): phrases are FALLBACK-ONLY, not
+    /// unioned. A node WITH folksonomy matches folksonomy alone — the union was too
+    /// noisy where the model had already answered (wrong-sense grabs like
+    /// "prisoner's cinema" → Cinema). A node with NO folksonomy (~37%) uses phrases,
+    /// exactly as Step 2 built them. Re-opening the union later is a one-line change.
     func tagSuggestions(forNodeID nodeID: String) async -> [TagSuggestion] {
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return [] }
 
-        // Source 1 — folksonomy, normalized (lowercase · trim · singularize).
-        let folkTerms = (node.folksonomy ?? []).map(TagNormalization.normalize)
-        // Source 2 — noun phrases from the RAW, no-FM text (§ C1), lowercased as
-        // measured in Step 1.5 (NOT singularized — that is the string the numbers
-        // were taken against). Floor = shortest existing tag name so `AI` is reachable.
-        let phraseTerms = TagPhraseExtractor.phrases(from: nodeMatchText(node),
-                                                     minNounLength: shortestTagNameLength())
-        let terms = Array(Set((folkTerms + phraseTerms)).filter { !$0.isEmpty })
+        // FALLBACK-ONLY term set. "Has folksonomy" = ≥1 term survives normalization,
+        // so a node whose only term is junk (normalizes to empty) still gets phrases;
+        // a node with any real term is folksonomy-only.
+        let folkTerms = (node.folksonomy ?? []).map(TagNormalization.normalize).filter { !$0.isEmpty }
+        let terms: [String]
+        if !folkTerms.isEmpty {
+            terms = Array(Set(folkTerms))
+        } else {
+            // Phrases from the RAW, no-FM text (§ C1). Lowercased as measured in
+            // Step 1.5 (NOT singularized). Floor = shortest tag name so `AI` is reachable.
+            let phraseTerms = TagPhraseExtractor.phrases(from: nodeMatchText(node),
+                                                         minNounLength: shortestTagNameLength())
+            terms = Array(Set(phraseTerms.filter { !$0.isEmpty }))
+        }
         guard !terms.isEmpty else { return [] }
 
         let attached = Set(node.tags.map(TagNormalization.normalize))
@@ -1506,15 +1512,51 @@ final class CorpusStore {
 
         let threshold = TagMatchTuning.shared.threshold
         var out: [TagSuggestion] = []
+        var tagVecByName: [String: [Float]] = [:]   // display name → tag embedding (for MMR)
         for (norm, display) in candidate {
             guard let tv = await TagEmbeddingCache.shared.embedding(for: norm) else { continue }
             var best: Float = -1
             for term in termVecs { best = max(best, tagCosine(tv, term)) }
-            if best >= threshold { out.append(TagSuggestion(name: display, score: best)) }
+            if best >= threshold {
+                out.append(TagSuggestion(name: display, score: best))
+                tagVecByName[display] = tv
+            }
         }
-        // Best-first, then the per-node cap (§ C2 — the flood guarantee).
+        // MMR re-rank into the cap: variety over four-shades-of-one-idea (§ C2).
         let cap = TagMatchTuning.shared.maxSuggestions
-        return Array(out.sorted { $0.score > $1.score }.prefix(cap))
+        let lambda = TagMatchTuning.shared.mmrLambda
+        return mmrRerank(out, tagVecs: tagVecByName, cap: cap, lambda: lambda)
+    }
+
+    /// Maximal Marginal Relevance selection: greedily fill `cap` slots, each pick
+    /// maximizing `λ·relevance − (1−λ)·maxSim(to already-picked)`, where relevance is
+    /// the suggestion's cosine to the node and candidate-to-candidate similarity is the
+    /// cosine between TAG-NAME embeddings. This spreads the list across distinct ideas —
+    /// *Book of Enoch*'s Human / Human Rights / Human Experience / People collapse toward
+    /// one slot, leaving room for Mythology. Hubness is a property of the embedding
+    /// space, so this runs for folksonomy-sourced suggestions too (§ C2). λ=1 → pure
+    /// relevance (old behavior); lower λ buys more variety.
+    private func mmrRerank(_ items: [TagSuggestion], tagVecs: [String: [Float]],
+                           cap: Int, lambda: Float) -> [TagSuggestion] {
+        var remaining = items.sorted { $0.score > $1.score }
+        guard remaining.count > 1, cap > 0 else { return Array(remaining.prefix(max(0, cap))) }
+        var selected: [TagSuggestion] = []
+        while selected.count < cap, !remaining.isEmpty {
+            var bestIdx = 0
+            var bestVal = -Float.greatestFiniteMagnitude
+            for (i, cand) in remaining.enumerated() {
+                var maxSim: Float = 0
+                if let cv = tagVecs[cand.name] {
+                    for s in selected where tagVecs[s.name] != nil {
+                        maxSim = max(maxSim, tagCosine(cv, tagVecs[s.name]!))
+                    }
+                }
+                let mmr = lambda * cand.score - (1 - lambda) * maxSim
+                if mmr > bestVal { bestVal = mmr; bestIdx = i }
+            }
+            selected.append(remaining.remove(at: bestIdx))
+        }
+        return selected
     }
 
     /// The RAW, no-FM text the phrase extractor reads: title + text-item content +

@@ -1467,14 +1467,28 @@ final class CorpusStore {
     // ONLY to remember a DISMISSAL, so it isn't re-offered for that node). Accept
     // reuses the existing `addTag(_:toNodes:)` path.
 
-    /// Tags this node's folksonomy is close to, above the (dev-dialed) threshold,
-    /// EXCLUDING tags it already has and tags dismissed for it. Deduped: several terms
-    /// hitting one tag yield ONE suggestion at the best score. Sorted best-first.
+    /// Tags this node is close to, above the (dev-dialed) threshold, EXCLUDING tags
+    /// it already has and tags dismissed for it. Deduped: several terms hitting one
+    /// tag yield ONE suggestion at the best score. Sorted best-first, then capped.
+    ///
+    /// ★ Step 2 (§ C2): the term set is the UNION of two deterministic sources —
+    /// normalized folksonomy terms AND noun phrases pulled from the node's RAW text
+    /// (`TagPhraseExtractor`). The phrase path lets a node with NO folksonomy (~37%
+    /// of the corpus) still match, and out-proposes folksonomy ~3.4× on nodes that
+    /// have both (§ STEP 1.5). No FM, no sweep — one on-demand match for this node.
     func tagSuggestions(forNodeID nodeID: String) async -> [TagSuggestion] {
-        guard let node = nodes.first(where: { $0.id == nodeID }),
-              let folk = node.folksonomy, !folk.isEmpty else { return [] }
-        let terms = Array(Set(folk.map(TagNormalization.normalize).filter { !$0.isEmpty }))
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return [] }
+
+        // Source 1 — folksonomy, normalized (lowercase · trim · singularize).
+        let folkTerms = (node.folksonomy ?? []).map(TagNormalization.normalize)
+        // Source 2 — noun phrases from the RAW, no-FM text (§ C1), lowercased as
+        // measured in Step 1.5 (NOT singularized — that is the string the numbers
+        // were taken against). Floor = shortest existing tag name so `AI` is reachable.
+        let phraseTerms = TagPhraseExtractor.phrases(from: nodeMatchText(node),
+                                                     minNounLength: shortestTagNameLength())
+        let terms = Array(Set((folkTerms + phraseTerms)).filter { !$0.isEmpty })
         guard !terms.isEmpty else { return [] }
+
         let attached = Set(node.tags.map(TagNormalization.normalize))
         let dismissed = dismissedTagNames(node)
         // normalized tag → real display name (attach uses the real name).
@@ -1498,7 +1512,34 @@ final class CorpusStore {
             for term in termVecs { best = max(best, tagCosine(tv, term)) }
             if best >= threshold { out.append(TagSuggestion(name: display, score: best)) }
         }
-        return out.sorted { $0.score > $1.score }
+        // Best-first, then the per-node cap (§ C2 — the flood guarantee).
+        let cap = TagMatchTuning.shared.maxSuggestions
+        return Array(out.sorted { $0.score > $1.score }.prefix(cap))
+    }
+
+    /// The RAW, no-FM text the phrase extractor reads: title + text-item content +
+    /// audio transcript + link title/description. ★ `summary` / `substrateSummary`
+    /// stay EXCLUDED (§ C1) — this path must survive with the FM disabled entirely.
+    private func nodeMatchText(_ node: Node) -> String {
+        var parts: [String] = [node.title]
+        for item in node.items {
+            switch item.type {
+            case .text: parts.append(item.content ?? "")
+            case .audio: parts.append(item.transcript ?? "")
+            case .link:
+                parts.append(item.ogTitle ?? "")
+                parts.append(item.ogDescription ?? "")
+                parts.append(item.title ?? "")
+            default: break
+            }
+        }
+        return parts.filter { !$0.isEmpty }.joined(separator: ". ")
+    }
+
+    /// Shortest existing tag-name length (min 2), the standalone-noun floor that keeps
+    /// `AI` reachable (§ STEP 1.5 acronym fix). Empty vocab → 4 (the old default).
+    private func shortestTagNameLength() -> Int {
+        max(2, tags.map { $0.name.count }.min() ?? 4)
     }
 
     /// Tags DISMISSED for this node (won't be offered again). Persisted as `.dismissed`

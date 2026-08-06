@@ -284,10 +284,10 @@ final class EntryVisualSettings {
     /// dials that replaced the single `spacing: 24`. Baked from T's device
     /// (2026-07-17); divider→entries + entries→related kept 24 deliberately.
     /// Range includes 0 → read via object-presence.
-    static let defaultTitleToSummary: CGFloat = 6
+    static let defaultTitleToSummary: CGFloat = 4   // #3 — tightened 2pt from the detail view's 6 (shared, both surfaces)
     static let defaultSummaryToChips: CGFloat = 15
     static let defaultChipRowGap: CGFloat = 11
-    static let defaultChipsToDivider: CGFloat = 0
+    static let defaultChipsToDivider: CGFloat = 12   // breathing room so the ATTRIBUTES hairline doesn't kiss the feather button / chips
     static let defaultDividerToEntries: CGFloat = 24
     static let defaultEntriesToRelated: CGFloat = 24
     static let metadataGapRange: ClosedRange<CGFloat> = 0...48

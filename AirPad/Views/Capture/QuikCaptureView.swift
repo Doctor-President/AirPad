@@ -59,6 +59,9 @@ struct QuikCaptureView: View {
     /// the modal entirely (`addDocumentEntry` runs directly).
     @State private var pendingDocumentURLs: [URL] = []
     @State private var showDocumentAppendModal = false
+    /// Shared `CaptureAttributesSection`'s "+" opens the Add-Field sheet (parity with
+    /// the detail surface's binding-driven section).
+    @State private var showFieldSheet = false
 
     /// Keyboard visibility (drives the bottom reservation: bar height when down, a
     /// small caret margin when up) and the pinned bar's MEASURED height (item 1 —
@@ -145,6 +148,10 @@ struct QuikCaptureView: View {
                     // THE LEVER — Stage 2c. The same proposals tray as the detail view.
                     .sheet(isPresented: $showLeverTray) {
                         LeverTray(nodeID: node.id)
+                    }
+                    // Shared ATTRIBUTES "+" → Add-Field sheet (same as the detail view).
+                    .sheet(isPresented: $showFieldSheet) {
+                        FieldCreationSheet(nodeID: node.id)
                     }
                     .sheet(isPresented: $showDocumentPicker) {
                         DocumentPickerView { urls in
@@ -251,49 +258,37 @@ struct QuikCaptureView: View {
         ScrollView {
             VStack(spacing: 0) {
                 heroZone(node: node, topInset: topInset, width: proxy.size.width)
-                VStack(alignment: .leading, spacing: 24) {
-                // Title
-                TextField("Title", text: $editedTitle, axis: .vertical)
-                    .font(visualSettings.nodeTitle.resolvedFont())
-                    .foregroundStyle(AppearancePalette.ink)
-                    .tint(AppearancePalette.ink)
-                    .focused($focusedField)
-
-                // Summary
-                if !editedSummary.isEmpty || node.summary.isEmpty {
+                    .measureHeaderBound("hero")
+                VStack(alignment: .leading, spacing: 0) {
+                // Header region — the SHARED `CaptureHeader` (title · summary · lever
+                // + chip lanes · ATTRIBUTES). ONE component + ONE metrics source
+                // (`EntryVisualSettings`) with NodeDetailView, so the rhythm can't
+                // drift. `showAttributes: true` — the "+" is the first-field entry
+                // point on the capture surface, so it's always shown.
+                CaptureHeader(
+                    nodeID: node.id,
+                    showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
+                    showAttributes: true,
+                    onLeverTap: { showLeverTray = true }
+                ) {
+                    TextField("Title", text: $editedTitle, axis: .vertical)
+                        .font(visualSettings.nodeTitle.resolvedFont())
+                        .foregroundStyle(AppearancePalette.ink)
+                        .tint(AppearancePalette.ink)
+                        .focused($focusedField)
+                } summary: {
                     TextField("Summary", text: $editedSummary, axis: .vertical)
                         .font(visualSettings.nodeSummary.resolvedFont())
                         .foregroundStyle(AppearancePalette.ink.opacity(0.75))
                         .tint(AppearancePalette.ink)
                         .focused($focusedField)
+                } collections: {
+                    collectionsRow(node: node)
+                } tags: {
+                    tagsRow
+                } attributes: {
+                    CaptureAttributesSection(nodeID: node.id, showFieldSheet: $showFieldSheet, measured: true)
                 }
-
-                // THE LEVER — Stage 2c. Mounted exactly as in NodeDetailView: the
-                // feather button LEFT, the two chip lanes (collections above tags)
-                // RIGHT, both scrolling to its right. Reuses `LeverButton` and the
-                // existing tray — one mechanism, a second mount point.
-                // ⚠️ Vertical rhythm BYTE-IDENTICAL: the HStack is ONE member of the
-                // enclosing `spacing: 24` VStack (so summary→lanes and tags→divider
-                // stay 24), and the inner lanes VStack keeps collections→tags at 24.
-                HStack(alignment: .center, spacing: 12) {
-                    LeverButton(nodeID: node.id, diameter: laneStackHeight,
-                                onTap: { showLeverTray = true })
-                    VStack(alignment: .leading, spacing: 24) {
-                        // Collections (membership chips above tags)
-                        collectionsRow(node: node)
-                        // Tags
-                        tagsRow
-                    }
-                    .background(
-                        GeometryReader { g in
-                            Color.clear.preference(key: LaneStackHeightKey.self,
-                                                   value: g.size.height)
-                        }
-                    )
-                }
-                .onPreferenceChange(LaneStackHeightKey.self) { laneStackHeight = $0 }
-
-                Divider().background(AppearancePalette.ink.opacity(0.12))
 
                 // Items — every entry is rendered as an `EntryCard`. Each
                 // card needs its index + a snapshot of sibling IDs so the
@@ -307,11 +302,6 @@ struct QuikCaptureView: View {
                     node.items.compactMap { $0.type == .text ? $0.content : nil }
                         .flatMap { MarkdownCodec.referencedImageItemIDs(in: $0) }
                 )
-
-                // Stage 5.2 C10 — Attributes section ALWAYS shown in QuickCapture
-                // so its "+" (field creation) is available whether or not the
-                // node already has atomics; empty → just the header + "+".
-                QuikCaptureAttributesSection(nodeID: node.id)
 
                 VStack(alignment: .leading, spacing: visualSettings.interCardSpacing) {
                     ForEach(payloadEntries, id: \.element.id) { pair in
@@ -335,9 +325,15 @@ struct QuikCaptureView: View {
                     }
                 }
                 .animation(.easeInOut(duration: 0.22), value: reorderController.isReorderActive)
+                // #4 — ATTRIBUTES→first entry: the symmetric gap (≈ hairline→ATTRIBUTES
+                // text, confirmed by measurement). `measureHeaderBound` before the
+                // padding so it reports the first card's top for the parity table.
+                .measureHeaderBound("firstEntry")
+                .padding(.top, CaptureHeaderMetrics.attributesToEntries)
 
                 // Paste Pad wired to per-type routing.
                 PastePadView(onPaste: handlePastedContent)
+                    .padding(.top, 24)
 
                 // Trailing spacer so the last entry isn't tucked under the
                 // capture chrome.
@@ -360,6 +356,9 @@ struct QuikCaptureView: View {
             .padding(20)
             .dismissKeyboardOnTapOutside()
             }
+            // Header parity measurement (DEBUG, `-HeaderMeasure`): collect rendered
+            // boundary frames spanning hero → header → first entry.
+            .collectHeaderMeasurements(surface: "QuikCapture")
         }
         // Item 1 — reserve the pinned bar's MEASURED height so scroll content never
         // sits under it (keyboard DOWN). Keyboard UP → reserve only a small caret
@@ -944,237 +943,6 @@ private struct QuikCaptureTagChip: View {
         .background(color.opacity(0.3))
         .overlay(Capsule().stroke(color.opacity(0.5), lineWidth: 1))
         .clipShape(Capsule())
-    }
-}
-
-// MARK: - Fold divider (copied from NodeDetailView; private there)
-
-// MARK: - Attributes section (copied from NodeDetailView; private there)
-
-/// Pinned Attributes section for atomic entries (Rating today). Renders
-/// only when the node has ≥1 atomic entry; a fresh capture node never does,
-/// so this is effectively dead on this surface — copied verbatim to keep
-/// the payload-list layout faithful.
-private struct QuikCaptureAttributesSection: View {
-
-    let nodeID: String
-
-    @Environment(CorpusStore.self) private var store
-    @State private var editingItem: NodeItem? = nil
-    @State private var showFieldSheet = false   // Stage 5.2 C10 — the "+"
-
-    private var node: Node? {
-        store.nodes.first { $0.id == nodeID }
-    }
-
-    private var atomicItems: [NodeItem] {
-        guard let node else { return [] }
-        let atomicCount = node.items.lazy.filter { $0.type.isAtomic }.count
-        return Array(node.items.prefix(atomicCount))
-    }
-
-    /// Stage 5.2 C10 — `.field` atomics (rendered via the shared FieldPairsGrid)
-    /// vs non-field atomics (legacy `.rating`, its own row + edit sheet).
-    private var fieldItems: [NodeItem] { atomicItems.filter { $0.type == .field } }
-    private var nonFieldAtomics: [NodeItem] { atomicItems.filter { $0.type != .field } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader
-            // Stage 5.2 C10 — QuickCapture renders `.field` atomics through the
-            // SAME FieldPairsGrid as the detail view (one component; the narrower
-            // QuickCapture width just yields fewer columns — that IS the
-            // one-primitive property). Legacy `.rating` keeps its own full-width
-            // row + edit sheet.
-            if !fieldItems.isEmpty {
-                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems)
-            }
-            if !nonFieldAtomics.isEmpty {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(nonFieldAtomics) { item in
-                        rowFor(item)
-                    }
-                }
-            }
-        }
-        .sheet(item: $editingItem) { item in
-            if item.type == .rating, let rating = item.rating {
-                QuikCaptureRatingEditSheet(
-                    itemID: item.id,
-                    nodeID: nodeID,
-                    initialValue: rating.value,
-                    scale: rating.scale
-                )
-                .presentationDetents([.height(260)])
-                .presentationDragIndicator(.visible)
-            }
-        }
-        .sheet(isPresented: $showFieldSheet) {
-            FieldCreationSheet(nodeID: nodeID)
-        }
-    }
-
-    private var sectionHeader: some View {
-        // Stage 5.2 C10 — QuickCapture DOES get field creation (T's call,
-        // overriding CC's C9 recommendation): the "+" opens the SAME
-        // FieldCreationSheet as the detail view — same component, same
-        // @AppStorage remembered section, same resolvePreset reuse-by-id, not a
-        // trimmed variant. The section is ungated in the parent, so this "+"
-        // shows whether or not the node already has attributes — it is the
-        // first-field entry point on the capture surface.
-        HStack(spacing: 8) {
-            Text("ATTRIBUTES")
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-                .tracking(0.6)
-                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
-            Spacer(minLength: 0)
-            Button {
-                showFieldSheet = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func rowFor(_ item: NodeItem) -> some View {
-        switch item.type {
-        case .rating:
-            QuikCaptureRatingAttributeRow(
-                item: item,
-                onTap: { editingItem = item },
-                onDelete: {
-                    Task { await store.deleteEntry(itemID: item.id, nodeID: nodeID) }
-                }
-            )
-        default:
-            EmptyView()
-        }
-    }
-}
-
-/// Compact, borderless rating row. Copied from NodeDetailView (private there).
-private struct QuikCaptureRatingAttributeRow: View {
-
-    let item: NodeItem
-    let onTap: () -> Void
-    let onDelete: () -> Void
-
-    private var rating: Rating { item.rating ?? Rating(value: 0) }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(item.type.defaultDisplayName)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(AppearancePalette.ink)
-
-            stars
-                .accessibilityElement()
-                .accessibilityLabel("Rating")
-                .accessibilityValue("\(rating.value) of \(rating.scale) stars")
-
-            Spacer(minLength: 12)
-
-            Menu {
-                Button("Delete", role: .destructive, action: onDelete)
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.6))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-        }
-        .frame(minHeight: 44)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
-    }
-
-    private var stars: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<rating.scale, id: \.self) { idx in
-                let filled = idx < rating.value
-                Image(systemName: filled ? "star.fill" : "star")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(
-                        filled
-                            ? Color(hexString: "FACC15")
-                            : AppearancePalette.ink.opacity(0.25)
-                    )
-            }
-        }
-    }
-}
-
-/// Minimal rating editor. Copied from NodeDetailView (private there).
-private struct QuikCaptureRatingEditSheet: View {
-
-    let itemID: String
-    let nodeID: String
-    let initialValue: Int
-    let scale: Int
-
-    @Environment(CorpusStore.self) private var store
-    @State private var value: Int
-
-    init(itemID: String, nodeID: String, initialValue: Int, scale: Int) {
-        self.itemID = itemID
-        self.nodeID = nodeID
-        self.initialValue = initialValue
-        self.scale = scale
-        self._value = State(initialValue: initialValue)
-    }
-
-    var body: some View {
-        VStack(spacing: 24) {
-            Text("Rating")
-                .font(.headline)
-                .foregroundStyle(.white)
-                .padding(.top, 28)
-
-            HStack(spacing: 12) {
-                ForEach(1...scale, id: \.self) { star in
-                    Button {
-                        let next = (value == star) ? 0 : star
-                        value = next
-                        Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: next) }
-                    } label: {
-                        Image(systemName: star <= value ? "star.fill" : "star")
-                            .font(.system(size: 36, weight: .medium))
-                            .foregroundStyle(
-                                star <= value
-                                    ? Color(hexString: "FACC15")
-                                    : Color(hexString: "FFFFFF").opacity(0.25)
-                            )
-                            .frame(width: 48, height: 48)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            Button {
-                value = 0
-                Task { await store.setRatingValue(itemID: itemID, nodeID: nodeID, value: 0) }
-            } label: {
-                Text("Clear")
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.plain)
-            .disabled(value == 0)
-            .opacity(value == 0 ? 0.4 : 1)
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(red: 0.027, green: 0.027, blue: 0.039))
     }
 }
 

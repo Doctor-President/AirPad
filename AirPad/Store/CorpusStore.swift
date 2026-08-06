@@ -793,6 +793,18 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
                     NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
                 }
+                // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
+                // (folksonomy coverage / recurrence / long tail / fragmentation / tag
+                // overlap + BGE-micro cosine calibration). Writes NOTHING to the corpus.
+                if ProcessInfo.processInfo.arguments.contains("-FolksonomyDiagnostic") {
+                    // Log line-by-line — a single NSLog truncates at the ~1KB os_log limit.
+                    Task {
+                        let report = await FolksonomyDiagnostic.run(store: self)
+                        for line in report.split(separator: "\n", omittingEmptySubsequences: false) {
+                            NSLog("[FolkDiag] %@", String(line))
+                        }
+                    }
+                }
                 if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
                     let defs = FieldValueSelfTest.fixtureDefinitions()
                     fieldDefinitions = defs

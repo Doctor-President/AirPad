@@ -118,6 +118,7 @@
 		6F98C9A9D3DA0E6A178A022B /* FMFailureBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */; };
 		6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F135F708282671E607C7C84B /* RichTextEditor.swift */; };
 		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
+		71FA4FF948901041E16802D4 /* FolksonomyDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */; };
 		7289AE336C9540B5885CD057 /* ShimmerSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977A952D9380005BE5E53A93 /* ShimmerSelfTest.swift */; };
 		729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F103085E0B3E0A4D0FAF79EC /* TagPickerMenu.swift */; };
 		72F74315A1038C544A682E36 /* WordPieceTokenizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F3E1E7BAA3B3C7B463E5D7 /* WordPieceTokenizer.swift */; };
@@ -400,6 +401,7 @@
 		68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModeToggle.swift; sourceTree = "<group>"; };
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
+		6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolksonomyDiagnostic.swift; sourceTree = "<group>"; };
 		6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasLayout.swift; sourceTree = "<group>"; };
 		6EDDB291F9F6170B93CE084E /* FieldKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldKind.swift; sourceTree = "<group>"; };
 		6F9B499A6DE0C5C10644FF16 /* EntryVisualSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryVisualSettings.swift; sourceTree = "<group>"; };
@@ -645,6 +647,7 @@
 				FA68215D2065B3D02251352C /* CardEmbeddingService.swift */,
 				39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */,
 				04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */,
+				6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */,
 				B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */,
 				E5035C30AE70E1C4E361CF86 /* ImageOCRService.swift */,
 				C729D9028EBF447A0241ABFD /* KeychainHelper.swift */,
@@ -1326,6 +1329,7 @@
 				3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */,
 				BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
+				71FA4FF948901041E16802D4 /* FolksonomyDiagnostic.swift in Sources */,
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
 				348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */,
 				CA78CCC70BD9A594AD079E7D /* GalleryItemTile.swift in Sources */,

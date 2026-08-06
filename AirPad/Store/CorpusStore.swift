@@ -1471,28 +1471,19 @@ final class CorpusStore {
     /// it already has and tags dismissed for it. Deduped: several terms hitting one
     /// tag yield ONE suggestion at the best score. MMR-reranked, then capped.
     ///
-    /// ★ Step 3 (§ REVERSED ON DEVICE 2026-08-06): phrases are FALLBACK-ONLY, not
-    /// unioned. A node WITH folksonomy matches folksonomy alone — the union was too
-    /// noisy where the model had already answered (wrong-sense grabs like
-    /// "prisoner's cinema" → Cinema). A node with NO folksonomy (~37%) uses phrases,
-    /// exactly as Step 2 built them. Re-opening the union later is a one-line change.
+    /// ★ CLOSE-OUT (§ CUT ENTIRELY 2026-08-06): matches **folksonomy terms only**.
+    /// The phrase-extraction fallback was built, measured three ways (union →
+    /// fallback+MMR), and removed: model-free means context-free means sense-blind,
+    /// and its junk clustered on the exact nodes Apple's FM refuses (religion,
+    /// esoterica, queer material, politics) — e.g. a Puerto Rico itinerary proposing
+    /// `Sex` off "queer-focused". No folksonomy → no suggestions (the honest empty
+    /// state), not a guess. The 0.80 threshold, the cap, and MMR are KEPT — they are
+    /// sound and apply to folksonomy-sourced suggestions (hubness is a property of
+    /// the embedding space, not the source).
     func tagSuggestions(forNodeID nodeID: String) async -> [TagSuggestion] {
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return [] }
 
-        // FALLBACK-ONLY term set. "Has folksonomy" = ≥1 term survives normalization,
-        // so a node whose only term is junk (normalizes to empty) still gets phrases;
-        // a node with any real term is folksonomy-only.
-        let folkTerms = (node.folksonomy ?? []).map(TagNormalization.normalize).filter { !$0.isEmpty }
-        let terms: [String]
-        if !folkTerms.isEmpty {
-            terms = Array(Set(folkTerms))
-        } else {
-            // Phrases from the RAW, no-FM text (§ C1). Lowercased as measured in
-            // Step 1.5 (NOT singularized). Floor = shortest tag name so `AI` is reachable.
-            let phraseTerms = TagPhraseExtractor.phrases(from: nodeMatchText(node),
-                                                         minNounLength: shortestTagNameLength())
-            terms = Array(Set(phraseTerms.filter { !$0.isEmpty }))
-        }
+        let terms = Array(Set((node.folksonomy ?? []).map(TagNormalization.normalize).filter { !$0.isEmpty }))
         guard !terms.isEmpty else { return [] }
 
         let attached = Set(node.tags.map(TagNormalization.normalize))
@@ -1531,11 +1522,11 @@ final class CorpusStore {
     /// Maximal Marginal Relevance selection: greedily fill `cap` slots, each pick
     /// maximizing `λ·relevance − (1−λ)·maxSim(to already-picked)`, where relevance is
     /// the suggestion's cosine to the node and candidate-to-candidate similarity is the
-    /// cosine between TAG-NAME embeddings. This spreads the list across distinct ideas —
-    /// *Book of Enoch*'s Human / Human Rights / Human Experience / People collapse toward
-    /// one slot, leaving room for Mythology. Hubness is a property of the embedding
-    /// space, so this runs for folksonomy-sourced suggestions too (§ C2). λ=1 → pure
-    /// relevance (old behavior); lower λ buys more variety.
+    /// cosine between TAG-NAME embeddings. This spreads the list across distinct ideas
+    /// so a hub cluster (Human / Human Rights / Human Experience / People) collapses
+    /// toward one slot instead of eating the cap. Hubness is a property of the
+    /// embedding space, so it applies to the folksonomy-sourced suggestions this now
+    /// serves (§ C1). λ=1 → pure relevance (old behavior); lower λ buys more variety.
     private func mmrRerank(_ items: [TagSuggestion], tagVecs: [String: [Float]],
                            cap: Int, lambda: Float) -> [TagSuggestion] {
         var remaining = items.sorted { $0.score > $1.score }
@@ -1557,31 +1548,6 @@ final class CorpusStore {
             selected.append(remaining.remove(at: bestIdx))
         }
         return selected
-    }
-
-    /// The RAW, no-FM text the phrase extractor reads: title + text-item content +
-    /// audio transcript + link title/description. ★ `summary` / `substrateSummary`
-    /// stay EXCLUDED (§ C1) — this path must survive with the FM disabled entirely.
-    private func nodeMatchText(_ node: Node) -> String {
-        var parts: [String] = [node.title]
-        for item in node.items {
-            switch item.type {
-            case .text: parts.append(item.content ?? "")
-            case .audio: parts.append(item.transcript ?? "")
-            case .link:
-                parts.append(item.ogTitle ?? "")
-                parts.append(item.ogDescription ?? "")
-                parts.append(item.title ?? "")
-            default: break
-            }
-        }
-        return parts.filter { !$0.isEmpty }.joined(separator: ". ")
-    }
-
-    /// Shortest existing tag-name length (min 2), the standalone-noun floor that keeps
-    /// `AI` reachable (§ STEP 1.5 acronym fix). Empty vocab → 4 (the old default).
-    private func shortestTagNameLength() -> Int {
-        max(2, tags.map { $0.name.count }.min() ?? 4)
     }
 
     /// Tags DISMISSED for this node (won't be offered again). Persisted as `.dismissed`

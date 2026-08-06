@@ -1453,6 +1453,72 @@ final class CorpusStore {
         }
     }
 
+    // MARK: - THE TAG PRODUCER — the "already yours" tier (ws-lever.md)
+    //
+    // Deterministic, NODE-LOCAL, on-demand: match THIS node's folksonomy terms against
+    // the user's existing tags by cosine (BGE-micro, shipped). No FM call, NO corpus
+    // sweep, NO clustering, NO new-tag proposals. Same note + same tags → same answer.
+    // Candidates are computed on demand (not recorded — a `.tags` proposal is written
+    // ONLY to remember a DISMISSAL, so it isn't re-offered for that node). Accept
+    // reuses the existing `addTag(_:toNodes:)` path.
+
+    /// Tags this node's folksonomy is close to, above the (dev-dialed) threshold,
+    /// EXCLUDING tags it already has and tags dismissed for it. Deduped: several terms
+    /// hitting one tag yield ONE suggestion at the best score. Sorted best-first.
+    func tagSuggestions(forNodeID nodeID: String) async -> [TagSuggestion] {
+        guard let node = nodes.first(where: { $0.id == nodeID }),
+              let folk = node.folksonomy, !folk.isEmpty else { return [] }
+        let terms = Array(Set(folk.map(TagNormalization.normalize).filter { !$0.isEmpty }))
+        guard !terms.isEmpty else { return [] }
+        let attached = Set(node.tags.map(TagNormalization.normalize))
+        let dismissed = dismissedTagNames(node)
+        // normalized tag → real display name (attach uses the real name).
+        var candidate: [String: String] = [:]
+        for t in tags {
+            let n = TagNormalization.normalize(t.name)
+            guard !n.isEmpty, !attached.contains(n), !dismissed.contains(n) else { continue }
+            candidate[n] = t.name
+        }
+        guard !candidate.isEmpty else { return [] }
+
+        var termVecs: [[Float]] = []
+        for term in terms { if let v = await TagEmbeddingCache.shared.embedding(for: term) { termVecs.append(v) } }
+        guard !termVecs.isEmpty else { return [] }
+
+        let threshold = TagMatchTuning.shared.threshold
+        var out: [TagSuggestion] = []
+        for (norm, display) in candidate {
+            guard let tv = await TagEmbeddingCache.shared.embedding(for: norm) else { continue }
+            var best: Float = -1
+            for term in termVecs { best = max(best, tagCosine(tv, term)) }
+            if best >= threshold { out.append(TagSuggestion(name: display, score: best)) }
+        }
+        return out.sorted { $0.score > $1.score }
+    }
+
+    /// Tags DISMISSED for this node (won't be offered again). Persisted as `.dismissed`
+    /// `.tags` proposals — the only tag proposals ever written.
+    private func dismissedTagNames(_ node: Node) -> Set<String> {
+        Set((node.proposals ?? [])
+            .filter { $0.kind == .tags && $0.state == .dismissed }
+            .map { TagNormalization.normalize($0.text) })
+    }
+
+    /// Dismiss a suggested tag for a node — record a `.dismissed` `.tags` proposal so
+    /// the matcher never offers it for this node again. No `updatedAt` bump (no content
+    /// changed).
+    func dismissTagSuggestion(nodeID: String, tagName: String) async {
+        let norm = TagNormalization.normalize(tagName)
+        await mutateNode(id: nodeID) { n in
+            var list = n.proposals ?? []
+            guard !list.contains(where: { $0.kind == .tags && $0.state == .dismissed
+                && TagNormalization.normalize($0.text) == norm }) else { return }
+            list.append(Proposal(id: UUID(), kind: .tags, text: tagName, generatedAt: Date(),
+                                 sourceEmbedding: nil, state: .dismissed, solicited: false))
+            n.proposals = list
+        }
+    }
+
     // MARK: - ws-card-catalog step 2c — catalog derivation / embed / backfill
 
     /// Derivation (not authoring): the embedded card text is gist-only,

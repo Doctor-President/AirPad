@@ -10,11 +10,16 @@ final class TagMatchTuning {
     static let shared = TagMatchTuning()
     private static let key = "tagMatch.threshold"
     private static let capKey = "tagMatch.maxSuggestions"
+    private static let lambdaKey = "tagMatch.mmrLambda"
     static let defaultThreshold: Float = 0.80
     /// Step 2 — per-node ceiling on chips shown (§ C2). The 0.80 gate + best-per-tag
     /// dedupe already hold a node to a handful; this is the guarantee against the
-    /// 5,394-phrase corpus ever flooding one tray. Sorted best-first, then capped.
+    /// 5,394-phrase corpus ever flooding one tray. MMR-reranked, then capped.
     static let defaultMaxSuggestions = 8
+    /// Step 3 — MMR trade-off (§ C2). `score = λ·relevance − (1−λ)·maxSim-to-selected`.
+    /// 0.7 favors relevance while still breaking up hub clusters (Human / Human Rights /
+    /// Human Experience / People → one slot). 1.0 = pure relevance (pre-Step-3).
+    static let defaultMMRLambda: Float = 0.70
 
     var threshold: Float {
         didSet { UserDefaults.standard.set(Double(threshold), forKey: Self.key) }
@@ -22,11 +27,16 @@ final class TagMatchTuning {
     var maxSuggestions: Int {
         didSet { UserDefaults.standard.set(maxSuggestions, forKey: Self.capKey) }
     }
+    var mmrLambda: Float {
+        didSet { UserDefaults.standard.set(Double(mmrLambda), forKey: Self.lambdaKey) }
+    }
     private init() {
         threshold = (UserDefaults.standard.object(forKey: Self.key) as? Double).map(Float.init)
             ?? Self.defaultThreshold
         let storedCap = UserDefaults.standard.object(forKey: Self.capKey) as? Int
         maxSuggestions = (storedCap.map { max(1, $0) }) ?? Self.defaultMaxSuggestions
+        mmrLambda = (UserDefaults.standard.object(forKey: Self.lambdaKey) as? Double).map(Float.init)
+            ?? Self.defaultMMRLambda
     }
 }
 

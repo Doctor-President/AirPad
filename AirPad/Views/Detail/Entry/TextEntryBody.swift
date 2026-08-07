@@ -87,7 +87,10 @@ struct TextEntryBody: View {
             // Inline images: resolve a token's item id → image for rendering.
             resolveImage: { await store.inlineImage(forItemID: $0, nodeID: nodeID) },
             // photo-at-caret: the editor wires this so we can capture the caret + splice.
-            inlineImageInsertion: imageInsertion
+            inlineImageInsertion: imageInsertion,
+            // Launcher bar `image` category → present the picker. The editor already
+            // captured the caret at the tap (state.insertImage); this just presents.
+            onInsertImageTapped: { showPhotoPicker = true }
         )
         // Comfortable internal text padding; the panel sits in the normal inset
         // column (the full-bleed `.padding(.horizontal, -32)` hack is gone).
@@ -121,24 +124,9 @@ struct TextEntryBody: View {
         // cover is a reprieve"). Radius/offset unchanged.
         .shadow(color: AppearancePalette.panelShadow,
                 radius: Panel.shadowRadius, x: 0, y: Panel.shadowY)
-        // Insert-image affordance: a small photos picker in the panel's top-right
-        // (empty corner on a left-aligned note). Picking inserts the image inline
-        // at the cursor.
-        .overlay(alignment: .topTrailing) {
-            // A Button (not PhotosPicker directly) so we can capture the caret BEFORE
-            // the picker presents and resigns first responder.
-            Button {
-                imageInsertion.captureCaret()
-                showPhotoPicker = true
-            } label: {
-                Image(systemName: "photo.badge.plus")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(NoteTypography.foreground).opacity(0.5))
-                    .padding(12)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
+        // Inline-image insertion now lives on the launcher bar's `image` category
+        // (ws-editor-chrome) — the orphaned top-right card button is gone. The picker
+        // is still presented from here; the caret was captured at the bar tap.
         .photosPicker(isPresented: $showPhotoPicker, selection: $pickerItem,
                       matching: .images, photoLibrary: .shared())
         .onChange(of: pickerItem) { _, newItem in

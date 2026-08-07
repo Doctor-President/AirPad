@@ -76,6 +76,11 @@ struct RichTextEditor: UIViewRepresentable {
     /// `nil` for editors that don't insert inline images. See `InlineImageInsertion`.
     var inlineImageInsertion: InlineImageInsertion? = nil
 
+    /// Fired when the toolbar's `image` category is tapped — the consumer presents
+    /// its photo picker. The caret is already captured (see `state.insertImage`).
+    /// Non-nil also gates the `image` category's visibility on the bar.
+    var onInsertImageTapped: (() -> Void)? = nil
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -106,6 +111,9 @@ struct RichTextEditor: UIViewRepresentable {
         // Set them explicitly here and re-apply whenever attributedText is replaced.
         textView.typingAttributes = documentStyle ? NoteTypography.typingAttributes : Self.defaultTypingAttributes
         context.coordinator.attachToolbar(to: textView)
+        // Launcher bar: show the `image` category only for editors that support
+        // inline images (the note; not capture surfaces).
+        context.coordinator.state.supportsInlineImage = (onInsertImageTapped != nil)
         // photo-at-caret: let the note drive inline-image insertion at a remembered
         // caret. Closures capture the Coordinator, which owns the text view.
         if let insertion = inlineImageInsertion {
@@ -319,6 +327,15 @@ struct RichTextEditor: UIViewRepresentable {
                 guard let self, let tv = self.textView else { return }
                 self.toggleChecklist(in: tv)
             }
+            state.presentFormatSheet = { [weak self] in
+                self?.presentFormatSheet()
+            }
+            state.insertImage = { [weak self] in
+                // Capture the caret NOW (before the picker resigns first responder),
+                // then ask the consumer to present the picker. See photo-at-caret.
+                self?.captureImageInsertionPoint()
+                self?.parent.onInsertImageTapped?()
+            }
         }
 
         // MARK: Undo registration (step 7)
@@ -470,6 +487,32 @@ struct RichTextEditor: UIViewRepresentable {
             // → its token in place (no cursor↔markdown mapping needed).
             pushBinding(from: textView)
             return true
+        }
+
+        // MARK: Format sheet (launcher chrome)
+
+        private weak var formatSheetHost: UIViewController?
+
+        /// Present the Format sheet from the APP window (the text view lives there;
+        /// only its inputAccessoryView is in the keyboard window). A partial custom
+        /// detent with `largestUndimmedDetentIdentifier` keeps the text INTERACTIVE
+        /// so the caret can still move and the sheet's active states track it live.
+        func presentFormatSheet() {
+            guard formatSheetHost == nil else { return }
+            guard let textView, var top = textView.window?.rootViewController else { return }
+            while let presented = top.presentedViewController { top = presented }
+
+            let host = UIHostingController(rootView: RichTextFormatSheet(state: state))
+            if let sheet = host.sheetPresentationController {
+                let id = UISheetPresentationController.Detent.Identifier("airpadFormat")
+                let detent = UISheetPresentationController.Detent.custom(identifier: id) { _ in 300 }
+                sheet.detents = [detent]
+                sheet.largestUndimmedDetentIdentifier = id   // non-blocking: text stays live
+                sheet.prefersGrabberVisible = true
+                sheet.preferredCornerRadius = 22
+            }
+            formatSheetHost = host
+            top.present(host, animated: true)
         }
 
         // MARK: UITextViewDelegate
@@ -1886,6 +1929,19 @@ final class RichTextEditorState {
     /// Sets the heading style for every paragraph touched by the current
     /// selection. `nil` resets to Body.
     var applyHeading: (RichTextHeadingLevel?) -> Void = { _ in }
+
+    // MARK: Launcher chrome (ws-editor-chrome) — the bar became categories.
+
+    /// True when this editor supports inline images (documentStyle notes), so the
+    /// bar shows the `image` category. Set by the Coordinator from the consumer.
+    var supportsInlineImage = false
+    /// `Aa` on the bar → presents the Format sheet (B/I/U/S · headings · lists ·
+    /// indent · inline code · link · undo/redo), which reads the active-state flags
+    /// above live via `@Observable`.
+    var presentFormatSheet: () -> Void = {}
+    /// `image` category on the bar → captures the caret (before the picker resigns
+    /// first responder) and asks the consumer to present the photo picker.
+    var insertImage: () -> Void = {}
 }
 
 // MARK: - Toolbar view
@@ -1910,69 +1966,29 @@ struct RichTextToolbar: View {
     })
 
     var body: some View {
-        HStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 2) {
-                    headingMenu
-                    separator
-                    button(icon: "bold", active: state.isBold, action: state.toggleBold)
-                    button(icon: "italic", active: state.isItalic, action: state.toggleItalic)
-                    button(icon: "underline", active: state.isUnderline, action: state.toggleUnderline)
-                    button(icon: "strikethrough", active: state.isStrikethrough, action: state.toggleStrikethrough)
-                    separator
-                    button(icon: "list.bullet", active: state.isBulletList, action: state.toggleBulletList)
-                    button(icon: "list.number", active: state.isNumberedList, action: state.toggleNumberedList)
-                    button(icon: "checklist", active: state.isChecklist, action: state.toggleChecklist)
-                    button(icon: "decrease.indent", active: false, action: state.outdent)
-                    button(icon: "increase.indent", active: false, action: state.indent)
-                    separator
-                    button(icon: "chevron.left.forwardslash.chevron.right", active: state.isInlineCode, action: state.toggleInlineCode)
-                    button(icon: "link", active: false, action: state.insertLink)
-                    separator
-                    button(icon: "arrow.uturn.backward", active: false, enabled: state.canUndo, action: state.undo)
-                    button(icon: "arrow.uturn.forward", active: false, enabled: state.canRedo, action: state.redo)
-                }
-                .padding(.horizontal, 10)
+        // ws-editor-chrome — the bar is CATEGORIES, not attributes. All formatting
+        // (B/I/U/S · headings · lists · indent · inline code · link · undo/redo)
+        // lives behind `Aa` in the Format sheet; the bar grows along what you can
+        // INSERT or DO.
+        HStack(spacing: 6) {
+            button(icon: "textformat", active: false, action: state.presentFormatSheet)     // Aa → Format sheet
+            button(icon: "checklist", active: state.isChecklist, action: state.toggleChecklist)  // a thing you make
+            if state.supportsInlineImage {
+                separator
+                button(icon: "photo", active: false, action: state.insertImage)             // image — its own section
             }
-            separator
+            // table — RESERVED position, NO icon (an icon implies a primitive that
+            // doesn't exist yet; ws-editor-chrome §"table IS NOT A BUTTON").
+            Color.clear.frame(width: 36, height: 36)
+            Spacer(minLength: 0)
             button(icon: "keyboard.chevron.compact.down", active: false, action: state.dismissKeyboard)
-                .padding(.trailing, 6)
         }
+        .padding(.horizontal, 10)
         .frame(height: 48)
-        .background(
-            Capsule(style: .continuous).fill(Self.toolbarFill)
-        )
+        .background(Capsule(style: .continuous).fill(Self.toolbarFill))
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
-    }
-
-    /// Heading-style picker. Inline Picker inside a Menu gives the iOS native
-    /// checkmark affordance on the active style; the trigger button lights up
-    /// whenever the cursor sits in any non-Body paragraph.
-    private var headingMenu: some View {
-        let active = state.currentHeadingLevel != nil
-        let binding = Binding<RichTextHeadingLevel?>(
-            get: { state.currentHeadingLevel },
-            set: { state.applyHeading($0) }
-        )
-        return Menu {
-            Picker("Style", selection: binding) {
-                Text("Title").tag(Optional(RichTextHeadingLevel.title))
-                Text("Heading").tag(Optional(RichTextHeadingLevel.heading))
-                Text("Subheading").tag(Optional(RichTextHeadingLevel.subheading))
-                Text("Body").tag(Optional<RichTextHeadingLevel>.none)
-                Text("Monospaced").tag(Optional(RichTextHeadingLevel.monospaced))
-            }
-            .pickerStyle(.inline)
-        } label: {
-            Image(systemName: "textformat")
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: 36, height: 36)
-                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.75))
-                .background(active ? Color.primary.opacity(0.18) : Color.clear)
-                .clipShape(Capsule(style: .continuous))
-        }
     }
 
     private var separator: some View {
@@ -1996,6 +2012,95 @@ struct RichTextToolbar: View {
                 .background(active ? Color.primary.opacity(0.18) : Color.clear)
                 .clipShape(Capsule(style: .continuous))
         }
+        .disabled(!enabled)
+    }
+}
+
+// MARK: - Format sheet (launcher chrome)
+
+/// The Format sheet behind the bar's `Aa` (ws-editor-chrome). Relocates every text
+/// format off the bar — B/I/U/S, the heading levels, list kinds, indent, inline
+/// code, link, undo/redo — into one partial-height sheet. Binds to the SAME
+/// `@Observable` `RichTextEditorState` the bar uses, so active states track the
+/// selection LIVE while the sheet is open (it is presented non-blocking, so the
+/// caret can still move). Every action is an existing, already-wired command —
+/// relocation, not new capability.
+struct RichTextFormatSheet: View {
+    @Bindable var state: RichTextEditorState
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                group("Style") {
+                    styleChip("Title", .title)
+                    styleChip("Heading", .heading)
+                    styleChip("Subheading", .subheading)
+                    styleChip("Body", nil)
+                    styleChip("Mono", .monospaced)
+                }
+                group("Format") {
+                    fmt("bold", state.isBold, state.toggleBold)
+                    fmt("italic", state.isItalic, state.toggleItalic)
+                    fmt("underline", state.isUnderline, state.toggleUnderline)
+                    fmt("strikethrough", state.isStrikethrough, state.toggleStrikethrough)
+                    fmt("chevron.left.forwardslash.chevron.right", state.isInlineCode, state.toggleInlineCode)
+                }
+                group("List") {
+                    fmt("list.bullet", state.isBulletList, state.toggleBulletList)
+                    fmt("list.number", state.isNumberedList, state.toggleNumberedList)
+                    fmt("checklist", state.isChecklist, state.toggleChecklist)
+                    fmt("decrease.indent", false, state.outdent)
+                    fmt("increase.indent", false, state.indent)
+                }
+                // Link stays here for now (selection-first — moves to the edit menu
+                // in its own brief); undo/redo relocate off the bar, nothing lost.
+                group("Insert & edit") {
+                    fmt("link", false, state.insertLink)
+                    fmt("arrow.uturn.backward", false, state.undo, enabled: state.canUndo)
+                    fmt("arrow.uturn.forward", false, state.redo, enabled: state.canRedo)
+                }
+            }
+            .padding(20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemBackground))
+    }
+
+    @ViewBuilder
+    private func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.uppercased())
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) { content() }
+            }
+        }
+    }
+
+    private func styleChip(_ label: String, _ level: RichTextHeadingLevel?) -> some View {
+        let active = state.currentHeadingLevel == level
+        return Button { state.applyHeading(level) } label: {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .padding(.horizontal, 14).padding(.vertical, 9)
+                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.8))
+                .background(active ? Color.primary.opacity(0.16) : Color.primary.opacity(0.06))
+                .clipShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func fmt(_ icon: String, _ active: Bool, _ action: @escaping () -> Void, enabled: Bool = true) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .medium))
+                .frame(width: 46, height: 42)
+                .foregroundStyle(enabled ? (active ? Color.primary : Color.primary.opacity(0.8)) : Color.primary.opacity(0.3))
+                .background(active ? Color.primary.opacity(0.16) : Color.primary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        }
+        .buttonStyle(.plain)
         .disabled(!enabled)
     }
 }

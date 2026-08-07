@@ -1763,11 +1763,8 @@ enum NoteEditorToolbar {
 /// All dials T tunes on device; the numeric values are picked here so they're
 /// inspectable. Adaptive so both themes separate by value.
 enum NoteEditorChrome {
-    /// Continuous corner radius for the Format panel's ENVELOPE — larger, to echo the
-    /// screen's own rounded corners (the bar stays a pill: radius = height/2). Dial.
-    static let cornerRadius: CGFloat = 26
     /// Hairline rim — a bright edge in dark (white α0.16), a dark edge in light
-    /// (black α0.12).
+    /// (black α0.12). (Used by the bar; the panel now sits in the system backdrop.)
     static let hairline = Color(UIColor { trait in
         trait.userInterfaceStyle == .dark
             ? UIColor(white: 1.0, alpha: 0.16)
@@ -2152,13 +2149,16 @@ struct RichTextToolbar: View {
 /// no z-fight and first responder is retained; it binds the SAME `@Observable`
 /// `RichTextEditorState` the bar uses, so active states track the selection LIVE.
 ///
-/// LAYOUT v2 (ws-editor-chrome, matches Apple Notes): ONE envelope — the panel is the
-/// only raised surface. Inside it, a header ("Format" + ✕) and three rows of controls
-/// that read as recessed cells CARVED INTO the panel (a darker well holding a lighter
-/// raised thumb for the selected/active cell), NOT raised chips floating on it. No
-/// section labels — the grouping carries the meaning. The envelope has inset side
-/// margins, continuous corners echoing the screen's radius, and floats clear of the
-/// bottom safe area.
+/// LAYOUT v3 (ws-editor-chrome, T's call): the SYSTEM keyboard backdrop (a
+/// `UIVisualEffectView` UIKit places behind any custom `inputView`) IS the envelope —
+/// it's UIKit's answer to the same "make the slot its own surface" problem our card's
+/// material was solving, and two stacked materials read as an error. So we add NO
+/// second surface (no material/rim/shadow/rounding/outer-margins); our content spans
+/// the slot and sits IN the backdrop. A header ("Format" + ✕) and three rows of
+/// controls read as recessed cells CARVED INTO the backdrop (a darker well holding a
+/// lighter raised thumb for the selected/active cell) — the Apple pattern. No section
+/// labels — the grouping carries the meaning. Only the home-indicator inset remains,
+/// as content padding.
 ///
 /// Dynamic Type: FIXED-height chrome (like the bar / the system keyboard) — the panel
 /// never grows past one screen; segment text shrinks to fit (`minimumScaleFactor`)
@@ -2170,21 +2170,17 @@ struct RichTextFormatSheet: View {
     /// sees no safe area of its own) so the envelope floats clear of it.
     var bottomInset: CGFloat = 0
 
-    // Fixed metrics — `baseHeight` (envelope + margins, sans safe area) lets the
-    // Coordinator size the fixed-height inputView; total = baseHeight + inset.
+    // Fixed metrics. The content spans the whole slot (the system keyboard backdrop
+    // IS the envelope now — no outer margins); `envelopePadding` is the only inset.
+    // `baseHeight` (content, sans home-indicator inset) sizes the fixed-height
+    // inputView; total = baseHeight + inset.
     private static let headerHeight: CGFloat = 30
     private static let rowHeight: CGFloat = 44
     private static let rowSpacing: CGFloat = 12
     private static let envelopePadding: CGFloat = 14
-    private static let sideMargin: CGFloat = 10
-    // topMargin 0: the card's top edge is flush with the inputView top (right under
-    // the bar). A gap here showed the app background through as a lighter "second
-    // surface behind the panel" (the seam T flagged). Sides/bottom still float.
-    private static let topMargin: CGFloat = 0
-    private static let bottomMargin: CGFloat = 12
     // 4 VStack children (header + 3 rows) → 3 gaps.
     static let baseHeight: CGFloat =
-        topMargin + envelopePadding * 2 + headerHeight + rowHeight * 3 + rowSpacing * 3 + bottomMargin
+        envelopePadding * 2 + headerHeight + rowHeight * 3 + rowSpacing * 3
 
     var body: some View {
         VStack(spacing: Self.rowSpacing) {
@@ -2222,23 +2218,14 @@ struct RichTextFormatSheet: View {
             }
         }
         .padding(Self.envelopePadding)
-        // ws-editor-chrome — the ONE ENVELOPE (the only raised surface). A custom
-        // `inputView` inherits no system-keyboard material, so dress it to match the
-        // bar: `.regularMaterial` + the shared hairline rim + a soft lift, VALUE-only
-        // (T colorblind), iOS-18-safe (NOT iOS 26 glass). Continuous corners echo the
-        // screen's radius.
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: NoteEditorChrome.cornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: NoteEditorChrome.cornerRadius, style: .continuous)
-                .strokeBorder(NoteEditorChrome.hairline, lineWidth: 1)
-        )
-        .shadow(color: NoteEditorChrome.shadow, radius: 6, x: 0, y: 3)   // downward lift, no top halo
-        // Float OFF the screen edges: inset sides, clear the home indicator; flush at
-        // the top (no seam). Top-aligned so any slack falls below the envelope.
-        .padding(.horizontal, Self.sideMargin)
-        .padding(.top, Self.topMargin)
-        .padding(.bottom, Self.bottomMargin + bottomInset)
+        // ws-editor-chrome — the system keyboard backdrop (a UIVisualEffectView UIKit
+        // puts behind any custom `inputView`) IS the envelope. We add NO second
+        // surface: no material, no rim, no shadow, no rounding, no outer margins — two
+        // stacked materials is what read as an error. Our content sits IN the backdrop;
+        // the recessed wells + raised thumbs are cells carved into it (the Apple
+        // pattern). Only the home-indicator inset stays, as PADDING (content must clear
+        // the indicator) — not a margin outside a card.
+        .padding(.bottom, bottomInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

@@ -194,7 +194,7 @@ struct RichTextEditor: UIViewRepresentable {
             host.view.translatesAutoresizingMaskIntoConstraints = false
             host.view.backgroundColor = .clear
 
-            let container = UIView(frame: CGRect(x: 0, y: 0, width: 0, height: 56))
+            let container = ToolbarContainerView(frame: CGRect(x: 0, y: 0, width: 0, height: NoteEditorToolbar.designHeight))
             container.autoresizingMask = .flexibleWidth
             container.backgroundColor = .clear
             container.addSubview(host.view)
@@ -1557,6 +1557,47 @@ struct RichTextEditor: UIViewRepresentable {
             }
             return mono
         }
+    }
+}
+
+// MARK: - Formatting-toolbar metrics + live-height measurement (caret-clearance)
+
+/// The editor's formatting toolbar is the `UITextView`'s `inputAccessoryView`
+/// (see `Coordinator.attachToolbar`). It floats ABOVE the keyboard, and the
+/// scroll view's `adjustedContentInset` accounts only for the keyboard — so the
+/// caret, kept just above the keyboard, otherwise sits UNDER the toolbar. The
+/// keyboard-up bottom inset in `NodeDetailView` reserves this toolbar's height
+/// (+ breathing room) so the caret clears it in normal viewing.
+enum NoteEditorToolbar {
+    /// Designed container height — the single source of truth read by both
+    /// `attachToolbar` (the container frame) and the inset's pre-measurement
+    /// fallback. The inset prefers the LIVE laid-out height once known.
+    static let designHeight: CGFloat = 56
+}
+
+extension Notification.Name {
+    /// Posted by `ToolbarContainerView` with the toolbar's ACTUAL laid-out height
+    /// (`userInfo["height"]: Double`) once it is presented in the window (keyboard
+    /// up) — so the inset reserves the real on-screen height, not the coded value.
+    static let noteEditorToolbarHeightMeasured = Notification.Name("noteEditorToolbarHeightMeasured")
+}
+
+/// `inputAccessoryView` container for the formatting toolbar. Posts its real
+/// laid-out height once presented (window-attached + laid out = keyboard up), so
+/// the caret-clearance inset reserves exactly the toolbar's on-screen height
+/// rather than trusting the coded design value (which is the container's initial
+/// frame, not a guaranteed laid-out height).
+final class ToolbarContainerView: UIView {
+    private var lastPostedHeight: CGFloat = 0
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard window != nil else { return }          // only once actually presented
+        let h = bounds.height
+        guard h > 0, h != lastPostedHeight else { return }
+        lastPostedHeight = h
+        NotificationCenter.default.post(
+            name: .noteEditorToolbarHeightMeasured, object: nil, userInfo: ["height": Double(h)]
+        )
     }
 }
 

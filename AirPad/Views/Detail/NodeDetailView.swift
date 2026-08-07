@@ -105,6 +105,15 @@ struct NodeDetailView: View {
     /// The pinned capture bar's MEASURED height (item 1 — drives the capture-mode
     /// bottom reservation so content never sits under the bar).
     @State private var barHeight: CGFloat = 0
+    /// Live laid-out height of the note editor's formatting toolbar
+    /// (`inputAccessoryView`), reported by `ToolbarContainerView` once the keyboard
+    /// is up. Seeded with the design value so the reserve is sane before the first
+    /// measurement. Drives the keyboard-up bottom inset in NORMAL mode so the caret
+    /// clears the toolbar (not just the keyboard).
+    @State private var measuredToolbarHeight: CGFloat = NoteEditorToolbar.designHeight
+    /// Breathing room ABOVE the toolbar for the caret to sit — the one TASTE dial
+    /// in the caret-clearance fix (T tunes on device).
+    private static let caretToolbarBreathingRoom: CGFloat = 8
     @State private var showLinkAddAlert = false
     @State private var linkDraft = ""
     @State private var showDocumentPicker = false
@@ -406,6 +415,11 @@ struct NodeDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             withAnimation(.easeInOut(duration: 0.2)) { keyboardVisible = false }
         }
+        // Caret-clearance: the note editor's formatting toolbar reports its real
+        // laid-out height once the keyboard is up; feed the keyboard-up inset below.
+        .onReceive(NotificationCenter.default.publisher(for: .noteEditorToolbarHeightMeasured)) { note in
+            if let h = note.userInfo?["height"] as? Double, h > 0 { measuredToolbarHeight = CGFloat(h) }
+        }
     }
 
     // MARK: - Main content
@@ -641,12 +655,16 @@ struct NodeDetailView: View {
         }
         // Item 1 — in CAPTURE mode, reserve the pinned bar's MEASURED height so
         // content never sits under it (keyboard DOWN); keyboard UP → a small caret
-        // margin (item 2), NOT the bar height (no double-count). Zero when not
-        // capturing (no bar), so normal detail viewing is unchanged.
+        // margin (item 2), NOT the bar height (no double-count). Capture branch
+        // UNCHANGED.
+        // NORMAL viewing, keyboard UP → reserve the formatting TOOLBAR's laid-out
+        // height + breathing room: UIKit's inset covers the keyboard, but the
+        // toolbar (inputAccessoryView) floats above it, so without this the caret
+        // sits under the toolbar. Zero when the keyboard is down.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Color.clear.frame(height: isCaptureMode
                 ? (keyboardVisible ? CaptureChromeMetrics.caretBottomMargin : barHeight)
-                : 0)
+                : (keyboardVisible ? measuredToolbarHeight + Self.caretToolbarBreathingRoom : 0))
         }
         // Matched-gray detail surface: same warm tone as the note panel
         // (`NoteTypography.background` — #1A1A1A dark / white light, adaptive),

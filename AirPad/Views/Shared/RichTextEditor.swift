@@ -1,6 +1,28 @@
 import SwiftUI
 import UIKit
 
+/// Consumer-owned command bridge for inserting an inline image at a caret the editor
+/// remembered before the photo picker stole focus (photo-at-caret). The
+/// `RichTextEditor.Coordinator` populates the closures; `TextEntryBody` calls the
+/// methods. Mirrors the toolbar's `RichTextEditorState` command-closure pattern — the
+/// editor owns the text view, the consumer triggers.
+@MainActor
+final class InlineImageInsertion {
+    fileprivate var onCapture: (() -> Void)?
+    fileprivate var onInsert: ((String) -> Bool)?
+
+    /// Remember the current caret as the image insertion point. Call at the
+    /// photo-button tap, BEFORE the picker presents (it resigns first responder and
+    /// the live caret is gone by the time the bytes arrive).
+    func captureCaret() { onCapture?() }
+
+    /// Splice a placeholder image attachment for `itemID` at the remembered caret.
+    /// Returns `false` when there's no usable capture (empty note, or the text
+    /// changed while the picker was up) — the caller should append instead.
+    @discardableResult
+    func insert(itemID: String) -> Bool { onInsert?(itemID) ?? false }
+}
+
 /// Reusable rich-text editor for AirPad. Wraps `UITextView` via `UIViewRepresentable`.
 ///
 /// API surface is intentionally minimal so the component can be dropped into any
@@ -50,6 +72,10 @@ struct RichTextEditor: UIViewRepresentable {
     /// generic. Nil = this consumer doesn't render inline images.
     var resolveImage: ((String) async -> UIImage?)? = nil
 
+    /// Bridge for photo-at-caret. The consumer owns it, the Coordinator wires it;
+    /// `nil` for editors that don't insert inline images. See `InlineImageInsertion`.
+    var inlineImageInsertion: InlineImageInsertion? = nil
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -80,6 +106,12 @@ struct RichTextEditor: UIViewRepresentable {
         // Set them explicitly here and re-apply whenever attributedText is replaced.
         textView.typingAttributes = documentStyle ? NoteTypography.typingAttributes : Self.defaultTypingAttributes
         context.coordinator.attachToolbar(to: textView)
+        // photo-at-caret: let the note drive inline-image insertion at a remembered
+        // caret. Closures capture the Coordinator, which owns the text view.
+        if let insertion = inlineImageInsertion {
+            insertion.onCapture = { [weak c = context.coordinator] in c?.captureImageInsertionPoint() }
+            insertion.onInsert = { [weak c = context.coordinator] id in c?.insertImageAttachment(itemID: id) ?? false }
+        }
         if autoFocusOnAppear {
             // Dispatch so the view is in the window/responder chain before we
             // try to become first responder. Without the hop, becomeFirstResponder
@@ -379,6 +411,65 @@ struct RichTextEditor: UIViewRepresentable {
             // unchanged — don't push it (avoids a needless re-decode).
             textView.attributedText = mut
             textView.selectedRange = NSRange(location: min(selected.location, mut.length), length: 0)
+        }
+
+        // MARK: Inline-image caret insertion (photo-at-caret)
+
+        /// The caret remembered at photo-button tap + the document length then, so a
+        /// re-decode during the async picker gap can be detected.
+        private var capturedImageInsertion: (location: Int, length: Int)?
+
+        /// Remember the current caret (called before the picker presents).
+        func captureImageInsertionPoint() {
+            guard let textView else { capturedImageInsertion = nil; return }
+            let length = (textView.attributedText ?? NSAttributedString()).length
+            capturedImageInsertion = (location: textView.selectedRange.location, length: length)
+        }
+
+        /// Splice a placeholder image attachment for `itemID` at the remembered caret,
+        /// on its own line, then re-encode. Returns false (caller appends — today's
+        /// behaviour) when there's no capture, the note is empty, or the document
+        /// changed while the picker was up (keyboard is down, so only external sync
+        /// could change it — do not insert at a stale offset).
+        func insertImageAttachment(itemID: String) -> Bool {
+            guard let textView else { return false }
+            let attr = textView.attributedText ?? NSAttributedString()
+            guard let captured = capturedImageInsertion,
+                  captured.length == attr.length,   // unchanged while the picker was up
+                  attr.length > 0                   // empty note → let the caller append
+            else { capturedImageInsertion = nil; return false }
+            capturedImageInsertion = nil
+
+            let ns = attr.string as NSString
+            let loc = min(max(captured.location, 0), ns.length)
+
+            // Image on its own line: leading newline unless already at a line start,
+            // trailing unless already at a line end.
+            let block = NSMutableAttributedString()
+            let atLineStart = loc == 0 || ns.substring(with: NSRange(location: loc - 1, length: 1)) == "\n"
+            if !atLineStart { block.append(NSAttributedString(string: "\n")) }
+            block.append(MarkdownCodec.imageAttachmentString(itemID: itemID))
+            let atLineEnd = loc >= ns.length || ns.substring(with: NSRange(location: loc, length: 1)) == "\n"
+            if !atLineEnd { block.append(NSAttributedString(string: "\n")) }
+            // Match note typography on the inserted run (documentStyle) so spacing +
+            // colour don't jump; the resolveImage pass swaps the real image in later.
+            if parent.documentStyle {
+                let full = NSRange(location: 0, length: block.length)
+                block.addAttribute(.paragraphStyle, value: NoteTypography.bodyParagraphStyle, range: full)
+                block.addAttribute(.foregroundColor, value: NoteTypography.foreground, range: full)
+            }
+
+            let mut = NSMutableAttributedString(attributedString: attr)
+            mut.insert(block, at: loc)
+            // BUG 13 — reassigning attributedText resets the caret to the doc end and
+            // autoscrolls; set it explicitly (just after the image) so it doesn't jump.
+            textView.attributedText = mut
+            textView.selectedRange = NSRange(location: min(loc + block.length, mut.length), length: 0)
+
+            // Reflect the new markdown in the binding — encode walks the attachment
+            // → its token in place (no cursor↔markdown mapping needed).
+            pushBinding(from: textView)
+            return true
         }
 
         // MARK: UITextViewDelegate

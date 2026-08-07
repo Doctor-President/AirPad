@@ -1667,14 +1667,29 @@ enum RichTextHeadingLevel: Int {
     case subheading  = 3
     case monospaced  = 4
 
-    /// Locked Stage 2.3 sizes relative to the 17pt body baseline:
-    /// Title 26 / Heading 21 / Subheading 18 / Body 17 / Monospaced 16.
+    /// Locked Stage 2.3 base sizes relative to the 17pt body baseline (Title 26 /
+    /// Heading 21 / Subheading 18 / Body 17 / Monospaced 16), scaled with Dynamic
+    /// Type by the SAME factor body scales by, so the tuned ratios are EXACT at every
+    /// setting and the hierarchy can't invert.
+    ///
+    /// The base sizes are FIXED but body (`NoteTypographyHelper.bodyFont` =
+    /// `preferredFont(.body)`) SCALES, so above the default text size a fixed
+    /// Subheading(18) fell below a scaled body and the hierarchy inverted.
+    ///
+    /// ★ NOT `UIFontMetrics.scaledFont` (the obvious choice) — the Simulator showed it
+    /// scales a larger base by a SMALLER factor than `preferredFont(.body)` does, so
+    /// body OVERTAKES Subheading at accessibility sizes (AX5: body 53 vs scaledFont(18)
+    /// 51). Instead multiply the base by body's own live scale factor
+    /// (`preferredFont(.body).pointSize / 17`), which keeps `26/21/18 : 17` constant at
+    /// EVERY size — Title > Heading > Subheading > body holds throughout, verified XS →
+    /// AX5. (Also not `.title1/.title2/.headline`, which would adopt Apple's ratios.)
     var font: UIFont {
+        let factor = UIFont.preferredFont(forTextStyle: .body).pointSize / 17  // 17 = .body @ default
         switch self {
-        case .title:       return UIFont.systemFont(ofSize: 26, weight: .bold)
-        case .heading:     return UIFont.systemFont(ofSize: 21, weight: .semibold)
-        case .subheading:  return UIFont.systemFont(ofSize: 18, weight: .semibold)
-        case .monospaced:  return UIFont.monospacedSystemFont(ofSize: 16, weight: .regular)
+        case .title:       return .systemFont(ofSize: 26 * factor, weight: .bold)
+        case .heading:     return .systemFont(ofSize: 21 * factor, weight: .semibold)
+        case .subheading:  return .systemFont(ofSize: 18 * factor, weight: .semibold)
+        case .monospaced:  return .monospacedSystemFont(ofSize: 16 * factor, weight: .regular)
         }
     }
 }

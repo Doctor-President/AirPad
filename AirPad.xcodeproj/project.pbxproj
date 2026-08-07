@@ -238,6 +238,7 @@
 		D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */; };
 		D9A7E5403FE45B08C51D6DB5 /* AirPadShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 20ED1D435BF9E254D634DF37 /* AirPadShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D9A9504C9BF0EA24F2476910 /* AIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E617FBB5C1757939CF37710B /* AIService.swift */; };
+		DB17DF29488227C4C40E0A59 /* SourceSerif4-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */; };
 		DCBC7827653EB1DD100A5A46 /* LeverTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F51F2790A2E3165CF44645 /* LeverTray.swift */; };
 		DD5A3F5D7E79BF3FCF6DE55D /* FieldValueEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF40AB94344E8686EA92E8C /* FieldValueEditorSheet.swift */; };
 		DDC652824F3F6BCA24D1EE71 /* CitationReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09D0243E524E09781995DF68 /* CitationReference.swift */; };
@@ -327,6 +328,7 @@
 		1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lato-Bold.ttf"; sourceTree = "<group>"; };
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-BoldItalic.ttf"; sourceTree = "<group>"; };
 		217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPairsGrid.swift; sourceTree = "<group>"; };
 		219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagTerritoryLayout.swift; sourceTree = "<group>"; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
@@ -1008,6 +1010,7 @@
 			isa = PBXGroup;
 			children = (
 				F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */,
+				2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */,
 				7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */,
 				B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */,
 			);
@@ -1225,6 +1228,7 @@
 				423D97121CD075A9C4114F49 /* Lora-Italic.ttf in Resources */,
 				5F8E37E87E6B3DAC5C0E38A9 /* Lora-Regular.ttf in Resources */,
 				EB83AF3EBDB104973AB2160B /* SourceSerif4-Bold.ttf in Resources */,
+				DB17DF29488227C4C40E0A59 /* SourceSerif4-BoldItalic.ttf in Resources */,
 				460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */,
 				5681223387D04D1716AB1020 /* SourceSerif4-Regular.ttf in Resources */,
 				E36FB1C888465AFE23431F29 /* card_parity_fixture.json in Resources */,

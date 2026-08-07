@@ -2901,7 +2901,15 @@ enum NoteFontChoice {
     case sourceSerif4
 
     /// PostScript face name for the given traits, or nil to keep the system font.
-    /// Neither family ships a bold-italic face, so bold wins when both are set.
+    /// SourceSerif4 ships a bold-italic face (`SourceSerif4-BoldIt`), so bold+italic
+    /// composes — its bold+italic case MUST precede the bare `if bold`, or bold
+    /// short-circuits and the italic is silently dropped (the re-facing bug).
+    /// `.lora` is dead scaffold here — nothing sets `documentFont: .lora` and the
+    /// font picker that would expose it isn't built — so its missing bold-italic
+    /// face is left as-is; give it the same bold+italic case plus a `Lora-BoldItalic`
+    /// asset if the picker ever makes `.lora` reachable. (The `.lora` in
+    /// `EntryVisualSettings` / `CorpusPhysicsScene` is a separate, family-based
+    /// mechanism — not this PostScript-name path.)
     func faceName(bold: Bool, italic: Bool) -> String? {
         switch self {
         case .system:
@@ -2910,6 +2918,7 @@ enum NoteFontChoice {
             if bold { return "Lora-Bold" }
             return italic ? "Lora-Italic" : "Lora-Regular"
         case .sourceSerif4:
+            if bold && italic { return "SourceSerif4-BoldIt" }   // real PS name, not "-BoldItalic"
             if bold { return "SourceSerif4-Bold" }
             return italic ? "SourceSerif4-It" : "SourceSerif4-Regular"
         }

@@ -153,6 +153,9 @@ targets:
           - SourceSerif4-Regular.ttf
           - SourceSerif4-Italic.ttf
           - SourceSerif4-Bold.ttf
+          # Bold-italic face (PS name SourceSerif4-BoldIt) so heading/body
+          # bold+italic composes instead of collapsing to bold. OFL, same family.
+          - SourceSerif4-BoldItalic.ttf
         UILaunchScreen: {}
         # Portrait-only, full screen. App has no rotation handling and opts out
         # of iPad multitasking; also required by App Store validation (90474)

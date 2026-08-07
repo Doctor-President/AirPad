@@ -72,6 +72,7 @@
 		<string>SourceSerif4-Regular.ttf</string>
 		<string>SourceSerif4-Italic.ttf</string>
 		<string>SourceSerif4-Bold.ttf</string>
+		<string>SourceSerif4-BoldItalic.ttf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

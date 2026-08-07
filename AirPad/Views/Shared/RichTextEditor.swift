@@ -260,7 +260,12 @@ struct RichTextEditor: UIViewRepresentable {
 
         private func wireStateCommands() {
             state.dismissKeyboard = { [weak self] in
-                self?.textView?.resignFirstResponder()
+                guard let self, let tv = self.textView else { return }
+                // If the Format panel is up, restore the keyboard slot first (no
+                // reload — the responder is resigning anyway), so re-focusing later
+                // raises the keyboard, not a stale panel.
+                self.dismissFormatPanel(in: tv, reload: false)
+                tv.resignFirstResponder()
             }
             state.toggleBold = { [weak self] in
                 guard let self, let tv = self.textView else { return }
@@ -327,8 +332,8 @@ struct RichTextEditor: UIViewRepresentable {
                 guard let self, let tv = self.textView else { return }
                 self.toggleChecklist(in: tv)
             }
-            state.presentFormatSheet = { [weak self] in
-                self?.presentFormatSheet()
+            state.toggleFormatPanel = { [weak self] in
+                self?.toggleFormatPanel()
             }
             state.insertImage = { [weak self] in
                 // Capture the caret NOW (before the picker resigns first responder),
@@ -489,30 +494,57 @@ struct RichTextEditor: UIViewRepresentable {
             return true
         }
 
-        // MARK: Format sheet (launcher chrome)
+        // MARK: Format panel (launcher chrome)
 
-        private weak var formatSheetHost: UIViewController?
+        private var formatPanelHost: UIHostingController<RichTextFormatSheet>?
 
-        /// Present the Format sheet from the APP window (the text view lives there;
-        /// only its inputAccessoryView is in the keyboard window). A partial custom
-        /// detent with `largestUndimmedDetentIdentifier` keeps the text INTERACTIVE
-        /// so the caret can still move and the sheet's active states track it live.
-        func presentFormatSheet() {
-            guard formatSheetHost == nil else { return }
-            guard let textView, var top = textView.window?.rootViewController else { return }
-            while let presented = top.presentedViewController { top = presented }
+        /// Swap the text view's `inputView` between the system keyboard and the
+        /// Format panel. The panel takes the keyboard's SLOT, so there is no z-order
+        /// fight with the keyboard's own window — presenting a sheet from the app
+        /// window lost that fight (ws-editor-chrome item 1). First responder is
+        /// RETAINED across the swap, so `textViewDidChangeSelection` keeps firing and
+        /// the panel's active states track the selection live for free. Tapping `Aa`
+        /// again swaps back to the keyboard.
+        func toggleFormatPanel() {
+            guard let textView else { return }
+            if textView.inputView == nil {
+                let host = UIHostingController(rootView: RichTextFormatSheet(state: state))
+                host.view.translatesAutoresizingMaskIntoConstraints = false
+                host.view.backgroundColor = .clear
 
-            let host = UIHostingController(rootView: RichTextFormatSheet(state: state))
-            if let sheet = host.sheetPresentationController {
-                let id = UISheetPresentationController.Detent.Identifier("airpadFormat")
-                let detent = UISheetPresentationController.Detent.custom(identifier: id) { _ in 300 }
-                sheet.detents = [detent]
-                sheet.largestUndimmedDetentIdentifier = id   // non-blocking: text stays live
-                sheet.prefersGrabberVisible = true
-                sheet.preferredCornerRadius = 22
+                let panel = FormatPanelContainerView(
+                    frame: CGRect(x: 0, y: 0, width: textView.bounds.width,
+                                  height: FormatPanelContainerView.designHeight)
+                )
+                panel.autoresizingMask = .flexibleWidth
+                panel.addSubview(host.view)
+                NSLayoutConstraint.activate([
+                    host.view.leadingAnchor.constraint(equalTo: panel.leadingAnchor),
+                    host.view.trailingAnchor.constraint(equalTo: panel.trailingAnchor),
+                    host.view.topAnchor.constraint(equalTo: panel.topAnchor),
+                    host.view.bottomAnchor.constraint(equalTo: panel.bottomAnchor)
+                ])
+                formatPanelHost = host
+                textView.inputView = panel
+                state.isFormatPanelPresented = true
+            } else {
+                textView.inputView = nil
+                formatPanelHost = nil
+                state.isFormatPanelPresented = false
             }
-            formatSheetHost = host
-            top.present(host, animated: true)
+            textView.reloadInputViews()
+        }
+
+        /// Restore the keyboard slot if the Format panel is up. Called before
+        /// resigning first responder and on end-editing so re-focusing always raises
+        /// the keyboard, never a stale panel. `reload: false` when the field is
+        /// losing focus (the input area is going away — no animation needed).
+        func dismissFormatPanel(in textView: UITextView, reload: Bool = true) {
+            guard textView.inputView != nil else { return }
+            textView.inputView = nil
+            formatPanelHost = nil
+            state.isFormatPanelPresented = false
+            if reload { textView.reloadInputViews() }
         }
 
         // MARK: UITextViewDelegate
@@ -544,6 +576,9 @@ struct RichTextEditor: UIViewRepresentable {
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
+            // Restore the keyboard slot so re-focusing raises the keyboard, not a
+            // stale Format panel (inputView otherwise persists across focus loss).
+            dismissFormatPanel(in: textView, reload: false)
             parent.onEndEditing?()
         }
 
@@ -1741,6 +1776,20 @@ final class ToolbarContainerView: UIView {
     }
 }
 
+/// `inputView` container hosting the Format panel (ws-editor-chrome item 1).
+/// Swapped in for the system keyboard when `Aa` is tapped — taking the keyboard's
+/// own slot avoids the z-order fight a window-presented sheet loses. Fixed height
+/// (the panel content scrolls); an explicit `intrinsicContentSize` so the input
+/// system sizes it even before autolayout settles.
+final class FormatPanelContainerView: UIView {
+    /// Panel height in the keyboard slot. Close to a typical keyboard height so the
+    /// swap doesn't jump the text; the panel scrolls if its content is taller. Dial.
+    static let designHeight: CGFloat = 320
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: Self.designHeight)
+    }
+}
+
 // MARK: - Custom attribute keys
 
 extension NSAttributedString.Key {
@@ -1935,10 +1984,15 @@ final class RichTextEditorState {
     /// True when this editor supports inline images (documentStyle notes), so the
     /// bar shows the `image` category. Set by the Coordinator from the consumer.
     var supportsInlineImage = false
-    /// `Aa` on the bar → presents the Format sheet (B/I/U/S · headings · lists ·
-    /// indent · inline code · link · undo/redo), which reads the active-state flags
-    /// above live via `@Observable`.
-    var presentFormatSheet: () -> Void = {}
+    /// True while the Format panel occupies the keyboard slot (an `inputView` swap,
+    /// NOT an app-window sheet — that lost the z-fight with the keyboard's own
+    /// window). Drives the `Aa` button's active state.
+    var isFormatPanelPresented = false
+    /// `Aa` on the bar → swaps the keyboard for the Format panel (B/I/U/S · headings
+    /// · list kinds · inline code · link · undo/redo) and back. The panel reads the
+    /// active-state flags above live via `@Observable`; first responder is retained
+    /// across the swap so `textViewDidChangeSelection` keeps firing.
+    var toggleFormatPanel: () -> Void = {}
     /// `image` category on the bar → captures the caret (before the picker resigns
     /// first responder) and asks the consumer to present the photo picker.
     var insertImage: () -> Void = {}
@@ -1952,27 +2006,40 @@ final class RichTextEditorState {
 struct RichTextToolbar: View {
     @Bindable var state: RichTextEditorState
 
-    /// ws-dark-light-mode — the formatting toolbar is a UIKit
-    /// `inputAccessoryView` (SwiftUI hosted in a `UIHostingController`), so it
-    /// sits OUTSIDE the SwiftUI render tree and every render-tree/directory
-    /// sweep missed it. The capsule adapts: dark = the prior `Color(white:
-    /// 0.12)` (byte-identical), light = a soft light pill so the bar reads on
-    /// cream. Buttons/separators use `.primary` (adaptive; dark = white =
-    /// identical). System color, not `AppearancePalette` — this is a Shared view.
-    private static let toolbarFill = Color(UIColor { trait in
+    /// ws-editor-chrome item 3 — the bar shares the detail surface's tone, so it
+    /// must separate by VALUE (T is colorblind — no hue cue). The pill body is a
+    /// blurred `.regularMaterial` (iOS-18-safe; NOT iOS 26 glass), lifted by a
+    /// hairline rim + a soft shadow. All three are dials T tunes on device; the
+    /// numeric values are picked here so they're inspectable. Adaptive so both
+    /// themes separate by value: dark = a bright hairline (white α0.16) over a deep
+    /// shadow (black α0.44); light = a dark hairline (black α0.12) over a soft
+    /// shadow (black α0.16). Buttons/separators stay `.primary` (adaptive).
+    private static let barHairline = Color(UIColor { trait in
         trait.userInterfaceStyle == .dark
-            ? UIColor(white: 0.12, alpha: 1)
-            : UIColor(white: 0.90, alpha: 1)
+            ? UIColor(white: 1.0, alpha: 0.16)
+            : UIColor(white: 0.0, alpha: 0.12)
+    })
+    private static let barShadow = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 0.0, alpha: 0.44)
+            : UIColor(white: 0.0, alpha: 0.16)
     })
 
     var body: some View {
-        // ws-editor-chrome — the bar is CATEGORIES, not attributes. All formatting
-        // (B/I/U/S · headings · lists · indent · inline code · link · undo/redo)
-        // lives behind `Aa` in the Format sheet; the bar grows along what you can
-        // INSERT or DO.
+        // ws-editor-chrome — the bar is CATEGORIES + the do-repeatedly list actions.
+        // Text attributes (B/I/U/S · headings · list kinds · inline code · link ·
+        // undo/redo) live behind `Aa` in the Format panel; checklist + indent/outdent
+        // stay out (things you DO while building a list). The bar grows along what you
+        // can INSERT or DO, not along how many text attributes exist.
         HStack(spacing: 6) {
-            button(icon: "textformat", active: false, action: state.presentFormatSheet)     // Aa → Format sheet
+            button(icon: "textformat", active: state.isFormatPanelPresented, action: state.toggleFormatPanel)  // Aa → Format panel
             button(icon: "checklist", active: state.isChecklist, action: state.toggleChecklist)  // a thing you make
+            // indent / outdent are PERMANENT bar fixtures (T): used repeatedly while
+            // building a list — the same "a thing you do" class as checklist, and two
+            // taps deep in a sheet was a regression from the old bar. Order per T's
+            // spec ("indent · outdent"): increase then decrease.
+            button(icon: "increase.indent", active: false, action: state.indent)
+            button(icon: "decrease.indent", active: false, action: state.outdent)
             if state.supportsInlineImage {
                 separator
                 button(icon: "photo", active: false, action: state.insertImage)             // image — its own section
@@ -1985,7 +2052,13 @@ struct RichTextToolbar: View {
         }
         .padding(.horizontal, 10)
         .frame(height: 48)
-        .background(Capsule(style: .continuous).fill(Self.toolbarFill))
+        // ws-editor-chrome item 3 — value-only separation from the detail surface:
+        // a blurred material body + a hairline rim + a soft lift. iOS-18-safe.
+        .background(Capsule(style: .continuous).fill(.regularMaterial))
+        .overlay(
+            Capsule(style: .continuous).strokeBorder(Self.barHairline, lineWidth: 1)
+        )
+        .shadow(color: Self.barShadow, radius: 6, x: 0, y: 1.5)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
@@ -2018,12 +2091,13 @@ struct RichTextToolbar: View {
 
 // MARK: - Format sheet (launcher chrome)
 
-/// The Format sheet behind the bar's `Aa` (ws-editor-chrome). Relocates every text
-/// format off the bar — B/I/U/S, the heading levels, list kinds, indent, inline
-/// code, link, undo/redo — into one partial-height sheet. Binds to the SAME
-/// `@Observable` `RichTextEditorState` the bar uses, so active states track the
-/// selection LIVE while the sheet is open (it is presented non-blocking, so the
-/// caret can still move). Every action is an existing, already-wired command —
+/// The Format panel behind the bar's `Aa` (ws-editor-chrome). Relocates the text
+/// attributes off the bar — B/I/U/S, the heading levels, list kinds, inline code,
+/// link, undo/redo — into one panel (indent/outdent stay on the bar as fixtures).
+/// Presented as the text view's `inputView` (the keyboard's own slot), so it wins
+/// no z-fight and first responder is retained; it binds the SAME `@Observable`
+/// `RichTextEditorState` the bar uses, so active states track the selection LIVE
+/// while it's open. Every action is an existing, already-wired command —
 /// relocation, not new capability.
 struct RichTextFormatSheet: View {
     @Bindable var state: RichTextEditorState
@@ -2049,8 +2123,10 @@ struct RichTextFormatSheet: View {
                     fmt("list.bullet", state.isBulletList, state.toggleBulletList)
                     fmt("list.number", state.isNumberedList, state.toggleNumberedList)
                     fmt("checklist", state.isChecklist, state.toggleChecklist)
-                    fmt("decrease.indent", false, state.outdent)
-                    fmt("increase.indent", false, state.indent)
+                    // indent / outdent moved to the bar PERMANENTLY (T) — used while
+                    // building a list, same class as checklist. Not duplicated here:
+                    // a single role → a single home (checklist's dual role is the
+                    // one intentional exception).
                 }
                 // Link stays here for now (selection-first — moves to the edit menu
                 // in its own brief); undo/redo relocate off the bar, nothing lost.

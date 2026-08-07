@@ -1750,6 +1750,33 @@ enum NoteEditorToolbar {
     static let designHeight: CGFloat = 56
 }
 
+/// Shared value-only chrome for the note-editor bar AND the Format panel
+/// (ws-editor-chrome item 3). Both surfaces use `.regularMaterial` + this rim so
+/// they read as ONE system, not two — a custom `inputView` inherits none of the
+/// system keyboard's material, so the panel must be dressed to match the bar.
+/// VALUE not hue (T is colorblind); iOS-18-safe (material blur, NOT iOS 26 glass).
+/// All dials T tunes on device; the numeric values are picked here so they're
+/// inspectable. Adaptive so both themes separate by value.
+enum NoteEditorChrome {
+    /// Continuous corner radius: the bar is a pill (radius = height/2); the panel
+    /// rounds its TOP corners to this so the two share a corner language.
+    static let cornerRadius: CGFloat = 22
+    /// Hairline rim — a bright edge in dark (white α0.16), a dark edge in light
+    /// (black α0.12).
+    static let hairline = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 1.0, alpha: 0.16)
+            : UIColor(white: 0.0, alpha: 0.12)
+    })
+    /// Soft lift off the surface behind — deep in dark (black α0.44), soft in light
+    /// (black α0.16).
+    static let shadow = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(white: 0.0, alpha: 0.44)
+            : UIColor(white: 0.0, alpha: 0.16)
+    })
+}
+
 extension Notification.Name {
     /// Posted by `ToolbarContainerView` with the toolbar's ACTUAL laid-out height
     /// (`userInfo["height"]: Double`) once it is presented in the window (keyboard
@@ -2006,24 +2033,10 @@ final class RichTextEditorState {
 struct RichTextToolbar: View {
     @Bindable var state: RichTextEditorState
 
-    /// ws-editor-chrome item 3 — the bar shares the detail surface's tone, so it
-    /// must separate by VALUE (T is colorblind — no hue cue). The pill body is a
-    /// blurred `.regularMaterial` (iOS-18-safe; NOT iOS 26 glass), lifted by a
-    /// hairline rim + a soft shadow. All three are dials T tunes on device; the
-    /// numeric values are picked here so they're inspectable. Adaptive so both
-    /// themes separate by value: dark = a bright hairline (white α0.16) over a deep
-    /// shadow (black α0.44); light = a dark hairline (black α0.12) over a soft
-    /// shadow (black α0.16). Buttons/separators stay `.primary` (adaptive).
-    private static let barHairline = Color(UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? UIColor(white: 1.0, alpha: 0.16)
-            : UIColor(white: 0.0, alpha: 0.12)
-    })
-    private static let barShadow = Color(UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? UIColor(white: 0.0, alpha: 0.44)
-            : UIColor(white: 0.0, alpha: 0.16)
-    })
+    // ws-editor-chrome item 3 — the bar separates from the same-tone detail surface
+    // by VALUE (T is colorblind): a blurred `.regularMaterial` pill + a hairline rim
+    // + a soft shadow, all from the SHARED `NoteEditorChrome` so the bar and the
+    // Format panel read as one system. Buttons/separators stay `.primary` (adaptive).
 
     var body: some View {
         // ws-editor-chrome — the bar is CATEGORIES + the do-repeatedly list actions.
@@ -2056,9 +2069,9 @@ struct RichTextToolbar: View {
         // a blurred material body + a hairline rim + a soft lift. iOS-18-safe.
         .background(Capsule(style: .continuous).fill(.regularMaterial))
         .overlay(
-            Capsule(style: .continuous).strokeBorder(Self.barHairline, lineWidth: 1)
+            Capsule(style: .continuous).strokeBorder(NoteEditorChrome.hairline, lineWidth: 1)
         )
-        .shadow(color: Self.barShadow, radius: 6, x: 0, y: 1.5)
+        .shadow(color: NoteEditorChrome.shadow, radius: 6, x: 0, y: 1.5)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity)
@@ -2139,7 +2152,28 @@ struct RichTextFormatSheet: View {
             .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(uiColor: .systemBackground))
+        // ws-editor-chrome item 3 — a custom `inputView` inherits NONE of the system
+        // keyboard's material, so dress the panel to MATCH the bar (same
+        // `NoteEditorChrome`): a `.regularMaterial` body, TOP corners rounded to the
+        // shared radius, and the same hairline rim — so the bar (a floating pill) and
+        // the panel (a frosted drawer beneath it) read as ONE system. Value-only,
+        // iOS-18-safe (material blur, NOT iOS 26 glass). Bottom corners stay square —
+        // they sit at the screen edge, off-screen.
+        .background(.regularMaterial)
+        .clipShape(panelShape)
+        .overlay(panelShape.strokeBorder(NoteEditorChrome.hairline, lineWidth: 1))
+    }
+
+    /// Top-rounded drawer shape shared by the panel's clip + rim, so they match the
+    /// bar's continuous corner language (`NoteEditorChrome.cornerRadius`).
+    private var panelShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: NoteEditorChrome.cornerRadius,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: NoteEditorChrome.cornerRadius,
+            style: .continuous
+        )
     }
 
     @ViewBuilder

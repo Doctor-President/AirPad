@@ -508,14 +508,18 @@ struct RichTextEditor: UIViewRepresentable {
         func toggleFormatPanel() {
             guard let textView else { return }
             if textView.inputView == nil {
-                let host = UIHostingController(rootView: RichTextFormatSheet(state: state))
+                // A custom inputView sees no safe area of its own — read the home
+                // indicator inset from the window so the envelope floats clear of it.
+                let bottomInset = textView.window?.safeAreaInsets.bottom ?? 0
+                let host = UIHostingController(rootView: RichTextFormatSheet(state: state, bottomInset: bottomInset))
                 host.view.translatesAutoresizingMaskIntoConstraints = false
                 host.view.backgroundColor = .clear
 
+                let panelHeight = RichTextFormatSheet.baseHeight + bottomInset
                 let panel = FormatPanelContainerView(
-                    frame: CGRect(x: 0, y: 0, width: textView.bounds.width,
-                                  height: FormatPanelContainerView.designHeight)
+                    frame: CGRect(x: 0, y: 0, width: textView.bounds.width, height: panelHeight)
                 )
+                panel.desiredHeight = panelHeight
                 panel.autoresizingMask = .flexibleWidth
                 panel.addSubview(host.view)
                 NSLayoutConstraint.activate([
@@ -1758,9 +1762,9 @@ enum NoteEditorToolbar {
 /// All dials T tunes on device; the numeric values are picked here so they're
 /// inspectable. Adaptive so both themes separate by value.
 enum NoteEditorChrome {
-    /// Continuous corner radius: the bar is a pill (radius = height/2); the panel
-    /// rounds its TOP corners to this so the two share a corner language.
-    static let cornerRadius: CGFloat = 22
+    /// Continuous corner radius for the Format panel's ENVELOPE — larger, to echo the
+    /// screen's own rounded corners (the bar stays a pill: radius = height/2). Dial.
+    static let cornerRadius: CGFloat = 26
     /// Hairline rim — a bright edge in dark (white α0.16), a dark edge in light
     /// (black α0.12).
     static let hairline = Color(UIColor { trait in
@@ -1809,11 +1813,12 @@ final class ToolbarContainerView: UIView {
 /// (the panel content scrolls); an explicit `intrinsicContentSize` so the input
 /// system sizes it even before autolayout settles.
 final class FormatPanelContainerView: UIView {
-    /// Panel height in the keyboard slot. Close to a typical keyboard height so the
-    /// swap doesn't jump the text; the panel scrolls if its content is taller. Dial.
-    static let designHeight: CGFloat = 320
+    /// Panel height in the keyboard slot — set by the Coordinator to
+    /// `RichTextFormatSheet.baseHeight + the home-indicator safe-area inset`, so the
+    /// panel is exactly tall enough for the one-screen envelope (no scroll).
+    var desiredHeight: CGFloat = RichTextFormatSheet.baseHeight
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: Self.designHeight)
+        CGSize(width: UIView.noIntrinsicMetric, height: desiredHeight)
     }
 }
 
@@ -2102,113 +2107,136 @@ struct RichTextToolbar: View {
     }
 }
 
-// MARK: - Format sheet (launcher chrome)
+// MARK: - Format panel (launcher chrome)
 
 /// The Format panel behind the bar's `Aa` (ws-editor-chrome). Relocates the text
-/// attributes off the bar — B/I/U/S, the heading levels, list kinds, inline code,
-/// link, undo/redo — into one panel (indent/outdent stay on the bar as fixtures).
+/// attributes off the bar — paragraph style, B/I/U/S, inline code, list kinds, link,
+/// undo/redo — onto ONE screen with NO scroll (indent/outdent stay on the bar).
 /// Presented as the text view's `inputView` (the keyboard's own slot), so it wins
 /// no z-fight and first responder is retained; it binds the SAME `@Observable`
-/// `RichTextEditorState` the bar uses, so active states track the selection LIVE
-/// while it's open. Every action is an existing, already-wired command —
-/// relocation, not new capability.
+/// `RichTextEditorState` the bar uses, so active states track the selection LIVE.
+///
+/// LAYOUT PASS (ws-editor-chrome, matches Apple Notes): SEGMENTED ROWS, not
+/// free-floating pills — the grouping IS the container (a rounded track per row), so
+/// no vertical space is spent on section labels or inter-pill gaps and everything
+/// fits one screen. The whole thing is an ENVELOPE: inset side margins, continuous
+/// corners echoing the screen's radius, floating clear of the bottom safe area.
+///
+/// Dynamic Type: the rows are FIXED-height chrome (like the bar / the system
+/// keyboard), so the panel never grows past one screen; segment TEXT shrinks to fit
+/// (`minimumScaleFactor`) rather than the layout overflowing. The deliberate trade —
+/// the panel doesn't enlarge for accessibility, same as the bar.
 struct RichTextFormatSheet: View {
     @Bindable var state: RichTextEditorState
+    /// Home-indicator safe-area inset, passed from the Coordinator (an `inputView`
+    /// sees no safe area of its own) so the envelope floats clear of it.
+    var bottomInset: CGFloat = 0
+
+    // Fixed metrics — `baseHeight` (envelope + margins, sans safe area) lets the
+    // Coordinator size the fixed-height inputView; total = baseHeight + inset.
+    private static let rowHeight: CGFloat = 44
+    private static let rowSpacing: CGFloat = 12
+    private static let envelopePadding: CGFloat = 16
+    private static let sideMargin: CGFloat = 10
+    private static let topMargin: CGFloat = 10
+    private static let bottomMargin: CGFloat = 12
+    static let baseHeight: CGFloat =
+        topMargin + envelopePadding * 2 + rowHeight * 3 + rowSpacing * 2 + bottomMargin
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                group("Style") {
-                    styleChip("Title", .title)
-                    styleChip("Heading", .heading)
-                    styleChip("Subheading", .subheading)
-                    styleChip("Body", nil)
-                    styleChip("Mono", .monospaced)
+        VStack(spacing: Self.rowSpacing) {
+            // Row 1 — paragraph style (single-select).
+            segmentedRow {
+                styleCell("Title", .title)
+                styleCell("Heading", .heading)
+                styleCell("Subheading", .subheading)
+                styleCell("Body", nil)
+                styleCell("Mono", .monospaced)
+            }
+            // Row 2 — character format (independent toggles in one block).
+            segmentedRow {
+                iconCell("bold", active: state.isBold, action: state.toggleBold)
+                iconCell("italic", active: state.isItalic, action: state.toggleItalic)
+                iconCell("underline", active: state.isUnderline, action: state.toggleUnderline)
+                iconCell("strikethrough", active: state.isStrikethrough, action: state.toggleStrikethrough)
+                iconCell("chevron.left.forwardslash.chevron.right", active: state.isInlineCode, action: state.toggleInlineCode)
+            }
+            // Row 3 — lists (left) + insert/edit (right) share one row. Link stays here
+            // until its edit-menu brief; undo/redo relocated off the bar, nothing lost.
+            HStack(spacing: Self.rowSpacing) {
+                segmentedRow {
+                    iconCell("list.bullet", active: state.isBulletList, action: state.toggleBulletList)
+                    iconCell("list.number", active: state.isNumberedList, action: state.toggleNumberedList)
+                    iconCell("checklist", active: state.isChecklist, action: state.toggleChecklist)
                 }
-                group("Format") {
-                    fmt("bold", state.isBold, state.toggleBold)
-                    fmt("italic", state.isItalic, state.toggleItalic)
-                    fmt("underline", state.isUnderline, state.toggleUnderline)
-                    fmt("strikethrough", state.isStrikethrough, state.toggleStrikethrough)
-                    fmt("chevron.left.forwardslash.chevron.right", state.isInlineCode, state.toggleInlineCode)
-                }
-                group("List") {
-                    fmt("list.bullet", state.isBulletList, state.toggleBulletList)
-                    fmt("list.number", state.isNumberedList, state.toggleNumberedList)
-                    fmt("checklist", state.isChecklist, state.toggleChecklist)
-                    // indent / outdent moved to the bar PERMANENTLY (T) — used while
-                    // building a list, same class as checklist. Not duplicated here:
-                    // a single role → a single home (checklist's dual role is the
-                    // one intentional exception).
-                }
-                // Link stays here for now (selection-first — moves to the edit menu
-                // in its own brief); undo/redo relocate off the bar, nothing lost.
-                group("Insert & edit") {
-                    fmt("link", false, state.insertLink)
-                    fmt("arrow.uturn.backward", false, state.undo, enabled: state.canUndo)
-                    fmt("arrow.uturn.forward", false, state.redo, enabled: state.canRedo)
+                segmentedRow {
+                    iconCell("link", active: false, action: state.insertLink)
+                    iconCell("arrow.uturn.backward", active: false, action: state.undo, enabled: state.canUndo)
+                    iconCell("arrow.uturn.forward", active: false, action: state.redo, enabled: state.canRedo)
                 }
             }
-            .padding(20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // ws-editor-chrome item 3 — a custom `inputView` inherits NONE of the system
-        // keyboard's material, so dress the panel to MATCH the bar (same
-        // `NoteEditorChrome`): a `.regularMaterial` body, TOP corners rounded to the
-        // shared radius, and the same hairline rim — so the bar (a floating pill) and
-        // the panel (a frosted drawer beneath it) read as ONE system. Value-only,
-        // iOS-18-safe (material blur, NOT iOS 26 glass). Bottom corners stay square —
-        // they sit at the screen edge, off-screen.
+        .padding(Self.envelopePadding)
+        // ws-editor-chrome — the ENVELOPE. A custom `inputView` inherits no
+        // system-keyboard material, so dress it to match the bar: `.regularMaterial` +
+        // the shared hairline rim, VALUE-only (T colorblind), iOS-18-safe (NOT iOS 26
+        // glass). Continuous corners echo the screen's radius.
         .background(.regularMaterial)
-        .clipShape(panelShape)
-        .overlay(panelShape.strokeBorder(NoteEditorChrome.hairline, lineWidth: 1))
-    }
-
-    /// Top-rounded drawer shape shared by the panel's clip + rim, so they match the
-    /// bar's continuous corner language (`NoteEditorChrome.cornerRadius`).
-    private var panelShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: NoteEditorChrome.cornerRadius,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: 0,
-            topTrailingRadius: NoteEditorChrome.cornerRadius,
-            style: .continuous
+        .clipShape(RoundedRectangle(cornerRadius: NoteEditorChrome.cornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: NoteEditorChrome.cornerRadius, style: .continuous)
+                .strokeBorder(NoteEditorChrome.hairline, lineWidth: 1)
         )
+        // Float OFF the screen edges: inset sides, a top margin, and clear the home
+        // indicator. Top-aligned so any slack falls below the envelope (harmless).
+        .padding(.horizontal, Self.sideMargin)
+        .padding(.top, Self.topMargin)
+        .padding(.bottom, Self.bottomMargin + bottomInset)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    @ViewBuilder
-    private func group<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) { content() }
-            }
-        }
+    // MARK: Segmented components
+
+    /// One segmented block: equal-width cells in a single rounded track. The track IS
+    /// the grouping — no label or gap needed to separate the controls.
+    private func segmentedRow<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        HStack(spacing: 3) { content() }
+            .padding(3)
+            .frame(maxWidth: .infinity)
+            .frame(height: Self.rowHeight)
+            .background(Color.primary.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(NoteEditorChrome.hairline.opacity(0.6), lineWidth: 0.5)
+            )
     }
 
-    private func styleChip(_ label: String, _ level: RichTextHeadingLevel?) -> some View {
+    /// A paragraph-style cell (single-select). Text shrinks rather than the row growing.
+    private func styleCell(_ label: String, _ level: RichTextHeadingLevel?) -> some View {
         let active = state.currentHeadingLevel == level
         return Button { state.applyHeading(level) } label: {
             Text(label)
-                .font(.subheadline.weight(.medium))
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.8))
-                .background(active ? Color.primary.opacity(0.16) : Color.primary.opacity(0.06))
-                .clipShape(Capsule(style: .continuous))
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.85))
+                .background(active ? Color.primary.opacity(0.20) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
     }
 
-    private func fmt(_ icon: String, _ active: Bool, _ action: @escaping () -> Void, enabled: Bool = true) -> some View {
+    /// An icon cell (independent toggle or one-shot action).
+    private func iconCell(_ icon: String, active: Bool, action: @escaping () -> Void, enabled: Bool = true) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .medium))
-                .frame(width: 46, height: 42)
-                .foregroundStyle(enabled ? (active ? Color.primary : Color.primary.opacity(0.8)) : Color.primary.opacity(0.3))
-                .background(active ? Color.primary.opacity(0.16) : Color.primary.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .font(.system(size: 16, weight: .medium))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .foregroundStyle(enabled ? (active ? Color.primary : Color.primary.opacity(0.85)) : Color.primary.opacity(0.3))
+                .background(active ? Color.primary.opacity(0.20) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!enabled)

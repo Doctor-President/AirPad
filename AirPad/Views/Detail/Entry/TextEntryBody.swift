@@ -39,6 +39,10 @@ struct TextEntryBody: View {
     @State private var didConsumeAutoFocus = false
     /// Photos-picker selection for inserting an inline image into the note.
     @State private var pickerItem: PhotosPickerItem? = nil
+    /// Present the picker from a Button so we can capture the caret BEFORE it opens.
+    @State private var showPhotoPicker = false
+    /// Bridge to ask the editor to insert an image at a remembered caret.
+    @State private var imageInsertion = InlineImageInsertion()
 
     private var shouldAutoFocus: Bool {
         !didConsumeAutoFocus && store.pendingAutoFocusItemID == item.id
@@ -81,7 +85,9 @@ struct TextEntryBody: View {
             // bundled for the forthcoming user-selectable font picker.
             documentFont: .sourceSerif4,
             // Inline images: resolve a token's item id → image for rendering.
-            resolveImage: { await store.inlineImage(forItemID: $0, nodeID: nodeID) }
+            resolveImage: { await store.inlineImage(forItemID: $0, nodeID: nodeID) },
+            // photo-at-caret: the editor wires this so we can capture the caret + splice.
+            inlineImageInsertion: imageInsertion
         )
         // Comfortable internal text padding; the panel sits in the normal inset
         // column (the full-bleed `.padding(.horizontal, -32)` hack is gone).
@@ -119,7 +125,12 @@ struct TextEntryBody: View {
         // (empty corner on a left-aligned note). Picking inserts the image inline
         // at the cursor.
         .overlay(alignment: .topTrailing) {
-            PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+            // A Button (not PhotosPicker directly) so we can capture the caret BEFORE
+            // the picker presents and resigns first responder.
+            Button {
+                imageInsertion.captureCaret()
+                showPhotoPicker = true
+            } label: {
                 Image(systemName: "photo.badge.plus")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color(NoteTypography.foreground).opacity(0.5))
@@ -128,6 +139,8 @@ struct TextEntryBody: View {
             }
             .buttonStyle(.plain)
         }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $pickerItem,
+                      matching: .images, photoLibrary: .shared())
         .onChange(of: pickerItem) { _, newItem in
             guard let newItem else { return }
             Task { await insertPickedImage(newItem) }
@@ -156,9 +169,13 @@ struct TextEntryBody: View {
         }
     }
 
-    /// Persist the picked image as an `.imageVideo` item, then append its token
-    /// to the note's markdown and save — the editor's decode path renders the
-    /// attachment, and the standalone entry is de-dup'd out of the payload list.
+    /// Persist the picked image as an `.imageVideo` item, then insert its token at
+    /// the caret remembered when the photo button was tapped — the editor splices a
+    /// placeholder attachment there and re-encodes (encode walks runs in order, so
+    /// the token lands in place; no cursor↔markdown mapping). Falls back to appending
+    /// (today's behaviour) for an empty note or if the text changed while the picker
+    /// was up. The decode path renders the attachment; the standalone entry is
+    /// de-dup'd out of the payload list.
     private func insertPickedImage(_ pickerItem: PhotosPickerItem) async {
         defer { self.pickerItem = nil }
         guard let data = try? await pickerItem.loadTransferable(type: Data.self) else { return }
@@ -170,13 +187,17 @@ struct TextEntryBody: View {
         do { try data.write(to: tmp) } catch { return }
         guard let id = await store.addInlineImageItem(nodeID: nodeID, sourceURL: tmp, fileExtension: ext) else { return }
 
-        // Append the token on its own line, then persist so it lands in
-        // item.content. NOTE: appends at the end of the note for now — reliable;
-        // cursor-precise insertion is a follow-up (needs cursor↔markdown mapping).
-        let token = MarkdownCodec.imageToken(itemID: id)
-        let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let newText = trimmed.isEmpty ? token : editingText + "\n\n" + token
-        editingText = newText
-        await store.updateTextItem(itemID: item.id, newContent: newText, nodeID: nodeID)
+        if imageInsertion.insert(itemID: id) {
+            // Editor spliced at the caret + pushed the binding; `editingText` is the
+            // new markdown with the token in place. Persist it.
+            await store.updateTextItem(itemID: item.id, newContent: editingText, nodeID: nodeID)
+        } else {
+            // Fallback (empty note, or text changed while the picker was up): append.
+            let token = MarkdownCodec.imageToken(itemID: id)
+            let trimmed = editingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let newText = trimmed.isEmpty ? token : editingText + "\n\n" + token
+            editingText = newText
+            await store.updateTextItem(itemID: item.id, newContent: newText, nodeID: nodeID)
+        }
     }
 }

@@ -2900,28 +2900,56 @@ enum NoteFontChoice {
     case lora
     case sourceSerif4
 
-    /// PostScript face name for the given traits, or nil to keep the system font.
-    /// SourceSerif4 ships a bold-italic face (`SourceSerif4-BoldIt`), so bold+italic
-    /// composes — its bold+italic case MUST precede the bare `if bold`, or bold
-    /// short-circuits and the italic is silently dropped (the re-facing bug).
-    /// `.lora` is dead scaffold here — nothing sets `documentFont: .lora` and the
-    /// font picker that would expose it isn't built — so its missing bold-italic
-    /// face is left as-is; give it the same bold+italic case plus a `Lora-BoldItalic`
-    /// asset if the picker ever makes `.lora` reachable. (The `.lora` in
-    /// `EntryVisualSettings` / `CorpusPhysicsScene` is a separate, family-based
-    /// mechanism — not this PostScript-name path.)
-    func faceName(bold: Bool, italic: Bool) -> String? {
+    /// Bundled serif PostScript face name for a run's NUMERIC `weight` + `italic`,
+    /// or nil to keep the system font. `weight` is the UIFontWeight-axis value read
+    /// from the descriptor's `.traits[.weight]` (see `UIFont.airpadWeightValue`) —
+    /// **not** the `.traitBold` symbolic bit, which is unset for `.semibold` and so
+    /// silently dropped a semibold heading's weight (the headings-italic defect).
+    /// Resolves to the NEAREST vendored weight, so runs at weights we don't ship a
+    /// face for still render at the closest one.
+    ///
+    /// SourceSerif4 vendors the full core family — Regular / Semibold / Bold, each
+    /// upright + italic — so every (weight, italic) a note run can reach renders,
+    /// keeping weight AND italic. `.lora` is dead scaffold: nothing sets
+    /// `documentFont: .lora`, the picker that would expose it isn't built, and only
+    /// Regular / Italic / Bold are vendored — so it can't honour weight or compose
+    /// bold-italic; give it the same family + weight treatment if the picker ever
+    /// makes it reachable. (The `.lora` in `EntryVisualSettings` / `CorpusPhysicsScene`
+    /// is a separate, family-based path — not this PostScript-name one.)
+    func faceName(weight: CGFloat, italic: Bool) -> String? {
         switch self {
         case .system:
             return nil
+        case .sourceSerif4:
+            // (axis weight, upright stem, italic stem) per vendored face. PS names
+            // read from the files — `-It`/`-SemiboldIt`/`-BoldIt`, NOT `-Italic`.
+            let faces: [(w: CGFloat, up: String, it: String)] = [
+                (UIFont.Weight.regular.rawValue,  "Regular",  "It"),
+                (UIFont.Weight.semibold.rawValue, "Semibold", "SemiboldIt"),
+                (UIFont.Weight.bold.rawValue,     "Bold",     "BoldIt"),
+            ]
+            let nearest = faces.min { abs($0.w - weight) < abs($1.w - weight) }!
+            return "SourceSerif4-" + (italic ? nearest.it : nearest.up)
         case .lora:
+            // Dead scaffold — only Regular/Bold/Italic vendored (no semibold /
+            // bold-italic), so weight collapses to a bold threshold and bold+italic
+            // can't compose. Same family + weight fix if ever reachable.
+            let bold = weight >= UIFont.Weight.semibold.rawValue
             if bold { return "Lora-Bold" }
             return italic ? "Lora-Italic" : "Lora-Regular"
-        case .sourceSerif4:
-            if bold && italic { return "SourceSerif4-BoldIt" }   // real PS name, not "-BoldItalic"
-            if bold { return "SourceSerif4-Bold" }
-            return italic ? "SourceSerif4-It" : "SourceSerif4-Regular"
         }
+    }
+}
+
+extension UIFont {
+    /// The run's NUMERIC weight — the UIFontWeight-axis value from the descriptor's
+    /// `.traits[.weight]` — independent of the `.traitBold` symbolic bit, which is
+    /// unset for `.semibold`. Defaults to `.regular` (0) when absent.
+    var airpadWeightValue: CGFloat {
+        let traits = fontDescriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]
+        if let n = traits?[.weight] as? NSNumber { return CGFloat(n.doubleValue) }
+        if let d = traits?[.weight] as? CGFloat { return d }
+        return 0
     }
 }
 
@@ -3050,10 +3078,13 @@ enum NoteTypography {
         var runs: [(NSRange, UIFont)] = []
         mut.enumerateAttribute(.font, in: full, options: []) { value, r, _ in
             let current = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
-            let traits = current.fontDescriptor.symbolicTraits
-            if traits.contains(.traitMonoSpace) { return }   // keep inline code monospaced
-            guard let name = choice.faceName(bold: traits.contains(.traitBold),
-                                             italic: traits.contains(.traitItalic)),
+            let symbolic = current.fontDescriptor.symbolicTraits
+            if symbolic.contains(.traitMonoSpace) { return }   // keep inline code monospaced
+            // Resolve by NUMERIC weight, not the .traitBold bit — semibold headings
+            // don't set .traitBold, so the bit path drops their weight. Italic stays
+            // the symbolic trait (its correct source).
+            guard let name = choice.faceName(weight: current.airpadWeightValue,
+                                             italic: symbolic.contains(.traitItalic)),
                   let swapped = UIFont(name: name, size: current.pointSize) else { return }
             runs.append((r, swapped))
         }

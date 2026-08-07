@@ -112,6 +112,7 @@
 		629990192B6017CAA6D5DF1D /* UberNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98C5EDB7B8428ABB080668F /* UberNode.swift */; };
 		679810DFF18BC3D51A25E8E0 /* NodeCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD659A40CE161F15D371C285 /* NodeCardView.swift */; };
 		681C98F35607F79887210FD5 /* CatalogCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50172A80D6B3F46FAE1A4862 /* CatalogCard.swift */; };
+		68A7DFE8A2759AF0DCFD3924 /* SourceSerif4-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = C438DCDE3DCF26ECB6207FEA /* SourceSerif4-OFL.txt */; };
 		6ABE3E503556A6148E29F602 /* Node.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1866B7173FCC4A9B1AE81AF1 /* Node.swift */; };
 		6AD3038B45A504C93797875A /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = C729D9028EBF447A0241ABFD /* KeychainHelper.swift */; };
 		6BAF912AA3AF57ED9A6F600B /* NodeGridTileTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E2EC2958AAC24AD281B70D /* NodeGridTileTuning.swift */; };
@@ -131,6 +132,7 @@
 		7CE4D30F31BD74E94FB87500 /* SpeechSynthesisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4496FF91A72DB981ED791A85 /* SpeechSynthesisService.swift */; };
 		7F1400E0F8FC4DC57AFA78B0 /* Fraunces_72pt-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */; };
 		80929F37D80B349FBF52A58E /* NodeConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 555A2F390CA8E4777AAE7CB6 /* NodeConnection.swift */; };
+		811D96167D624FC5CEA113E7 /* Lora-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = F3D0F984EFB676B8DEF23CF1 /* Lora-OFL.txt */; };
 		82A241AC4B5BE28AC0C44FCE /* UMAPTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBFC67AB61C6EF9AE8FAEA9E /* UMAPTransform.swift */; };
 		82E46E44615798A6EAF8F8EF /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ADCFC2E5FD3AD007A9DF0EE /* ShareViewController.swift */; };
 		84D3297B82B6407D4F3DA4C4 /* SelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F8312336CC2A7C1C2763EF /* SelectionService.swift */; };
@@ -485,6 +487,7 @@
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
 		C35140138304B4308B90A0F6 /* ChatPinning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPinning.swift; sourceTree = "<group>"; };
 		C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureFlags.swift; sourceTree = "<group>"; };
+		C438DCDE3DCF26ECB6207FEA /* SourceSerif4-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "SourceSerif4-OFL.txt"; sourceTree = "<group>"; };
 		C49FE808E3476860F4E68D4F /* CoverFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverFlowView.swift; sourceTree = "<group>"; };
 		C6CE4B33C6F4682BF9799EC2 /* SpriteKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SpriteKit.framework; path = System/Library/Frameworks/SpriteKit.framework; sourceTree = SDKROOT; };
 		C729D9028EBF447A0241ABFD /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
@@ -534,6 +537,7 @@
 		F135F708282671E607C7C84B /* RichTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextEditor.swift; sourceTree = "<group>"; };
 		F189E8F160D5B6BD04D88706 /* NodeGridTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridTile.swift; sourceTree = "<group>"; };
 		F20C72F362ADBFA6890FA798 /* ImportIdeasSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportIdeasSheet.swift; sourceTree = "<group>"; };
+		F3D0F984EFB676B8DEF23CF1 /* Lora-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Lora-OFL.txt"; sourceTree = "<group>"; };
 		F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Bold.ttf"; sourceTree = "<group>"; };
 		F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagCreationSheet.swift; sourceTree = "<group>"; };
 		F7814673E5A10B9F5E391DA4 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -1016,6 +1020,7 @@
 				F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */,
 				2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */,
 				7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */,
+				C438DCDE3DCF26ECB6207FEA /* SourceSerif4-OFL.txt */,
 				B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */,
 				03B6828AF9AA80BAC6C1EF73 /* SourceSerif4-Semibold.ttf */,
 				36746C9E05B99C06E6564DA4 /* SourceSerif4-SemiboldItalic.ttf */,
@@ -1090,6 +1095,7 @@
 			children = (
 				D414766388E3034250D0E1AE /* Lora-Bold.ttf */,
 				7910DE998349210AB2623D42 /* Lora-Italic.ttf */,
+				F3D0F984EFB676B8DEF23CF1 /* Lora-OFL.txt */,
 				46B2E50D5AC047E8D52B2013 /* Lora-Regular.ttf */,
 			);
 			path = Lora;
@@ -1232,10 +1238,12 @@
 				4D418B5B931D8B8170E67A3A /* Lato-Regular.ttf in Resources */,
 				ACB61EF70E11DC8884EE3A6F /* Lora-Bold.ttf in Resources */,
 				423D97121CD075A9C4114F49 /* Lora-Italic.ttf in Resources */,
+				811D96167D624FC5CEA113E7 /* Lora-OFL.txt in Resources */,
 				5F8E37E87E6B3DAC5C0E38A9 /* Lora-Regular.ttf in Resources */,
 				EB83AF3EBDB104973AB2160B /* SourceSerif4-Bold.ttf in Resources */,
 				DB17DF29488227C4C40E0A59 /* SourceSerif4-BoldItalic.ttf in Resources */,
 				460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */,
+				68A7DFE8A2759AF0DCFD3924 /* SourceSerif4-OFL.txt in Resources */,
 				5681223387D04D1716AB1020 /* SourceSerif4-Regular.ttf in Resources */,
 				C2B9FFBFDD58377EC3C628D2 /* SourceSerif4-Semibold.ttf in Resources */,
 				0B85024B4DD95ADE1D73DF2E /* SourceSerif4-SemiboldItalic.ttf in Resources */,

@@ -1529,12 +1529,18 @@ struct RichTextEditor: UIViewRepresentable {
             code: Bool,
             base: UIFont
         ) -> UIFont {
-            let traits = base.fontDescriptor.symbolicTraits
-            let bold = trait == .traitBold ? !currentlyOn : traits.contains(.traitBold)
-            let italic = trait == .traitItalic ? !currentlyOn : traits.contains(.traitItalic)
+            let symbolic = base.fontDescriptor.symbolicTraits
+            let italic = trait == .traitItalic ? !currentlyOn : symbolic.contains(.traitItalic)
+            // BOLD toggle changes the WEIGHT; ITALIC toggle PRESERVES the run's numeric
+            // weight — so italic on a semibold heading stays semibold, not regular (the
+            // old buildBodyFont reset to body) and not bold (deriving weight from the
+            // .traitBold bit, which .SFUI-Semibold sets). Size is preserved throughout.
+            let weight: CGFloat = trait == .traitBold
+                ? (currentlyOn ? UIFont.Weight.regular.rawValue : UIFont.Weight.bold.rawValue)
+                : base.airpadWeightValue
             return code
-                ? buildMonoFont(bold: bold, italic: italic)
-                : buildBodyFont(bold: bold, italic: italic)
+                ? buildMonoFont(bold: weight >= UIFont.Weight.bold.rawValue, italic: italic)
+                : NoteTypographyHelper.styledFont(weight: weight, italic: italic, like: base)
         }
 
         private func buildBodyFont(bold: Bool, italic: Bool) -> UIFont {
@@ -1689,27 +1695,44 @@ enum NoteTypographyHelper {
         UIFont.preferredFont(forTextStyle: .body)
     }
 
-    /// Heading font at `level`, optionally italic.
+    /// Reliably applies italic to `font`. Uses `withSymbolicTraits` on the UNION with
+    /// the font's EXISTING symbolic traits (which include the semibold/​bold bits), so
+    /// it re-matches to the concrete italic face, e.g. `.SFUI-SemiboldItalic`.
     ///
-    /// The obvious `base.fontDescriptor.withSymbolicTraits(.traitItalic)` — which
-    /// both `applyHeading` sites used — frequently returns `nil` for the non-regular
-    /// system weights headings use (Title `.bold`, Heading/Subheading `.semibold`),
-    /// because the numeric weight isn't carried by the symbolic-trait bitmask. The
-    /// call then silently drops italic. Rebuild the descriptor's `.traits`
-    /// dictionary instead, preserving the concrete weight alongside the italic bit.
-    /// If the platform still can't synthesise the face, `UIFont(descriptor:size:)`
-    /// falls back to the closest match — i.e. the non-italic base, the prior
-    /// behaviour, so this never regresses.
+    /// ★ Measured (Simulator, `-SPRFontDiag`): the `.traits`-dict `.symbolic` approach
+    /// — which the earlier `headingFont`/`styledFont` used — only ANNOTATES the
+    /// descriptor; `UIFont(descriptor:)` does not resolve the italic face and the run
+    /// stays upright (`italic=false`). `withSymbolicTraits` here returns the real
+    /// italic font. Falls back to `font` unchanged if the platform can't synthesise
+    /// italic at this weight (never regresses below upright).
+    static func italicized(_ font: UIFont) -> UIFont {
+        let d = font.fontDescriptor
+        if let italicDesc = d.withSymbolicTraits(d.symbolicTraits.union(.traitItalic)) {
+            return UIFont(descriptor: italicDesc, size: font.pointSize)
+        }
+        return font
+    }
+
+    /// Heading font at `level`, optionally italic (via the reliable `italicized`).
     static func headingFont(level: RichTextHeadingLevel, italic: Bool) -> UIFont {
-        let base = level.font
-        guard italic else { return base }
-        let descriptor = base.fontDescriptor
-        var symbolic = descriptor.symbolicTraits
-        symbolic.insert(.traitItalic)
-        var traits = (descriptor.object(forKey: .traits) as? [UIFontDescriptor.TraitKey: Any]) ?? [:]
-        traits[.symbolic] = symbolic.rawValue
-        let italicDescriptor = descriptor.addingAttributes([.traits: traits])
-        return UIFont(descriptor: italicDescriptor, size: base.pointSize)
+        italic ? italicized(level.font) : level.font
+    }
+
+    /// A SYSTEM font at `weight` (UIFontWeight axis) + `italic`, at `base`'s size, for
+    /// the bold/italic toolbar toggle; `applyFont` re-faces it to the matching serif
+    /// weight afterward.
+    ///
+    /// Built from `UIFont.systemFont(ofSize:weight:)`, NOT `base`'s descriptor: once
+    /// `applyFont` has re-faced a run to a concrete serif face, italic can't be
+    /// synthesised on THAT descriptor (measured). Weight is carried NUMERICALLY (what
+    /// `applyFont` reads); the `.traitBold` symbolic bit is not used (semibold system
+    /// fonts set it, which would mistake semibold for bold). The toggle passes the
+    /// weight it wants: an ITALIC toggle passes the run's existing weight (so italic on
+    /// a semibold heading stays semibold — not regular, as the old `buildBodyFont`
+    /// reset to body did, and not bold); a BOLD toggle passes regular/bold.
+    static func styledFont(weight: CGFloat, italic: Bool, like base: UIFont) -> UIFont {
+        let system = UIFont.systemFont(ofSize: base.pointSize, weight: UIFont.Weight(rawValue: weight))
+        return italic ? italicized(system) : system
     }
 }
 

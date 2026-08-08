@@ -1553,7 +1553,17 @@ struct RichTextEditor: UIViewRepresentable {
             // same reassignment and never jumps — mirror it here.
             let savedSelection = textView.selectedRange
             let mut = NSMutableAttributedString(attributedString: attrText)
-            let replacement = MarkdownCodec.checklistAttachmentString(checked: newChecked)
+            // The toggle changes ONLY the checked state, and it runs with restyle:false
+            // (below). `checklistAttachmentString` bakes in system `.body` with no
+            // paragraph style, so carry the old glyph's LIVE font + paragraph style onto
+            // the new attachment — otherwise the swapped glyph (the paragraph's first
+            // char) reverts to 17pt Regular and drops the list hanging indent, and the
+            // item visibly reflows on tap.
+            let replacement = NSMutableAttributedString(
+                attributedString: MarkdownCodec.checklistAttachmentString(checked: newChecked))
+            let rRange = NSRange(location: 0, length: replacement.length)
+            if let f = attrs[.font] { replacement.addAttribute(.font, value: f, range: rRange) }
+            if let ps = attrs[.paragraphStyle] { replacement.addAttribute(.paragraphStyle, value: ps, range: rRange) }
             mut.replaceCharacters(in: NSRange(location: glyphLoc, length: 1), with: replacement)
             textView.attributedText = mut
             // The replace is length-preserving, so the saved range is still

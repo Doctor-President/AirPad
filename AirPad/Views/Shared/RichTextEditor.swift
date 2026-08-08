@@ -2170,62 +2170,72 @@ struct RichTextFormatSheet: View {
     /// sees no safe area of its own) so the envelope floats clear of it.
     var bottomInset: CGFloat = 0
 
-    // Fixed metrics. The content spans the whole slot (the system keyboard backdrop
-    // IS the envelope now — no outer margins); `envelopePadding` is the only inset.
-    // `baseHeight` (content, sans home-indicator inset) sizes the fixed-height
-    // inputView; total = baseHeight + inset.
+    // Fixed metrics. The backdrop IS the envelope (no outer margins), but the content
+    // still needs real PADDING to sit comfortably INSIDE it (margins and padding are
+    // different things). Apple insets its panel content generously — that inset is most
+    // of why theirs reads as designed. `baseHeight` (content, sans home-indicator inset)
+    // sizes the fixed-height inputView; total = baseHeight + inset. ★ Padding is BAKED
+    // into baseHeight so it's real, not stolen from the 44pt rows.
+    // The header sits vertically EQUIDISTANT from the top edge and the Style row (T).
+    // The system backdrop's visible top is ~18pt below our content's top, so equal
+    // CODE values render unequal — `topInset` is ~18 larger than `headerGap` to
+    // compensate, making the two VISIBLE gaps match (~30pt each). Measured in-sim.
+    private static let topInset: CGFloat = 32         // air ABOVE the header
+    private static let sideInset: CGFloat = 20        // left + right
     private static let headerHeight: CGFloat = 30
+    private static let headerGap: CGFloat = 14         // header → row 1
     private static let rowHeight: CGFloat = 44
     private static let rowSpacing: CGFloat = 12
-    private static let envelopePadding: CGFloat = 14
-    // 4 VStack children (header + 3 rows) → 3 gaps.
+    private static let bottomPad: CGFloat = 18         // above the home-indicator inset
     static let baseHeight: CGFloat =
-        envelopePadding * 2 + headerHeight + rowHeight * 3 + rowSpacing * 3
+        topInset + headerHeight + headerGap + rowHeight * 3 + rowSpacing * 2 + bottomPad
 
     var body: some View {
-        VStack(spacing: Self.rowSpacing) {
+        VStack(spacing: 0) {
             header
-            // Row 1 — paragraph style (single-select): uniform text cells, selected filled.
-            well {
-                styleCell("Title", .title); divider
-                styleCell("Heading", .heading); divider
-                styleCell("Subhead", .subheading); divider   // "Subheading" abbreviated so all 5 share ONE type size (no down-scaling)
-                styleCell("Body", nil); divider
-                styleCell("Mono", .monospaced)
-            }
-            // Row 2 — character format: B/I/U/S/code as ONE block, hairline dividers.
-            well {
-                iconCell("bold", active: state.isBold, action: state.toggleBold); divider
-                iconCell("italic", active: state.isItalic, action: state.toggleItalic); divider
-                iconCell("underline", active: state.isUnderline, action: state.toggleUnderline); divider
-                iconCell("strikethrough", active: state.isStrikethrough, action: state.toggleStrikethrough); divider
-                iconCell("chevron.left.forwardslash.chevron.right", active: state.isInlineCode, action: state.toggleInlineCode)
-            }
-            // Row 3 — list kinds grouped, then insert/edit grouped, sharing the row.
-            // (indent/outdent are the confirmed BAR fixtures; link stays here until its
-            // edit-menu brief; undo/redo relocated off the bar.)
-            HStack(spacing: Self.rowSpacing) {
+            VStack(spacing: Self.rowSpacing) {
+                // Row 1 — paragraph style (single-select): uniform text cells, selected filled.
                 well {
-                    iconCell("list.bullet", active: state.isBulletList, action: state.toggleBulletList); divider
-                    iconCell("list.number", active: state.isNumberedList, action: state.toggleNumberedList); divider
-                    iconCell("checklist", active: state.isChecklist, action: state.toggleChecklist)
+                    styleCell("Title", .title); divider
+                    styleCell("Heading", .heading); divider
+                    styleCell("Subhead", .subheading); divider   // "Subheading" abbreviated so all 5 share ONE type size (no down-scaling)
+                    styleCell("Body", nil); divider
+                    styleCell("Mono", .monospaced)
                 }
+                // Row 2 — character format: B/I/U/S/code as ONE block, hairline dividers.
                 well {
-                    iconCell("link", active: false, action: state.insertLink); divider
-                    iconCell("arrow.uturn.backward", active: false, action: state.undo, enabled: state.canUndo); divider
-                    iconCell("arrow.uturn.forward", active: false, action: state.redo, enabled: state.canRedo)
+                    iconCell("bold", active: state.isBold, action: state.toggleBold); divider
+                    iconCell("italic", active: state.isItalic, action: state.toggleItalic); divider
+                    iconCell("underline", active: state.isUnderline, action: state.toggleUnderline); divider
+                    iconCell("strikethrough", active: state.isStrikethrough, action: state.toggleStrikethrough); divider
+                    iconCell("chevron.left.forwardslash.chevron.right", active: state.isInlineCode, action: state.toggleInlineCode)
+                }
+                // Row 3 — list kinds grouped, then insert/edit grouped, sharing the row.
+                // (indent/outdent are the confirmed BAR fixtures; link stays here until its
+                // edit-menu brief; undo/redo relocated off the bar.)
+                HStack(spacing: Self.rowSpacing) {
+                    well {
+                        iconCell("list.bullet", active: state.isBulletList, action: state.toggleBulletList); divider
+                        iconCell("list.number", active: state.isNumberedList, action: state.toggleNumberedList); divider
+                        iconCell("checklist", active: state.isChecklist, action: state.toggleChecklist)
+                    }
+                    well {
+                        iconCell("link", active: false, action: state.insertLink); divider
+                        iconCell("arrow.uturn.backward", active: false, action: state.undo, enabled: state.canUndo); divider
+                        iconCell("arrow.uturn.forward", active: false, action: state.redo, enabled: state.canRedo)
+                    }
                 }
             }
+            .padding(.top, Self.headerGap)   // real space between the header and row 1
         }
-        .padding(Self.envelopePadding)
         // ws-editor-chrome — the system keyboard backdrop (a UIVisualEffectView UIKit
-        // puts behind any custom `inputView`) IS the envelope. We add NO second
-        // surface: no material, no rim, no shadow, no rounding, no outer margins — two
-        // stacked materials is what read as an error. Our content sits IN the backdrop;
-        // the recessed wells + raised thumbs are cells carved into it (the Apple
-        // pattern). Only the home-indicator inset stays, as PADDING (content must clear
-        // the indicator) — not a margin outside a card.
-        .padding(.bottom, bottomInset)
+        // puts behind any custom `inputView`) IS the envelope, so no second surface
+        // (no material/rim/shadow/rounding/outer-margins). But content still needs real
+        // interior PADDING so it doesn't kiss the slot edges — the backdrop is the
+        // envelope, the content sits comfortably INSIDE it. Baked into `baseHeight`.
+        .padding(.horizontal, Self.sideInset)
+        .padding(.top, Self.topInset)
+        .padding(.bottom, Self.bottomPad + bottomInset)   // interior bottom pad + home-indicator clearance
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 

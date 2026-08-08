@@ -152,9 +152,9 @@ targets:
           - Lora-Italic.ttf
           # Full core family (OFL) — Regular/Semibold/Bold × upright+italic — so the
           # weight-aware serif re-facing (NoteFontChoice.faceName) can honour a run's
-          # numeric weight AND italic. Semibold especially: headings are .semibold,
-          # which isn't a symbolic-bold bit, so without these faces they collapsed to
-          # regular/bold. PS names: -Regular/-It/-Semibold/-SemiboldIt/-Bold/-BoldIt.
+          # numeric weight AND italic. The note BODY renders at Semibold (headings Bold),
+          # so -Semibold/-SemiboldItalic carry the body; Bold carries emphasis + Title.
+          # PS names: -Regular/-It/-Semibold/-SemiboldIt/-Bold/-BoldIt.
           - SourceSerif4-Regular.ttf
           - SourceSerif4-Italic.ttf
           - SourceSerif4-Semibold.ttf

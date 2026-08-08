@@ -1932,11 +1932,15 @@ enum RichTextHeadingLevel: Int {
     /// EVERY size — Title > Heading > Subheading > body holds throughout, verified XS →
     /// AX5. (Also not `.title1/.title2/.headline`, which would adopt Apple's ratios.)
     var font: UIFont {
+        // Base ramp sizes, relative to a 17pt body. The note's body-size ratio (19/17)
+        // is layered on in `NoteTypography.applyFont` (the document sizing authority),
+        // so a Title renders at 26 · (dt/17) · (19/17). Heading/Subheading are Bold —
+        // one weight-notch above the Semibold body so they don't collide with it.
         let factor = UIFont.preferredFont(forTextStyle: .body).pointSize / 17  // 17 = .body @ default
         switch self {
         case .title:       return .systemFont(ofSize: 26 * factor, weight: .bold)
-        case .heading:     return .systemFont(ofSize: 21 * factor, weight: .semibold)
-        case .subheading:  return .systemFont(ofSize: 18 * factor, weight: .semibold)
+        case .heading:     return .systemFont(ofSize: 21 * factor, weight: .bold)
+        case .subheading:  return .systemFont(ofSize: 18 * factor, weight: .bold)
         case .monospaced:  return .monospacedSystemFont(ofSize: 16 * factor, weight: .regular)
         }
     }
@@ -1953,7 +1957,14 @@ enum RichTextHeadingLevel: Int {
 /// silent italic-on-heading failure — see `headingFont`.
 enum NoteTypographyHelper {
 
-    /// Body font for the editor and decoded text.
+    /// The note body reads a step larger than the system `.body` (19pt vs 17pt at
+    /// the default Dynamic Type size). This ratio is applied in the document styling
+    /// pass (`NoteTypography.applyFont`), so it's scoped to notes and rides Dynamic
+    /// Type — the shared decode baseline stays at `.body`.
+    static let bodyPointSizeRatio: CGFloat = 19.0 / 17.0
+
+    /// Body font for the editor and decoded text (system `.body`; the note document
+    /// scales it by `bodyPointSizeRatio` and re-faces it in `NoteTypography`).
     static var bodyFont: UIFont {
         UIFont.preferredFont(forTextStyle: .body)
     }
@@ -3374,7 +3385,9 @@ enum NoteFontChoice {
             return nil
         case .sourceSerif4:
             // (axis weight, upright stem, italic stem) per vendored face. PS names
-            // read from the files — `-It`/`-SemiboldIt`/`-BoldIt`, NOT `-Italic`.
+            // read from the files — `-It`/`-SemiboldIt`/`-BoldIt`, NOT `-Italic`. The
+            // note body renders at Semibold (see `NoteTypography.applyFont`), so body
+            // italic resolves to `-SemiboldIt` — both faces ship with the family.
             let faces: [(w: CGFloat, up: String, it: String)] = [
                 (UIFont.Weight.regular.rawValue,  "Regular",  "It"),
                 (UIFont.Weight.semibold.rawValue, "Semibold", "SemiboldIt"),
@@ -3420,13 +3433,18 @@ extension UIFont {
 @MainActor
 enum NoteTypography {
 
-    // Layout constants in points (not colors — safe as literals). Tuned so body
-    // text reads at roughly 1.5x font-size line height with comfortable gaps,
-    // and list items hang under their text like Apple Notes.
-    private static let bodyLineSpacing: CGFloat = 3
+    // Layout constants in points (not colors — safe as literals). Body carries NO
+    // additive line spacing — Source Serif's natural leading reads tight at the
+    // note body size; a paragraph gap is a comfortable single step, and list items
+    // hang under their text like Apple Notes.
+    private static let bodyLineSpacing: CGFloat = 0
     private static let bodyParagraphSpacing: CGFloat = 7
     private static let listLineSpacing: CGFloat = 4
     private static let listParagraphSpacing: CGFloat = 6
+    // A blank line (`\n\n`) decodes to an empty paragraph that would otherwise
+    // render a FULL body line — the real driver of the inter-paragraph gap. It's
+    // collapsed to this thin sliver so paragraphs sit in a tight margin rhythm.
+    private static let emptyParagraphHeight: CGFloat = 10
     private static let indentUnit: CGFloat = 22     // horizontal step per nesting level
     private static let markerHang: CGFloat = 20     // wrapped lines hang past the marker
 
@@ -3464,10 +3482,13 @@ enum NoteTypography {
     }
 
     /// Typing attributes seeded for an empty / freshly-focused editor so the first
-    /// keystrokes render body-styled and in the adaptive foreground.
+    /// keystrokes render body-styled and in the adaptive foreground. Seeded at the
+    /// note body SIZE (see `bodyPointSizeRatio`) so the caret doesn't jump a size
+    /// when `applyInPlace` re-faces the run to the serif document font.
     static var typingAttributes: [NSAttributedString.Key: Any] {
-        [
-            .font: NoteTypographyHelper.bodyFont,
+        let base = NoteTypographyHelper.bodyFont
+        return [
+            .font: base.withSize(base.pointSize * NoteTypographyHelper.bodyPointSizeRatio),
             .foregroundColor: foreground,
             .paragraphStyle: bodyParagraphStyle
         ]
@@ -3523,21 +3544,46 @@ enum NoteTypography {
         if font != .system { applyFont(font, to: mut) }
     }
 
-    /// Swaps every text run's typeface to `choice`, preserving point size and
-    /// bold/italic. Inline-code (monospaced) runs are left alone. Scaffold only.
+    /// Swaps every text run's typeface to `choice` and scales it to the note body
+    /// size (`bodyPointSizeRatio`). This is the document's SIZING AUTHORITY: the
+    /// shared decode pass sizes runs at system `.body`; this document-only pass
+    /// (it runs only when `documentStyle` is on) scales the whole ramp — body,
+    /// headings, and inline code — by the same ratio, so the capture editor is
+    /// untouched. Bold/italic and the heading size ratios are preserved.
+    ///
+    /// ★ IDEMPOTENT: the target size is ABSOLUTE, derived from each run's ROLE
+    /// (heading level → its base size; everything else → body), NOT from the run's
+    /// current size. `applyInPlace` re-runs this on every edit, so multiplying the
+    /// *current* size would compound the ratio (21→26→32→…) as a note is edited.
     private static func applyFont(_ choice: NoteFontChoice, to mut: NSMutableAttributedString) {
+        let ratio = NoteTypographyHelper.bodyPointSizeRatio
+        let bodySize = NoteTypographyHelper.bodyFont.pointSize * ratio
         let full = NSRange(location: 0, length: mut.length)
         var runs: [(NSRange, UIFont)] = []
         mut.enumerateAttribute(.font, in: full, options: []) { value, r, _ in
             let current = (value as? UIFont) ?? UIFont.preferredFont(forTextStyle: .body)
             let symbolic = current.fontDescriptor.symbolicTraits
-            if symbolic.contains(.traitMonoSpace) { return }   // keep inline code monospaced
+            // Absolute size from role — headings from their level, else body-sized.
+            var size = bodySize
+            if let lv = mut.attribute(.airpadHeadingLevel, at: r.location, effectiveRange: nil) as? Int,
+               let level = RichTextHeadingLevel(rawValue: lv) {
+                size = level.font.pointSize * ratio
+            }
+            if symbolic.contains(.traitMonoSpace) {
+                // Inline code stays monospaced — just scale it to the body size.
+                runs.append((r, current.withSize(size)))
+                return
+            }
             // Resolve by NUMERIC weight, not the .traitBold bit — semibold headings
             // don't set .traitBold, so the bit path drops their weight. Italic stays
             // the symbolic trait (its correct source).
-            guard let name = choice.faceName(weight: current.airpadWeightValue,
+            var weight = current.airpadWeightValue
+            // Serif note body reads at Semibold (600): plain (Regular) body runs are
+            // lifted to the body weight; heavier runs (bold, Bold headings) keep theirs.
+            if choice == .sourceSerif4 { weight = max(weight, UIFont.Weight.semibold.rawValue) }
+            guard let name = choice.faceName(weight: weight,
                                              italic: symbolic.contains(.traitItalic)),
-                  let swapped = UIFont(name: name, size: current.pointSize) else { return }
+                  let swapped = UIFont(name: name, size: size) else { return }
             runs.append((r, swapped))
         }
         for (r, f) in runs { mut.addAttribute(.font, value: f, range: r) }
@@ -3548,6 +3594,17 @@ enum NoteTypography {
         paragraph: NSRange,
         in attr: NSAttributedString
     ) -> NSParagraphStyle {
+        // An empty (`\n\n`) paragraph renders a FULL body line by default — the real
+        // driver of the inter-paragraph gap. Collapse it to a thin sliver so
+        // paragraphs sit in a tight margin rhythm.
+        if line.trimmingCharacters(in: .whitespaces).isEmpty {
+            let p = NSMutableParagraphStyle()
+            p.minimumLineHeight = emptyParagraphHeight
+            p.maximumLineHeight = emptyParagraphHeight
+            p.lineSpacing = 0
+            p.paragraphSpacing = 0
+            return p
+        }
         let info = RichTextEditor.Coordinator.parseLine(line)
         if info.kind != nil {
             return listParagraphStyle(indent: info.indent)

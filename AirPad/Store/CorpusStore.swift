@@ -658,7 +658,10 @@ final class CorpusStore {
     /// card sidecar, mirroring `blockIndex(forNodeID:)`. The storage actor stays
     /// private; card access flows through these entry points. No call sites yet
     /// beyond the accessors — the write path lands in a later step.
-    private func card(forNodeID nodeID: String) async -> CatalogCard? {
+    /// B7: internal (was private) so `SubstrateLayoutService.preloadCardVectors`
+    /// reads card vectors through this SAME funneled entry point that
+    /// `blockIndex(forNodeID:)` uses, instead of reaching at the storage actor.
+    func card(forNodeID nodeID: String) async -> CatalogCard? {
         try? await service.loadCard(forNodeID: nodeID)
     }
 

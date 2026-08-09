@@ -131,6 +131,42 @@ struct CanvasView: View {
         print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger)")
     }
 
+    /// B7 — warm the CARD-VECTOR cache, then RE-FORM the territories off it.
+    ///
+    /// ★ THIS IS THE RACE FIX, and it is the whole point of the wiring.
+    /// `TagTerritoryLayout.layout` is synchronous; the preload is async. The
+    /// cold-start formation inside `syncScene` therefore runs BEFORE the cache
+    /// can possibly be warm, resolves NLContextual vectors, and produces a map
+    /// that looks completely unchanged — a correct implementation connected to
+    /// nothing (exactly how the block-pooled vectors never reached the map).
+    /// So we do not try to win the race: we let the cold formation happen, then
+    /// AWAIT the preload and deliberately re-form on top of it.
+    ///
+    /// Deliberately NOT behind `FeatureFlags.substrateLayout` — that flag is
+    /// off by default and is the reason block vectors never arrived here.
+    ///
+    /// Idempotent: once `cardVectors` is warm, re-entry (returning to the
+    /// canvas) re-forms against the same basis and settles identically.
+    private func warmCardVectorsThenReform() {
+        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
+        Task { @MainActor in
+            let nodes = store.visibleNodes(in: scope)
+            await SubstrateLayoutService.shared.preloadCardVectors(
+                allNodes: store.nodes, store: store
+            )
+            let warmed = SubstrateLayoutService.shared.cardVectors?.count ?? 0
+            print("[Territory] card-vector preload warmed \(warmed) vectors — re-forming")
+            // Re-form on the now-warm basis. The consumer-side
+            // `[Territory/language]` line printed by this run is the proof
+            // the map is actually on card vectors.
+            formTerritories(nodes: nodes, trigger: "card-vectors-warm")
+            guard let frozen = territory else { return }
+            // SwiftUI-space → SpriteKit (y-up), same as `reblendMap`.
+            scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
+            scene.applyTerritoryColors(frozen.colors)
+        }
+    }
+
     /// Re-derive Map positions + tint live (weight or tint-toggle change — a
     /// DELIBERATE map action, so it re-forms the frozen cache).
     private func reblendMap() {
@@ -198,6 +234,7 @@ struct CanvasView: View {
             scene.refreshSelectionOutlines()
             kickOffSubstrateAutoFitIfNeeded()
             kickOffClusterLabelingIfNeeded()
+            warmCardVectorsThenReform()
         }
         .onChange(of: store.territoryFormationRequest) { _, _ in
             // DELIBERATE re-formation — Analyze button / idle fallback bumped the

@@ -95,6 +95,21 @@ final class SubstrateLayoutService {
     /// pre-4c2 behavior when nothing has been preloaded).
     private(set) var blockPooledVectors: [String: [Float]]?
 
+    /// B7 — pre-resolved CARD-GIST vectors (BGE-micro-v2, 384-dim), keyed by
+    /// node ID. Populated by `preloadCardVectors`; consulted FIRST by
+    /// `substrateVector(for:)` and exclusively by `languageVector(for:)`.
+    ///
+    /// Measured on the live 210-node corpus (Mac harness, raw cosine over the
+    /// same 162-node intersection): card-gist p10–p90 spread **0.219** vs
+    /// NLContextual node-level **0.104** — 2.1× wider, and better covered
+    /// (182 vs 163 of 197 rankable nodes). Top-1 median 0.691 vs 0.963: the
+    /// NLContextual space is so collapsed that every node's nearest neighbor
+    /// sits at ~0.96, leaving the map's `language` gravity nothing to grip.
+    ///
+    /// Nil ⇒ nothing preloaded yet ⇒ every accessor behaves exactly as it did
+    /// before B7 (block-pooled, then legacy summary/folksonomy).
+    private(set) var cardVectors: [String: [Float]]?
+
     /// SB139 Stage 4c1.3 — display-space canvas positions produced by the
     /// tethered relaxation pass. Spans ALL canvas-displayed nodes (substrate
     /// fit + non-substrate stragglers), not just substrate placements:
@@ -149,6 +164,28 @@ final class SubstrateLayoutService {
     /// - neither → fall back to `contextualContentEmbedding`
     /// - none of the three → nil (caller skips the node)
     func substrateVector(for node: Node) -> [Float]? {
+        // B7 — CARD GIST FIRST, ahead of block-pooled. ★ THE PRECEDENCE
+        // DECISION, stated: card outranks block-pooled deliberately, not
+        // incidentally. Two reasons.
+        //   1. DETERMINISM. The block cache is populated only by a UMAP fit
+        //      (behind `FeatureFlags.substrateLayout`, default OFF) or the dev
+        //      inspect view. If card sat SECOND, the map's vector basis would
+        //      silently switch from card to block the moment anything warmed
+        //      the block cache — the same class of invisible basis-swap this
+        //      area keeps getting bitten by. Card first ⇒ one basis, always.
+        //   2. It is the basis T ruled in for the map's `language` gravity.
+        // Block-pooled measured WIDER (0.275 vs card 0.219) but needs a
+        // read-time pooling pass and is unreachable on the map path today;
+        // this ordering makes card authoritative whenever it is warm.
+        // BLAST RADIUS (stated, not hidden): `substrateVector` also feeds UMAP
+        // fit input and the dev diagnostics — while `cardVectors` is warm they
+        // now see card vectors too. The flag is off by default, so no live
+        // path other than the map changes today.
+        if let cache = cardVectors,
+           let card = cache[node.id],
+           !card.isEmpty {
+            return card
+        }
         // SB139 Stage 4c2 — block-pooled vector takes precedence when
         // pre-resolved. Replaces (not augments) summary/folksonomy because
         // the diagnostic showed mean-pooling at the node level inherits
@@ -177,6 +214,71 @@ final class SubstrateLayoutService {
             let c = node.contextualContentEmbedding
             return (c?.isEmpty == false) ? c : nil
         }
+    }
+
+    // MARK: - Language vector (map gravity)
+
+    /// Where a language vector came from. Reported by `TagTerritoryLayout` so
+    /// the consumer side can PROVE which basis the map actually used.
+    enum LanguageVectorSource: String {
+        case card
+        case blockPooled
+        case legacyNLContextual
+    }
+
+    /// B7 — the vector the map's `language` gravity reads. Distinct from
+    /// `substrateVector` for ONE reason: **dimensional homogeneity**.
+    ///
+    /// ★ THE MIXED-DIMENSION DECISION, stated: when `cardVectors` is warm this
+    /// returns card-or-NIL — a node without a card gets **no language vector at
+    /// all**, and is therefore EXCLUDED from the language signal (both from
+    /// territory centroids and from its own language pull). It is NOT silently
+    /// backfilled with a 512-dim NLContextual vector.
+    ///
+    /// Why exclusion rather than fallback: `TagTerritoryLayout.mean` adopts the
+    /// FIRST member's dimension as canonical and silently drops every vector
+    /// that disagrees, while `cosine` returns nil on a dimension mismatch. So a
+    /// mixed 384/512 population makes "which nodes keep their language pull"
+    /// depend on dictionary iteration order — non-deterministic, and invisible.
+    /// Mixing two different embedders' spaces in one cosine is meaningless
+    /// anyway. Excluded nodes keep every other gravity (collection, anchor,
+    /// backlink); they simply do not vote on language. Deterministic by
+    /// construction, and the count is reported every run.
+    ///
+    /// When `cardVectors` is nil (nothing preloaded) this falls back to
+    /// `substrateVector` — pre-B7 behavior, unchanged.
+    func languageVector(for node: Node) -> (vector: [Float], source: LanguageVectorSource)? {
+        if let cache = cardVectors {
+            guard let card = cache[node.id], !card.isEmpty else { return nil }
+            return (card, .card)
+        }
+        guard let v = substrateVector(for: node) else { return nil }
+        // Cache cold ⇒ whatever substrateVector resolved. Label it by which
+        // path actually produced it so the consumer log stays honest.
+        if let bp = blockPooledVectors?[node.id], !bp.isEmpty, bp == v {
+            return (v, .blockPooled)
+        }
+        return (v, .legacyNLContextual)
+    }
+
+    /// B7 — pre-resolve CARD-GIST vectors for the given nodes and cache them.
+    /// Mirrors `preloadBlockPooledVectors` exactly (same filter, same async
+    /// sequential sidecar reads, same idempotent overwrite): nodes without a
+    /// card sidecar, or whose card carries no embedding, are ABSENT from the
+    /// cache — which `languageVector` reads as deliberate exclusion.
+    ///
+    /// No re-embedding and no schema change: card vectors already exist at
+    /// `embedding_version = 1` on 193/210 nodes via the catalog backfill.
+    func preloadCardVectors(allNodes: [Node], store: CorpusStore) async {
+        var cache: [String: [Float]] = [:]
+        for node in allNodes {
+            guard SubstrateService.shared.isRankable(node), !node.isMeta else { continue }
+            guard let card = await store.card(forNodeID: node.id),
+                  let emb = card.embedding,
+                  !emb.isEmpty else { continue }
+            cache[node.id] = emb
+        }
+        cardVectors = cache
     }
 
     /// Pre-resolve block-pooled vectors for the given nodes and cache them
@@ -448,6 +550,9 @@ final class SubstrateLayoutService {
         // across a clear would otherwise feed a fresh fit with the wrong
         // geometry. (Refused-content nodes preserve summary-path fallback.)
         self.blockPooledVectors = nil
+        // B7 — same reasoning for the card cache: a clear must not carry a
+        // stale language basis across into the next formation.
+        self.cardVectors = nil
         let url = Self.fittedModelURL()
         if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)

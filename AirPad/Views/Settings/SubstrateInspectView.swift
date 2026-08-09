@@ -98,6 +98,16 @@ struct SubstrateInspectView: View {
     @State private var blockCosineDistError: String? = nil
     @State private var blockCosineDistCoverage: (withBlocks: Int, withoutBlocks: Int)? = nil
 
+    // B7 spike — A/B/C substrate-vector comparison. MEASUREMENT ONLY: no
+    // thresholds change, nothing written to Node, no schema/migration. One
+    // button runs all three distributions (+ a LIVE reference) over the same
+    // rankable-non-meta node set and dumps a JSON to Documents.
+    @State private var b7InProgress: Bool = false
+    @State private var b7Progress: String = ""
+    @State private var b7Result: B7SpikeResult? = nil
+    @State private var b7Error: String? = nil
+    @State private var b7ExportURL: URL? = nil
+
     // SB139 Stage 4c2 commit E — inspect-view cluster rename alert state.
     // Mirrors the canvas rename UX so the dev surface stays parity with
     // what a user sees on the canvas overlay.
@@ -137,6 +147,39 @@ struct SubstrateInspectView: View {
     struct ExportResult: Equatable {
         let url: URL
         let nodeCount: Int
+        let elapsed: TimeInterval
+    }
+
+    // B7 spike — on-screen display model. The authoritative dump is the JSON;
+    // this mirrors the headline numbers so they can be read on device without
+    // opening the file.
+    struct B7Top1: Equatable {
+        let median: Double
+        let p75: Double
+        let p90: Double
+        let count: Int
+    }
+
+    struct B7DistBlock: Equatable {
+        let key: String          // "A" / "B" / "C"
+        let name: String         // human label
+        let raw: B7DistRaw
+        let coverable: Int
+        let noVector: Int
+        let coverageNote: String
+    }
+
+    struct B7SpikeResult: Equatable {
+        let a: B7DistBlock
+        let b: B7DistBlock
+        let c: B7DistBlock
+        let live: B7Top1
+        let ffSubstrateLayout: Bool
+        let blockPooledNonNil: Bool
+        let blockPooledCount: Int
+        let nodeCount: Int
+        let rankableNonMeta: Int
+        let exportPath: String
         let elapsed: TimeInterval
     }
 
@@ -2362,6 +2405,124 @@ struct SubstrateInspectView: View {
                     .foregroundStyle(.red.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            b7SpikeBlock
+        }
+    }
+
+    // MARK: - B7 spike UI
+
+    @ViewBuilder
+    private var b7SpikeBlock: some View {
+        Divider()
+            .background(AppearancePalette.ink.opacity(0.08))
+            .padding(.vertical, 4)
+
+        Text("B7 SPIKE — three distributions over the SAME rankable·non-meta set, raw cosine: A = legacy NLContextual off Node (bypasses block cache), B = BGE on the same summary/folksonomy text, C = block-pooled BGE. Writes JSON to Documents. MEASURE ONLY. ⚠️ BGE returns ZERO vectors on the Simulator — run on device for valid B/C.")
+            .font(.caption2)
+            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            .fixedSize(horizontal: false, vertical: true)
+
+        Button {
+            Task { await runB7Spike() }
+        } label: {
+            Text(b7InProgress ? (b7Progress.isEmpty ? "Computing…" : b7Progress) : "Run B7 spike (A/B/C + JSON)")
+                .font(.caption2)
+                .foregroundStyle(.blue.opacity(b7InProgress ? 0.4 : 0.8))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(AppearancePalette.ink.opacity(0.05))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(b7InProgress)
+
+        if let r = b7Result {
+            statRow("ff.substrateLayout", r.ffSubstrateLayout ? "true" : "false")
+            statRow("blockPooledVectors", r.blockPooledNonNil ? "non-nil (\(r.blockPooledCount))" : "nil")
+            statRow("Nodes (total)", "\(r.nodeCount)")
+            statRow("Rankable·non-meta", "\(r.rankableNonMeta)")
+            statRow("Elapsed", String(format: "%.1fs", r.elapsed))
+
+            b7DistView(r.a, tint: .purple)
+            b7DistView(r.b, tint: .blue)
+            b7DistView(r.c, tint: .orange)
+
+            Text("TOP-1 comparison (median · p75 · p90)")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                .padding(.top, 6)
+            statRow("A raw top-1", b7Top1Line(r.a.raw))
+            statRow("B raw top-1", b7Top1Line(r.b.raw))
+            statRow("C raw top-1", b7Top1Line(r.c.raw))
+            statRow("LIVE (centered)", String(format: "%.3f · %.3f · %.3f (n=%d)", r.live.median, r.live.p75, r.live.p90, r.live.count))
+            Text("Documented (ThreadService): blended top-1 = 0.47 · 0.52 · 0.71 (n=84); content top-1 = 0.57 · 0.65 · 0.73 (n=86). LIVE uses the real centered per-channel metric; A/B/C top-1 are RAW cosine on blended vectors (a different metric — expect a gap).")
+                .font(.caption2)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let url = b7ExportURL {
+                Text("JSON: \(url.lastPathComponent)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ShareLink(item: url) {
+                    Text("Share B7 JSON")
+                        .font(.caption2)
+                        .foregroundStyle(.blue.opacity(0.8))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(AppearancePalette.ink.opacity(0.05))
+                        .clipShape(Capsule())
+                }
+            }
+        }
+
+        if let err = b7Error {
+            Text(err)
+                .font(.caption2)
+                .foregroundStyle(.red.opacity(0.8))
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func b7Top1Line(_ raw: B7DistRaw) -> String {
+        String(format: "%.3f · %.3f · %.3f (n=%d)", raw.top1Median, raw.top1P75, raw.top1P90, raw.top1Count)
+    }
+
+    @ViewBuilder
+    private func b7DistView(_ block: B7DistBlock, tint: Color) -> some View {
+        let r = block.raw
+        Text("\(block.key) — \(block.name)")
+            .font(.caption2.weight(.bold))
+            .foregroundStyle(tint.opacity(0.9))
+            .padding(.top, 6)
+        statRow("dim", "\(r.dim)")
+        statRow("Vectors", "\(r.vectorCount)")
+        statRow("Pairs", "\(r.pairCount)")
+        statRow("Negative pairs", "\(r.negatives)")
+        if r.zeroNorm > 0 {
+            statRow("⚠️ zero-norm vectors", "\(r.zeroNorm)")
+        }
+        statRow("Coverable / no-vector", "\(block.coverable) / \(block.noVector)")
+        if !block.coverageNote.isEmpty {
+            Text(block.coverageNote)
+                .font(.caption2)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        statRow("Min", String(format: "%.4f", r.min))
+        statRow("p10", String(format: "%.4f", r.p10))
+        statRow("p25", String(format: "%.4f", r.p25))
+        statRow("Median", String(format: "%.4f", r.median))
+        statRow("Mean", String(format: "%.4f", r.mean))
+        statRow("p75", String(format: "%.4f", r.p75))
+        statRow("p90", String(format: "%.4f", r.p90))
+        statRow("Max", String(format: "%.4f", r.max))
+        statRow("p10–p90 spread", String(format: "%.4f", r.p90 - r.p10))
+        ForEach(0..<r.bins.count, id: \.self) { i in
+            cosineBinRow(index: i, count: r.bins[i], maxCount: r.maxBin, tint: tint)
         }
     }
 
@@ -2621,6 +2782,296 @@ struct SubstrateInspectView: View {
         }.value
 
         blockCosineDistResult = result
+    }
+
+    // MARK: - B7 spike
+
+    /// B7 spike — build three per-node vector sets over the SAME filter
+    /// (`isRankable && !isMeta`) and measure the raw-cosine distribution of
+    /// each, plus top-5 neighbors / top-1 distribution, plus a LIVE reference
+    /// using the real centered ranking metric. Dumps everything to a JSON in
+    /// Documents. MEASUREMENT ONLY — reads Node/blocks, writes nothing back.
+    ///
+    /// A — legacy NLContextual, node-level. Reads `summaryEmbedding` /
+    ///     `folksonomyEmbedding` DIRECTLY off Node (does NOT go through
+    ///     `substrateVector(for:)`, so the block-pooled cache can't leak in).
+    ///     Blend mirrors `substrateVector` exactly: mean(summary, folksonomy)
+    ///     when both, single channel when one, `contextualContentEmbedding`
+    ///     when neither. Dim 512.
+    /// B — BGE on the SAME text NLContextual was fed: `substrateSummary` and
+    ///     the folksonomy joined comma-space, each embedded via
+    ///     `CardEmbeddingService`, blended by the same rule. Content fallback
+    ///     (neither summary nor folksonomy text) = BGE of the extracted
+    ///     content text, so B stays internally 384-dim and comparable to A's
+    ///     coverage. Isolates the embedder. Dim 384.
+    /// C — block-pooled BGE: element-wise mean of the node's block embeddings
+    ///     (the existing orange path). Dim 384.
+    @MainActor
+    private func runB7Spike() async {
+        b7InProgress = true
+        b7Error = nil
+        b7Result = nil
+        b7ExportURL = nil
+        b7Progress = "Snapshotting…"
+        defer { b7InProgress = false }
+
+        let overallStart = Date()
+        let service = SubstrateService.shared
+        let layout = SubstrateLayoutService.shared
+        let allNodes = store.nodes
+        let cands = allNodes.filter { service.isRankable($0) && !$0.isMeta }
+
+        guard cands.count >= 2 else {
+            b7Error = "need ≥ 2 rankable·non-meta nodes (have \(cands.count))"
+            return
+        }
+
+        // Runtime state — captured at run time, per the brief.
+        let ffLayout = substrateLayoutFlag
+        let bpv = layout.blockPooledVectors
+        let bpvNonNil = bpv != nil
+        let bpvCount = bpv?.count ?? 0
+        let coverage = SubstrateCoverage.compute(allNodes)
+        let titlesByID: [String: String] = Dictionary(
+            uniqueKeysWithValues: allNodes.map { ($0.id, String($0.title.prefix(80))) }
+        )
+
+        // ---- A: legacy NLContextual, node-level ----
+        b7Progress = "Building A (NLContextual)…"
+        var aIDs: [String] = []
+        var aVecs: [[Float]] = []
+        var aNoVec = 0
+        for node in cands {
+            if let v = legacyNLVector(node) {
+                aIDs.append(node.id); aVecs.append(v)
+            } else {
+                aNoVec += 1
+            }
+        }
+
+        // ---- B: BGE on same text ----
+        var bIDs: [String] = []
+        var bVecs: [[Float]] = []
+        var bNoVec = 0
+        var bBothCount = 0, bSingleCount = 0, bContentFallback = 0
+        let bge = CardEmbeddingService.shared
+        for (i, node) in cands.enumerated() {
+            if i % 5 == 0 { b7Progress = "Embedding B (BGE) \(i)/\(cands.count)…" }
+            let sText = (node.substrateSummary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let fText = (node.folksonomy ?? [])
+                .joined(separator: ", ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let sVec = sText.isEmpty ? nil : await bge.embed(sText)
+            let fVec = fText.isEmpty ? nil : await bge.embed(fText)
+            var vec: [Float]? = nil
+            switch (sVec, fVec) {
+            case let (s?, f?):
+                if s.count == f.count {
+                    var out = [Float](repeating: 0, count: s.count)
+                    for k in 0..<s.count { out[k] = (s[k] + f[k]) * 0.5 }
+                    vec = out
+                } else {
+                    vec = s
+                }
+                bBothCount += 1
+            case let (s?, nil):
+                vec = s; bSingleCount += 1
+            case let (nil, f?):
+                vec = f; bSingleCount += 1
+            case (nil, nil):
+                let cText = substrateContentText(node).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !cText.isEmpty, let cv = await bge.embed(cText) {
+                    vec = cv; bContentFallback += 1
+                }
+            }
+            if let vec { bIDs.append(node.id); bVecs.append(vec) } else { bNoVec += 1 }
+        }
+
+        // ---- C: block-pooled BGE ----
+        b7Progress = "Pooling C (blocks)…"
+        var cIDs: [String] = []
+        var cVecs: [[Float]] = []
+        var cNoVec = 0
+        var cDim: Int? = nil
+        for node in cands {
+            guard let index = await store.blockIndex(forNodeID: node.id),
+                  !index.blocks.isEmpty else { cNoVec += 1; continue }
+            let d = index.blocks[0].embedding.count
+            guard d > 0 else { cNoVec += 1; continue }
+            if let existing = cDim, d != existing { cNoVec += 1; continue }
+            if cDim == nil { cDim = d }
+            var acc = [Float](repeating: 0, count: d)
+            var n = 0
+            for b in index.blocks where b.embedding.count == d {
+                for k in 0..<d { acc[k] += b.embedding[k] }
+                n += 1
+            }
+            guard n > 0 else { cNoVec += 1; continue }
+            let inv = Float(1) / Float(n)
+            for k in 0..<d { acc[k] *= inv }
+            cIDs.append(node.id); cVecs.append(acc)
+        }
+
+        // ---- Pairwise + top-K for A/B/C off-main ----
+        // Capture immutable copies so the detached closures don't capture the
+        // mutable locals built above (strict-concurrency-safe).
+        b7Progress = "Computing distributions…"
+        let aRaw = await Task.detached(priority: .userInitiated) { [aIDs, aVecs, titlesByID] in
+            b7ComputeDist(ids: aIDs, vectors: aVecs, titlesByID: titlesByID)
+        }.value
+        let bRaw = await Task.detached(priority: .userInitiated) { [bIDs, bVecs, titlesByID] in
+            b7ComputeDist(ids: bIDs, vectors: bVecs, titlesByID: titlesByID)
+        }.value
+        let cRaw = await Task.detached(priority: .userInitiated) { [cIDs, cVecs, titlesByID] in
+            b7ComputeDist(ids: cIDs, vectors: cVecs, titlesByID: titlesByID)
+        }.value
+
+        // ---- LIVE reference — the ACTUAL live ranking metric (centered
+        //      per-channel blend via rankingPairSimilarity). This is what the
+        //      documented top-1 figures were calibrated on; raw A/B/C top-1
+        //      are a different metric and won't match. Computed on main
+        //      because SubstrateService is MainActor-isolated.
+        b7Progress = "Computing LIVE reference…"
+        var liveTop1s: [Double] = []
+        var liveNeighbors: [B7NodeNeighbors] = []
+        for node in cands {
+            var scored: [(String, Double)] = []
+            scored.reserveCapacity(cands.count)
+            for other in cands where other.id != node.id {
+                let p = service.rankingPairSimilarity(node, other)
+                if let bl = p.blended { scored.append((other.id, bl)) }
+            }
+            scored.sort { $0.1 > $1.1 }
+            if let best = scored.first { liveTop1s.append(best.1) }
+            liveNeighbors.append(B7NodeNeighbors(
+                nodeID: node.id,
+                neighbors: scored.prefix(5).map {
+                    B7NeighborRaw(id: $0.0, score: $0.1, title: titlesByID[$0.0])
+                }
+            ))
+        }
+        liveTop1s.sort()
+        let live = B7Top1(
+            median: b7Percentile(liveTop1s, 0.5),
+            p75: b7Percentile(liveTop1s, 0.75),
+            p90: b7Percentile(liveTop1s, 0.90),
+            count: liveTop1s.count
+        )
+
+        // ---- Assemble display blocks ----
+        let aBlock = B7DistBlock(
+            key: "A", name: "legacy NLContextual (node-level, off Node)",
+            raw: aRaw, coverable: aIDs.count, noVector: aNoVec,
+            coverageNote: "no-vector = node had no summary/folksonomy/content channel."
+        )
+        let bBlock = B7DistBlock(
+            key: "B", name: "BGE on same text (node-level)",
+            raw: bRaw, coverable: bIDs.count, noVector: bNoVec,
+            coverageNote: "coverage: summary+folksonomy=\(bBothCount), single-channel=\(bSingleCount), content-fallback=\(bContentFallback). no-vector = no embeddable text or embedder returned nil."
+        )
+        let cBlock = B7DistBlock(
+            key: "C", name: "block-pooled BGE",
+            raw: cRaw, coverable: cIDs.count, noVector: cNoVec,
+            coverageNote: "no-vector = node had no block sidecar (pre-backfill / refused)."
+        )
+
+        // ---- Build + write JSON payload ----
+        b7Progress = "Writing JSON…"
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let payload = B7SpikePayload(
+            schemaVersion: 1,
+            exportedAt: isoFormatter.string(from: Date()),
+            runtime: .init(
+                ffSubstrateLayout: ffLayout,
+                blockPooledVectorsNonNil: bpvNonNil,
+                blockPooledVectorsCount: bpvCount,
+                nodeCount: allNodes.count,
+                rankableNonMetaCount: cands.count,
+                bgeNote: "CardEmbeddingService uses computeUnits=.all → ZERO vectors on the Simulator. Valid only on device.",
+                substrateCoverage: .init(
+                    totalNodes: coverage.totalNodes,
+                    full: coverage.full,
+                    partial: coverage.partial,
+                    failedAll: coverage.failedAll,
+                    unprocessed: coverage.unprocessed,
+                    failuresByReason: coverage.failuresByReason
+                )
+            ),
+            coverage: [
+                "A": .init(dim: aRaw.dim, coverable: aIDs.count, noVector: aNoVec, note: aBlock.coverageNote),
+                "B": .init(dim: bRaw.dim, coverable: bIDs.count, noVector: bNoVec, note: bBlock.coverageNote),
+                "C": .init(dim: cRaw.dim, coverable: cIDs.count, noVector: cNoVec, note: cBlock.coverageNote),
+            ],
+            distributions: [
+                "A": .init(from: aRaw),
+                "B": .init(from: bRaw),
+                "C": .init(from: cRaw),
+            ],
+            live: .init(
+                metric: "rankingPairSimilarity (centered per-channel blend) — the live ranking metric",
+                top1Median: live.median, top1P75: live.p75, top1P90: live.p90,
+                top1Count: live.count, nodes: liveNeighbors
+            ),
+            documentedFigures: .init(
+                source: "SubstrateThreadService header (calibrated on substrate-diagnostic-20260510, 206-node corpus)",
+                blendedTop1: "median 0.47, p75 0.52, p90 0.71 (n=84)",
+                contentTop1: "median 0.57, p75 0.65, p90 0.73 (n=86)",
+                blendedThreshold: SubstrateThreadService.blendedThreshold,
+                contentFallbackThreshold: SubstrateThreadService.contentFallbackThreshold,
+                note: "These figures use the CENTERED per-channel metric (= LIVE here), NOT raw cosine on blended vectors. Compare LIVE against these; A/B/C raw top-1 are a different metric."
+            )
+        )
+
+        var exportPath = "(write failed)"
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+            let data = try encoder.encode(payload)
+            let docs = try FileManager.default.url(
+                for: .documentDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+            )
+            let url = docs.appendingPathComponent("b7-substrate-spike-\(exportFilenameTimestamp()).json")
+            try data.write(to: url, options: .atomic)
+            exportPath = url.path
+            b7ExportURL = url
+        } catch {
+            b7Error = "JSON write failed: \(String(describing: error))"
+        }
+
+        b7Result = B7SpikeResult(
+            a: aBlock, b: bBlock, c: cBlock, live: live,
+            ffSubstrateLayout: ffLayout,
+            blockPooledNonNil: bpvNonNil,
+            blockPooledCount: bpvCount,
+            nodeCount: allNodes.count,
+            rankableNonMeta: cands.count,
+            exportPath: exportPath,
+            elapsed: Date().timeIntervalSince(overallStart)
+        )
+    }
+
+    /// A's vector: mirror of `SubstrateLayoutService.substrateVector`'s
+    /// summary/folksonomy/content path, but read DIRECTLY off Node so the
+    /// block-pooled cache can't substitute in. Kept byte-for-byte with the
+    /// service's blend rule.
+    private func legacyNLVector(_ node: Node) -> [Float]? {
+        let s = node.summaryEmbedding?.isEmpty == false ? node.summaryEmbedding : nil
+        let f = node.folksonomyEmbedding?.isEmpty == false ? node.folksonomyEmbedding : nil
+        switch (s, f) {
+        case let (s?, f?):
+            guard s.count == f.count else { return s }
+            var out = [Float](repeating: 0, count: s.count)
+            for i in 0..<s.count { out[i] = (s[i] + f[i]) * 0.5 }
+            return out
+        case let (s?, nil):
+            return s
+        case let (nil, f?):
+            return f
+        case (nil, nil):
+            let c = node.contextualContentEmbedding
+            return (c?.isEmpty == false) ? c : nil
+        }
     }
 
     // MARK: - Reusable bits
@@ -2971,6 +3422,251 @@ struct ClusterDiagnosticExportPayload: Encodable {
         case exportedAt = "exported_at"
         case fitMetadata = "fit_metadata"
         case clusterSummaries = "cluster_summaries"
+    }
+}
+
+// MARK: - B7 spike types + math
+
+/// One neighbor in a top-5 list.
+struct B7NeighborRaw: Codable, Sendable, Equatable {
+    let id: String
+    let score: Double
+    let title: String?
+}
+
+/// A node's top-5 neighbors under one distribution.
+struct B7NodeNeighbors: Codable, Sendable, Equatable {
+    let nodeID: String
+    let neighbors: [B7NeighborRaw]
+}
+
+/// Raw output of one B7 distribution — pairwise stats + per-node top-5 +
+/// top-1 percentiles. `Sendable` so it can cross the detached-task boundary.
+struct B7DistRaw: Sendable, Equatable {
+    let dim: Int
+    let vectorCount: Int
+    let pairCount: Int
+    let negatives: Int
+    let zeroNorm: Int
+    let min: Double
+    let p10: Double
+    let p25: Double
+    let median: Double
+    let mean: Double
+    let p75: Double
+    let p90: Double
+    let max: Double
+    let bins: [Int]
+    let maxBin: Int
+    let top1Median: Double
+    let top1P75: Double
+    let top1P90: Double
+    let top1Count: Int
+    let neighbors: [B7NodeNeighbors]
+    let elapsed: TimeInterval
+}
+
+/// Index-safe percentile from a pre-sorted ascending array (matches the
+/// existing cosine-distribution diagnostics' nearest-rank convention).
+func b7Percentile(_ sorted: [Double], _ q: Double) -> Double {
+    guard !sorted.isEmpty else { return 0 }
+    let idx = Swift.min(sorted.count - 1, Swift.max(0, Int(Double(sorted.count - 1) * q)))
+    return sorted[idx]
+}
+
+/// B7 spike — raw-cosine pairwise stats + per-node top-5 neighbors + top-1
+/// distribution for one vector set. Pure; safe to run off-main. Raw cosine,
+/// no mean-centering (matches the existing purple/orange diagnostics so A/B/C
+/// are apples-to-apples with each other).
+func b7ComputeDist(ids: [String], vectors: [[Float]], titlesByID: [String: String]) -> B7DistRaw {
+    let start = Date()
+    let n = vectors.count
+    let dim = vectors.first?.count ?? 0
+
+    var norms = [Double](repeating: 0, count: n)
+    var zeroNorm = 0
+    for i in 0..<n {
+        var s = 0.0
+        for x in vectors[i] { s += Double(x) * Double(x) }
+        let nrm = s.squareRoot()
+        norms[i] = nrm
+        if nrm == 0 { zeroNorm += 1 }
+    }
+
+    var values: [Double] = []
+    values.reserveCapacity(n * (n - 1) / 2)
+    // Per-node accumulation for top-K: (otherIndex, score).
+    var perNode: [[(Int, Double)]] = Array(repeating: [], count: n)
+
+    for i in 0..<n {
+        let na = norms[i]
+        guard na > 0 else { continue }
+        let va = vectors[i]
+        for j in (i + 1)..<n {
+            let nb = norms[j]
+            guard nb > 0 else { continue }
+            let vb = vectors[j]
+            var dot = 0.0
+            let d = Swift.min(va.count, vb.count)
+            for k in 0..<d { dot += Double(va[k]) * Double(vb[k]) }
+            let c = dot / (na * nb)
+            values.append(c)
+            perNode[i].append((j, c))
+            perNode[j].append((i, c))
+        }
+    }
+
+    values.sort()
+    var bins = [Int](repeating: 0, count: 20)
+    var negatives = 0
+    for v in values {
+        if v < 0 { negatives += 1; continue }
+        let raw = Int(v / 0.05)
+        bins[Swift.min(19, Swift.max(0, raw))] += 1
+    }
+    let count = values.count
+    let mean = count > 0 ? values.reduce(0, +) / Double(count) : 0
+
+    var top1s: [Double] = []
+    top1s.reserveCapacity(n)
+    var nodeNeighbors: [B7NodeNeighbors] = []
+    nodeNeighbors.reserveCapacity(n)
+    for i in 0..<n {
+        let sorted = perNode[i].sorted { $0.1 > $1.1 }
+        if let best = sorted.first { top1s.append(best.1) }
+        nodeNeighbors.append(B7NodeNeighbors(
+            nodeID: ids[i],
+            neighbors: sorted.prefix(5).map {
+                B7NeighborRaw(id: ids[$0.0], score: $0.1, title: titlesByID[ids[$0.0]])
+            }
+        ))
+    }
+    top1s.sort()
+
+    return B7DistRaw(
+        dim: dim,
+        vectorCount: n,
+        pairCount: count,
+        negatives: negatives,
+        zeroNorm: zeroNorm,
+        min: values.first ?? 0,
+        p10: b7Percentile(values, 0.10),
+        p25: b7Percentile(values, 0.25),
+        median: b7Percentile(values, 0.50),
+        mean: mean,
+        p75: b7Percentile(values, 0.75),
+        p90: b7Percentile(values, 0.90),
+        max: values.last ?? 0,
+        bins: bins,
+        maxBin: bins.max() ?? 0,
+        top1Median: b7Percentile(top1s, 0.50),
+        top1P75: b7Percentile(top1s, 0.75),
+        top1P90: b7Percentile(top1s, 0.90),
+        top1Count: top1s.count,
+        neighbors: nodeNeighbors,
+        elapsed: Date().timeIntervalSince(start)
+    )
+}
+
+// MARK: - B7 spike JSON payload
+
+struct B7SpikePayload: Encodable {
+    let schemaVersion: Int
+    let exportedAt: String
+    let runtime: Runtime
+    let coverage: [String: ChannelCoverage]     // "A" / "B" / "C"
+    let distributions: [String: DistBlock]       // "A" / "B" / "C"
+    let live: LiveBlock
+    let documentedFigures: DocumentedFigures
+
+    struct Runtime: Encodable {
+        let ffSubstrateLayout: Bool
+        let blockPooledVectorsNonNil: Bool
+        let blockPooledVectorsCount: Int
+        let nodeCount: Int
+        let rankableNonMetaCount: Int
+        let bgeNote: String
+        let substrateCoverage: SubCov
+
+        struct SubCov: Encodable {
+            let totalNodes: Int
+            let full: Int
+            let partial: Int
+            let failedAll: Int
+            let unprocessed: Int
+            let failuresByReason: [String: Int]
+        }
+    }
+
+    struct ChannelCoverage: Encodable {
+        let dim: Int
+        let coverable: Int
+        let noVector: Int
+        let note: String?
+    }
+
+    struct DistBlock: Encodable {
+        let dim: Int
+        let vectorCount: Int
+        let pairCount: Int
+        let negatives: Int
+        let zeroNorm: Int
+        let min: Double
+        let p10: Double
+        let p25: Double
+        let median: Double
+        let mean: Double
+        let p75: Double
+        let p90: Double
+        let max: Double
+        let p10ToP90Spread: Double
+        let bins: [Int]
+        let top1Median: Double
+        let top1P75: Double
+        let top1P90: Double
+        let top1Count: Int
+        let nodes: [B7NodeNeighbors]
+
+        init(from r: B7DistRaw) {
+            dim = r.dim
+            vectorCount = r.vectorCount
+            pairCount = r.pairCount
+            negatives = r.negatives
+            zeroNorm = r.zeroNorm
+            min = r.min
+            p10 = r.p10
+            p25 = r.p25
+            median = r.median
+            mean = r.mean
+            p75 = r.p75
+            p90 = r.p90
+            max = r.max
+            p10ToP90Spread = r.p90 - r.p10
+            bins = r.bins
+            top1Median = r.top1Median
+            top1P75 = r.top1P75
+            top1P90 = r.top1P90
+            top1Count = r.top1Count
+            nodes = r.neighbors
+        }
+    }
+
+    struct LiveBlock: Encodable {
+        let metric: String
+        let top1Median: Double
+        let top1P75: Double
+        let top1P90: Double
+        let top1Count: Int
+        let nodes: [B7NodeNeighbors]
+    }
+
+    struct DocumentedFigures: Encodable {
+        let source: String
+        let blendedTop1: String
+        let contentTop1: String
+        let blendedThreshold: Double
+        let contentFallbackThreshold: Double
+        let note: String
     }
 }
 #endif

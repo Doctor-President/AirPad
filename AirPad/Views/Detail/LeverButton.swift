@@ -84,12 +84,25 @@ final class LeverShimmerTuning {
 }
 
 /// Whether internal dev tuners (the shimmer variant panel) are reachable. ON for
-/// DEBUG, the Simulator, and **TestFlight** (sandbox receipt); OFF for the App
-/// Store. ★ NOT `#if DEBUG` — TestFlight archives are Release, and T must reach
-/// the tuner there (the whole point of building three variants). It auto-disables
-/// on the App Store (the receipt is not `sandboxReceipt`), so nothing must be
-/// stripped — but VERIFY absence before submission and remove in ONE edit
-/// (`return false`) if desired. Recorded in queue.md § pre-submission.
+/// DEBUG and the Simulator; **OFF for every Release build** — TestFlight and the
+/// App Store alike.
+///
+/// ★ PRE-SUBMISSION (2026-08-09): the `#else` branch used to be
+/// `Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"`, so the
+/// tuner reached TestFlight by design and was *expected* to self-disable on the App
+/// Store. T's call: make that guarantee STRUCTURAL rather than trusted — a receipt
+/// check is a runtime inference about the environment, and the cost of it being
+/// wrong is a dev panel shipped to users. `return false` cannot be wrong.
+///
+/// The shimmer's variant/duration READ PATH is UNCHANGED and still live in every
+/// build (`LeverShimmerTuning`): a shipped user with empty tuning storage gets the
+/// compiled-in defaults — `.specular` (Sweep) @ 1.95 — which `ShimmerSelfTest`
+/// asserts. Only the picker UI is gone.
+///
+/// ★ REVERSIBLE IN ONE LINE: restore the receipt check to put the tuner back on
+/// TestFlight if T needs to re-dial the shimmer. Nothing else was removed —
+/// `LeverShimmerTuning`, its UserDefaults keys, the resolution functions and
+/// `ShimmerTuningPanel` all remain.
 enum InternalBuild {
     static let showsDevTuners: Bool = {
         #if DEBUG
@@ -97,7 +110,7 @@ enum InternalBuild {
         #elseif targetEnvironment(simulator)
         return true
         #else
-        return Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+        return false
         #endif
     }()
 }
@@ -353,9 +366,12 @@ private struct LeverShimmerOverlay: View {
 
 /// Draggable dev widget so T picks the shimmer KIND (and dials duration) in one
 /// device pass, with Replay to re-fire without re-navigating. Mirrors
-/// `CardTuningPanel`. ★ Compiled in ALL configs (TestFlight is Release), but only
-/// PRESENTED when `InternalBuild.showsDevTuners` — so it reaches TestFlight and
-/// not the App Store. The variant it writes is read in all builds.
+/// `CardTuningPanel`. ★ Still compiled in all configs, but only PRESENTED when
+/// `InternalBuild.showsDevTuners` — which since the 2026-08-09 pre-submission edit
+/// is **DEBUG + Simulator only**: no Release build (TestFlight or App Store) shows
+/// it. Deliberately NOT deleted — the variant/duration it writes is still read in
+/// every build, and restoring the receipt check in `InternalBuild` is a one-line
+/// revert if T needs to re-dial the shimmer on TestFlight.
 struct ShimmerTuningPanel: View {
     @Binding var isPresented: Bool
     @Binding var position: CGSize

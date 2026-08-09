@@ -129,9 +129,10 @@ struct NodeDetailView: View {
     @State private var laneStackHeight: CGFloat = 60
 
     // Stage 2b — shimmer-variant tuner (draggable widget; CardTuning idiom).
-    // Presented only on INTERNAL builds (DEBUG + Simulator + TestFlight) via
-    // `InternalBuild.showsDevTuners`; state is always declared (unused on the
-    // App Store, where the tuner is never shown).
+    // Presented only on INTERNAL builds (DEBUG + Simulator) via
+    // `InternalBuild.showsDevTuners`; state is always declared (unused in any
+    // Release build, where the tuner is never shown — see the 2026-08-09
+    // pre-submission note on `InternalBuild`).
     @State private var showShimmerTuning = false
     @State private var shimmerTuningPos: CGSize = .zero
 
@@ -629,10 +630,11 @@ struct NodeDetailView: View {
         }
         // Stage 2b — shimmer tuner: a small trigger (top-leading, under the chrome)
         // toggles the draggable variant/duration/replay widget so T picks the
-        // shimmer KIND in one pass. Gated on `InternalBuild.showsDevTuners` (DEBUG
-        // + Simulator + TestFlight), NOT `#if DEBUG` — TestFlight is Release and T
-        // must reach it there. Absent on the App Store. The chosen variant is read
-        // in all builds; whatever the panel last wrote is what Release renders.
+        // shimmer KIND in one pass. Gated on `InternalBuild.showsDevTuners`, which
+        // since the 2026-08-09 pre-submission edit is DEBUG + Simulator ONLY —
+        // absent from every Release build, TestFlight and App Store alike. The
+        // chosen variant is still read in all builds; with empty tuning storage (a
+        // shipped user) that resolves to the compiled-in Sweep @ 1.95.
         .overlay(alignment: .topLeading) {
             if InternalBuild.showsDevTuners {
                 Button { showShimmerTuning.toggle() } label: {

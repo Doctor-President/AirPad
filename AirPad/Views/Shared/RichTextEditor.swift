@@ -2365,6 +2365,39 @@ final class RichTextUIView: UITextView {
         didSet { invalidateIntrinsicContentSize() }
     }
 
+    // MARK: Layout-height cache
+    //
+    // `isScrollEnabled=false` makes this the full note's own view, so `sizeThatFits`
+    // is a whole-document TextKit layout (~O(note length)). While scrolling a node,
+    // a per-frame `@State` churn in `NodeDetailView.body` re-proposes every entry
+    // (measured: 6 full-note layouts/frame → ~19 fps). The height only changes when
+    // CONTENT, WIDTH, or Dynamic-Type size changes — everything else asks for the
+    // SAME height. So cache it keyed on `(width, layoutVersion)` and skip the layout.
+    //
+    // ⚠️ STALE HEIGHT IS THE FAILURE MODE — it renders a note at the wrong size with
+    // no error. `layoutVersion` MUST bump on EVERY mutation that can change height.
+    // If you add a new mutation path, bump it here too. Current invalidators, each
+    // proven to change height WITHOUT necessarily a user text edit:
+    //   • attributedText / text didSet → decode reassign · checklist toggle (813aee8,
+    //     restyle:false) · async inline-image swap (applyImage sets attributedText:
+    //     1×1 placeholder → real image) · photo-at-caret splice (512eaf6).
+    //   • textDidChange → user typing / inline growth (Stage 2.1 contract).
+    //   • NSTextStorage.didProcessEditing → programmatic storage edits (applyInPlace
+    //     re-style, which does not post textDidChange).
+    //   • traitCollectionDidChange (preferredContentSizeCategory) → Dynamic Type;
+    //     headings scale live (c71416e).
+    //   • WIDTH is NOT invalidated — it's part of the KEY (rotation / iPad split →
+    //     new width → automatic miss).
+    private var layoutVersion = 0
+    private var cacheWidth: CGFloat = -1
+    private var cacheVersion = -1
+    private var cacheFit: CGSize = .zero
+    private func invalidateLayoutHeightCache() {
+        layoutVersion &+= 1
+        invalidateIntrinsicContentSize()   // request a re-layout so the fresh height applies
+    }
+    @objc private func noteStorageDidProcessEditing() { invalidateLayoutHeightCache() }
+
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         setupPlaceholder()
@@ -2373,6 +2406,14 @@ final class RichTextUIView: UITextView {
             selector: #selector(textDidChangeNotification),
             name: UITextView.textDidChangeNotification,
             object: self
+        )
+        // Catch programmatic storage edits (applyInPlace re-style) that never post
+        // textDidChange — else the cache would serve a stale height after a re-style.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(noteStorageDidProcessEditing),
+            name: NSTextStorage.didProcessEditingNotification,
+            object: textStorage
         )
     }
 
@@ -2386,17 +2427,37 @@ final class RichTextUIView: UITextView {
     }
 
     override var text: String! {
-        didSet { updatePlaceholderVisibility() }
+        didSet { updatePlaceholderVisibility(); invalidateLayoutHeightCache() }
     }
 
     override var attributedText: NSAttributedString! {
-        didSet { updatePlaceholderVisibility() }
+        didSet { updatePlaceholderVisibility(); invalidateLayoutHeightCache() }
     }
 
     override var intrinsicContentSize: CGSize {
         let proposedWidth = bounds.width > 0 ? bounds.width : UIView.layoutFittingExpandedSize.width
         let fitted = sizeThatFits(CGSize(width: proposedWidth, height: .greatestFiniteMagnitude))
         return CGSize(width: UIView.noIntrinsicMetric, height: max(fitted.height, minHeight))
+    }
+
+    /// Cached: returns the last full-note layout when width + content are unchanged,
+    /// so a scroll re-proposal doesn't recompute a whole-document TextKit layout. The
+    /// cache is invalidated by `invalidateLayoutHeightCache()` (see the invalidator
+    /// list on `layoutVersion`).
+    override func sizeThatFits(_ size: CGSize) -> CGSize {
+        if size.width == cacheWidth, cacheVersion == layoutVersion { return cacheFit }
+        let fit = super.sizeThatFits(size)
+        cacheWidth = size.width
+        cacheVersion = layoutVersion
+        cacheFit = fit
+        return fit
+    }
+
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        if previous?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory {
+            invalidateLayoutHeightCache()   // Dynamic Type → heights change (c71416e)
+        }
     }
 
     private func setupPlaceholder() {
@@ -2421,7 +2482,7 @@ final class RichTextUIView: UITextView {
 
     @objc private func textDidChangeNotification() {
         updatePlaceholderVisibility()
-        invalidateIntrinsicContentSize()
+        invalidateLayoutHeightCache()   // bumps the cache + invalidates intrinsic size
     }
 
     private func updatePlaceholderVisibility() {

@@ -94,9 +94,23 @@ enum TagTerritoryLayout {
         guard !directMembers.isEmpty else { return Layout() }
 
         // 2. Territory embedding centroids (from direct members).
+        // B7 — CONSUMER-SIDE PROOF. `layout` is synchronous and the card
+        // preload is async: if it runs before the cache is warm it silently
+        // falls through to NLContextual and the map looks unchanged — a
+        // correct implementation connected to nothing. So tally, per run,
+        // which basis every node ACTUALLY resolved and at what dimension,
+        // and print it. Do not trust the author side.
+        // The tally is filled in step 3, where every node is visited EXACTLY
+        // once (a node can belong to several territories, so counting here
+        // would double-count it).
+        var tally = LanguageVectorTally()
+        func languageVector(_ node: Node) -> [Float]? {
+            SubstrateLayoutService.shared.languageVector(for: node)?.vector
+        }
+
         var centroid: [String: [Float]] = [:]
         for (key, ms) in directMembers {
-            let vecs = ms.compactMap { SubstrateLayoutService.shared.substrateVector(for: $0) }
+            let vecs = ms.compactMap { languageVector($0) }
             if let c = mean(vecs) { centroid[key] = c }
         }
 
@@ -116,11 +130,31 @@ enum TagTerritoryLayout {
             for tag in node.tags where anchorSet.contains(tag) {
                 pull["tag:" + tag, default: 0] += weights.anchor
             }
-            if weights.language > 0, let vec = SubstrateLayoutService.shared.substrateVector(for: node) {
-                for (key, cen) in centroid {
-                    let s = max(0, cosine(vec, cen) ?? 0)
-                    if s > 0 { pull[key, default: 0] += weights.language * s }
+            // B7 — one lookup per node, tallied. `nil` here means the node is
+            // DELIBERATELY excluded from the language signal (no card while the
+            // card basis is authoritative), not that it silently mismatched.
+            if let r = SubstrateLayoutService.shared.languageVector(for: node) {
+                switch r.source {
+                case .card:               tally.card += 1
+                case .blockPooled:        tally.blockPooled += 1
+                case .legacyNLContextual: tally.legacy += 1
                 }
+                tally.dims.insert(r.vector.count)
+                if weights.language > 0 {
+                    for (key, cen) in centroid {
+                        // Dimension mismatch can no longer silently zero a pull:
+                        // the basis is homogeneous by construction, and any
+                        // residual mismatch is counted rather than swallowed.
+                        guard let c = cosine(r.vector, cen) else {
+                            tally.cosineMismatch += 1
+                            continue
+                        }
+                        let s = max(0, c)
+                        if s > 0 { pull[key, default: 0] += weights.language * s }
+                    }
+                }
+            } else {
+                tally.none += 1
             }
             // Deterministic argmax: sort by pull descending, then key ascending
             // as a stable tiebreaker. Without the tiebreak, two territories with
@@ -195,6 +229,12 @@ enum TagTerritoryLayout {
         //    bigger nodes claim more room (min gap = r_i + r_j + padding).
         relaxOverlaps(&out, radii: radii)
 
+        // B7 — CONSUMER-SIDE REPORT. This is the line that proves the map is
+        // actually reading card vectors; the author-side "I wrote a cache"
+        // proves nothing. `card=0 legacy=N` means the preload lost the race
+        // and the map is still on NLContextual.
+        tally.report(nodeCount: nodes.count, languageWeight: weights.language)
+
         let territories = keys.map { Territory(key: $0, name: name[$0] ?? $0) }
         // Retain centroids for winner territories only (the ones that became
         // `keys`) so drift-in placement argmaxes against the same set.
@@ -226,9 +266,15 @@ enum TagTerritoryLayout {
         for tag in node.tags where anchorSet.contains(tag) {
             pull["tag:" + tag, default: 0] += weights.anchor
         }
-        if weights.language > 0, let vec = SubstrateLayoutService.shared.substrateVector(for: node) {
+        // B7 — drift must argmax against the SAME basis the frozen centroids
+        // were built from, or a newly captured node is scored in a different
+        // space than the geography it's landing in (512-d node vector vs
+        // 384-d card centroids ⇒ `cosine` returns nil ⇒ silently no language
+        // pull at all). `languageVector` guarantees the same basis; a node
+        // with no card gets no language pull, deliberately.
+        if weights.language > 0, let r = SubstrateLayoutService.shared.languageVector(for: node) {
             for (key, cen) in layout.centroids {
-                let s = max(0, cosine(vec, cen) ?? 0)
+                let s = max(0, cosine(r.vector, cen) ?? 0)
                 if s > 0 { pull[key, default: 0] += weights.language * s }
             }
         }
@@ -408,6 +454,45 @@ enum TagTerritoryLayout {
             ring += 1
         }
         return CGFloat(max(0, ring - 1)) * nodeRingSpacing
+    }
+
+    // MARK: - B7 language-basis instrumentation
+
+    /// Per-run tally of which vector basis the map's `language` gravity
+    /// ACTUALLY resolved, and at what dimension. Exists because
+    /// `TagTerritoryLayout.layout` is synchronous while the card preload is
+    /// async — the failure mode is silent fallthrough, which looks exactly
+    /// like "the change didn't work." Counts nodes, each visited once.
+    private struct LanguageVectorTally {
+        var card = 0
+        var blockPooled = 0
+        var legacy = 0
+        /// Nodes deliberately excluded: card basis authoritative, no card.
+        var none = 0
+        /// Residual dimension mismatches against a centroid (should be 0).
+        var cosineMismatch = 0
+        var dims: Set<Int> = []
+
+        func report(nodeCount: Int, languageWeight: Double) {
+            let dimList = dims.sorted().map(String.init).joined(separator: ",")
+            let basis: String
+            if card > 0 && blockPooled == 0 && legacy == 0 {
+                basis = "CARD (B7 — card gist, BGE 384d)"
+            } else if card == 0 && (legacy > 0 || blockPooled > 0) {
+                basis = "⚠️ NOT CARD — preload lost the race or cache is cold"
+            } else if card > 0 {
+                basis = "⚠️ MIXED — card + fallback in one run"
+            } else {
+                basis = "no language vectors resolved"
+            }
+            print("""
+            [Territory/language] basis=\(basis) \
+            nodes=\(nodeCount) card=\(card) blockPooled=\(blockPooled) \
+            legacyNLContextual=\(legacy) excluded_noCard=\(none) \
+            dims=[\(dimList.isEmpty ? "-" : dimList)] \
+            cosineMismatch=\(cosineMismatch) weight=\(languageWeight)
+            """)
+        }
     }
 
     // MARK: - Helpers

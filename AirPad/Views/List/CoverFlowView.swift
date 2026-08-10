@@ -263,7 +263,19 @@ struct CoverFlowView: View {
                             phase: max(-1, min(1, dist))
                         )
                         .offset(x: dist * cardStride)
-                        .matchedTransitionSource(id: node.id, in: zoomNamespace)
+                        // CAROUSEL return-shadow fix (2026-08-10): the shadow seen on
+                        // the carousel during the zoom is SwiftUI's OWN zoom-transition
+                        // shadow — proven by a bright-cyan positive control injected
+                        // through this same closure, which rendered a cyan halo around
+                        // the morphing card and REPLACED (not stacked on) the default.
+                        // So a CLEAR shadow here SUPPRESSES the transition shadow (and
+                        // its square-corner clip). Shadow param ONLY — no clipShape (the
+                        // earlier "mask" came from clipShape), no background. The card's
+                        // own rounded `.shadow()` rides in the source snapshot and is
+                        // unaffected. Pending T device-verify.
+                        .matchedTransitionSource(id: node.id, in: zoomNamespace) { source in
+                            source.shadow(color: .clear, radius: 0)
+                        }
                     }
                 }
                 .frame(height: cardHeight)

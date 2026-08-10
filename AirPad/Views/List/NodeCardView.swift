@@ -177,6 +177,13 @@ struct NodeCardView: View {
                     editorialContent(cardHeight: geo.size.height)
                     sheen
                 }
+                // Pin the face to the GeometryReader's proposal. Without this the
+                // ZStack grows to content whenever editorialContent's intrinsic
+                // height exceeds the proposed height, and the clipShape below
+                // follows the GROWN bounds — so the rounded mask sits past the
+                // frame and the bottom edge reads clipped/squared. Carousel had
+                // headroom so it never showed; other presentations do.
+                .frame(width: geo.size.width, height: geo.size.height)
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
                 // R6 — top-edge rim light (float cue). Brightest along the
                 // upper edge, fading down the sides, so the face reads as a

@@ -23,6 +23,9 @@ extension Color {
 }
 
 struct NodeCardView: View {
+    /// Card-surface values are LIGHT-ONLY; every resolver is keyed on appearance.
+    @Environment(\.colorScheme) private var colorScheme
+
     // R2 — the card observes the store itself so in-place mutations to
     // its node trigger a re-render without waiting for the list to
     // recycle. Mirrors NodeDetailView's pattern: keep the ID, look up
@@ -181,20 +184,21 @@ struct NodeCardView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: Self.cornerRadius)
                         .strokeBorder(
-                            LinearGradient(
-                                colors: [Color.white.opacity(Self.rimOpacity), Color.white.opacity(0)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            ),
-                            lineWidth: Self.rimWidth
+                            CardSurfaceResolved.rimGradient(dark: colorScheme == .dark),
+                            lineWidth: CardSurfaceResolved.rimWidth(dark: colorScheme == .dark)
                         )
                         .allowsHitTesting(false)
                 )
+                // Emboss — light-only; the SAME builder the grid tile uses.
+                .overlay(CardEmbossOverlay(cornerRadius: Self.cornerRadius))
                 // Warm, appearance-adaptive lift — shared AppearancePalette
                 // token (dark = the shipped black@0.32, byte-identical; light =
                 // warm brown-gray on parchment). The grid tiles reuse the same
                 // token so carousel + grid can't drift.
-                .shadow(color: AppearancePalette.cardShadow, radius: 12, x: 0, y: 4)
+                .shadow(color: AppearancePalette.cardShadow,
+                        radius: CardSurfaceResolved.shadowRadius(dark: colorScheme == .dark),
+                        x: 0,
+                        y: CardSurfaceResolved.shadowY(dark: colorScheme == .dark))
             }
         }
     }

@@ -186,6 +186,9 @@ struct NodeGridView: View {
             // Carousel-parity lift, scaled to the tile width (same for every
             // tile in a density) so grid cards separate from the parchment.
             let shadowScale = min(cellW / Self.cardShadowReferenceWidth, 1)
+            let isDarkMode = colorScheme == .dark
+            let tileShadowRadius = CardSurfaceResolved.shadowRadius(dark: isDarkMode)
+            let tileShadowY = CardSurfaceResolved.shadowY(dark: isDarkMode)
 
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -221,21 +224,20 @@ struct NodeGridView: View {
                             // parchment without reading heavy. Cast by the
                             // clipped shape (drawn outside the clip).
                             .shadow(color: AppearancePalette.cardShadow,
-                                    radius: 12 * shadowScale, x: 0, y: 4 * shadowScale)
+                                    radius: tileShadowRadius * shadowScale,
+                                    x: 0,
+                                    y: tileShadowY * shadowScale)
                             // R6 — top-edge rim light on the rounded edge.
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
                                     .strokeBorder(
-                                        LinearGradient(
-                                            colors: [Color.white.opacity(Self.tileRimOpacity),
-                                                     Color.white.opacity(0)],
-                                            startPoint: .top,
-                                            endPoint: .bottom
-                                        ),
-                                        lineWidth: Self.tileRimWidth
+                                        CardSurfaceResolved.rimGradient(dark: colorScheme == .dark),
+                                        lineWidth: CardSurfaceResolved.rimWidth(dark: colorScheme == .dark)
                                     )
                                     .allowsHitTesting(false)
                             )
+                            // Emboss — same builder as the carousel card.
+                            .overlay(CardEmbossOverlay(cornerRadius: 14))
                             .matchedTransitionSource(id: node.id, in: zoomNamespace)
                             .id(node.id)
                             .contentShape(Rectangle())

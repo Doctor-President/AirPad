@@ -133,8 +133,10 @@ enum AppearancePalette {
     /// more lift). Dial: T nudges the warmth via the light hex and the heft via
     /// `lightAlpha` here (hex is the colorblind-safe control; the grid scales
     /// this same color down by tile width).
-    static let cardShadow = dynamic(dark: "000000", darkAlpha: 0.32,
-                                    light: "43372A", lightAlpha: 0.22)
+    /// ★ Light hex/alpha resolved via `CardSurfaceResolved` (T's dialed values).
+    /// DARK returns the shipped literal `black@0.32`, unreachable by any value.
+    /// Still ONE token, so carousel and grid cannot drift.
+    static var cardShadow: Color { CardSurfaceResolved.cardShadow }
 
     /// The list-row warm lift (#13, T-dialed). LIGHT: a heavy warm brown-gray
     /// (`#43372A` @0.75) so the ELEVATED row band (filled with `bgElevated` — the
@@ -187,9 +189,10 @@ enum AppearancePalette {
     /// hair warmer/lighter than the old `#07070A` Void). Light: `#F4EFE3`, the
     /// same parchment ground as the detail view (`bgBase`). Resolved by the
     /// caller's `colorScheme`, so the SwiftUI fill recomputes on appearance flip.
+    /// ★ Light hex via `CardSurfaceResolved.ground`; DARK is the literal `#111115`.
+    /// T kept the ground at `#F4EFE3`, so light is unchanged in this build too.
     static func mapBackground(dark: Bool) -> Color {
-        let (r, g, b) = rgb(dark ? "111115" : "F4EFE3")
-        return Color(red: Double(r), green: Double(g), blue: Double(b))
+        CardSurfaceResolved.ground(dark: dark)
     }
 
     // MARK: - Cucumber Water light pigment (shared: node cards + dashboard lava)
@@ -221,7 +224,7 @@ extension View {
     /// cards and the dashboard). `compositingGroup` isolates the blend so it
     /// composites against the parchment, not whatever ground is behind.
     func pigmentOnParchment(parchmentHex: String = AppearancePalette.cwParchmentHex,
-                            baseLightness: CGFloat = AppearancePalette.cwBaseLightness,
+                            baseLightness: CGFloat = CardSurfaceResolved.baseLightness,
                             strength: CGFloat = AppearancePalette.cwPigmentStrength,
                             blend: BlendMode = AppearancePalette.cwTransferMode) -> some View {
         ZStack {

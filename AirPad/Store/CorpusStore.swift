@@ -808,6 +808,13 @@ final class CorpusStore {
                         }
                     }
                 }
+                // `-OpenCardView` — open Card View directly so the card surface is
+                // reachable in the Simulator without driving the view-switcher menu.
+                if ProcessInfo.processInfo.arguments.contains("-OpenCardView") {
+                    var s = filterState(for: .corpus)
+                    s.viewMode = .grid
+                    setFilterState(s, for: .corpus)
+                }
                 if ProcessInfo.processInfo.arguments.contains("-FieldFixtureNode") {
                     let defs = FieldValueSelfTest.fixtureDefinitions()
                     fieldDefinitions = defs

@@ -20,6 +20,14 @@ struct ContentView: View {
     var body: some View {
         @Bindable var routerBinding = router
         ZStack {
+            #if DEBUG
+            // `-OpenCardView` companion — `entryMode` defaults to `.recents`, so the
+            // viewMode seed alone never reaches the canvas.
+            Color.clear.frame(width: 0, height: 0).onAppear {
+                if ProcessInfo.processInfo.arguments.contains("-OpenCardView"),
+                   router.entryMode != .canvas { router.entryMode = .canvas }
+            }
+            #endif
             Group {
                 switch router.entryMode {
                 case .dashboard:

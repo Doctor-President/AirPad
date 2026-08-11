@@ -225,14 +225,14 @@ struct VerticalScrollView: View {
                                 .opacity(vignetteOpacity)
                                 .scaleEffect(scale, anchor: .center)
                         }
-                        // DIAGNOSTIC (cyan positive control) — identical to the
-                        // CoverFlow deck: paint the source config background cyan so
-                        // a lingering transition rectangle is unmistakable. NOT
-                        // transition-only, so resting cards may show cyan (expected).
-                        // No clipShape (condemned); clear shadow kept. TEMPORARY.
+                        // Zoom source config — identical to the CoverFlow deck.
+                        // Background CLEAR (the cyan control confirmed this surface
+                        // was the lingering rectangle; paint it invisible, don't
+                        // clip — clipShape is condemned). Clear shadow kept (the
+                        // verified default-shadow suppression).
                         .matchedTransitionSource(id: node.id, in: zoomNamespace) { source in
                             source
-                                .background(Color.cyan)
+                                .background(Color.clear)
                                 .shadow(color: .clear, radius: 0)
                         }
                         .contentShape(Rectangle())

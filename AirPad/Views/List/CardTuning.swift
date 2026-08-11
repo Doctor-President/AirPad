@@ -121,6 +121,11 @@ enum HeroLeftDial {
     static let fadeEndKey    = "card.heroLeft.fadeEnd"     // …fully faded by here
     static let scrimKey     = "card.heroLeft.scrim"
     static let haloKey      = "card.heroLeft.halo"
+    // Gradient-only blob distribution (see NodeGradientLayer.BlobDistribution).
+    static let blobScaleKey = "card.heroLeft.blobScale"
+    static let vSpreadKey   = "card.heroLeft.blobVSpread"
+    static let hOffsetKey   = "card.heroLeft.blobHOffset"
+    static let overlapKey   = "card.heroLeft.blobOverlap"
 
     static let enabledDefault   = true      // on by default on this look-see branch
     static let widthDefault     = 0.333     // text starts at ⅓ of the card width
@@ -128,6 +133,10 @@ enum HeroLeftDial {
     static let fadeEndDefault    = 0.38      // …fully transparent by 38%
     static let scrimDefault     = false     // travelling scrim off
     static let haloDefault      = false     // ink halo off
+    static let blobScaleDefault = 0.70      // radius = 0.70 × column width
+    static let vSpreadDefault   = 0.22      // centre gap = 22% of card height
+    static let hOffsetDefault   = 0.50      // centre-of-mass mid-column
+    static let overlapDefault   = 0.30      // moderate mixing
 
     // All fractions of card width. fadeStart/fadeEnd position the cover fade band
     // (independently of the text-column start) — slide them left into the image or
@@ -135,6 +144,11 @@ enum HeroLeftDial {
     static let widthRange:     ClosedRange<Double> = 0.20...0.50
     static let fadeStartRange:  ClosedRange<Double> = 0.05...0.55
     static let fadeEndRange:    ClosedRange<Double> = 0.10...0.65
+    // Blob distribution — generous enough to reach a single wash ↔ fully separated.
+    static let blobScaleRange:  ClosedRange<Double> = 0.15...2.5
+    static let vSpreadRange:    ClosedRange<Double> = 0.0...0.60
+    static let hOffsetRange:    ClosedRange<Double> = 0.0...1.50
+    static let overlapRange:    ClosedRange<Double> = 0.0...1.0
 }
 
 // MARK: - Panel (DEBUG)
@@ -279,6 +293,18 @@ struct CardTuningPanel: View {
                            HeroLeftDial.fadeStartRange, 0.005, "%.3f")
                 heroSlider("Fade end", HeroLeftDial.fadeEndKey, HeroLeftDial.fadeEndDefault,
                            HeroLeftDial.fadeEndRange, 0.005, "%.3f")
+                Divider().padding(.vertical, 2)
+                Text("GRADIENT BLOBS")
+                    .font(.system(size: 10, weight: .semibold)).tracking(1.5)
+                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+                heroSlider("Blob scale", HeroLeftDial.blobScaleKey, HeroLeftDial.blobScaleDefault,
+                           HeroLeftDial.blobScaleRange, 0.01, "%.2f")
+                heroSlider("Vertical spread", HeroLeftDial.vSpreadKey, HeroLeftDial.vSpreadDefault,
+                           HeroLeftDial.vSpreadRange, 0.005, "%.3f")
+                heroSlider("Horizontal offset", HeroLeftDial.hOffsetKey, HeroLeftDial.hOffsetDefault,
+                           HeroLeftDial.hOffsetRange, 0.01, "%.2f")
+                heroSlider("Overlap", HeroLeftDial.overlapKey, HeroLeftDial.overlapDefault,
+                           HeroLeftDial.overlapRange, 0.01, "%.2f")
                 Toggle("Scrim", isOn: heroBool(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))
                     .font(.system(size: 13, weight: .medium))
                 Toggle("Ink halo", isOn: heroBool(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))
@@ -328,6 +354,10 @@ struct CardTuningPanel: View {
         lines.append("heroLeft.textStart: \(String(format: "%.3f", dval(HeroLeftDial.widthKey, HeroLeftDial.widthDefault)))")
         lines.append("heroLeft.fadeStart: \(String(format: "%.3f", dval(HeroLeftDial.fadeStartKey, HeroLeftDial.fadeStartDefault)))")
         lines.append("heroLeft.fadeEnd: \(String(format: "%.3f", dval(HeroLeftDial.fadeEndKey, HeroLeftDial.fadeEndDefault)))")
+        lines.append("heroLeft.blobScale: \(String(format: "%.2f", dval(HeroLeftDial.blobScaleKey, HeroLeftDial.blobScaleDefault)))")
+        lines.append("heroLeft.blobVSpread: \(String(format: "%.3f", dval(HeroLeftDial.vSpreadKey, HeroLeftDial.vSpreadDefault)))")
+        lines.append("heroLeft.blobHOffset: \(String(format: "%.2f", dval(HeroLeftDial.hOffsetKey, HeroLeftDial.hOffsetDefault)))")
+        lines.append("heroLeft.blobOverlap: \(String(format: "%.2f", dval(HeroLeftDial.overlapKey, HeroLeftDial.overlapDefault)))")
         lines.append("heroLeft.scrim: \(bval(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))")
         lines.append("heroLeft.halo: \(bval(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))")
         UIPasteboard.general.string = lines.joined(separator: "\n")

@@ -157,6 +157,10 @@ struct NodeCardView: View {
     @AppStorage(HeroLeftDial.fadeEndKey)   private var heroLeftFadeEnd: Double   = HeroLeftDial.fadeEndDefault
     @AppStorage(HeroLeftDial.scrimKey)     private var heroLeftScrimOn: Bool     = HeroLeftDial.scrimDefault
     @AppStorage(HeroLeftDial.haloKey)      private var heroLeftHaloOn: Bool      = HeroLeftDial.haloDefault
+    @AppStorage(HeroLeftDial.blobScaleKey) private var heroBlobScale: Double     = HeroLeftDial.blobScaleDefault
+    @AppStorage(HeroLeftDial.vSpreadKey)   private var heroBlobVSpread: Double   = HeroLeftDial.vSpreadDefault
+    @AppStorage(HeroLeftDial.hOffsetKey)   private var heroBlobHOffset: Double   = HeroLeftDial.hOffsetDefault
+    @AppStorage(HeroLeftDial.overlapKey)   private var heroBlobOverlap: Double   = HeroLeftDial.overlapDefault
     #else
     private let heroLeftEnabled   = false
     private let heroLeftWidthFrac  = HeroLeftDial.widthDefault
@@ -164,6 +168,10 @@ struct NodeCardView: View {
     private let heroLeftFadeEnd    = HeroLeftDial.fadeEndDefault
     private let heroLeftScrimOn    = false
     private let heroLeftHaloOn     = false
+    private let heroBlobScale      = HeroLeftDial.blobScaleDefault
+    private let heroBlobVSpread    = HeroLeftDial.vSpreadDefault
+    private let heroBlobHOffset    = HeroLeftDial.hOffsetDefault
+    private let heroBlobOverlap    = HeroLeftDial.overlapDefault
     #endif
 
     /// Ink legibility halo. Over the hero-left white column it (white in light)
@@ -283,10 +291,18 @@ struct NodeCardView: View {
                         heroCoverColumn(cardWidth: geo.size.width, height: geo.size.height)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     } else {
-                        // GRADIENT-only card: the pigment fills the WHOLE face with its
-                        // colour mass anchored LEFT, bleeding organically toward the text
-                        // — no mask, no column. The faded tail keeps the text legible.
-                        NodeGradientLayer(node: node, anchor: .leading)
+                        // GRADIENT-only card: the pigment fills the WHOLE face, but its
+                        // three blobs are placed relative to the left COLUMN and stacked
+                        // down its vertical axis so their colours meet and mix (dialed).
+                        // No mask; the colour bleeds toward the text, which stays legible.
+                        NodeGradientLayer(
+                            node: node,
+                            blobDistribution: NodeGradientLayer.BlobDistribution(
+                                columnFrac: CGFloat(heroLeftWidthFrac),
+                                blobScale: CGFloat(heroBlobScale),
+                                verticalSpread: CGFloat(heroBlobVSpread),
+                                horizontalOffset: CGFloat(heroBlobHOffset),
+                                overlap: CGFloat(heroBlobOverlap)))
                     }
                     // Optional traveling scrim over the editorial (right) column.
                     if heroLeftScrimOn {

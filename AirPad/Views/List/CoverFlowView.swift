@@ -263,19 +263,14 @@ struct CoverFlowView: View {
                             phase: max(-1, min(1, dist))
                         )
                         .offset(x: dist * cardStride)
-                        // DIAGNOSTIC (cyan positive control): paint the source
-                        // config's background cyan so the lingering transition
-                        // rectangle is unmistakably identifiable. If the leftover
-                        // rectangle on zoom in/out turns CYAN, the source config IS
-                        // the culprit surface. NOTE: .background is NOT transition-
-                        // only, so resting cards may show cyan too — expected. No
-                        // clipShape (that mechanism is condemned). Clear shadow kept
-                        // (the verified default-shadow suppression). TEMPORARY —
-                        // reverted to Color.clear (or removed) once the question is
-                        // answered.
+                        // Zoom source config. The cyan control confirmed the
+                        // lingering rectangle IS this config's surface, so we paint
+                        // it CLEAR (invisible) rather than clip it — clipShape is
+                        // condemned (it reproduced the mask). The clear shadow stays:
+                        // the verified suppression of the transition's default shadow.
                         .matchedTransitionSource(id: node.id, in: zoomNamespace) { source in
                             source
-                                .background(Color.cyan)
+                                .background(Color.clear)
                                 .shadow(color: .clear, radius: 0)
                         }
                     }

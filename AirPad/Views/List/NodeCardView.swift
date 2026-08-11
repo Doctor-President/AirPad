@@ -151,15 +151,17 @@ struct NodeCardView: View {
     // RELEASE forces the layout OFF so the shipped vertical face is untouched.
     // Carousel + grid never branch here.
     #if DEBUG
-    @AppStorage(HeroLeftDial.enabledKey)  private var heroLeftEnabled: Bool   = HeroLeftDial.enabledDefault
-    @AppStorage(HeroLeftDial.widthKey)    private var heroLeftWidthFrac: Double = HeroLeftDial.widthDefault
-    @AppStorage(HeroLeftDial.softnessKey) private var heroLeftSoftness: Double  = HeroLeftDial.softnessDefault
-    @AppStorage(HeroLeftDial.scrimKey)    private var heroLeftScrimOn: Bool     = HeroLeftDial.scrimDefault
-    @AppStorage(HeroLeftDial.haloKey)     private var heroLeftHaloOn: Bool      = HeroLeftDial.haloDefault
+    @AppStorage(HeroLeftDial.enabledKey)   private var heroLeftEnabled: Bool    = HeroLeftDial.enabledDefault
+    @AppStorage(HeroLeftDial.widthKey)     private var heroLeftWidthFrac: Double = HeroLeftDial.widthDefault
+    @AppStorage(HeroLeftDial.fadeStartKey) private var heroLeftFadeStart: Double = HeroLeftDial.fadeStartDefault
+    @AppStorage(HeroLeftDial.fadeEndKey)   private var heroLeftFadeEnd: Double   = HeroLeftDial.fadeEndDefault
+    @AppStorage(HeroLeftDial.scrimKey)     private var heroLeftScrimOn: Bool     = HeroLeftDial.scrimDefault
+    @AppStorage(HeroLeftDial.haloKey)      private var heroLeftHaloOn: Bool      = HeroLeftDial.haloDefault
     #else
     private let heroLeftEnabled   = false
     private let heroLeftWidthFrac  = HeroLeftDial.widthDefault
-    private let heroLeftSoftness   = HeroLeftDial.softnessDefault
+    private let heroLeftFadeStart  = HeroLeftDial.fadeStartDefault
+    private let heroLeftFadeEnd    = HeroLeftDial.fadeEndDefault
     private let heroLeftScrimOn    = false
     private let heroLeftHaloOn     = false
     #endif
@@ -274,10 +276,11 @@ struct NodeCardView: View {
                     : Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
                 ZStack(alignment: .topLeading) {
                     if hasHero {
-                        // COVER card: image confined to the LEFT column on the paper
-                        // surface, its right edge easing (smoothstep) into the paper.
+                        // COVER card: image confined to the LEFT of the paper surface,
+                        // its right edge easing into the paper between the two fade
+                        // positions (independent of where the text column starts).
                         paper
-                        heroCoverColumn(height: geo.size.height, heroWidth: heroWidth)
+                        heroCoverColumn(cardWidth: geo.size.width, height: geo.size.height)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     } else {
                         // GRADIENT-only card: the pigment fills the WHOLE face with its
@@ -315,31 +318,30 @@ struct NodeCardView: View {
         }
     }
 
-    /// COVER hero column: the cover image confined to the left column, its right
-    /// edge easing into the paper with a SMOOTHSTEP falloff (gentler than a linear
-    /// ramp) over `heroLeftSoftness` pt. Softness 0 = a hard vertical edge.
+    /// COVER hero column: the cover image drawn from the left edge out to `fadeEnd`
+    /// (fraction of card width), fully opaque up to `fadeStart` and easing to clear
+    /// by `fadeEnd` with a SMOOTHSTEP falloff. The two positions are independent, so
+    /// the fade band can sit inside the image or bleed into the text as dialed.
     @ViewBuilder
-    private func heroCoverColumn(height: CGFloat, heroWidth: CGFloat) -> some View {
-        let soft = CGFloat(heroLeftSoftness)
-        let colWidth = heroWidth + soft
+    private func heroCoverColumn(cardWidth: CGFloat, height: CGFloat) -> some View {
+        let startF = CGFloat(min(heroLeftFadeStart, heroLeftFadeEnd - 0.01))
+        let endF   = CGFloat(max(heroLeftFadeEnd, heroLeftFadeStart + 0.01))
+        let colWidth = cardWidth * endF
         CardHeroImage(node: node)
             .equatable()
             .frame(width: colWidth, height: height)
             .clipped()
             .mask(
-                LinearGradient(stops: Self.easedEdgeStops(colWidth: colWidth, soft: soft),
+                LinearGradient(stops: Self.easedEdgeStops(innerStart: endF > 0 ? startF / endF : 1),
                                startPoint: .leading, endPoint: .trailing)
             )
     }
 
-    /// Smoothstep (ease-in-out) alpha stops for a right-edge fade over `soft` pt —
+    /// Smoothstep (ease-in-out) alpha stops for a right-edge fade. `innerStart` is
+    /// the fraction of the image frame that stays fully opaque before the ease —
     /// reads as a gradual melt instead of the hard corners of a linear ramp.
-    private static func easedEdgeStops(colWidth: CGFloat, soft: CGFloat) -> [Gradient.Stop] {
-        guard soft > 0.5, colWidth > 0 else {
-            return [Gradient.Stop(color: .black, location: 0),
-                    Gradient.Stop(color: .black, location: 1)]
-        }
-        let start = max(0, (colWidth - soft) / colWidth)
+    private static func easedEdgeStops(innerStart: CGFloat) -> [Gradient.Stop] {
+        let start = min(max(innerStart, 0), 0.999)
         var stops: [Gradient.Stop] = [Gradient.Stop(color: .black, location: 0)]
         for f: CGFloat in [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.0] {
             let s = f * f * (3 - 2 * f)                       // smoothstep

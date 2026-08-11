@@ -128,6 +128,27 @@ enum HeroLeftDial {
     static let overlapDefault   = 0.45
 }
 
+// MARK: - Chrome edge bands (look-see; DEBUG dials → bake on T's word)
+
+/// Eased blur+darken bands behind the chrome on the vertical scroll surface.
+/// Dialed live in the DEBUG CardTuningPanel; read by CanvasChrome's ChromeEdgeBands.
+enum ChromeBandDial {
+    static let topHeightKey    = "chrome.band.topHeight"
+    static let bottomHeightKey = "chrome.band.bottomHeight"
+    static let blurKey         = "chrome.band.blur"
+    static let darkenKey       = "chrome.band.darken"
+    static let easingKey       = "chrome.band.easing"
+
+    static let topHeightDefault: Double    = 150     // screen top → just below the AA control
+    static let bottomHeightDefault: Double = 230     // just above the switcher → bottom, enclosing the capsule
+    static let blurDefault: Double         = 0.80    // material strength at the screen edge
+    static let darkenDefault: Double       = 0.10    // black overlay at the screen edge
+    static let easingDefault: Double       = 0.70    // 0 = linear ramp … 1 = full smoothstep
+
+    static let heightRange: ClosedRange<Double> = 0...440
+    static let unitRange:   ClosedRange<Double> = 0...1
+}
+
 // MARK: - Panel (DEBUG)
 
 #if DEBUG
@@ -162,6 +183,9 @@ struct CardTuningPanel: View {
             presentationToggle
             paramChip
             sliderRow
+            if presentation == .vertical {
+                chromeBandsSection
+            }
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -253,6 +277,46 @@ struct CardTuningPanel: View {
             .frame(height: 32)
     }
 
+    // MARK: Chrome-bands section (vertical presentation)
+
+    private var chromeBandsSection: some View {
+        VStack(spacing: 8) {
+            Divider().padding(.top, 2)
+            Text("CHROME BANDS")
+                .font(.system(size: 10, weight: .semibold)).tracking(1.5)
+                .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
+            dialSlider("Top height", ChromeBandDial.topHeightKey, ChromeBandDial.topHeightDefault,
+                       ChromeBandDial.heightRange, 2, "%.0f")
+            dialSlider("Bottom height", ChromeBandDial.bottomHeightKey, ChromeBandDial.bottomHeightDefault,
+                       ChromeBandDial.heightRange, 2, "%.0f")
+            dialSlider("Blur", ChromeBandDial.blurKey, ChromeBandDial.blurDefault,
+                       ChromeBandDial.unitRange, 0.01, "%.2f")
+            dialSlider("Darken", ChromeBandDial.darkenKey, ChromeBandDial.darkenDefault,
+                       ChromeBandDial.unitRange, 0.01, "%.2f")
+            dialSlider("Ramp easing", ChromeBandDial.easingKey, ChromeBandDial.easingDefault,
+                       ChromeBandDial.unitRange, 0.01, "%.2f")
+        }
+    }
+
+    @ViewBuilder
+    private func dialSlider(_ label: String, _ key: String, _ def: Double,
+                           _ range: ClosedRange<Double>, _ step: Double, _ fmt: String) -> some View {
+        let binding = Binding<Double>(
+            get: { _ = revision; return UserDefaults.standard.object(forKey: key) == nil ? def : UserDefaults.standard.double(forKey: key) },
+            set: { UserDefaults.standard.set($0, forKey: key); revision += 1 }
+        )
+        VStack(spacing: 2) {
+            HStack {
+                Text(label).font(.system(size: 12, weight: .medium))
+                Spacer()
+                Text(String(format: fmt, binding.wrappedValue))
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: binding, in: range, step: step)
+        }
+    }
+
     private func copyValues() {
         var lines: [String] = []
         for p in CardPresentation.allCases {
@@ -261,6 +325,12 @@ struct CardTuningPanel: View {
                 lines.append("\(d.exportLabel)_\(p.rawValue): \(String(format: d.format, v))")
             }
         }
+        func dval(_ k: String, _ def: Double) -> Double { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.double(forKey: k) }
+        lines.append("chromeBand.topHeight: \(String(format: "%.0f", dval(ChromeBandDial.topHeightKey, ChromeBandDial.topHeightDefault)))")
+        lines.append("chromeBand.bottomHeight: \(String(format: "%.0f", dval(ChromeBandDial.bottomHeightKey, ChromeBandDial.bottomHeightDefault)))")
+        lines.append("chromeBand.blur: \(String(format: "%.2f", dval(ChromeBandDial.blurKey, ChromeBandDial.blurDefault)))")
+        lines.append("chromeBand.darken: \(String(format: "%.2f", dval(ChromeBandDial.darkenKey, ChromeBandDial.darkenDefault)))")
+        lines.append("chromeBand.easing: \(String(format: "%.2f", dval(ChromeBandDial.easingKey, ChromeBandDial.easingDefault)))")
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         justCopied = true

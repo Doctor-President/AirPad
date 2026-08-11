@@ -127,6 +127,16 @@ struct CanvasChrome: View {
             }
             .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
 
+            #if DEBUG
+            // Chrome edge bands (look-see): eased blur + darken behind the chrome
+            // on the vertical card surface. Sits ABOVE the surface (cards blur as
+            // they pass under) and BELOW every chrome overlay below (pills,
+            // switcher, capsule, +), so the chrome stays crisp.
+            if filterState.viewMode == .grid && gridColumnCount == 4 {
+                ChromeEdgeBands()
+            }
+            #endif
+
             // Overlays that live above the canvas but behind the fan — these all
             // blur uniformly when the fan is expanded so the focal effect is
             // consistent across the full screen, not just the canvas area.
@@ -1301,3 +1311,65 @@ extension View {
                                     outline: outline))
     }
 }
+
+#if DEBUG
+// MARK: - Chrome edge bands (look-see)
+
+/// Full-width top + bottom bands that sit BEHIND the chrome on the vertical
+/// scroll surface: an eased backdrop blur + darkening that ramps from full at the
+/// screen edge to zero at the inner boundary. Cards blur passing under; the
+/// chrome (mounted later in CanvasChrome's ZStack) stays crisp. Dialed live via
+/// the ChromeBandDial keys (CardTuningPanel), to be baked on T's word.
+struct ChromeEdgeBands: View {
+    @AppStorage(ChromeBandDial.topHeightKey)    private var topHeight: Double    = ChromeBandDial.topHeightDefault
+    @AppStorage(ChromeBandDial.bottomHeightKey) private var bottomHeight: Double = ChromeBandDial.bottomHeightDefault
+    @AppStorage(ChromeBandDial.blurKey)         private var blur: Double         = ChromeBandDial.blurDefault
+    @AppStorage(ChromeBandDial.darkenKey)       private var darken: Double       = ChromeBandDial.darkenDefault
+    @AppStorage(ChromeBandDial.easingKey)       private var easing: Double       = ChromeBandDial.easingDefault
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ChromeEdgeBand(edge: .top, height: topHeight, blur: blur, darken: darken, easing: easing)
+            Spacer(minLength: 0)
+            ChromeEdgeBand(edge: .bottom, height: bottomHeight, blur: blur, darken: darken, easing: easing)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+private struct ChromeEdgeBand: View {
+    enum Side { case top, bottom }
+    let edge: Side
+    let height: Double
+    let blur: Double
+    let darken: Double
+    let easing: Double
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.thinMaterial).opacity(blur)   // backdrop blur (dial-able strength)
+            Rectangle().fill(Color.black).opacity(darken)   // darkening on the same ramp
+        }
+        .frame(height: max(0, CGFloat(height)))
+        .mask(
+            LinearGradient(stops: Self.rampStops(easing: easing),
+                           startPoint: edge == .top ? .top : .bottom,
+                           endPoint:   edge == .top ? .bottom : .top)
+        )
+        .allowsHitTesting(false)
+    }
+
+    /// Opaque at the screen edge → clear at the inner boundary, blending a linear
+    /// ramp with a smoothstep by `easing` (0 = linear … 1 = full smoothstep) so
+    /// there is no visible stop line.
+    static func rampStops(easing: Double) -> [Gradient.Stop] {
+        (0...8).map { i in
+            let t = Double(i) / 8.0
+            let ss = t * t * (3 - 2 * t)
+            let a = t * (1 - easing) + ss * easing
+            return .init(color: .white.opacity(1 - a), location: t)
+        }
+    }
+}
+#endif

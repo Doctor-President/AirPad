@@ -22,6 +22,10 @@ struct VerticalScrollView: View {
     /// same Librarian match (which otherwise stack identical detail
     /// views). Cleared when the path returns to root.
     @State private var currentDetailNodeID: String? = nil
+    /// Card drop-shadow alpha (0…1). Snapped to 0 while a detail is presented,
+    /// animated back to 1 on return so the shadow fades in instead of popping
+    /// when the zoom transition tears down. Driven from navigationPath.count.
+    @State private var cardShadowOpacity: Double = 1
     @State private var displayItems: [Node] = []
     @State private var scrolledID: String? = nil
 
@@ -108,7 +112,16 @@ struct VerticalScrollView: View {
                     store.detailViewDepth = newCount
                     // Back-out → root: clear so a subsequent tap on the
                     // same node pushes a fresh detail view.
-                    if newCount == 0 { currentDetailNodeID = nil }
+                    if newCount == 0 {
+                        currentDetailNodeID = nil
+                        // Fade the card shadow back in after landing (~0.3s
+                        // ease-out) instead of popping on transition teardown.
+                        withAnimation(.easeOut(duration: 0.3)) { cardShadowOpacity = 1 }
+                    } else {
+                        // Snap off — no shadow while the card morphs into detail.
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { cardShadowOpacity = 0 }
+                    }
                 }
             }
         }
@@ -184,7 +197,8 @@ struct VerticalScrollView: View {
                         NodeCardView(
                             nodeID: node.id,
                             fallbackNode: node,
-                            presentation: .vertical
+                            presentation: .vertical,
+                            shadowOpacity: cardShadowOpacity
                         )
                         .frame(height: cardHeight)
                         // #3 — shared focus glow (matches NodeCardView's 30pt face).

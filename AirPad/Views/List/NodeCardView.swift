@@ -145,24 +145,31 @@ struct NodeCardView: View {
     private static let rimWidth: CGFloat = 1.5       // rim hairline width
 
     // MARK: - Hero-LEFT look-see (branch layout/hero-left-variants; .vertical only)
-    // A throwaway layout probe: on the vertical-scroll surface the hero moves to
-    // a LEFT column (1/3) and the editorial content sits on the resolved card
-    // surface (2/3). Selected per-launch by the `HeroLeftVariant` default
-    // (`-HeroLeftVariant A|B|C`). Carousel + grid are untouched.
-    enum HeroLeftVariant { case a, b, c }
-    static let heroLeftVariant: HeroLeftVariant = {
-        switch (UserDefaults.standard.string(forKey: "HeroLeftVariant") ?? "A").uppercased() {
-        case "B": return .b
-        case "C": return .c
-        default:  return .a
-        }
-    }()
-    /// Ink legibility halo. Over the white editorial column of the hero-left A/B
-    /// variants it only smears, so it's dropped there; variant C keeps it (to show
-    /// the cost). Every other presentation always gets the halo (`Self.inkShadow`).
+    // A throwaway layout probe: on the vertical-scroll surface the hero moves to a
+    // LEFT column and the editorial content sits on the resolved card surface.
+    // Every knob is a live dial (HeroLeftDial) written by the DEBUG CardTuningPanel;
+    // RELEASE forces the layout OFF so the shipped vertical face is untouched.
+    // Carousel + grid never branch here.
+    #if DEBUG
+    @AppStorage(HeroLeftDial.enabledKey)  private var heroLeftEnabled: Bool   = HeroLeftDial.enabledDefault
+    @AppStorage(HeroLeftDial.widthKey)    private var heroLeftWidthFrac: Double = HeroLeftDial.widthDefault
+    @AppStorage(HeroLeftDial.softnessKey) private var heroLeftSoftness: Double  = HeroLeftDial.softnessDefault
+    @AppStorage(HeroLeftDial.scrimKey)    private var heroLeftScrimOn: Bool     = HeroLeftDial.scrimDefault
+    @AppStorage(HeroLeftDial.haloKey)     private var heroLeftHaloOn: Bool      = HeroLeftDial.haloDefault
+    #else
+    private let heroLeftEnabled   = false
+    private let heroLeftWidthFrac  = HeroLeftDial.widthDefault
+    private let heroLeftSoftness   = HeroLeftDial.softnessDefault
+    private let heroLeftScrimOn    = false
+    private let heroLeftHaloOn     = false
+    #endif
+
+    /// Ink legibility halo. Over the hero-left white column it (white in light)
+    /// only smears, so it's dropped unless the halo dial turns it on. Every other
+    /// face — and hero-left with the halo dialed on — keeps `Self.inkShadow`.
     private var inkHalo: Color {
-        guard presentation == .vertical else { return Self.inkShadow }
-        return Self.heroLeftVariant == .c ? Self.inkShadow : .clear
+        if presentation == .vertical && heroLeftEnabled && !heroLeftHaloOn { return .clear }
+        return Self.inkShadow
     }
 
     var body: some View {
@@ -178,9 +185,9 @@ struct NodeCardView: View {
 
     @ViewBuilder
     private var cardBody: some View {
-        // Hero-LEFT look-see: only the vertical-scroll surface branches; carousel
-        // and grid keep the shipped top-hero face.
-        if presentation == .vertical {
+        // Hero-LEFT look-see: only the vertical-scroll surface branches, and only
+        // when the dial is on (DEBUG). Carousel and grid keep the shipped face.
+        if presentation == .vertical && heroLeftEnabled {
             heroLeftBody
         } else {
             topHeroBody
@@ -258,28 +265,26 @@ struct NodeCardView: View {
     private var heroLeftBody: some View {
         HStack(spacing: 12) {
             GeometryReader { geo in
-                let variant = Self.heroLeftVariant
-                let heroWidth = geo.size.width / 3
+                let heroWidth = geo.size.width * CGFloat(heroLeftWidthFrac)
                 let textWidth = geo.size.width - heroWidth
                 let hasHero = node.coverImageRelativePath != nil
-                // Resolved card surface, LIGHT path. Dark falls back to ground —
-                // the look-see renders light only.
+                // Resolved card surface, LIGHT path. Dark falls back to ground.
                 let paper: Color = colorScheme == .dark
                     ? CardSurfaceResolved.ground(dark: true)
                     : Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
                 ZStack(alignment: .topLeading) {
-                    // Editorial surface fills the whole face; the hero overlays the left third.
+                    // Editorial surface fills the whole face; the hero overlays the left column.
                     paper
-                    // Hero column, pinned LEFT. Variant B bleeds + fades ~24pt into the text column.
-                    heroColumn(height: geo.size.height, heroWidth: heroWidth, hasHero: hasHero, variant: variant)
+                    // Hero column, pinned LEFT. Softness > 0 fades its right edge into the paper.
+                    heroColumn(height: geo.size.height, heroWidth: heroWidth, hasHero: hasHero)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                    // Variant C keeps the traveling scrim — over the WHITE column now, to show its cost.
-                    if variant == .c {
+                    // Optional traveling scrim over the editorial (white) column.
+                    if heroLeftScrimOn {
                         travelingScrim
                             .frame(width: textWidth)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
                     }
-                    // Editorial column, pinned RIGHT (2/3). Dateline starts here; topInset dropped.
+                    // Editorial column, pinned RIGHT. Dateline starts here; topInset dropped.
                     editorialContent(cardHeight: geo.size.height, topInsetOverride: 20)
                         .frame(width: textWidth, height: geo.size.height, alignment: .topLeading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
@@ -304,13 +309,13 @@ struct NodeCardView: View {
     }
 
     /// Left hero column: `NodeGradientLayer` confined to the column (renders with
-    /// or without a cover), cover image overlaid when present. Variant B widens by
-    /// ~24pt and fades its right edge into the text column (soft edge); A and C are
-    /// a hard vertical edge at 1/3.
+    /// or without a cover), cover image overlaid when present. `heroLeftSoftness`
+    /// (pt) widens the column by that much and fades its right edge into the text
+    /// column; 0 = a hard vertical edge.
     @ViewBuilder
-    private func heroColumn(height: CGFloat, heroWidth: CGFloat, hasHero: Bool, variant: HeroLeftVariant) -> some View {
-        let bleed: CGFloat = variant == .b ? 24 : 0
-        let colWidth = heroWidth + bleed
+    private func heroColumn(height: CGFloat, heroWidth: CGFloat, hasHero: Bool) -> some View {
+        let soft = CGFloat(heroLeftSoftness)
+        let colWidth = heroWidth + soft
         ZStack {
             NodeGradientLayer(node: node, centerYOffset: 0, anchor: .center)
             if hasHero {
@@ -322,12 +327,12 @@ struct NodeCardView: View {
         }
         .frame(width: colWidth, height: height)
         .mask(
-            // Hard edge (A/C): fully opaque, frame clips at colWidth. Soft edge (B):
-            // fade the rightmost ~24pt to clear so the hero melts into the paper.
+            // Hard edge (softness 0): fully opaque, frame clips at colWidth. Soft:
+            // fade the rightmost `soft` pt to clear so the hero melts into the paper.
             LinearGradient(
-                stops: variant == .b
+                stops: soft > 0.5
                     ? [ .init(color: .black, location: 0.0),
-                        .init(color: .black, location: max(0.0, (colWidth - 24) / colWidth)),
+                        .init(color: .black, location: max(0.0, (colWidth - soft) / colWidth)),
                         .init(color: .clear, location: 1.0) ]
                     : [ .init(color: .black, location: 0.0),
                         .init(color: .black, location: 1.0) ],

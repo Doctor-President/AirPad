@@ -102,36 +102,4 @@ final class CardSwipeRepro: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 2.0)
     }
-
-    /// HERO-LEFT look-see capture (branch layout/hero-left-variants). For each of
-    /// the three variants A/B/C, opens the vertical-scroll surface (gridColumnCount
-    /// == 4) in LIGHT and captures the SAME four nodes (deterministic swipes → same
-    /// node set across variants), attaching each screenshot as `hero-<V>-node<N>`.
-    /// Twelve attachments; extract with `xcresulttool export attachments`.
-    func testHeroLeftVariants() {
-        for v in ["A", "B", "C"] {
-            let app = XCUIApplication()
-            app.launchArguments = ["-OpenCardView", "-HeroLeftVariant", v, "-gridColumnCount", "4"]
-            app.launch()
-            Thread.sleep(forTimeInterval: 24)   // corpus load + settle
-
-            for node in 1...4 {
-                let att = XCTAttachment(screenshot: app.screenshot())
-                att.name = "hero-\(v)-node\(node)"
-                att.lifetime = .keepAlways
-                add(att)
-
-                if node < 4 {
-                    // Advance one card in the viewAligned vertical scroll. Same
-                    // travel every time so the four nodes match across variants.
-                    let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.70))
-                    let end   = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.26))
-                    start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0.0)
-                    Thread.sleep(forTimeInterval: 2.5)
-                }
-            }
-            app.terminate()
-            Thread.sleep(forTimeInterval: 1.5)
-        }
-    }
 }

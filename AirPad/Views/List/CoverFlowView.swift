@@ -31,6 +31,10 @@ struct CoverFlowView: View {
     /// Mirrors NodeGridView's dedupe — Node ID currently sitting at the
     /// top of the navigation stack after a router-driven push.
     @State private var currentDetailNodeID: String? = nil
+    /// Card drop-shadow alpha (0…1). Snapped to 0 while a detail is presented,
+    /// animated back to 1 on return so the shadow fades in instead of popping
+    /// when the zoom transition tears down. Driven from navigationPath.count.
+    @State private var cardShadowOpacity: Double = 1
 
     @AppStorage(CoverFlowKey.rotationMaxDegrees)
     private var rotationMaxDegrees: Double = CoverFlowDefaults.rotationMaxDegrees
@@ -121,7 +125,16 @@ struct CoverFlowView: View {
             }
             .onChange(of: navigationPath.count) { _, newCount in
                 store.detailViewDepth = newCount
-                if newCount == 0 { currentDetailNodeID = nil }
+                if newCount == 0 {
+                    currentDetailNodeID = nil
+                    // Fade the card shadow back in after landing (~0.3s ease-out)
+                    // rather than letting it pop when the transition tears down.
+                    withAnimation(.easeOut(duration: 0.3)) { cardShadowOpacity = 1 }
+                } else {
+                    // Snap off — no shadow while the card morphs into detail.
+                    var t = Transaction(); t.disablesAnimations = true
+                    withTransaction(t) { cardShadowOpacity = 0 }
+                }
             }
         }
         .onAppear {
@@ -260,7 +273,8 @@ struct CoverFlowView: View {
                             isPicked: selection.isSelected(node.id),
                             // Rake saturates at ±1 (edge cards look like the ±1
                             // neighbour, just pushed further out by the offset).
-                            phase: max(-1, min(1, dist))
+                            phase: max(-1, min(1, dist)),
+                            shadowOpacity: cardShadowOpacity
                         )
                         .offset(x: dist * cardStride)
                         // Zoom source config. The cyan control confirmed the
@@ -367,6 +381,8 @@ private struct CoverFlowCell: View {
     /// −1 (leading) … 0 (centre) … +1 (trailing). Left cards hinge on their
     /// right edge, right cards on their left — both rake inward toward centre.
     let phase: CGFloat
+    /// Forwarded to the card face so the deck can fade the shadow on return.
+    var shadowOpacity: Double = 1
 
     var body: some View {
         let absV = abs(phase)
@@ -376,7 +392,8 @@ private struct CoverFlowCell: View {
         return NodeCardView(
             nodeID: node.id,
             fallbackNode: node,
-            animateEntry: false
+            animateEntry: false,
+            shadowOpacity: shadowOpacity
         )
         .frame(width: cardWidth, height: cardHeight)
         // #3 — shared focus glow. Applied before the rake so it transforms with

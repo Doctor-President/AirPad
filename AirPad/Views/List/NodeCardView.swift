@@ -41,6 +41,13 @@ struct NodeCardView: View {
     /// `CardTuning`. Defaults to `.carousel` to preserve the memberwise-
     /// init call shape at existing sites.
     var presentation: CardPresentation = .carousel
+    /// Multiplies the card's drop-shadow alpha. The presenting decks (carousel,
+    /// vertical scroll) drive this to fade the shadow in on return from detail
+    /// instead of letting it pop when the zoom transition tears down: snapped to
+    /// 0 while in detail, animated to 1 on return. A PLAIN value — the card body
+    /// never observes detailViewDepth itself (see the @Observable perf lesson).
+    /// Default 1 keeps every other call site (grid, previews) byte-identical.
+    var shadowOpacity: Double = 1
 
     // CardTuning dials. DEBUG: live @AppStorage — the DEBUG-only CardTuningPanel
     // (CoverFlow / VerticalScroll) dials them. RELEASE: plain constants set to
@@ -63,11 +70,13 @@ struct NodeCardView: View {
     init(nodeID: String,
          fallbackNode: Node,
          animateEntry: Bool = true,
-         presentation: CardPresentation = .carousel) {
+         presentation: CardPresentation = .carousel,
+         shadowOpacity: Double = 1) {
         self.nodeID = nodeID
         self.fallbackNode = fallbackNode
         self.animateEntry = animateEntry
         self.presentation = presentation
+        self.shadowOpacity = shadowOpacity
         #if DEBUG
         _heroFraction = AppStorage(wrappedValue: CardTuningDefaults.value(presentation, .heroZone),
                                    CardTuningKey.key(presentation, .heroZone))
@@ -201,8 +210,10 @@ struct NodeCardView: View {
                 // Warm, appearance-adaptive lift — shared AppearancePalette
                 // token (dark = the shipped black@0.32, byte-identical; light =
                 // warm brown-gray on parchment). The grid tiles reuse the same
-                // token so carousel + grid can't drift.
-                .shadow(color: AppearancePalette.cardShadow,
+                // token so carousel + grid can't drift. shadowOpacity (default 1)
+                // multiplies the alpha so the decks can fade the shadow in on
+                // return from detail instead of letting it pop.
+                .shadow(color: AppearancePalette.cardShadow.opacity(shadowOpacity),
                         radius: CardSurfaceResolved.shadowRadius(dark: colorScheme == .dark),
                         x: 0,
                         y: CardSurfaceResolved.shadowY(dark: colorScheme == .dark))

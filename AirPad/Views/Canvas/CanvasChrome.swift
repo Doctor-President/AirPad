@@ -1321,17 +1321,14 @@ extension View {
 /// chrome (mounted later in CanvasChrome's ZStack) stays crisp. Dialed live via
 /// the ChromeBandDial keys (CardTuningPanel), to be baked on T's word.
 struct ChromeEdgeBands: View {
-    @AppStorage(ChromeBandDial.topHeightKey)    private var topHeight: Double    = ChromeBandDial.topHeightDefault
-    @AppStorage(ChromeBandDial.bottomHeightKey) private var bottomHeight: Double = ChromeBandDial.bottomHeightDefault
-    @AppStorage(ChromeBandDial.blurKey)         private var blur: Double         = ChromeBandDial.blurDefault
-    @AppStorage(ChromeBandDial.darkenKey)       private var darken: Double       = ChromeBandDial.darkenDefault
-    @AppStorage(ChromeBandDial.easingKey)       private var easing: Double       = ChromeBandDial.easingDefault
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
+        let v = ChromeBandDefaults.values(dark: colorScheme == .dark)
         VStack(spacing: 0) {
-            ChromeEdgeBand(edge: .top, height: topHeight, blur: blur, darken: darken, easing: easing)
+            ChromeEdgeBand(edge: .top, height: v.topHeight, blur: v.blur, darken: v.darken, easing: v.easing)
             Spacer(minLength: 0)
-            ChromeEdgeBand(edge: .bottom, height: bottomHeight, blur: blur, darken: darken, easing: easing)
+            ChromeEdgeBand(edge: .bottom, height: v.bottomHeight, blur: v.blur, darken: v.darken, easing: v.easing)
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)

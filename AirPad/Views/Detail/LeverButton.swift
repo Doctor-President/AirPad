@@ -107,8 +107,6 @@ enum InternalBuild {
     static let showsDevTuners: Bool = {
         #if DEBUG
         return true
-        #elseif targetEnvironment(simulator)
-        return true
         #else
         return false
         #endif

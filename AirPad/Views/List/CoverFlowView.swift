@@ -263,18 +263,20 @@ struct CoverFlowView: View {
                             phase: max(-1, min(1, dist))
                         )
                         .offset(x: dist * cardStride)
-                        // CAROUSEL return-shadow fix (2026-08-10): the shadow seen on
-                        // the carousel during the zoom is SwiftUI's OWN zoom-transition
-                        // shadow — proven by a bright-cyan positive control injected
-                        // through this same closure, which rendered a cyan halo around
-                        // the morphing card and REPLACED (not stacked on) the default.
-                        // So a CLEAR shadow here SUPPRESSES the transition shadow (and
-                        // its square-corner clip). Shadow param ONLY — no clipShape (the
-                        // earlier "mask" came from clipShape), no background. The card's
-                        // own rounded `.shadow()` rides in the source snapshot and is
-                        // unaffected. Pending T device-verify.
+                        // DIAGNOSTIC (cyan positive control): paint the source
+                        // config's background cyan so the lingering transition
+                        // rectangle is unmistakably identifiable. If the leftover
+                        // rectangle on zoom in/out turns CYAN, the source config IS
+                        // the culprit surface. NOTE: .background is NOT transition-
+                        // only, so resting cards may show cyan too — expected. No
+                        // clipShape (that mechanism is condemned). Clear shadow kept
+                        // (the verified default-shadow suppression). TEMPORARY —
+                        // reverted to Color.clear (or removed) once the question is
+                        // answered.
                         .matchedTransitionSource(id: node.id, in: zoomNamespace) { source in
-                            source.shadow(color: .clear, radius: 0)
+                            source
+                                .background(Color.cyan)
+                                .shadow(color: .clear, radius: 0)
                         }
                     }
                 }

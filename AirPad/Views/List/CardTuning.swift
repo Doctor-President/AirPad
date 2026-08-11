@@ -42,7 +42,7 @@ enum CardDial: String, CaseIterable {
 
     var range: ClosedRange<Double> {
         switch self {
-        case .height:      return 0.6...3.0
+        case .height:      return 0.35...3.0
         case .heroZone:    return 0.0...0.9
         case .fontScale:   return 0.6...2.0
         case .textOpacity: return 0.2...1.0
@@ -115,20 +115,26 @@ enum CardTuningStore {
 /// (DEBUG) and read by NodeCardView via `@AppStorage`, so dragging a slider
 /// updates the card in place. DEBUG-only surface; RELEASE forces hero-left OFF.
 enum HeroLeftDial {
-    static let enabledKey  = "card.heroLeft.enabled"
-    static let widthKey    = "card.heroLeft.widthFrac"
-    static let softnessKey = "card.heroLeft.softness"
-    static let scrimKey    = "card.heroLeft.scrim"
-    static let haloKey     = "card.heroLeft.halo"
+    static let enabledKey   = "card.heroLeft.enabled"
+    static let widthKey     = "card.heroLeft.widthFrac"   // editorial text-column start
+    static let fadeStartKey = "card.heroLeft.fadeStart"   // cover image solid up to here
+    static let fadeEndKey    = "card.heroLeft.fadeEnd"     // …fully faded by here
+    static let scrimKey     = "card.heroLeft.scrim"
+    static let haloKey      = "card.heroLeft.halo"
 
-    static let enabledDefault  = true       // on by default on this look-see branch
-    static let widthDefault    = 0.333      // ⅓ of the card width
-    static let softnessDefault = 0.0        // 0 = hard edge; > 0 = soft fade (pt)
-    static let scrimDefault    = false      // travelling scrim off (matches A/B)
-    static let haloDefault     = false      // ink halo off (matches A/B)
+    static let enabledDefault   = true      // on by default on this look-see branch
+    static let widthDefault     = 0.333     // text starts at ⅓ of the card width
+    static let fadeStartDefault = 0.24      // cover fully opaque up to 24% of card width
+    static let fadeEndDefault    = 0.38      // …fully transparent by 38%
+    static let scrimDefault     = false     // travelling scrim off
+    static let haloDefault      = false     // ink halo off
 
-    static let widthRange:    ClosedRange<Double> = 0.20...0.50
-    static let softnessRange: ClosedRange<Double> = 0...60
+    // All fractions of card width. fadeStart/fadeEnd position the cover fade band
+    // (independently of the text-column start) — slide them left into the image or
+    // right into the text; gradient-only cards ignore them (they aren't masked).
+    static let widthRange:     ClosedRange<Double> = 0.20...0.50
+    static let fadeStartRange:  ClosedRange<Double> = 0.05...0.55
+    static let fadeEndRange:    ClosedRange<Double> = 0.10...0.65
 }
 
 // MARK: - Panel (DEBUG)
@@ -267,10 +273,12 @@ struct CardTuningPanel: View {
             Toggle("Hero-LEFT layout", isOn: heroBool(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault))
                 .font(.system(size: 13, weight: .semibold))
             if heroBool(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault).wrappedValue {
-                heroSlider("Hero width", HeroLeftDial.widthKey, HeroLeftDial.widthDefault,
+                heroSlider("Text start", HeroLeftDial.widthKey, HeroLeftDial.widthDefault,
                            HeroLeftDial.widthRange, 0.005, "%.3f")
-                heroSlider("Edge softness", HeroLeftDial.softnessKey, HeroLeftDial.softnessDefault,
-                           HeroLeftDial.softnessRange, 1, "%.0f")
+                heroSlider("Fade start", HeroLeftDial.fadeStartKey, HeroLeftDial.fadeStartDefault,
+                           HeroLeftDial.fadeStartRange, 0.005, "%.3f")
+                heroSlider("Fade end", HeroLeftDial.fadeEndKey, HeroLeftDial.fadeEndDefault,
+                           HeroLeftDial.fadeEndRange, 0.005, "%.3f")
                 Toggle("Scrim", isOn: heroBool(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))
                     .font(.system(size: 13, weight: .medium))
                 Toggle("Ink halo", isOn: heroBool(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))
@@ -317,8 +325,9 @@ struct CardTuningPanel: View {
         func bval(_ k: String, _ def: Bool) -> Bool { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.bool(forKey: k) }
         func dval(_ k: String, _ def: Double) -> Double { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.double(forKey: k) }
         lines.append("heroLeft.enabled: \(bval(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault))")
-        lines.append("heroLeft.widthFrac: \(String(format: "%.3f", dval(HeroLeftDial.widthKey, HeroLeftDial.widthDefault)))")
-        lines.append("heroLeft.softness: \(String(format: "%.0f", dval(HeroLeftDial.softnessKey, HeroLeftDial.softnessDefault)))")
+        lines.append("heroLeft.textStart: \(String(format: "%.3f", dval(HeroLeftDial.widthKey, HeroLeftDial.widthDefault)))")
+        lines.append("heroLeft.fadeStart: \(String(format: "%.3f", dval(HeroLeftDial.fadeStartKey, HeroLeftDial.fadeStartDefault)))")
+        lines.append("heroLeft.fadeEnd: \(String(format: "%.3f", dval(HeroLeftDial.fadeEndKey, HeroLeftDial.fadeEndDefault)))")
         lines.append("heroLeft.scrim: \(bval(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))")
         lines.append("heroLeft.halo: \(bval(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))")
         UIPasteboard.general.string = lines.joined(separator: "\n")

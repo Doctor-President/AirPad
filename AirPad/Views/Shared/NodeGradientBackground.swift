@@ -82,6 +82,22 @@ struct NodeGradientLayer: View {
     /// read as slow ambient breathing, not shimmer, now that they animate.
     var driftSpeedScale: CGFloat = 1.0
 
+    /// OPTIONAL blob-distribution override (hero-LEFT look-see only, DEBUG). `nil`
+    /// (default) leaves EVERY existing caller on the untouched `cardBlobs()` path —
+    /// carousel, grid, and detail hero render byte-identically. When set, the three
+    /// static blobs are instead placed relative to a left COLUMN and distributed
+    /// down its long (vertical) axis, so their colours meet and mix (the carousel
+    /// reads well precisely because its blobs span a wide field and overlap). Only
+    /// `NodeCardView`'s hero-left vertical gradient passes a non-nil value.
+    struct BlobDistribution: Equatable {
+        var columnFrac: CGFloat        // reference column width, as a fraction of layer width
+        var blobScale: CGFloat         // radius = blobScale × (columnFrac × width)
+        var verticalSpread: CGFloat    // centre gap down the column, fraction of layer height
+        var horizontalOffset: CGFloat  // centre-of-mass X, fraction of the column width
+        var overlap: CGFloat           // 0 = full spread … 1 = coincident (single wash)
+    }
+    var blobDistribution: BlobDistribution? = nil
+
     @State private var phase: Double = Double.random(in: 0...100)
 
     /// Effective appearance — the SAME mechanism the shipped map/chrome theming
@@ -250,7 +266,13 @@ struct NodeGradientLayer: View {
     private var pigmentField: some View {
         let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
         let size: CGFloat = 180 * circleScale
-        if undulation > 0 {
+        if let dist = blobDistribution {
+            // Hero-LEFT: column-relative, vertically distributed blobs (measured).
+            GeometryReader { g in
+                BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
+                              animated: animated, anchor: .center)
+            }
+        } else if undulation > 0 {
             BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
                           animated: animated)
         } else {
@@ -294,12 +316,57 @@ struct NodeGradientLayer: View {
     // radialGlow (overlay) + vignette (multiply) composite over it in `body`
     // exactly as before — only the expensive blurred circles moved to Metal,
     // so the overlay-blend vividness is unchanged by construction.
+    @ViewBuilder
     private func staticFill(colors: (String, String, String), size: CGFloat) -> some View {
         ZStack {
             Color(red: 0.027, green: 0.027, blue: 0.039)
-            BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
-                          animated: animated,
-                          anchor: anchor)
+            if let dist = blobDistribution {
+                GeometryReader { g in
+                    BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
+                                  animated: animated, anchor: .center)
+                }
+            } else {
+                BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
+                              animated: animated,
+                              anchor: anchor)
+            }
+        }
+    }
+
+    /// Hero-LEFT distribution (guarded, additive): three static blobs placed
+    /// relative to a left COLUMN and stacked down its long axis so their colours
+    /// overlap and mix. Reuses the SAME drift character and the SAME 40·blurScale
+    /// falloff as `cardBlobs()` — only positions + radius change. Does not touch
+    /// `cardBlobs()` and never adds a fourth blob.
+    private func distributedBlobs(colors: (String, String, String),
+                                  dist: BlobDistribution,
+                                  size: CGSize) -> [BlobFieldView.CardBlob] {
+        let colW = size.width * dist.columnFrac
+        let radius = dist.blobScale * colW
+        let centerX = dist.horizontalOffset * colW
+        let gap = dist.verticalSpread * size.height * (1 - dist.overlap)
+        let blurWidth: CGFloat = 40 * blurScale
+        let ph = CGFloat(phase)
+        let hexes = [colors.0, colors.1, colors.2]
+        // Same per-blob drift frequencies / phase seeds as cardBlobs().
+        let dFreq: [CGSize] = [.init(width: 0.30, height: 0.25),
+                               .init(width: 0.35, height: 0.30),
+                               .init(width: 0.40, height: 0.35)]
+        let dPhase: [CGSize] = [.init(width: 1.3, height: 0.9),
+                                .init(width: 1.7, height: 1.1),
+                                .init(width: 2.1, height: 0.7)]
+        return (0..<3).map { i in
+            BlobFieldView.CardBlob(
+                baseOffset: CGPoint(x: centerX - size.width / 2, y: CGFloat(i - 1) * gap),
+                radius: radius,
+                driftFreq: CGSize(width: dFreq[i].width * driftSpeedScale,
+                                  height: dFreq[i].height * driftSpeedScale),
+                driftPhase: CGSize(width: ph * dPhase[i].width, height: ph * dPhase[i].height),
+                driftAmp: 30,
+                blurWidth: blurWidth,
+                color: Color(hexString: hexes[i]),
+                peak: 1
+            )
         }
     }
 

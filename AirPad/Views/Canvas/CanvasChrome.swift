@@ -127,15 +127,13 @@ struct CanvasChrome: View {
             }
             .animation(.easeInOut(duration: 0.22), value: filterState.viewMode)
 
-            #if DEBUG
-            // Chrome edge bands (look-see): eased blur + darken behind the chrome
-            // on the vertical card surface. Sits ABOVE the surface (cards blur as
-            // they pass under) and BELOW every chrome overlay below (pills,
-            // switcher, capsule, +), so the chrome stays crisp.
+            // Chrome edge bands: eased blur + darken behind the chrome on the
+            // vertical card surface. Sits ABOVE the surface (cards blur as they
+            // pass under) and BELOW every chrome overlay below (pills, switcher,
+            // capsule, +), so the chrome stays crisp.
             if filterState.viewMode == .grid && gridColumnCount == 4 {
                 ChromeEdgeBands()
             }
-            #endif
 
             // Overlays that live above the canvas but behind the fan — these all
             // blur uniformly when the fan is expanded so the focal effect is
@@ -1312,14 +1310,13 @@ extension View {
     }
 }
 
-#if DEBUG
-// MARK: - Chrome edge bands (look-see)
+// MARK: - Chrome edge bands
 
 /// Full-width top + bottom bands that sit BEHIND the chrome on the vertical
 /// scroll surface: an eased backdrop blur + darkening that ramps from full at the
 /// screen edge to zero at the inner boundary. Cards blur passing under; the
-/// chrome (mounted later in CanvasChrome's ZStack) stays crisp. Dialed live via
-/// the ChromeBandDial keys (CardTuningPanel), to be baked on T's word.
+/// chrome (mounted later in CanvasChrome's ZStack) stays crisp. Values are baked
+/// PER APPEARANCE in `ChromeBandDefaults` (dark ≠ light).
 struct ChromeEdgeBands: View {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -1369,4 +1366,3 @@ private struct ChromeEdgeBand: View {
         }
     }
 }
-#endif

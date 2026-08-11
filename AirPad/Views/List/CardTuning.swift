@@ -109,6 +109,28 @@ enum CardTuningStore {
     }
 }
 
+// MARK: - Hero-LEFT look-see dials (branch layout/hero-left-variants)
+
+/// Live knobs for the vertical hero-left probe. Written by the CardTuningPanel
+/// (DEBUG) and read by NodeCardView via `@AppStorage`, so dragging a slider
+/// updates the card in place. DEBUG-only surface; RELEASE forces hero-left OFF.
+enum HeroLeftDial {
+    static let enabledKey  = "card.heroLeft.enabled"
+    static let widthKey    = "card.heroLeft.widthFrac"
+    static let softnessKey = "card.heroLeft.softness"
+    static let scrimKey    = "card.heroLeft.scrim"
+    static let haloKey     = "card.heroLeft.halo"
+
+    static let enabledDefault  = true       // on by default on this look-see branch
+    static let widthDefault    = 0.333      // ⅓ of the card width
+    static let softnessDefault = 0.0        // 0 = hard edge; > 0 = soft fade (pt)
+    static let scrimDefault    = false      // travelling scrim off (matches A/B)
+    static let haloDefault     = false      // ink halo off (matches A/B)
+
+    static let widthRange:    ClosedRange<Double> = 0.20...0.50
+    static let softnessRange: ClosedRange<Double> = 0...60
+}
+
 // MARK: - Panel (DEBUG)
 
 #if DEBUG
@@ -143,6 +165,9 @@ struct CardTuningPanel: View {
             presentationToggle
             paramChip
             sliderRow
+            if presentation == .vertical {
+                heroLeftSection
+            }
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -234,6 +259,52 @@ struct CardTuningPanel: View {
             .frame(height: 32)
     }
 
+    // MARK: Hero-LEFT section (shown for the vertical presentation)
+
+    private var heroLeftSection: some View {
+        VStack(spacing: 8) {
+            Divider().padding(.top, 2)
+            Toggle("Hero-LEFT layout", isOn: heroBool(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault))
+                .font(.system(size: 13, weight: .semibold))
+            if heroBool(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault).wrappedValue {
+                heroSlider("Hero width", HeroLeftDial.widthKey, HeroLeftDial.widthDefault,
+                           HeroLeftDial.widthRange, 0.005, "%.3f")
+                heroSlider("Edge softness", HeroLeftDial.softnessKey, HeroLeftDial.softnessDefault,
+                           HeroLeftDial.softnessRange, 1, "%.0f")
+                Toggle("Scrim", isOn: heroBool(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))
+                    .font(.system(size: 13, weight: .medium))
+                Toggle("Ink halo", isOn: heroBool(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))
+                    .font(.system(size: 13, weight: .medium))
+            }
+        }
+    }
+
+    private func heroBool(_ key: String, _ def: Bool) -> Binding<Bool> {
+        Binding(
+            get: { _ = revision; return UserDefaults.standard.object(forKey: key) == nil ? def : UserDefaults.standard.bool(forKey: key) },
+            set: { UserDefaults.standard.set($0, forKey: key); revision += 1 }
+        )
+    }
+
+    @ViewBuilder
+    private func heroSlider(_ label: String, _ key: String, _ def: Double,
+                            _ range: ClosedRange<Double>, _ step: Double, _ fmt: String) -> some View {
+        let binding = Binding<Double>(
+            get: { _ = revision; return UserDefaults.standard.object(forKey: key) == nil ? def : UserDefaults.standard.double(forKey: key) },
+            set: { UserDefaults.standard.set($0, forKey: key); revision += 1 }
+        )
+        VStack(spacing: 2) {
+            HStack {
+                Text(label).font(.system(size: 12, weight: .medium))
+                Spacer()
+                Text(String(format: fmt, binding.wrappedValue))
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: binding, in: range, step: step)
+        }
+    }
+
     private func copyValues() {
         var lines: [String] = []
         for p in CardPresentation.allCases {
@@ -242,6 +313,14 @@ struct CardTuningPanel: View {
                 lines.append("\(d.exportLabel)_\(p.rawValue): \(String(format: d.format, v))")
             }
         }
+        // Hero-LEFT look-see dials.
+        func bval(_ k: String, _ def: Bool) -> Bool { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.bool(forKey: k) }
+        func dval(_ k: String, _ def: Double) -> Double { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.double(forKey: k) }
+        lines.append("heroLeft.enabled: \(bval(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault))")
+        lines.append("heroLeft.widthFrac: \(String(format: "%.3f", dval(HeroLeftDial.widthKey, HeroLeftDial.widthDefault)))")
+        lines.append("heroLeft.softness: \(String(format: "%.0f", dval(HeroLeftDial.softnessKey, HeroLeftDial.softnessDefault)))")
+        lines.append("heroLeft.scrim: \(bval(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))")
+        lines.append("heroLeft.halo: \(bval(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))")
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         justCopied = true

@@ -149,6 +149,18 @@ enum ChromeBandDial {
     static let unitRange:   ClosedRange<Double> = 0...1
 }
 
+/// ★ T's device-dialed chrome-band baseline, baked 2026-08-11 — PER APPEARANCE.
+/// Dark and light carry INDEPENDENT values (the band reads differently on the dark
+/// ground vs parchment). Resolved by `dark:` the same way `CardSurfaceResolved`
+/// splits appearance; card-tuning values stay shared (layout isn't appearance-
+/// dependent). Read by `CanvasChrome.ChromeEdgeBands`.
+enum ChromeBandDefaults {
+    struct Values { let topHeight, bottomHeight, blur, darken, easing: Double }
+    static let dark  = Values(topHeight: 194, bottomHeight: 118, blur: 1.00, darken: 0.74, easing: 1.00)
+    static let light = Values(topHeight:  94, bottomHeight:  94, blur: 0.53, darken: 0.00, easing: 1.00)  // darken 0 = pure blur on parchment
+    static func values(dark: Bool) -> Values { dark ? Self.dark : Self.light }
+}
+
 // MARK: - Panel (DEBUG)
 
 #if DEBUG

@@ -150,29 +150,18 @@ struct NodeCardView: View {
     // Every knob is a live dial (HeroLeftDial) written by the DEBUG CardTuningPanel;
     // RELEASE forces the layout OFF so the shipped vertical face is untouched.
     // Carousel + grid never branch here.
-    #if DEBUG
-    @AppStorage(HeroLeftDial.enabledKey)   private var heroLeftEnabled: Bool    = HeroLeftDial.enabledDefault
-    @AppStorage(HeroLeftDial.widthKey)     private var heroLeftWidthFrac: Double = HeroLeftDial.widthDefault
-    @AppStorage(HeroLeftDial.fadeStartKey) private var heroLeftFadeStart: Double = HeroLeftDial.fadeStartDefault
-    @AppStorage(HeroLeftDial.fadeEndKey)   private var heroLeftFadeEnd: Double   = HeroLeftDial.fadeEndDefault
-    @AppStorage(HeroLeftDial.scrimKey)     private var heroLeftScrimOn: Bool     = HeroLeftDial.scrimDefault
-    @AppStorage(HeroLeftDial.haloKey)      private var heroLeftHaloOn: Bool      = HeroLeftDial.haloDefault
-    @AppStorage(HeroLeftDial.blobScaleKey) private var heroBlobScale: Double     = HeroLeftDial.blobScaleDefault
-    @AppStorage(HeroLeftDial.vSpreadKey)   private var heroBlobVSpread: Double   = HeroLeftDial.vSpreadDefault
-    @AppStorage(HeroLeftDial.hOffsetKey)   private var heroBlobHOffset: Double   = HeroLeftDial.hOffsetDefault
-    @AppStorage(HeroLeftDial.overlapKey)   private var heroBlobOverlap: Double   = HeroLeftDial.overlapDefault
-    #else
-    private let heroLeftEnabled   = false
+    // SHIPPING hero-left face (baked baseline). No longer dialed — plain constants
+    // so DEBUG and RELEASE render identically. Values live in HeroLeftDial.*Default.
+    private let heroLeftEnabled   = HeroLeftDial.enabledDefault   // true → vertical renders hero-left
     private let heroLeftWidthFrac  = HeroLeftDial.widthDefault
     private let heroLeftFadeStart  = HeroLeftDial.fadeStartDefault
     private let heroLeftFadeEnd    = HeroLeftDial.fadeEndDefault
-    private let heroLeftScrimOn    = false
-    private let heroLeftHaloOn     = false
+    private let heroLeftScrimOn    = HeroLeftDial.scrimDefault
+    private let heroLeftHaloOn     = HeroLeftDial.haloDefault
     private let heroBlobScale      = HeroLeftDial.blobScaleDefault
     private let heroBlobVSpread    = HeroLeftDial.vSpreadDefault
     private let heroBlobHOffset    = HeroLeftDial.hOffsetDefault
     private let heroBlobOverlap    = HeroLeftDial.overlapDefault
-    #endif
 
     /// Ink legibility halo. Over the hero-left white column it (white in light)
     /// only smears, so it's dropped unless the halo dial turns it on. Every other

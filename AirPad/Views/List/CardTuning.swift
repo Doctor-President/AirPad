@@ -111,45 +111,21 @@ enum CardTuningStore {
 
 // MARK: - Hero-LEFT look-see dials (branch layout/hero-left-variants)
 
-/// Live knobs for the vertical hero-left probe. Written by the CardTuningPanel
-/// (DEBUG) and read by NodeCardView via `@AppStorage`, so dragging a slider
-/// updates the card in place. DEBUG-only surface; RELEASE forces hero-left OFF.
+/// ★ T's device-dialed hero-left baseline, baked 2026-08-11 — the SHIPPING face.
+/// Read as plain constants by `NodeCardView` (the tuner knobs that produced these
+/// were retired when hero-left shipped). Fractions are of card width unless noted.
 enum HeroLeftDial {
-    static let enabledKey   = "card.heroLeft.enabled"
-    static let widthKey     = "card.heroLeft.widthFrac"   // editorial text-column start
-    static let fadeStartKey = "card.heroLeft.fadeStart"   // cover image solid up to here
-    static let fadeEndKey    = "card.heroLeft.fadeEnd"     // …fully faded by here
-    static let scrimKey     = "card.heroLeft.scrim"
-    static let haloKey      = "card.heroLeft.halo"
-    // Gradient-only blob distribution (see NodeGradientLayer.BlobDistribution).
-    static let blobScaleKey = "card.heroLeft.blobScale"
-    static let vSpreadKey   = "card.heroLeft.blobVSpread"
-    static let hOffsetKey   = "card.heroLeft.blobHOffset"
-    static let overlapKey   = "card.heroLeft.blobOverlap"
-
-    // ★ T's device-dialed baseline, baked 2026-08-11 — the SHIPPING hero-left face.
-    static let enabledDefault   = true
-    static let widthDefault     = 0.370     // text-column start
-    static let fadeStartDefault = 0.260     // cover fully opaque up to here
-    static let fadeEndDefault    = 0.480     // …fully transparent by here
+    static let enabledDefault   = true       // vertical scroll renders hero-left
+    static let widthDefault     = 0.370      // editorial text-column start
+    static let fadeStartDefault = 0.260      // cover fully opaque up to here
+    static let fadeEndDefault    = 0.480      // …fully transparent by here (independent band)
     static let scrimDefault     = false
     static let haloDefault      = false
-    static let blobScaleDefault = 0.56      // radius = 0.56 × column width
-    static let vSpreadDefault   = 0.410     // centre gap = 41% of card height
-    static let hOffsetDefault   = 0.58      // centre-of-mass across the column
+    // Gradient-only blob distribution (see NodeGradientLayer.BlobDistribution).
+    static let blobScaleDefault = 0.56       // radius = 0.56 × column width
+    static let vSpreadDefault   = 0.410      // centre gap = 41% of card height
+    static let hOffsetDefault   = 0.58       // centre-of-mass across the column
     static let overlapDefault   = 0.45
-
-    // All fractions of card width. fadeStart/fadeEnd position the cover fade band
-    // (independently of the text-column start) — slide them left into the image or
-    // right into the text; gradient-only cards ignore them (they aren't masked).
-    static let widthRange:     ClosedRange<Double> = 0.20...0.50
-    static let fadeStartRange:  ClosedRange<Double> = 0.05...0.55
-    static let fadeEndRange:    ClosedRange<Double> = 0.10...0.65
-    // Blob distribution — generous enough to reach a single wash ↔ fully separated.
-    static let blobScaleRange:  ClosedRange<Double> = 0.15...2.5
-    static let vSpreadRange:    ClosedRange<Double> = 0.0...0.60
-    static let hOffsetRange:    ClosedRange<Double> = 0.0...1.50
-    static let overlapRange:    ClosedRange<Double> = 0.0...1.0
 }
 
 // MARK: - Panel (DEBUG)
@@ -186,9 +162,6 @@ struct CardTuningPanel: View {
             presentationToggle
             paramChip
             sliderRow
-            if presentation == .vertical {
-                heroLeftSection
-            }
         }
         .padding(12)
         .frame(width: Self.widgetWidth)
@@ -280,66 +253,6 @@ struct CardTuningPanel: View {
             .frame(height: 32)
     }
 
-    // MARK: Hero-LEFT section (shown for the vertical presentation)
-
-    private var heroLeftSection: some View {
-        VStack(spacing: 8) {
-            Divider().padding(.top, 2)
-            Toggle("Hero-LEFT layout", isOn: heroBool(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault))
-                .font(.system(size: 13, weight: .semibold))
-            if heroBool(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault).wrappedValue {
-                heroSlider("Text start", HeroLeftDial.widthKey, HeroLeftDial.widthDefault,
-                           HeroLeftDial.widthRange, 0.005, "%.3f")
-                heroSlider("Fade start", HeroLeftDial.fadeStartKey, HeroLeftDial.fadeStartDefault,
-                           HeroLeftDial.fadeStartRange, 0.005, "%.3f")
-                heroSlider("Fade end", HeroLeftDial.fadeEndKey, HeroLeftDial.fadeEndDefault,
-                           HeroLeftDial.fadeEndRange, 0.005, "%.3f")
-                Divider().padding(.vertical, 2)
-                Text("GRADIENT BLOBS")
-                    .font(.system(size: 10, weight: .semibold)).tracking(1.5)
-                    .foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-                heroSlider("Blob scale", HeroLeftDial.blobScaleKey, HeroLeftDial.blobScaleDefault,
-                           HeroLeftDial.blobScaleRange, 0.01, "%.2f")
-                heroSlider("Vertical spread", HeroLeftDial.vSpreadKey, HeroLeftDial.vSpreadDefault,
-                           HeroLeftDial.vSpreadRange, 0.005, "%.3f")
-                heroSlider("Horizontal offset", HeroLeftDial.hOffsetKey, HeroLeftDial.hOffsetDefault,
-                           HeroLeftDial.hOffsetRange, 0.01, "%.2f")
-                heroSlider("Overlap", HeroLeftDial.overlapKey, HeroLeftDial.overlapDefault,
-                           HeroLeftDial.overlapRange, 0.01, "%.2f")
-                Toggle("Scrim", isOn: heroBool(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))
-                    .font(.system(size: 13, weight: .medium))
-                Toggle("Ink halo", isOn: heroBool(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))
-                    .font(.system(size: 13, weight: .medium))
-            }
-        }
-    }
-
-    private func heroBool(_ key: String, _ def: Bool) -> Binding<Bool> {
-        Binding(
-            get: { _ = revision; return UserDefaults.standard.object(forKey: key) == nil ? def : UserDefaults.standard.bool(forKey: key) },
-            set: { UserDefaults.standard.set($0, forKey: key); revision += 1 }
-        )
-    }
-
-    @ViewBuilder
-    private func heroSlider(_ label: String, _ key: String, _ def: Double,
-                            _ range: ClosedRange<Double>, _ step: Double, _ fmt: String) -> some View {
-        let binding = Binding<Double>(
-            get: { _ = revision; return UserDefaults.standard.object(forKey: key) == nil ? def : UserDefaults.standard.double(forKey: key) },
-            set: { UserDefaults.standard.set($0, forKey: key); revision += 1 }
-        )
-        VStack(spacing: 2) {
-            HStack {
-                Text(label).font(.system(size: 12, weight: .medium))
-                Spacer()
-                Text(String(format: fmt, binding.wrappedValue))
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            Slider(value: binding, in: range, step: step)
-        }
-    }
-
     private func copyValues() {
         var lines: [String] = []
         for p in CardPresentation.allCases {
@@ -348,19 +261,6 @@ struct CardTuningPanel: View {
                 lines.append("\(d.exportLabel)_\(p.rawValue): \(String(format: d.format, v))")
             }
         }
-        // Hero-LEFT look-see dials.
-        func bval(_ k: String, _ def: Bool) -> Bool { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.bool(forKey: k) }
-        func dval(_ k: String, _ def: Double) -> Double { UserDefaults.standard.object(forKey: k) == nil ? def : UserDefaults.standard.double(forKey: k) }
-        lines.append("heroLeft.enabled: \(bval(HeroLeftDial.enabledKey, HeroLeftDial.enabledDefault))")
-        lines.append("heroLeft.textStart: \(String(format: "%.3f", dval(HeroLeftDial.widthKey, HeroLeftDial.widthDefault)))")
-        lines.append("heroLeft.fadeStart: \(String(format: "%.3f", dval(HeroLeftDial.fadeStartKey, HeroLeftDial.fadeStartDefault)))")
-        lines.append("heroLeft.fadeEnd: \(String(format: "%.3f", dval(HeroLeftDial.fadeEndKey, HeroLeftDial.fadeEndDefault)))")
-        lines.append("heroLeft.blobScale: \(String(format: "%.2f", dval(HeroLeftDial.blobScaleKey, HeroLeftDial.blobScaleDefault)))")
-        lines.append("heroLeft.blobVSpread: \(String(format: "%.3f", dval(HeroLeftDial.vSpreadKey, HeroLeftDial.vSpreadDefault)))")
-        lines.append("heroLeft.blobHOffset: \(String(format: "%.2f", dval(HeroLeftDial.hOffsetKey, HeroLeftDial.hOffsetDefault)))")
-        lines.append("heroLeft.blobOverlap: \(String(format: "%.2f", dval(HeroLeftDial.overlapKey, HeroLeftDial.overlapDefault)))")
-        lines.append("heroLeft.scrim: \(bval(HeroLeftDial.scrimKey, HeroLeftDial.scrimDefault))")
-        lines.append("heroLeft.halo: \(bval(HeroLeftDial.haloKey, HeroLeftDial.haloDefault))")
         UIPasteboard.general.string = lines.joined(separator: "\n")
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         justCopied = true

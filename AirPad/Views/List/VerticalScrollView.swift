@@ -225,7 +225,16 @@ struct VerticalScrollView: View {
                                 .opacity(vignetteOpacity)
                                 .scaleEffect(scale, anchor: .center)
                         }
-                        .matchedTransitionSource(id: node.id, in: zoomNamespace)
+                        // DIAGNOSTIC (cyan positive control) — identical to the
+                        // CoverFlow deck: paint the source config background cyan so
+                        // a lingering transition rectangle is unmistakable. NOT
+                        // transition-only, so resting cards may show cyan (expected).
+                        // No clipShape (condemned); clear shadow kept. TEMPORARY.
+                        .matchedTransitionSource(id: node.id, in: zoomNamespace) { source in
+                            source
+                                .background(Color.cyan)
+                                .shadow(color: .clear, radius: 0)
+                        }
                         .contentShape(Rectangle())
                         .onTapGesture {
                             guard let real = store.nodes.first(where: { $0.id == node.id }) else { return }

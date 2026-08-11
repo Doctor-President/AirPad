@@ -144,6 +144,27 @@ struct NodeCardView: View {
     private static let sheenOpacity: Double = 0.14  // specular top sheen
     private static let rimWidth: CGFloat = 1.5       // rim hairline width
 
+    // MARK: - Hero-LEFT look-see (branch layout/hero-left-variants; .vertical only)
+    // A throwaway layout probe: on the vertical-scroll surface the hero moves to
+    // a LEFT column (1/3) and the editorial content sits on the resolved card
+    // surface (2/3). Selected per-launch by the `HeroLeftVariant` default
+    // (`-HeroLeftVariant A|B|C`). Carousel + grid are untouched.
+    enum HeroLeftVariant { case a, b, c }
+    static let heroLeftVariant: HeroLeftVariant = {
+        switch (UserDefaults.standard.string(forKey: "HeroLeftVariant") ?? "A").uppercased() {
+        case "B": return .b
+        case "C": return .c
+        default:  return .a
+        }
+    }()
+    /// Ink legibility halo. Over the white editorial column of the hero-left A/B
+    /// variants it only smears, so it's dropped there; variant C keeps it (to show
+    /// the cost). Every other presentation always gets the halo (`Self.inkShadow`).
+    private var inkHalo: Color {
+        guard presentation == .vertical else { return Self.inkShadow }
+        return Self.heroLeftVariant == .c ? Self.inkShadow : .clear
+    }
+
     var body: some View {
         if animateEntry {
             cardBody
@@ -155,7 +176,18 @@ struct NodeCardView: View {
         }
     }
 
+    @ViewBuilder
     private var cardBody: some View {
+        // Hero-LEFT look-see: only the vertical-scroll surface branches; carousel
+        // and grid keep the shipped top-hero face.
+        if presentation == .vertical {
+            heroLeftBody
+        } else {
+            topHeroBody
+        }
+    }
+
+    private var topHeroBody: some View {
         // Selection affordance (checkmark + Klein outline) is applied by the
         // shared `.selectionHighlight` modifier at the call site (BUG 10), not
         // rendered here — this face is selection-agnostic.
@@ -219,6 +251,90 @@ struct NodeCardView: View {
                         y: CardSurfaceResolved.shadowY(dark: colorScheme == .dark))
             }
         }
+    }
+
+    // MARK: - Hero-LEFT body (look-see)
+
+    private var heroLeftBody: some View {
+        HStack(spacing: 12) {
+            GeometryReader { geo in
+                let variant = Self.heroLeftVariant
+                let heroWidth = geo.size.width / 3
+                let textWidth = geo.size.width - heroWidth
+                let hasHero = node.coverImageRelativePath != nil
+                // Resolved card surface, LIGHT path. Dark falls back to ground —
+                // the look-see renders light only.
+                let paper: Color = colorScheme == .dark
+                    ? CardSurfaceResolved.ground(dark: true)
+                    : Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
+                ZStack(alignment: .topLeading) {
+                    // Editorial surface fills the whole face; the hero overlays the left third.
+                    paper
+                    // Hero column, pinned LEFT. Variant B bleeds + fades ~24pt into the text column.
+                    heroColumn(height: geo.size.height, heroWidth: heroWidth, hasHero: hasHero, variant: variant)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    // Variant C keeps the traveling scrim — over the WHITE column now, to show its cost.
+                    if variant == .c {
+                        travelingScrim
+                            .frame(width: textWidth)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    }
+                    // Editorial column, pinned RIGHT (2/3). Dateline starts here; topInset dropped.
+                    editorialContent(cardHeight: geo.size.height, topInsetOverride: 20)
+                        .frame(width: textWidth, height: geo.size.height, alignment: .topLeading)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Self.cornerRadius)
+                        .strokeBorder(
+                            CardSurfaceResolved.rimGradient(dark: colorScheme == .dark),
+                            lineWidth: CardSurfaceResolved.rimWidth(dark: colorScheme == .dark)
+                        )
+                        .allowsHitTesting(false)
+                )
+                .overlay(CardEmbossOverlay(cornerRadius: Self.cornerRadius))
+                .shadow(color: AppearancePalette.cardShadow.opacity(shadowOpacity),
+                        radius: CardSurfaceResolved.shadowRadius(dark: colorScheme == .dark),
+                        x: 0,
+                        y: CardSurfaceResolved.shadowY(dark: colorScheme == .dark))
+            }
+        }
+    }
+
+    /// Left hero column: `NodeGradientLayer` confined to the column (renders with
+    /// or without a cover), cover image overlaid when present. Variant B widens by
+    /// ~24pt and fades its right edge into the text column (soft edge); A and C are
+    /// a hard vertical edge at 1/3.
+    @ViewBuilder
+    private func heroColumn(height: CGFloat, heroWidth: CGFloat, hasHero: Bool, variant: HeroLeftVariant) -> some View {
+        let bleed: CGFloat = variant == .b ? 24 : 0
+        let colWidth = heroWidth + bleed
+        ZStack {
+            NodeGradientLayer(node: node, centerYOffset: 0, anchor: .center)
+            if hasHero {
+                CardHeroImage(node: node)
+                    .equatable()
+                    .frame(width: colWidth, height: height)
+                    .clipped()
+            }
+        }
+        .frame(width: colWidth, height: height)
+        .mask(
+            // Hard edge (A/C): fully opaque, frame clips at colWidth. Soft edge (B):
+            // fade the rightmost ~24pt to clear so the hero melts into the paper.
+            LinearGradient(
+                stops: variant == .b
+                    ? [ .init(color: .black, location: 0.0),
+                        .init(color: .black, location: max(0.0, (colWidth - 24) / colWidth)),
+                        .init(color: .clear, location: 1.0) ]
+                    : [ .init(color: .black, location: 0.0),
+                        .init(color: .black, location: 1.0) ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        )
     }
 
     // MARK: - Hero overlay
@@ -285,7 +401,7 @@ struct NodeCardView: View {
 
     // MARK: - Editorial content
 
-    private func editorialContent(cardHeight: CGFloat) -> some View {
+    private func editorialContent(cardHeight: CGFloat, topInsetOverride: CGFloat? = nil) -> some View {
         let category = node.primaryTag
         let titleText = displayTitle
         let showDeck = node.descriptionOnCard && !node.summary.isEmpty
@@ -293,7 +409,8 @@ struct NodeCardView: View {
         // Reserve the SAME hero zone whether or not a hero exists, so the
         // title always sits below the color band (gradientCenterY in the
         // ZStack rides the same fraction). Parity with NodeGridTile.
-        let topInset: CGFloat = cardHeight * hero + 18
+        // Hero-left drops this (content starts at the top of the right column).
+        let topInset: CGFloat = topInsetOverride ?? (cardHeight * hero + 18)
 
         // Entry-stream partition. Atomics are normalized to the contiguous
         // front of `node.items`; foldIndex is guaranteed ≥ atomicCount.
@@ -325,7 +442,7 @@ struct NodeCardView: View {
                     .foregroundColor(Self.inkMeta)
                     .lineLimit(1)
             }
-            .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+            .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
 
             Rectangle()
                 .fill(Self.hairline)
@@ -338,7 +455,7 @@ struct NodeCardView: View {
                 .font(.system(size: 23 * fs, weight: .bold, design: .serif))
                 .tracking(-0.35)
                 .foregroundColor(Self.inkTitle)
-                .shadow(color: Self.inkShadow.opacity(0.45), radius: 3, x: 0, y: 1)
+                .shadow(color: inkHalo.opacity(0.45), radius: 3, x: 0, y: 1)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
@@ -351,7 +468,7 @@ struct NodeCardView: View {
                         .font(.system(size: 14 * fs, design: .serif))
                         .italic()
                         .foregroundColor(Self.inkDeck)
-                        .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+                        .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
                         .lineSpacing(3)
                         .lineLimit(3)
                         .padding(.top, 8)
@@ -425,7 +542,7 @@ struct NodeCardView: View {
                     .font(.system(size: 10 * fs, weight: .medium, design: .serif))
                     .tracking(2.0)
                     .foregroundColor(Self.inkMeta)
-                    .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+                    .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
                     .lineLimit(1)
             }
         }
@@ -459,7 +576,7 @@ struct NodeCardView: View {
             }
             Spacer(minLength: 0)
         }
-        .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+        .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
     }
 
     @ViewBuilder
@@ -567,7 +684,7 @@ struct NodeCardView: View {
             Spacer(minLength: 0)
         }
         .foregroundColor(Self.inkMeta)
-        .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+        .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
     }
 
     private func overflowLine(_ count: Int) -> some View {
@@ -575,7 +692,7 @@ struct NodeCardView: View {
             .font(.system(size: 11, design: .serif))
             .italic()
             .foregroundColor(Self.inkMeta.opacity(0.85))
-            .shadow(color: Self.inkShadow.opacity(0.35), radius: 2, x: 0, y: 1)
+            .shadow(color: inkHalo.opacity(0.35), radius: 2, x: 0, y: 1)
     }
 
     /// Horizontal scrollable thumbnail strip for a promoted `.imageVideo`
@@ -675,7 +792,7 @@ struct NodeCardView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .shadow(color: Self.inkShadow.opacity(0.4), radius: 2, x: 0, y: 1)
+            .shadow(color: inkHalo.opacity(0.4), radius: 2, x: 0, y: 1)
             if let transcript {
                 fitLinesText(
                     transcript,
@@ -775,7 +892,7 @@ struct NodeCardView: View {
             }()
             styled
                 .foregroundColor(color)
-                .shadow(color: Self.inkShadow.opacity(shadowOpacity), radius: 2, x: 0, y: 1)
+                .shadow(color: inkHalo.opacity(shadowOpacity), radius: 2, x: 0, y: 1)
                 .lineLimit(maxLines)
                 .truncationMode(.tail)
                 .lineSpacing(lineSpacing)

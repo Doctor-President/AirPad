@@ -273,12 +273,19 @@ struct NodeCardView: View {
                     ? CardSurfaceResolved.ground(dark: true)
                     : Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
                 ZStack(alignment: .topLeading) {
-                    // Editorial surface fills the whole face; the hero overlays the left column.
-                    paper
-                    // Hero column, pinned LEFT. Softness > 0 fades its right edge into the paper.
-                    heroColumn(height: geo.size.height, heroWidth: heroWidth, hasHero: hasHero)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                    // Optional traveling scrim over the editorial (white) column.
+                    if hasHero {
+                        // COVER card: image confined to the LEFT column on the paper
+                        // surface, its right edge easing (smoothstep) into the paper.
+                        paper
+                        heroCoverColumn(height: geo.size.height, heroWidth: heroWidth)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    } else {
+                        // GRADIENT-only card: the pigment fills the WHOLE face with its
+                        // colour mass anchored LEFT, bleeding organically toward the text
+                        // — no mask, no column. The faded tail keeps the text legible.
+                        NodeGradientLayer(node: node, anchor: .leading)
+                    }
+                    // Optional traveling scrim over the editorial (right) column.
                     if heroLeftScrimOn {
                         travelingScrim
                             .frame(width: textWidth)
@@ -308,38 +315,38 @@ struct NodeCardView: View {
         }
     }
 
-    /// Left hero column: `NodeGradientLayer` confined to the column (renders with
-    /// or without a cover), cover image overlaid when present. `heroLeftSoftness`
-    /// (pt) widens the column by that much and fades its right edge into the text
-    /// column; 0 = a hard vertical edge.
+    /// COVER hero column: the cover image confined to the left column, its right
+    /// edge easing into the paper with a SMOOTHSTEP falloff (gentler than a linear
+    /// ramp) over `heroLeftSoftness` pt. Softness 0 = a hard vertical edge.
     @ViewBuilder
-    private func heroColumn(height: CGFloat, heroWidth: CGFloat, hasHero: Bool) -> some View {
+    private func heroCoverColumn(height: CGFloat, heroWidth: CGFloat) -> some View {
         let soft = CGFloat(heroLeftSoftness)
         let colWidth = heroWidth + soft
-        ZStack {
-            NodeGradientLayer(node: node, centerYOffset: 0, anchor: .center)
-            if hasHero {
-                CardHeroImage(node: node)
-                    .equatable()
-                    .frame(width: colWidth, height: height)
-                    .clipped()
-            }
-        }
-        .frame(width: colWidth, height: height)
-        .mask(
-            // Hard edge (softness 0): fully opaque, frame clips at colWidth. Soft:
-            // fade the rightmost `soft` pt to clear so the hero melts into the paper.
-            LinearGradient(
-                stops: soft > 0.5
-                    ? [ .init(color: .black, location: 0.0),
-                        .init(color: .black, location: max(0.0, (colWidth - soft) / colWidth)),
-                        .init(color: .clear, location: 1.0) ]
-                    : [ .init(color: .black, location: 0.0),
-                        .init(color: .black, location: 1.0) ],
-                startPoint: .leading,
-                endPoint: .trailing
+        CardHeroImage(node: node)
+            .equatable()
+            .frame(width: colWidth, height: height)
+            .clipped()
+            .mask(
+                LinearGradient(stops: Self.easedEdgeStops(colWidth: colWidth, soft: soft),
+                               startPoint: .leading, endPoint: .trailing)
             )
-        )
+    }
+
+    /// Smoothstep (ease-in-out) alpha stops for a right-edge fade over `soft` pt —
+    /// reads as a gradual melt instead of the hard corners of a linear ramp.
+    private static func easedEdgeStops(colWidth: CGFloat, soft: CGFloat) -> [Gradient.Stop] {
+        guard soft > 0.5, colWidth > 0 else {
+            return [Gradient.Stop(color: .black, location: 0),
+                    Gradient.Stop(color: .black, location: 1)]
+        }
+        let start = max(0, (colWidth - soft) / colWidth)
+        var stops: [Gradient.Stop] = [Gradient.Stop(color: .black, location: 0)]
+        for f: CGFloat in [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1.0] {
+            let s = f * f * (3 - 2 * f)                       // smoothstep
+            stops.append(Gradient.Stop(color: .black.opacity(Double(1 - s)),
+                                       location: start + f * (1 - start)))
+        }
+        return stops
     }
 
     // MARK: - Hero overlay

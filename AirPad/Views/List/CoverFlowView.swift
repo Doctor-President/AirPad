@@ -427,7 +427,7 @@ enum CoverFlowDefaults {
     static let sideScale: Double           = 0.59
     static let centerWidthFraction: Double = 0.79
     static let perspective: Double         = 0.55
-    static let cardSpacing: Double         = -60   // negative = neighbors tuck behind center
+    static let cardSpacing: Double         = -46   // negative = neighbors tuck behind center; matches CardTuningDefaults(.carousel,.spacing)
 }
 
 // MARK: - CoverFlowTuningPanel (DEBUG)

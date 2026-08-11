@@ -81,15 +81,15 @@ enum CardTuningDefaults {
     // T's device (his last two device-verified moves).
     static func value(_ p: CardPresentation, _ d: CardDial) -> Double {
         switch (p, d) {
-        case (.carousel, .height):      return 1.49
-        case (.vertical, .height):      return 1.22
+        case (.carousel, .height):      return 1.53
+        case (.vertical, .height):      return 0.51
         case (.carousel, .heroZone):    return 0.40
-        case (.vertical, .heroZone):    return 0.39
+        case (.vertical, .heroZone):    return 0.50
         case (.carousel, .fontScale):   return 0.90
-        case (.vertical, .fontScale):   return 1.00
+        case (.vertical, .fontScale):   return 0.97
         case (_, .textOpacity):         return 1.00
-        case (.carousel, .spacing):     return -60     // also CoverFlowDefaults.cardSpacing
-        case (.vertical, .spacing):     return -46
+        case (.carousel, .spacing):     return -46     // also CoverFlowDefaults.cardSpacing
+        case (.vertical, .spacing):     return 2
         }
     }
 }
@@ -127,16 +127,17 @@ enum HeroLeftDial {
     static let hOffsetKey   = "card.heroLeft.blobHOffset"
     static let overlapKey   = "card.heroLeft.blobOverlap"
 
-    static let enabledDefault   = true      // on by default on this look-see branch
-    static let widthDefault     = 0.333     // text starts at ⅓ of the card width
-    static let fadeStartDefault = 0.24      // cover fully opaque up to 24% of card width
-    static let fadeEndDefault    = 0.38      // …fully transparent by 38%
-    static let scrimDefault     = false     // travelling scrim off
-    static let haloDefault      = false     // ink halo off
-    static let blobScaleDefault = 0.70      // radius = 0.70 × column width
-    static let vSpreadDefault   = 0.22      // centre gap = 22% of card height
-    static let hOffsetDefault   = 0.50      // centre-of-mass mid-column
-    static let overlapDefault   = 0.30      // moderate mixing
+    // ★ T's device-dialed baseline, baked 2026-08-11 — the SHIPPING hero-left face.
+    static let enabledDefault   = true
+    static let widthDefault     = 0.370     // text-column start
+    static let fadeStartDefault = 0.260     // cover fully opaque up to here
+    static let fadeEndDefault    = 0.480     // …fully transparent by here
+    static let scrimDefault     = false
+    static let haloDefault      = false
+    static let blobScaleDefault = 0.56      // radius = 0.56 × column width
+    static let vSpreadDefault   = 0.410     // centre gap = 41% of card height
+    static let hOffsetDefault   = 0.58      // centre-of-mass across the column
+    static let overlapDefault   = 0.45
 
     // All fractions of card width. fadeStart/fadeEnd position the cover fade band
     // (independently of the text-column start) — slide them left into the image or

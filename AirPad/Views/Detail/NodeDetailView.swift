@@ -136,6 +136,19 @@ struct NodeDetailView: View {
     @State private var showShimmerTuning = false
     @State private var shimmerTuningPos: CGSize = .zero
 
+    /// Detail ground fill (bake 2026-08-12, ground B — T device-dialed). Light: the
+    /// card surface (#FFFFFA, `CardSurfaceResolved.resolvedCardBackgroundHex` — the
+    /// exact fill the card face uses), so the detail reads as a card face and the
+    /// note primitive lifts off it by shadow, not hue. Dark: the shared ground
+    /// (`bgBase`, #1A1A1A). LIGHT-only change; `bgBase` / `mapBackground` and every
+    /// other surface are untouched.
+    @Environment(\.colorScheme) private var colorScheme
+    private var detailGround: Color {
+        colorScheme == .light
+            ? Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)   // #FFFFFA — card surface
+            : AppearancePalette.bgBase                                          // #1A1A1A dark
+    }
+
     /// hero-empty-picker (H1, revised) — drives the file-local
     /// `HeroImagePickerSheet`. Triggered from the `•••` menu's
     /// "Set / Change Hero Image…" item. Always enabled (a node with
@@ -668,11 +681,11 @@ struct NodeDetailView: View {
                 ? (keyboardVisible ? CaptureChromeMetrics.caretBottomMargin : barHeight)
                 : (keyboardVisible ? measuredToolbarHeight + Self.caretToolbarBreathingRoom : 0))
         }
-        // Matched-gray detail surface: same warm tone as the note panel
-        // (`NoteTypography.background` — #1A1A1A dark / white light, adaptive),
-        // so the raised note panel separates from the ground by light (shadow +
-        // rim), not colour. Replaces the fixed near-black #070709.
-        .background { AppearancePalette.bgBase.ignoresSafeArea() }
+        // Detail ground (note-primitive bake, ground B). DARK: matched near-black
+        // (#1A1A1A, `bgBase`) — the note panel shares the tone and separates by light
+        // (shadow + rim), not colour. LIGHT: the card surface #FFFFFA — the detail
+        // reads as a card face; the note fills the SAME colour and lifts by shadow.
+        .background { detailGround.ignoresSafeArea() }
         .ignoresSafeArea(.container, edges: .top)
         // Scroll-collapsed band — same reader the chat transcript uses
         // (`visibleRect.minY` = distance scrolled from the top). Drives the

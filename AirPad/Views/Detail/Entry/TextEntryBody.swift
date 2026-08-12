@@ -27,8 +27,14 @@ struct TextEntryBody: View {
     private enum Panel {
         static let cornerRadius: CGFloat = 24       // generous rounded panel
         static let shadowOpacity: Double = 0.35     // soft black drop shadow
-        static let shadowRadius: CGFloat = 12       // shadow blur
-        static let shadowY: CGFloat = 4             // shadow downward offset
+        static let shadowRadius: CGFloat = 12       // (dark) shadow blur
+        static let shadowY: CGFloat = 4             // (dark) shadow downward offset
+        // Light (bake 2026-08-12, ground B): T device-dialed warm lift (#43372A hue,
+        // reused from the card shadow) off the same-colour ground — separation is
+        // the shadow, not hue. Dark keeps shadowRadius/shadowY above.
+        static let lightShadowOpacity: Double = 0.143
+        static let lightShadowRadius:  CGFloat = 5.6
+        static let lightShadowY:       CGFloat = 0
         static let rimOpacity: Double = 0.10        // top-edge white rim light
         static let rimWidth: CGFloat = 1            // rim hairline width
     }
@@ -43,6 +49,33 @@ struct TextEntryBody: View {
     @State private var showPhotoPicker = false
     /// Bridge to ask the editor to insert an image at a remembered caret.
     @State private var imageInsertion = InlineImageInsertion()
+
+    // Note-primitive separation (bake 2026-08-12, ground B — T device-dialed). LIGHT:
+    // the note fills with the SAME card surface (#FFFFFA) as the detail ground, so it
+    // has no hue boundary and lifts purely by the drop shadow — a warm occlusion at
+    // T's dialed values. DARK: the shipped `bgElevated` + `panelShadow`, unchanged.
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Note panel fill. Light: the card surface (#FFFFFA), matching the detail ground
+    /// → separation is lift, not hue. Dark: `bgElevated` (#1A1A1A).
+    private var noteFill: Color {
+        colorScheme == .light
+            ? Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)   // #FFFFFA — = detail ground
+            : AppearancePalette.bgElevated
+    }
+    /// Note lift shadow. Light: the card's warm occlusion hue (#43372A, reused from
+    /// the card shadow path) at T's dialed strength. Dark: `panelShadow` (black@0.35).
+    private var noteShadowColor: Color {
+        colorScheme == .light
+            ? Color(hexString: CardSurfaceStore.read(.shadowHex)).opacity(Panel.lightShadowOpacity)
+            : AppearancePalette.panelShadow
+    }
+    private var noteShadowRadius: CGFloat {
+        colorScheme == .light ? Panel.lightShadowRadius : Panel.shadowRadius
+    }
+    private var noteShadowYOffset: CGFloat {
+        colorScheme == .light ? Panel.lightShadowY : Panel.shadowY
+    }
 
     private var shouldAutoFocus: Bool {
         !didConsumeAutoFocus && store.pendingAutoFocusItemID == item.id
@@ -97,12 +130,12 @@ struct TextEntryBody: View {
         .padding(.horizontal, 22)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // ws-dark-light-mode — the raised note panel fill. Dark #1A1A1A
-        // (identical to the matched-tone ground); light a hair brighter/warmer
-        // than the ground so it lifts by luminance (transmissive). The note
-        // TEXT stays on NoteTypography (adaptive, preserved) — only the panel
-        // surface is themed here.
-        .background(AppearancePalette.bgElevated)
+        // ws-dark-light-mode + note-primitive bake — the raised note panel fill.
+        // DARK #1A1A1A (identical to the matched-tone ground; lifts by shadow + rim).
+        // LIGHT: the card surface #FFFFFA — the SAME colour as the detail ground, so
+        // the note has no hue boundary and lifts purely by the shadow below. The note
+        // TEXT stays on NoteTypography (adaptive, preserved) — only the panel fill here.
+        .background(noteFill)
         .clipShape(RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous))
         // Top-edge rim light: brightest along the upper edge, fading down the
         // sides, so the panel reads as catching ambient light from above. On a
@@ -118,12 +151,11 @@ struct TextEntryBody: View {
                     lineWidth: Panel.rimWidth
                 )
         )
-        // Soft drop shadow lifts the panel off the matched-gray ground.
-        // ws-dark-light-mode — shadow strength is themed: dark black@0.35
-        // (identical), light a soft diffused shadow (no hard edge — "cloud
-        // cover is a reprieve"). Radius/offset unchanged.
-        .shadow(color: AppearancePalette.panelShadow,
-                radius: Panel.shadowRadius, x: 0, y: Panel.shadowY)
+        // The drop shadow is the note's ONLY separation on light (note == ground).
+        // Themed: DARK black@0.35 / r12 / y4 (`panelShadow`, identical). LIGHT: the
+        // card's warm occlusion hue (#43372A) at T's dialed lift — see Panel.lightShadow*.
+        .shadow(color: noteShadowColor,
+                radius: noteShadowRadius, x: 0, y: noteShadowYOffset)
         // Inline-image insertion now lives on the launcher bar's `image` category
         // (ws-editor-chrome) — the orphaned top-right card button is gone. The picker
         // is still presented from here; the caret was captured at the bar tap.

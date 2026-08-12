@@ -1,0 +1,142 @@
+=== Round 8 — prompt surface (default guardrails, title+summary schema, raw content) ===
+Loaded 20 nodes from round6-nodes.json (same set as Rounds 6/7).
+
+--- Cell C1a ---
+  [C1a] 1/20 1130789A (REFUSED)… THREW 688ms (generation-side)
+  [C1a] 2/20 17B0552D (REFUSED)… THREW 244ms (input-side)
+  [C1a] 3/20 37B4904F (REFUSED)… ok 13962ms "Etymology of 'Honky'"
+  [C1a] 4/20 8605E844 (REFUSED)… THREW 404ms (input-side)
+  [C1a] 5/20 9AF3AA17 (REFUSED)… ok 13853ms "Unconventional Comedy"
+  [C1a] 6/20 9F74032F (REFUSED)… THREW 260ms (input-side)
+  [C1a] 7/20 BF9595C3 (REFUSED)… THREW 227ms (input-side)
+  [C1a] 8/20 D20112F1 (REFUSED)… ok 13706ms "Idea about Privacy"
+  [C1a] 9/20 E7BCE684 (REFUSED)… THREW 3345ms (generation-side)
+  [C1a] 10/20 FF0C11DE (REFUSED)… ok 8030ms "Iconoclasher Videos"
+  [C1a] 11/20 C57169F2 (CONTROL)… ok 16979ms "Diet Coke and Achievement in W"
+  [C1a] 12/20 70A66523 (CONTROL)… ok 7374ms "Exploring Geometry"
+  [C1a] 13/20 0A0DB1DA (CONTROL)… ok 14084ms "Hole to China Episode"
+  [C1a] 14/20 1E9C4DEF (CONTROL)… ok 4612ms "Action Button Reveal"
+  [C1a] 15/20 3B5584B8 (CONTROL)… ok 2010ms "The Complexity of Morality in "
+  [C1a] 16/20 09C7E791 (CONTROL)… THREW 291ms (input-side)
+  [C1a] 17/20 DEA2B9DB (CONTROL)… ok 4746ms "The Evolution of Meal Times"
+  [C1a] 18/20 7735A62F (CONTROL)… ok 7593ms "Plum Tomato Recipe"
+  [C1a] 19/20 4B5E9285 (CONTROL)… ok 7595ms "AirPad as a Layer"
+  [C1a] 20/20 FF43DCC8 (CONTROL)… ok 7747ms "Queerness as Self-Determinatio"
+  wrote results-C1a.json (20 rows)
+
+--- Cell C1b ---
+  [C1b] 1/20 1130789A (REFUSED)… THREW 183ms (input-side)
+  [C1b] 2/20 17B0552D (REFUSED)… THREW 245ms (input-side)
+  [C1b] 3/20 37B4904F (REFUSED)… ok 7292ms "Etymology of Honky"
+  [C1b] 4/20 8605E844 (REFUSED)… THREW 379ms (input-side)
+  [C1b] 5/20 9AF3AA17 (REFUSED)… ok 7935ms "Tom's Attention"
+  [C1b] 6/20 9F74032F (REFUSED)… THREW 249ms (input-side)
+  [C1b] 7/20 BF9595C3 (REFUSED)… THREW 233ms (input-side)
+  [C1b] 8/20 D20112F1 (REFUSED)… ok 7543ms "Ideas and Privacy"
+  [C1b] 9/20 E7BCE684 (REFUSED)… THREW 252ms (input-side)
+  [C1b] 10/20 FF0C11DE (REFUSED)… ok 7953ms "Iconoclasher Videos"
+  [C1b] 11/20 C57169F2 (CONTROL)… ok 11372ms "Diet Coke and Work Culture in "
+  [C1b] 12/20 70A66523 (CONTROL)… ok 4316ms "Right Angles and Perspectives"
+  [C1b] 13/20 0A0DB1DA (CONTROL)… ok 1528ms "Episode: Hole to China"
+  [C1b] 14/20 1E9C4DEF (CONTROL)… ok 1528ms "AirPad Reveal"
+  [C1b] 15/20 3B5584B8 (CONTROL)… ok 1959ms "The Persistent Influence of Mi"
+  [C1b] 16/20 09C7E791 (CONTROL)… THREW 280ms (input-side)
+  [C1b] 17/20 DEA2B9DB (CONTROL)… ok 1867ms "The Evolution of Meals and Bre"
+  [C1b] 18/20 7735A62F (CONTROL)… ok 1010ms "Tomato Recipe"
+  [C1b] 19/20 4B5E9285 (CONTROL)… ok 1519ms "AirPad as a Layer Beyond an Ap"
+  [C1b] 20/20 FF43DCC8 (CONTROL)… ok 1448ms "Queerness: Living Life on Your"
+  wrote results-C1b.json (20 rows)
+
+--- Cell C1c ---
+  [C1c] 1/20 1130789A (REFUSED)… THREW 177ms (input-side)
+  [C1c] 2/20 17B0552D (REFUSED)… THREW 228ms (input-side)
+  [C1c] 3/20 37B4904F (REFUSED)… ok 1324ms "Etymology of 'Honky'"
+  [C1c] 4/20 8605E844 (REFUSED)… THREW 378ms (input-side)
+  [C1c] 5/20 9AF3AA17 (REFUSED)… ok 1243ms "Unconventional Comedy"
+  [C1c] 6/20 9F74032F (REFUSED)… THREW 233ms (input-side)
+  [C1c] 7/20 BF9595C3 (REFUSED)… THREW 228ms (input-side)
+  [C1c] 8/20 D20112F1 (REFUSED)… ok 1372ms "Idea on Privacy"
+  [C1c] 9/20 E7BCE684 (REFUSED)… THREW 219ms (input-side)
+  [C1c] 10/20 FF0C11DE (REFUSED)… ok 1536ms "Iconoclastic Videos with Tom M"
+  [C1c] 11/20 C57169F2 (CONTROL)… ok 1499ms "Diet Coke and High Achievers"
+  [C1c] 12/20 70A66523 (CONTROL)… ok 1693ms "Reevaluating Right Angles"
+  [C1c] 13/20 0A0DB1DA (CONTROL)… ok 1472ms "Episode Premise: Hole to China"
+  [C1c] 14/20 1E9C4DEF (CONTROL)… ok 1519ms "Action Button Reveal"
+  [C1c] 15/20 3B5584B8 (CONTROL)… ok 1833ms "The Persistence of Good vs. Ev"
+  [C1c] 16/20 09C7E791 (CONTROL)… THREW 277ms (input-side)
+  [C1c] 17/20 DEA2B9DB (CONTROL)… ok 1841ms "Revisiting Meals: A Historical"
+  [C1c] 18/20 7735A62F (CONTROL)… ok 4748ms "Plum Tomato Recipe"
+  [C1c] 19/20 4B5E9285 (CONTROL)… ok 8058ms "Understanding AirPad's Functio"
+  [C1c] 20/20 FF43DCC8 (CONTROL)… ok 7594ms "Queerness and Personal Freedom"
+  wrote results-C1c.json (20 rows)
+
+--- Cell C2 ---
+  [C2] 1/20 1130789A (REFUSED)… THREW 138ms (input-side)
+  [C2] 2/20 17B0552D (REFUSED)… THREW 200ms (input-side)
+  [C2] 3/20 37B4904F (REFUSED)… ok 7469ms "Origin of 'Honky' Term"
+  [C2] 4/20 8605E844 (REFUSED)… THREW 226ms (input-side)
+  [C2] 5/20 9AF3AA17 (REFUSED)… THREW 196ms (input-side)
+  [C2] 6/20 9F74032F (REFUSED)… THREW 205ms (input-side)
+  [C2] 7/20 BF9595C3 (REFUSED)… THREW 198ms (input-side)
+  [C2] 8/20 D20112F1 (REFUSED)… ok 4308ms "Idea on Personal Privacy"
+  [C2] 9/20 E7BCE684 (REFUSED)… ok 4799ms "Gen Z Parenthood Challenge"
+  [C2] 10/20 FF0C11DE (REFUSED)… ok 4738ms "Iconoclasher with Tom McJazz"
+  [C2] 11/20 C57169F2 (CONTROL)… ok 4597ms "Diet Coke Culture in DC and Hi"
+  [C2] 12/20 70A66523 (CONTROL)… ok 7687ms "The Misconception of Right Ang"
+  [C2] 13/20 0A0DB1DA (CONTROL)… ok 4667ms "Episode Premise: Hole to China"
+  [C2] 14/20 1E9C4DEF (CONTROL)… ok 4173ms "Action Button Reveal"
+  [C2] 15/20 3B5584B8 (CONTROL)… THREW 134ms (input-side)
+  [C2] 16/20 09C7E791 (CONTROL)… ok 5344ms "Revisiting WWII"
+  [C2] 17/20 DEA2B9DB (CONTROL)… ok 4848ms "Historical Meal Separation and"
+  [C2] 18/20 7735A62F (CONTROL)… ok 7555ms "Plum Tomato Preparation"
+  [C2] 19/20 4B5E9285 (CONTROL)… ok 4443ms "AirPad Concept"
+  [C2] 20/20 FF43DCC8 (CONTROL)… THREW 105ms (input-side)
+  wrote results-C2.json (20 rows)
+
+--- Cell C3 ---
+  [C3] 1/20 1130789A (REFUSED)… ok 3990ms "Corti Keyboard Usage Inquiry"
+  [C3] 2/20 17B0552D (REFUSED)… THREW 199ms (input-side)
+  [C3] 3/20 37B4904F (REFUSED)… ok 4163ms "Origin of the Term 'Honky'"
+  [C3] 4/20 8605E844 (REFUSED)… THREW 285ms (input-side)
+  [C3] 5/20 9AF3AA17 (REFUSED)… THREW 210ms (input-side)
+  [C3] 6/20 9F74032F (REFUSED)… THREW 205ms (input-side)
+  [C3] 7/20 BF9595C3 (REFUSED)… THREW 196ms (input-side)
+  [C3] 8/20 D20112F1 (REFUSED)… ok 4278ms "Privacy of Ideas"
+  [C3] 9/20 E7BCE684 (REFUSED)… THREW 166ms (input-side)
+  [C3] 10/20 FF0C11DE (REFUSED)… ok 4318ms "Tom McJazz's Iconoclasm"
+  [C3] 11/20 C57169F2 (CONTROL)… ok 4489ms "Diet Coke Preference"
+  [C3] 12/20 70A66523 (CONTROL)… ok 7040ms "Reevaluating Right Angles"
+  [C3] 13/20 0A0DB1DA (CONTROL)… THREW 144ms (input-side)
+  [C3] 14/20 1E9C4DEF (CONTROL)… ok 4355ms "Action Button Setup"
+  [C3] 15/20 3B5584B8 (CONTROL)… THREW 138ms (input-side)
+  [C3] 16/20 09C7E791 (CONTROL)… THREW 241ms (input-side)
+  [C3] 17/20 DEA2B9DB (CONTROL)… ok 4346ms "Breakfast's Role in Modern Die"
+  [C3] 18/20 7735A62F (CONTROL)… ok 7213ms "Plum Tomatoes"
+  [C3] 19/20 4B5E9285 (CONTROL)… ok 4652ms "AirPad Concept Overview"
+  [C3] 20/20 FF43DCC8 (CONTROL)… ok 4250ms "Queerness as Autonomy"
+  wrote results-C3.json (20 rows)
+
+--- Cell C4 ---
+  [C4] 1/20 1130789A (REFUSED)… ok 4108ms "Exploring Corti Keyboard Usage"
+  [C4] 2/20 17B0552D (REFUSED)… THREW 187ms (input-side)
+  [C4] 3/20 37B4904F (REFUSED)… ok 4072ms "Origin of 'Honky'"
+  [C4] 4/20 8605E844 (REFUSED)… THREW 213ms (input-side)
+  [C4] 5/20 9AF3AA17 (REFUSED)… THREW 192ms (input-side)
+  [C4] 6/20 9F74032F (REFUSED)… THREW 192ms (input-side)
+  [C4] 7/20 BF9595C3 (REFUSED)… THREW 201ms (input-side)
+  [C4] 8/20 D20112F1 (REFUSED)… THREW 125ms (input-side)
+  [C4] 9/20 E7BCE684 (REFUSED)… THREW 173ms (input-side)
+  [C4] 10/20 FF0C11DE (REFUSED)… ok 4249ms "Tom McJazz's Iconoclasm"
+  [C4] 11/20 C57169F2 (CONTROL)… ok 4454ms "Diet Coke Preference"
+  [C4] 12/20 70A66523 (CONTROL)… ok 7130ms "Right Angles"
+  [C4] 13/20 0A0DB1DA (CONTROL)… THREW 122ms (input-side)
+  [C4] 14/20 1E9C4DEF (CONTROL)… ok 3966ms "Action Button"
+  [C4] 15/20 3B5584B8 (CONTROL)… THREW 138ms (input-side)
+  [C4] 16/20 09C7E791 (CONTROL)… THREW 178ms (input-side)
+  [C4] 17/20 DEA2B9DB (CONTROL)… ok 4272ms "Breakfast Reimagined"
+  [C4] 18/20 7735A62F (CONTROL)… ok 7305ms "Plum Tomatoes"
+  [C4] 19/20 4B5E9285 (CONTROL)… ok 4297ms "AirPad Concept"
+  [C4] 20/20 FF43DCC8 (CONTROL)… ok 3964ms "Queerness"
+  wrote results-C4.json (20 rows)
+
+Round 8 complete. Generate summary-round8.md from results-C*.json.

@@ -3,8 +3,8 @@ import UIKit
 
 /// Animated lavalamp background for the Dashboard (GPU `BlobField.metal`).
 ///
-/// - **DARK** (unchanged): four additive Klein Blue + Electric Cyan blobs
-///   drifting over the `Color.black` ground behind it. The shipped look.
+/// - **DARK**: T's baked additive lava — dialed cyan/blue blobs over the
+///   `Color.black` ground, `sharedField` on. Values in `DashLavaDark.default`.
 /// - **LIGHT**: cyan/gold/rust blobs (T's baked values) on parchment, using the
 ///   SAME light path the node cards use — the shared `.pigmentOnParchment()` recipe
 ///   (source-over field composited `.plusDarker` over parchment, so saturated colour
@@ -32,7 +32,7 @@ struct DashboardLavaLamp: View {
         .ignoresSafeArea()
     }
 
-    // MARK: - Dark (additive lava; parameterized, same look)
+    // MARK: - Dark (additive lava; T's baked values)
 
     private var darkLava: some View {
         let d = dark
@@ -135,7 +135,7 @@ enum DashLavaKey {
     static let dark  = "dashlava.dark"
 }
 
-// MARK: - Dark style (parameterized for tuning; STEP 1 = no look change)
+// MARK: - Dark style (T's baked values; tuner retired)
 
 /// One dark additive lava blob (Codable mirror of `BlobFieldView.Blob`; CGPoint/
 /// CGSize flattened to Doubles for JSON).
@@ -148,26 +148,27 @@ struct DashLavaDarkBlob: Codable, Equatable {
     var peak: Double
 }
 
-/// Mirrors `DashLavaLight` for the DARK additive lava. `.default` holds the CURRENT
-/// hardcoded values BYTE-FOR-BYTE (colors are the Klein Blue / Electric Cyan hex
-/// as RGB); dark keeps its additive path — do NOT converge it onto the light
-/// pigment recipe. Dialable via `DashLavaDarkTuningPanel` (bake → delete).
+/// Mirrors `DashLavaLight` for the DARK additive lava. `.default` holds T's baked
+/// device-dialed values; dark keeps its ADDITIVE path — do NOT converge it onto
+/// the light pigment recipe (different grounds, different compositing).
 struct DashLavaDark: Codable, Equatable {
     var blobs: [DashLavaDarkBlob]
     var sharedField: Bool
 
+    /// ★ T's device-dialed DARK values, baked 2026-08-12. sharedField ON; blob 2
+    /// dialed to peak 0 (removed). Values are the copy-dump verbatim.
     static let `default` = DashLavaDark(
         blobs: [
-            DashLavaDarkBlob(originX: 0.22, originY: 0.30, radius: 0.56, speedX: 0.00020, speedY: 0.00014,
-                             phase: 0.0, color: DashLavaRGB(r: 27.0/255.0, g: 89.0/255.0, b: 194.0/255.0), peak: 0.85),  // Klein Blue #1B59C2
-            DashLavaDarkBlob(originX: 0.78, originY: 0.22, radius: 0.50, speedX: 0.00016, speedY: 0.00026,
-                             phase: 1.2, color: DashLavaRGB(r: 0.0, g: 191.0/255.0, b: 1.0), peak: 0.55),                // Electric Cyan #00BFFF
-            DashLavaDarkBlob(originX: 0.50, originY: 0.74, radius: 0.62, speedX: 0.00024, speedY: 0.00018,
-                             phase: 2.4, color: DashLavaRGB(r: 27.0/255.0, g: 89.0/255.0, b: 194.0/255.0), peak: 0.85),
-            DashLavaDarkBlob(originX: 0.16, originY: 0.80, radius: 0.46, speedX: 0.00013, speedY: 0.00022,
-                             phase: 3.8, color: DashLavaRGB(r: 0.0, g: 191.0/255.0, b: 1.0), peak: 0.50),
+            DashLavaDarkBlob(originX: 0.22, originY: 0.3, radius: 0.569047611951828, speedX: 0.001, speedY: 0.001,
+                             phase: 0, color: DashLavaRGB(r: 0, g: 0.21770860254764557, b: 1), peak: 1),
+            DashLavaDarkBlob(originX: 0.78, originY: 0.22, radius: 0.9047618865966796, speedX: 0.00016, speedY: 0.00026,
+                             phase: 0, color: DashLavaRGB(r: 0, g: 0.19471164047718048, b: 0.7630341053009033), peak: 0),
+            DashLavaDarkBlob(originX: 0.04347684606909752, originY: 0.9418398141860962, radius: 0.6557142615318298, speedX: 0.00024, speedY: 0.0005346380472183227,
+                             phase: 5.277698114454746, color: DashLavaRGB(r: 0.10588235294117647, g: 0.34901960784313724, b: 0.7607843137254902), peak: 1),
+            DashLavaDarkBlob(originX: 1, originY: 1, radius: 0.59874729514122, speedX: 0.00013, speedY: 0.00022,
+                             phase: 3.8, color: DashLavaRGB(r: 0.10588235294117647, g: 0.018795641139149666, b: 0.6282270550727844), peak: 1),
         ],
-        sharedField: false
+        sharedField: true
     )
 
     static func decode(_ json: String) -> DashLavaDark? {
@@ -179,121 +180,4 @@ struct DashLavaDark: Codable, Equatable {
     }
     static let defaultJSON = DashLavaDark.default.encoded()
 }
-
-#if DEBUG
-/// DEBUG tuner for the DARK dashboard lava — per-blob colour/radius/peak/origin/
-/// speed/phase + the additive path's `sharedField`. Bake T's values into
-/// `DashLavaDark.default` then delete this. (Mirrors the retired light tuner.)
-struct DashLavaDarkTuningPanel: View {
-    @Binding var isPresented: Bool
-    @Binding var position: CGSize
-    @AppStorage(DashLavaKey.dark) private var darkJSON: String = DashLavaDark.defaultJSON
-    @State private var dragStart: CGSize? = nil
-
-    private static let palette: [(String, DashLavaRGB)] = [
-        ("Klein", DashLavaRGB(r: 27.0/255.0, g: 89.0/255.0, b: 194.0/255.0)),
-        ("Cyan",  DashLavaRGB(r: 0, g: 191.0/255.0, b: 1.0)),
-        ("Mango", DashLavaRGB(r: 0.91, g: 0.51, b: 0.04)),
-        ("Gold",  DashLavaRGB(r: 0.98, g: 0.80, b: 0.28)),
-        ("Rust",  DashLavaRGB(r: 0.72, g: 0.30, b: 0.10)),
-    ]
-
-    private var style: Binding<DashLavaDark> {
-        Binding(get: { DashLavaDark.decode(darkJSON) ?? .default },
-                set: { darkJSON = $0.encoded() })
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            header
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(0..<style.wrappedValue.blobs.count, id: \.self) { i in
-                        blobSection(i)
-                    }
-                    Toggle("Shared field", isOn: style.sharedField)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    copyRow
-                }.padding(12)
-            }.frame(maxHeight: 460)
-        }
-        .frame(width: 300)
-        .background(RoundedRectangle(cornerRadius: 16).fill(Color(white: 0.10)))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12)))
-        .foregroundStyle(.white)
-        .offset(position)
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Dash Lava · DARK").font(.system(size: 13, weight: .bold, design: .monospaced))
-            Spacer()
-            Button { isPresented = false } label: {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.6))
-            }.buttonStyle(.plain)
-        }
-        .padding(.horizontal, 12).padding(.top, 12).contentShape(Rectangle())
-        .gesture(DragGesture()
-            .onChanged { v in
-                let base = dragStart ?? position
-                if dragStart == nil { dragStart = position }
-                position = CGSize(width: base.width + v.translation.width,
-                                  height: base.height + v.translation.height)
-            }
-            .onEnded { _ in dragStart = nil })
-    }
-
-    private func blobSection(_ i: Int) -> some View {
-        let b = style.blobs[i]
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("BLOB \(i + 1)").font(.system(size: 10, weight: .bold, design: .monospaced)).opacity(0.7)
-                Spacer()
-                RoundedRectangle(cornerRadius: 4).fill(b.wrappedValue.color.color)
-                    .frame(width: 26, height: 14)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.white.opacity(0.2)))
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(Self.palette, id: \.0) { name, rgb in
-                        Button { b.color.wrappedValue = rgb } label: {
-                            VStack(spacing: 2) {
-                                RoundedRectangle(cornerRadius: 3).fill(rgb.color).frame(width: 20, height: 12)
-                                Text(name).font(.system(size: 7)).opacity(0.6)
-                            }.frame(width: 32)
-                        }.buttonStyle(.plain)
-                    }
-                }
-            }
-            slider("R", b.color.r, 0...1); slider("G", b.color.g, 0...1); slider("B", b.color.b, 0...1)
-            slider("Peak", b.peak, 0...1)
-            slider("Radius", b.radius, 0.1...1.2)
-            slider("Origin X", b.originX, 0...1); slider("Origin Y", b.originY, 0...1)
-            slider("Speed X", b.speedX, 0...0.001, "%.5f"); slider("Speed Y", b.speedY, 0...0.001, "%.5f")
-            slider("Phase", b.phase, 0...6.283)
-            Divider().overlay(Color.white.opacity(0.15))
-        }
-    }
-
-    private func slider(_ label: String, _ v: Binding<Double>, _ range: ClosedRange<Double>, _ fmt: String = "%.2f") -> some View {
-        HStack(spacing: 8) {
-            Text(label).font(.system(size: 10, design: .monospaced)).frame(width: 62, alignment: .leading).opacity(0.7)
-            Slider(value: v, in: range)
-            Text(String(format: fmt, v.wrappedValue)).font(.system(size: 9, design: .monospaced))
-                .frame(width: 44, alignment: .trailing).opacity(0.7)
-        }
-    }
-
-    private var copyRow: some View {
-        Button {
-            UIPasteboard.general.string = darkJSON
-            print("DASHLAVA·DARK>\n\(darkJSON)")
-        } label: {
-            Label("Copy DARK values", systemImage: "doc.on.doc")
-                .font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.12)))
-        }.buttonStyle(.plain)
-    }
-}
-#endif
 

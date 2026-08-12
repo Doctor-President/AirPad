@@ -349,7 +349,9 @@ struct HarnessMain {
         // Line-buffer stdout so progress is visible when piped through `tee`.
         setvbuf(stdout, nil, _IOLBF, 0)
         let args = CommandLine.arguments
-        if args.contains("round7") {
+        if args.contains("round8") {
+            await runRound8()
+        } else if args.contains("round7") {
             await runRound7()
         } else if args.contains("round6") {
             await runRound6()

@@ -52,12 +52,6 @@ struct DashboardView: View {
     @State private var showCreateCollectionSheet = false
     @State private var showCollectionReorder = false
     @State private var showSettings = false
-    #if DEBUG
-    /// #3 lava-lamp LIGHT tuner (throwaway; delete with the panel once T's values
-    /// are baked into DashLavaLight.default).
-    @State private var showDashLavaTuner = false
-    @State private var dashLavaTunerOffset: CGSize = .zero
-    #endif
 
     /// Dashboard Stage 3 — rows are derived at render time from
     /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
@@ -107,10 +101,6 @@ struct DashboardView: View {
                 }
 
                 floatingPlusButton
-
-                #if DEBUG
-                dashLavaTunerLayer
-                #endif
             }
             .toolbar(.hidden, for: .navigationBar) // dashboard renders its own header
             .navigationDestination(for: DashboardRoute.self) { route in
@@ -498,40 +488,6 @@ struct DashboardView: View {
             }
         }
     }
-
-    #if DEBUG
-    /// #3 — floating tuner trigger (drop glyph, top-left) + panel. Delete with
-    /// DashLavaTuningPanel once T's LIGHT values are baked.
-    private var dashLavaTunerLayer: some View {
-        ZStack {
-            VStack {
-                HStack {
-                    Button { showDashLavaTuner.toggle() } label: {
-                        Image(systemName: "drop.fill")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.35))
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                }
-                Spacer()
-            }
-            .padding(.top, 60)
-            .padding(.leading, 10)
-
-            if showDashLavaTuner {
-                VStack {
-                    Spacer()
-                    DashLavaTuningPanel(isPresented: $showDashLavaTuner,
-                                        position: $dashLavaTunerOffset)
-                        .padding(.bottom, 80)
-                }
-            }
-        }
-    }
-    #endif
 
 }
 

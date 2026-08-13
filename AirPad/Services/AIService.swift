@@ -58,8 +58,8 @@ struct ProcessNodeResult {
     @Guide(description: "One to two sentence summary capturing the idea's core essence.")
     var summary: String
 
-    @Guide(description: "Up to 5 tags. Prefer compound or specific tags over single broad ones when both are valid; e.g., a recipe-app idea should be tagged with both 'Recipe' and 'Technology' rather than 'Technology' alone. Return an empty array if the content is too thin to support confident tagging.")
-    var tags: [VocabularyTag]
+    @Guide(description: "Up to 5 tags from the supplied vocabulary. Prefer compound or specific tags over single broad ones when both are valid; e.g., a recipe-app idea should be tagged with both 'Recipe' and 'Technology' rather than 'Technology' alone. Return an empty array if the content is too thin to support confident tagging.")
+    var tags: [String]
 
     @Guide(description: "Emotional tone — exactly one word from this fixed set: curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.")
     var mood: String
@@ -267,13 +267,18 @@ actor AIService {
             }.joined(separator: "\n")
         }
 
-        // The tag vocabulary is no longer named in the prompt: ProcessNodeResult.tags is
-        // [VocabularyTag], so guided generation constrains tags to the vocabulary by
-        // construction (Round 9). `fullVocabulary` is retained in the signature but unused here.
+        let vocabLine: String
+        if fullVocabulary.isEmpty {
+            vocabLine = "(empty)"
+        } else {
+            vocabLine = fullVocabulary.joined(separator: ", ")
+        }
+
         let prompt = """
         You are tagging a captured idea against an existing personal corpus. Use the supplied corpus context to ground your choices.
 
         Tag-selection rules:
+        - Only choose tags from the full vocabulary list. Tags outside the vocabulary are not allowed.
         - Prefer compound or specific tags over single broad ones when both are valid. A recipe-app idea is better tagged ["Recipe", "Technology"] than ["Technology"] alone. Single broad tags like "Technology" or "Work" tagged in isolation make clusters incoherent.
         - If the content is too thin or ambiguous to support confident tagging, return an empty tags array. Do not fabricate.
 
@@ -292,6 +297,9 @@ actor AIService {
 
         ## Most-used tags in the corpus (top \(tagDigests.count), with co-occurrence)
         \(tagSection)
+
+        ## Full tag vocabulary (fallback — pick from any of these)
+        \(vocabLine)
         """
 
         await logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
@@ -308,7 +316,7 @@ actor AIService {
             return .success(NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
-                tags:    Array(r.tags.map(\.rawValue).prefix(5)),
+                tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
                 mood:    r.mood.isEmpty ? nil : r.mood,
                 domain:  r.domain.isEmpty ? nil : r.domain,
                 neighborhoodID: nbhd.isEmpty ? nil : nbhd

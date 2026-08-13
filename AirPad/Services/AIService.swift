@@ -296,23 +296,25 @@ actor AIService {
 
         await logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
         do {
-            // The lever now routes through ModelRouter.generateStructured — Foundation Model (guided
-            // generation, unchanged) by default, or the on-device model when the user opted in and it
-            // is ready. This is the ONLY one of AIService's eight LanguageModelSession() sites moved to
-            // the router; the other seven (processNode/NodeAIResult, CorpusSummary, the two
-            // Neighborhood passes, SubstrateInterpretation, and the two CoherenceCheck sites) stay
-            // inline. FM's catchable refusal still arrives via the throw below → nodeFailure.
-            let e = try await ModelRouter.generateStructured(prompt: prompt)
+            // ws-local-model Stage 2 CORRECTION: this DORMANT path (gated on the DEBUG-only
+            // `useCorpusAwareTagging`, default false → unreachable in Release) is NO LONGER the
+            // one routed through ModelRouter. The lever moves to the two LIVE capture calls —
+            // `processNode` (title+summary) and `processSubstrate` (folksonomy) — so it reaches a
+            // default user. This path stays on its inline FM call, unchanged from before Stage 2.
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt, generating: ProcessNodeResult.self)
+            let r = response.content
+            let nbhd = r.neighborhoodID.trimmingCharacters(in: .whitespacesAndNewlines)
             return .success(NodeAIOutput(
-                title:   e.title,
-                summary: e.summary,
-                tags:    e.tags,
-                mood:    e.mood,
-                domain:  e.domain,
-                neighborhoodID: e.neighborhoodID
+                title:   r.title,
+                summary: r.summary,
+                tags:    Array(r.tags.map(\.rawValue).prefix(5)),
+                mood:    r.mood.isEmpty ? nil : r.mood,
+                domain:  r.domain.isEmpty ? nil : r.domain,
+                neighborhoodID: nbhd.isEmpty ? nil : nbhd
             ))
         } catch {
-            print("[processNodeCorpusAware] FAILURE: \(error)")
+            print("[FM][processNodeCorpusAware] FAILURE: \(error)")
             return .failure(await nodeFailure(from: error, prompt: prompt))
         }
     }

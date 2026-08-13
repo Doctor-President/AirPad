@@ -149,6 +149,14 @@ targets:
         # unused fallback. Validated: actool compiles AirPad.icon and emits
         # CFBundleIconName=AirPad.
         ASSETCATALOG_COMPILER_APPICON_NAME: AirPad
+      configs:
+        # T's device-checkpoint entitlement (2026-08-13), moved OUT of the Xcode pbxproj edit into
+        # project.yml so it survives every `xcodegen generate`. Release signs with
+        # AirPadRelease.entitlements (increased-memory-limit + extended-virtual-addressing for the
+        # local MLX model). Debug uses settings.base's AirPad.entitlements — which ALSO carries the
+        # two memory keys now (T: "Debug too"), so Xcode Run dev builds get the headroom on device.
+        Release:
+          CODE_SIGN_ENTITLEMENTS: AirPad/AirPadRelease.entitlements
     info:
       path: AirPad/Info.plist
       properties:

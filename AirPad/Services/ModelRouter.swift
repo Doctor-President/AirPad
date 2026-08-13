@@ -1,27 +1,39 @@
 import Foundation
 import FoundationModels
 
-/// The enrichment lever's result, provider-agnostic. Foundation Model fills all six fields; the
-/// on-device model fills title/summary/tags and leaves the mood/domain/neighborhood extras nil
-/// unless its JSON carried them. `tags` are ALREADY validated against `VocabularyTag`.
-struct StructuredEnrichment: Sendable {
+/// The note-summary lever's result, provider-agnostic (`processNode`'s shape). Title + summary,
+/// nothing else — the corpus-aware extras (tags/mood/domain/neighborhood) belong to the DORMANT
+/// `processNodeCorpusAware` path, which is NOT routed here.
+struct NodeSummaryResult: Sendable {
     var title: String
     var summary: String
-    var tags: [String]
-    var mood: String?
-    var domain: String?
-    var neighborhoodID: String?
 }
 
-/// Decoding shape for the on-device model's JSON reply. Every field optional — a local model
-/// omits or mistypes keys, and the caller coerces to StructuredEnrichment's non-optionals.
-private struct LocalEnrichmentJSON: Decodable {
+/// The substrate lever's result, provider-agnostic (`processSubstrate`'s shape). Summary + a
+/// FREE-FORM folksonomy. ★ There is deliberately NO vocabulary enum here: the substrate call
+/// produces open folksonomy by settled decision (ws-lever.md § THE TAG PRODUCER); normalization
+/// and embedding-match against the user's existing tags happen DETERMINISTICALLY downstream. This
+/// is a SEPARATE shape from `NodeSummaryResult`, and a SEPARATE refusal locus — a node can lose
+/// its summary, its tags, or both, independently. (This is why there are two methods, not one
+/// struct with empty fields: `tags: []` going invisible for months is exactly the failure the
+/// two-shape split avoids.)
+struct SubstrateResult: Sendable {
+    var summary: String
+    var folksonomy: [String]
+}
+
+/// Decoding shape for the on-device model's node-summary JSON. Both fields optional — a local
+/// model omits or mistypes keys; the caller coerces to `NodeSummaryResult`'s non-optionals.
+private struct LocalNodeSummaryJSON: Decodable {
     var title: String?
     var summary: String?
+}
+
+/// Decoding shape for the on-device model's substrate JSON. Both fields optional; `tags` is the
+/// free-form folksonomy (no fixed vocabulary — matches `SubstrateInterpretation`).
+private struct LocalSubstrateJSON: Decodable {
+    var summary: String?
     var tags: [String]?
-    var mood: String?
-    var domain: String?
-    var neighborhoodID: String?
 }
 
 /// Librarian model routing. Reads the Keychain for configured providers
@@ -150,7 +162,9 @@ enum ModelRouter {
                         )
                         continuation.finish()
                     case .local:
-                        // Unreachable via `active` (see generate); free-text streaming falls back to FM.
+                        // Unreachable via `active`: the on-device model serves only the structured
+                        // enrichment levers (generateNodeSummary / generateSubstrate), not the
+                        // free-text Librarian path. Defensive → FM.
                         guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
                         try await streamFoundationModel(
                             systemPrompt: systemPrompt,
@@ -217,81 +231,121 @@ enum ModelRouter {
         return ready ? .local : .foundationModel
     }
 
-    /// THE LEVER. Ask for a structured enrichment (title, summary, vocabulary-validated tags, and
-    /// the FM-only mood/domain/neighborhood extras) and get them — the caller never learns which
-    /// model answered. FM constrains tags by construction (`@Generable`) and can throw a catchable
-    /// refusal; the local model is prompted for JSON, parsed, and its tags validated against the SAME
-    /// `VocabularyTag` (non-matches dropped). The ONE provider difference — FM's catchable refusal —
-    /// is thrown up here for the caller to surface, never worked around inside the router.
+    // TWO methods, not one with an associated result type. The two live capture calls need
+    // genuinely different shapes — `processNode` wants title + summary, `processSubstrate` wants
+    // summary + free-form folksonomy — with different local-JSON decode shapes and, critically,
+    // INDEPENDENT refusal loci (a node can lose its summary, its tags, or both). A single generic
+    // method would push toward a shared struct (empty fields → the `tags: []` invisibility that
+    // hid the substrate producer for months) or protocol gymnastics over two @Generable types.
+    // Two small methods keep each locus honest and separate.
+
+    /// THE NOTE-SUMMARY LEVER — title + summary (`processNode`'s shape). FM uses guided generation
+    /// (`NodeAIResult` is @Generable), so a refusal arrives as a catchable `GenerationError` and is
+    /// thrown UP for the caller to surface — the ONE provider difference, exposed not worked around.
+    /// The local model is prompted for strict JSON and parsed; it effectively does not refuse.
     @available(iOS 26.0, *)
-    static func generateStructured(prompt: String) async throws -> StructuredEnrichment {
+    static func generateNodeSummary(prompt: String) async throws -> NodeSummaryResult {
         switch await structuredProvider() {
         case .local:
-            return try await generateStructuredLocal(prompt: prompt)
+            return try await nodeSummaryLocal(prompt: prompt)
         case .foundationModel, .ollama:
-            return try await generateStructuredFoundationModel(prompt: prompt)
+            return try await nodeSummaryFoundationModel(prompt: prompt)
         }
     }
 
     @available(iOS 26.0, *)
-    private static func generateStructuredFoundationModel(prompt: String) async throws -> StructuredEnrichment {
+    private static func nodeSummaryFoundationModel(prompt: String) async throws -> NodeSummaryResult {
         guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
         let session = LanguageModelSession()
-        // KEEP guided generation: ProcessNodeResult is @Generable, so tags are constrained to
-        // VocabularyTag by construction and a refusal arrives as a catchable GenerationError (thrown up).
-        let r = try await session.respond(to: prompt, generating: ProcessNodeResult.self).content
-        func nilIfEmpty(_ s: String) -> String? {
-            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? nil : t
-        }
-        return StructuredEnrichment(
-            title: r.title,
-            summary: r.summary,
-            tags: Array(r.tags.map(\.rawValue).prefix(5)),
-            mood: nilIfEmpty(r.mood),
-            domain: nilIfEmpty(r.domain),
-            neighborhoodID: nilIfEmpty(r.neighborhoodID)
+        // KEEP guided generation: NodeAIResult is @Generable, so a refusal arrives as a catchable
+        // GenerationError, thrown up to `AIService.processNode` → `nodeFailure` → `.refused`.
+        let r = try await session.respond(to: prompt, generating: NodeAIResult.self).content
+        return NodeSummaryResult(
+            title:   r.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            summary: r.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         )
     }
 
     @available(iOS 26.0, *)
-    private static func generateStructuredLocal(prompt: String) async throws -> StructuredEnrichment {
-        // The local model isn't constrained by construction, so ask for strict JSON, then parse and
-        // validate. The vocabulary is NOT re-added to the prompt (Round 9: the vocab line is
-        // net-negative); instead tags are validated against VocabularyTag and non-matches DROPPED.
+    private static func nodeSummaryLocal(prompt: String) async throws -> NodeSummaryResult {
         let jsonInstruction = """
         Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
-        {"title": string, "summary": string, "tags": [string], "mood": string, "domain": string, "neighborhoodID": string}
-        Use "" (or [] for tags) for anything you cannot fill. Do not add keys.
+        {"title": string, "summary": string}
+        Use "" for anything you cannot fill. Do not add keys.
         """
         let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
-        guard let obj = decodeEnrichmentJSON(raw) else {
+        guard let obj: LocalNodeSummaryJSON = decodeOutermostJSON(raw) else {
             throw RouterError.localBadJSON(String(raw.prefix(240)))
         }
-        let cleanedTags = VocabularyTag.validated(Array((obj.tags ?? []).prefix(8)))   // drop non-matches + de-dupe
-        func nilIfEmpty(_ s: String?) -> String? {
-            let t = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            return t.isEmpty ? nil : t
+        return NodeSummaryResult(
+            title:   (obj.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            summary: (obj.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    /// THE SUBSTRATE LEVER — summary + free-form folksonomy (`processSubstrate`'s shape). Same
+    /// provider split, DELIBERATELY SEPARATE from the note-summary lever (independent refusal
+    /// locus, different shape). ★ The folksonomy is FREE-FORM by settled decision — the model
+    /// proposes whatever words fit; there is NO vocabulary enum and NO picklist, because
+    /// normalization + embedding-match against existing tags happen deterministically downstream
+    /// (ws-lever.md § THE TAG PRODUCER). Constraining this call with an enum would reverse that.
+    /// FM's guided generation throws its refusal up (→ `processSubstrate` → `.guardrailRefused`);
+    /// the local model is prompted for JSON and parsed.
+    @available(iOS 26.0, *)
+    static func generateSubstrate(prompt: String) async throws -> SubstrateResult {
+        switch await structuredProvider() {
+        case .local:
+            return try await substrateLocal(prompt: prompt)
+        case .foundationModel, .ollama:
+            return try await substrateFoundationModel(prompt: prompt)
         }
-        return StructuredEnrichment(
-            title: (obj.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+    }
+
+    @available(iOS 26.0, *)
+    private static func substrateFoundationModel(prompt: String) async throws -> SubstrateResult {
+        guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
+        let session = LanguageModelSession()
+        // KEEP guided generation: SubstrateInterpretation is @Generable, so a refusal arrives as a
+        // catchable GenerationError, thrown up to `processSubstrate` → `.guardrailRefused`.
+        let r = try await session.respond(to: prompt, generating: SubstrateInterpretation.self).content
+        return SubstrateResult(
+            summary: r.summary.trimmingCharacters(in: .whitespacesAndNewlines),
+            folksonomy: r.tags
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    @available(iOS 26.0, *)
+    private static func substrateLocal(prompt: String) async throws -> SubstrateResult {
+        // No vocabulary is added to the prompt — the folksonomy is free-form by construction.
+        let jsonInstruction = """
+        Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
+        {"summary": string, "tags": [string]}
+        `tags` are free-form — pick whatever short words best describe the idea; there is no fixed vocabulary. Use "" or [] for anything you cannot fill. Do not add keys.
+        """
+        let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
+        guard let obj: LocalSubstrateJSON = decodeOutermostJSON(raw) else {
+            throw RouterError.localBadJSON(String(raw.prefix(240)))
+        }
+        let folk = (obj.tags ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return SubstrateResult(
             summary: (obj.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-            tags: Array(cleanedTags.prefix(5)),
-            mood: nilIfEmpty(obj.mood),
-            domain: nilIfEmpty(obj.domain),
-            neighborhoodID: nilIfEmpty(obj.neighborhoodID)
+            folksonomy: Array(folk.prefix(8))
         )
     }
 
     /// Local models wrap JSON in prose or code fences despite instructions; pull the outermost
-    /// `{ … }` and decode it. Returns nil if there's no object or it doesn't decode.
-    private static func decodeEnrichmentJSON(_ raw: String) -> LocalEnrichmentJSON? {
+    /// `{ … }` and decode it as `T`. Returns nil if there's no object or it doesn't decode.
+    private static func decodeOutermostJSON<T: Decodable>(_ raw: String) -> T? {
         guard let start = raw.firstIndex(of: "{"),
               let end = raw.lastIndex(of: "}"),
               start < end else { return nil }
         let slice = String(raw[start...end])
         guard let data = slice.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(LocalEnrichmentJSON.self, from: data)
+        return try? JSONDecoder().decode(T.self, from: data)
     }
 
     // MARK: - Foundation Model

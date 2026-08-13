@@ -131,7 +131,12 @@ struct CanvasChrome: View {
             // vertical card surface. Sits ABOVE the surface (cards blur as they
             // pass under) and BELOW every chrome overlay below (pills, switcher,
             // capsule, +), so the chrome stays crisp.
-            if filterState.viewMode == .grid && gridColumnCount == 4 {
+            // BUG 26 — `VerticalScrollView` pushes its detail INSIDE this ZStack
+            // (its own NavigationStack), so the surface gate alone kept the bands
+            // rendering over the pushed detail. Add the discrete depth guard the
+            // sibling overlays below already use (`!store.isInDetailView`) so the
+            // bands hide in the detail view — same shape as the drop-shadow fix.
+            if filterState.viewMode == .grid && gridColumnCount == 4 && !store.isInDetailView {
                 ChromeEdgeBands()
             }
 

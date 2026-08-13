@@ -143,6 +143,7 @@
 		8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */; };
 		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
+		8B123FFA9CC1CE3B3C739AE3 /* LocalModelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6395ED2F705BD95B1D64F56 /* LocalModelService.swift */; };
 		8C06E3866E668409E3983A5D /* SubstrateSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */; };
 		8C733440249680712EED9AAE /* NodeGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */; };
 		8C816C9A65368BD8D812CFFB /* FieldKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDDB291F9F6170B93CE084E /* FieldKind.swift */; };
@@ -151,6 +152,7 @@
 		8D99DC4617A52B993992A45E /* PlaybackAudioSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC64642A8AD34593133AC155 /* PlaybackAudioSession.swift */; };
 		8D9DC70840AFFFF47A8577FB /* ParityShots.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60D13A13B22F4512A523EB58 /* ParityShots.swift */; };
 		8DF5479C80E72F6CE5DCC035 /* SubstrateLayoutService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7917C14BA2EB5AE11F600CA0 /* SubstrateLayoutService.swift */; };
+		8FAEAF61A466C4180D5B078D /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = FA212520B86966AE24E20B23 /* MLXLLM */; };
 		8FCCD1C11E415D8FDC0322CA /* ZoomableImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D4851654AC4C2F3AF8798F /* ZoomableImageView.swift */; };
 		8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 463DA699C1C0AF251F9242D9 /* RejectedBlock.swift */; };
 		910169FB448EEF32C13A9AD4 /* CorpusStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADDA79A05C807120913FCE5F /* CorpusStore.swift */; };
@@ -185,9 +187,11 @@
 		A795741744098AF3B305335B /* CardBlurTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B65719255B960A7B6876EC2A /* CardBlurTest.swift */; };
 		A859CCDDA5AEF40491043CDA /* UMAPFuzzySet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */; };
 		AA9443964465D51E902BE973 /* TagPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */; };
+		AAB2501E331656DE7FE806A6 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8C8B68B978A8161E8AC53C08 /* MLXLMCommon */; };
 		AB1987E40736EECE7D0FDD13 /* HistoryPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC36DE9EA28BD7C8FAFD81A0 /* HistoryPanel.swift */; };
 		ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */; };
 		AC00CAAEA3AB86F2D4455FD1 /* UMAPFindAB.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */; };
+		AC2DE8245EED4A88F909800B /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = 7E8E59FE24B218A0AEFD5C52 /* Hub */; };
 		ACA7B702683CE03A268E743D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7814673E5A10B9F5E391DA4 /* SettingsView.swift */; };
 		ACB61EF70E11DC8884EE3A6F /* Lora-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = D414766388E3034250D0E1AE /* Lora-Bold.ttf */; };
 		ACEC4360C76A6F362AA87972 /* UMAPModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78B727835739390B86DF397 /* UMAPModel.swift */; };
@@ -526,6 +530,7 @@
 		E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeDetailView.swift; sourceTree = "<group>"; };
 		E5035C30AE70E1C4E361CF86 /* ImageOCRService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageOCRService.swift; sourceTree = "<group>"; };
 		E617FBB5C1757939CF37710B /* AIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIService.swift; sourceTree = "<group>"; };
+		E6395ED2F705BD95B1D64F56 /* LocalModelService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelService.swift; sourceTree = "<group>"; };
 		E650D0049F1C1E20D3E562B1 /* FieldValueFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValueFormatter.swift; sourceTree = "<group>"; };
 		E6F0064A274D4E43585A9E88 /* SubstrateRelaxationPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateRelaxationPass.swift; sourceTree = "<group>"; };
 		E72BAB0716ACA80A097CBF4F /* NodeGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeGridView.swift; sourceTree = "<group>"; };
@@ -562,6 +567,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				738349B24610F0BADC5B82A3 /* FloatingPanel in Frameworks */,
+				8FAEAF61A466C4180D5B078D /* MLXLLM in Frameworks */,
+				AAB2501E331656DE7FE806A6 /* MLXLMCommon in Frameworks */,
+				AC2DE8245EED4A88F909800B /* Hub in Frameworks */,
 				C0EF62B446B52D9A7AFF602F /* SpriteKit.framework in Frameworks */,
 				B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */,
 				CA5580BF3FA789B9EF9D906C /* Speech.framework in Frameworks */,
@@ -673,6 +681,7 @@
 				239B75A26B2BA53534F71428 /* LayoutService.swift */,
 				FC68B6E4E41E80E237C8FFBA /* LinkSnapshotService.swift */,
 				9113DD140BEEB334F5D52DA8 /* LiveDictationService.swift */,
+				E6395ED2F705BD95B1D64F56 /* LocalModelService.swift */,
 				FCC9C2D2D1F417F790A23C5F /* ModelRouter.swift */,
 				38C43874FCAA3C0E4F2A8E43 /* NeighborhoodService.swift */,
 				3366166820015E0F584466E9 /* OGMetadataService.swift */,
@@ -1143,6 +1152,9 @@
 			name = AirPad;
 			packageProductDependencies = (
 				F0F15B30974A69BF628C7BE6 /* FloatingPanel */,
+				FA212520B86966AE24E20B23 /* MLXLLM */,
+				8C8B68B978A8161E8AC53C08 /* MLXLMCommon */,
+				7E8E59FE24B218A0AEFD5C52 /* Hub */,
 			);
 			productName = AirPad;
 			productReference = 9D21AB3DEE91993C6F039833 /* AirPad.app */;
@@ -1218,6 +1230,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				DAD267307789DCC10702A858 /* XCRemoteSwiftPackageReference "FloatingPanel" */,
+				88F74B1D7CC79C496FC8FFA0 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
+				59ABF0315CC8D526D4F128CB /* XCRemoteSwiftPackageReference "swift-transformers" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 95C31440F925CC38D4918A3D /* Products */;
@@ -1394,6 +1408,7 @@
 				4A2412B05EF3E6B0AC85E119 /* LinkSnapshotService.swift in Sources */,
 				505E0F8BA9D6E93F476B35C0 /* LinkViewModeToggle.swift in Sources */,
 				A2C5037009821DE621FC3B03 /* LiveDictationService.swift in Sources */,
+				8B123FFA9CC1CE3B3C739AE3 /* LocalModelService.swift in Sources */,
 				1C7BD8D8DAED08D89F04F795 /* LongPressDragRecognizer.swift in Sources */,
 				BB9BDB30E58DC2856238105B /* MSDFLabel.swift in Sources */,
 				D231EBAD8B8B3B58C951FEDE /* MarkdownBlock.swift in Sources */,
@@ -1820,6 +1835,22 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		59ABF0315CC8D526D4F128CB /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/huggingface/swift-transformers";
+			requirement = {
+				kind = exactVersion;
+				version = 1.0.0;
+			};
+		};
+		88F74B1D7CC79C496FC8FFA0 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-examples";
+			requirement = {
+				kind = exactVersion;
+				version = 2.29.1;
+			};
+		};
 		DAD267307789DCC10702A858 /* XCRemoteSwiftPackageReference "FloatingPanel" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/scenee/FloatingPanel";
@@ -1831,10 +1862,25 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		7E8E59FE24B218A0AEFD5C52 /* Hub */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 59ABF0315CC8D526D4F128CB /* XCRemoteSwiftPackageReference "swift-transformers" */;
+			productName = Hub;
+		};
+		8C8B68B978A8161E8AC53C08 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88F74B1D7CC79C496FC8FFA0 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLMCommon;
+		};
 		F0F15B30974A69BF628C7BE6 /* FloatingPanel */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = DAD267307789DCC10702A858 /* XCRemoteSwiftPackageReference "FloatingPanel" */;
 			productName = FloatingPanel;
+		};
+		FA212520B86966AE24E20B23 /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88F74B1D7CC79C496FC8FFA0 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */;
+			productName = MLXLLM;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

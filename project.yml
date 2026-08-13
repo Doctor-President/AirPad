@@ -59,6 +59,20 @@ packages:
   FloatingPanel:
     url: https://github.com/scenee/FloatingPanel
     exactVersion: 3.2.2
+  # ── Local on-device model (ws-local-model Stage 1, 2026-08-13) ──
+  # MLX runtime for the optional downloadable Qwen3-1.7B-4bit model (spike device-verified,
+  # Ops/briefs/device-local-model.md). Pinned to the spike's exact versions. mlx-swift 0.29.1
+  # is pulled TRANSITIVELY by mlx-swift-examples 2.29.1 (same resolution the spike proved).
+  # ★ main gutted the MLXLLM/MLXLMCommon libraries — a release tag still vends them.
+  MLXSwiftExamples:
+    url: https://github.com/ml-explore/mlx-swift-examples
+    exactVersion: 2.29.1
+  # swift-transformers is already transitive (mlx-swift-examples → .upToNextMinor 1.0.0); declared
+  # DIRECTLY only so LocalModelService can `import Hub` for HubApi(downloadBase:) — the model must
+  # download to Application Support, NOT the mlx default (Caches, evictable) or Documents (iCloud).
+  SwiftTransformers:
+    url: https://github.com/huggingface/swift-transformers
+    exactVersion: 1.0.0
   # ── Synthesized-voice (Kokoro MLX/ANE + ORT) SPM packages REMOVED 2026-08-02 ──
   # The whole shelved TTS runtime was removed from the build — AVSpeechSynthesizer is
   # the sole read-aloud engine. Removed here: KokoroSwift, mlx-swift (0.29.1),
@@ -95,6 +109,15 @@ targets:
       - target: AirPadShare
         embed: true
       - package: FloatingPanel
+      # Local on-device model (ws-local-model Stage 1). MLXLLM/MLXLMCommon from
+      # mlx-swift-examples 2.29.1 (mlx-swift 0.29.1 transitive). Plumbing only this
+      # stage — no generation path uses it yet (LocalModelService + Settings surface).
+      - package: MLXSwiftExamples
+        product: MLXLLM
+      - package: MLXSwiftExamples
+        product: MLXLMCommon
+      - package: SwiftTransformers
+        product: Hub
       # Synthesized-voice deps (KokoroSwift / mlx-swift / MLXUtilsLibrary / FluidAudio,
       # + ORT earlier) REMOVED 2026-08-02 — AVSpeech is the sole read-aloud engine.
       # Restore steps in Ops/workstreams/ws-synthesized-voice.md.

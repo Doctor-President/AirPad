@@ -58,8 +58,8 @@ struct ProcessNodeResult {
     @Guide(description: "One to two sentence summary capturing the idea's core essence.")
     var summary: String
 
-    @Guide(description: "Up to 5 tags from the supplied vocabulary. Prefer compound or specific tags over single broad ones when both are valid; e.g., a recipe-app idea should be tagged with both 'Recipe' and 'Technology' rather than 'Technology' alone. Return an empty array if the content is too thin to support confident tagging.")
-    var tags: [String]
+    @Guide(description: "Up to 5 tags. Prefer compound or specific tags over single broad ones when both are valid; e.g., a recipe-app idea should be tagged with both 'Recipe' and 'Technology' rather than 'Technology' alone. Return an empty array if the content is too thin to support confident tagging.")
+    var tags: [VocabularyTag]
 
     @Guide(description: "Emotional tone — exactly one word from this fixed set: curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.")
     var mood: String
@@ -311,7 +311,7 @@ actor AIService {
             return .success(NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
-                tags:    Array(r.tags.filter { !$0.isEmpty }.prefix(5)),
+                tags:    Array(r.tags.map(\.rawValue).prefix(5)),
                 mood:    r.mood.isEmpty ? nil : r.mood,
                 domain:  r.domain.isEmpty ? nil : r.domain,
                 neighborhoodID: nbhd.isEmpty ? nil : nbhd

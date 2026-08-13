@@ -195,9 +195,13 @@ actor AIService {
 
         await logFMTokens("ProcessNode", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: NodeAIResult.self)
-            let r = response.content
+            // ws-local-model Stage 2 — one of the TWO live capture calls routed through
+            // ModelRouter (the other is processSubstrate). Foundation Model (guided generation,
+            // unchanged) by default, or the on-device model when the user opted in and it's ready.
+            // FM's catchable refusal still arrives via the throw below → nodeFailure → .refused,
+            // which the tray renders as LeverRefusalBanner. This is the TITLE+SUMMARY refusal
+            // locus, INDEPENDENT of processSubstrate's folksonomy locus.
+            let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
             return .success(NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
@@ -304,6 +308,11 @@ actor AIService {
 
         await logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
         do {
+            // ws-local-model Stage 2 CORRECTION: this DORMANT path (gated on the DEBUG-only
+            // `useCorpusAwareTagging`, default false → unreachable in Release) is NO LONGER the
+            // one routed through ModelRouter. The lever moves to the two LIVE capture calls —
+            // `processNode` (title+summary) and `processSubstrate` (folksonomy) — so it reaches a
+            // default user. This path stays on its inline FM call, unchanged from before Stage 2.
             let session = LanguageModelSession()
             let response = try await session.respond(to: prompt, generating: ProcessNodeResult.self)
             let r = response.content
@@ -330,16 +339,24 @@ actor AIService {
     /// decode failures, etc. — carries the error's OWN description verbatim, the
     /// same derivation the chat surface uses. Do NOT re-add a bucketing classifier.
     private func nodeFailure(from error: any Error, prompt: String) async -> NodeAIFailure {
-        if let g = error as? LanguageModelSession.GenerationError,
-           case .exceededContextWindowSize = g {
-            var tokens = -1
-            if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
-                tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
-            }
-            return .contextOverflow(promptTokens: tokens,
-                                    contextSize: SystemLanguageModel.default.contextSize)
-        }
         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        if let g = error as? LanguageModelSession.GenerationError {
+            switch g {
+            case .exceededContextWindowSize:
+                var tokens = -1
+                if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+                    tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
+                }
+                return .contextOverflow(promptTokens: tokens,
+                                        contextSize: SystemLanguageModel.default.contextSize)
+            case .refusal, .guardrailViolation:
+                // Same pair processSubstrate routes to `guardrailRefused`. Keep the verbatim
+                // message; the distinct case only lets the tray offer the on-device model.
+                return .refused(message: message)
+            default:
+                break
+            }
+        }
         return .failed(message: message)
     }
 
@@ -545,16 +562,18 @@ actor AIService {
 
         await logFMTokens("ProcessSubstrate", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: SubstrateInterpretation.self)
-            let s = response.content.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            let f = response.content.tags
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if s.isEmpty && f.isEmpty {
+            // ws-local-model Stage 2 — the SECOND live capture call routed through ModelRouter,
+            // a SEPARATE refusal locus from processNode. Foundation Model (guided generation,
+            // FREE-FORM folksonomy — no vocabulary, by settled decision) by default, or the
+            // on-device model when the user opted in and it's ready. The router already trims +
+            // filters. A refusal still throws GenerationError up, so the catch below maps it to
+            // `.guardrailRefused` → persisted as the node's "guardrail_refused" reason, which is
+            // what lets the tray tell a refused-tags node apart from a genuinely-empty one.
+            let r = try await ModelRouter.generateSubstrate(prompt: prompt)
+            if r.summary.isEmpty && r.folksonomy.isEmpty {
                 return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
             }
-            return .ok(summary: s, folksonomy: f)
+            return .ok(summary: r.summary, folksonomy: r.folksonomy)
         } catch {
             // SB139 Stage 1 cleanup: match on the typed enum cases, not on
             // substrings of the stringified error. The `fm_error_detail`
@@ -743,6 +762,13 @@ enum NodeAIFailure: Equatable {
     /// here as `GenerationError.refusal` (there is NO separate `LanguageModelError`
     /// type in this SDK); `GenerationError: LocalizedError`, so its text renders.
     case failed(message: String)
+    /// ws-local-model Stage 2 — Foundation Model declined (`GenerationError.refusal`
+    /// / `.guardrailViolation`, the SAME pair `processSubstrate` routes to
+    /// `guardrailRefused`). Still carries the framework's VERBATIM message (no info
+    /// lost — this is NOT re-bucketing) so the tray can show it; the distinct case
+    /// only adds the product action: offer AirPad's optional on-device model, which
+    /// effectively does not refuse. Local's own technical failures do NOT land here.
+    case refused(message: String)
 }
 
 /// The result of an authorship FM call: the produced fields, or the reason none

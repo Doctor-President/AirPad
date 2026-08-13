@@ -35,6 +35,17 @@ struct SettingsView: View {
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
+
+    // Local on-device model (ws-local-model Stage 1). Settings surface + plumbing only —
+    // this does NOT change any generation path yet (AIService / ModelRouter untouched).
+    @State private var localModel = LocalModelService.shared
+    /// ws-local-model Stage 2 — the opt-in that moves the note-enrichment lever to the
+    /// on-device model. FM stays the default; ModelRouter.structuredProvider() reads this
+    /// key AND requires `.ready`, so toggling it on only takes effect while the model is
+    /// downloaded (configured-but-absent falls back to FM). Shown ONLY in the `.ready` state.
+    @AppStorage(ModelRouter.useLocalEnrichmentKey) private var useLocalEnrichment = false
+    @State private var isTestingLocal = false
+    @State private var localTestOutput = ""
     #if DEBUG
     // Dev diagnostics — SubstrateInspectView carries a DESTRUCTIVE "Reset cluster
     // registry"; it must not be reachable in a shipping build. DEBUG-gated
@@ -148,6 +159,127 @@ struct SettingsView: View {
             }
 
             personalPromptField
+
+            localModelSubsection
+        }
+    }
+
+    // MARK: - Local on-device model (Stage 1: download + status only; NOT wired to generation)
+
+    private var localModelSubsection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Divider().overlay(AppearancePalette.ink.opacity(0.1))
+            Text("Private on-device model")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            // Placeholder copy (T is providing final wording).
+            Text("AirPad lets you choose which model does its thinking. Apple Intelligence is built into your device and works immediately. AirPad also offers an optional private model you can download — it runs entirely on your device, engages consistently across all subjects, and doesn't change when your phone updates.")
+                .font(.caption)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+
+            if !localModel.isAvailable {
+                localStatusRow(symbol: "xmark.octagon", text: "Not available on this device")
+            } else {
+                switch localModel.state {
+                case .notDownloaded:
+                    Text("Download \(localModel.modelDisplayName) · \(localModel.downloadSizeLabel). Use Wi-Fi — this is a large download.")
+                        .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    localCapsuleButton("Download model", symbol: "arrow.down.circle") { localModel.download() }
+                case .downloading(let p):
+                    VStack(alignment: .leading, spacing: 6) {
+                        localStatusRow(symbol: "arrow.down.circle.dotted", text: "Downloading… \(Int(p * 100))%")
+                        ProgressView(value: p).tint(AppearancePalette.ink)
+                        localCapsuleButton("Cancel", symbol: "xmark") { localModel.cancelDownload() }
+                    }
+                case .ready:
+                    localStatusRow(symbol: "checkmark.circle", text: "Downloaded & ready")
+                    // ws-local-model Stage 2 — the real opt-in. FM is the default; this only
+                    // moves the note-enrichment lever. Toggle position (not colour) carries the
+                    // state, and the caption stays honest in both settings (T is colorblind).
+                    Toggle(isOn: $useLocalEnrichment) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Use for note enrichment")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                            Text(useLocalEnrichment
+                                 ? "New note titles, summaries, and tags use the private model."
+                                 : "Apple Intelligence is still doing the thinking. Turn on to use the private model.")
+                                .font(.caption2)
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(Color(hexString: "1B59C2"))
+                    Text("Excluded from backup: \(localModel.excludedFromBackup ? "yes" : "NO"). Stored in Application Support (not iCloud).")
+                        .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                    localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }
+                    if InternalBuild.showsDevTuners { localTestBlock }
+                case .failed(let reason):
+                    localStatusRow(symbol: "exclamationmark.triangle", text: "Failed")
+                    Text(reason).font(.caption2).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
+                    localCapsuleButton("Retry", symbol: "arrow.clockwise") { localModel.download() }
+                }
+            }
+        }
+    }
+
+    private var reclaimLabel: String {
+        ByteCountFormatter.string(fromByteCount: localModel.diskUsageBytes(), countStyle: .file)
+    }
+
+    // Colorblind-safe: shape (SF Symbol) + text carry the meaning; no colour-only state.
+    private func localStatusRow(symbol: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+            Text(text).font(.subheadline.weight(.medium)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
+        }
+    }
+
+    private func localCapsuleButton(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                Text(title).font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+            .padding(.horizontal, 16).padding(.vertical, 9)
+            .background(AppearancePalette.ink.opacity(0.09))
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // STEP 5 — verification hook, DEBUG/dev-only (InternalBuild.showsDevTuners → false in Release).
+    private var localTestBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            localCapsuleButton(isTestingLocal ? "Testing…" : "Test generation",
+                               symbol: "play.circle") { runLocalTest() }
+            if !localTestOutput.isEmpty {
+                Text(localTestOutput)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                    .textSelection(.enabled)
+                if localModel.lastOutTokens > 0 {
+                    Text("\(localModel.lastOutTokens) out-tokens · \(String(format: "%.1f", localModel.lastTokPerSec)) tok/s")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                }
+            }
+        }
+    }
+
+    private func runLocalTest() {
+        guard !isTestingLocal else { return }
+        isTestingLocal = true; localTestOutput = ""
+        Task {
+            do {
+                let out = try await localModel.generate(
+                    systemPrompt: "You are a note-distillation assistant. Reply ONLY with a JSON object: {\"title\": \"...\", \"summary\": \"...\"}.",
+                    userPrompt: "Breakfast, lunch, dinner — why three meals? The whole structure feels like a social construct the food industry reinforced to sell cereal and coffee.")
+                localTestOutput = out
+            } catch {
+                localTestOutput = "ERROR: \(error)"
+            }
+            isTestingLocal = false
         }
     }
 

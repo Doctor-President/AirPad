@@ -1,6 +1,41 @@
 import Foundation
 import FoundationModels
 
+/// The note-summary lever's result, provider-agnostic (`processNode`'s shape). Title + summary,
+/// nothing else — the corpus-aware extras (tags/mood/domain/neighborhood) belong to the DORMANT
+/// `processNodeCorpusAware` path, which is NOT routed here.
+struct NodeSummaryResult: Sendable {
+    var title: String
+    var summary: String
+}
+
+/// The substrate lever's result, provider-agnostic (`processSubstrate`'s shape). Summary + a
+/// FREE-FORM folksonomy. ★ There is deliberately NO vocabulary enum here: the substrate call
+/// produces open folksonomy by settled decision (ws-lever.md § THE TAG PRODUCER); normalization
+/// and embedding-match against the user's existing tags happen DETERMINISTICALLY downstream. This
+/// is a SEPARATE shape from `NodeSummaryResult`, and a SEPARATE refusal locus — a node can lose
+/// its summary, its tags, or both, independently. (This is why there are two methods, not one
+/// struct with empty fields: `tags: []` going invisible for months is exactly the failure the
+/// two-shape split avoids.)
+struct SubstrateResult: Sendable {
+    var summary: String
+    var folksonomy: [String]
+}
+
+/// Decoding shape for the on-device model's node-summary JSON. Both fields optional — a local
+/// model omits or mistypes keys; the caller coerces to `NodeSummaryResult`'s non-optionals.
+private struct LocalNodeSummaryJSON: Decodable {
+    var title: String?
+    var summary: String?
+}
+
+/// Decoding shape for the on-device model's substrate JSON. Both fields optional; `tags` is the
+/// free-form folksonomy (no fixed vocabulary — matches `SubstrateInterpretation`).
+private struct LocalSubstrateJSON: Decodable {
+    var summary: String?
+    var tags: [String]?
+}
+
 /// Librarian model routing. Reads the Keychain for configured providers
 /// and dispatches `generate(...)` to the active one.
 ///
@@ -21,11 +56,16 @@ enum ModelRouter {
     enum Provider: Sendable {
         case foundationModel
         case ollama(endpoint: String)
+        /// On-device MLX model (Stage 1's `LocalModelService`). Resolved ONLY by
+        /// `structuredProvider()` for the enrichment lever — `active` (the free-text
+        /// Librarian path) never returns it, by design (see `structuredProvider`).
+        case local
 
         var displayName: String {
             switch self {
             case .foundationModel: return "Foundation Model"
             case .ollama: return "Ollama (local)"
+            case .local: return "Private model (on-device)"
             }
         }
     }
@@ -65,6 +105,9 @@ enum ModelRouter {
         case .ollama(let endpoint):
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
+        case .local:
+            // Unreachable via `active` (structured-lever only); present for exhaustiveness.
+            return "Private model"
         }
     }
 
@@ -78,6 +121,10 @@ enum ModelRouter {
             return try await generateFoundationModel(systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .ollama(let endpoint):
             return try await generateOllama(endpoint: endpoint, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .local:
+            // Unreachable: `active` never resolves to .local — the on-device model serves only the
+            // enrichment lever via `generateStructured`, not the free-text Librarian path. Defensive → FM.
+            return try await generateFoundationModel(systemPrompt: systemPrompt, userPrompt: userPrompt)
         }
     }
 
@@ -114,6 +161,17 @@ enum ModelRouter {
                             continuation: continuation
                         )
                         continuation.finish()
+                    case .local:
+                        // Unreachable via `active`: the on-device model serves only the structured
+                        // enrichment levers (generateNodeSummary / generateSubstrate), not the
+                        // free-text Librarian path. Defensive → FM.
+                        guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
+                        try await streamFoundationModel(
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt,
+                            continuation: continuation
+                        )
+                        continuation.finish()
                     }
                 } catch {
                     continuation.finish(throwing: error)
@@ -129,10 +187,12 @@ enum ModelRouter {
         case ollamaTransport(String)
         case ollamaHTTPError(path: String, status: Int, body: String)
         case ollamaBadResponse(path: String, body: String)
+        case localBadJSON(String)
 
         var errorDescription: String? {
             switch self {
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
+            case .localBadJSON(let s): return "The on-device model didn't return valid JSON: \(Self.truncate(s))"
             case .ollamaNoModels: return "Endpoint is reachable but no models are loaded. Load a model in LM Studio / pull one with `ollama pull <name>`."
             case .ollamaBadEndpoint(let s): return "Ollama endpoint is not a valid URL: \(s)"
             case .ollamaTransport(let s): return "Couldn't reach Ollama: \(s)"
@@ -147,6 +207,145 @@ enum ModelRouter {
             let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.count > 240 ? String(trimmed.prefix(240)) + "…" : trimmed
         }
+    }
+
+    // MARK: - Structured enrichment (the note lever)
+
+    /// UserDefaults flag: the user has opted into the on-device model for note enrichment.
+    /// FM stays the default; this flag is the ONLY thing that can move the lever to local. The
+    /// Settings toggle that sets it (gated on `.ready`) lands with the routing in the next commit —
+    /// until then the flag is unset, so `structuredProvider()` always resolves to FM.
+    static let useLocalEnrichmentKey = "useLocalModelForEnrichment"
+
+    /// Which provider answers the enrichment lever. Resolution order (stated per the brief):
+    ///   1. `.local` — ONLY when the user opted in (`useLocalEnrichmentKey`) AND the model is
+    ///                 downloaded and `.ready` on disk. Configured-but-absent falls through.
+    ///   2. `.foundationModel` — the default, and the fallback for every other state.
+    /// `.ollama` is deliberately NOT a structured-lever provider: corpus content stays on the FM /
+    /// on-device boundary (the privacy oath), and Ollama offers neither guided generation nor the
+    /// catchable refusal the refusal surface depends on. So local's precedence is "above FM when
+    /// ready + opted-in, otherwise FM"; Ollama never enters this path.
+    static func structuredProvider() async -> Provider {
+        guard UserDefaults.standard.bool(forKey: useLocalEnrichmentKey) else { return .foundationModel }
+        let ready = await MainActor.run { LocalModelService.shared.state == .ready }
+        return ready ? .local : .foundationModel
+    }
+
+    // TWO methods, not one with an associated result type. The two live capture calls need
+    // genuinely different shapes — `processNode` wants title + summary, `processSubstrate` wants
+    // summary + free-form folksonomy — with different local-JSON decode shapes and, critically,
+    // INDEPENDENT refusal loci (a node can lose its summary, its tags, or both). A single generic
+    // method would push toward a shared struct (empty fields → the `tags: []` invisibility that
+    // hid the substrate producer for months) or protocol gymnastics over two @Generable types.
+    // Two small methods keep each locus honest and separate.
+
+    /// THE NOTE-SUMMARY LEVER — title + summary (`processNode`'s shape). FM uses guided generation
+    /// (`NodeAIResult` is @Generable), so a refusal arrives as a catchable `GenerationError` and is
+    /// thrown UP for the caller to surface — the ONE provider difference, exposed not worked around.
+    /// The local model is prompted for strict JSON and parsed; it effectively does not refuse.
+    @available(iOS 26.0, *)
+    static func generateNodeSummary(prompt: String) async throws -> NodeSummaryResult {
+        switch await structuredProvider() {
+        case .local:
+            return try await nodeSummaryLocal(prompt: prompt)
+        case .foundationModel, .ollama:
+            return try await nodeSummaryFoundationModel(prompt: prompt)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func nodeSummaryFoundationModel(prompt: String) async throws -> NodeSummaryResult {
+        guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
+        let session = LanguageModelSession()
+        // KEEP guided generation: NodeAIResult is @Generable, so a refusal arrives as a catchable
+        // GenerationError, thrown up to `AIService.processNode` → `nodeFailure` → `.refused`.
+        let r = try await session.respond(to: prompt, generating: NodeAIResult.self).content
+        return NodeSummaryResult(
+            title:   r.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            summary: r.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    @available(iOS 26.0, *)
+    private static func nodeSummaryLocal(prompt: String) async throws -> NodeSummaryResult {
+        let jsonInstruction = """
+        Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
+        {"title": string, "summary": string}
+        Use "" for anything you cannot fill. Do not add keys.
+        """
+        let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
+        guard let obj: LocalNodeSummaryJSON = decodeOutermostJSON(raw) else {
+            throw RouterError.localBadJSON(String(raw.prefix(240)))
+        }
+        return NodeSummaryResult(
+            title:   (obj.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            summary: (obj.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    /// THE SUBSTRATE LEVER — summary + free-form folksonomy (`processSubstrate`'s shape). Same
+    /// provider split, DELIBERATELY SEPARATE from the note-summary lever (independent refusal
+    /// locus, different shape). ★ The folksonomy is FREE-FORM by settled decision — the model
+    /// proposes whatever words fit; there is NO vocabulary enum and NO picklist, because
+    /// normalization + embedding-match against existing tags happen deterministically downstream
+    /// (ws-lever.md § THE TAG PRODUCER). Constraining this call with an enum would reverse that.
+    /// FM's guided generation throws its refusal up (→ `processSubstrate` → `.guardrailRefused`);
+    /// the local model is prompted for JSON and parsed.
+    @available(iOS 26.0, *)
+    static func generateSubstrate(prompt: String) async throws -> SubstrateResult {
+        switch await structuredProvider() {
+        case .local:
+            return try await substrateLocal(prompt: prompt)
+        case .foundationModel, .ollama:
+            return try await substrateFoundationModel(prompt: prompt)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func substrateFoundationModel(prompt: String) async throws -> SubstrateResult {
+        guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
+        let session = LanguageModelSession()
+        // KEEP guided generation: SubstrateInterpretation is @Generable, so a refusal arrives as a
+        // catchable GenerationError, thrown up to `processSubstrate` → `.guardrailRefused`.
+        let r = try await session.respond(to: prompt, generating: SubstrateInterpretation.self).content
+        return SubstrateResult(
+            summary: r.summary.trimmingCharacters(in: .whitespacesAndNewlines),
+            folksonomy: r.tags
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    @available(iOS 26.0, *)
+    private static func substrateLocal(prompt: String) async throws -> SubstrateResult {
+        // No vocabulary is added to the prompt — the folksonomy is free-form by construction.
+        let jsonInstruction = """
+        Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
+        {"summary": string, "tags": [string]}
+        `tags` are free-form — pick whatever short words best describe the idea; there is no fixed vocabulary. Use "" or [] for anything you cannot fill. Do not add keys.
+        """
+        let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
+        guard let obj: LocalSubstrateJSON = decodeOutermostJSON(raw) else {
+            throw RouterError.localBadJSON(String(raw.prefix(240)))
+        }
+        let folk = (obj.tags ?? [])
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return SubstrateResult(
+            summary: (obj.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            folksonomy: Array(folk.prefix(8))
+        )
+    }
+
+    /// Local models wrap JSON in prose or code fences despite instructions; pull the outermost
+    /// `{ … }` and decode it as `T`. Returns nil if there's no object or it doesn't decode.
+    private static func decodeOutermostJSON<T: Decodable>(_ raw: String) -> T? {
+        guard let start = raw.firstIndex(of: "{"),
+              let end = raw.lastIndex(of: "}"),
+              start < end else { return nil }
+        let slice = String(raw[start...end])
+        guard let data = slice.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
     }
 
     // MARK: - Foundation Model

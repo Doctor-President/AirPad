@@ -267,18 +267,13 @@ actor AIService {
             }.joined(separator: "\n")
         }
 
-        let vocabLine: String
-        if fullVocabulary.isEmpty {
-            vocabLine = "(empty)"
-        } else {
-            vocabLine = fullVocabulary.joined(separator: ", ")
-        }
-
+        // The tag vocabulary is no longer named in the prompt: ProcessNodeResult.tags is
+        // [VocabularyTag], so guided generation constrains tags to the vocabulary by
+        // construction (Round 9). `fullVocabulary` is retained in the signature but unused here.
         let prompt = """
         You are tagging a captured idea against an existing personal corpus. Use the supplied corpus context to ground your choices.
 
         Tag-selection rules:
-        - Only choose tags from the full vocabulary list. Tags outside the vocabulary are not allowed.
         - Prefer compound or specific tags over single broad ones when both are valid. A recipe-app idea is better tagged ["Recipe", "Technology"] than ["Technology"] alone. Single broad tags like "Technology" or "Work" tagged in isolation make clusters incoherent.
         - If the content is too thin or ambiguous to support confident tagging, return an empty tags array. Do not fabricate.
 
@@ -297,9 +292,6 @@ actor AIService {
 
         ## Most-used tags in the corpus (top \(tagDigests.count), with co-occurrence)
         \(tagSection)
-
-        ## Full tag vocabulary (fallback — pick from any of these)
-        \(vocabLine)
         """
 
         await logFMTokens("ProcessNodeCorpusAware", prompt: prompt)

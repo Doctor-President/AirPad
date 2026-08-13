@@ -74,6 +74,7 @@
 		40E9C78B407BED0018A5D607 /* ChatPinning.swift in Sources */ = {isa = PBXBuildFile; fileRef = C35140138304B4308B90A0F6 /* ChatPinning.swift */; };
 		423D97121CD075A9C4114F49 /* Lora-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7910DE998349210AB2623D42 /* Lora-Italic.ttf */; };
 		460B456B553D07FAD0AAA28C /* SourceSerif4-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7A472A94A2947218490CED0B /* SourceSerif4-Italic.ttf */; };
+		4673DF79E780AD563D1A97B5 /* VocabularyTag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E84E346BD871427AEA5687 /* VocabularyTag.swift */; };
 		477F08FD09F9D4C6A9418BB6 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6150CF6FB6E8BBB89B1C5C8F /* Security.framework */; };
 		48043B3C310828936B349842 /* BGEMicro.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 8C73593D5F5CF884769506DE /* BGEMicro.mlpackage */; };
 		48F889B689808B42A745DCFB /* CardEmbeddingParityTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */; };
@@ -416,6 +417,7 @@
 		67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuikCaptureView.swift; sourceTree = "<group>"; };
 		688537782A3AA4A7F0B436F9 /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
 		68BC1C6F6322A33290F95FDE /* DocumentViewModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentViewModeToggle.swift; sourceTree = "<group>"; };
+		68E84E346BD871427AEA5687 /* VocabularyTag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VocabularyTag.swift; sourceTree = "<group>"; };
 		6CA2C672B173696A7DD874CF /* SubstrateCanvasLayoutAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateCanvasLayoutAdapter.swift; sourceTree = "<group>"; };
 		6CC9DA2E35A6A167254A44EC /* GalleryItemTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GalleryItemTile.swift; sourceTree = "<group>"; };
 		6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolksonomyDiagnostic.swift; sourceTree = "<group>"; };
@@ -706,6 +708,7 @@
 				219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */,
 				B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */,
 				1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */,
+				68E84E346BD871427AEA5687 /* VocabularyTag.swift */,
 				43F3E1E7BAA3B3C7B463E5D7 /* WordPieceTokenizer.swift */,
 			);
 			path = Services;
@@ -1498,6 +1501,7 @@
 				A3E698D765C180092E891E83 /* VerticalScrollView.swift in Sources */,
 				774AD9C545FED85D651CA8D7 /* VideoEntryBody.swift in Sources */,
 				0DD473436C9C5CAAAC0E3654 /* ViewModeToggle.swift in Sources */,
+				4673DF79E780AD563D1A97B5 /* VocabularyTag.swift in Sources */,
 				FCC7997009DE3B635D382FFF /* VoiceCaptureSheet.swift in Sources */,
 				4A9066CFF7C8F4CF3B9EE689 /* VoiceEntryBody.swift in Sources */,
 				72F74315A1038C544A682E36 /* WordPieceTokenizer.swift in Sources */,

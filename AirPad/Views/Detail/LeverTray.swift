@@ -59,10 +59,12 @@ struct LeverTray: View {
                 // verbatim; Retry re-runs the generate; × clears it.
                 if let failure, !isGenerating {
                     if case .refused(let msg) = failure {
-                        // FM DECLINED (ws-local-model Stage 2). Not an error to retry —
-                        // offer AirPad's optional on-device model, which handles a wider
-                        // range of subjects, and route into Settings to set it up.
+                        // FM DECLINED the TITLE+SUMMARY call (`processNode`, ws-local-model
+                        // Stage 2). Not an error to retry — offer AirPad's optional on-device
+                        // model and route into Settings to set it up. The tags locus has its
+                        // own, separate notice in `tagsSection`.
                         LeverRefusalBanner(
+                            message: "Apple Intelligence declined to summarize this one. AirPad's optional private model handles a wider range of subjects.",
                             frameworkMessage: msg,
                             onSetUp: { showSettings = true },
                             onDismiss: { self.failure = nil }
@@ -228,6 +230,21 @@ struct LeverTray: View {
                         .font(.subheadline)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
+            } else if node?.embeddingFailureReason == "guardrail_refused" {
+                // ws-local-model Stage 2 — the SUBSTRATE refusal, made HONEST. The
+                // folksonomy call (`processSubstrate`) refused → `folksonomy` nil →
+                // no suggestions. Before, this rendered "Nothing to suggest here.",
+                // INDISTINGUISHABLE from a node that simply has no tags yet — the
+                // failure T saw on day one and could not see. The persisted
+                // `embeddingFailureReason == "guardrail_refused"` is what tells them
+                // apart. Say WHICH capability was lost: the tags were declined; the
+                // title and summary (a SEPARATE call) are unaffected when the node
+                // still has a summary — and don't claim so if it doesn't (both refused).
+                LeverRefusalBanner(
+                    message: tagsRefusalMessage,
+                    onSetUp: { showSettings = true }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             } else if tagSuggestions.isEmpty {
                 // A real row, not a missing one (§ C3): ~37% of the corpus has no
                 // folksonomy, and a node with folksonomy can still match nothing.
@@ -287,6 +304,17 @@ struct LeverTray: View {
             return Color(hex: tag.colorHex) ?? .gray
         }
         return .gray
+    }
+
+    /// Honest copy for a SUBSTRATE (tags) refusal. Names the tags capability as the one
+    /// lost; appends "its title and summary are unaffected" ONLY when the node actually
+    /// has a summary (the sibling `processNode` call succeeded) — so it never implies
+    /// total failure, and never falsely claims they survived when both calls refused.
+    private var tagsRefusalMessage: String {
+        let hasSummary = !((node?.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        return hasSummary
+            ? "Apple Intelligence declined to suggest tags for this note — its title and summary are unaffected. AirPad's optional private model handles a wider range of subjects."
+            : "Apple Intelligence declined to suggest tags for this note. AirPad's optional private model handles a wider range of subjects."
     }
 
     private func loadTagSuggestions() async {
@@ -378,12 +406,21 @@ struct LeverTray: View {
 /// (an error to retry): a refusal is a capability boundary, so this OFFERS AirPad's
 /// optional on-device model and routes into Settings to set it up, rather than a Retry.
 /// Colorblind-safe by construction: meaning is carried by the icon SHAPE + text, on a
-/// neutral (hueless) ground — never by color alone (T is colorblind). The framework's
-/// own words are kept verbatim beneath the offer so no information is lost.
+/// neutral (hueless) ground — never by color alone (T is colorblind).
+///
+/// ★ `message` is HONEST about WHICH capability was lost — the two capture calls are
+/// independent refusal loci: the title+summary call (`processNode`) and the folksonomy
+/// call (`processSubstrate`) can refuse separately, and the copy says which. When we
+/// have the framework's verbatim words (the title+summary locus routes them through
+/// `.refused`), they're kept beneath so no information is lost; the tags locus has no
+/// persisted message, so `frameworkMessage` is empty there. `onDismiss` is optional: a
+/// transient banner (title+summary) shows a ×; a notice derived from the node's persisted
+/// state (tags) omits it — dismissing a persisted fact would just reappear on reload.
 private struct LeverRefusalBanner: View {
-    let frameworkMessage: String
+    let message: String
+    var frameworkMessage: String = ""
     let onSetUp: () -> Void
-    let onDismiss: () -> Void
+    var onDismiss: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -392,7 +429,7 @@ private struct LeverRefusalBanner: View {
                     .font(.system(size: 14))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Apple Intelligence declined to summarize this one. AirPad's optional private model handles a wider range of subjects.")
+                    Text(message)
                         .font(.system(size: 13))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                         .fixedSize(horizontal: false, vertical: true)
@@ -404,13 +441,15 @@ private struct LeverRefusalBanner: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                if let onDismiss {
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dismiss")
             }
             Button(action: onSetUp) {
                 HStack(spacing: 6) {

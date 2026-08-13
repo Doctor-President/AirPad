@@ -1574,7 +1574,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AirPad;
-				CODE_SIGN_ENTITLEMENTS = AirPad/AirPad.entitlements;
+				CODE_SIGN_ENTITLEMENTS = AirPad/AirPadRelease.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 8XM4B5F42Y;

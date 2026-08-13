@@ -39,6 +39,11 @@ struct LeverTray: View {
     @State private var tagSuggestions: [TagSuggestion] = []
     @State private var tagsLoaded = false
 
+    /// ws-local-model Stage 2 — routes the refusal surface into AirPad's own Settings
+    /// (where the on-device model is downloaded + enabled). Presented as a nested sheet
+    /// OVER the tray so there's no dismiss-then-present race; closing it returns here.
+    @State private var showSettings = false
+
     private var node: Node? { store.nodes.first { $0.id == nodeID } }
 
     var body: some View {
@@ -53,12 +58,24 @@ struct LeverTray: View {
                 // Retry + dismiss). A framework throw shows its OWN message
                 // verbatim; Retry re-runs the generate; × clears it.
                 if let failure, !isGenerating {
-                    FMFailureBanner(
-                        message: failureMessage(failure),
-                        onRetry: { generate() },
-                        onDismiss: { self.failure = nil }
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    if case .refused(let msg) = failure {
+                        // FM DECLINED (ws-local-model Stage 2). Not an error to retry —
+                        // offer AirPad's optional on-device model, which handles a wider
+                        // range of subjects, and route into Settings to set it up.
+                        LeverRefusalBanner(
+                            frameworkMessage: msg,
+                            onSetUp: { showSettings = true },
+                            onDismiss: { self.failure = nil }
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        FMFailureBanner(
+                            message: failureMessage(failure),
+                            onRetry: { generate() },
+                            onDismiss: { self.failure = nil }
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
                 }
 
                 if let node {
@@ -86,6 +103,10 @@ struct LeverTray: View {
         // costs nothing. Low detent listed first = the opening one.
         .presentationDetents([.height(360), .large])
         .presentationDragIndicator(.visible)
+        // Nested sheet OVER the tray — the refusal surface's "set up" route lands the
+        // user in AirPad's own Settings (local-model download + enable). No AppRouter
+        // plumbing, no dismiss-then-present race; closing returns to the tray.
+        .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
     // MARK: - Rows
@@ -344,7 +365,65 @@ struct LeverTray: View {
             return "This note fills the model's context window, leaving no room for a reply."
         case .failed(let msg):
             return msg
+        case .refused(let msg):
+            // Not shown through this path — `.refused` renders LeverRefusalBanner, not
+            // FMFailureBanner — but the switch must stay exhaustive. Returns the verbatim
+            // framework text as a safe fallback.
+            return msg
         }
+    }
+}
+
+/// ws-local-model Stage 2 — the FM-declined surface. Distinct from `FMFailureBanner`
+/// (an error to retry): a refusal is a capability boundary, so this OFFERS AirPad's
+/// optional on-device model and routes into Settings to set it up, rather than a Retry.
+/// Colorblind-safe by construction: meaning is carried by the icon SHAPE + text, on a
+/// neutral (hueless) ground — never by color alone (T is colorblind). The framework's
+/// own words are kept verbatim beneath the offer so no information is lost.
+private struct LeverRefusalBanner: View {
+    let frameworkMessage: String
+    let onSetUp: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Apple Intelligence declined to summarize this one. AirPad's optional private model handles a wider range of subjects.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !frameworkMessage.isEmpty {
+                        Text(frameworkMessage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dismiss")
+            }
+            Button(action: onSetUp) {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape.fill").font(.system(size: 12))
+                    Text("Set up the private model").font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundStyle(Color(hexString: "00BFFF"))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(AppearancePalette.ink.opacity(0.06))
     }
 }
 

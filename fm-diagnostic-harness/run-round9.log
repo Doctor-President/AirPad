@@ -1,0 +1,97 @@
+=== Round 9 — enum tags without the vocabulary line ===
+STEP 0 locale: AppleLocale=en_US; already en_US → single pass.
+Loaded 20 nodes from round6-nodes.json (same set as Rounds 6–8).
+
+--- Cell D1  (title+summary+tags[String]) ---
+  [D1] 1/20 1130789A (REFUSED)… THREW 629ms (generation-side)
+  [D1] 2/20 17B0552D (REFUSED)… THREW 238ms (input-side)
+  [D1] 3/20 37B4904F (REFUSED)… ok 11278ms "Origins of the Term 'Hon" tags=["Etymology", "Cultural Studies"]
+  [D1] 4/20 8605E844 (REFUSED)… THREW 6567ms (generation-side)
+  [D1] 5/20 9AF3AA17 (REFUSED)… ok 8243ms "Tom's Attention Quest" tags=["Attention", "Comedy", "Conceptual", "Humor"]
+  [D1] 6/20 9F74032F (REFUSED)… THREW 262ms (input-side)
+  [D1] 7/20 BF9595C3 (REFUSED)… THREW 252ms (input-side)
+  [D1] 8/20 D20112F1 (REFUSED)… ok 7632ms "Ideas and Privacy" tags=["Privacy", "Ideas"]
+  [D1] 9/20 E7BCE684 (REFUSED)… THREW 260ms (input-side)
+  [D1] 10/20 FF0C11DE (REFUSED)… ok 8290ms "Iconoclasm with Tom McJa" tags=["Art", "Attention", "Comedy", "Conceptual", "Cultural Studies"]
+  [D1] 11/20 C57169F2 (CONTROL)… ok 14692ms "Diet Coke and High Achie" tags=["Cultural Studies", "Sociology", "Marketing", "Psychology", "Consumer Behavior"]
+  [D1] 12/20 70A66523 (CONTROL)… ok 1348ms "Geometry and Logic" tags=["Geometry", "Logic", "Conceptual"]
+  [D1] 13/20 0A0DB1DA (CONTROL)… ok 1793ms "Episode Premise: Hole to" tags=["Conceptual", "Adventure", "Science Fiction", "Travel", "Story"]
+  [D1] 14/20 1E9C4DEF (CONTROL)… ok 11041ms "Action Button Reveal" tags=["Technology", "Design", "Innovation", "Functionality"]
+  [D1] 15/20 3B5584B8 (CONTROL)… ok 11670ms "Light vs Darkness in Tol" tags=["Conceptual", "Cultural Studies", "Morality", "Time Travel", "Historical Revisionism"]
+  [D1] 16/20 09C7E791 (CONTROL)… THREW 323ms (input-side)
+  [D1] 17/20 DEA2B9DB (CONTROL)… ok 2067ms "Breakfast as a Cultural " tags=["Breakfast", "Cultural Studies", "Food Industry", "Nutrition"]
+  [D1] 18/20 7735A62F (CONTROL)… ok 1478ms "Plum Tomato Recipe" tags=["Food", "Cooking"]
+  [D1] 19/20 4B5E9285 (CONTROL)… ok 1489ms "AirPad Concept" tags=["Conceptual", "Design", "Technology"]
+  [D1] 20/20 FF43DCC8 (CONTROL)… ok 1793ms "Queerness as Self-Determ" tags=["Conceptual", "Cultural Studies", "Self-Expression", "Identity", "Human Rights"]
+  wrote results-D1.json (20 rows)
+
+--- Cell D2  (title+summary+tags[enum]) ---
+  [D2] 1/20 1130789A (REFUSED)… THREW 177ms (input-side)
+  [D2] 2/20 17B0552D (REFUSED)… THREW 240ms (input-side)
+  [D2] 3/20 37B4904F (REFUSED)… ok 1415ms "Etymology Inquiry" tags=["Etymology"]
+  [D2] 4/20 8605E844 (REFUSED)… THREW 418ms (input-side)
+  [D2] 5/20 9AF3AA17 (REFUSED)… ok 2337ms "My Eyes Are Up Here" tags=["Comedy", "Attention", "Conflict", "Humor", "Idea"]
+  [D2] 6/20 9F74032F (REFUSED)… THREW 239ms (input-side)
+  [D2] 7/20 BF9595C3 (REFUSED)… THREW 252ms (input-side)
+  [D2] 8/20 D20112F1 (REFUSED)… ok 1757ms "Ideas and Privacy" tags=["Idea", "Attention", "Control"]
+  [D2] 9/20 E7BCE684 (REFUSED)… THREW 244ms (input-side)
+  [D2] 10/20 FF0C11DE (REFUSED)… ok 5202ms "Iconoclasher Video Serie" tags=["Art", "Attention", "Conceptual"]
+  [D2] 11/20 C57169F2 (CONTROL)… ok 11877ms "Diet Coke and its Impact" tags=["Diet Coke", "Power", "Washington DC"]
+  [D2] 12/20 70A66523 (CONTROL)… ok 8023ms "Sometimes a right angle " tags=["Conceptual", "Geometry"]
+  [D2] 13/20 0A0DB1DA (CONTROL)… ok 7964ms "Episode premise: Hole to" tags=["Conceptual", "Travel", "Idea"]
+  [D2] 14/20 1E9C4DEF (CONTROL)… ok 1907ms "Action Button Setup" tags=["Design", "Technology", "Idea"]
+  [D2] 15/20 3B5584B8 (CONTROL)… ok 12012ms "The Complexity of Morali" tags=["Conceptual", "Conflict", "Morality", "Middle-earth"]
+  [D2] 16/20 09C7E791 (CONTROL)… THREW 301ms (input-side)
+  [D2] 17/20 DEA2B9DB (CONTROL)… ok 11821ms "The Evolution of Meals" tags=["Food", "Historical Revisionism", "Cultural Studies", "Sociology", "Idea"]
+  [D2] 18/20 7735A62F (CONTROL)… ok 8229ms "Plum Tomato Recipe" tags=["Food"]
+  [D2] 19/20 4B5E9285 (CONTROL)… ok 8255ms "AirPad as a Layer" tags=["Creative", "Conceptual", "Design", "Technology", "Idea"]
+  [D2] 20/20 FF43DCC8 (CONTROL)… ok 8340ms "Queerness as a Personal " tags=["Conceptual", "Emotional", "Ownership", "Power", "Trends"]
+  wrote results-D2.json (20 rows)
+
+--- Cell D3  (title+summary+tags[enum]) ---
+  [D3] 1/20 1130789A (REFUSED)… THREW 128ms (input-side)
+  [D3] 2/20 17B0552D (REFUSED)… THREW 190ms (input-side)
+  [D3] 3/20 37B4904F (REFUSED)… ok 8011ms "Origin of the Term "Honk" tags=["Etymology", "Cultural Studies"]
+  [D3] 4/20 8605E844 (REFUSED)… THREW 221ms (input-side)
+  [D3] 5/20 9AF3AA17 (REFUSED)… THREW 197ms (input-side)
+  [D3] 6/20 9F74032F (REFUSED)… THREW 194ms (input-side)
+  [D3] 7/20 BF9595C3 (REFUSED)… THREW 190ms (input-side)
+  [D3] 8/20 D20112F1 (REFUSED)… ok 7687ms "Ideas Privacy" tags=["Idea", "Ownership"]
+  [D3] 9/20 E7BCE684 (REFUSED)… ok 8200ms "Provocative Episode" tags=["Attention", "Conceptual", "Conflict", "Idea"]
+  [D3] 10/20 FF0C11DE (REFUSED)… ok 7992ms "Iconoclasher / Iconoclys" tags=["Art", "Attention", "Comedy"]
+  [D3] 11/20 C57169F2 (CONTROL)… ok 8356ms "Diet Coke Cultural Pheno" tags=["Diet Coke", "Sociology", "Psychology", "Washington DC"]
+  [D3] 12/20 70A66523 (CONTROL)… ok 8426ms "Geometry" tags=["Geometry", "Math"]
+  [D3] 13/20 0A0DB1DA (CONTROL)… ok 8091ms "Episode Premise: Hole to" tags=["Conceptual", "Science", "Travel"]
+  [D3] 14/20 1E9C4DEF (CONTROL)… ok 7949ms "Action Button Reveal" tags=["Technology", "Design", "Attention"]
+  [D3] 15/20 3B5584B8 (CONTROL)… THREW 128ms (input-side)
+  [D3] 16/20 09C7E791 (CONTROL)… ok 8257ms "Historical Revisionism" tags=["Historical Revisionism"]
+  [D3] 17/20 DEA2B9DB (CONTROL)… ok 8037ms "Historical Meal Separati" tags=["Food", "History"]
+  [D3] 18/20 7735A62F (CONTROL)… ok 7386ms "Plum Tomato Recipe" tags=["Food"]
+  [D3] 19/20 4B5E9285 (CONTROL)… ok 7824ms "AirPad" tags=["AirPad", "Conceptual", "Attention"]
+  [D3] 20/20 FF43DCC8 (CONTROL)… THREW 112ms (input-side)
+  wrote results-D3.json (20 rows)
+
+--- Cell D4  (title+summary) ---
+  [D4] 1/20 1130789A (REFUSED)… THREW 118ms (input-side)
+  [D4] 2/20 17B0552D (REFUSED)… THREW 194ms (input-side)
+  [D4] 3/20 37B4904F (REFUSED)… ok 7306ms "Origin of 'Honky' Term" tags=[]
+  [D4] 4/20 8605E844 (REFUSED)… THREW 219ms (input-side)
+  [D4] 5/20 9AF3AA17 (REFUSED)… THREW 196ms (input-side)
+  [D4] 6/20 9F74032F (REFUSED)… THREW 200ms (input-side)
+  [D4] 7/20 BF9595C3 (REFUSED)… THREW 206ms (input-side)
+  [D4] 8/20 D20112F1 (REFUSED)… ok 4269ms "Idea: Privacy of Ideas" tags=[]
+  [D4] 9/20 E7BCE684 (REFUSED)… ok 7993ms "Gen Z Parenthood Initiat" tags=[]
+  [D4] 10/20 FF0C11DE (REFUSED)… ok 4718ms "Iconoclasher with Tom Mc" tags=[]
+  [D4] 11/20 C57169F2 (CONTROL)… ok 4390ms "Diet Coke Preference and" tags=[]
+  [D4] 12/20 70A66523 (CONTROL)… ok 3993ms "Right Angle Dilemma" tags=[]
+  [D4] 13/20 0A0DB1DA (CONTROL)… ok 4723ms "Hole to China" tags=[]
+  [D4] 14/20 1E9C4DEF (CONTROL)… ok 4217ms "Action Button Reveal" tags=[]
+  [D4] 15/20 3B5584B8 (CONTROL)… THREW 126ms (input-side)
+  [D4] 16/20 09C7E791 (CONTROL)… ok 5160ms "WWII as a Complex Histor" tags=[]
+  [D4] 17/20 DEA2B9DB (CONTROL)… ok 4386ms "Historical Perspective o" tags=[]
+  [D4] 18/20 7735A62F (CONTROL)… ok 4420ms "Plum Tomato Preparation" tags=[]
+  [D4] 19/20 4B5E9285 (CONTROL)… ok 4512ms "AirPad Concept" tags=[]
+  [D4] 20/20 FF43DCC8 (CONTROL)… THREW 107ms (input-side)
+  wrote results-D4.json (20 rows)
+
+Round 9 complete. Generate summary-round9.md from results-D*.json.

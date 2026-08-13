@@ -1,6 +1,29 @@
 import Foundation
 import FoundationModels
 
+/// The enrichment lever's result, provider-agnostic. Foundation Model fills all six fields; the
+/// on-device model fills title/summary/tags and leaves the mood/domain/neighborhood extras nil
+/// unless its JSON carried them. `tags` are ALREADY validated against `VocabularyTag`.
+struct StructuredEnrichment: Sendable {
+    var title: String
+    var summary: String
+    var tags: [String]
+    var mood: String?
+    var domain: String?
+    var neighborhoodID: String?
+}
+
+/// Decoding shape for the on-device model's JSON reply. Every field optional — a local model
+/// omits or mistypes keys, and the caller coerces to StructuredEnrichment's non-optionals.
+private struct LocalEnrichmentJSON: Decodable {
+    var title: String?
+    var summary: String?
+    var tags: [String]?
+    var mood: String?
+    var domain: String?
+    var neighborhoodID: String?
+}
+
 /// Librarian model routing. Reads the Keychain for configured providers
 /// and dispatches `generate(...)` to the active one.
 ///
@@ -21,11 +44,16 @@ enum ModelRouter {
     enum Provider: Sendable {
         case foundationModel
         case ollama(endpoint: String)
+        /// On-device MLX model (Stage 1's `LocalModelService`). Resolved ONLY by
+        /// `structuredProvider()` for the enrichment lever — `active` (the free-text
+        /// Librarian path) never returns it, by design (see `structuredProvider`).
+        case local
 
         var displayName: String {
             switch self {
             case .foundationModel: return "Foundation Model"
             case .ollama: return "Ollama (local)"
+            case .local: return "Private model (on-device)"
             }
         }
     }
@@ -65,6 +93,9 @@ enum ModelRouter {
         case .ollama(let endpoint):
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
+        case .local:
+            // Unreachable via `active` (structured-lever only); present for exhaustiveness.
+            return "Private model"
         }
     }
 
@@ -78,6 +109,10 @@ enum ModelRouter {
             return try await generateFoundationModel(systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .ollama(let endpoint):
             return try await generateOllama(endpoint: endpoint, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .local:
+            // Unreachable: `active` never resolves to .local — the on-device model serves only the
+            // enrichment lever via `generateStructured`, not the free-text Librarian path. Defensive → FM.
+            return try await generateFoundationModel(systemPrompt: systemPrompt, userPrompt: userPrompt)
         }
     }
 
@@ -114,6 +149,15 @@ enum ModelRouter {
                             continuation: continuation
                         )
                         continuation.finish()
+                    case .local:
+                        // Unreachable via `active` (see generate); free-text streaming falls back to FM.
+                        guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
+                        try await streamFoundationModel(
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt,
+                            continuation: continuation
+                        )
+                        continuation.finish()
                     }
                 } catch {
                     continuation.finish(throwing: error)
@@ -129,10 +173,12 @@ enum ModelRouter {
         case ollamaTransport(String)
         case ollamaHTTPError(path: String, status: Int, body: String)
         case ollamaBadResponse(path: String, body: String)
+        case localBadJSON(String)
 
         var errorDescription: String? {
             switch self {
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
+            case .localBadJSON(let s): return "The on-device model didn't return valid JSON: \(Self.truncate(s))"
             case .ollamaNoModels: return "Endpoint is reachable but no models are loaded. Load a model in LM Studio / pull one with `ollama pull <name>`."
             case .ollamaBadEndpoint(let s): return "Ollama endpoint is not a valid URL: \(s)"
             case .ollamaTransport(let s): return "Couldn't reach Ollama: \(s)"
@@ -147,6 +193,105 @@ enum ModelRouter {
             let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.count > 240 ? String(trimmed.prefix(240)) + "…" : trimmed
         }
+    }
+
+    // MARK: - Structured enrichment (the note lever)
+
+    /// UserDefaults flag: the user has opted into the on-device model for note enrichment.
+    /// FM stays the default; this flag is the ONLY thing that can move the lever to local. The
+    /// Settings toggle that sets it (gated on `.ready`) lands with the routing in the next commit —
+    /// until then the flag is unset, so `structuredProvider()` always resolves to FM.
+    static let useLocalEnrichmentKey = "useLocalModelForEnrichment"
+
+    /// Which provider answers the enrichment lever. Resolution order (stated per the brief):
+    ///   1. `.local` — ONLY when the user opted in (`useLocalEnrichmentKey`) AND the model is
+    ///                 downloaded and `.ready` on disk. Configured-but-absent falls through.
+    ///   2. `.foundationModel` — the default, and the fallback for every other state.
+    /// `.ollama` is deliberately NOT a structured-lever provider: corpus content stays on the FM /
+    /// on-device boundary (the privacy oath), and Ollama offers neither guided generation nor the
+    /// catchable refusal the refusal surface depends on. So local's precedence is "above FM when
+    /// ready + opted-in, otherwise FM"; Ollama never enters this path.
+    static func structuredProvider() async -> Provider {
+        guard UserDefaults.standard.bool(forKey: useLocalEnrichmentKey) else { return .foundationModel }
+        let ready = await MainActor.run { LocalModelService.shared.state == .ready }
+        return ready ? .local : .foundationModel
+    }
+
+    /// THE LEVER. Ask for a structured enrichment (title, summary, vocabulary-validated tags, and
+    /// the FM-only mood/domain/neighborhood extras) and get them — the caller never learns which
+    /// model answered. FM constrains tags by construction (`@Generable`) and can throw a catchable
+    /// refusal; the local model is prompted for JSON, parsed, and its tags validated against the SAME
+    /// `VocabularyTag` (non-matches dropped). The ONE provider difference — FM's catchable refusal —
+    /// is thrown up here for the caller to surface, never worked around inside the router.
+    @available(iOS 26.0, *)
+    static func generateStructured(prompt: String) async throws -> StructuredEnrichment {
+        switch await structuredProvider() {
+        case .local:
+            return try await generateStructuredLocal(prompt: prompt)
+        case .foundationModel, .ollama:
+            return try await generateStructuredFoundationModel(prompt: prompt)
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func generateStructuredFoundationModel(prompt: String) async throws -> StructuredEnrichment {
+        guard SystemLanguageModel.default.isAvailable else { throw RouterError.foundationModelUnavailable }
+        let session = LanguageModelSession()
+        // KEEP guided generation: ProcessNodeResult is @Generable, so tags are constrained to
+        // VocabularyTag by construction and a refusal arrives as a catchable GenerationError (thrown up).
+        let r = try await session.respond(to: prompt, generating: ProcessNodeResult.self).content
+        func nilIfEmpty(_ s: String) -> String? {
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        return StructuredEnrichment(
+            title: r.title,
+            summary: r.summary,
+            tags: Array(r.tags.map(\.rawValue).prefix(5)),
+            mood: nilIfEmpty(r.mood),
+            domain: nilIfEmpty(r.domain),
+            neighborhoodID: nilIfEmpty(r.neighborhoodID)
+        )
+    }
+
+    @available(iOS 26.0, *)
+    private static func generateStructuredLocal(prompt: String) async throws -> StructuredEnrichment {
+        // The local model isn't constrained by construction, so ask for strict JSON, then parse and
+        // validate. The vocabulary is NOT re-added to the prompt (Round 9: the vocab line is
+        // net-negative); instead tags are validated against VocabularyTag and non-matches DROPPED.
+        let jsonInstruction = """
+        Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
+        {"title": string, "summary": string, "tags": [string], "mood": string, "domain": string, "neighborhoodID": string}
+        Use "" (or [] for tags) for anything you cannot fill. Do not add keys.
+        """
+        let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
+        guard let obj = decodeEnrichmentJSON(raw) else {
+            throw RouterError.localBadJSON(String(raw.prefix(240)))
+        }
+        let cleanedTags = VocabularyTag.validated(Array((obj.tags ?? []).prefix(8)))   // drop non-matches + de-dupe
+        func nilIfEmpty(_ s: String?) -> String? {
+            let t = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? nil : t
+        }
+        return StructuredEnrichment(
+            title: (obj.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            summary: (obj.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            tags: Array(cleanedTags.prefix(5)),
+            mood: nilIfEmpty(obj.mood),
+            domain: nilIfEmpty(obj.domain),
+            neighborhoodID: nilIfEmpty(obj.neighborhoodID)
+        )
+    }
+
+    /// Local models wrap JSON in prose or code fences despite instructions; pull the outermost
+    /// `{ … }` and decode it. Returns nil if there's no object or it doesn't decode.
+    private static func decodeEnrichmentJSON(_ raw: String) -> LocalEnrichmentJSON? {
+        guard let start = raw.firstIndex(of: "{"),
+              let end = raw.lastIndex(of: "}"),
+              start < end else { return nil }
+        let slice = String(raw[start...end])
+        guard let data = slice.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(LocalEnrichmentJSON.self, from: data)
     }
 
     // MARK: - Foundation Model

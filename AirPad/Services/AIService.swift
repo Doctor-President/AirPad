@@ -296,20 +296,23 @@ actor AIService {
 
         await logFMTokens("ProcessNodeCorpusAware", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: ProcessNodeResult.self)
-            let r = response.content
-            let nbhd = r.neighborhoodID.trimmingCharacters(in: .whitespacesAndNewlines)
+            // The lever now routes through ModelRouter.generateStructured — Foundation Model (guided
+            // generation, unchanged) by default, or the on-device model when the user opted in and it
+            // is ready. This is the ONLY one of AIService's eight LanguageModelSession() sites moved to
+            // the router; the other seven (processNode/NodeAIResult, CorpusSummary, the two
+            // Neighborhood passes, SubstrateInterpretation, and the two CoherenceCheck sites) stay
+            // inline. FM's catchable refusal still arrives via the throw below → nodeFailure.
+            let e = try await ModelRouter.generateStructured(prompt: prompt)
             return .success(NodeAIOutput(
-                title:   r.title,
-                summary: r.summary,
-                tags:    Array(r.tags.map(\.rawValue).prefix(5)),
-                mood:    r.mood.isEmpty ? nil : r.mood,
-                domain:  r.domain.isEmpty ? nil : r.domain,
-                neighborhoodID: nbhd.isEmpty ? nil : nbhd
+                title:   e.title,
+                summary: e.summary,
+                tags:    e.tags,
+                mood:    e.mood,
+                domain:  e.domain,
+                neighborhoodID: e.neighborhoodID
             ))
         } catch {
-            print("[FM][processNodeCorpusAware] FAILURE: \(error)")
+            print("[processNodeCorpusAware] FAILURE: \(error)")
             return .failure(await nodeFailure(from: error, prompt: prompt))
         }
     }
@@ -322,16 +325,24 @@ actor AIService {
     /// decode failures, etc. — carries the error's OWN description verbatim, the
     /// same derivation the chat surface uses. Do NOT re-add a bucketing classifier.
     private func nodeFailure(from error: any Error, prompt: String) async -> NodeAIFailure {
-        if let g = error as? LanguageModelSession.GenerationError,
-           case .exceededContextWindowSize = g {
-            var tokens = -1
-            if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
-                tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
-            }
-            return .contextOverflow(promptTokens: tokens,
-                                    contextSize: SystemLanguageModel.default.contextSize)
-        }
         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        if let g = error as? LanguageModelSession.GenerationError {
+            switch g {
+            case .exceededContextWindowSize:
+                var tokens = -1
+                if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+                    tokens = (try? await SystemLanguageModel.default.tokenCount(for: prompt)) ?? -1
+                }
+                return .contextOverflow(promptTokens: tokens,
+                                        contextSize: SystemLanguageModel.default.contextSize)
+            case .refusal, .guardrailViolation:
+                // Same pair processSubstrate routes to `guardrailRefused`. Keep the verbatim
+                // message; the distinct case only lets the tray offer the on-device model.
+                return .refused(message: message)
+            default:
+                break
+            }
+        }
         return .failed(message: message)
     }
 
@@ -735,6 +746,13 @@ enum NodeAIFailure: Equatable {
     /// here as `GenerationError.refusal` (there is NO separate `LanguageModelError`
     /// type in this SDK); `GenerationError: LocalizedError`, so its text renders.
     case failed(message: String)
+    /// ws-local-model Stage 2 — Foundation Model declined (`GenerationError.refusal`
+    /// / `.guardrailViolation`, the SAME pair `processSubstrate` routes to
+    /// `guardrailRefused`). Still carries the framework's VERBATIM message (no info
+    /// lost — this is NOT re-bucketing) so the tray can show it; the distinct case
+    /// only adds the product action: offer AirPad's optional on-device model, which
+    /// effectively does not refuse. Local's own technical failures do NOT land here.
+    case refused(message: String)
 }
 
 /// The result of an authorship FM call: the produced fields, or the reason none

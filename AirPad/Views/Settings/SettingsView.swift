@@ -39,6 +39,11 @@ struct SettingsView: View {
     // Local on-device model (ws-local-model Stage 1). Settings surface + plumbing only —
     // this does NOT change any generation path yet (AIService / ModelRouter untouched).
     @State private var localModel = LocalModelService.shared
+    /// ws-local-model Stage 2 — the opt-in that moves the note-enrichment lever to the
+    /// on-device model. FM stays the default; ModelRouter.structuredProvider() reads this
+    /// key AND requires `.ready`, so toggling it on only takes effect while the model is
+    /// downloaded (configured-but-absent falls back to FM). Shown ONLY in the `.ready` state.
+    @AppStorage(ModelRouter.useLocalEnrichmentKey) private var useLocalEnrichment = false
     @State private var isTestingLocal = false
     @State private var localTestOutput = ""
     #if DEBUG
@@ -187,8 +192,24 @@ struct SettingsView: View {
                         localCapsuleButton("Cancel", symbol: "xmark") { localModel.cancelDownload() }
                     }
                 case .ready:
-                    // ★ HONEST label — downloaded + ready, but NOT yet used by any generation path this stage.
-                    localStatusRow(symbol: "checkmark.circle", text: "Downloaded — ready, not yet in use")
+                    localStatusRow(symbol: "checkmark.circle", text: "Downloaded & ready")
+                    // ws-local-model Stage 2 — the real opt-in. FM is the default; this only
+                    // moves the note-enrichment lever. Toggle position (not colour) carries the
+                    // state, and the caption stays honest in both settings (T is colorblind).
+                    Toggle(isOn: $useLocalEnrichment) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Use for note enrichment")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.85))
+                            Text(useLocalEnrichment
+                                 ? "New note titles, summaries, and tags use the private model."
+                                 : "Apple Intelligence is still doing the thinking. Turn on to use the private model.")
+                                .font(.caption2)
+                                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .tint(Color(hexString: "1B59C2"))
                     Text("Excluded from backup: \(localModel.excludedFromBackup ? "yes" : "NO"). Stored in Application Support (not iCloud).")
                         .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.35))
                     localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }

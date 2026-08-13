@@ -195,9 +195,13 @@ actor AIService {
 
         await logFMTokens("ProcessNode", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: NodeAIResult.self)
-            let r = response.content
+            // ws-local-model Stage 2 — one of the TWO live capture calls routed through
+            // ModelRouter (the other is processSubstrate). Foundation Model (guided generation,
+            // unchanged) by default, or the on-device model when the user opted in and it's ready.
+            // FM's catchable refusal still arrives via the throw below → nodeFailure → .refused,
+            // which the tray renders as LeverRefusalBanner. This is the TITLE+SUMMARY refusal
+            // locus, INDEPENDENT of processSubstrate's folksonomy locus.
+            let r = try await ModelRouter.generateNodeSummary(prompt: prompt)
             return .success(NodeAIOutput(
                 title:   r.title,
                 summary: r.summary,
@@ -558,16 +562,18 @@ actor AIService {
 
         await logFMTokens("ProcessSubstrate", prompt: prompt)
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt, generating: SubstrateInterpretation.self)
-            let s = response.content.summary.trimmingCharacters(in: .whitespacesAndNewlines)
-            let f = response.content.tags
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            if s.isEmpty && f.isEmpty {
+            // ws-local-model Stage 2 — the SECOND live capture call routed through ModelRouter,
+            // a SEPARATE refusal locus from processNode. Foundation Model (guided generation,
+            // FREE-FORM folksonomy — no vocabulary, by settled decision) by default, or the
+            // on-device model when the user opted in and it's ready. The router already trims +
+            // filters. A refusal still throws GenerationError up, so the catch below maps it to
+            // `.guardrailRefused` → persisted as the node's "guardrail_refused" reason, which is
+            // what lets the tray tell a refused-tags node apart from a genuinely-empty one.
+            let r = try await ModelRouter.generateSubstrate(prompt: prompt)
+            if r.summary.isEmpty && r.folksonomy.isEmpty {
                 return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
             }
-            return .ok(summary: s, folksonomy: f)
+            return .ok(summary: r.summary, folksonomy: r.folksonomy)
         } catch {
             // SB139 Stage 1 cleanup: match on the typed enum cases, not on
             // substrings of the stringified error. The `fm_error_detail`

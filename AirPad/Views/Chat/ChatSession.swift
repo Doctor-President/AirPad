@@ -272,13 +272,19 @@ final class ChatSession {
             // Whether any tool reported a provider throttle this turn — used only to
             // word the give-up message honestly (the cap/backoff live in the executor).
             var sawRateLimit = false
+            // Whether any tool reported it has NO backend (web search with no Brave key).
+            // Once true, the tool schema is WITHHELD from the next model turn so the model
+            // can't retry a tool that cannot succeed — one attempt, one honest chip.
+            var sawUnavailable = false
             for step in 0..<maxToolSteps {
                 streamingText = ""
                 let turn = try await ModelRouter.streamAgentTurn(
                     endpoint: endpoint,
                     model: model,
                     messages: working,
-                    tools: AgentTools.schema,
+                    // Withhold the tool schema once a tool reported it has no backend — the
+                    // model can't retry a tool that can't succeed, so it answers honestly.
+                    tools: sawUnavailable ? nil : AgentTools.schema,
                     onContentDelta: { [weak self] delta in
                         Task { @MainActor in self?.streamingText += delta }
                     }
@@ -306,6 +312,7 @@ final class ChatSession {
                     appendActivity(for: call, result: result)
                     producedActivity = true
                     if result.rateLimited { sawRateLimit = true }
+                    if result.unavailable { sawUnavailable = true }
                     // Web results feed the answer's citations. Renumber GLOBALLY across
                     // the turn so the model's [n] is unambiguous even across multiple
                     // searches, and accumulate so cited [n] → {title, url}.
@@ -380,7 +387,14 @@ final class ChatSession {
         switch call.name {
         case AgentTools.webSearch:
             icon = "magnifyingglass"
-            label = result.links.isEmpty ? "Searched the web — no results" : "Searched the web"
+            if result.unavailable {
+                // NOTHING searched — the backend isn't configured. Reuse the executor's own
+                // factual line so the chip AGREES with the model's prose (never "no results",
+                // which would assert a search that never happened).
+                label = result.textForModel
+            } else {
+                label = result.links.isEmpty ? "Searched the web — no results" : "Searched the web"
+            }
             detail = call.arguments["query"] as? String
         case AgentTools.fetchURL:
             icon = "doc.text"

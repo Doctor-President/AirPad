@@ -4823,6 +4823,13 @@ final class CorpusStore {
     ///     Defaults `false`: every unsolicited path (enrichment, batch import,
     ///     substrate refires) keeps the gate at full strength. ONLY the tray sets
     ///     it true. "Consent comes from initiating."
+    ///   - aspects: which AUTHORSHIP fields this pass may record/write. Defaults to
+    ///     BOTH (`.title`, `.summary`) so every capture/enrichment caller is
+    ///     bit-identical. The tray's PER-ROW "Suggest another" passes a SINGLE aspect
+    ///     so regenerating one never overwrites the other (T's 2026-08-14 ruling). The
+    ///     model call is monolithic (`generateNodeSummary` → title AND summary), so the
+    ///     non-requested field is simply discarded. A focused (single-aspect) request
+    ///     also SKIPS substrate, so the tag tiers are never disturbed.
     /// - Returns: `nil` when authorship succeeded (proposals recorded / fields
     ///   written) or the call was a no-op; a `NodeAIFailure` (F3) when the
     ///   authorship FM produced nothing, so the tray's generate can say WHY.
@@ -4833,7 +4840,8 @@ final class CorpusStore {
                            forceCorpusAware: Bool? = nil,
                            needsAuthorship: Bool = true,
                            needsSubstrate: Bool = true,
-                           solicited: Bool = false) async -> NodeAIFailure? {
+                           solicited: Bool = false,
+                           aspects: Set<Proposal.Kind> = [.title, .summary]) async -> NodeAIFailure? {
         print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) solicited=\(solicited)")
         guard #available(iOS 26.0, *) else {
             print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
@@ -4923,7 +4931,12 @@ final class CorpusStore {
         // the FM-authored fields, with the source gates re-checked against the
         // fresh node. `.items` and every user-owned field come from the fresh read.
         guard var working = nodes.first(where: { $0.id == nodeID }) else { return nil }
-        if FeatureFlags.substrateOnCapture {
+        // Substrate (summary + folksonomy → the tag tiers) runs only for a FULL
+        // authorship pass. A FOCUSED per-aspect regenerate (the tray's per-row "Suggest
+        // another") must NOT disturb the tags, so skip it when only one aspect was asked
+        // for. Capture/enrichment callers use the default full set → unchanged.
+        let regeneratesAllAuthorship = aspects.contains(.title) && aspects.contains(.summary)
+        if FeatureFlags.substrateOnCapture, regeneratesAllAuthorship {
             // SB139 Stage 1 — one FM call → summary + folksonomy, then three
             // NLContextualEmbedding vectors. Mutates only substrate fields.
             await runSubstratePipeline(on: &working, aiSvc: aiSvc)
@@ -4947,7 +4960,11 @@ final class CorpusStore {
             let posture = AuthorshipPosture.current
             let generatedAt = Date()
             let sourceEmbedding = working.contextualContentEmbedding
-            if n.recordProposal(kind: .title, text: result.title,
+            // Only the requested aspect(s) are recorded/written — so a per-row
+            // regenerate can't overwrite the sibling field (T's 2026-08-14 ruling). The
+            // model produced both; the non-requested one is discarded.
+            if aspects.contains(.title),
+               n.recordProposal(kind: .title, text: result.title,
                                 currentSource: n.titleSource,
                                 sourceEmbedding: sourceEmbedding,
                                 posture: posture, generatedAt: generatedAt,
@@ -4955,7 +4972,8 @@ final class CorpusStore {
                 n.title = result.title
                 n.titleSource = .model
             }
-            if n.recordProposal(kind: .summary, text: result.summary,
+            if aspects.contains(.summary),
+               n.recordProposal(kind: .summary, text: result.summary,
                                 currentSource: n.summarySource,
                                 sourceEmbedding: sourceEmbedding,
                                 posture: posture, generatedAt: generatedAt,

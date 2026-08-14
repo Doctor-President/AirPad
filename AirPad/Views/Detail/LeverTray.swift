@@ -39,9 +39,9 @@ struct LeverTray: View {
     @State private var tagSuggestions: [TagSuggestion] = []
     /// STEP 4 — the SECOND tier: folksonomy terms matching NO existing tag, offered as
     /// brand-new tags (§ THE TAG PRODUCER · "would be new"). Held separately from the
-    /// "already yours" list so the two render as distinct groups and accept/dismiss drop
-    /// the right chip without a re-query.
-    @State private var newTagSuggestions: [TagSuggestion] = []
+    /// "already yours" list so the two render as distinct groups. Carries `total` (item 3)
+    /// so the group label can say "3 of N" and the dismiss-to-page behaviour is legible.
+    @State private var newTier: NewTagTier = .empty
     @State private var tagsLoaded = false
 
     /// ws-local-model Stage 2 — routes the refusal surface into AirPad's own Settings
@@ -302,7 +302,7 @@ struct LeverTray: View {
                     onSetUp: localModelReady ? nil : { showSettings = true }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else if tagSuggestions.isEmpty && newTagSuggestions.isEmpty {
+            } else if tagSuggestions.isEmpty && newTier.shown.isEmpty {
                 // A real row, not a missing one (§ C3): ~37% of the corpus has no
                 // folksonomy, and a node with folksonomy can still match nothing in
                 // EITHER tier. Distinct from the guardrail-refused branch above.
@@ -321,14 +321,23 @@ struct LeverTray: View {
                             ForEach(tagSuggestions) { suggestionChip($0) }
                         }
                     }
-                    if !newTagSuggestions.isEmpty {
-                        tierGroup(caption: "New tags — tap ＋ to create") {
-                            ForEach(newTagSuggestions) { newSuggestionChip($0) }
+                    if !newTier.shown.isEmpty {
+                        tierGroup(caption: newTierCaption) {
+                            ForEach(newTier.shown) { newSuggestionChip($0) }
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Item 3 — the "would be new" group label. When more candidates exist than the cap
+    /// shows, surface the count so the dismiss-to-page behaviour is legible (dismiss a chip
+    /// → the next candidate fills the freed slot). PLACEHOLDER COPY — T dials on device.
+    private var newTierCaption: String {
+        newTier.total > newTier.shown.count
+            ? "New tags — \(newTier.shown.count) of \(newTier.total)"
+            : "New tags — tap ＋ to create"
     }
 
     /// A labeled tier group: a small caption over a wrapping chip row. The caption is a
@@ -460,16 +469,17 @@ struct LeverTray: View {
             ]
             // STEP 4 — canned "would be new" chips so the dashed tier renders for a
             // device-parity screenshot (the real matcher yields nothing on the Sim).
-            newTagSuggestions = [
+            // `total: 5` > 2 shown so the "2 of 5" count (item 3) renders too.
+            newTier = NewTagTier(shown: [
                 TagSuggestion(name: "Air Force Fighter Pilot", score: 1.0),
                 TagSuggestion(name: "Coming of Age", score: 0.99),
-            ]
+            ], total: 5)
             tagsLoaded = true
             return
         }
         #endif
         tagSuggestions = await store.tagSuggestions(forNodeID: nodeID)
-        newTagSuggestions = await store.newTagSuggestions(forNodeID: nodeID)
+        newTier = await store.newTagSuggestions(forNodeID: nodeID)
         tagsLoaded = true
     }
 
@@ -515,7 +525,7 @@ struct LeverTray: View {
     /// changes no tag, so it can't move a term between tiers — only the new tier reloads.
     private func dismissNewSuggestion(_ s: TagSuggestion) async {
         await store.dismissTagSuggestion(nodeID: nodeID, tagName: s.name)
-        newTagSuggestions = await store.newTagSuggestions(forNodeID: nodeID)
+        newTier = await store.newTagSuggestions(forNodeID: nodeID)
     }
 
     // MARK: - Generate

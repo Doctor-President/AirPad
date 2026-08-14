@@ -168,6 +168,12 @@ struct TextEntryBody: View {
         // Capture mode: feed the live "has typed text" signal so the Cancel↔Done
         // pill flips as the user types (content only persists on end-editing).
         .onChange(of: editingText) { _, newValue in
+            // Mirror the live body text into the store so a lever fire can flush it
+            // before reading the node (commit-before-fire). The editor only persists on
+            // end-editing, so without this the substrate/generate see stale or empty
+            // body text. Runs on BOTH surfaces (detail + capture share this editor), so
+            // it must precede the capture-only guard below.
+            store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
             guard router.isCapturing, router.captureNodeID == nodeID else { return }
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }

@@ -499,9 +499,17 @@ struct NodeDetailView: View {
                         // commit (mutateNode writes back past its own await) so the tray
                         // opens on the committed value; `dbb9175`'s no-op suppression is
                         // correct — it was being fed an empty string. Resign first so the
-                        // keyboard drops as the sheet rises.
+                        // keyboard drops as the sheet rises. commitPendingItemEdits also
+                        // flushes the NOTE BODY — its live text lives in the child editor
+                        // and only persists on end-editing, so without this the substrate
+                        // reads a stale/empty body (the tags tier stayed empty until an
+                        // exit-and-return re-ran it).
                         focusedField = false
-                        Task { await commitEditsIfChanged(); showLeverTray = true }
+                        Task {
+                            await commitEditsIfChanged()
+                            await store.commitPendingItemEdits(forNodeID: nodeID)
+                            showLeverTray = true
+                        }
                     }
                 ) {
                     TextField("Title", text: $editedTitle, axis: .vertical)

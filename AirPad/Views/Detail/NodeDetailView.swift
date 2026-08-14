@@ -491,7 +491,18 @@ struct NodeDetailView: View {
                     nodeID: nodeID,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
                     showAttributes: isCaptureMode || atomicCount > 0,
-                    onLeverTap: { showLeverTray = true }
+                    onLeverTap: {
+                        // Item 1 — COMMIT the header's live title/summary edit BEFORE
+                        // presenting the tray. The fields write only on end-editing, so
+                        // without this the tray reads a stale `node.title` ("Nothing
+                        // yet") and proposes for a field the user just filled. Await the
+                        // commit (mutateNode writes back past its own await) so the tray
+                        // opens on the committed value; `dbb9175`'s no-op suppression is
+                        // correct — it was being fed an empty string. Resign first so the
+                        // keyboard drops as the sheet rises.
+                        focusedField = false
+                        Task { await commitEditsIfChanged(); showLeverTray = true }
+                    }
                 ) {
                     TextField("Title", text: $editedTitle, axis: .vertical)
                         .font(visualSettings.nodeTitle.resolvedFont())
@@ -1687,11 +1698,23 @@ struct NodeDetailView: View {
 
     // MARK: - Auto-save
 
+    /// Fire-and-forget commit — for teardown paths (`onDisappear`) where nothing
+    /// downstream reads the node in the same turn.
     private func saveIfChanged() {
+        Task { await commitEditsIfChanged() }
+    }
+
+    /// AWAITABLE commit of the header's live edits (title/summary/tags) into the store.
+    /// The header `TextField`s bind live, but the STORE only learns of an edit when this
+    /// runs — historically just `onDisappear`. ★ The lever fire path must AWAIT this
+    /// BEFORE presenting the tray: `mutateNode` writes back only inside its own `await`,
+    /// so a fire-and-forget save races the tray, which would then read a stale
+    /// `node.title` ("Nothing yet") and propose for a field the user just filled.
+    private func commitEditsIfChanged() async {
         guard let node else { return }
         let nodeID = node.id
         let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
-        // Compare against the FRESHEST node so an unedited close stays a no-op.
+        // Compare against the FRESHEST node so an unedited fire stays a no-op.
         guard let fresh = store.nodes.first(where: { $0.id == nodeID }) else { return }
         let titleChanged = fresh.title != newTitle
         let summaryChanged = fresh.summary != newSummary
@@ -1703,20 +1726,18 @@ struct NodeDetailView: View {
         //  - title/summary stamp `.user` (Commit 6 / step 1); clearing summary is
         //    a deliberate `.user` state (the change guard already skips no-ops).
         //  - tags carry `.user` provenance; sources for removed tags are dropped.
-        Task {
-            await store.mutateNode(id: nodeID) { n in
-                if titleChanged { n.title = newTitle; n.titleSource = .user }
-                if summaryChanged { n.summary = newSummary; n.summarySource = .user }
-                if tagsChanged {
-                    n.tags = newTags
-                    let editedSet = Set(newTags)
-                    for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
-                    for name in n.tagSources.keys where !editedSet.contains(name) {
-                        n.tagSources.removeValue(forKey: name)
-                    }
+        await store.mutateNode(id: nodeID) { n in
+            if titleChanged { n.title = newTitle; n.titleSource = .user }
+            if summaryChanged { n.summary = newSummary; n.summarySource = .user }
+            if tagsChanged {
+                n.tags = newTags
+                let editedSet = Set(newTags)
+                for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
+                for name in n.tagSources.keys where !editedSet.contains(name) {
+                    n.tagSources.removeValue(forKey: name)
                 }
-                n.updatedAt = Date()
             }
+            n.updatedAt = Date()
         }
     }
 }

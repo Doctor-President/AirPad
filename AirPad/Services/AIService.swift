@@ -1,5 +1,6 @@
 import Foundation
 import FoundationModels
+import NaturalLanguage
 
 // MARK: - SB126 Stage 2 — token instrumentation helper
 
@@ -559,6 +560,25 @@ actor AIService {
     /// schema constraint, then the resulting text is embedded.
     /// Returns `.guardrailRefused` for the ~4% of nodes Apple's safety layer
     /// rejects so the caller can record the reason and fall back to content.
+    /// Item 2 — the note's dominant language as an ENGLISH display name ("English",
+    /// "Spanish", "Chinese"), or nil when detection isn't confident. Used ONLY to pin the
+    /// LOCAL model's substrate output language: Qwen3 is a Chinese-base model and, on a bare
+    /// tag list, intermittently returns Chinese folksonomy for an English note (T
+    /// device-observed) — which STEP 4 then mints permanently on tap. The prior-art pass
+    /// (ws-lever) found NO template/param/grammar knob in mlx-swift/Qwen3, so a system-prompt
+    /// line is the only lever; naming the language explicitly (in English, keeping the prompt
+    /// all-English) beats "same language as input", which Qwen drifts around. The 0.5 floor
+    /// keeps a short/ambiguous note from being forced into the wrong language. FM is untouched.
+    private static func substrateResponseLanguage(for text: String) -> String? {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+        guard let lang = recognizer.dominantLanguage, lang != .undetermined else { return nil }
+        if let top = recognizer.languageHypotheses(withMaximum: 1).first?.value, top < 0.5 { return nil }
+        // `forIdentifier:` (not `forLanguageCode:`) so script-tagged codes like "zh-Hans"
+        // resolve to a real name instead of nil. English locale → an English name.
+        return Locale(identifier: "en_US").localizedString(forIdentifier: lang.rawValue)
+    }
+
     func processSubstrate(content: String) async -> SubstrateFMOutcome {
         // GAP 27 (the site T hit) — consult the router BEFORE the FM guard. This call routes
         // through `ModelRouter.generateSubstrate`, which sends `.local` to the on-device
@@ -592,6 +612,10 @@ actor AIService {
         \(truncated)
         """
 
+        // Item 2 — detect the note's OWN language from the raw content (not the
+        // instruction-laden prompt) so the LOCAL model can be pinned to it. FM ignores this.
+        let responseLanguage = Self.substrateResponseLanguage(for: truncated)
+
         await logFMTokens("ProcessSubstrate", prompt: prompt)
         do {
             // ws-local-model Stage 2 — the SECOND live capture call routed through ModelRouter,
@@ -601,7 +625,7 @@ actor AIService {
             // filters. A refusal still throws GenerationError up, so the catch below maps it to
             // `.guardrailRefused` → persisted as the node's "guardrail_refused" reason, which is
             // what lets the tray tell a refused-tags node apart from a genuinely-empty one.
-            let r = try await ModelRouter.generateSubstrate(prompt: prompt)
+            let r = try await ModelRouter.generateSubstrate(prompt: prompt, responseLanguage: responseLanguage)
             if r.summary.isEmpty && r.folksonomy.isEmpty {
                 return .otherError(FMErrorDetail(errorType: "empty_output", debugDescription: nil))
             }

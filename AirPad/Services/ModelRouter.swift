@@ -291,11 +291,15 @@ enum ModelRouter {
     /// (ws-lever.md § THE TAG PRODUCER). Constraining this call with an enum would reverse that.
     /// FM's guided generation throws its refusal up (→ `processSubstrate` → `.guardrailRefused`);
     /// the local model is prompted for JSON and parsed.
+    /// `responseLanguage` (item 2) pins the LOCAL model's output to the note's own language
+    /// (an English display name, e.g. "Spanish"); nil = don't constrain. The FM path ignores
+    /// it — Apple's guided generation doesn't exhibit the Chinese-drift and its prompt is
+    /// deliberately untouched.
     @available(iOS 26.0, *)
-    static func generateSubstrate(prompt: String) async throws -> SubstrateResult {
+    static func generateSubstrate(prompt: String, responseLanguage: String? = nil) async throws -> SubstrateResult {
         switch await structuredProvider() {
         case .local:
-            return try await substrateLocal(prompt: prompt)
+            return try await substrateLocal(prompt: prompt, responseLanguage: responseLanguage)
         case .foundationModel, .ollama:
             return try await substrateFoundationModel(prompt: prompt)
         }
@@ -317,12 +321,23 @@ enum ModelRouter {
     }
 
     @available(iOS 26.0, *)
-    private static func substrateLocal(prompt: String) async throws -> SubstrateResult {
+    private static func substrateLocal(prompt: String, responseLanguage: String? = nil) async throws -> SubstrateResult {
         // No vocabulary is added to the prompt — the folksonomy is free-form by construction.
+        // ★ Item 2 — Qwen3 is a Chinese-base model and, on a bare tag list with no language
+        // constraint, intermittently returns Chinese folksonomy for an English note (T
+        // device-observed: 未来 · 平行宇宙 · 教堂). STEP 4 mints these permanently on tap, so pin
+        // the OUTPUT LANGUAGE to the note's own language. The prior-art pass (ws-lever) found NO
+        // supported template/param/grammar knob in mlx-swift/Qwen3 — a system-prompt line is the
+        // only lever, and naming the language explicitly (in English, keeping the prompt
+        // all-English) beats "same language as input", which Qwen drifts around. LOCAL ONLY —
+        // the FM path is deliberately untouched.
+        let languageLine = responseLanguage.map {
+            "\nWrite `summary` and every entry in `tags` in \($0)."
+        } ?? ""
         let jsonInstruction = """
         Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
         {"summary": string, "tags": [string]}
-        `tags` are free-form — pick whatever short words best describe the idea; there is no fixed vocabulary. Use "" or [] for anything you cannot fill. Do not add keys.
+        `tags` are free-form — pick whatever short words best describe the idea; there is no fixed vocabulary. Use "" or [] for anything you cannot fill. Do not add keys.\(languageLine)
         """
         let raw = try await LocalModelService.shared.generate(systemPrompt: jsonInstruction, userPrompt: prompt)
         guard let obj: LocalSubstrateJSON = decodeOutermostJSON(raw) else {

@@ -37,6 +37,11 @@ struct LeverTray: View {
     /// dismiss can drop a chip without a re-query. `tagsLoaded` gates loading vs
     /// empty-vs-populated so the empty state doesn't flash before the async match.
     @State private var tagSuggestions: [TagSuggestion] = []
+    /// STEP 4 — the SECOND tier: folksonomy terms matching NO existing tag, offered as
+    /// brand-new tags (§ THE TAG PRODUCER · "would be new"). Held separately from the
+    /// "already yours" list so the two render as distinct groups and accept/dismiss drop
+    /// the right chip without a re-query.
+    @State private var newTagSuggestions: [TagSuggestion] = []
     @State private var tagsLoaded = false
 
     /// ws-local-model Stage 2 — routes the refusal surface into AirPad's own Settings
@@ -262,17 +267,45 @@ struct LeverTray: View {
                     onSetUp: localModelReady ? nil : { showSettings = true }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else if tagSuggestions.isEmpty {
+            } else if tagSuggestions.isEmpty && newTagSuggestions.isEmpty {
                 // A real row, not a missing one (§ C3): ~37% of the corpus has no
-                // folksonomy, and a node with folksonomy can still match nothing.
+                // folksonomy, and a node with folksonomy can still match nothing in
+                // EITHER tier. Distinct from the guardrail-refused branch above.
                 Text("Nothing to suggest here.")
                     .font(.subheadline)
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             } else {
-                TagFlowLayout(spacing: 8) {
-                    ForEach(tagSuggestions) { suggestionChip($0) }
+                // TWO TIERS, distinguished by SHAPE + LABEL, never hue (T is colorblind,
+                // and a brand-new tag has no color yet anyway). "Already yours" =
+                // SOLID-outlined chips in the tag's own color; "would be new" = a labeled
+                // group of DASHED, neutral chips reading as provisional. Each group's
+                // sub-label shows only when that tier has chips.
+                VStack(alignment: .leading, spacing: 16) {
+                    if !tagSuggestions.isEmpty {
+                        tierGroup(caption: "Tags you already use") {
+                            ForEach(tagSuggestions) { suggestionChip($0) }
+                        }
+                    }
+                    if !newTagSuggestions.isEmpty {
+                        tierGroup(caption: "New tags — tap ＋ to create") {
+                            ForEach(newTagSuggestions) { newSuggestionChip($0) }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    /// A labeled tier group: a small caption over a wrapping chip row. The caption is a
+    /// TEXT distinction (colorblind-safe) between the two tiers; the chip SHAPE carries
+    /// it too (solid vs dashed). T dials the copy on device.
+    @ViewBuilder
+    private func tierGroup(caption: String, @ViewBuilder chips: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(caption)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            TagFlowLayout(spacing: 8) { chips() }
         }
     }
 
@@ -313,6 +346,49 @@ struct LeverTray: View {
         .contentShape(Capsule())
     }
 
+    /// STEP 4 — one "would be new" chip. Deliberately a DIFFERENT SHAPE from
+    /// `suggestionChip`: a DASHED, neutral (hueless) outline reading as "provisional,
+    /// not yet in your vocabulary" — the tag doesn't exist until accepted, so it has no
+    /// color to show, and the dash carries the distinction WITHOUT relying on hue (T is
+    /// colorblind). Leading ＋ promotes it to a real tag (`promoteNewTag`, `.promoted`
+    /// provenance); trailing ✕ dismisses it for this node (same persist path as the
+    /// "already yours" tier).
+    @ViewBuilder
+    private func newSuggestionChip(_ s: TagSuggestion) -> some View {
+        HStack(spacing: 5) {
+            Button {
+                Task { await acceptNew(s) }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .bold))
+                    Text(s.name)
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await dismissNewSuggestion(s) }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .overlay(
+            Capsule().stroke(
+                AppearancePalette.ink.opacity(0.5),
+                style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+            )
+        )
+        .contentShape(Capsule())
+    }
+
     /// The tag's own color from the vocabulary (same source as `TagChip`); gray if
     /// the tag isn't found (it always should be — suggestions are drawn FROM the
     /// tag set).
@@ -347,11 +423,18 @@ struct LeverTray: View {
                 TagSuggestion(name: "organization", score: 0.87),
                 TagSuggestion(name: "growth", score: 0.83),
             ]
+            // STEP 4 — canned "would be new" chips so the dashed tier renders for a
+            // device-parity screenshot (the real matcher yields nothing on the Sim).
+            newTagSuggestions = [
+                TagSuggestion(name: "Air Force Fighter Pilot", score: 1.0),
+                TagSuggestion(name: "Coming of Age", score: 0.99),
+            ]
             tagsLoaded = true
             return
         }
         #endif
         tagSuggestions = await store.tagSuggestions(forNodeID: nodeID)
+        newTagSuggestions = await store.newTagSuggestions(forNodeID: nodeID)
         tagsLoaded = true
     }
 
@@ -368,6 +451,23 @@ struct LeverTray: View {
     private func dismissSuggestion(_ s: TagSuggestion) async {
         await store.dismissTagSuggestion(nodeID: nodeID, tagName: s.name)
         tagSuggestions.removeAll { $0.id == s.id }
+    }
+
+    /// STEP 4 — accept a "would be new" chip: PROMOTE the term to a real tag via the
+    /// create-then-apply-`.promoted` path (§ THE TAG PRODUCER, constraint 2), then drop
+    /// the chip. NOT the "already yours" `accept` — that attaches an existing tag; this
+    /// mints one. The detail view's tag row picks the new tag up from the store.
+    private func acceptNew(_ s: TagSuggestion) async {
+        await store.promoteNewTag(s.name, toNodeID: nodeID)
+        newTagSuggestions.removeAll { $0.id == s.id }
+    }
+
+    /// STEP 4 — dismiss a "would be new" chip. Same persist path as the "already yours"
+    /// tier (`dismissTagSuggestion` keys by normalized name), so a rejected new term
+    /// isn't offered for this node again — whether or not it later becomes a real tag.
+    private func dismissNewSuggestion(_ s: TagSuggestion) async {
+        await store.dismissTagSuggestion(nodeID: nodeID, tagName: s.name)
+        newTagSuggestions.removeAll { $0.id == s.id }
     }
 
     // MARK: - Generate

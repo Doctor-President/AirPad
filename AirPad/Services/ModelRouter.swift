@@ -611,10 +611,15 @@ struct ToolResult: Sendable {
     let textForModel: String
     let links: [ToolLink]
     /// The provider throttled us (distinct from a genuine empty result). Backend-
-    /// agnostic: the DDG scraper sets it on a 202/challenge; a future SearXNG/keyed
-    /// backend would set it on its own throttle signal. The loop reads it only to
-    /// word the give-up message honestly — the cap/backoff live in the executor.
+    /// agnostic: the Brave backend sets it on a 429; a future keyed backend would set it
+    /// on its own throttle signal. The loop reads it only to word the give-up message
+    /// honestly — the cap/backoff live in the executor.
     var rateLimited: Bool = false
+    /// No search backend is configured (web search with no Brave key). Distinct from an
+    /// empty result: NOTHING ran. The loop renders an honest "not configured" chip — never
+    /// "no results", which would assert a search that didn't happen — and withholds the tool
+    /// schema from the rest of the turn, so the model can't retry a tool that cannot succeed.
+    var unavailable: Bool = false
 }
 
 /// One tool call the model requested (OpenAI shape). `argumentsJSON` is the raw
@@ -764,7 +769,7 @@ extension ModelRouter {
 /// user text somewhere T didn't deliberately choose.
 struct WebSearchUnavailableExecutor: ToolExecutor {
     func execute(name: String, arguments: [String: Any]) async -> ToolResult {
-        ToolResult(textForModel: "Web search requires a Brave Search API key, which can be added in Settings.", links: [])
+        ToolResult(textForModel: "Web search requires a Brave Search API key, which can be added in Settings.", links: [], unavailable: true)
     }
 }
 

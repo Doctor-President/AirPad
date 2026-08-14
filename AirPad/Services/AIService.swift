@@ -175,13 +175,31 @@ struct TagDigest {
 @available(iOS 26.0, *)
 actor AIService {
 
+    /// GAP 27 (pattern) — does the resolved STRUCTURED provider require Apple FM? The
+    /// structured summary/substrate calls route BOTH `.foundationModel` and `.ollama` to the
+    /// FM session (`generateNodeSummary`/`generateSubstrate`), so ONLY `.local` bypasses FM.
+    /// `processNode` / `processSubstrate` take the `SystemLanguageModel.isAvailable` guard
+    /// ONLY when this is true — otherwise an opted-in, ready local model would be wrongly
+    /// gated behind FM availability (the GAP 27 defect, found at a second site by T
+    /// 2026-08-14: the substrate guard returned `model_unavailable` before the router was
+    /// ever consulted).
+    private func structuredCallNeedsFoundationModel() async -> Bool {
+        if case .local = await ModelRouter.structuredProvider() { return false }
+        return true
+    }
+
     /// ws-card-catalog step 1 — capture no longer classifies. This legacy path
     /// produces title + summary only; tags/mood/domain were removed from both the
     /// prompt and the structured result (`NodeAIResult`). Tier-2 tag assignment
     /// moves to a deferred reflection pass (step 5). `tagVocabulary` is retained
     /// for signature stability with the corpus-aware sibling but is no longer read.
     func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutcome {
-        guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
+        // GAP 27 — consult the router BEFORE the FM guard. This call routes through
+        // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
+        // so the FM-availability guard applies only when FM is the resolved provider.
+        if await structuredCallNeedsFoundationModel() {
+            guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
+        }
 
         let content = extractContent(from: node)
         guard !content.isEmpty else { return .failure(.noContent) }
@@ -229,6 +247,8 @@ actor AIService {
         tagDigests: [TagDigest],
         fullVocabulary: [String]
     ) async -> NodeAIOutcome {
+        // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
+        // through ModelRouter — so the FM guard is correct. (Dormant: DEBUG-gated flag.)
         guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
 
         let raw = extractContent(from: node)
@@ -374,6 +394,8 @@ actor AIService {
         nodeCount: Int,
         recentCaptureCount: Int
     ) async -> CorpusSummaryResult? {
+        // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
+        // through ModelRouter — so the FM guard is correct.
         guard SystemLanguageModel.default.isAvailable else { return nil }
 
         let topTags = index.tags.values
@@ -435,6 +457,8 @@ actor AIService {
         priorName: String?,
         priorDescription: String?
     ) async -> String? {
+        // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
+        // through ModelRouter — so the FM guard is correct.
         guard SystemLanguageModel.default.isAvailable else { return nil }
         guard !dominantTags.isEmpty else { return nil }
 
@@ -490,6 +514,8 @@ actor AIService {
         siblingNames: [String],
         priorName: String?
     ) async -> String? {
+        // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
+        // through ModelRouter — so the FM guard is correct.
         guard SystemLanguageModel.default.isAvailable else { return nil }
         guard !description.isEmpty else { return nil }
 
@@ -534,8 +560,14 @@ actor AIService {
     /// Returns `.guardrailRefused` for the ~4% of nodes Apple's safety layer
     /// rejects so the caller can record the reason and fall back to content.
     func processSubstrate(content: String) async -> SubstrateFMOutcome {
-        guard SystemLanguageModel.default.isAvailable else {
-            return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
+        // GAP 27 (the site T hit) — consult the router BEFORE the FM guard. This call routes
+        // through `ModelRouter.generateSubstrate`, which sends `.local` to the on-device
+        // model; returning `model_unavailable` here without asking the router meant the local
+        // model was never consulted and the tray rendered a refusal that never happened.
+        if await structuredCallNeedsFoundationModel() {
+            guard SystemLanguageModel.default.isAvailable else {
+                return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
+            }
         }
         guard !content.isEmpty else {
             return .otherError(FMErrorDetail(errorType: "empty_content", debugDescription: nil))
@@ -640,6 +672,8 @@ actor AIService {
         newTag: String,
         existingTags: [String]
     ) async -> [TagRelation]? {
+        // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
+        // through ModelRouter — so the FM guard is correct.
         guard SystemLanguageModel.default.isAvailable else { return nil }
         let filteredVocab = existingTags.filter { $0 != newTag }
         guard !filteredVocab.isEmpty else { return [] }
@@ -672,6 +706,8 @@ actor AIService {
     /// Returns true (coherent), false (incoherent), or nil if the model is unavailable.
     /// Callers should treat nil as "pass" — never block import when the model is offline.
     func checkCoherence(_ text: String) async -> Bool? {
+        // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
+        // through ModelRouter — so the FM guard is correct.
         guard SystemLanguageModel.default.isAvailable else { return nil }
         let prompt = "Is this a complete, standalone idea? Yes or No.\n\n\(text)"
         do {

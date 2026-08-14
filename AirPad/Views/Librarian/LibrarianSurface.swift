@@ -289,32 +289,6 @@ struct LibrarianSurface: View {
             if UserDefaults.standard.bool(forKey: "PersistCorpusAware") {
                 librarian.corpusAware = true
             }
-            // `-ToolExecutorTest YES` — runs the REAL WebSearchToolExecutor (live DDG
-            // scrape from the sim's network) and injects the resulting activity row,
-            // so `-Screen` can verify the scrape + the collapsible tappable-links row
-            // WITHOUT a live LM Studio loop (the model↔tool wiring is device-only).
-            if UserDefaults.standard.bool(forKey: "ToolExecutorTest") {
-                isViewingActiveChat = true
-                panelModel.expandToFull(animated: false)
-                let q = UserDefaults.standard.string(forKey: "ToolTestQuery") ?? "the yogic tradition"
-                Task {
-                    let result = await WebSearchToolExecutor()
-                        .execute(name: AgentTools.webSearch, arguments: ["query": q])
-                    // Dump the EXACT tool-role content that gets injected, so STEP 0 can
-                    // SEE the model received real readable text (read via get_app_container).
-                    let dump = FileManager.default.temporaryDirectory.appendingPathComponent("tooldump.txt")
-                    try? result.textForModel.write(to: dump, atomically: true, encoding: .utf8)
-                    // Also dump the resolved tool system prompt (with today's real date).
-                    let pdump = FileManager.default.temporaryDirectory.appendingPathComponent("toolprompt.txt")
-                    try? librarian.debugToolSystemPrompt.write(to: pdump, atomically: true, encoding: .utf8)
-                    router.chat.debugAppendActivity(
-                        icon: "magnifyingglass",
-                        label: result.links.isEmpty ? "Searched the web — no results" : "Searched the web",
-                        detail: q,
-                        links: result.links
-                    )
-                }
-            }
             // `-DeadLinkTest YES` — inject an assistant turn with MODEL-AUTHORED URLs
             // (a markdown link + a bare url + a [1] ref) so `-Screen` can confirm the
             // fabricated URLs render as PLAIN TEXT (de-linked), while the activity-row
@@ -325,28 +299,6 @@ struct LibrarianSurface: View {
                 router.chat.debugAppendAssistant(
                     "Two good SpongeBob video essays: [Full Fat Videos on YouTube](https://www.youtube.com/playlist?list=PLfabricated9x8y7z) and one at https://example.com/spongebob-essay-fake — see [1] for the source I used."
                 )
-            }
-            // `-ScraperDiag YES` — STEP-0 evidence: run simple vs over-specified queries
-            // + a rapid burst against live DDG, capturing status/body/parse-count, written
-            // to tmp/scraperdiag.txt (read via get_app_container). Splits scraper vs prompt.
-            if UserDefaults.standard.bool(forKey: "ScraperDiag") {
-                Task {
-                    var out = "=== SINGLE QUERIES (simple → over-specified) ===\n\n"
-                    let queries = [
-                        "yoga classes chicago",
-                        "inclusive yoga studio south loop chicago",
-                        "Half Moon Yoga Chicago South Loop inclusive community beginner friendly reviews 2026",
-                        "latest news chicago today",
-                    ]
-                    for q in queries { out += await WebSearchToolExecutor.diagnose(query: q) + "\n\n---\n\n" }
-                    out += "\n=== RAPID BURST (6 back-to-back, rate-limit probe) ===\n\n"
-                    let burst = ["yoga chicago", "coffee chicago", "weather chicago", "pizza chicago", "museums chicago", "parks chicago"]
-                    for (i, q) in burst.enumerated() {
-                        out += "[\(i + 1)] " + (await WebSearchToolExecutor.diagnose(query: q)) + "\n\n"
-                    }
-                    let f = FileManager.default.temporaryDirectory.appendingPathComponent("scraperdiag.txt")
-                    try? out.write(to: f, atomically: true, encoding: .utf8)
-                }
             }
             // `-BraveDiag YES` — verify the Brave executor without a live subscription:
             // (1) parseBrave on a mock payload → mapped {title,url,snippet}; (2) backend
@@ -372,44 +324,6 @@ struct LibrarianSurface: View {
                     out += await BraveSearchToolExecutor.diagnose(query: "chicago yoga", apiKey: probeKey) + "\n"
                     let f = FileManager.default.temporaryDirectory.appendingPathComponent("bravediag.txt")
                     try? out.write(to: f, atomically: true, encoding: .utf8)
-                }
-            }
-            // `-ExecutorFixTest YES` — verify fix #1: (A) the per-turn CAP (one executor,
-            // 4 searches → 2 real then "budget exhausted", no more scraping); (B) THROTTLE
-            // detection (push DDG into 202 with rapid probes, then execute → rateLimited
-            // signal, NOT an empty "no results"). Dumped to tmp/execfix.txt.
-            if UserDefaults.standard.bool(forKey: "ExecutorFixTest") {
-                Task {
-                    var out = "=== (A) CAP TEST — one executor, 4 web_search calls ===\n"
-                    let exec = WebSearchToolExecutor()
-                    for (i, q) in ["yoga chicago", "coffee chicago", "pizza chicago", "museums chicago"].enumerated() {
-                        let r = await exec.execute(name: AgentTools.webSearch, arguments: ["query": q])
-                        out += "[\(i + 1)] q=\(q)  rateLimited=\(r.rateLimited)  links=\(r.links.count)  :: \(r.textForModel.prefix(90))\n"
-                    }
-                    out += "\n=== (B) THROTTLE TEST — push DDG to 202, then a fresh executor ===\n"
-                    for i in 1...6 { _ = await WebSearchToolExecutor.diagnose(query: "throttle probe \(i)") }
-                    let exec2 = WebSearchToolExecutor()
-                    let r = await exec2.execute(name: AgentTools.webSearch, arguments: ["query": "chicago news today"])
-                    out += "execute after throttle:  rateLimited=\(r.rateLimited)  links=\(r.links.count)  :: \(r.textForModel.prefix(140))\n"
-                    let f = FileManager.default.temporaryDirectory.appendingPathComponent("execfix.txt")
-                    try? out.write(to: f, atomically: true, encoding: .utf8)
-                }
-            }
-            // `-WebChipTest YES` — real search (8 results) + a synthetic answer citing
-            // [1] and [4] → proves web chips GATE TO CITED (exactly 2 chips, not 8),
-            // with the correct titles/URLs, alongside the full "Searched the web" list.
-            if UserDefaults.standard.bool(forKey: "WebChipTest") {
-                isViewingActiveChat = true
-                panelModel.expandToFull(animated: false)
-                Task {
-                    let result = await WebSearchToolExecutor()
-                        .execute(name: AgentTools.webSearch, arguments: ["query": "spongebob video essays"])
-                    router.chat.debugAppendActivity(
-                        icon: "magnifyingglass", label: "Searched the web",
-                        detail: "spongebob video essays", links: result.links)
-                    router.chat.debugAppendWebAnswer(
-                        "Two strong SpongeBob video essays: a long-form deep dive [1] and a sharper analytical piece [4]. Both dig into the show's writing and humor.",
-                        links: result.links)
                 }
             }
             #endif

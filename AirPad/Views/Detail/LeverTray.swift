@@ -103,32 +103,20 @@ struct LeverTray: View {
                 }
 
                 if let node {
-                    // A proposal byte-identical to Current is a NO-OP — not a decision
-                    // to ask for (architecture/hybrid-authorship.md), and it makes the
-                    // tray look broken on a re-fire. Withhold its whole aspect row.
-                    // Per-aspect + independent: title may hide while a changed summary
-                    // still renders. Plain trimmed-string test — NOT a "meaningful
-                    // change" heuristic, NOT an embedding compare.
-                    let showTitle = !aspectIsNoOp(node, kind: .title, current: node.title)
-                    let showSummary = !aspectIsNoOp(node, kind: .summary, current: node.summary)
-                    if showTitle {
-                        aspectRow(node: node, kind: .title, label: "Title",
-                                  current: node.title)
-                    }
-                    if showTitle && showSummary {
-                        Divider().overlay(AppearancePalette.ink.opacity(0.12))
-                    }
-                    if showSummary {
-                        aspectRow(node: node, kind: .summary, label: "Summary",
-                                  current: node.summary)
-                    }
-                    if showTitle || showSummary {
-                        Divider().overlay(AppearancePalette.ink.opacity(0.12))
-                    }
-                    // If BOTH aspects are withheld AND both tag tiers are empty, the
-                    // honest empty state is the tags section's existing "Nothing to
-                    // suggest here." — reused, not reinvented, and kept DISTINCT from the
-                    // guardrail_refused notice ("nothing changed" ≠ "the model declined").
+                    // Both aspects ALWAYS render (correction to dbb9175, which withheld a
+                    // no-op row entirely). A NO-OP proposal — byte-identical to Current, an
+                    // already-accepted aspect, or a Generate that returned the same string
+                    // — collapses the row to Current + "Suggest another" INSIDE aspectRow,
+                    // never to nothing: withholding the row hid the only route back to a new
+                    // proposal and made accepting IRREVERSIBLE. So the tray can never
+                    // collapse to a bare header; the tags section keeps its own empty state
+                    // (still DISTINCT from the guardrail_refused notice).
+                    aspectRow(node: node, kind: .title, label: "Title",
+                              current: node.title)
+                    Divider().overlay(AppearancePalette.ink.opacity(0.12))
+                    aspectRow(node: node, kind: .summary, label: "Summary",
+                              current: node.summary)
+                    Divider().overlay(AppearancePalette.ink.opacity(0.12))
                     tagsSection
                 }
             }
@@ -156,9 +144,10 @@ struct LeverTray: View {
     // MARK: - Rows
 
     /// True when `kind` has a surfaced proposal whose text, trimmed, EQUALS the current
-    /// value — a re-fire that rewrote nothing. Such a proposal offers no decision, so its
-    /// row is withheld (see `body`). No proposal at all ⇒ false (the row still renders its
-    /// Current + Generate action).
+    /// value — a re-fire that rewrote nothing. Such a proposal offers no decision, so
+    /// `aspectRow` collapses to its "Suggest another" state instead of presenting a fake
+    /// Ignore / Use this (the row is NEVER withheld — see `body`). No proposal at all ⇒
+    /// false, which also lands the "Suggest another" state.
     ///
     /// ⚠️ This hides a SYMPTOM only: a model-written title is still silently regenerated
     /// on a substrate-only refire (the gate fires on `substrateMissing`; a `.model` title
@@ -179,7 +168,13 @@ struct LeverTray: View {
         // generate) always shows — so after F2 the title row behaves exactly like
         // the summary row even when `titleSource == .user`.
         let proposal = node.surfacedProposal(kind: kind)
-        let showProposal = proposal != nil
+        // Correction to dbb9175: a NO-OP proposal (Proposed == Current after trimming) is
+        // not a decision, so collapse to the "Suggest another" state (the else branch)
+        // rather than present a fake Ignore / Use this. The row still renders — the route
+        // back to a new proposal is never withheld, so accepting stays reversible.
+        // `aspectIsNoOp` is the predicate; here it selects the row's STATE, not its
+        // presence.
+        let showProposal = proposal != nil && !aspectIsNoOp(node, kind: kind, current: current)
         let currentTrimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
 
         VStack(alignment: .leading, spacing: 10) {

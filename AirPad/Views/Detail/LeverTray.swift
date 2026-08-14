@@ -26,7 +26,14 @@ struct LeverTray: View {
 
     /// One FM call produces title AND summary together (the § C5 known
     /// constraint), so a single flag covers the whole tray's working state.
-    @State private var isGenerating = false
+    /// Which aspect is mid-generate (nil = none). Scopes the "Proposing…" indicator to
+    /// the tapped row so the other row keeps its normal label. Still SINGLE-in-flight (a
+    /// global gate): the model call can't run concurrently — the local model is a shared
+    /// MLX context, and two passes would interleave `mutateNode` writes on one node.
+    @State private var generatingAspect: Proposal.Kind? = nil
+    /// The aspect of the most recent generate — so the failure banner's Retry re-runs the
+    /// SAME aspect that failed (generate is per-aspect now, not whole-node).
+    @State private var lastGeneratedKind: Proposal.Kind? = nil
     /// F3 — why the last generate produced nothing (nil = no failure to show).
     /// One FM call does both aspects, so one reason covers the tray. Cleared at
     /// the start of every generate.
@@ -79,7 +86,7 @@ struct LeverTray: View {
                 // failure banner (one vocabulary with chat: amber, the reason,
                 // Retry + dismiss). A framework throw shows its OWN message
                 // verbatim; Retry re-runs the generate; × clears it.
-                if let failure, !isGenerating {
+                if let failure, generatingAspect == nil {
                     if case .refused(let msg) = failure {
                         // FM DECLINED the TITLE+SUMMARY call (`processNode`, ws-local-model
                         // Stage 2). Not an error to retry — offer AirPad's optional on-device
@@ -95,7 +102,7 @@ struct LeverTray: View {
                     } else {
                         FMFailureBanner(
                             message: failureMessage(failure),
-                            onRetry: { generate() },
+                            onRetry: { if let k = lastGeneratedKind { generate(k) } },
                             onDismiss: { self.failure = nil }
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -213,22 +220,25 @@ struct LeverTray: View {
                     .buttonStyle(.plain)
                 }
             } else {
-                generateAction(currentIsEmpty: currentTrimmed.isEmpty)
+                generateAction(kind: kind, currentIsEmpty: currentTrimmed.isEmpty)
             }
         }
     }
 
-    /// The generate action. A user-authored row still OFFERS it — consent comes
-    /// from tapping (the request model). ★ Working state is `ellipsis` +
-    /// `.variableColor.iterative` per § GLYPH VOCABULARY — NOT the feather, which
-    /// means authorship, not activity.
+    /// The generate action for ONE aspect. A user-authored row still OFFERS it — consent
+    /// comes from tapping (the request model). ★ Working state is `ellipsis` +
+    /// `.variableColor.iterative` per § GLYPH VOCABULARY — NOT the feather, which means
+    /// authorship, not activity. `generate(kind)` regenerates ONLY this aspect (T's
+    /// 2026-08-14 ruling); "Proposing…" shows only on the aspect being generated, but the
+    /// button is disabled while ANY generate is in flight (single-in-flight — see
+    /// `generatingAspect`).
     @ViewBuilder
-    private func generateAction(currentIsEmpty: Bool) -> some View {
+    private func generateAction(kind: Proposal.Kind, currentIsEmpty: Bool) -> some View {
         Button {
-            generate()
+            generate(kind)
         } label: {
             HStack(spacing: 7) {
-                if isGenerating {
+                if generatingAspect == kind {
                     Image(systemName: "ellipsis")
                         .symbolEffect(.variableColor.iterative)
                     Text("Proposing…")
@@ -244,7 +254,7 @@ struct LeverTray: View {
             .overlay(Capsule().stroke(AppearancePalette.ink.opacity(0.18), lineWidth: 1))
         }
         .buttonStyle(.plain)
-        .disabled(isGenerating)
+        .disabled(generatingAspect != nil)
     }
 
     @ViewBuilder
@@ -525,23 +535,26 @@ struct LeverTray: View {
 
     // MARK: - Generate
 
-    /// Route through the existing `processNodeWithAI` path. Under `.propose`,
-    /// `recordProposal` withholds the write and records the proposal, so no new
-    /// write logic is needed. One call refreshes BOTH title and summary proposals
-    /// (the § C5 known constraint) — acceptable, they are proposals, not writes.
+    /// Regenerate ONE aspect (title OR summary) — the button regenerates the row it sits
+    /// in (T's 2026-08-14 ruling). Routes through the existing `processNodeWithAI` path
+    /// with `aspects: [kind]`, so only that field is recorded/written and the sibling
+    /// field AND the tag tiers are untouched. Under `.propose`, `recordProposal` withholds
+    /// the write and records the proposal, so no new write logic is needed.
     ///
-    /// ★ Stage 2 F2 — `solicited: true`: this is the ONE path that sets it. The
-    /// user tapped generate, so the user-beats-model gate opens for RECORDING (not
-    /// the write) — a proposal can now be offered even for a field the user
-    /// authored. Consent comes from initiating.
-    private func generate() {
-        guard !isGenerating else { return }
-        isGenerating = true
+    /// ★ Stage 2 F2 — `solicited: true`: the user tapped generate, so the
+    /// user-beats-model gate opens for RECORDING (not the write) — a proposal can be
+    /// offered even for a field the user authored. Consent comes from initiating.
+    /// Single-in-flight: the model call can't run concurrently (see `generatingAspect`).
+    private func generate(_ kind: Proposal.Kind) {
+        guard generatingAspect == nil else { return }
+        generatingAspect = kind
+        lastGeneratedKind = kind
         failure = nil
         Task {
             // F3 — the returned reason (nil on success) drives the tray's copy.
-            let reason = await store.processNodeWithAI(nodeID: nodeID, suppressTagSheet: true, solicited: true)
-            isGenerating = false
+            let reason = await store.processNodeWithAI(
+                nodeID: nodeID, suppressTagSheet: true, solicited: true, aspects: [kind])
+            generatingAspect = nil
             failure = reason
         }
     }

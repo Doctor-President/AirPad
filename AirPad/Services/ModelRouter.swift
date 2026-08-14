@@ -243,12 +243,16 @@ enum ModelRouter {
     /// (`NodeAIResult` is @Generable), so a refusal arrives as a catchable `GenerationError` and is
     /// thrown UP for the caller to surface — the ONE provider difference, exposed not worked around.
     /// The local model is prompted for strict JSON and parsed; it effectively does not refuse.
-    @available(iOS 26.0, *)
     static func generateNodeSummary(prompt: String) async throws -> NodeSummaryResult {
         switch await structuredProvider() {
         case .local:
             return try await nodeSummaryLocal(prompt: prompt)
         case .foundationModel, .ollama:
+            // The FM branch requires iOS 26; the `.local` branch above runs on the iOS 18
+            // floor (LocalModelService has no OS floor, only a runtime Metal-GPU check). This
+            // is GAP 27's shape in the type system — the availability guard belongs on the FM
+            // branch, not around the whole router method.
+            guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
             return try await nodeSummaryFoundationModel(prompt: prompt)
         }
     }
@@ -266,7 +270,9 @@ enum ModelRouter {
         )
     }
 
-    @available(iOS 26.0, *)
+    // No @available: the on-device model path touches NO FoundationModels type — only
+    // LocalModelService (Metal-gated at runtime, no OS floor) + JSON decode. Gating it to
+    // iOS 26 is what stranded the local model on the floor where it's the ONLY option.
     private static func nodeSummaryLocal(prompt: String) async throws -> NodeSummaryResult {
         let jsonInstruction = """
         Respond with ONLY a single minified JSON object and nothing else — no prose, no code fences, no commentary. Use exactly these keys:
@@ -295,12 +301,13 @@ enum ModelRouter {
     /// (an English display name, e.g. "Spanish"); nil = don't constrain. The FM path ignores
     /// it — Apple's guided generation doesn't exhibit the Chinese-drift and its prompt is
     /// deliberately untouched.
-    @available(iOS 26.0, *)
     static func generateSubstrate(prompt: String, responseLanguage: String? = nil) async throws -> SubstrateResult {
         switch await structuredProvider() {
         case .local:
             return try await substrateLocal(prompt: prompt, responseLanguage: responseLanguage)
         case .foundationModel, .ollama:
+            // The FM branch requires iOS 26; the `.local` branch above runs on the iOS 18 floor.
+            guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
             return try await substrateFoundationModel(prompt: prompt)
         }
     }
@@ -320,7 +327,7 @@ enum ModelRouter {
         )
     }
 
-    @available(iOS 26.0, *)
+    // No @available: like nodeSummaryLocal, this path touches NO FoundationModels type.
     private static func substrateLocal(prompt: String, responseLanguage: String? = nil) async throws -> SubstrateResult {
         // No vocabulary is added to the prompt — the folksonomy is free-form by construction.
         // ★ Item 2 — Qwen3 is a Chinese-base model and, on a bare tag list with no language

@@ -170,10 +170,13 @@ struct TagDigest {
 // MARK: - Service
 
 /// On-device AI processing for nodes.
-/// LanguageModelSession and SystemLanguageModel are iOS 26.0+ — the entire
-/// actor is gated accordingly. Callers must use #available(iOS 26.0, *).
-/// Gracefully returns nil on unavailable hardware or errors — node saves are NEVER blocked.
-@available(iOS 26.0, *)
+/// ★ The actor is NO LONGER gated `@available(iOS 26.0, *)`. FoundationModels
+/// (LanguageModelSession / SystemLanguageModel / @Generable) is iOS 26.0+, so every
+/// FM-only method below carries the annotation INDIVIDUALLY. But `processNode` and
+/// `processSubstrate` route through `ModelRouter`, whose `.local` branch (the on-device
+/// model) has NO OS floor — only a runtime Metal check — so they must be callable on
+/// iOS 18–25, where the local model is the ONLY enrichment path. Gating the whole actor
+/// stranded them (GAP 27's shape, at the actor level). Node saves are NEVER blocked.
 actor AIService {
 
     /// GAP 27 (pattern) — does the resolved STRUCTURED provider require Apple FM? The
@@ -199,7 +202,14 @@ actor AIService {
         // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
         // so the FM-availability guard applies only when FM is the resolved provider.
         if await structuredCallNeedsFoundationModel() {
-            guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
+            // FM is the resolved provider. The `SystemLanguageModel` reference (iOS 26) is
+            // itself availability-guarded so this method compiles on the iOS 18 floor — where
+            // the only way here is `.local`, which returns false above and skips this block.
+            if #available(iOS 26.0, *) {
+                guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
+            } else {
+                return .failure(.unavailable)
+            }
         }
 
         let content = extractContent(from: node)
@@ -212,7 +222,7 @@ actor AIService {
         \(content)
         """
 
-        await logFMTokens("ProcessNode", prompt: prompt)
+        if #available(iOS 26.0, *) { await logFMTokens("ProcessNode", prompt: prompt) }
         do {
             // ws-local-model Stage 2 — one of the TWO live capture calls routed through
             // ModelRouter (the other is processSubstrate). Foundation Model (guided generation,
@@ -231,7 +241,14 @@ actor AIService {
             ))
         } catch {
             print("[FM][processNode] FAILURE: \(error)")
-            return .failure(await nodeFailure(from: error, prompt: prompt))
+            // nodeFailure inspects FM error types (iOS 26). On the floor the throw can only
+            // come from the local path (e.g. RouterError.localBadJSON), so carry its message
+            // verbatim — the same "show what you're handed" derivation nodeFailure uses.
+            if #available(iOS 26.0, *) {
+                return .failure(await nodeFailure(from: error, prompt: prompt))
+            } else {
+                return .failure(.failed(message: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription))
+            }
         }
     }
 
@@ -242,6 +259,7 @@ actor AIService {
     /// FM's best-guess neighborhood id. Returns nil on model unavailability or
     /// failure. Callers must NOT block node save on this — same contract as
     /// the legacy `processNode`.
+    @available(iOS 26.0, *)   // FM-only (own LanguageModelSession + @Generable ProcessNodeResult); DEBUG-dormant.
     func processNodeCorpusAware(
         node: Node,
         neighborhoodDigests: [NeighborhoodDigest],
@@ -359,6 +377,7 @@ actor AIService {
     /// refusals (`GenerationError.refusal`; this SDK has NO `LanguageModelError`),
     /// decode failures, etc. — carries the error's OWN description verbatim, the
     /// same derivation the chat surface uses. Do NOT re-add a bucketing classifier.
+    @available(iOS 26.0, *)   // FM-only: inspects LanguageModelSession.GenerationError + SystemLanguageModel.
     private func nodeFailure(from error: any Error, prompt: String) async -> NodeAIFailure {
         let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         if let g = error as? LanguageModelSession.GenerationError {
@@ -390,6 +409,7 @@ actor AIService {
     /// cohesion signal directly rather than guessing from name strings. Surplus
     /// neighborhoods collapse into an "and N smaller communities" footer.
     /// `recentCaptureCount` is the count of nodes captured in the last 14 days.
+    @available(iOS 26.0, *)   // FM-only (own LanguageModelSession + @Generable CorpusSummaryResult).
     func generateCorpusSummary(
         index: CorpusIndex,
         nodeCount: Int,
@@ -451,6 +471,7 @@ actor AIService {
     /// 1-2 sentence description, or nil on model unavailability / failure.
     /// `priorName` and `priorDescription` provide continuity when cluster
     /// identity matched across refreshes (AT21 Jaccard logic).
+    @available(iOS 26.0, *)   // FM-only (own LanguageModelSession + @Generable NeighborhoodCharacterization).
     func characterizeNeighborhood(
         dominantTags: [String],
         topCoOccurrences: [(pair: String, count: Int)],
@@ -510,6 +531,7 @@ actor AIService {
     /// the names of sibling neighborhoods. Returns a 2-4 word name, or nil on
     /// failure. `priorName` instructs the model to prefer keeping the prior
     /// label unless the description has shifted meaningfully.
+    @available(iOS 26.0, *)   // FM-only (own LanguageModelSession + @Generable NeighborhoodNaming).
     func nameNeighborhood(
         description: String,
         siblingNames: [String],
@@ -585,7 +607,14 @@ actor AIService {
         // model; returning `model_unavailable` here without asking the router meant the local
         // model was never consulted and the tray rendered a refusal that never happened.
         if await structuredCallNeedsFoundationModel() {
-            guard SystemLanguageModel.default.isAvailable else {
+            // FM is the resolved provider — availability-guard the SystemLanguageModel
+            // reference (iOS 26) so this compiles on the floor, where the only path here is
+            // `.local` (returns false above, skips this block).
+            if #available(iOS 26.0, *) {
+                guard SystemLanguageModel.default.isAvailable else {
+                    return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
+                }
+            } else {
                 return .otherError(FMErrorDetail(errorType: "model_unavailable", debugDescription: nil))
             }
         }
@@ -616,7 +645,7 @@ actor AIService {
         // instruction-laden prompt) so the LOCAL model can be pinned to it. FM ignores this.
         let responseLanguage = Self.substrateResponseLanguage(for: truncated)
 
-        await logFMTokens("ProcessSubstrate", prompt: prompt)
+        if #available(iOS 26.0, *) { await logFMTokens("ProcessSubstrate", prompt: prompt) }
         do {
             // ws-local-model Stage 2 — the SECOND live capture call routed through ModelRouter,
             // a SEPARATE refusal locus from processNode. Foundation Model (guided generation,
@@ -642,7 +671,9 @@ actor AIService {
             // to `fm_error` — reserved for genuine unseen failure modes —
             // and `classifyFMError` captures the type + debugDescription
             // for diagnosis on `Node.fmErrorDetail`.
-            if let genErr = error as? LanguageModelSession.GenerationError {
+            // GenerationError is iOS 26; guard the cast so this compiles on the floor (a
+            // local-path throw is never a GenerationError, so the floor correctly skips this).
+            if #available(iOS 26.0, *), let genErr = error as? LanguageModelSession.GenerationError {
                 switch genErr {
                 case .refusal, .guardrailViolation:
                     print("[FM][processSubstrate] guardrail refusal: \(error)")
@@ -692,6 +723,7 @@ actor AIService {
     /// the new tag is filtered out of the comparison vocabulary defensively
     /// (AT20 fix) — passing it back to itself produces self-similarity = 1.0
     /// noise.
+    @available(iOS 26.0, *)   // FM-only (own LanguageModelSession).
     func computeTagSimilarity(
         newTag: String,
         existingTags: [String]
@@ -729,6 +761,7 @@ actor AIService {
     /// Checks whether a raw text block represents a complete, standalone idea.
     /// Returns true (coherent), false (incoherent), or nil if the model is unavailable.
     /// Callers should treat nil as "pass" — never block import when the model is offline.
+    @available(iOS 26.0, *)   // FM-only (own LanguageModelSession + @Generable CoherenceCheck).
     func checkCoherence(_ text: String) async -> Bool? {
         // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
         // through ModelRouter — so the FM guard is correct.

@@ -4843,10 +4843,11 @@ final class CorpusStore {
                            solicited: Bool = false,
                            aspects: Set<Proposal.Kind> = [.title, .summary]) async -> NodeAIFailure? {
         print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) solicited=\(solicited)")
-        guard #available(iOS 26.0, *) else {
-            print("[AI] iOS 26.0 unavailable — skipping AI for \(nodeID)")
-            return .unavailable
-        }
+        // GAP 27 shape at the caller layer: DON'T bail here on !iOS26. `processNode` and
+        // `runSubstratePipeline` route through ModelRouter, whose `.local` branch (the
+        // on-device model) has no OS floor — so an iOS 18–25 user who opted into the local
+        // model must reach it. FM-availability is now enforced INSIDE the routed calls (which
+        // return .unavailable / model_unavailable when FM is the resolved provider and absent).
         guard let node = nodes.first(where: { $0.id == nodeID }) else { return nil }
 
         let currentTags = tags
@@ -4858,21 +4859,36 @@ final class CorpusStore {
         // window (top-K neighborhood digests + top-N tag digests), and runs a
         // single FM call producing all per-node fields plus an FM-suggested
         // neighborhood id.
-        let useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
+        // The corpus-aware path is FM-only (own LanguageModelSession) AND DEBUG-dormant
+        // (default-false flag, unreachable in Release), so it never runs on the iOS 18–25
+        // floor — force it off there so every downstream `if useCorpusAware` block is
+        // consistently skipped and the routed legacy path (processNode) is taken.
+        let useCorpusAware: Bool
+        if #available(iOS 26.0, *) {
+            useCorpusAware = forceCorpusAware ?? FeatureFlags.useCorpusAwareTagging
+        } else {
+            useCorpusAware = false
+        }
         let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
         let aiOutcome: NodeAIOutcome
         bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
         if useCorpusAware {
-            let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
-            let tagDigests = topTagsForProcessNode(N: 12)
-            let vocabulary = currentTags.map { $0.name }
-            print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
-            aiOutcome = await aiSvc.processNodeCorpusAware(
-                node: node,
-                neighborhoodDigests: neighborhoodDigests,
-                tagDigests: tagDigests,
-                fullVocabulary: vocabulary
-            )
+            if #available(iOS 26.0, *) {
+                let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
+                let tagDigests = topTagsForProcessNode(N: 12)
+                let vocabulary = currentTags.map { $0.name }
+                print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
+                aiOutcome = await aiSvc.processNodeCorpusAware(
+                    node: node,
+                    neighborhoodDigests: neighborhoodDigests,
+                    tagDigests: tagDigests,
+                    fullVocabulary: vocabulary
+                )
+            } else {
+                // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
+                // the compiler sees a definite assignment without the FM-only call on the floor.
+                aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags)
+            }
         } else {
             aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags)
         }
@@ -5304,7 +5320,9 @@ final class CorpusStore {
     /// `embeddingVersion` is set to the current substrate version regardless
     /// of outcome, so this node won't be re-attempted by backfill until the
     /// version constant bumps.
-    @available(iOS 26.0, *)
+    // No @available: the substrate FM runs ONLY via `aiSvc.processSubstrate`, routed through
+    // ModelRouter (the `.local` branch has no OS floor). Touches no FM type directly, so it
+    // must be callable on the iOS 18–25 floor.
     private func runSubstratePipeline(on node: inout Node, aiSvc: AIService) async {
         let substrate = SubstrateService.shared
         let loaded = await substrate.ensureLoaded()

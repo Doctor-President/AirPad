@@ -1583,6 +1583,92 @@ final class CorpusStore {
         }
     }
 
+    /// STEP 4 — THE "WOULD BE NEW" TIER (§ THE TAG PRODUCER). The sibling of
+    /// `tagSuggestions`: where that tier proposes an EXISTING tag the folksonomy is
+    /// close to (≥ threshold), this proposes the folksonomy terms that match NO
+    /// existing tag — the genuinely new concepts the "already yours" loop throws away.
+    /// Without it the corpus can never grow its vocabulary. Node-local, on demand,
+    /// never a sweep. Accepting one goes through `promoteNewTag` (create + `.promoted`).
+    func newTagSuggestions(forNodeID nodeID: String) async -> [TagSuggestion] {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return [] }
+
+        // Folksonomy in emission order, deduped by NORMALIZED form but keeping the
+        // model's ORIGINAL casing for the proposal (§ CASING — normalize COMPARES,
+        // never stores). "Air Force Fighter Pilot" is offered verbatim; only the
+        // match test lowercases it.
+        var ordered: [(norm: String, display: String)] = []
+        var seen = Set<String>()
+        for raw in (node.folksonomy ?? []) {
+            let norm = TagNormalization.normalize(raw)
+            guard !norm.isEmpty, !seen.contains(norm) else { continue }
+            seen.insert(norm)
+            ordered.append((norm, raw.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        guard !ordered.isEmpty else { return [] }
+
+        let attached = Set(node.tags.map(TagNormalization.normalize))
+        let dismissed = dismissedTagNames(node)
+        let threshold = TagMatchTuning.shared.threshold
+
+        // A term is "would be new" only if NO existing tag already covers its concept.
+        // Coverage is tested against the WHOLE vocabulary (attached or not, dismissed
+        // or not): if the concept exists as any tag at all it is not new, and proposing
+        // it would mint a near-duplicate ("veteran" beside an existing "Veteran"). So
+        // embed every tag once and, per surviving term, take the max cosine over all
+        // tags — exactly the leftovers the `tagSuggestions` loop discards.
+        var tagVecs: [[Float]] = []
+        for t in tags {
+            let n = TagNormalization.normalize(t.name)
+            guard !n.isEmpty else { continue }
+            if let v = await TagEmbeddingCache.shared.embedding(for: n) { tagVecs.append(v) }
+        }
+
+        var items: [TagSuggestion] = []
+        var termVecByDisplay: [String: [Float]] = [:]
+        for (index, term) in ordered.enumerated() {
+            guard !attached.contains(term.norm), !dismissed.contains(term.norm) else { continue }
+            guard let tv = await TagEmbeddingCache.shared.embedding(for: term.norm) else { continue }
+            var covered = false
+            for gv in tagVecs where tagCosine(tv, gv) >= threshold { covered = true; break }
+            guard !covered else { continue }
+            // Relevance is UNIFORM — every folksonomy term is, by construction, the
+            // model's own description of THIS node, so there is no cosine-to-existing to
+            // rank by. The tiny position decrement only makes the MMR sort DETERMINISTIC
+            // and breaks ties toward the model's earlier (more salient) terms; diversity
+            // still drives selection (§ "same note → same answer").
+            let score = Float(1.0) - Float(index) * 0.001
+            items.append(TagSuggestion(name: term.display, score: score))
+            termVecByDisplay[term.display] = tv
+        }
+        guard !items.isEmpty else { return [] }
+
+        // SAME MMR pass as the "already yours" tier, into the SEPARATE, smaller cap, so
+        // near-duplicate new proposals (Identity Crisis / Gender Identity) collapse
+        // toward one slot instead of eating the cap (§ C2, STEP 4).
+        let cap = TagMatchTuning.shared.newTagCap
+        let lambda = TagMatchTuning.shared.mmrLambda
+        return mmrRerank(items, tagVecs: termVecByDisplay, cap: cap, lambda: lambda)
+    }
+
+    /// STEP 4 — accept a "would be new" proposal: PROMOTE a folksonomy term to a real
+    /// tag. Distinct from the "already yours" accept (which attaches an EXISTING tag):
+    /// here the tag does not exist yet, so it is CREATED first — via `addTag(_:)` for
+    /// its case-preserving uniqueness + `computeTagSimilarityIfNeeded` warming — then
+    /// applied with `.promoted` provenance ("model-generated, explicitly accepted by
+    /// user", Node.swift). NEVER `.user` (the human didn't author the word) and NEVER
+    /// `.model` (the human explicitly chose it). Nothing enters the tag channel without
+    /// this tap (architecture/tags-as-user-affordance.md — the SB139 guard).
+    func promoteNewTag(_ name: String, toNodeID nodeID: String) async {
+        let canonical = canonicalTagName(name)
+        guard !canonical.isEmpty else { return }
+        // Create the tag if it's genuinely new. `addTag(_:)` no-ops on a
+        // case-insensitive match, so a race that already minted it is harmless. Neutral
+        // color — the same default `TagCreationSheet` seeds; T recolors in the editor.
+        await addTag(Tag(id: UUID(), name: canonical, colorHex: Tag.neutralColorHex,
+                         createdAt: Date(), useCount: 0))
+        await applyTags([canonical], toNodeID: nodeID, source: .promoted)
+    }
+
     // MARK: - ws-card-catalog step 2c — catalog derivation / embed / backfill
 
     /// Derivation (not authoring): the embedded card text is gist-only,

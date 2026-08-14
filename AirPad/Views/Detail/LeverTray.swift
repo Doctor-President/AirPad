@@ -454,20 +454,33 @@ struct LeverTray: View {
     }
 
     /// STEP 4 — accept a "would be new" chip: PROMOTE the term to a real tag via the
-    /// create-then-apply-`.promoted` path (§ THE TAG PRODUCER, constraint 2), then drop
-    /// the chip. NOT the "already yours" `accept` — that attaches an existing tag; this
-    /// mints one. The detail view's tag row picks the new tag up from the store.
+    /// create-then-apply-`.promoted` path (§ THE TAG PRODUCER, constraint 2). NOT the
+    /// "already yours" `accept` — that attaches an existing tag; this mints one.
+    ///
+    /// RE-QUERY BOTH TIERS afterward (reuse `loadTagSuggestions`), never a local
+    /// removeAll: (1) the new tier shows 3 of N (newTagCap), so draining it locally
+    /// strands the other N−3 until the tray reopens — the re-query promotes the next
+    /// candidate into the freed slot; and (2) minting a Tag CHANGES the vocabulary the
+    /// remaining folksonomy terms are tested against, so a term that had no ≥ 0.80 match
+    /// may now clear against the tag just created and must leave the new tier (accept
+    /// "Transgender" → "Gender Identity" is no longer "would be new"). The detail view's
+    /// tag row picks the new tag up from the store.
     private func acceptNew(_ s: TagSuggestion) async {
         await store.promoteNewTag(s.name, toNodeID: nodeID)
-        newTagSuggestions.removeAll { $0.id == s.id }
+        await loadTagSuggestions()
     }
 
     /// STEP 4 — dismiss a "would be new" chip. Same persist path as the "already yours"
     /// tier (`dismissTagSuggestion` keys by normalized name), so a rejected new term
     /// isn't offered for this node again — whether or not it later becomes a real tag.
+    ///
+    /// RE-QUERY the new tier afterward, never a local removeAll: the producer filters on
+    /// `dismissedTagNames`, so the dismissed term won't return, and the re-query is what
+    /// promotes the next candidate into the freed slot (the tier shows 3 of N). Dismiss
+    /// changes no tag, so it can't move a term between tiers — only the new tier reloads.
     private func dismissNewSuggestion(_ s: TagSuggestion) async {
         await store.dismissTagSuggestion(nodeID: nodeID, tagName: s.name)
-        newTagSuggestions.removeAll { $0.id == s.id }
+        newTagSuggestions = await store.newTagSuggestions(forNodeID: nodeID)
     }
 
     // MARK: - Generate

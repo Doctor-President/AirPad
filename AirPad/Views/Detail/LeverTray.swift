@@ -103,12 +103,32 @@ struct LeverTray: View {
                 }
 
                 if let node {
-                    aspectRow(node: node, kind: .title, label: "Title",
-                              current: node.title)
-                    Divider().overlay(AppearancePalette.ink.opacity(0.12))
-                    aspectRow(node: node, kind: .summary, label: "Summary",
-                              current: node.summary)
-                    Divider().overlay(AppearancePalette.ink.opacity(0.12))
+                    // A proposal byte-identical to Current is a NO-OP — not a decision
+                    // to ask for (architecture/hybrid-authorship.md), and it makes the
+                    // tray look broken on a re-fire. Withhold its whole aspect row.
+                    // Per-aspect + independent: title may hide while a changed summary
+                    // still renders. Plain trimmed-string test — NOT a "meaningful
+                    // change" heuristic, NOT an embedding compare.
+                    let showTitle = !aspectIsNoOp(node, kind: .title, current: node.title)
+                    let showSummary = !aspectIsNoOp(node, kind: .summary, current: node.summary)
+                    if showTitle {
+                        aspectRow(node: node, kind: .title, label: "Title",
+                                  current: node.title)
+                    }
+                    if showTitle && showSummary {
+                        Divider().overlay(AppearancePalette.ink.opacity(0.12))
+                    }
+                    if showSummary {
+                        aspectRow(node: node, kind: .summary, label: "Summary",
+                                  current: node.summary)
+                    }
+                    if showTitle || showSummary {
+                        Divider().overlay(AppearancePalette.ink.opacity(0.12))
+                    }
+                    // If BOTH aspects are withheld AND both tag tiers are empty, the
+                    // honest empty state is the tags section's existing "Nothing to
+                    // suggest here." — reused, not reinvented, and kept DISTINCT from the
+                    // guardrail_refused notice ("nothing changed" ≠ "the model declined").
                     tagsSection
                 }
             }
@@ -134,6 +154,21 @@ struct LeverTray: View {
     }
 
     // MARK: - Rows
+
+    /// True when `kind` has a surfaced proposal whose text, trimmed, EQUALS the current
+    /// value — a re-fire that rewrote nothing. Such a proposal offers no decision, so its
+    /// row is withheld (see `body`). No proposal at all ⇒ false (the row still renders its
+    /// Current + Generate action).
+    ///
+    /// ⚠️ This hides a SYMPTOM only: a model-written title is still silently regenerated
+    /// on a substrate-only refire (the gate fires on `substrateMissing`; a `.model` title
+    /// passes the user-beats-model check). Whether Automatic means "write once into blanks"
+    /// or "keep current" is Stage 3's call, not this commit's.
+    private func aspectIsNoOp(_ node: Node, kind: Proposal.Kind, current: String) -> Bool {
+        guard let p = node.surfacedProposal(kind: kind) else { return false }
+        return p.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            == current.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     @ViewBuilder
     private func aspectRow(node: Node, kind: Proposal.Kind, label: String,

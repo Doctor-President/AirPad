@@ -1589,8 +1589,8 @@ final class CorpusStore {
     /// existing tag — the genuinely new concepts the "already yours" loop throws away.
     /// Without it the corpus can never grow its vocabulary. Node-local, on demand,
     /// never a sweep. Accepting one goes through `promoteNewTag` (create + `.promoted`).
-    func newTagSuggestions(forNodeID nodeID: String) async -> [TagSuggestion] {
-        guard let node = nodes.first(where: { $0.id == nodeID }) else { return [] }
+    func newTagSuggestions(forNodeID nodeID: String) async -> NewTagTier {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return .empty }
 
         // Folksonomy in emission order, deduped by NORMALIZED form but keeping the
         // model's ORIGINAL casing for the proposal (§ CASING — normalize COMPARES,
@@ -1604,7 +1604,7 @@ final class CorpusStore {
             seen.insert(norm)
             ordered.append((norm, raw.trimmingCharacters(in: .whitespacesAndNewlines)))
         }
-        guard !ordered.isEmpty else { return [] }
+        guard !ordered.isEmpty else { return .empty }
 
         let attached = Set(node.tags.map(TagNormalization.normalize))
         let dismissed = dismissedTagNames(node)
@@ -1640,14 +1640,16 @@ final class CorpusStore {
             items.append(TagSuggestion(name: term.display, score: score))
             termVecByDisplay[term.display] = tv
         }
-        guard !items.isEmpty else { return [] }
+        guard !items.isEmpty else { return .empty }
 
         // SAME MMR pass as the "already yours" tier, into the SEPARATE, smaller cap, so
         // near-duplicate new proposals (Identity Crisis / Gender Identity) collapse
-        // toward one slot instead of eating the cap (§ C2, STEP 4).
+        // toward one slot instead of eating the cap (§ C2, STEP 4). `total` = every
+        // eligible candidate before the cap, so the tray can show "N of total" (item 3).
         let cap = TagMatchTuning.shared.newTagCap
         let lambda = TagMatchTuning.shared.mmrLambda
-        return mmrRerank(items, tagVecs: termVecByDisplay, cap: cap, lambda: lambda)
+        let shown = mmrRerank(items, tagVecs: termVecByDisplay, cap: cap, lambda: lambda)
+        return NewTagTier(shown: shown, total: items.count)
     }
 
     /// STEP 4 — accept a "would be new" proposal: PROMOTE a folksonomy term to a real

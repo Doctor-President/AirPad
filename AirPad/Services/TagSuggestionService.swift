@@ -62,6 +62,17 @@ struct TagSuggestion: Identifiable, Equatable {
     var id: String { name }
 }
 
+/// STEP 4 (item 3) — the "would be new" tier plus how many candidates exist in TOTAL
+/// before the per-node `newTagCap`. `shown` is the capped, MMR-reranked list actually
+/// rendered; `total` is every eligible candidate, so the tray can say "3 of 8" and make
+/// the dismiss-to-page behaviour legible (a dismissed chip frees a slot the next
+/// candidate fills). `total - shown.count` is how many remain unseen.
+struct NewTagTier: Equatable {
+    var shown: [TagSuggestion]
+    var total: Int
+    static let empty = NewTagTier(shown: [], total: 0)
+}
+
 /// Caches BGE-micro embeddings by string. Deterministic → never stale within an
 /// embedder version: a new tag or term embeds on first use (satisfying "recompute
 /// only when the set changes"); a reopen of the same node is free. `missed` avoids

@@ -511,8 +511,9 @@ final class LibrarianState {
                 // Tool loop steers with the tool-aware prompt (real date + "trust the
                 // live results, don't hedge") — NOT the plain private prompt, which
                 // told the model to answer "from your own knowledge" (the bug).
-                // `WebSearchBackend.make()` picks Brave (reliable) when a key is set,
-                // else the keyless DDG scraper — the loop is agnostic to which.
+                // `WebSearchBackend.make()` picks Brave when the user set a key, else an
+                // "unavailable — needs a Brave key" stub the model relays to the user (no
+                // keyless fallback) — the loop is agnostic to which.
                 await chat.sendWithTools(displayText: query,
                                          systemPrompt: toolChatSystemPrompt,
                                          executor: WebSearchBackend.make())

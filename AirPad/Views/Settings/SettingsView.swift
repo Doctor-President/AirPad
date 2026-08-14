@@ -108,9 +108,10 @@ struct SettingsView: View {
                 apiKeyField(label: "Anthropic API key", placeholder: "sk-ant-...", text: $anthropicKey)
                 apiKeyField(label: "OpenAI API key", placeholder: "sk-...", text: $openAIKey)
                 apiKeyField(label: "DeepSeek API key", placeholder: "sk-...", text: $deepSeekKey)
-                // Web search backend (private-mode tool loop). With a Brave key the
-                // reliable Brave Search API is used; without one, the keyless DDG
-                // scraper (which rate-limits). DEV/PERSONAL only — see the relay note.
+                // Web search backend (private-mode tool loop). Web search REQUIRES a Brave
+                // key: with one, the Brave Search API is used; without one, web search is
+                // unavailable (no keyless fallback). Same BYO-key model as the frontier
+                // providers above and the Ollama endpoint below.
                 apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
 
                 VStack(alignment: .leading, spacing: 4) {

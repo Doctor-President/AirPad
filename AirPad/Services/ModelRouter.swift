@@ -638,12 +638,11 @@ struct AgentTurn: Sendable {
     let toolCalls: [ToolCall]
 }
 
-/// ★ THE LOAD-BEARING SEAM. The agent loop is identical whether AIRPAD executes the
-/// tool or a relay / BYO-key backend does — only this one method differs. This build
-/// ships `WebSearchToolExecutor` (AirPad-executes via free DuckDuckGo HTML scraping,
-/// zero cost / no key — a DEV/TEST executor, NOT the declared launch backend). A
-/// thin-relay or keyed implementation drops in behind the SAME method later without
-/// touching the loop.
+/// ★ THE LOAD-BEARING SEAM. The agent loop is identical whether a BYO-key backend or a
+/// relay executes the tool — only this one method differs. This build ships
+/// `BraveSearchToolExecutor` (BYO Brave key) with `WebSearchUnavailableExecutor` as the
+/// keyless state; a thin-relay implementation drops in behind the SAME method later
+/// without touching the loop.
 protocol ToolExecutor: Sendable {
     func execute(name: String, arguments: [String: Any]) async -> ToolResult
 }
@@ -754,169 +753,27 @@ extension ModelRouter {
     }
 }
 
-/// ★ DEV/TEST executor — AirPad-executes the fixed tool pair for zero cost, no key,
-/// no provider account, so T can watch the loop work. `web_search` scrapes the free
-/// DuckDuckGo HTML endpoint (the same approach LM Studio's local-web-search plugin
-/// uses); `fetch_url` is a plain HTTPS GET + readability trim. ⚠️ Direct-from-device
-/// scraping does NOT scale (per-install traffic → rate-limit / block risk) — this is
-/// NOT the launch backend; a thin-relay or BYO-key executor swaps in behind
-/// `ToolExecutor` later. See the launch-backend flag in the report.
-/// A CLASS (not struct) so it carries PER-TURN state — the search budget + throttle
-/// flag — behind the seam, so the loop stays untouched. Created fresh per user turn;
-/// `execute` is called sequentially (awaited) from the one `sendWithTools` loop, so the
-/// mutable state is never touched concurrently (`@unchecked Sendable` is safe here).
-final class WebSearchToolExecutor: ToolExecutor, @unchecked Sendable {
+/// The keyless web-search state: no Brave key configured, so web search is OFF. Reuses the
+/// `ToolExecutor` seam so the agent loop stays UNCHANGED — when the model calls web_search
+/// or fetch_url, it gets a plain factual note it relays to the user. No scraping, no silent
+/// failure, no dangling affordance.
+/// ★ T's ruling 2026-08-14: web search requires a user-supplied Brave key, consistent with
+/// every other external provider in the app (frontier keys, the Ollama endpoint). The prior
+/// keyless DuckDuckGo scraper was REMOVED — it parsed DDG's HTML with no API and no
+/// agreement (breaks on markup change, blocks under volume) and was the only path that sent
+/// user text somewhere T didn't deliberately choose.
+struct WebSearchUnavailableExecutor: ToolExecutor {
+    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
+        ToolResult(textForModel: "Web search requires a Brave Search API key, which can be added in Settings.", links: [])
+    }
+}
+
+/// Shared web-content utilities (readability fetch + HTML cleanup). These formerly lived on
+/// the removed `WebSearchToolExecutor` (the keyless DDG scraper); `BraveSearchToolExecutor`
+/// reuses them for `fetch_url` and for cleaning result snippets, so they outlive the scraper.
+enum WebReadability {
 
     private static let browserUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-
-    /// A single question rarely needs more than a couple of successful searches; this
-    /// cap (below the loop's 5-step tool cap) stops retries from burning the whole turn.
-    private let maxSearchesPerTurn = 2
-    private var searchCount = 0
-    /// Set once the provider throttles us this turn — every later web_search short-
-    /// circuits to a "stop searching, answer now" result instead of re-scraping.
-    private var throttled = false
-
-    func execute(name: String, arguments: [String: Any]) async -> ToolResult {
-        switch name {
-        case AgentTools.webSearch:
-            let query = (arguments["query"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !query.isEmpty else { return ToolResult(textForModel: "No query provided.", links: []) }
-
-            // Already throttled this turn → do NOT scrape again (that just gets more 202s).
-            if throttled {
-                return ToolResult(
-                    textForModel: "Web search is temporarily rate-limited by the provider. Do NOT search again this turn — answer now from the results you already have; if you have none, tell the user web search is rate-limited right now and to try again shortly.",
-                    links: [], rateLimited: true)
-            }
-            // Search budget — stop the retry-storm before it consumes the tool cap.
-            if searchCount >= maxSearchesPerTurn {
-                return ToolResult(
-                    textForModel: "You have used your web search budget for this question (\(maxSearchesPerTurn) searches). Do NOT search again — answer now from the results you already have.",
-                    links: [])
-            }
-            searchCount += 1
-
-            let (links, rateLimited) = await Self.scrape(query)
-            if rateLimited {
-                throttled = true
-                return ToolResult(
-                    textForModel: "Web search is temporarily rate-limited by the provider (too many requests in a short time). Do NOT keep retrying — answer from what you already have, or if you have nothing, tell the user web search is rate-limited right now and to try again shortly.",
-                    links: [], rateLimited: true)
-            }
-            guard !links.isEmpty else {
-                return ToolResult(textForModel: "No results found for \"\(query)\".", links: [])
-            }
-            let text = links.enumerated().map { i, l in
-                "[\(i + 1)] \(l.title)\n\(l.url)\n\(l.snippet ?? "")"
-            }.joined(separator: "\n\n")
-            return ToolResult(textForModel: text, links: links)
-
-        case AgentTools.fetchURL:
-            let raw = (arguments["url"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else {
-                return ToolResult(textForModel: "Invalid URL: \(raw)", links: [])
-            }
-            let text = await Self.fetchReadable(url)
-            return ToolResult(textForModel: text, links: [])
-
-        default:
-            return ToolResult(textForModel: "Unknown tool: \(name)", links: [])
-        }
-    }
-
-    // MARK: DuckDuckGo HTML scrape
-
-    /// Scrape DDG, distinguishing a THROTTLE (HTTP 202 / anomaly-challenge page with no
-    /// `result__a`) from a genuine empty result. On a throttle, back off briefly and
-    /// retry ONCE; if still throttled, report it (→ `rateLimited`) rather than an empty
-    /// "no results" the model would keep retrying against.
-    private static func scrape(_ query: String, allowRetry: Bool = true) async -> (links: [ToolLink], rateLimited: Bool) {
-        var comps = URLComponents(string: "https://html.duckduckgo.com/html/")
-        comps?.queryItems = [URLQueryItem(name: "q", value: query)]
-        guard let url = comps?.url else { return ([], false) }
-        var req = URLRequest(url: url)
-        req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let html = String(data: data, encoding: .utf8) else {
-            return ([], false)   // transport failure → treat as empty, not a throttle
-        }
-        let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
-        let low = html.lowercased()
-        let isThrottle = status == 202
-            || (!html.contains("result__a") && (low.contains("anomaly") || low.contains("challenge")))
-        if isThrottle {
-            if allowRetry {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)   // brief backoff
-                return await scrape(query, allowRetry: false)        // one retry
-            }
-            return ([], true)   // still throttled
-        }
-        return (parseDDG(html), false)
-    }
-
-    #if DEBUG
-    /// STEP-0 diagnostic — the same request `duckDuckGoSearch` makes, but capturing the
-    /// HTTP status, body length, first ~600 chars, parse count, and anomaly markers that
-    /// the production path silently swallows. Used to split scraper-vs-prompt with evidence.
-    static func diagnose(query: String) async -> String {
-        var comps = URLComponents(string: "https://html.duckduckgo.com/html/")
-        comps?.queryItems = [URLQueryItem(name: "q", value: query)]
-        guard let url = comps?.url else { return "QUERY: \(query)\nBAD URL\n" }
-        var req = URLRequest(url: url)
-        req.setValue(browserUA, forHTTPHeaderField: "User-Agent")
-        do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
-            let html = String(data: data, encoding: .utf8) ?? "<non-utf8 \(data.count) bytes>"
-            let parsed = parseDDG(html).count
-            let low = html.lowercased()
-            var flags: [String] = []
-            if low.contains("anomaly") { flags.append("anomaly") }
-            if low.contains("captcha") { flags.append("captcha") }
-            if low.contains("challenge") { flags.append("challenge") }
-            if !html.contains("result__a") { flags.append("NO_result__a_class") }
-            if html.contains("result__snippet") == false { flags.append("no_snippet_class") }
-            let head = String(html.prefix(600)).replacingOccurrences(of: "\n", with: " ")
-            return """
-            QUERY: \(query)
-            STATUS: \(status)  BODY_LEN: \(html.count)  PARSED: \(parsed)  FLAGS: \(flags.isEmpty ? "none" : flags.joined(separator: ","))
-            HEAD: \(head)
-            """
-        } catch {
-            return "QUERY: \(query)\nERROR: \(error.localizedDescription)"
-        }
-    }
-    #endif
-
-    private static func parseDDG(_ html: String) -> [ToolLink] {
-        let anchors  = regexCaptures(#"<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>"#, html)
-        let snippets = regexCaptures(#"<a[^>]*class="result__snippet"[^>]*>(.*?)</a>"#, html)
-        var out: [ToolLink] = []
-        for (i, a) in anchors.enumerated() where i < 8 {
-            guard a.count >= 2 else { continue }
-            let href = decodeDDGHref(a[0])
-            let title = decodeEntities(stripTags(a[1])).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !href.isEmpty, !title.isEmpty else { continue }
-            let snippet = i < snippets.count && !snippets[i].isEmpty
-                ? decodeEntities(stripTags(snippets[i][0])).trimmingCharacters(in: .whitespacesAndNewlines)
-                : nil
-            out.append(ToolLink(title: title, url: href, snippet: snippet))
-        }
-        return out
-    }
-
-    /// DDG result hrefs are redirects like `//duckduckgo.com/l/?uddg=<encoded>&rut=…`.
-    /// Pull the `uddg` target (URLComponents percent-decodes query values).
-    private static func decodeDDGHref(_ raw: String) -> String {
-        var s = raw
-        if s.hasPrefix("//") { s = "https:" + s }
-        guard let comps = URLComponents(string: s) else { return raw }
-        if let target = comps.queryItems?.first(where: { $0.name == "uddg" })?.value {
-            return target
-        }
-        return s
-    }
 
     // MARK: fetch_url readability
 
@@ -939,17 +796,6 @@ final class WebSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 
     // MARK: HTML helpers
 
-    private static func regexCaptures(_ pattern: String, _ text: String) -> [[String]] {
-        guard let re = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return [] }
-        let ns = text as NSString
-        return re.matches(in: text, range: NSRange(location: 0, length: ns.length)).map { m in
-            (1..<m.numberOfRanges).map { g -> String in
-                let r = m.range(at: g)
-                return r.location == NSNotFound ? "" : ns.substring(with: r)
-            }
-        }
-    }
-
     private static func removeBlocks(_ html: String, tag: String) -> String {
         guard let re = try? NSRegularExpression(pattern: "<\(tag)[^>]*>.*?</\(tag)>", options: [.dotMatchesLineSeparators, .caseInsensitive]) else { return html }
         let ns = html as NSString
@@ -971,11 +817,10 @@ final class WebSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     }
 }
 
-/// ★ RELIABLE executor — Brave Search API (real independent index, JSON, no scraping /
-/// no anti-bot throttle). Same seam, same per-turn cap/throttle machinery as the DDG
-/// scraper (Brave just won't trip it under normal use — its own 429 maps to the SAME
-/// `rateLimited` signal). `fetch_url` is provider-agnostic and reuses the scraper's
-/// readability fetch verbatim.
+/// ★ THE web-search executor — Brave Search API (real independent index, JSON, no scraping /
+/// no anti-bot throttle). Per-turn cap/throttle machinery behind the ToolExecutor seam
+/// (Brave rarely trips it — its own 429 maps to the shared `rateLimited` signal).
+/// `fetch_url` is provider-agnostic and reuses `WebReadability`'s readability fetch.
 ///
 /// ⚠️ DEV/PERSONAL only: the key lives in the user's Keychain (entered in Settings). A
 /// shipped build carrying/entering a per-install key is the "key in the app" problem —
@@ -985,8 +830,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     private let apiKey: String
     init(apiKey: String) { self.apiKey = apiKey }
 
-    // Same per-turn budget/throttle contract as WebSearchToolExecutor (kept intact so a
-    // backend swap changes nothing for the loop).
+    // Per-turn budget/throttle contract behind the ToolExecutor seam, so a backend swap
+    // changes nothing for the loop. Brave's own 429 maps to the shared `rateLimited` signal.
     private let maxSearchesPerTurn = 2
     private var searchCount = 0
     private var throttled = false
@@ -1021,8 +866,8 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
             guard let url = URL(string: raw), url.scheme?.hasPrefix("http") == true else {
                 return ToolResult(textForModel: "Invalid URL: \(raw)", links: [])
             }
-            // Provider-agnostic — reuse the scraper's readability fetch verbatim.
-            let text = await WebSearchToolExecutor.fetchReadable(url)
+            // Provider-agnostic readability fetch (shared helper on WebReadability).
+            let text = await WebReadability.fetchReadable(url)
             return ToolResult(textForModel: text, links: [])
 
         default:
@@ -1075,9 +920,9 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
               let results = web["results"] as? [[String: Any]] else { return [] }
         return results.prefix(8).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
-            let cleanTitle = WebSearchToolExecutor.decodeEntities(WebSearchToolExecutor.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
             let snippet = (r["description"] as? String).map {
-                WebSearchToolExecutor.decodeEntities(WebSearchToolExecutor.stripTags($0)).trimmingCharacters(in: .whitespacesAndNewlines)
+                WebReadability.decodeEntities(WebReadability.stripTags($0)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
             guard !cleanTitle.isEmpty else { return nil }
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet)
@@ -1085,9 +930,10 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     }
 }
 
-/// Selects the web-search backend BEHIND the seam: Brave when a key is configured
-/// (reliable), else the keyless DDG scraper (fallback — kept intact). The loop calls
-/// `make()` per turn and never knows which backend it got.
+/// Selects the web-search backend BEHIND the seam: Brave when the user configured a key,
+/// else `WebSearchUnavailableExecutor` — web search REQUIRES a user-supplied Brave key,
+/// there is no keyless fallback (T's ruling 2026-08-14). The loop calls `make()` per turn
+/// and never knows which backend it got.
 enum WebSearchBackend {
     static let keychainKey = "braveSearchAPIKey"
 
@@ -1098,6 +944,6 @@ enum WebSearchBackend {
         }
         #endif
         let key = (KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return key.isEmpty ? WebSearchToolExecutor() : BraveSearchToolExecutor(apiKey: key)
+        return key.isEmpty ? WebSearchUnavailableExecutor() : BraveSearchToolExecutor(apiKey: key)
     }
 }

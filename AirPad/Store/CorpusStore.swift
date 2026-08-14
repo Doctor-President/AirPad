@@ -1376,6 +1376,36 @@ final class CorpusStore {
         scheduleEnrichment(nodeID: nodeID)
     }
 
+    // MARK: - Pending note-body edits (commit-before-fire)
+
+    /// Live, in-memory mirror of note-editor text that has NOT yet reached the store.
+    /// The editor (`RichTextEditor` in `TextEntryBody`) binds its text live but only
+    /// persists on end-editing, so `item.content` is stale while a field is focused — the
+    /// same shape as the header's `editedTitle`, but the live text lives inside a child
+    /// view, out of the lever fire site's reach. This mirror is a FLUSH CHANNEL: the fire
+    /// site awaits `commitPendingItemEdits` so the substrate / generate read the real
+    /// note, not stale or empty text. NOT persisted, NOT observed. Keyed by item id.
+    @ObservationIgnored private var pendingItemEdits: [String: String] = [:]
+
+    /// Mirror the note editor's live text for `itemID`. Cheap, non-observed; called from
+    /// the editor's `onChange`. Shared by every surface that renders `TextEntryBody`
+    /// (the detail view and QuikCapture), so one channel covers both lever fire sites.
+    func mirrorPendingItemEdit(itemID: String, text: String) {
+        pendingItemEdits[itemID] = text
+    }
+
+    /// Flush any un-persisted note-body edits for this node's TEXT items into the store,
+    /// AWAITED, so a caller reads committed content. Reuses `updateTextItem` (no-ops when
+    /// unchanged; schedules enrichment). The lever fire site awaits this before presenting
+    /// the tray — a fire-and-forget save would race the read.
+    func commitPendingItemEdits(forNodeID nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        for item in node.items where item.type == .text {
+            guard let text = pendingItemEdits[item.id] else { continue }
+            await updateTextItem(itemID: item.id, newContent: text, nodeID: nodeID)
+        }
+    }
+
     /// Debounced automatic enrichment for a single node. Coalesces rapid text
     /// commits (cancel + re-arm), then re-reads the node FRESH at fire time and
     /// only enriches when it's still un-enriched (empty title = fill-empty rule)

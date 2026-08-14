@@ -46,6 +46,23 @@ struct LeverTray: View {
 
     private var node: Node? { store.nodes.first { $0.id == nodeID } }
 
+    /// GAP 27 copy — whether the on-device private model is opted in AND ready (the same
+    /// test `ModelRouter.structuredProvider` uses). When true, the refusal banners drop the
+    /// "Set up the private model" CTA (it would route the user to something already done) and
+    /// stop pitching a model the user already has.
+    private var localModelReady: Bool {
+        UserDefaults.standard.bool(forKey: ModelRouter.useLocalEnrichmentKey)
+            && LocalModelService.shared.state == .ready
+    }
+
+    /// Trailing sentence of a refusal banner: pitch the private model when it isn't set up,
+    /// or note it's already active when it is. (Wording held for T.)
+    private var privateModelPitch: String {
+        localModelReady
+            ? "Your private model isn't limited the same way."
+            : "AirPad's optional private model handles a wider range of subjects."
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -64,9 +81,9 @@ struct LeverTray: View {
                         // model and route into Settings to set it up. The tags locus has its
                         // own, separate notice in `tagsSection`.
                         LeverRefusalBanner(
-                            message: "Apple Intelligence declined to summarize this one. AirPad's optional private model handles a wider range of subjects.",
+                            message: "Apple Intelligence declined to summarize this one. \(privateModelPitch)",
                             frameworkMessage: msg,
-                            onSetUp: { showSettings = true },
+                            onSetUp: localModelReady ? nil : { showSettings = true },
                             onDismiss: { self.failure = nil }
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -242,7 +259,7 @@ struct LeverTray: View {
                 // still has a summary — and don't claim so if it doesn't (both refused).
                 LeverRefusalBanner(
                     message: tagsRefusalMessage,
-                    onSetUp: { showSettings = true }
+                    onSetUp: localModelReady ? nil : { showSettings = true }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else if tagSuggestions.isEmpty {
@@ -313,8 +330,8 @@ struct LeverTray: View {
     private var tagsRefusalMessage: String {
         let hasSummary = !((node?.summary ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         return hasSummary
-            ? "Apple Intelligence declined to suggest tags for this note — its title and summary are unaffected. AirPad's optional private model handles a wider range of subjects."
-            : "Apple Intelligence declined to suggest tags for this note. AirPad's optional private model handles a wider range of subjects."
+            ? "Apple Intelligence declined to suggest tags for this note — its title and summary are unaffected. \(privateModelPitch)"
+            : "Apple Intelligence declined to suggest tags for this note. \(privateModelPitch)"
     }
 
     private func loadTagSuggestions() async {
@@ -419,7 +436,9 @@ struct LeverTray: View {
 private struct LeverRefusalBanner: View {
     let message: String
     var frameworkMessage: String = ""
-    let onSetUp: () -> Void
+    /// Nil HIDES the "Set up the private model" CTA — used when the local model is already
+    /// opted in + ready, so the banner never routes the user to something they've done.
+    var onSetUp: (() -> Void)? = nil
     var onDismiss: (() -> Void)? = nil
 
     var body: some View {
@@ -451,14 +470,16 @@ private struct LeverRefusalBanner: View {
                     .accessibilityLabel("Dismiss")
                 }
             }
-            Button(action: onSetUp) {
-                HStack(spacing: 6) {
-                    Image(systemName: "gearshape.fill").font(.system(size: 12))
-                    Text("Set up the private model").font(.system(size: 13, weight: .semibold))
+            if let onSetUp {
+                Button(action: onSetUp) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gearshape.fill").font(.system(size: 12))
+                        Text("Set up the private model").font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(Color(hexString: "00BFFF"))
                 }
-                .foregroundStyle(Color(hexString: "00BFFF"))
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

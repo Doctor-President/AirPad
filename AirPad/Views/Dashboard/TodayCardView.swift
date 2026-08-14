@@ -4,14 +4,16 @@ import SwiftUI
 ///
 /// Layout (top → bottom):
 ///   1. Date header (formatted "Friday, May 22")
-///   2. System insight stub copy
-///   3. Journal entry prompt — the one interactive affordance in C1; tap
+///   2. Journal entry prompt — the one interactive affordance in C1; tap
 ///      forwards to `onJournalPromptTap` for the host to surface a placeholder.
-///   4. Activity log stub list
+///   3. Activity log stub list
 ///
 /// All copy is hardcoded for C1. In C2+ each section is driven by real data
-/// (date stays formatted from `Date()`; insight + activity from a service;
-/// journal prompt rotates from a prompt library).
+/// (date stays formatted from `Date()`; activity from a service; journal prompt
+/// rotates from a prompt library). An "insight" section was REMOVED pre-V1: it
+/// rendered a hardcoded literal (advertised intelligence that never computed),
+/// which the honesty posture forbids (v1-gates.md § B2). An honest absence beats
+/// a dishonest presence; real insight generation is a post-V1 question.
 struct TodayCardView: View {
 
     let now: Date
@@ -36,7 +38,6 @@ struct TodayCardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             dateHeader
-            insightSection
             journalPrompt
             activityLog
         }
@@ -67,18 +68,6 @@ struct TodayCardView: View {
         let f = DateFormatter()
         f.dateFormat = "EEEE, MMMM d"
         return f.string(from: date)
-    }
-
-    // MARK: - Insight
-
-    private var insightSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("Insight")
-            Text("Your reading and field notes have been converging on the same set of questions this week.")
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.82))
-                .lineSpacing(2)
-        }
     }
 
     // MARK: - Journal prompt

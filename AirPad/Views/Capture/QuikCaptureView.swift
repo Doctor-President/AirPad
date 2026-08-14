@@ -269,7 +269,20 @@ struct QuikCaptureView: View {
                     nodeID: node.id,
                     showSummary: !editedSummary.isEmpty || node.summary.isEmpty,
                     showAttributes: true,
-                    onLeverTap: { showLeverTray = true }
+                    onLeverTap: {
+                        // SITE 2 (commit-before-fire) — capture is the FIRST surface a new
+                        // user hits, where "the AI does nothing" gets formed. Commit the
+                        // header (title/summary) AND the note body before presenting: both
+                        // bind live but only persist on end-editing, so firing without
+                        // dismissing the keyboard would read a stale/empty node. Awaited —
+                        // a fire-and-forget save races the tray.
+                        focusedField = false
+                        Task {
+                            await commitEditsIfChanged()
+                            await store.commitPendingItemEdits(forNodeID: node.id)
+                            showLeverTray = true
+                        }
+                    }
                 ) {
                     TextField("Title", text: $editedTitle, axis: .vertical)
                         .font(visualSettings.nodeTitle.resolvedFont())
@@ -848,7 +861,17 @@ struct QuikCaptureView: View {
 
     // MARK: - Auto-save
 
+    /// Fire-and-forget commit — for teardown paths (`onDisappear`) where nothing
+    /// downstream reads the node in the same turn.
     private func saveIfChanged() {
+        Task { await commitEditsIfChanged() }
+    }
+
+    /// AWAITABLE header commit — mirrors `NodeDetailView.commitEditsIfChanged` (item 1).
+    /// The lever fire path awaits this BEFORE presenting the tray so the tray reads the
+    /// committed title/summary, not the stale node — the same defect the detail view had,
+    /// and higher-impact here since capture is the first surface a new user hits.
+    private func commitEditsIfChanged() async {
         guard let node else { return }
         let nodeID = node.id
         let newTitle = editedTitle, newSummary = editedSummary, newTags = editedTags
@@ -862,20 +885,18 @@ struct QuikCaptureView: View {
         // so this title/summary/tags save can't blind-overwrite `.items` with a
         // stale snapshot and erase the note body typed just before Done.
         // titleSource/summarySource stamps unchanged from step 1.
-        Task {
-            await store.mutateNode(id: nodeID) { n in
-                if titleChanged { n.title = newTitle; n.titleSource = .user }
-                if summaryChanged { n.summary = newSummary; n.summarySource = .user }
-                if tagsChanged {
-                    n.tags = newTags
-                    let editedSet = Set(newTags)
-                    for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
-                    for name in n.tagSources.keys where !editedSet.contains(name) {
-                        n.tagSources.removeValue(forKey: name)
-                    }
+        await store.mutateNode(id: nodeID) { n in
+            if titleChanged { n.title = newTitle; n.titleSource = .user }
+            if summaryChanged { n.summary = newSummary; n.summarySource = .user }
+            if tagsChanged {
+                n.tags = newTags
+                let editedSet = Set(newTags)
+                for name in newTags { n.tagSources[name] = TagOrigin(source: .user) }
+                for name in n.tagSources.keys where !editedSet.contains(name) {
+                    n.tagSources.removeValue(forKey: name)
                 }
-                n.updatedAt = Date()
             }
+            n.updatedAt = Date()
         }
     }
 }

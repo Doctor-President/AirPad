@@ -75,6 +75,14 @@ struct LeverTray: View {
             : "AirPad's optional private model handles a wider range of subjects."
     }
 
+    /// STATE 2 (no provider) copy — NO model exists to run on this device (iOS 18–25 / no
+    /// Apple Intelligence, private model not downloaded). Distinct from a refusal (nothing
+    /// ran, so NO Apple attribution) and from an error (not retryable). Offers the download;
+    /// the "Set up the private model" CTA is supplied by `onSetUp`. (Wording held for T.)
+    private var noProviderMessage: String {
+        "No AI model is available on this device yet. Download AirPad's private model to generate titles and summaries."
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -95,6 +103,20 @@ struct LeverTray: View {
                         LeverRefusalBanner(
                             message: "Apple Intelligence declined to summarize this one. \(privateModelPitch)",
                             frameworkMessage: msg,
+                            onSetUp: localModelReady ? nil : { showSettings = true },
+                            onDismiss: { self.failure = nil }
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else if case .unavailable = failure {
+                        // STATE 2 — NO model exists to run (iOS 18–25 / no Apple Intelligence,
+                        // private model not downloaded). NOT a refusal (nothing ran, nothing
+                        // declined → no Apple attribution) and NOT an error to retry (there is no
+                        // provider to retry against). Reuse the capability-boundary SURFACE: it
+                        // offers the download + routes to Settings and has NO Retry. `onSetUp`
+                        // shows because `localModelReady` is false here by construction — a ready
+                        // local model resolves as `.local`, so it never returns `.unavailable`.
+                        LeverRefusalBanner(
+                            message: noProviderMessage,
                             onSetUp: localModelReady ? nil : { showSettings = true },
                             onDismiss: { self.failure = nil }
                         )
@@ -566,7 +588,10 @@ struct LeverTray: View {
     private func failureMessage(_ f: NodeAIFailure) -> String {
         switch f {
         case .unavailable:
-            return "The on-device model isn't available right now."
+            // Not shown through this path — `.unavailable` renders LeverRefusalBanner (the
+            // capability-boundary surface: offers the download, no Retry), NOT FMFailureBanner.
+            // Kept for exhaustiveness / as a safe fallback string.
+            return "No AI model is available on this device yet."
         case .noContent:
             return "There's nothing here to work from yet."
         case .contextOverflow:

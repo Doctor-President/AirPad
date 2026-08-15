@@ -83,6 +83,21 @@ enum ModelRouter {
         return .foundationModel
     }
 
+    /// STATE 2 for the free-text Ask/chat path: NO usable provider exists. True only when
+    /// `active` resolves to FM (i.e. NO ollama endpoint configured) AND FM itself is
+    /// unavailable (iOS < 26, or Apple Intelligence off / unsupported). ★ The on-device LOCAL
+    /// model is deliberately NOT counted here — it is wired to the structured lever only, not
+    /// to free-text Ask, so downloading it does not (yet) enable chat. Because `active` picks
+    /// ollama first, this is ALWAYS false when an LM Studio / Ollama endpoint is set up — a
+    /// user with a working endpoint is never told they have no model.
+    /// ⚠️ Reads the Keychain (XPC) via `active`; call OFF the SwiftUI render path and cache the
+    /// result (LibrarianState.askUnavailable) — never from a `body`.
+    static var askHasNoProvider: Bool {
+        guard case .foundationModel = active else { return false }
+        if #available(iOS 26.0, *) { return !SystemLanguageModel.default.isAvailable }
+        return true
+    }
+
     /// Friendly, quiet name for the on-device Foundation Model — no network, safe
     /// to return instantly. (Wording confirmed by T.)
     static let foundationModelName = "Apple Intelligence"
@@ -101,7 +116,14 @@ enum ModelRouter {
     static func resolveActiveModelName() async -> String {
         switch active {
         case .foundationModel:
-            return foundationModelName
+            // STEP 2 — honest on the floor: the FM name ONLY when FM is actually usable.
+            // On iOS 18-25 / no Apple Intelligence, FM resolves as the provider but can't run,
+            // so the chip must NOT claim "Apple Intelligence" (that contradicted the Ask
+            // no-model notice). Fall back to the resting "No model" label.
+            if #available(iOS 26.0, *), SystemLanguageModel.default.isAvailable {
+                return foundationModelName
+            }
+            return remoteRestingName
         case .ollama(let endpoint):
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName

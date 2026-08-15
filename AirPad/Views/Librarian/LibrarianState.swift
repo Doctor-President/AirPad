@@ -890,6 +890,13 @@ final class LibrarianState {
     /// belongs in `body`. Defaults to the FM name.
     private(set) var activeModelLabel: String = ModelRouter.foundationModelName
 
+    /// STATE 2 for the Ask field — no free-text provider exists (no ollama endpoint AND FM
+    /// unavailable; the local model is NOT wired to Ask). Cached from `ModelRouter.askHasNoProvider`
+    /// in `refreshActiveModel` (OFF the render path — it does a Keychain/XPC read via `active`) so
+    /// the input gate can read it from `body` without a per-frame XPC hit. When true, Ask is gated
+    /// behind a connected model rather than sending into a guaranteed `foundationModelUnavailable`.
+    private(set) var askUnavailable: Bool = false
+
     /// Refresh the model indicator OFF the render path. Resolves the live provider
     /// (so an endpoint swapped in Settings is reflected on the next turn) and probes
     /// a remote endpoint's model id (best-effort → resting label). Cheap for FM (no
@@ -901,10 +908,19 @@ final class LibrarianState {
         // remote-endpoint state without a live server). No-op without the arg.
         if let mock = UserDefaults.standard.string(forKey: "MockModelName"), !mock.isEmpty {
             activeModelLabel = mock
+            askUnavailable = false   // a mocked label implies a model is present
+            return
+        }
+        // `-AskNoProvider YES` — force STATE 2 so the gate/notice can be exercised in the
+        // Simulator (which can't reach it via FM availability alone). No-op without the arg.
+        if UserDefaults.standard.bool(forKey: "AskNoProvider") {
+            activeModelLabel = "No model"
+            askUnavailable = true
             return
         }
         #endif
         activeModelLabel = await ModelRouter.resolveActiveModelName()
+        askUnavailable = ModelRouter.askHasNoProvider
     }
 
     /// User-defined standing voice (c7) — read fresh on each prompt build

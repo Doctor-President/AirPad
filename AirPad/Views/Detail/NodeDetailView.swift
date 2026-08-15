@@ -234,8 +234,6 @@ struct NodeDetailView: View {
     /// The band's chrome-row height below the status bar (houses the title,
     /// aligned with the back button + ••• capsule).
     private let bandContentHeight: CGFloat = 52
-    /// Backdrop blur radius (static, GPU-cached — no per-frame re-blur).
-    private let bandBackdropBlur: CGFloat = 18
     /// Round 2 — the title's leading inset: clears the back button (16pt outer +
     /// 48pt button) plus a gap. Left-aligned starts here, after the back button.
     private let bandTitleLeadingInset: CGFloat = 72
@@ -1011,15 +1009,7 @@ struct NodeDetailView: View {
         // the top safe area).
         if node.coverImageRelativePath == nil {
             let totalHeight: CGFloat = 200 + topInset
-            NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
-                .frame(height: totalHeight)
-                .clipShape(
-                    UnevenRoundedRectangle(
-                        bottomLeadingRadius: 30,
-                        bottomTrailingRadius: 30,
-                        style: .continuous
-                    )
-                )
+            BandGradientExpanded(node: node, totalHeight: totalHeight)
                 // No-hero node → the gradient IS the band backdrop (one
                 // treatment, two sources); its visible height is the fixed 200.
                 .onAppear { onVisibleHeight(200) }
@@ -1111,16 +1101,11 @@ struct NodeDetailView: View {
                 // crisp-card + mirror + letterbox composition never leaks in —
                 // blur is an identity wash, not a thumbnail.
                 BandHeroBackdrop(node: node, coverPath: path, width: width,
-                                 height: height, blur: bandBackdropBlur,
+                                 height: height, blur: BandGradient.backdropBlur,
                                  sampleLeftFraction: bandInkSampleLeftFraction,
                                  onLuminance: { bandTitleLuminance = $0 })
             } else {
-                NodeGradientLayer(node: node, circleScale: 1.3,
-                                  undulation: 1.0, animated: false)
-                    .frame(width: width, height: height)
-                    .clipped()
-                    .blur(radius: bandBackdropBlur, opaque: true)
-                    .drawingGroup()
+                BandGradientCollapsed(node: node, width: width, height: height)
             }
         }
     }
@@ -3010,15 +2995,7 @@ private struct HeroImageBanner: View {
                 // Loading / resolve-or-decode failure: fall back to the
                 // gradient banner at its natural 200 + topInset height.
                 let totalHeight: CGFloat = 200 + topInset
-                NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
-                    .frame(height: totalHeight)
-                    .clipShape(
-                        UnevenRoundedRectangle(
-                            bottomLeadingRadius: 30,
-                            bottomTrailingRadius: 30,
-                            style: .continuous
-                        )
-                    )
+                BandGradientExpanded(node: node, totalHeight: totalHeight)
             }
         }
         // Scroll-collapsed band — report the visible content height (and keep it
@@ -3141,12 +3118,7 @@ private struct BandHeroBackdrop: View {
                     .blur(radius: blur, opaque: true)
                     .drawingGroup()
             } else {
-                NodeGradientLayer(node: node, circleScale: 1.3,
-                                  undulation: 1.0, animated: false)
-                    .frame(width: width, height: height)
-                    .clipped()
-                    .blur(radius: blur, opaque: true)
-                    .drawingGroup()
+                BandGradientCollapsed(node: node, width: width, height: height)
             }
         }
         .task(id: coverPath) {

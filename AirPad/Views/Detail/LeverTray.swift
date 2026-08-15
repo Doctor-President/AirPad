@@ -76,11 +76,14 @@ struct LeverTray: View {
     }
 
     /// STATE 2 (no provider) copy — NO model exists to run on this device (iOS 18–25 / no
-    /// Apple Intelligence, private model not downloaded). Distinct from a refusal (nothing
-    /// ran, so NO Apple attribution) and from an error (not retryable). Offers the download;
-    /// the "Set up the private model" CTA is supplied by `onSetUp`. (Wording held for T.)
+    /// Apple Intelligence, private model not downloaded). Distinct from a refusal (nothing ran,
+    /// so NO Apple attribution) and from an error (not retryable). Offers the download; the "Set
+    /// up the private model" CTA is supplied by `onSetUp`. ★ T's wording (2026-08-14): "this
+    /// device" (a hardware fact, not a possession); names the three concrete capabilities, not
+    /// "enrichment" (internal vocabulary); deliberately says NOTHING about chats — the Ask
+    /// surface gets its own copy.
     private var noProviderMessage: String {
-        "No AI model is available on this device yet. Download AirPad's private model to generate titles and summaries."
+        "No model is available on this device. AirPad's optional private model runs entirely on your device and enables titles, summaries, and tags."
     }
 
     var body: some View {

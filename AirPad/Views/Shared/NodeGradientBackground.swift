@@ -65,6 +65,11 @@ struct NodeGradientLayer: View {
     /// hero blob field, which adds the per-pixel harmonic wobble plus extended
     /// drift, buoyancy, and breathing. Both are GPU (BlobField) — the amount
     /// selects which style, not CPU vs GPU.
+    /// ⚠️ EMPIRICAL (T, 2026-08-15): a non-zero `undulation` also shifts HUE, not just edge
+    /// shape — a large jump at 0.00→0.02 (e.g. orange→magenta) that persists at every non-zero
+    /// value, so the hero path feeds the COLOUR mix, not only the boundary geometry. Unexplained,
+    /// NOT chased (the detail band ships `0`, the boundary case; other hero-look callers accept
+    /// it). A caller wanting the hero LOOK should expect a colour change, not only a shape change.
     var undulation: CGFloat = 0
     /// Drives `TimelineView(.animation)` when true. When false, the same
     /// layers render with `time = 0` — a still frame of the live gradient,
@@ -513,3 +518,82 @@ struct NodeGradientBackground: View {
         }
     }
 }
+
+// MARK: - Detail header-band gradient (baked; T device-settled 2026-08-15)
+
+/// SINGLE source of truth for the detail header-band gradient, so the four call sites
+/// (`NodeDetailView` :1014/:3013 expanded, :1118/:3144 collapsed) can NEVER drift. Values were
+/// dialed on device (a DEBUG tuner, now removed) and baked here as literals.
+///
+/// ⚠️ TWO THINGS RECORDED for the next reader:
+///  1. `undulation` shifts COLOR, not only shape. The read-only diagnosis called it a per-pixel
+///     harmonic BOUNDARY deformation, but T observed a large hue jump between 0.00 and 0.02
+///     (orange → magenta) that persists at every non-zero value — the hero path feeds the colour
+///     mix too, not only the boundary geometry. Unexplained; NOT chased (the band ships
+///     `undulation = 0`, the boundary case, so it's moot for V1). See the `undulation` doc on
+///     `NodeGradientLayer`.
+///  2. The card's `travelingScrim` does NOT transfer to a header. T's ruling: a bottom fade on a
+///     short strip that bleeds off-screen reads as a HARD BAND, not depth (nowhere to resolve).
+///     So `scrimBottom = 0` (no bottom scrim); the band keeps only a light top fade. Do NOT
+///     re-add a bottom scrim thinking it was an oversight.
+enum BandGradient {
+    static let undulation: CGFloat = 0.0      // clean discs, matching the card (also 0) — see note 1
+    static let circleScale: CGFloat = 1.3
+    static let scrimTop: CGFloat = 0.13       // light top fade (the header analogue of the card scrim)
+    static let scrimBottom: CGFloat = 0.0     // ships as NO bottom scrim — see note 2
+    static let backdropBlur: CGFloat = 18     // collapsed band only
+}
+
+/// The header-band top scrim — the analogue of the card's `travelingScrim`, with the band's own
+/// (light) baked values (`BandGradient.scrimTop`/`scrimBottom`). Mirrors the card's scrimInk
+/// (dark→black, light→clear) so the two surfaces read as the same app. ⚠️ NOT the card's
+/// 0.42/0.52 stops: the band is a short, wide, status-bar-bleeding strip (T settled ~0.13 top,
+/// 0 bottom — see the `BandGradient` note on why a bottom fade doesn't work here).
+struct BandScrim: View {
+    var top: CGFloat
+    var bottom: CGFloat
+    @Environment(\.colorScheme) private var scheme
+    var body: some View {
+        let ink: Color = scheme == .dark ? .black : .clear
+        LinearGradient(
+            stops: [
+                .init(color: ink.opacity(Double(top)),    location: 0.0),
+                .init(color: .clear,                       location: 0.20),
+                .init(color: .clear,                       location: 0.80),
+                .init(color: ink.opacity(Double(bottom)),  location: 1.0)
+            ],
+            startPoint: .top, endPoint: .bottom
+        )
+        .allowsHitTesting(false)
+    }
+}
+
+/// The EXPANDED detail header band (`NodeDetailView` :1014 no-hero, :3013 hero-load-fail). ONE
+/// definition so the two sites can't diverge (a hero-load failure MUST match a no-hero node).
+/// Reads the baked `BandGradient` values; NOT externally blurred.
+struct BandGradientExpanded: View {
+    let node: Node
+    let totalHeight: CGFloat
+    var body: some View {
+        NodeGradientLayer(node: node, circleScale: BandGradient.circleScale, undulation: BandGradient.undulation)
+            .frame(height: totalHeight)
+            .overlay(BandScrim(top: BandGradient.scrimTop, bottom: BandGradient.scrimBottom))
+            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
+    }
+}
+
+/// The COLLAPSED pinned-band backdrop (`NodeDetailView` :1118, :3144). Blurred identity wash;
+/// NO scrim. Reads the baked `BandGradient` values incl. `backdropBlur`.
+struct BandGradientCollapsed: View {
+    let node: Node
+    let width: CGFloat
+    let height: CGFloat
+    var body: some View {
+        NodeGradientLayer(node: node, circleScale: BandGradient.circleScale, undulation: BandGradient.undulation, animated: false)
+            .frame(width: width, height: height)
+            .clipped()
+            .blur(radius: BandGradient.backdropBlur, opaque: true)
+            .drawingGroup()
+    }
+}
+

@@ -1400,16 +1400,17 @@ struct LibrarianSurface: View {
 
     /// STATE 2 notice for the Ask composer — no free-text provider on this device. Honest
     /// capability boundary: NO Retry, and it deliberately does NOT claim the private model
-    /// enables chat (it is wired to the lever only, not Ask — so the copy points at Settings
-    /// for a connected model, not the download). Colorblind-safe (icon SHAPE + text on a
-    /// hueless ground, never colour alone). ★ Copy is a placeholder HELD for T.
+    /// enables chat (it is wired to the lever only, not Ask). Colorblind-safe (icon SHAPE +
+    /// text on a hueless ground, never colour alone). ★ T's final copy (2026-08-15): the verb
+    /// is "connect", not "download" — on the floor the only Ask provider is an ollama/LM Studio
+    /// endpoint, so offering the download here would promise chat the build cannot deliver.
     private var askNoModelNotice: some View {
         Button { showSettings = true } label: {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "cpu")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
-                Text("No model is available for chat on this device. Open Settings to connect one.")
+                Text("Ask needs a model. This device has none available — you can connect one in Settings.")
                     .font(.system(size: 12))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.9))
                     .fixedSize(horizontal: false, vertical: true)

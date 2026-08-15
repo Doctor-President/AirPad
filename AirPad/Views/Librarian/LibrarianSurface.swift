@@ -68,6 +68,9 @@ struct LibrarianSurface: View {
     /// ws-chat-lane — presents `PinChatSheet` for the active chat (the pill's pin
     /// button; the Librarian is the third pin entry point).
     @State private var showingLibrarianPinSheet = false
+    /// STATE 2 — routes the "no model for chat" notice into Settings (same pattern as the
+    /// lever's capability-boundary banner: CanvasChrome / DashboardView / LeverTray).
+    @State private var showSettings = false
     @FocusState private var isInputFocused: Bool
     /// Live measured height of the Ask field (grows with wrapped lines). Drives
     /// the Messages-style corner: `min(height/2, singleLineHeight/2)` — a PILL at
@@ -919,6 +922,7 @@ struct LibrarianSurface: View {
         .sheet(isPresented: $showingLibrarianPinSheet) {
             PinChatSheet(chatID: router.chat.id).environment(store)
         }
+        .sheet(isPresented: $showSettings) { SettingsView() }
     }
 
     /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out
@@ -1057,6 +1061,9 @@ struct LibrarianSurface: View {
     }
 
     private func sendIsEnabled(librarian: LibrarianState) -> Bool {
+        // STATE 2 — no free-text provider on this device (gated behind a connected model).
+        // Reads the CACHED flag (resolved off-render in `refreshActiveModel`), never XPC here.
+        if librarian.askUnavailable { return false }
         let hasText = !librarian.inputText
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard hasText else { return false }
@@ -1293,6 +1300,13 @@ struct LibrarianSurface: View {
             }
             .padding(.leading, 6)
 
+            // STATE 2 — no free-text model on this device: gate Ask (send disabled via
+            // `sendIsEnabled`) and say so, routing to Settings. Honest capability boundary,
+            // no Retry. (v1-gates § A item 1 — the Ask half of the iOS-18 floor.)
+            if librarian.askUnavailable {
+                askNoModelNotice
+            }
+
             inputRow(librarian: librarian)
                 // Item 2 — the focus glow is driven from the SAME Messages-style
                 // RoundedRectangle the field uses (`askCornerRadius`), NOT its own
@@ -1382,6 +1396,37 @@ struct LibrarianSurface: View {
         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Answering with \(librarian.activeModelLabel)")
+    }
+
+    /// STATE 2 notice for the Ask composer — no free-text provider on this device. Honest
+    /// capability boundary: NO Retry, and it deliberately does NOT claim the private model
+    /// enables chat (it is wired to the lever only, not Ask — so the copy points at Settings
+    /// for a connected model, not the download). Colorblind-safe (icon SHAPE + text on a
+    /// hueless ground, never colour alone). ★ Copy is a placeholder HELD for T.
+    private var askNoModelNotice: some View {
+        Button { showSettings = true } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                Text("No model is available for chat on this device. Open Settings to connect one.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(AppearancePalette.ink.opacity(0.06))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 6)
+        .accessibilityHint("Opens Settings to connect a model for chat")
     }
 
     /// Trailing mic/send/clear cluster — extracted so it can be a BOTTOM-TRAILING

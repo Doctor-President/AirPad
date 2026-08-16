@@ -81,6 +81,17 @@ struct BlobFieldView: View {
         var color: Color
         /// Peak opacity at the disc core (1 = opaque fill).
         var peak: CGFloat
+        /// Card-morph (2026-08-16): domain-warp amount. 0 (default) → a plain disc,
+        /// byte-identical to the pre-card-morph path. > 0 warps the boundary in position space
+        /// with 2-octave fbm noise (BlobField.metal) → an irregular, non-repeating organic edge
+        /// that keeps the card's colour.
+        var undulation: CGFloat = 0
+        /// Per-blob noise offset so blobs don't warp in lockstep (only matters when undulation > 0).
+        var seed: CGFloat = 0
+        /// Warp noise wavelength as a MULTIPLE of blob radius (relative, so it reads the same on
+        /// any blob size). Larger = longer wavelength = fewer, flowing lobes. Only matters when
+        /// undulation > 0; default `2` ≈ one undulation across the blob.
+        var warpScale: CGFloat = 2
     }
 
     // MARK: Hero style (Stage 3)
@@ -128,6 +139,9 @@ struct BlobFieldView: View {
     /// lava all pass 0 → byte-identical. Only the dashboard LIGHT field dials it.
     private let noiseAmount: Float
     private let noiseScale: Float
+    /// Imagery-derived bloom amount (card + hero styles). 0 (default) → no bloom →
+    /// byte-identical. > 0 adds each blob's own soft additive colour halo (BlobField.metal).
+    private let bloom: Float
 
     init(parameters: Parameters) {
         self.style = .lava
@@ -138,6 +152,7 @@ struct BlobFieldView: View {
         self.anchor = .center   // unused by the lava path
         self.noiseAmount = 0
         self.noiseScale = 0
+        self.bloom = 0
     }
 
     /// - Parameter animated: `false` renders a single still frame (time = 0)
@@ -152,7 +167,8 @@ struct BlobFieldView: View {
          sharedField: Bool = false,
          frameInterval: Double = 1.0 / 30.0,
          noiseAmount: CGFloat = 0,
-         noiseScale: CGFloat = 0) {
+         noiseScale: CGFloat = 0,
+         bloom: CGFloat = 0) {
         self.style = .card
         self.packed = Self.packCard(cardBlobs)
         self.sharedField = sharedField
@@ -161,12 +177,14 @@ struct BlobFieldView: View {
         self.anchor = anchor
         self.noiseAmount = Float(noiseAmount)
         self.noiseScale = Float(noiseScale)
+        self.bloom = Float(bloom)
     }
 
     init(heroBlobs: [HeroBlob],
          animated: Bool,
          sharedField: Bool = false,
-         frameInterval: Double = 1.0 / 30.0) {
+         frameInterval: Double = 1.0 / 30.0,
+         bloom: CGFloat = 0) {
         self.style = .hero
         self.packed = Self.packHero(heroBlobs)
         self.sharedField = sharedField
@@ -175,6 +193,7 @@ struct BlobFieldView: View {
         self.anchor = .center   // unused by the hero path
         self.noiseAmount = 0
         self.noiseScale = 0
+        self.bloom = Float(bloom)
     }
 
     var body: some View {
@@ -210,6 +229,7 @@ struct BlobFieldView: View {
                     .float2(Float(anchor.x), Float(anchor.y)),
                     .float(noiseAmount),
                     .float(noiseScale),
+                    .float(bloom),
                     .floatArray(packed)
                 )
             )
@@ -237,10 +257,10 @@ struct BlobFieldView: View {
         return out
     }
 
-    /// CARD layout, stride 13.
+    /// CARD layout, stride 16.
     private static func packCard(_ blobs: [CardBlob]) -> [Float] {
         var out: [Float] = []
-        out.reserveCapacity(blobs.count * 13)
+        out.reserveCapacity(blobs.count * 16)
         for blob in blobs {
             let (r, g, b) = rgb(blob.color)
             out.append(Float(blob.baseOffset.x))
@@ -256,6 +276,9 @@ struct BlobFieldView: View {
             out.append(r)
             out.append(g)
             out.append(b)
+            out.append(Float(blob.undulation))
+            out.append(Float(blob.seed))
+            out.append(Float(blob.warpScale))
         }
         return out
     }

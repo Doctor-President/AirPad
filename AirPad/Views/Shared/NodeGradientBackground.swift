@@ -28,6 +28,10 @@ private let blobMorphKs: [Int] = [2, 3, 5]
 /// so the two surfaces are guaranteed identical by construction.
 struct NodeGradientLayer: View {
     let node: Node
+
+    /// Selects the blob COMPOSITION (see `blobSet`) — decoupled from `undulation` (2026-08-16).
+    enum BlobSet { case card, hero }
+
     /// Multiplier on circle DIAMETER (not blur). `1.0` (the default)
     /// matches the card geometry — `NodeGradientBackground` consumers
     /// inherit it untouched. `NodeDetailView.heroZone` passes a larger
@@ -54,23 +58,47 @@ struct NodeGradientLayer: View {
     /// zero regression for hero / card. Tiles pass ~0.35–0.55 to darken
     /// the corners and give the gradient a defined center.
     var vignette: CGFloat = 0
+    /// `radialGlow` inner/outer radius as a fraction of the view WIDTH (dark mode only).
+    /// Defaults `0.15`/`0.72` are the shipped literals → byte-identical when unset. Exposed
+    /// (2026-08-16, glow-parity) so the width-only glow can be dialed per surface, since a
+    /// ~5:7 card and a ~16:5 band get very different coverage from identical width-basis code.
+    /// ⚠️ Still WIDTH-basis — the basis change (width→aspect-aware) is a filed post-V1 follow-up.
+    var glowStart: CGFloat = 0.15
+    var glowEnd: CGFloat = 0.72
+    /// Opacity of the fixed `radialGlow` circle (dark mode). `1` (default) = today. Lower it to
+    /// fade the legacy radial out while dialing `bloom` up — the two are a crossfade from the
+    /// hand-drawn circle to the imagery-derived glow (2026-08-16). 0 removes the radial entirely.
+    var glowStrength: CGFloat = 1
+    /// Imagery-derived bloom (dark mode). `0` (default) → no bloom → byte-identical. > 0 makes each
+    /// colour blob emit a soft additive halo IN ITS OWN COLOUR (BlobField.metal), so the glow
+    /// follows the imagery and can never miscenter the way the fixed `radialGlow` does.
+    var bloom: CGFloat = 0
     /// Vertical shift (points) applied to the color blobs only — the
     /// dark base, radial glow, and vignette stay centered. `0` (default)
     /// renders byte-identical to today. Gradient-only tiles pass a
     /// negative value so the color form rides up into the hero zone,
     /// matching where a cover image would sit on a hero tile.
     var centerYOffset: CGFloat = 0
-    /// Hero-only morph amount. `0` (default) routes to the static card blob
-    /// field (blurred discs, drift only). Hero passes `1.0` to route to the
-    /// hero blob field, which adds the per-pixel harmonic wobble plus extended
-    /// drift, buoyancy, and breathing. Both are GPU (BlobField) — the amount
-    /// selects which style, not CPU vs GPU.
-    /// ⚠️ EMPIRICAL (T, 2026-08-15): a non-zero `undulation` also shifts HUE, not just edge
-    /// shape — a large jump at 0.00→0.02 (e.g. orange→magenta) that persists at every non-zero
-    /// value, so the hero path feeds the COLOUR mix, not only the boundary geometry. Unexplained,
-    /// NOT chased (the detail band ships `0`, the boundary case; other hero-look callers accept
-    /// it). A caller wanting the hero LOOK should expect a colour change, not only a shape change.
+    /// Domain-warp AMPLITUDE for the SELECTED blob set (`blobSet`). PURE GEOMETRY — the card shader
+    /// warps the sample point by fbm noise before measuring distance (never touches colour). `0`
+    /// (default) = no warp (plain disc) → byte-identical. Higher = the boundary moves further.
+    /// Paired with `warpScale` (wavelength); the two are INDEPENDENT (amount vs. size).
+    /// ★ 2026-08-16 correction: an earlier note read this as "undulation shifts HUE (orange→
+    /// magenta at 0.00→0.02)". That was a SYMPTOM of `undulation` doubling as the blob-SET
+    /// selector — `undulation > 0` swapped the CARD set for the HERO set, and the two sets pool
+    /// colour differently. It was NEVER the shader. Selection now lives in `blobSet`, so
+    /// `undulation` is a clean geometry dial on whichever set is chosen.
     var undulation: CGFloat = 0
+    /// Domain-warp noise WAVELENGTH as a multiple of blob radius (card path). Relative to radius, so
+    /// the same value reads the same on a 60pt and a 200pt blob. Larger = fewer, flowing lobes;
+    /// `2` (default) ≈ one undulation across the blob. Only matters when `undulation > 0`.
+    var warpScale: CGFloat = 2
+
+    /// Which blob COMPOSITION renders, decoupled from `undulation` (2026-08-16). `.card`
+    /// (default) = the three static discs, now able to wobble via `undulation` (card-morph);
+    /// `.hero` = the four morphing hero blobs. Every existing caller keeps `.card`; only the
+    /// hero-look callers (QuikCapture) pass `.hero`.
+    var blobSet: BlobSet = .card
     /// Drives `TimelineView(.animation)` when true. When false, the same
     /// layers render with `time = 0` — a still frame of the live gradient,
     /// not a different visual. On the GPU (static path) motion is ~free, so
@@ -241,7 +269,9 @@ struct NodeGradientLayer: View {
     private var darkBody: some View {
         ZStack {
             gradientFill
-            radialGlow.blendMode(.overlay)
+            // glowStrength fades the fixed radial (1 = today, 0 = gone) so it can crossfade
+            // against the imagery `bloom`. opacity(1) is a no-op → byte-identical at the default.
+            radialGlow.blendMode(.overlay).opacity(glowStrength)
             if vignette > 0 {
                 vignetteLayer
             }
@@ -277,7 +307,7 @@ struct NodeGradientLayer: View {
                 BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
                               animated: animated, anchor: .center)
             }
-        } else if undulation > 0 {
+        } else if blobSet == .hero {
             BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
                           animated: animated)
         } else {
@@ -291,7 +321,7 @@ struct NodeGradientLayer: View {
         let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
         let size: CGFloat = 180 * circleScale
         return Group {
-            if undulation > 0 {
+            if blobSet == .hero {
                 // HERO — the organic morph, now on the GPU (BlobField hero
                 // style: per-pixel harmonic boundary + drift/buoyancy/breathe).
                 // ws-render-perf PERF FIX 3, stage 3.
@@ -313,7 +343,7 @@ struct NodeGradientLayer: View {
         ZStack {
             Color(red: 0.027, green: 0.027, blue: 0.039)
             BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
-                          animated: animated)
+                          animated: animated, bloom: bloom)
         }
     }
 
@@ -328,12 +358,12 @@ struct NodeGradientLayer: View {
             if let dist = blobDistribution {
                 GeometryReader { g in
                     BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
-                                  animated: animated, anchor: .center)
+                                  animated: animated, anchor: .center, bloom: bloom)
                 }
             } else {
                 BlobFieldView(cardBlobs: cardBlobs(colors: colors, size: size),
                               animated: animated,
-                              anchor: anchor)
+                              anchor: anchor, bloom: bloom)
             }
         }
     }
@@ -360,17 +390,27 @@ struct NodeGradientLayer: View {
         let dPhase: [CGSize] = [.init(width: 1.3, height: 0.9),
                                 .init(width: 1.7, height: 1.1),
                                 .init(width: 2.1, height: 0.7)]
-        return (0..<3).map { i in
-            BlobFieldView.CardBlob(
-                baseOffset: CGPoint(x: centerX - size.width / 2, y: CGFloat(i - 1) * gap),
+        return (0..<3).map { i -> BlobFieldView.CardBlob in
+            let baseY: CGFloat = CGFloat(i - 1) * gap
+            let offset = CGPoint(x: centerX - size.width / 2, y: baseY)
+            let freq = CGSize(width: dFreq[i].width * driftSpeedScale,
+                              height: dFreq[i].height * driftSpeedScale)
+            let dph = CGSize(width: ph * dPhase[i].width, height: ph * dPhase[i].height)
+            let sd: CGFloat = ph + CGFloat(i) * 1.7
+            return BlobFieldView.CardBlob(
+                baseOffset: offset,
                 radius: radius,
-                driftFreq: CGSize(width: dFreq[i].width * driftSpeedScale,
-                                  height: dFreq[i].height * driftSpeedScale),
-                driftPhase: CGSize(width: ph * dPhase[i].width, height: ph * dPhase[i].height),
+                driftFreq: freq,
+                driftPhase: dph,
                 driftAmp: 30,
                 blurWidth: blurWidth,
                 color: Color(hexString: hexes[i]),
-                peak: 1
+                peak: 1,
+                // Same card-morph as cardBlobs() so the list (hero-left) warps too; undulation 0
+                // → no-op → byte-identical to the pre-morph distributed blob.
+                undulation: undulation,
+                seed: sd,
+                warpScale: warpScale
             )
         }
     }
@@ -386,7 +426,7 @@ struct NodeGradientLayer: View {
         let ph = CGFloat(phase)
 
         func blob(baseX: CGFloat, fx: CGFloat, fy: CGFloat,
-                  px: CGFloat, py: CGFloat, hex: String) -> BlobFieldView.CardBlob {
+                  px: CGFloat, py: CGFloat, sd: CGFloat, hex: String) -> BlobFieldView.CardBlob {
             BlobFieldView.CardBlob(
                 baseOffset: CGPoint(x: baseX, y: centerYOffset),
                 radius: radius,
@@ -395,14 +435,20 @@ struct NodeGradientLayer: View {
                 driftAmp: amp,
                 blurWidth: blurWidth,
                 color: Color(hexString: hex),
-                peak: 1
+                peak: 1,
+                // card-morph: the caller's `undulation` (amplitude) + `warpScale` (wavelength) drive
+                // the fbm domain warp; `sd` de-syncs each disc. At undulation 0 the warp is a no-op
+                // → byte-identical to the plain disc.
+                undulation: undulation,
+                seed: sd,
+                warpScale: warpScale
             )
         }
 
         return [
-            blob(baseX: -spread, fx: 0.30, fy: 0.25, px: 1.3, py: 0.9, hex: colors.0),
-            blob(baseX: 0,       fx: 0.35, fy: 0.30, px: 1.7, py: 1.1, hex: colors.1),
-            blob(baseX: spread,  fx: 0.40, fy: 0.35, px: 2.1, py: 0.7, hex: colors.2),
+            blob(baseX: -spread, fx: 0.30, fy: 0.25, px: 1.3, py: 0.9, sd: ph,       hex: colors.0),
+            blob(baseX: 0,       fx: 0.35, fy: 0.30, px: 1.7, py: 1.1, sd: ph + 1.7, hex: colors.1),
+            blob(baseX: spread,  fx: 0.40, fy: 0.35, px: 2.1, py: 0.7, sd: ph + 3.4, hex: colors.2),
         ]
     }
 
@@ -453,8 +499,9 @@ struct NodeGradientLayer: View {
             RadialGradient(
                 colors: [.black, Color.white.opacity(0.85)],
                 center: .center,
-                startRadius: geo.size.width * 0.15,
-                endRadius: geo.size.width * 0.72
+                // WIDTH-basis (unchanged); `glowStart`/`glowEnd` default to 0.15/0.72 = today.
+                startRadius: geo.size.width * glowStart,
+                endRadius: geo.size.width * glowEnd
             )
         }
     }
@@ -519,29 +566,53 @@ struct NodeGradientBackground: View {
     }
 }
 
-// MARK: - Detail header-band gradient (baked; T device-settled 2026-08-15)
+// MARK: - Detail header-band gradient (baked scrim/blur; morph/glow baked in `GradientBake`)
 
-/// SINGLE source of truth for the detail header-band gradient, so the four call sites
-/// (`NodeDetailView` :1014/:3013 expanded, :1118/:3144 collapsed) can NEVER drift. Values were
-/// dialed on device (a DEBUG tuner, now removed) and baked here as literals.
+/// Settled band chrome: the top scrim + the collapsed-band blur (T device-settled; baked literals).
+/// The band's morph + glow values live in `GradientBake` (also baked, tuner deleted).
 ///
-/// ⚠️ TWO THINGS RECORDED for the next reader:
-///  1. `undulation` shifts COLOR, not only shape. The read-only diagnosis called it a per-pixel
-///     harmonic BOUNDARY deformation, but T observed a large hue jump between 0.00 and 0.02
-///     (orange → magenta) that persists at every non-zero value — the hero path feeds the colour
-///     mix too, not only the boundary geometry. Unexplained; NOT chased (the band ships
-///     `undulation = 0`, the boundary case, so it's moot for V1). See the `undulation` doc on
-///     `NodeGradientLayer`.
-///  2. The card's `travelingScrim` does NOT transfer to a header. T's ruling: a bottom fade on a
-///     short strip that bleeds off-screen reads as a HARD BAND, not depth (nowhere to resolve).
-///     So `scrimBottom = 0` (no bottom scrim); the band keeps only a light top fade. Do NOT
-///     re-add a bottom scrim thinking it was an oversight.
+/// ⚠️ RECORDED: the card's `travelingScrim` does NOT transfer to a header. T's ruling: a bottom
+/// fade on a short strip that bleeds off-screen reads as a HARD BAND, not depth (nowhere to
+/// resolve). So `scrimBottom = 0` (no bottom scrim); the band keeps only a light top fade. Do NOT
+/// re-add a bottom scrim thinking it was an oversight.
 enum BandGradient {
-    static let undulation: CGFloat = 0.0      // clean discs, matching the card (also 0) — see note 1
-    static let circleScale: CGFloat = 1.3
     static let scrimTop: CGFloat = 0.13       // light top fade (the header analogue of the card scrim)
-    static let scrimBottom: CGFloat = 0.0     // ships as NO bottom scrim — see note 2
+    static let scrimBottom: CGFloat = 0.0     // ships as NO bottom scrim — see the note above
     static let backdropBlur: CGFloat = 18     // collapsed band only
+}
+
+/// BAKED gradient values — T device-settled on TestFlight `202608161025` and pasted the final list
+/// (2026-08-16); the dev tuner (`BandGradientTuning` + `BandGradientTuningPanel` + `GlobalGradientTuner`)
+/// has been DELETED. SINGLE source of truth so the band's two sites (expanded/collapsed) and the
+/// card's two sites (`NodeCardView` :217 carousel+canvas, :287 list) can't drift.
+/// ⚠️ GRID TILE has no vignette here — grid vignette stays PER-DENSITY in the grid's own tuner
+/// (`gradientVignette_2col` 0.62 / `_3col` 0.26), UNCHANGED. ⚠️ The COLLAPSED band forces vignette 0
+/// regardless (see `BandGradientCollapsed`) — a `.multiply` vignette does not survive its opaque blur.
+enum GradientBake {
+    // BAND — morph (amplitude / scale-wavelength / circle-size)
+    static let bandAmplitude: CGFloat = 1.00
+    static let bandScale:     CGFloat = 1.35
+    static let bandCircle:    CGFloat = 1.28
+    // CARD — morph (carousel + canvas + list)
+    static let cardAmplitude: CGFloat = 1.00
+    static let cardScale:     CGFloat = 1.34
+    // BAND — glow (dark)
+    static let bandRadial:    CGFloat = 1.00
+    static let bandBloom:     CGFloat = 0.00
+    static let bandGlowStart: CGFloat = 0.07
+    static let bandGlowEnd:   CGFloat = 1.00
+    static let bandVignette:  CGFloat = 0.64   // EXPANDED band only; collapsed forces 0
+    // CARD — glow (dark)
+    static let cardRadial:    CGFloat = 1.00
+    static let cardBloom:     CGFloat = 0.00
+    static let cardGlowStart: CGFloat = 0.07
+    static let cardGlowEnd:   CGFloat = 1.60
+    static let cardVignette:  CGFloat = 0.00
+    // GRID TILE — glow (dark). vignette stays on the grid's own per-density tuner.
+    static let gridRadial:    CGFloat = 1.00
+    static let gridBloom:     CGFloat = 0.02
+    static let gridGlowStart: CGFloat = 0.22
+    static let gridGlowEnd:   CGFloat = 1.60
 }
 
 /// The header-band top scrim — the analogue of the card's `travelingScrim`, with the band's own
@@ -570,12 +641,15 @@ struct BandScrim: View {
 
 /// The EXPANDED detail header band (`NodeDetailView` :1014 no-hero, :3013 hero-load-fail). ONE
 /// definition so the two sites can't diverge (a hero-load failure MUST match a no-hero node).
-/// Reads the baked `BandGradient` values; NOT externally blurred.
+/// Card blob set (undulation = card-morph irregularity, not a hero swap); NOT externally blurred.
 struct BandGradientExpanded: View {
     let node: Node
     let totalHeight: CGFloat
     var body: some View {
-        NodeGradientLayer(node: node, circleScale: BandGradient.circleScale, undulation: BandGradient.undulation)
+        NodeGradientLayer(node: node, circleScale: GradientBake.bandCircle,
+                          vignette: GradientBake.bandVignette, glowStart: GradientBake.bandGlowStart, glowEnd: GradientBake.bandGlowEnd,
+                          glowStrength: GradientBake.bandRadial, bloom: GradientBake.bandBloom,
+                          undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale)
             .frame(height: totalHeight)
             .overlay(BandScrim(top: BandGradient.scrimTop, bottom: BandGradient.scrimBottom))
             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
@@ -583,13 +657,22 @@ struct BandGradientExpanded: View {
 }
 
 /// The COLLAPSED pinned-band backdrop (`NodeDetailView` :1118, :3144). Blurred identity wash;
-/// NO scrim. Reads the baked `BandGradient` values incl. `backdropBlur`.
+/// NO scrim. Card blob set + the tuner's undulation/circleScale; blur from `BandGradient`.
 struct BandGradientCollapsed: View {
     let node: Node
     let width: CGFloat
     let height: CGFloat
     var body: some View {
-        NodeGradientLayer(node: node, circleScale: BandGradient.circleScale, undulation: BandGradient.undulation, animated: false)
+        // ⚠️ vignette FORCED 0 here (regression fix 2026-08-16): the vignette layer's
+        // `.blendMode(.multiply)` does NOT survive this band's `.blur(opaque: true).drawingGroup()`
+        // — a non-zero band vignette (T settled 0.64) collapsed the whole pinned strip to solid
+        // BLACK (device-observed, Sim-reproduced at 0.4 and 1.0; the EXPANDED band renders the same
+        // vignette correctly because it has no opaque blur / drawingGroup). A vignette is pointless
+        // on an 18pt-blurred identity wash anyway. The expanded band keeps `GradientBake.bandVignette`.
+        NodeGradientLayer(node: node, circleScale: GradientBake.bandCircle,
+                          vignette: 0, glowStart: GradientBake.bandGlowStart, glowEnd: GradientBake.bandGlowEnd,
+                          glowStrength: GradientBake.bandRadial, bloom: GradientBake.bandBloom,
+                          undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale, animated: false)
             .frame(width: width, height: height)
             .clipped()
             .blur(radius: BandGradient.backdropBlur, opaque: true)

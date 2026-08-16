@@ -214,8 +214,17 @@ struct NodeCardView: View {
                     // Hero-image cards anchor the gradient to the floor so the
                     // color pools beneath the photo instead of washing up into
                     // it. No-hero cards keep the full-bleed centered look.
+                    // glow-parity dev tuner (CARD group) — carousel + list + canvas all render
+                    // this body; defaults = today's literals, byte-identical until T dials.
                     NodeGradientLayer(node: node,
+                                      vignette: GradientBake.cardVignette,
+                                      glowStart: GradientBake.cardGlowStart,
+                                      glowEnd: GradientBake.cardGlowEnd,
+                                      glowStrength: GradientBake.cardRadial,
+                                      bloom: GradientBake.cardBloom,
                                       centerYOffset: gradientCenterY,
+                                      undulation: GradientBake.cardAmplitude,
+                                      warpScale: GradientBake.cardScale,
                                       anchor: hasHero ? .bottom : .center)
                     if hasHero {
                         heroOverlay(width: geo.size.width, height: geo.size.height)
@@ -286,6 +295,16 @@ struct NodeCardView: View {
                         // No mask; the colour bleeds toward the text, which stays legible.
                         NodeGradientLayer(
                             node: node,
+                            // Vertical-scroll (list) card = this hero-LEFT call site (default on),
+                            // NOT :217 — uses the SAME baked CARD values so glow + morph match the
+                            // carousel/canvas.
+                            vignette: GradientBake.cardVignette,
+                            glowStart: GradientBake.cardGlowStart,
+                            glowEnd: GradientBake.cardGlowEnd,
+                            glowStrength: GradientBake.cardRadial,
+                            bloom: GradientBake.cardBloom,
+                            undulation: GradientBake.cardAmplitude,
+                            warpScale: GradientBake.cardScale,
                             blobDistribution: NodeGradientLayer.BlobDistribution(
                                 columnFrac: CGFloat(heroLeftWidthFrac),
                                 blobScale: CGFloat(heroBlobScale),

@@ -471,7 +471,7 @@ struct QuikCaptureView: View {
         // bottom is a defined edge via rounded corners.
         if node.coverImageRelativePath == nil {
             let totalHeight: CGFloat = 200 + topInset
-            NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
+            NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0, blobSet: .hero)
                 .frame(height: totalHeight)
                 .clipShape(
                     UnevenRoundedRectangle(
@@ -1002,7 +1002,7 @@ private struct QuikCaptureHeroImageBanner: View {
                     )
             } else {
                 let totalHeight: CGFloat = 200 + topInset
-                NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0)
+                NodeGradientLayer(node: node, circleScale: 1.3, undulation: 1.0, blobSet: .hero)
                     .frame(height: totalHeight)
                     .clipShape(
                         UnevenRoundedRectangle(

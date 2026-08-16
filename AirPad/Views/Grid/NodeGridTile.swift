@@ -249,7 +249,13 @@ struct NodeGridTile: View {
                 circleScale:   tuning.gradientCircleScale,
                 blurScale:     tuning.gradientBlurScale,
                 offsetScale:   tuning.gradientOffsetScale,
-                vignette:      tuning.gradientVignette,
+                vignette:      tuning.gradientVignette,   // grid keeps its own per-density vignette
+                // Baked glow-parity values (T device-settled 2026-08-16); glow radii only — grid
+                // vignette stays per-density above.
+                glowStart:     GradientBake.gridGlowStart,
+                glowEnd:       GradientBake.gridGlowEnd,
+                glowStrength:  GradientBake.gridRadial,
+                bloom:         GradientBake.gridBloom,
                 centerYOffset: gradientCenterY,
                 animated:      animateGradient,
                 // Hero tiles pool the gradient at the floor beneath the photo.

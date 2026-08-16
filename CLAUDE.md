@@ -41,6 +41,14 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - Smallest reversible change that satisfies the task. One commit per task/brief.
 - Don't refactor or "improve" adjacent code unless asked.
 
+## Dev tuners (standing rule, T 2026-08-16)
+- **Every dev tuner panel MUST have a "Copy values" button** that copies the current settled
+  values to the clipboard (a labelled list, ready to paste). T dials on device/TestFlight, and a
+  TestFlight reinstall WIPES the UserDefaults the tuner persists to — without a copy button the
+  only way back is re-typing from screenshots (which also failed to transfer once). The copy
+  button is what makes "T dials, then CC bakes" reliable.
+- When baking settled values, use T's pasted/copied list — NEVER read them from a running build.
+
 ## SwiftUI body discipline — nothing blocking in `body`
 - **Never call a system-enumeration or XPC-backed API from inside a SwiftUI `body`.** They
   **block rather than spin**, so a default Time Profiler cannot see them, and they cost whole

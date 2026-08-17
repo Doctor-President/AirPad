@@ -1566,7 +1566,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -1586,7 +1586,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -1604,7 +1604,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad.share;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -1710,7 +1710,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.doctorpresident.airpad;
 				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};

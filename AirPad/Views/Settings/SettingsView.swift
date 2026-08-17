@@ -115,7 +115,7 @@ struct SettingsView: View {
                 apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Ollama endpoint")
+                    Text("Ollama / LM Studio endpoint")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     TextField("http://192.168.x.x:11434", text: $ollamaEndpoint)
@@ -149,12 +149,15 @@ struct SettingsView: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(isTestingConnection || activeAPIKey == nil)
+                // Enabled even with an empty endpoint — the tap must always produce a visible,
+                // honest response (empty → guidance; reachable/unreachable → result). Gating it on
+                // a key made it a dead control for a reviewer with nothing configured (the 2.1 case).
+                .disabled(isTestingConnection)
 
                 if let result = connectionTestResult {
                     Text(result)
                         .font(.caption)
-                        .foregroundStyle(result.hasPrefix("✓") ? .green : .red.opacity(0.8))
+                        .foregroundStyle(connectionResultColor(result))
                 }
                 Spacer()
             }
@@ -352,13 +355,6 @@ struct SettingsView: View {
         // Single source of truth so this can't drift from the Librarian pill
         // (both now read "Apple Intelligence"). Was "On-device (Foundation Model)".
         return ModelRouter.foundationModelName
-    }
-
-    private var activeAPIKey: String? {
-        if !anthropicKey.isEmpty { return anthropicKey }
-        if !openAIKey.isEmpty    { return openAIKey }
-        if !deepSeekKey.isEmpty  { return deepSeekKey }
-        return nil
     }
 
     @ViewBuilder
@@ -790,17 +786,36 @@ struct SettingsView: View {
         }
     }
 
+    /// "Test connection" for the local-server (Ollama / LM Studio) endpoint — three honest,
+    /// in-place outcomes. Empty short-circuits BEFORE the spinner (no attempt, no spinner-to-
+    /// nothing). Otherwise it actually probes the endpoint via `ModelRouter.probeEndpoint`, which
+    /// reuses the same path the live Librarian uses.
     private func testConnection() {
-        guard let key = activeAPIKey else { return }
+        let trimmed = ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            connectionTestResult = "Enter an endpoint above to test it."   // no connection attempt
+            return
+        }
         isTestingConnection = true
         connectionTestResult = nil
         Task {
-            // Minimal Anthropic-style check — just validates the key format and reachability.
-            // A real implementation would send a minimal completions request.
-            try? await Task.sleep(for: .seconds(1))
-            connectionTestResult = key.count > 10 ? "✓ Key saved" : "✗ Key too short"
+            switch await ModelRouter.probeEndpoint(trimmed) {
+            case .needsEndpoint:
+                connectionTestResult = "Enter an endpoint above to test it."
+            case .reachable(let model):
+                connectionTestResult = "✓ Connected — \(model) is loaded"
+            case .unreachable(let reason):
+                connectionTestResult = "✗ \(reason)"
+            }
             isTestingConnection = false
         }
+    }
+
+    /// ✓ green / ✗ red / neutral guidance (the empty-field line is not an error).
+    private func connectionResultColor(_ result: String) -> Color {
+        if result.hasPrefix("✓") { return .green }
+        if result.hasPrefix("✗") { return .red.opacity(0.8) }
+        return AppearancePalette.ink.opacity(0.55)
     }
 }
 

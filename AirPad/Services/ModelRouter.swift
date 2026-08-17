@@ -216,8 +216,8 @@ enum ModelRouter {
             case .foundationModelUnavailable: return "Foundation Model not available on this device."
             case .localBadJSON(let s): return "The on-device model didn't return valid JSON: \(Self.truncate(s))"
             case .ollamaNoModels: return "Endpoint is reachable but no models are loaded. Load a model in LM Studio / pull one with `ollama pull <name>`."
-            case .ollamaBadEndpoint(let s): return "Ollama endpoint is not a valid URL: \(s)"
-            case .ollamaTransport(let s): return "Couldn't reach Ollama: \(s)"
+            case .ollamaBadEndpoint(let s): return "The endpoint is not a valid URL: \(s)"
+            case .ollamaTransport(let s): return "Couldn't reach the local server: \(s)"
             case .ollamaHTTPError(let path, let status, let body):
                 return "Endpoint returned HTTP \(status) at \(path): \(Self.truncate(body))"
             case .ollamaBadResponse(let path, let body):
@@ -573,6 +573,31 @@ enum ModelRouter {
                let content = delta["content"] as? String {
                 continuation.yield(content)
             }
+        }
+    }
+
+    /// Result of a Settings "Test connection" probe — three honest, in-place outcomes.
+    enum EndpointProbe {
+        case needsEndpoint                 // field empty — no connection attempted
+        case reachable(model: String)      // answered; names the model that's loaded
+        case unreachable(reason: String)   // failed; the typed RouterError reason
+    }
+
+    /// Probe the local-server endpoint (Ollama / LM Studio) for the Settings "Test connection"
+    /// button. Reuses the SAME `firstOllamaModel` path the live Librarian uses, so a green result
+    /// means the real feature will work. Never throws — returns one of the three honest outcomes.
+    static func probeEndpoint(_ endpoint: String) async -> EndpointProbe {
+        let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .needsEndpoint }
+        guard let base = URL(string: trimmed), base.scheme != nil, base.host != nil else {
+            return .unreachable(reason: RouterError.ollamaBadEndpoint(trimmed).errorDescription
+                                        ?? "The endpoint is not a valid URL.")
+        }
+        do {
+            return .reachable(model: try await firstOllamaModel(base: base))
+        } catch {
+            return .unreachable(reason: (error as? LocalizedError)?.errorDescription
+                                        ?? error.localizedDescription)
         }
     }
 

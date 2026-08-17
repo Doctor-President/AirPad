@@ -131,7 +131,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_ENTITLEMENTS: AirPad/AirPad.entitlements
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         # Re-pin signing at the TARGET level too. The project-level pin (see
@@ -260,7 +260,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.doctorpresident.airpad.share
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         DEVELOPMENT_TEAM: 8XM4B5F42Y
         CODE_SIGN_ENTITLEMENTS: AirPadShare/AirPadShare.entitlements
     info:

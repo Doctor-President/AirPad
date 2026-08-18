@@ -34,6 +34,20 @@ struct LeverTray: View {
     /// The aspect of the most recent generate — so the failure banner's Retry re-runs the
     /// SAME aspect that failed (generate is per-aspect now, not whole-node).
     @State private var lastGeneratedKind: Proposal.Kind? = nil
+    /// §2 provenance — the outcome of the last "regenerate from your writing only" per aspect,
+    /// so the disclosure never lies. `recordProposal` REPLACES a proposal (fresh `UUID()`) on a
+    /// non-empty result and SKIPS entirely on an empty one — so the surfaced proposal's IDENTITY
+    /// (`id`) tells "a proposal was written" from "nothing came back", and its TEXT tells changed
+    /// from identical. Three distinct truths (nil = no writing-only regen yet → default state):
+    ///   • .changed — new proposal, DIFFERENT text → the shown suggestion is now writing-only;
+    ///     hide the disclosure (it's no longer "based partly on" derived text).
+    ///   • .same    — new proposal, IDENTICAL text → writing alone points to the SAME suggestion
+    ///     (the image/doc text didn't skew it); a true confirmation, no inert re-run.
+    ///   • .empty   — nothing recorded (model returned empty) → keep the affordance + say so.
+    @State private var regenOutcome: [Proposal.Kind: RegenOutcome] = [:]
+
+    /// Outcome of a writing-only regenerate — see `regenOutcome`.
+    private enum RegenOutcome { case changed, same, empty }
     /// F3 — why the last generate produced nothing (nil = no failure to show).
     /// One FM call does both aspects, so one reason covers the tray. Cleared at
     /// the start of every generate.
@@ -244,10 +258,106 @@ struct LeverTray: View {
                     }
                     .buttonStyle(.plain)
                 }
+                provenanceLine(node: node, kind: kind)
             } else {
                 generateAction(kind: kind, currentIsEmpty: currentTrimmed.isEmpty)
             }
         }
+    }
+
+    /// §2 — ACTIONABLE provenance. The node's proposals can draw on DERIVED text
+    /// (image OCR, document/PDF extracted text, link OG) as well as what the user
+    /// wrote. When both exist, disclose that the proposal drew partly on derived
+    /// text and offer a one-tap regenerate from authored text ALONE. Same honesty
+    /// posture as `LeverRefusalBanner` and the web-search-unavailable chip: say the
+    /// true thing at the moment it's relevant, hueless (colorblind-safe). ★ Shown
+    /// ONLY when there IS authored text to fall back to — the action is inert (so
+    /// HIDDEN, never disabled-looking) on an image-only node, and hidden for an
+    /// aspect the user already regenerated authored-only.
+    @ViewBuilder
+    private func provenanceLine(node: Node, kind: Proposal.Kind) -> some View {
+        let prov = AIService.contentProvenance(for: node)
+        if generatingAspect == kind {
+            // Working state — a provenance regen runs WHILE a proposal is shown, so the
+            // row's normal "Proposing…" (which lives only in generateAction) never appears.
+            // Without this the action reads as dead. Only our authored-only regen can set
+            // generatingAspect while this line is visible (normal Generate has no proposal shown).
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Regenerating from your writing…")
+                    .font(.caption)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            }
+            .padding(.top, 4)
+        } else if prov.hasAuthored, prov.hasDerived {
+            switch regenOutcome[kind] {
+            case .changed:
+                // The shown suggestion is now writing-only — nothing left to disclose.
+                EmptyView()
+            case .same:
+                // TRUE: writing alone points to the SAME suggestion, so the image/doc text
+                // didn't skew it. A confirmation, not an action (re-running is deterministic).
+                // Copy proposed, held for T.
+                provenanceNote("Your writing alone points to the same suggestion.")
+            case .empty:
+                // Nothing came back from authored text alone — keep the affordance, say so.
+                provenanceDisclosure(kind,
+                    note: "Your writing alone didn't produce a new suggestion.",
+                    action: "Try again from your writing only →")
+            case .none:
+                provenanceDisclosure(kind, note: nil,
+                    action: "Regenerate from your writing only →")
+            }
+        }
+    }
+
+    /// The "Based partly on image & document text." disclosure + a writing-only action,
+    /// with an optional second line (e.g. the empty-result explanation).
+    @ViewBuilder
+    private func provenanceDisclosure(_ kind: Proposal.Kind, note: String?, action: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                Text("Based partly on image & document text.")
+                    .font(.caption)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let note {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button {
+                generate(kind, authoredOnly: true)
+            } label: {
+                Text(action)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(hexString: "00BFFF"))
+            }
+            .buttonStyle(.plain)
+            .disabled(generatingAspect != nil)
+        }
+        .padding(.top, 4)
+    }
+
+    /// A hueless confirmation line with NO action — the "same suggestion" outcome. The `equal`
+    /// glyph carries the meaning by shape (colorblind-safe), not color.
+    @ViewBuilder
+    private func provenanceNote(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "equal.circle")
+                .font(.system(size: 11))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 4)
     }
 
     /// The generate action for ONE aspect. A user-authored row still OFFERS it — consent
@@ -570,17 +680,35 @@ struct LeverTray: View {
     /// user-beats-model gate opens for RECORDING (not the write) — a proposal can be
     /// offered even for a field the user authored. Consent comes from initiating.
     /// Single-in-flight: the model call can't run concurrently (see `generatingAspect`).
-    private func generate(_ kind: Proposal.Kind) {
+    private func generate(_ kind: Proposal.Kind, authoredOnly: Bool = false) {
         guard generatingAspect == nil else { return }
         generatingAspect = kind
         lastGeneratedKind = kind
         failure = nil
+        // Snapshot the surfaced proposal's IDENTITY + text so the outcome reads precisely:
+        // `processNodeWithAI` returns nil on SUCCESS whether the model produced a new proposal
+        // OR an empty result (recordProposal skips empty → prior proposal, same `id`, stays).
+        // `after.id != beforeID` == "a proposal was written"; text tells changed vs identical.
+        let before = node?.surfacedProposal(kind: kind)
+        let beforeID = before?.id
+        let beforeText = before?.text
         Task {
-            // F3 — the returned reason (nil on success) drives the tray's copy.
             let reason = await store.processNodeWithAI(
-                nodeID: nodeID, suppressTagSheet: true, solicited: true, aspects: [kind])
+                nodeID: nodeID, suppressTagSheet: true, solicited: true,
+                authoredOnly: authoredOnly, aspects: [kind])
             generatingAspect = nil
             failure = reason
+            guard reason == nil else { return }   // a failure left the prior proposal + shows a banner
+            guard authoredOnly else { regenOutcome[kind] = nil; return }   // normal generate re-includes derived
+            let after = node?.surfacedProposal(kind: kind)
+            let recorded = after != nil && after?.id != beforeID   // a NEW proposal object was written
+            if recorded && after?.text != beforeText {
+                regenOutcome[kind] = .changed
+            } else if recorded {
+                regenOutcome[kind] = .same
+            } else {
+                regenOutcome[kind] = .empty
+            }
         }
     }
 

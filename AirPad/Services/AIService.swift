@@ -197,7 +197,7 @@ actor AIService {
     /// prompt and the structured result (`NodeAIResult`). Tier-2 tag assignment
     /// moves to a deferred reflection pass (step 5). `tagVocabulary` is retained
     /// for signature stability with the corpus-aware sibling but is no longer read.
-    func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutcome {
+    func processNode(_ node: Node, tagVocabulary: [Tag], authoredOnly: Bool = false) async -> NodeAIOutcome {
         // GAP 27 — consult the router BEFORE the FM guard. This call routes through
         // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
         // so the FM-availability guard applies only when FM is the resolved provider.
@@ -212,11 +212,11 @@ actor AIService {
             }
         }
 
-        let content = extractContent(from: node)
+        let content = extractContent(from: node, authoredOnly: authoredOnly)
         guard !content.isEmpty else { return .failure(.noContent) }
 
         let prompt = """
-        Analyze this captured idea and produce a concise title and summary.
+        Analyze this captured idea and produce a concise title and summary. Base them on what the user wrote; any text found in images or documents is supporting context — rely on it only when the user's own writing is thin or absent.
 
         Idea:
         \(content)
@@ -264,13 +264,14 @@ actor AIService {
         node: Node,
         neighborhoodDigests: [NeighborhoodDigest],
         tagDigests: [TagDigest],
-        fullVocabulary: [String]
+        fullVocabulary: [String],
+        authoredOnly: Bool = false
     ) async -> NodeAIOutcome {
         // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
         // through ModelRouter — so the FM guard is correct. (Dormant: DEBUG-gated flag.)
         guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
 
-        let raw = extractContent(from: node)
+        let raw = extractContent(from: node, authoredOnly: authoredOnly)
         guard !raw.isEmpty else { return .failure(.noContent) }
         // ~4 chars per token proxy; truncate at ~3200 chars (≈800 tokens) so the
         // node-content slice stays inside its allocation in the token budget.
@@ -327,7 +328,7 @@ actor AIService {
 
         Other fields:
         - title: concise, functional, under 60 characters.
-        - summary: 1-2 sentences capturing the core essence.
+        - summary: 1-2 sentences capturing the core essence, based primarily on what the user wrote (the "## What you wrote" section when present); text found in images or documents is supporting context.
         - mood: exactly one of curious, reflective, energized, uncertain, calm, urgent, playful, melancholy.
         - domain: exactly one of Recipe, Legal, Medical, Nutrition, Dream, Travel, Work, Learning, Family, Art/Project, or empty string if none apply.
         - neighborhoodID: if the idea clearly belongs to one of the existing neighborhoods below, copy that neighborhood's id verbatim. Otherwise empty string.
@@ -784,31 +785,89 @@ actor AIService {
 
     // MARK: - Content extraction
 
-    private func extractContent(from node: Node) -> String {
-        node.items.compactMap { item -> String? in
+    /// AUTHORED vs DERIVED split — the single source of truth for the distinction,
+    /// shared by the weighted content assembly (`extractContent`) and the tray's
+    /// provenance signal (`contentProvenance`) so the two can't drift.
+    ///   • AUTHORED = text the user typed or dictated (text items, audio/video
+    ///     transcripts of their own capture).
+    ///   • DERIVED = machine-extracted (image OCR + parent description, image/
+    ///     document descriptions, link title/OG preview).
+    /// Per-item order is preserved WITHIN each bucket (items are visited in order).
+    static func classifyContent(from node: Node) -> (authored: [String], derived: [String]) {
+        var authored: [String] = []
+        var derived: [String] = []
+        for item in node.items {
             switch item.type {
-            case .text:              return item.content
-            case .audio, .video:     return item.transcript
-            case .image, .document:  return item.description
-            case .link:              return [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+            case .text:
+                if let c = item.content, !c.isEmpty { authored.append(c) }
+            case .audio, .video:
+                if let t = item.transcript, !t.isEmpty { authored.append(t) }
+            case .image, .document:
+                if let d = item.description, !d.isEmpty { derived.append(d) }
+            case .link:
+                let s = [item.title, item.preview].compactMap { $0 }.joined(separator: " ")
+                if !s.isEmpty { derived.append(s) }
             case .imageVideo:
-                // Gallery OCR (substrate) + legacy parent description feed AI
-                // content extraction (title/summary/tags), mirroring what
-                // BlockChunker feeds the search index. Previously nil — gallery
-                // entries contributed nothing to the intelligence layer.
+                // Gallery OCR + legacy parent description. This is DERIVED — the
+                // 2026-08-17 ranking bug was a mockup's OCR caption outranking four
+                // typed items because this text was concatenated ahead of them with
+                // no authored/derived weighting.
                 let ocr = (item.mediaItems ?? [])
                     .compactMap { $0.analysis?.recognizedText }
                     .filter { !$0.isEmpty }
                 let desc = (item.description?.isEmpty == false) ? [item.description!] : []
                 let parts = desc + ocr
-                return parts.isEmpty ? nil : parts.joined(separator: "\n")
-            // Stage 4.8 — Rating is an atomic numeric value, not text;
-            // contributes nothing to AI content extraction. Stage 5.1 —
-            // fields are atomic too; no free text to extract in Stage 1.
-            // ws-chat-lane — .chats is a reference (no extraction in V1).
-            case .rating, .field, .chats:  return nil
+                if !parts.isEmpty { derived.append(parts.joined(separator: "\n")) }
+            // Rating/field are atomic (no free text); .chats is a reference.
+            case .rating, .field, .chats:
+                break
             }
-        }.filter { !$0.isEmpty }.joined(separator: "\n")
+        }
+        return (authored, derived)
+    }
+
+    /// Whether a node carries each kind of text. Drives the tray's provenance line,
+    /// which is shown ONLY when BOTH exist — a "regenerate from your writing only"
+    /// affordance is inert (must be hidden) when there is no authored text to fall
+    /// back to (the same standard as the Test-connection stub: never offer an action
+    /// that cannot succeed).
+    static func contentProvenance(for node: Node) -> (hasAuthored: Bool, hasDerived: Bool) {
+        let c = classifyContent(from: node)
+        return (!c.authored.isEmpty, !c.derived.isEmpty)
+    }
+
+    /// Derived-text budget when authored text is ALSO present (~200-token proxy).
+    /// Leaves the bulk of the downstream ~3200-char cap for authored text so an
+    /// image-heavy node can't crowd out a few typed items.
+    static let derivedContentCap = 800
+
+    /// The node's text for title/summary generation, WEIGHTED: authored text first
+    /// under a labelled section, then a labelled derived section that is CAPPED so
+    /// it can inform but not override. Ordering + labelling + budget, never a filter.
+    ///   • text-only  → authored joined (byte-identical to the pre-split behaviour)
+    ///   • image-only → derived carries it unlabelled (byte-identical; the Mewtwo
+    ///     card / recipe screenshots keep working — derived is NOT gated out)
+    ///   • both       → the two labelled sections, derived capped
+    /// `authoredOnly` drops the derived section entirely — used ONLY by the tray's
+    /// "regenerate from your writing only" action (a scoped, user-initiated
+    /// exclusion, never the default path).
+    private func extractContent(from node: Node, authoredOnly: Bool = false) -> String {
+        let (authored, derived) = Self.classifyContent(from: node)
+        let authoredText = authored.joined(separator: "\n")
+        if authoredOnly { return authoredText }
+        let derivedText = derived.joined(separator: "\n")
+        if derivedText.isEmpty { return authoredText }   // text-only → unchanged
+        if authoredText.isEmpty { return derivedText }   // image-only → unchanged
+        let cappedDerived = derivedText.count > Self.derivedContentCap
+            ? String(derivedText.prefix(Self.derivedContentCap)) + " […]"
+            : derivedText
+        return """
+        ## What you wrote
+        \(authoredText)
+
+        ## Text found in images and documents (supporting context)
+        \(cappedDerived)
+        """
     }
 }
 

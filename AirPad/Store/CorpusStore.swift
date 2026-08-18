@@ -4841,6 +4841,7 @@ final class CorpusStore {
                            needsAuthorship: Bool = true,
                            needsSubstrate: Bool = true,
                            solicited: Bool = false,
+                           authoredOnly: Bool = false,
                            aspects: Set<Proposal.Kind> = [.title, .summary]) async -> NodeAIFailure? {
         print("[AI] processNodeWithAI called for \(nodeID) suppressTagSheet=\(suppressTagSheet) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) solicited=\(solicited)")
         // GAP 27 shape at the caller layer: DON'T bail here on !iOS26. `processNode` and
@@ -4882,15 +4883,16 @@ final class CorpusStore {
                     node: node,
                     neighborhoodDigests: neighborhoodDigests,
                     tagDigests: tagDigests,
-                    fullVocabulary: vocabulary
+                    fullVocabulary: vocabulary,
+                    authoredOnly: authoredOnly
                 )
             } else {
                 // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
                 // the compiler sees a definite assignment without the FM-only call on the floor.
-                aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags)
+                aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
             }
         } else {
-            aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags)
+            aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
         }
         // F3 — a failed authorship call no longer collapses into a bare nil: the
         // reason travels back so the tray can say which one it was.

@@ -34,6 +34,10 @@ struct LeverTray: View {
     /// The aspect of the most recent generate — so the failure banner's Retry re-runs the
     /// SAME aspect that failed (generate is per-aspect now, not whole-node).
     @State private var lastGeneratedKind: Proposal.Kind? = nil
+    /// §2 provenance — aspects whose CURRENT proposal was generated from AUTHORED text only
+    /// (via "regenerate from your writing only"). Hides the "based partly on…" disclosure for
+    /// that aspect until a normal generate re-includes derived text. Session-scoped @State.
+    @State private var authoredOnlyAspects: Set<Proposal.Kind> = []
     /// F3 — why the last generate produced nothing (nil = no failure to show).
     /// One FM call does both aspects, so one reason covers the tray. Cleared at
     /// the start of every generate.
@@ -244,9 +248,47 @@ struct LeverTray: View {
                     }
                     .buttonStyle(.plain)
                 }
+                provenanceLine(node: node, kind: kind)
             } else {
                 generateAction(kind: kind, currentIsEmpty: currentTrimmed.isEmpty)
             }
+        }
+    }
+
+    /// §2 — ACTIONABLE provenance. The node's proposals can draw on DERIVED text
+    /// (image OCR, document/PDF extracted text, link OG) as well as what the user
+    /// wrote. When both exist, disclose that the proposal drew partly on derived
+    /// text and offer a one-tap regenerate from authored text ALONE. Same honesty
+    /// posture as `LeverRefusalBanner` and the web-search-unavailable chip: say the
+    /// true thing at the moment it's relevant, hueless (colorblind-safe). ★ Shown
+    /// ONLY when there IS authored text to fall back to — the action is inert (so
+    /// HIDDEN, never disabled-looking) on an image-only node, and hidden for an
+    /// aspect the user already regenerated authored-only.
+    @ViewBuilder
+    private func provenanceLine(node: Node, kind: Proposal.Kind) -> some View {
+        let prov = AIService.contentProvenance(for: node)
+        if prov.hasAuthored, prov.hasDerived, !authoredOnlyAspects.contains(kind) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    Text("Based partly on image & document text.")
+                        .font(.caption)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button {
+                    generate(kind, authoredOnly: true)
+                } label: {
+                    Text("Regenerate from your writing only →")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color(hexString: "00BFFF"))
+                }
+                .buttonStyle(.plain)
+                .disabled(generatingAspect != nil)
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -570,7 +612,7 @@ struct LeverTray: View {
     /// user-beats-model gate opens for RECORDING (not the write) — a proposal can be
     /// offered even for a field the user authored. Consent comes from initiating.
     /// Single-in-flight: the model call can't run concurrently (see `generatingAspect`).
-    private func generate(_ kind: Proposal.Kind) {
+    private func generate(_ kind: Proposal.Kind, authoredOnly: Bool = false) {
         guard generatingAspect == nil else { return }
         generatingAspect = kind
         lastGeneratedKind = kind
@@ -578,9 +620,17 @@ struct LeverTray: View {
         Task {
             // F3 — the returned reason (nil on success) drives the tray's copy.
             let reason = await store.processNodeWithAI(
-                nodeID: nodeID, suppressTagSheet: true, solicited: true, aspects: [kind])
+                nodeID: nodeID, suppressTagSheet: true, solicited: true,
+                authoredOnly: authoredOnly, aspects: [kind])
             generatingAspect = nil
             failure = reason
+            // §2 — track whether this aspect's live proposal came from authored text
+            // only, so the disclosure hides after a "writing only" regen and returns
+            // on a normal one. Only on success (a failure left the prior proposal).
+            if reason == nil {
+                if authoredOnly { authoredOnlyAspects.insert(kind) }
+                else { authoredOnlyAspects.remove(kind) }
+            }
         }
     }
 

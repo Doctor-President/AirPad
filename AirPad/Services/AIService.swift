@@ -197,7 +197,7 @@ actor AIService {
     /// prompt and the structured result (`NodeAIResult`). Tier-2 tag assignment
     /// moves to a deferred reflection pass (step 5). `tagVocabulary` is retained
     /// for signature stability with the corpus-aware sibling but is no longer read.
-    func processNode(_ node: Node, tagVocabulary: [Tag]) async -> NodeAIOutcome {
+    func processNode(_ node: Node, tagVocabulary: [Tag], authoredOnly: Bool = false) async -> NodeAIOutcome {
         // GAP 27 — consult the router BEFORE the FM guard. This call routes through
         // `ModelRouter.generateNodeSummary`, which sends `.local` to the on-device model,
         // so the FM-availability guard applies only when FM is the resolved provider.
@@ -212,7 +212,7 @@ actor AIService {
             }
         }
 
-        let content = extractContent(from: node)
+        let content = extractContent(from: node, authoredOnly: authoredOnly)
         guard !content.isEmpty else { return .failure(.noContent) }
 
         let prompt = """
@@ -264,13 +264,14 @@ actor AIService {
         node: Node,
         neighborhoodDigests: [NeighborhoodDigest],
         tagDigests: [TagDigest],
-        fullVocabulary: [String]
+        fullVocabulary: [String],
+        authoredOnly: Bool = false
     ) async -> NodeAIOutcome {
         // FM-only (GAP 27 audit): builds its own `LanguageModelSession()` — not routed
         // through ModelRouter — so the FM guard is correct. (Dormant: DEBUG-gated flag.)
         guard SystemLanguageModel.default.isAvailable else { return .failure(.unavailable) }
 
-        let raw = extractContent(from: node)
+        let raw = extractContent(from: node, authoredOnly: authoredOnly)
         guard !raw.isEmpty else { return .failure(.noContent) }
         // ~4 chars per token proxy; truncate at ~3200 chars (≈800 tokens) so the
         // node-content slice stays inside its allocation in the token budget.

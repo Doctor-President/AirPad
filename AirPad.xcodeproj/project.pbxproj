@@ -120,6 +120,7 @@
 		6F98C9A9D3DA0E6A178A022B /* FMFailureBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */; };
 		6FC2BE9C463FD9AE53042812 /* RichTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F135F708282671E607C7C84B /* RichTextEditor.swift */; };
 		709B693116148A5A33D7BFCF /* SubstrateClusterLabelService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 657E5CF4617BD56734417E8F /* SubstrateClusterLabelService.swift */; };
+		71D025511C4B62325B4E6A4D /* BackgroundModelDownloader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */; };
 		71FA4FF948901041E16802D4 /* FolksonomyDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */; };
 		7289AE336C9540B5885CD057 /* ShimmerSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977A952D9380005BE5E53A93 /* ShimmerSelfTest.swift */; };
 		729D2AB8CC9F7200FB3D355C /* TagPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = F103085E0B3E0A4D0FAF79EC /* TagPickerMenu.swift */; };
@@ -354,6 +355,7 @@
 		30C340391F2E98790F9DA5D1 /* fraunces_msdf.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = fraunces_msdf.json; sourceTree = "<group>"; };
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
+		328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloader.swift; sourceTree = "<group>"; };
 		33412943BFC78174C4CB7437 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
 		338373B19F63427D62FB1D74 /* UMAPSGD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSGD.swift; sourceTree = "<group>"; };
@@ -668,6 +670,7 @@
 				7A44945C77B8E8010F9421AC /* HDBSCAN */,
 				78757359D9135582165FEA36 /* UMAP */,
 				E617FBB5C1757939CF37710B /* AIService.swift */,
+				328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */,
 				34AC513418FD53025E45C9B6 /* BlockChunker.swift */,
 				4011A4175698F1BD8BAECF08 /* BlockEmbeddingService.swift */,
 				A68F48BA8AA932943F118533 /* CardEmbeddingParityTest.swift */,
@@ -1300,6 +1303,7 @@
 				48043B3C310828936B349842 /* BGEMicro.mlpackage in Sources */,
 				1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */,
 				D95E1D3F124A19FDFFE80BF3 /* BackgroundGridView.swift in Sources */,
+				71D025511C4B62325B4E6A4D /* BackgroundModelDownloader.swift in Sources */,
 				CFFE64A955B749CCBAA0C04D /* BacklinkPickerSheet.swift in Sources */,
 				97C345D4F777202BA884F9A3 /* BatchParser.swift in Sources */,
 				524632EA61033FFCA11734F8 /* BentoLayout.swift in Sources */,

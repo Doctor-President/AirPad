@@ -195,6 +195,14 @@ struct SettingsView: View {
                         ProgressView(value: p).tint(AppearancePalette.ink)
                         localCapsuleButton("Cancel", symbol: "xmark") { localModel.cancelDownload() }
                     }
+                case .paused(let p):
+                    // ws-bg-download — honest "waiting" state, NOT a frozen "Downloading X%" (BUG 35 §7).
+                    // The transfer keeps running in the background and resumes on its own.
+                    VStack(alignment: .leading, spacing: 6) {
+                        localStatusRow(symbol: "pause.circle", text: "Paused — waiting for a connection… \(Int(p * 100))%")
+                        ProgressView(value: p).tint(AppearancePalette.ink.opacity(0.6))
+                        localCapsuleButton("Cancel", symbol: "xmark") { localModel.cancelDownload() }
+                    }
                 case .ready:
                     localStatusRow(symbol: "checkmark.circle", text: "Downloaded & ready")
                     // ws-local-model Stage 2 — the real opt-in. FM is the default; this only
@@ -219,9 +227,19 @@ struct SettingsView: View {
                     localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }
                     if InternalBuild.showsDevTuners { localTestBlock }
                 case .failed(let reason):
-                    localStatusRow(symbol: "exclamationmark.triangle", text: "Failed")
+                    // A DOWNLOAD failure — the weights aren't (fully) on disk, so re-downloading is right.
+                    localStatusRow(symbol: "exclamationmark.triangle", text: "Download failed")
                     Text(reason).font(.caption2).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
-                    localCapsuleButton("Retry", symbol: "arrow.clockwise") { localModel.download() }
+                    localCapsuleButton("Retry download", symbol: "arrow.clockwise") { localModel.download() }
+                case .loadFailed(let reason):
+                    // ws-bg-download Fix Path A — the weights ARE on disk; this is a LOAD failure, so the
+                    // remedy is a cheap retry (repair sidecars + load), NOT a 1.8 GB re-download. That
+                    // re-download is exactly what cost T two cellular downloads. Delete stays as the
+                    // deliberate escape hatch.
+                    localStatusRow(symbol: "exclamationmark.triangle", text: "Downloaded — but couldn't load")
+                    Text(reason).font(.caption2).foregroundStyle(.orange.opacity(0.8)).lineLimit(3)
+                    localCapsuleButton("Try again", symbol: "arrow.clockwise") { localModel.retryLoad() }
+                    localCapsuleButton("Delete model · reclaim \(reclaimLabel)", symbol: "trash") { localModel.deleteModel() }
                 }
             }
         }

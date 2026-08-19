@@ -20,9 +20,11 @@ final class LocalModelService {
 
     enum State: Equatable {
         case notDownloaded
-        case downloading(Double)   // fraction 0...1
+        case downloading(Double)   // BYTE fraction 0...1 (bytes on disk / bytes total)
+        case paused(Double)        // ws-bg-download: interrupted (e.g. offline) — auto-resumes; keeps the fraction
         case ready                 // weights on disk
-        case failed(String)
+        case failed(String)        // DOWNLOAD failure (network / disk / integrity) — remedy = re-download
+        case loadFailed(String)    // weights ARE on disk but the model wouldn't LOAD — remedy = retry LOAD (repair sidecars), NOT re-download
     }
 
     private(set) var state: State = .notDownloaded
@@ -51,7 +53,35 @@ final class LocalModelService {
     private let hub: HubApi
     private let config: ModelConfiguration
     private var container: ModelContainer?
-    private var downloadTask: Task<Void, Never>?
+
+    /// ws-bg-download (Option C) — downloads the model's files with a BACKGROUND URLSession
+    /// (survives suspension/termination; byte-based progress; resumable). `load()` below still
+    /// loads the on-disk files and is device-verified — this only replaces the DOWNLOAD step.
+    @ObservationIgnored private lazy var downloader: BackgroundModelDownloader = {
+        let d = BackgroundModelDownloader(
+            hub: hub, repoID: modelID,
+            modelDir: config.modelDirectory(hub: hub), downloadBase: modelHome)
+        d.onProgress  = { [weak self] f in self?.state = .downloading(f) }
+        d.onPaused    = { [weak self] f in self?.state = .paused(f) }
+        d.onCompleted = { [weak self] in
+            guard let self else { return }
+            self.applyBackupExclusion()       // re-assert exclusion once the weights have landed
+            self.state = .ready               // files on disk; load() loads them lazily (unchanged)
+        }
+        d.onFailed = { [weak self] failure in self?.state = self?.failureState(failure) ?? .notDownloaded }
+        return d
+    }()
+
+    /// Maps a downloader failure to an honest, distinguishable UI state (BUG 35 §7).
+    private func failureState(_ failure: BackgroundModelDownloader.Failure) -> State {
+        switch failure {
+        case .cancelled:              return .notDownloaded
+        case .networkUnavailable:     return .failed("No internet connection. Connect to Wi-Fi and tap Retry.")
+        case .diskFull:               return .failed("Not enough storage to finish the download. Free up space and tap Retry.")
+        case .integrityFailed(let f): return .failed("A downloaded file was incomplete (\(f)). Tap Retry to re-download.")
+        case .other(let msg):         return .failed(msg)
+        }
+    }
 
     /// The exact on-disk model directory (surfaced for verification).
     var modelDirectoryPath: String { config.modelDirectory(hub: hub).path }
@@ -67,6 +97,18 @@ final class LocalModelService {
         try? FileManager.default.createDirectory(at: modelHome, withIntermediateDirectories: true)
         applyBackupExclusion()
         refreshDownloadedState()
+        // ws-bg-download — reconnect to any background download the system kept running while we
+        // were suspended/terminated, and resume anything left in flight. NO manual re-tap (BUG 35 §3).
+        if isAvailable {
+            downloader.reattach()
+            // ★ Fix Path A — a download from a PRE-FIX build has the weights on disk but no HubApi
+            // `.metadata` sidecars → the offline load path fails. Repair proactively on launch when the
+            // files exist but sidecars don't (HEADs only, no body; no-ops once sidecars are present).
+            // Best-effort: if the network is unreachable right now, the load path repairs + reports honestly.
+            if isDownloadedOnDisk() {
+                Task { [weak self] in try? await self?.downloader.ensureSidecars() }
+            }
+        }
     }
 
     // MARK: - Disk state
@@ -104,50 +146,84 @@ final class LocalModelService {
             return
         }
         if case .downloading = state { return }
-        MLX.GPU.set(cacheLimit: Self.cacheLimitBytes)
+        if case .paused = state { return }
         state = .downloading(0)
-        downloadTask = Task { [weak self] in
+        Task { [weak self] in
             guard let self else { return }
             do {
-                let loaded = try await LLMModelFactory.shared.loadContainer(hub: self.hub, configuration: self.config) { progress in
-                    Task { @MainActor [weak self] in
-                        guard let self, case .downloading = self.state else { return }
-                        self.state = .downloading(progress.fractionCompleted)
-                    }
-                }
-                try Task.checkCancellation()
-                self.container = loaded
-                self.isResident = true
-                self.applyBackupExclusion()          // re-assert once the weights have landed
-                self.state = .ready
-            } catch is CancellationError {
-                self.deletePartialDownload()
-                self.state = .notDownloaded
+                try await self.downloader.start()
             } catch {
-                self.state = .failed("\(error)")
+                // Only the resolve step (getFilenames/getFileMetadata) throws here; per-file transfer
+                // failures come back via onFailed. Keep the message honest.
+                let ns = error as NSError
+                self.state = ns.domain == NSURLErrorDomain
+                    ? .failed("Couldn't reach the model server. Check your connection and tap Retry.")
+                    : .failed(error.localizedDescription)
             }
         }
     }
 
-    func cancelDownload() { downloadTask?.cancel() }
+    /// ws-bg-download — cancel means CANCEL: stop every task, delete the partials + our resume state,
+    /// and reflect it. (The old `deletePartialDownload()` was inert — a cancelled transfer surfaces as
+    /// `URLError.cancelled`, not `CancellationError`, so it never ran. BUG 35 §6.)
+    func cancelDownload() {
+        downloader.cancel()
+        if isAvailable { state = .notDownloaded }
+    }
 
-    /// Cancel deletes the partial rather than leaving a half-written directory — resume is not surfaced
-    /// this stage. (Hub does support file-level resume; a later stage could preserve the partial.)
-    private func deletePartialDownload() {
-        try? FileManager.default.removeItem(at: config.modelDirectory(hub: hub))
+    /// AppDelegate → us on relaunch: the system finished background transfers for this session and
+    /// handed back a completion handler to call once we've processed the events.
+    func handleBackgroundURLSessionEvents(identifier: String, completionHandler: @escaping () -> Void) {
+        guard isAvailable, identifier == BackgroundModelDownloader.sessionIdentifier else {
+            completionHandler(); return
+        }
+        downloader.setBackgroundCompletionHandler(completionHandler)
     }
 
     // MARK: - Load / unload
 
     func load() async {
-        guard isAvailable, case .ready = state, container == nil else { return }
+        guard isAvailable, isDownloadedOnDisk(), container == nil else { return }
+        // ★ Fix Path A — ensure HubApi's per-file `.metadata` sidecars exist BEFORE loading. Without them
+        // the offline path (taken on cellular, where NWPath is `isExpensive`) throws "Metadata not
+        // available…". Repairs a pre-fix download once (HEADs only, no body); no-ops with no network once
+        // the sidecars are present. A LOAD failure is `.loadFailed` — NOT `.failed`, so the UI never
+        // offers a 1.8 GB re-download as the remedy.
+        do {
+            try await downloader.ensureSidecars()
+        } catch {
+            state = .loadFailed(loadFailureMessage(error))
+            return
+        }
         MLX.GPU.set(cacheLimit: Self.cacheLimitBytes)
         do {
             container = try await LLMModelFactory.shared.loadContainer(hub: hub, configuration: config)  // files present → fast, no download
             isResident = true
+            state = .ready
         } catch {
-            state = .failed("\(error)")
+            state = .loadFailed(loadFailureMessage(error))
         }
+    }
+
+    /// Retry a failed LOAD without re-downloading — repairs sidecars if needed, then loads.
+    func retryLoad() {
+        guard isAvailable, isDownloadedOnDisk() else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            self.container = nil
+            await self.load()
+        }
+    }
+
+    /// Honest, distinguishable copy for a LOAD-side failure (vs a download failure).
+    private func loadFailureMessage(_ error: Error) -> String {
+        if let repair = error as? BackgroundModelDownloader.RepairError {
+            return repair.errorDescription ?? "Couldn't prepare the model to load."
+        }
+        if (error as NSError).domain == NSURLErrorDomain {
+            return "Couldn't reach the model server to finish setup. Connect to the internet and tap Try again."
+        }
+        return "The model is on disk but couldn't be loaded. Tap Try again. (\(error.localizedDescription))"
     }
 
     /// Free the resident model (weights stay on disk). ARC releases the MLXArrays; the GPU buffer cache
@@ -186,7 +262,10 @@ final class LocalModelService {
     /// prompt hack. Sets `lastOutTokens` / `lastTokPerSec` as a side effect for the Settings test hook.
     func generate(systemPrompt: String, userPrompt: String) async throws -> String {
         if container == nil { await load() }
-        guard let container else { throw LocalModelError.notReady }
+        guard let container else {
+            if case .loadFailed(let reason) = state { throw LocalModelError.loadFailed(reason) }
+            throw LocalModelError.notReady
+        }
         let result: GenerateResult = try await container.perform { (ctx: ModelContext) in
             let input = UserInput(
                 chat: [.system(systemPrompt), .user(userPrompt)],
@@ -204,9 +283,11 @@ final class LocalModelService {
 
 enum LocalModelError: Error, LocalizedError {
     case notReady
+    case loadFailed(String)   // downloaded but couldn't load — distinct from "not downloaded"
     var errorDescription: String? {
         switch self {
-        case .notReady: return "The local model isn't downloaded or loaded yet."
+        case .notReady: return "The local model isn't downloaded yet."
+        case .loadFailed(let reason): return reason
         }
     }
 }

@@ -46,8 +46,11 @@ struct LeverTray: View {
     ///   • .empty   — nothing recorded (model returned empty) → keep the affordance + say so.
     @State private var regenOutcome: [Proposal.Kind: RegenOutcome] = [:]
 
-    /// Outcome of a writing-only regenerate — see `regenOutcome`.
-    private enum RegenOutcome { case changed, same, empty }
+    /// Outcome of a writing-only regenerate — see `regenOutcome`. `.matchesCurrent` is the ORDINARY
+    /// (not writing-only) generate returning a suggestion identical to the current field — surfaced
+    /// as a hueless "=" confirmation instead of silence (BUG 34: the inertness is real; the SILENCE
+    /// was what read as the model failing).
+    private enum RegenOutcome: Equatable { case changed, same, empty, matchesCurrent }
     /// F3 — why the last generate produced nothing (nil = no failure to show).
     /// One FM call does both aspects, so one reason covers the tray. Cleared at
     /// the start of every generate.
@@ -205,6 +208,16 @@ struct LeverTray: View {
             == current.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// The node's CURRENT value for an aspect — mirrors the `current:` passed to `aspectRow`
+    /// (title/summary). Used to detect an ordinary-generate no-op (suggestion == current).
+    private func currentField(_ node: Node, _ kind: Proposal.Kind) -> String {
+        switch kind {
+        case .title:   return node.title
+        case .summary: return node.summary
+        case .tags:    return ""   // tags aren't an aspectRow aspect; generate() is title/summary only
+        }
+    }
+
     @ViewBuilder
     private func aspectRow(node: Node, kind: Proposal.Kind, label: String,
                            current: String) -> some View {
@@ -260,6 +273,13 @@ struct LeverTray: View {
                 }
                 provenanceLine(node: node, kind: kind)
             } else {
+                // The generate ran but its suggestion equalled the current value — surface the same
+                // hueless "=" confirmation the writing-only `.same` path uses, so the run isn't silent.
+                // The "Suggest another" button stays (ordinary generate samples at temp 0.6 → a re-run
+                // CAN differ), unlike the deterministic writing-only `.same`.
+                if regenOutcome[kind] == .matchesCurrent {
+                    provenanceNote("This suggestion matches the current \(label.lowercased()).")
+                }
                 generateAction(kind: kind, currentIsEmpty: currentTrimmed.isEmpty)
             }
         }
@@ -304,6 +324,9 @@ struct LeverTray: View {
                 provenanceDisclosure(kind,
                     note: "Your writing alone didn't produce a new suggestion.",
                     action: "Try again from your writing only →")
+            case .matchesCurrent:
+                // Ordinary-generate no-op — rendered in aspectRow's generate branch, not here.
+                EmptyView()
             case .none:
                 provenanceDisclosure(kind, note: nil,
                     action: "Regenerate from your writing only →")
@@ -699,7 +722,20 @@ struct LeverTray: View {
             generatingAspect = nil
             failure = reason
             guard reason == nil else { return }   // a failure left the prior proposal + shows a banner
-            guard authoredOnly else { regenOutcome[kind] = nil; return }   // normal generate re-includes derived
+            guard authoredOnly else {
+                // Ordinary generate: if the model's suggestion EQUALS the current field (a no-op —
+                // `recordProposal` still records it, `aspectIsNoOp` then hides the Proposed card), say
+                // so with the hueless "=" note instead of dropping back to the button in silence. That
+                // silence was misread as the model failing (BUG 34). Same equality test as aspectIsNoOp.
+                let after = node?.surfacedProposal(kind: kind)
+                let current = node.map { currentField($0, kind) } ?? ""
+                let isNoOp = after.map {
+                    $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                        == current.trimmingCharacters(in: .whitespacesAndNewlines)
+                } ?? false
+                regenOutcome[kind] = isNoOp ? .matchesCurrent : nil
+                return
+            }
             let after = node?.surfacedProposal(kind: kind)
             let recorded = after != nil && after?.id != beforeID   // a NEW proposal object was written
             if recorded && after?.text != beforeText {

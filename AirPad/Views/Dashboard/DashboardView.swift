@@ -211,15 +211,17 @@ struct DashboardView: View {
         .frame(height: 48)
     }
 
-    /// #3 — the chat / inbox / settings icons grouped into ONE liquid-glass pill,
+    /// #3 — the chat / settings icons grouped into ONE liquid-glass pill,
     /// reusing the STANDARD `chromeSurface(Capsule())` chrome treatment (the same
     /// Map/Card/List chrome glass), NOT the #2 peek-pill style. Icons use the
     /// adaptive `AppearancePalette.ink` (dark #FFFFFF byte-identical; light
     /// dark-ink so they read on the light glass over parchment).
+    /// ws-librarian-cleanup (2026-08-19): the middle Inbox icon (`inboxPillIcon`) was a dead pill —
+    /// empty Button action + a hardcoded `badgeCount = 0` making the badge branch unreachable, with
+    /// no roadmap story — removed.
     private var headerPill: some View {
         HStack(spacing: 2) {
             pillIcon("bubble.left.and.bubble.right.fill", size: 16) { router.showChatsList = true }
-            inboxPillIcon
             pillIcon("gearshape.fill", size: 16) { showSettings = true }
         }
         .padding(.horizontal, 4)
@@ -233,31 +235,6 @@ struct DashboardView: View {
                 .foregroundStyle(AppearancePalette.ink)
                 .frame(width: 40, height: 40)
                 .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var inboxPillIcon: some View {
-        let badgeCount = 0
-        return Button(action: {}) {
-            ZStack(alignment: .topTrailing) {
-                Image(systemName: "tray")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink)
-                    .frame(width: 40, height: 40)
-                    .contentShape(Rectangle())
-
-                if badgeCount > 0 {
-                    Text("\(badgeCount)")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(minWidth: 16, minHeight: 16)
-                        .padding(.horizontal, 3)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                        .offset(x: 4, y: -4)
-                }
-            }
         }
         .buttonStyle(.plain)
     }

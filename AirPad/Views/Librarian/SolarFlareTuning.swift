@@ -515,6 +515,7 @@ struct SolarFlareFieldGlow<S: Shape>: View {
     var opacityOverride: Double? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
     @AppStorage(SolarFlareTuningKey.fieldGlowWidth) private var fieldGlowWidth: Double = SolarFlareTuningDefaults.fieldGlowWidth
     @AppStorage(SolarFlareTuningKey.fieldGlowBlur) private var fieldGlowBlur: Double = SolarFlareTuningDefaults.fieldGlowBlur
@@ -533,25 +534,40 @@ struct SolarFlareFieldGlow<S: Shape>: View {
         let outerBlur = blurOverride ?? fieldGlowBlur
         let outerOpacity = opacityOverride ?? fieldGlowOpacity
 
-        ZStack {
-            // Outer pass — wide soft halo, the bulk of the radiated
-            // emanation. Larger blur diffuses the stroke into a soft
-            // glow on both sides of the edge; the inward half is
-            // covered by the field interior, outward bleeds into
-            // the panel.
-            shape
-                .stroke(gradient, lineWidth: w)
-                .blur(radius: outerBlur)
-                .opacity(outerOpacity)
+        Group {
+            if colorScheme == .dark {
+                // DARK — the blurred 2-pass bloom. On near-black it reads as a
+                // light source in a dark room; T device-confirmed it's correct
+                // there, so dark is unchanged.
+                ZStack {
+                    // Outer pass — wide soft halo, the bulk of the radiated
+                    // emanation. Larger blur diffuses the stroke into a soft
+                    // glow on both sides of the edge; the inward half is
+                    // covered by the field interior, outward bleeds into
+                    // the panel.
+                    shape
+                        .stroke(gradient, lineWidth: w)
+                        .blur(radius: outerBlur)
+                        .opacity(outerOpacity)
 
-            // Inner pass — tight bright rim that defines the edge
-            // crisply on top of the diffuse halo. Without this the
-            // outer pass alone reads as a fuzzy fog; with it the
-            // field's outline stays articulated.
-            shape
-                .stroke(gradient, lineWidth: w)
-                .blur(radius: fieldGlowInnerBlur)
-                .opacity(fieldGlowInnerOpacity)
+                    // Inner pass — tight bright rim that defines the edge
+                    // crisply on top of the diffuse halo. Without this the
+                    // outer pass alone reads as a fuzzy fog; with it the
+                    // field's outline stays articulated.
+                    shape
+                        .stroke(gradient, lineWidth: w)
+                        .blur(radius: fieldGlowInnerBlur)
+                        .opacity(fieldGlowInnerOpacity)
+                }
+            } else {
+                // LIGHT — same hue, NO blur: a crisp focus STROKE (ws-librarian-cleanup,
+                // T's ruling). The blurred halo read wrong on the Cucumber-Water parchment;
+                // a solid edge in the field's own accent (Mango / Klein — unchanged) reads
+                // cleanly. Treatment change only, not a palette change.
+                shape
+                    .stroke(gradient, lineWidth: w)
+                    .opacity(fieldGlowInnerOpacity)
+            }
         }
         .opacity(isVisible ? 1 : 0)
         .allowsHitTesting(false)

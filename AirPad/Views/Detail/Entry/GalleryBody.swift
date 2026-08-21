@@ -121,6 +121,18 @@ struct GalleryBody: View {
                 }
             }
         }
+        // ws-librarian-cleanup — Gallery + Attributes background tint (Option A, T's call).
+        // Reuse the Detail View's existing section-container idiom (`RelatedNodesSection`:
+        // translucent ADAPTIVE ink in a rounded-12 rect, pad v10·h12) so the gallery reads
+        // as a distinct region on the Detail ground instead of free-floating content — NOT a
+        // new box treatment. ★ One idiom, TWO weights: Gallery is the LIGHTER tint (0.03) —
+        // photos supply their own colour, so a heavier fill becomes a visible MAT framing the
+        // images; Attributes (text/data) takes the firmer 0.05 edge (see CaptureAttributesSection).
+        // `ink` is adaptive → white@3% on the dark ground (#212121 over #1A1A1A) / ink@3% on
+        // light (#F8F9F4 over #FFFFFA).
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(AppearancePalette.ink.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
         .sheet(isPresented: $showingPicker) {
             MediaPickerWrapper { results in
                 Task { await handlePickedMedia(results) }

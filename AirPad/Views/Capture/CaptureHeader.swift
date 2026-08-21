@@ -197,6 +197,21 @@ struct CaptureAttributesSection: View {
                 }
             }
         }
+        // ws-librarian-cleanup — Gallery + Attributes background tint (Option A, T's call).
+        // Same `RelatedNodesSection` section-container idiom as GalleryBody (translucent
+        // ADAPTIVE ink, rounded-12, pad v10·h12) so ATTRIBUTES reads as a distinct region —
+        // NOT a new box. ★ One idiom, TWO weights: Attributes takes the FIRMER 0.05 tint
+        // (text/data, firmer edge); the Gallery uses the lighter 0.03 (photos supply their
+        // own colour). `ink` adaptive → white@5% on dark (#252525 over #1A1A1A) / ink@5% on
+        // light (#F4F4F0 over #FFFFFA). ★ This is the SHARED capture section (Detail +
+        // QuikCapture), so BOTH capture surfaces get the container — kept shared on purpose:
+        // the section was unified from two copies to prevent drift + the header parity table
+        // measures it, so forking to tint only Detail would re-introduce drift AND break parity.
+        // The existing 1pt hairline above ATTRIBUTES (in CaptureHeader) is LEFT in place —
+        // dropping it would disturb the tuned symmetric-gap constants; flagged for device pass.
+        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
         .sheet(item: $editingItem) { item in
             if item.type == .rating, let rating = item.rating {
                 RatingEditSheet(itemID: item.id, nodeID: nodeID,

@@ -416,19 +416,19 @@ struct LibrarianSurface: View {
     /// full chrome carries the same arc rather than flattening.
     private var surfaceCornerRadius: CGFloat { 39 }
 
-    /// Item 4 — LIGHT-ONLY field-definition stroke for the expanded Search field
-    /// (the peek-pill stroke has faded by full). `.clear` in DARK so the dark
-    /// field is byte-identical (no stroke, as before); dark-ink on cream in LIGHT
-    /// so the field edge reads. A top→bottom gradient (stronger top) mirrors the
-    /// Ask field's stroke direction.
-    private static let lightFieldStrokeTop = Color(UIColor { t in
-        t.userInterfaceStyle == .dark ? .clear
-            : UIColor(Color(hexString: "232A2E")).withAlphaComponent(0.28)
-    })
-    private static let lightFieldStrokeBottom = Color(UIColor { t in
-        t.userInterfaceStyle == .dark ? .clear
-            : UIColor(Color(hexString: "232A2E")).withAlphaComponent(0.08)
-    })
+    /// The RESTING field-definition stroke — shared by BOTH Search and Ask (ws-librarian-cleanup
+    /// unified them; they had drifted — Ask carried an always-on adaptive-ink edge, Search a light-only
+    /// `#232A2E` that was `.clear` in DARK, so Search had no resting edge on near-black). One gradient,
+    /// two instances: `AppearancePalette.ink` (the app's adaptive ink — DARK `#FFFFFF` / LIGHT `#232A2E`)
+    /// at α0.22→0.04 top→bottom. Search now GAINS a dark resting edge matching Ask; both then bloom in
+    /// their own hue on focus (`SolarFlareFieldGlow`). Search fades this in with detent (`opacity(p)`)
+    /// so it hands off cleanly from the peek-pill edge; Ask (no morph) carries it always-on.
+    static var restingFieldStroke: LinearGradient {
+        LinearGradient(
+            colors: [AppearancePalette.ink.opacity(0.22), AppearancePalette.ink.opacity(0.04)],
+            startPoint: .top, endPoint: .bottom
+        )
+    }
 
     /// Top-edge drag grabber. Live-tracks vertical drag: the surface
     /// height follows the finger between detents, with a light haptic
@@ -622,18 +622,15 @@ struct LibrarianSurface: View {
         // (material + tint stay).
         .peekPillBackground(outerShape,
                             visibility: max(0, min(1, 1 - Double(p) / 0.35)))
-        // Item 4 — full-detent definition. The peek-pill stroke fades out by
-        // p≈0.35, so the expanded Search field is material-only on the cream
-        // panel (too light). Fade IN a LIGHT-ONLY ink stroke as p→1 so the field
-        // reads at full. Light-only (clear in dark) so DARK stays byte-identical
-        // — dark's expanded field had no stroke and still doesn't.
+        // Item 4 / ws-librarian-cleanup — the RESTING field-definition stroke, now SHARED with Ask
+        // (`restingFieldStroke`). The peek-pill stroke fades out by p≈0.35, so this fades IN as p→1 to
+        // define the expanded field's edge — a clean handoff, no double-stroke on the pill. Now present
+        // in BOTH appearances (DARK gains the white edge matching Ask; LIGHT is the same #232A2E), so
+        // Search and Ask carry one resting treatment; Search's is detent-gated by its morph, Ask's is
+        // always-on (no morph).
         .overlay(
-            outerShape.strokeBorder(
-                LinearGradient(colors: [Self.lightFieldStrokeTop, Self.lightFieldStrokeBottom],
-                               startPoint: .top, endPoint: .bottom),
-                lineWidth: 1
-            )
-            .opacity(Double(p))
+            outerShape.strokeBorder(Self.restingFieldStroke, lineWidth: 1)
+                .opacity(Double(p))
         )
         // Tap-to-expand overlay — only mounted at peek (`p < 0.5`).
         // Transparent Rectangle catches the entire pill area and routes
@@ -1517,18 +1514,15 @@ struct LibrarianSurface: View {
         let askShape = RoundedRectangle(cornerRadius: askCornerRadius, style: .continuous)
         // Item 4 — more separation from the (cream) panel. FILL: dark white@0.04
         // (byte-identical to the prior `ink.opacity(0.04)`); light a stronger dark
-        // wash so the field reads. STROKE: adaptive ink (dark = white, byte-
-        // identical to the prior white gradient; light = dark ink so the edge
-        // reads on cream) — was a `.white` gradient, invisible on cream.
+        // wash so the field reads. STROKE: the SHARED `restingFieldStroke` (adaptive
+        // ink — dark = white / light = #232A2E, α0.22→0.04) — ws-librarian-cleanup
+        // unified it with Search's resting stroke (one gradient, two instances).
         let askFill = Color(UIColor { t in
             t.userInterfaceStyle == .dark
                 ? UIColor.white.withAlphaComponent(0.04)
                 : UIColor(Color(hexString: "232A2E")).withAlphaComponent(0.075)
         })
-        let askStroke = LinearGradient(
-            colors: [AppearancePalette.ink.opacity(0.22), AppearancePalette.ink.opacity(0.04)],
-            startPoint: .top, endPoint: .bottom
-        )
+        let askStroke = Self.restingFieldStroke
 
         // Optical alignment — DERIVED from the text's LINE BOX (not container
         // padding, which lands off-centre because a line carries ascender/descender
@@ -1835,19 +1829,13 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// 2×2 grid that occupies the landing pocket (no session, empty
-    /// search) in place of the retired "Try Asking" suggestions list.
-    /// Frames the Librarian as a launchpad into Insights / Inbox /
-    /// Capsule / Chats instead of a dead suggestion list.
-    ///
-    /// Tap destinations are stubbed this pass — the workstreams that
-    /// own each surface (corpus reflection, Inbox SB134, chat
-    /// primitive, capsule export) wire them up as they land. Capsule
-    /// renders dimmed + inert until its export format is locked.
-    /// `singleRow` compresses the four tiles into one row of compact
-    /// cards (the Ask home, which needs vertical room beneath for the
-    /// active-chat pill). Default false keeps the 2×2 grid used by the
-    /// pipeline-mode empty landing.
+    /// Landing tiles that occupy the pocket (no session, empty search)
+    /// in place of the retired "Try Asking" suggestions list. `singleRow`
+    /// lays them out as one row of compact cards (the Ask home, which
+    /// needs vertical room beneath for the active-chat pill). ★ The default
+    /// 2×2 grid branch has NO current caller — only `librarianHome` renders
+    /// this, with `singleRow: true`. ★ ws-librarian-cleanup: only the Chats
+    /// tile survives; the other three were inert stubs (see `capabilityTiles`).
     @ViewBuilder
     private func capabilityTileGrid(librarian: LibrarianState, singleRow: Bool = false) -> some View {
         if singleRow {
@@ -1865,40 +1853,20 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// The four landing tiles, shared by both the 2×2 grid and the
-    /// single-row home layout. `compact` shrinks each card so all four
-    /// fit one row.
+    /// The landing tile(s), shared by the grid + single-row layouts.
+    /// `compact` shrinks the card for the single-row (Ask home) case.
     @ViewBuilder
     private func capabilityTiles(compact: Bool) -> some View {
-        capabilityTile(
-            label: "Insights",
-            systemImage: "sparkles",
-            isEnabled: true,
-            compact: compact
-        ) {
-            // TODO: route to corpus-reflection workstream
-        }
-        capabilityTile(
-            label: "Inbox",
-            systemImage: "tray",
-            isEnabled: true,
-            compact: compact
-        ) {
-            // TODO: route to dashboard Inbox surface (SB134).
-            // Future badge count slot lives on this tile.
-        }
-        capabilityTile(
-            label: "Capsule",
-            systemImage: "shippingbox",
-            isEnabled: false,
-            compact: compact
-        ) {
-            // Dimmed + inert until export format is locked.
-        }
+        // ws-librarian-cleanup (2026-08-19): Insights + Inbox REMOVED (inert stubs — empty `// TODO`
+        // action closures, tappable but no-ops). Chats is the live tile. Capsule is RESTORED (T's
+        // call) as an explicitly DISCLOSED placeholder via `comingSoonTile` — non-interactive (no
+        // Button), a dashed outline, and a literal "Coming soon" caption, so it reads as deliberately
+        // unavailable and SAYS why. The prior tile's sin was being dimmed and SILENT about it.
+        // Insights/Inbox destinations (corpus reflection, Inbox/SB134) remain in their workstreams,
+        // still unwired.
         capabilityTile(
             label: "Chats",
             systemImage: "bubble.left.and.bubble.right",
-            isEnabled: true,
             compact: compact
         ) {
             // Drop to .half first so a full-detent Librarian doesn't
@@ -1907,20 +1875,16 @@ struct LibrarianSurface: View {
             panelModel.dropToHalf(animated: true)
             router.showChatsList = true
         }
+        comingSoonTile(label: "Capsule", systemImage: "shippingbox", compact: compact)
     }
 
     /// One tile in `capabilityTileGrid`. Icon-led card with a small
     /// label beneath. Solar Flare rim-light treatment lands in a
     /// later art-direction pass — this is the placeholder card style.
-    ///
-    /// `isEnabled == false` renders the tile dimmed and skips the
-    /// Button wrapper entirely so the tile reads as a "coming soon"
-    /// placeholder rather than a tappable affordance (Capsule tile).
     @ViewBuilder
     private func capabilityTile(
         label: String,
         systemImage: String,
-        isEnabled: Bool,
         compact: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
@@ -1940,12 +1904,44 @@ struct LibrarianSurface: View {
         .background(AppearancePalette.ink.opacity(0.05))
         .clipShape(RoundedRectangle(cornerRadius: compact ? 12 : 14))
 
-        if isEnabled {
-            Button(action: action) { card }
-                .buttonStyle(.plain)
-        } else {
-            card.opacity(0.4)
+        Button(action: action) { card }
+            .buttonStyle(.plain)
+    }
+
+    /// A deliberately-UNAVAILABLE placeholder tile (T's call for Capsule). Distinct from
+    /// `capabilityTile` in three colorblind-safe ways — no colour signalling: (1) NOT wrapped in a
+    /// Button, so it's untappable; (2) a DASHED outline instead of a solid fill (shape, not hue);
+    /// (3) a literal "Coming soon" caption — it SAYS why it's inert, rather than being dimmed and
+    /// silent (the prior tile's failure). Same `.frame(maxWidth: .infinity)` as `capabilityTile`,
+    /// so in the single row the two tiles split the width evenly.
+    @ViewBuilder
+    private func comingSoonTile(label: String, systemImage: String, compact: Bool) -> some View {
+        VStack(spacing: compact ? 4 : 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: compact ? 18 : 22, weight: .regular))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            Text(label)
+                .font(.system(size: compact ? 11 : 12, weight: .medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text("Coming soon")
+                .font(.system(size: compact ? 9 : 10, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, compact ? 9 : 14)
+        .padding(.horizontal, compact ? 8 : 16)
+        .overlay(
+            RoundedRectangle(cornerRadius: compact ? 12 : 14)
+                .strokeBorder(
+                    AppearancePalette.ink.opacity(0.18),
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                )
+        )
+        // No Button wrapper — deliberately non-interactive.
     }
 
     // MARK: - Research mode (c8)

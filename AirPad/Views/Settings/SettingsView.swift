@@ -11,6 +11,10 @@ struct SettingsView: View {
     @State private var deepSeekKey = ""
     @State private var braveSearchKey = ""
     @State private var ollamaEndpoint = ""
+    // Optional bearer token sent as `Authorization: Bearer <token>` on every request to
+    // the endpoint above. Empty = today's behavior (no auth header). Needed for the
+    // AirPad Bridge/Host (the Host requires the QR-derived bearer) and any authed proxy.
+    @State private var ollamaAPIToken = ""
 
     // Privacy
     @AppStorage("locationEnabled") private var locationEnabled = false
@@ -129,6 +133,13 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                 }
+
+                // Optional bearer token for the endpoint above. Empty = no auth header
+                // (today's behavior). Sent as `Authorization: Bearer <token>` on every
+                // request; required by the AirPad Bridge/Host and any authed proxy.
+                apiKeyField(label: "API token (optional)",
+                            placeholder: "Bearer token — leave empty for none",
+                            text: $ollamaAPIToken)
             }
 
             HStack {
@@ -786,6 +797,7 @@ struct SettingsView: View {
         deepSeekKey    = KeychainHelper.load(key: "deepSeekAPIKey")    ?? ""
         braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
+        ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
     }
 
     private func saveKeys() {
@@ -794,6 +806,7 @@ struct SettingsView: View {
         persistKey("deepSeekAPIKey",  value: deepSeekKey)
         persistKey(WebSearchBackend.keychainKey, value: braveSearchKey)
         persistKey("ollamaEndpoint",  value: ollamaEndpoint)
+        persistKey("ollamaAPIToken",  value: ollamaAPIToken)
     }
 
     private func persistKey(_ key: String, value: String) {

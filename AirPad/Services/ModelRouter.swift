@@ -477,6 +477,7 @@ enum ModelRouter {
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyEndpointAuth(&request)
 
         let foldedUserContent = systemPrompt.isEmpty
             ? userPrompt
@@ -532,6 +533,7 @@ enum ModelRouter {
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyEndpointAuth(&request)
 
         let foldedUserContent = systemPrompt.isEmpty
             ? userPrompt
@@ -608,6 +610,7 @@ enum ModelRouter {
         let path = "api/v0/models"
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "GET"
+        applyEndpointAuth(&request)
 
         let (data, response) = try await runRequest(request, path: path)
         let bodyString = String(data: data, encoding: .utf8) ?? ""
@@ -637,6 +640,21 @@ enum ModelRouter {
             print("[ModelRouter] \(path) transport: \(error.localizedDescription)")
             throw RouterError.ollamaTransport(error.localizedDescription)
         }
+    }
+
+    /// Optional bearer credential for the configured local endpoint. When the user has
+    /// set an "API token" in Settings (Keychain `ollamaAPIToken`), attach it as
+    /// `Authorization: Bearer <token>` on every request to that endpoint; an empty token
+    /// leaves the request unchanged (today's behavior). Read live from the Keychain —
+    /// like the endpoint itself — so a token set in Settings takes effect on the next
+    /// request without a restart. Needed for the AirPad Bridge/Host path (the Host
+    /// requires the QR-derived bearer) and for any authenticated proxy in front of a
+    /// local model server.
+    private static func applyEndpointAuth(_ request: inout URLRequest) {
+        guard let token = KeychainHelper.load(key: "ollamaAPIToken")?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !token.isEmpty else { return }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
 }
 
@@ -752,6 +770,7 @@ extension ModelRouter {
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyEndpointAuth(&request)
         var body: [String: Any] = ["model": model, "stream": true, "messages": messages]
         if let tools { body["tools"] = tools }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)

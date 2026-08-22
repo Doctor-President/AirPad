@@ -542,22 +542,16 @@ struct NodeDetailView: View {
                             // doesn't also show as a standalone gallery card.
                             EmptyView()
                         } else {
-                        // 1pt hairline as a bottom overlay on every row except
-                        // the last so the gap between entries reads as a divider
-                        // without adding layout height. (The fold-boundary
-                        // divider was removed — fold is AUTO by default now; the
-                        // per-entry ••• still authors card visibility.)
+                        // SPIKE v2 (spike-entry-spine) — the inter-entry hairline
+                        // is DROPPED: spine-type entries (note / gallery) now carry
+                        // their own rounded container, and "the containers ARE the
+                        // separation" (brief item 5). Stacked with the existing
+                        // `interCardSpacing`. FLAG: non-container types (link /
+                        // voice / doc / single-media) lose their divider too this
+                        // spike — throwaway.
                         EntryCard(item: item, nodeID: nodeID, index: rawIndex, snapshotIDs: payloadSnapshot,
                                   onBacklink: { backlinkSource = BacklinkSource(id: item.id) })
                             .id(item.id)
-                            .overlay(alignment: .bottom) {
-                                if rawIndex < node.items.count - 1 {
-                                    Rectangle()
-                                        .fill(AppearancePalette.ink.opacity(0.08))
-                                        .frame(height: 1)
-                                        .allowsHitTesting(false)
-                                }
-                            }
                         }
                     }
                 }

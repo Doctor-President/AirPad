@@ -36,6 +36,10 @@ struct SettingsView: View {
     @State private var isTestingConnection = false
     @State private var showTagEditor = false
     @State private var editingTag: Tag? = nil
+    // Stage 4 — desktop Host pairing. `hostPairing` is cached (Keychain read is XPC-backed;
+    // never read HostPairing.load() from `body`); refreshed on appear + after the sheet closes.
+    @State private var showPairingQR = false
+    @State private var hostPairing: HostPairing? = nil
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
@@ -176,6 +180,38 @@ struct SettingsView: View {
             personalPromptField
 
             localModelSubsection
+
+            hostPairingRow
+        }
+        .sheet(isPresented: $showPairingQR, onDismiss: { hostPairing = HostPairing.load() }) {
+            HostPairingSheet()
+        }
+    }
+
+    // MARK: - Connect to your computer (Stage 4: pair with the desktop Host over the tunnel)
+    private var hostPairingRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider().overlay(AppearancePalette.ink.opacity(0.1))
+            Text("Connect to your computer")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            Button { showPairingQR = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: hostPairing == nil ? "qrcode" : "checkmark.seal.fill")
+                        .foregroundStyle(hostPairing == nil ? AppearancePalette.ink.opacity(0.8) : .green)
+                    Text(hostPairing == nil ? "Pair with your desktop model" : "Paired — \(hostPairing!.displayHost)")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                }
+                .padding(.horizontal, 16).padding(.vertical, 11)
+                .background(AppearancePalette.ink.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            Text("Reach a private model running on your own Mac, from anywhere — end-to-end encrypted.")
+                .font(.caption2).foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 
@@ -798,6 +834,7 @@ struct SettingsView: View {
         braveSearchKey = KeychainHelper.load(key: WebSearchBackend.keychainKey) ?? ""
         ollamaEndpoint = KeychainHelper.load(key: "ollamaEndpoint")    ?? ""
         ollamaAPIToken = KeychainHelper.load(key: "ollamaAPIToken")    ?? ""
+        hostPairing    = HostPairing.load()
     }
 
     private func saveKeys() {

@@ -40,8 +40,13 @@ struct HostPairing: Codable, Equatable {
 
     /// The chat endpoint URL on the tunnel.
     var chatURL: URL? { endpoint("v1/chat/completions") }
+    /// The filtered model-list endpoint on the tunnel.
+    var modelsURL: URL? { endpoint("v1/models") }
     /// The health endpoint (capability + host key discovery).
     var healthURL: URL? { endpoint("health") }
+
+    /// A short human label for the paired Host (the tunnel host, e.g. "spike.curiousobjects.co").
+    var displayHost: String { URL(string: tunnelURL)?.host ?? tunnelURL }
 
     private func endpoint(_ path: String) -> URL? {
         let base = tunnelURL.hasSuffix("/") ? String(tunnelURL.dropLast()) : tunnelURL

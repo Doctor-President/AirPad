@@ -81,6 +81,14 @@ struct RichTextEditor: UIViewRepresentable {
     /// Non-nil also gates the `image` category's visibility on the bar.
     var onInsertImageTapped: (() -> Void)? = nil
 
+    /// SPIKE v3 (spike-entry-spine) Model C — when true, the note's FIRST non-empty
+    /// PARAGRAPH is styled in the entry-title serif role (Fraunces) in place, so the
+    /// heading IS line 1 of the editor (no separate copy of the string). Display-only:
+    /// it sets a FONT, never `.airpadHeadingLevel`, so `encode` emits no `#` and
+    /// storage is unchanged. Re-derived on every keystroke (after `applyInPlace`), so
+    /// deleting paragraph 1 promotes the next paragraph live. Only notes opt in.
+    var firstParagraphAsTitle: Bool = false
+
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
     }
@@ -96,12 +104,21 @@ struct RichTextEditor: UIViewRepresentable {
         textView.textColor = documentStyle ? .label : .white
         textView.tintColor = documentStyle ? .label : .white
         textView.isScrollEnabled = false
-        textView.textContainerInset = .zero
+        // SPIKE v3.1 F1 — title-row invariance. The collapsed static row centers the
+        // title in a 28pt row (glyph top ~7pt below the container padding); a bare
+        // editor puts its first line flush at the top. This top inset drops the
+        // expanded first line to the SAME y so the title never jumps on fold. Only
+        // for the Model-C first-paragraph-title editor; every other editor stays .zero.
+        textView.textContainerInset = firstParagraphAsTitle
+            ? UIEdgeInsets(top: 2, left: 0, bottom: 0, right: 0)
+            : .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.adjustsFontForContentSizeCategory = true
         textView.placeholderText = placeholder
         textView.minHeight = minHeight
         textView.attributedText = decodedAttributedText(text)
+        // SPIKE v3 Model C — style paragraph 1 as the entry title on first render.
+        if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(textView) }
         // Record the markdown now reflected in the view so the first updateUIView
         // (and every benign re-render after) is a no-op — see `lastAppliedMarkdown`.
         context.coordinator.lastAppliedMarkdown = text
@@ -149,6 +166,8 @@ struct RichTextEditor: UIViewRepresentable {
             let clampedLocation = min(previousRange.location, length)
             let clampedLength = min(previousRange.length, length - clampedLocation)
             uiView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+            // SPIKE v3 Model C — re-style paragraph 1 as the entry title after a re-decode.
+            if firstParagraphAsTitle { NoteTypography.styleFirstParagraphAsEntryTitle(uiView) }
             CaretTrace.log("updateUIView REASSIGNED attributedText, restored \(CaretTrace.sel(uiView)) (prev=\(NSStringFromRange(previousRange)))")
             // After replacing attributedText, typingAttributes inherit from the new
             // surrounding character — or default to system attrs if the text is empty.
@@ -698,6 +717,11 @@ struct RichTextEditor: UIViewRepresentable {
                 CaretTrace.log("  refreshActiveState pre-applyInPlace  \(CaretTrace.sel(textView))")
                 isRestyling = true
                 NoteTypography.applyInPlace(to: textView, font: parent.documentFont)
+                // SPIKE v3 Model C — the entry-title pass runs LAST (after the serif
+                // re-facing) so paragraph 1 keeps the Fraunces title on every keystroke.
+                if parent.firstParagraphAsTitle {
+                    NoteTypography.styleFirstParagraphAsEntryTitle(textView)
+                }
                 isRestyling = false
                 CaretTrace.log("  refreshActiveState post-applyInPlace \(CaretTrace.sel(textView))")
             }
@@ -3658,6 +3682,61 @@ enum NoteTypography {
             runs.append((r, swapped))
         }
         for (r, f) in runs { mut.addAttribute(.font, value: f, range: r) }
+    }
+
+    // MARK: - SPIKE v3 (spike-entry-spine) Model C — first paragraph = entry title
+
+    /// Style the FIRST non-empty paragraph in the entry-title serif (Fraunces) IN
+    /// PLACE. Runs AFTER `applyFont` (which re-faces every run to the body serif on
+    /// each keystroke) so it wins the per-keystroke restyle. Sets only `.font` —
+    /// NEVER `.airpadHeadingLevel` — so `encode` (which keys on that attribute) emits
+    /// no `#` and the stored markdown is unchanged. Re-derives the first paragraph
+    /// each call, so deleting paragraph 1 promotes the next paragraph to the title
+    /// live. Idempotent (target font is absolute, not derived from the current font).
+    static func styleFirstParagraphAsEntryTitle(_ textView: UITextView) {
+        let storage = textView.textStorage
+        let ns = storage.string as NSString
+        guard ns.length > 0 else { return }
+        var firstRange: NSRange?
+        ns.enumerateSubstrings(in: NSRange(location: 0, length: ns.length),
+                               options: .byParagraphs) { sub, subRange, _, stop in
+            if let sub, !sub.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                firstRange = subRange
+                stop.pointee = true
+            }
+        }
+        guard let fr = firstRange, fr.length > 0 else { return }
+        // DEFAULT, not mandate — only dress a PLAIN BODY first paragraph. If the user
+        // gave it any explicit style (`.airpadHeadingLevel`: Title/Heading/Subhead/
+        // Mono), honor it EXACTLY: skip so `applyFont`'s styling stands and the Format
+        // sheet reflects + can change it. The collapsed static row still renders the
+        // derived text in the uniform spine typography (the index's rendering) — that
+        // divergence on user-styled titles is the intended fold crossfade.
+        if storage.attribute(.airpadHeadingLevel, at: fr.location, effectiveRange: nil) != nil {
+            return
+        }
+        storage.beginEditing()
+        storage.enumerateAttribute(.font, in: fr, options: []) { value, r, _ in
+            let existing = (value as? UIFont) ?? NoteTypographyHelper.bodyFont
+            let italic = existing.fontDescriptor.symbolicTraits.contains(.traitItalic)
+            storage.addAttribute(.font, value: entryTitleFont(italic: italic), range: r)
+        }
+        storage.endEditing()
+        // Type in the title font while the caret sits in paragraph 1 — but only for a
+        // plain-Body first paragraph (a user-styled one keeps its own typing font).
+        let caret = textView.selectedRange.location
+        if caret >= fr.location && caret <= fr.location + fr.length {
+            textView.typingAttributes[.font] = entryTitleFont(italic: false)
+        }
+    }
+
+    /// The entry-title serif (Fraunces), matching the chrome `sectionTitle` role
+    /// (size 20) so the collapsed static row and the expanded first line read
+    /// identically. Falls back to the system title font if the face won't resolve.
+    static func entryTitleFont(italic: Bool) -> UIFont {
+        let base = UIFont(name: "Fraunces72pt-Bold", size: 20)
+            ?? NoteTypographyHelper.headingFont(level: .title, italic: false)
+        return italic ? NoteTypographyHelper.italicized(base) : base
     }
 
     private static func paragraphStyle(

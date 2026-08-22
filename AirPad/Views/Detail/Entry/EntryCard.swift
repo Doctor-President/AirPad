@@ -79,6 +79,19 @@ struct EntryCard: View {
         return item.displayName ?? item.type.defaultDisplayName
     }
 
+    /// SPIKE v2 (`spike-entry-spine`) — which entry types wear the in-container
+    /// heading row (row 1 lives INSIDE the entry's own rounded container; the
+    /// body folds below it). Notes always; galleries (`.imageVideo` with ≥2
+    /// media — the universality test). Everything else keeps the standard
+    /// `EntryTitleRow` chrome. Throwaway.
+    private var isSpineType: Bool {
+        switch item.type {
+        case .text:       return true
+        case .imageVideo: return (item.mediaItems?.count ?? 0) >= 2
+        default:          return false
+        }
+    }
+
     /// Force-collapsed during reorder mode so every card renders as a
     /// uniform-height title row, which is what the controller's slotPitch
     /// math assumes. Restored to user-set expansion when reorder exits.
@@ -128,6 +141,37 @@ struct EntryCard: View {
             // per-section timestamp, ellipsis menu, chevron) is Edit-only
             // chrome. In Display it hides so the body reads as a document
             // section. Entry titles aren't removed, just gated by mode.
+            if isSpineType {
+                // SPIKE v2 (spine-entry) — the heading row lives INSIDE the
+                // entry's own rounded container (TextEntryBody / GalleryBody
+                // `spineMode`). The container renders in BOTH fold states; its
+                // body folds beneath row 1. No external EntryTitleRow chrome,
+                // and — unlike a normal entry — it is NOT gated on expansion
+                // (row 1 must persist when collapsed). Non-spine types untouched.
+                switch item.type {
+                case .text:
+                    TextEntryBody(
+                        item: item, nodeID: nodeID,
+                        isExpanded: effectiveExpansion,
+                        onToggleExpansion: toggleExpansion,
+                        reorderActive: presentation.reorderActive,
+                        headingFont: visualSettings.sectionTitle.resolvedFont(),
+                        spineMode: true
+                    )
+                case .imageVideo:
+                    GalleryBody(
+                        item: item, nodeID: nodeID,
+                        isExpanded: effectiveExpansion,
+                        onToggleExpansion: toggleExpansion,
+                        reorderActive: presentation.reorderActive,
+                        name: displayName,
+                        nameFont: visualSettings.sectionTitle.resolvedFont(),
+                        spineMode: true
+                    )
+                default:
+                    EmptyView()
+                }
+            } else {
             if !displayEditMode.isDisplay {
             EntryTitleRow(
                 displayName: displayName,
@@ -172,6 +216,7 @@ struct EntryCard: View {
                     // No header above the body in Display → no gap needed.
                     .padding(.top, displayEditMode.isDisplay ? 0 : 8)
             }
+            }
         }
         // #15 (T-dialed) — entry cards sit FLUSH with the 20pt title column
         // (NodeDetailView `.padding(20)`); the prior 12pt inset made every entry
@@ -179,9 +224,11 @@ struct EntryCard: View {
         // title and to its siblings. Outer gutter only — the note's internal
         // text padding (TextEntryBody 22pt) is untouched.
         .padding(.horizontal, 0)
-        // Note headers tighten the vertical padding so the body + PastePad sit
-        // higher; other entry types keep the original vertical rhythm.
-        .padding(.vertical, item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding)
+        // SPIKE v3 — spine-type entries carry their OWN filled container (which
+        // self-separates via fill + shadow), so the outer vertical padding is
+        // dropped; the inter-container gap comes purely from the list spacing
+        // (reference ~16pt gap). Non-spine types keep the original rhythm.
+        .padding(.vertical, isSpineType ? 0 : (item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding))
         .background {
             // Long-press recognizer lives in the background slot so foreground
             // interactive widgets (chevron, menu, text editors, waveform
@@ -708,6 +755,144 @@ private struct EntryTitleRow: View {
         + Text(" ago")
             .font(timestampFont)
             .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+    }
+}
+
+// MARK: - Spine row + container (SPIKE v3: spine-entry — THROWAWAY)
+
+/// SPIKE v3 (`spike-entry-spine`) — the shared "row 1" that sits INSIDE an
+/// entry's own filled container, applied to two types this spike (Note +
+/// Gallery). Geometry maps the T-approved reference
+/// (`Ops/design-refs/entry-primitives-mockup.html`):
+///   `[chevron 16 · gap10 · name (flex) · gap10 · meta · gap10 · ⠿ grip]`, min-height 28.
+/// Chevron 16 + gap 10 puts the name's left edge at `textMargin` (26), the same
+/// edge the note body indents to. INVARIANT between fold states; only the
+/// chevron rotates. Gallery media does NOT owe the text margin (full width).
+/// `trailing` = metadata riding in BOTH states (Gallery: 3-thumb stack + count;
+/// Note: empty). Grip is VISUAL ONLY (no menu, no reorder wiring).
+struct EntrySpineRow<Trailing: View>: View {
+
+    let name: String
+    /// Ghost styling for a derived-but-empty name (a note's "Untitled").
+    let isPlaceholder: Bool
+    let isExpanded: Bool
+    let reorderActive: Bool
+    /// Entry-title type role (serif) — the app's `sectionTitle` role, mapping the
+    /// reference's Fraunces name.
+    let nameFont: Font
+    let onToggle: () -> Void
+    @ViewBuilder let trailing: () -> Trailing
+
+    /// The name's left edge = the note body's left edge below it. Reference:
+    /// chevron 16 + gap 10.
+    static var textMargin: CGFloat { 26 }
+    /// Reference `.spine { min-height: 28 }`.
+    static var rowHeight: CGFloat { 28 }
+    private static var chevronWidth: CGFloat { 16 }
+    private static var gap: CGFloat { 10 }
+
+    var body: some View {
+        HStack(spacing: Self.gap) {
+            // Chevron: 16pt column, rotates on toggle (reference ▶→▼).
+            Button(action: onToggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.40))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: Self.chevronWidth, height: Self.rowHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(reorderActive)
+
+            // Name (flex). Tappable to expand ONLY when collapsed; inert when
+            // expanded so the background long-press reorder recognizer stays live.
+            Text(name)
+                .font(nameFont)
+                .foregroundStyle(AppearancePalette.ink.opacity(isPlaceholder ? 0.3 : 1.0))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .allowsHitTesting(!isExpanded)
+                .onTapGesture { if !isExpanded { onToggle() } }
+
+            // Right-side metadata (Gallery thumbs + count; Note none).
+            trailing()
+
+            // Grip glyph — VISUAL ONLY; non-interactive so touches fall through
+            // to the background long-press reorder recognizer.
+            Text("⠿")
+                .font(.system(size: 14, weight: .regular))
+                .tracking(1)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.30))
+                .allowsHitTesting(false)
+        }
+        .frame(minHeight: Self.rowHeight)
+    }
+}
+
+/// SPIKE v3 — the unified filled-panel container idiom (reference `.entry`):
+/// a FILLED surface (a step lighter than the detail ground), fixed 16pt radius,
+/// a top inset highlight + drop shadow, NO outline stroke, never a capsule.
+/// Identical for Note and Gallery. Collapsed = the same container at row height.
+struct EntryContainerStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    static let radius: CGFloat = 16
+    /// Reference container padding: `12px 14px`.
+    static let padH: CGFloat = 14
+    static let padV: CGFloat = 12
+
+    func body(content: Content) -> some View {
+        content
+            .background(fill)
+            .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+            // Top rim light — same as the note panel's (`rimOpacity 0.10`).
+            .overlay(
+                RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0)],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: shadow, radius: shadowRadius, x: 0, y: shadowY)
+    }
+
+    /// The app's EXISTING raised-panel surface — the SAME tokens the note panel
+    /// (`TextEntryBody.noteFill`) uses, so the container is the app's semantic
+    /// panel role, not an invented value. DARK: `bgElevated` #1A1A1A (lifts by
+    /// shadow + rim, same-tone with the ground — the note's proven idiom). LIGHT:
+    /// the card surface #FFFFFA (`CardSurfaceResolved`), NOT `bgElevated` #FAF6EC
+    /// (which read warm-cream, off the light idiom the edge/tint work was tuned to).
+    static var fillDarkHex: String { "#1A1A1A" }              // AppearancePalette.bgElevated (dark)
+    static var fillLightHex: String { CardSurfaceResolved.resolvedCardBackgroundHex }  // #FFFFFA
+    private var fill: Color {
+        colorScheme == .dark
+            ? AppearancePalette.bgElevated
+            : Color(hexString: Self.fillLightHex)
+    }
+    /// Note-panel shadow: DARK black@0.35; LIGHT the card's warm occlusion
+    /// (#43372A @0.143) — the T-dialed note-panel light lift.
+    private var shadow: Color {
+        colorScheme == .dark
+            ? AppearancePalette.panelShadow
+            : Color(hexString: CardSurfaceStore.read(.shadowHex)).opacity(0.143)
+    }
+    private var shadowRadius: CGFloat { colorScheme == .dark ? 12 : 5.6 }
+    private var shadowY: CGFloat { colorScheme == .dark ? 4 : 0 }
+}
+
+extension View {
+    /// Applies the shared spike container (fill + radius + rim + shadow) with the
+    /// reference's interior padding.
+    func entrySpineContainer() -> some View {
+        self
+            .padding(.horizontal, EntryContainerStyle.padH)
+            .padding(.vertical, EntryContainerStyle.padV)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(EntryContainerStyle())
     }
 }
 

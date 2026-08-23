@@ -27,9 +27,21 @@ struct ChatView: View {
             guard !didRestoreOnAppear else { return }
             didRestoreOnAppear = true
             await session.restoreIfNeededFromStore()
+            // BUG 36 Pillar 2 — a cold launch that restored a dropped Host partial (an app
+            // KILL mid-stream) re-attaches to the held answer right away (D3, the app-kill case).
+            await session.resumeHeldIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { session.flush() }
+            switch phase {
+            case .background:
+                session.flush()
+            case .active:
+                // Returning to the foreground: re-attach to any held Host result whose stream
+                // dropped while we were backgrounded — the true walk-away (BUG 36 Pillar 2).
+                Task { await session.resumeHeldIfNeeded() }
+            default:
+                break
+            }
         }
         .navigationTitle(session.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
@@ -56,7 +68,7 @@ struct ChatView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(AppearancePalette.ink)
                 }
-                .disabled(session.isStreaming)
+                .disabled(session.isStreaming || session.isResuming)
             }
         }
         .toolbarBackground(.visible, for: .navigationBar)

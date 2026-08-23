@@ -83,6 +83,17 @@ struct ChatTranscript: View {
             input = ""
             isPinnedToBottom = true
         }
+        // ★ BUG 36 Pillar 2 — foreground re-attach for EVERY chat host. This is the
+        // shared component behind both ChatView and the Librarian's "Ask" panel; the
+        // Librarian is a FloatingPanel-hosted VC where `@Environment(\.scenePhase)` does
+        // not reliably propagate, so we key off the app-wide `didBecomeActive`
+        // notification instead. On return to the foreground, re-attach to any held Host
+        // result whose stream dropped while backgrounded (the true walk-away).
+        // `resumeHeldIfNeeded` is idempotent + guarded, so this composes safely with
+        // ChatView's own scenePhase trigger and the send()-end trigger.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await session.resumeHeldIfNeeded() }
+        }
     }
 
     // MARK: - Transcript

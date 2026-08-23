@@ -361,6 +361,11 @@ struct LibrarianSurface: View {
             // once any chat activity exists — safe to call alongside
             // ChatView's own restore.
             await router.chat.restoreIfNeededFromStore()
+            // BUG 36 Pillar 2 — the Librarian is the PRIMARY chat surface, so a cold launch
+            // that restored a dropped Host partial (app KILL mid-stream) must re-attach here
+            // too (ChatView does the same). The foreground-return case is handled in the
+            // shared ChatTranscript (didBecomeActive), which the Librarian also hosts.
+            await router.chat.resumeHeldIfNeeded()
         }
         .onChange(of: hostScope) { _, _ in
             seedScopeFromHostIfNeeded(librarian: librarian)

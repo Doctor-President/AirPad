@@ -303,6 +303,18 @@ struct LibrarianSurface: View {
                     "Two good SpongeBob video essays: [Full Fat Videos on YouTube](https://www.youtube.com/playlist?list=PLfabricated9x8y7z) and one at https://example.com/spongebob-essay-fake — see [1] for the source I used."
                 )
             }
+            // `-PartialTurnTest YES` — inject a user turn + a PARTIAL assistant turn
+            // (BUG 36: the stream dropped mid-answer) so `-Screen` can confirm the calm
+            // "Stopped early / Continue" affordance renders on the dropped turn — NOT a
+            // red failure banner (the pre-fix behavior discarded the text + errored).
+            if UserDefaults.standard.bool(forKey: "PartialTurnTest") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                router.chat.debugAppendPartialTurn(
+                    user: "Explain how a Cloudflare tunnel keeps my Mac reachable.",
+                    partial: "A Cloudflare tunnel works by having a lightweight agent on your Mac dial OUT to Cloudflare's edge, so there's no inbound port to open. Your phone reaches a stable public hostname and Cloudflare routes that request down the"
+                )
+            }
             // `-BraveDiag YES` — verify the Brave executor without a live subscription:
             // (1) parseBrave on a mock payload → mapped {title,url,snippet}; (2) backend
             // selection given key present/absent; (3) live request wiring (fake key from

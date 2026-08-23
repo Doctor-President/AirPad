@@ -55,13 +55,22 @@ final class ChatSession {
         /// and the tappable links returned). Nil for chat turns. Optional →
         /// decodeIfPresent keeps legacy transcripts decoding with `nil`.
         var activity: ToolActivity?
+        /// ★ BUG 36 — an assistant turn that stopped EARLY: the stream dropped
+        /// mid-answer (the app backgrounded and iOS/CF severed the connection)
+        /// so this text is what arrived before the drop, kept rather than
+        /// discarded. The bubble renders a calm "Continue" affordance instead of
+        /// a red failure banner. `nil`/`false` = a complete turn. Optional +
+        /// synthesized Codable → legacy transcripts decode with `isPartial ==
+        /// nil` (mirrors `citations` / `activity`).
+        var isPartial: Bool?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, activity: ToolActivity? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil) {
             self.id = id
             self.role = role
             self.text = text
             self.citations = citations
             self.activity = activity
+            self.isPartial = isPartial
         }
     }
 
@@ -142,6 +151,21 @@ final class ChatSession {
     @ObservationIgnored
     private var didGenerateTitle: Bool = false
 
+    /// ★ BUG 36 — stable identity for the assistant turn currently streaming.
+    /// The incrementally-persisted partial (`flush()` during the stream), the
+    /// partial committed if the stream drops, and any later continuation all
+    /// carry THIS id, so they upsert onto one turn rather than duplicating.
+    /// Re-minted at the start of every streamed turn.
+    @ObservationIgnored
+    private var streamingMessageID = UUID()
+
+    /// Coalesce incremental partial persistence to ~this many newly-streamed
+    /// characters (BUG 36) — durable-as-it-arrives without a per-token disk
+    /// write. The `.background` flush (ChatView) captures whatever remains the
+    /// instant the app leaves the foreground, which is the measured drop
+    /// trigger; this threshold only adds crash/kill safety between backgroundings.
+    private static let partialPersistThreshold = 240
+
     static let systemPrompt = """
     You are a thoughtful conversational assistant. The user is thinking out loud \
     and will ask follow-up questions that depend on earlier turns — always take \
@@ -180,14 +204,24 @@ final class ChatSession {
         isStreaming = true
         streamingText = ""
 
+        streamingMessageID = UUID()
         let prompt = buildPrompt(current: modelText)
 
+        // ★ BUG 36 — incremental delta persistence. The partial is made durable
+        // AS IT ARRIVES (coalesced by `partialPersistThreshold`), so a mid-stream
+        // background / drop / kill never loses what's already on screen. `flush()`
+        // folds the in-flight `streamingText` into the persisted snapshot.
+        var lastPersistedLength = 0
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
                 userPrompt: prompt
             ) {
                 streamingText += delta
+                if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
+                    lastPersistedLength = streamingText.count
+                    flush()
+                }
             }
             let finalText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !finalText.isEmpty {
@@ -201,15 +235,26 @@ final class ChatSession {
                     let kept = candidates.filter { used.contains($0.index) }
                     return kept.isEmpty ? nil : kept
                 }
-                messages.append(Message(role: .assistant, text: finalText, citations: citedOnly))
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: finalText, citations: citedOnly))
             }
         } catch {
-            // Endpoint / network / discovery failure. Surface it as a
-            // distinct, non-message failure state — NOT an assistant turn —
-            // so the transcript stays clean of raw error strings. The
-            // trailing `.user` message remains so retry can re-send it.
-            let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            lastError = reason
+            // ★ BUG 36 — do NOT discard the partial. A mid-stream drop (the app
+            // backgrounded and iOS/CF severed the stream) previously threw away
+            // everything already streamed and showed a red banner — the measured
+            // "already-streamed text entirely LOST." Instead KEEP what arrived as
+            // a PARTIAL assistant turn (no banner); the bubble offers "Continue".
+            // Only when NOTHING streamed do we surface a failure banner, so a
+            // genuine unreachable-Host error is still visible (and the trailing
+            // `.user` message remains so retry can re-send it).
+            let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !partial.isEmpty {
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true))
+            } else {
+                // Nothing streamed — a genuine failure. Classify it into a human
+                // banner (field findings #2/#3): unreachable/530 reads as "offline
+                // or asleep", and raw upstream HTML is never shown.
+                lastError = Self.humanError(for: error)
+            }
         }
 
         streamingText = ""
@@ -419,6 +464,15 @@ final class ChatSession {
         messages.append(Message(role: .assistant, text: text))
     }
 
+    /// Headless verification hook (BUG 36) — inject a user turn + a PARTIAL
+    /// assistant turn (the stream dropped mid-answer) so `-Screen` can shoot the
+    /// calm "Stopped early / Continue" affordance — NOT a red failure banner —
+    /// without driving a live mid-stream background.
+    func debugAppendPartialTurn(user: String, partial: String) {
+        messages.append(Message(role: .user, text: user))
+        messages.append(Message(role: .assistant, text: partial, isPartial: true))
+    }
+
     /// Headless verification hook — inject a web answer + its CITED chips, using the
     /// SAME `citedIndices` gating as the live loop, so `-Screen` can prove chips gate
     /// to cited (not searched).
@@ -440,6 +494,64 @@ final class ChatSession {
                                 activity: ToolActivity(icon: icon, label: label, detail: detail, links: links)))
     }
     #endif
+
+    // MARK: - Failure presentation (BUG 36 field findings #2 / #3)
+
+    /// Turn a raw send failure into a calm, human banner. Field findings from the
+    /// device test: (#2) a 530 / unreachable / network-lost error means the Host
+    /// Mac is offline or asleep — say THAT, not a status code; (#3) NEVER render
+    /// raw upstream HTML (a Cloudflare 530 body is a full HTML page) in the
+    /// banner. Reached only when NOTHING streamed — a mid-stream drop that
+    /// already has partial text is kept as a partial turn (no banner), see send().
+    static func humanError(for error: Error) -> String {
+        let offline = "Your computer appears to be offline or asleep. Make sure the AirPad Host is running on it, then try again."
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost,
+                 .cannotFindHost, .dnsLookupFailed, .timedOut, .secureConnectionFailed:
+                return offline
+            default:
+                // A URLError we don't specifically classify — its own description
+                // is already human (and never HTML).
+                return urlError.localizedDescription
+            }
+        }
+
+        if let routerError = error as? ModelRouter.RouterError {
+            switch routerError {
+            case .ollamaTransport:
+                // Couldn't reach the endpoint at all — same human meaning.
+                return offline
+            case .ollamaHTTPError(_, let status, let body):
+                // 530 (Cloudflare: origin unreachable — tunnel down / Mac asleep)
+                // and the 502/503/504 gateway family read, to a person, as "the
+                // computer isn't answering."
+                if status == 530 || (502...504).contains(status) { return offline }
+                // Any other HTTP error: show the status, but strip the body FIRST
+                // so a raw HTML error page can never reach the banner (#3).
+                let clean = Self.sanitizedErrorBody(body)
+                return clean.isEmpty
+                    ? "Your computer's model returned an error (HTTP \(status))."
+                    : "Your computer's model returned an error (HTTP \(status)): \(clean)"
+            default:
+                return routerError.errorDescription ?? offline
+            }
+        }
+
+        return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+
+    /// Strip HTML (#3) so an error page never renders as raw markup in the
+    /// banner. Reuses the app's readability helpers (`WebReadability`), collapses
+    /// whitespace, and caps length. Empty → the caller shows a status-only line.
+    private static func sanitizedErrorBody(_ body: String) -> String {
+        let looksHTML = body.range(of: "<[a-zA-Z!/]", options: .regularExpression) != nil
+        var s = looksHTML ? WebReadability.decodeEntities(WebReadability.stripTags(body)) : body
+        s = s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.count > 160 ? String(s.prefix(160)) + "…" : s
+    }
 
     /// Dismiss the transient failure banner without retrying.
     func clearError() {
@@ -473,6 +585,88 @@ final class ChatSession {
         messages.removeLast()               // assistant
         let userText = messages.removeLast().text
         await send(userText)
+    }
+
+    /// ★ BUG 36 — resume a turn that STOPPED EARLY. When the stream dropped
+    /// mid-answer (app backgrounded), `send()` kept the arrived text as a
+    /// trailing `isPartial` assistant turn. "Continue" re-prompts the model with
+    /// the conversation + that partial and MERGES the continuation onto the same
+    /// bubble, clearing the partial flag on success. This is the iOS-side
+    /// interim resume: a re-prompt, NOT a byte-exact splice of the original
+    /// generation — that is the Host finish-and-hold + resume arc (next). No-op
+    /// unless the transcript ends in a partial assistant turn preceded by its
+    /// user turn. Regenerate remains the robust fallback if a continuation drifts.
+    func continuePartial() async {
+        guard !isStreaming,
+              let last = messages.last,
+              last.role == .assistant,
+              last.isPartial == true,
+              messages.count >= 2,
+              messages[messages.count - 2].role == .user else { return }
+
+        let head = last.text
+        lastError = nil
+        isStreaming = true
+        streamingText = ""
+        streamingMessageID = last.id   // continuation upserts onto the same turn
+
+        let prompt = buildContinuationPrompt(partialHead: head)
+        do {
+            for try await delta in ModelRouter.generateStreaming(
+                systemPrompt: Self.systemPrompt,
+                userPrompt: prompt
+            ) {
+                streamingText += delta
+            }
+            mergeContinuation(tail: streamingText, complete: true)
+        } catch {
+            // Dropped AGAIN — keep whatever extra arrived and stay partial so the
+            // user can resume once more. Nothing new streamed → the turn is left
+            // exactly as it was (still resumable), no banner.
+            mergeContinuation(tail: streamingText, complete: false)
+        }
+
+        streamingText = ""
+        isStreaming = false
+        flush()
+    }
+
+    /// Merge a continuation `tail` onto the trailing partial assistant turn.
+    /// `complete` clears the partial flag; otherwise the turn stays resumable.
+    private func mergeContinuation(tail: String, complete: Bool) {
+        guard let idx = messages.indices.last, messages[idx].role == .assistant else { return }
+        var merged = messages[idx]
+        merged.text = Self.spliceContinuation(head: merged.text, tail: tail)
+        // Clear the flag only on a clean finish; a re-dropped continuation stays
+        // partial (nil vs true, never false — a "complete" turn just has no flag).
+        merged.isPartial = complete ? nil : true
+        messages[idx] = merged
+    }
+
+    /// Join a continuation onto a partial head. The drop lands at a token
+    /// boundary, so a bare concat is usually right; insert a single space only
+    /// when both sides are letters (avoids gluing two words) — the common case
+    /// where the model resumes at the next word without a leading space.
+    private static func spliceContinuation(head: String, tail: String) -> String {
+        guard !tail.isEmpty else { return head }
+        let needsSpace = (head.last?.isLetter ?? false) && (tail.first?.isLetter ?? false)
+        return needsSpace ? head + " " + tail : head + tail
+    }
+
+    /// Continuation prompt — the folded conversation ending on the partial
+    /// assistant text (no fresh "Assistant:" mid-cue), then an explicit
+    /// continue-from-here instruction. Mirrors `buildPrompt`'s User:/Assistant:
+    /// format so every provider (FM one-shot, Ollama/Host SSE) reads it the same.
+    private func buildContinuationPrompt(partialHead: String) -> String {
+        var lines: [String] = []
+        for m in messages.dropLast() where m.role == .user || m.role == .assistant {
+            lines.append(m.role == .user ? "User: \(m.text)" : "Assistant: \(m.text)")
+        }
+        lines.append("Assistant: \(partialHead)")
+        lines.append("")
+        lines.append("[The assistant's answer above was cut off. Continue it from exactly where it stopped — do not repeat any of it, do not restate the question, just continue the text.]")
+        lines.append("Assistant:")
+        return lines.joined(separator: "\n")
     }
 
     /// Render the prior transcript + the new user turn as a single text
@@ -559,13 +753,25 @@ final class ChatSession {
     /// refuses to touch `title` on existing-id updates so this race is
     /// also closed at the store layer (belt + suspenders).
     func flush() {
-        guard let store, !messages.isEmpty else { return }
+        // ★ BUG 36 — fold the in-flight partial into the persisted snapshot. The
+        // live tail lives in `streamingText` (not `messages`) for render
+        // isolation; persistence needs it too, so a background / drop / kill
+        // mid-stream keeps what's on screen. Keyed by the stable
+        // `streamingMessageID` so a later completion or continuation upserts onto
+        // the SAME turn (no duplicate) rather than appending a second bubble.
+        var snapshotMessages = messages
+        if isStreaming {
+            let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !partial.isEmpty {
+                snapshotMessages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true))
+            }
+        }
+        guard let store, !snapshotMessages.isEmpty else { return }
         // This non-empty session IS the active chat — mark it so a cold launch
         // resumes it. Cleared by reset() when the user ends the chat.
         Self.persistedActiveChatID = id.uuidString
         let snapshotID = id
         let snapshotCreatedAt = createdAt
-        let snapshotMessages = messages
         Task {
             let chat = Chat(
                 id: snapshotID,

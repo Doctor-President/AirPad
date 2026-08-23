@@ -253,6 +253,11 @@ struct ChatTranscript: View {
                     .padding(.trailing, 40)
                 // Piece 1 — collapsible grounded-Ask sources (chrome, not content).
                 citationFooter(message: message)
+                // ★ BUG 36 — a turn that stopped early (stream dropped while
+                // backgrounded): calm resume affordance, never a red banner.
+                if message.isPartial == true {
+                    partialResumeControl(message: message)
+                }
                 // Per-turn read-aloud on settled assistant bubbles — each turn
                 // independently replayable via its per-message UUID token.
                 readAloudControl(message: message)
@@ -372,6 +377,37 @@ struct ChatTranscript: View {
             }
             .padding(.top, 2)
         }
+    }
+
+    // MARK: - Partial-turn resume (BUG 36)
+
+    /// A turn that stopped early — the stream dropped while the app was
+    /// backgrounded, so the text shown is what arrived before the drop, KEPT
+    /// (not discarded) and persisted. Calm, quiet affordance (icon + word,
+    /// shape not hue — T is colorblind), never the red failure banner. "Continue"
+    /// resumes onto this same bubble; shown only on the trailing turn (that's
+    /// what `continuePartial()` merges onto), older partials just read as stopped.
+    @ViewBuilder
+    private func partialResumeControl(message: ChatSession.Message) -> some View {
+        HStack(spacing: 10) {
+            Label("Stopped early", systemImage: "pause.circle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            if message.id == session.messages.last?.id {
+                Button {
+                    Task { await session.continuePartial() }
+                } label: {
+                    Label("Continue", systemImage: "arrow.turn.down.right")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(hexString: "00BFFF"))
+                }
+                .buttonStyle(.plain)
+                .disabled(session.isStreaming)
+                .accessibilityLabel("Continue the answer")
+            }
+        }
+        .padding(.top, 2)
     }
 
     // MARK: - Read-aloud (per settled assistant turn)

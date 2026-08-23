@@ -651,6 +651,7 @@ final class ChatSession {
         let partialID = last.id
         let shownHead = last.text
 
+        lastError = nil              // each attempt starts clean; only a failed one surfaces
         isResuming = true            // set BEFORE the first await so a concurrent call no-ops
         defer { isResuming = false }
 
@@ -676,13 +677,30 @@ final class ChatSession {
                 flush()
             }
         } catch {
-            // 404 (held gone) or transport error → keep the partial + the "Continue"
-            // fallback, silently. Restore the shown head if a truncated resume grew it.
+            // Restore the shown head if a truncated resume grew it then failed.
             if let i = messages.firstIndex(where: { $0.id == partialID }),
                messages[i].isPartial == true, messages[i].text.count < shownHead.count {
                 messages[i].text = shownHead
             }
+            // ★ Only a genuine 404 (the held result expired past the TTL or was already
+            // consumed) may degrade SILENTLY to the "Continue" re-prompt fallback — that's
+            // expected. ANY OTHER failure (a transport error, a non-404 HTTP status, a
+            // decrypt failure) must SURFACE: a silent Continue there hides a broken re-attach
+            // — the exact trap that made this bug invisible in the field. Partial + Continue
+            // still remain beneath the transient banner.
+            if !Self.isHeldGone(error) {
+                lastError = Self.humanError(for: error)
+            }
         }
+    }
+
+    /// A resume failure meaning the held result is simply GONE — expired past the TTL or
+    /// already consumed (HTTP 404). The ONLY resume error that may degrade silently to the
+    /// "Continue" fallback; everything else surfaces (BUG 36 field bisect — a swallowed
+    /// non-404 hid a broken re-attach).
+    private static func isHeldGone(_ error: Error) -> Bool {
+        if case ModelRouter.RouterError.ollamaHTTPError(_, 404, _) = error { return true }
+        return false
     }
 
     /// ★ BUG 36 — resume a turn that STOPPED EARLY. When the stream dropped

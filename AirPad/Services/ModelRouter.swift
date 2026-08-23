@@ -56,6 +56,10 @@ enum ModelRouter {
     enum Provider: Sendable {
         case foundationModel
         case ollama(endpoint: String)
+        /// A paired desktop AirPad Host reached over the tunnel with app-layer E2E
+        /// (Stage 4). Wins over everything when a pairing exists — it's the deliberate
+        /// "reach my computer's model from anywhere" path.
+        case host(HostPairing)
         /// On-device MLX model (Stage 1's `LocalModelService`). Resolved ONLY by
         /// `structuredProvider()` for the enrichment lever — `active` (the free-text
         /// Librarian path) never returns it, by design (see `structuredProvider`).
@@ -65,16 +69,19 @@ enum ModelRouter {
             switch self {
             case .foundationModel: return "Foundation Model"
             case .ollama: return "Ollama (local)"
+            case .host(let p): return "Host — \(p.displayHost)"
             case .local: return "Private model (on-device)"
             }
         }
     }
 
-    /// Resolves the active provider. Ollama wins over FM only when the
-    /// endpoint is non-empty *and* parses as a URL — anything else falls
-    /// back to FM so a malformed setting can't strand the user with no
-    /// model.
+    /// Resolves the active provider. A paired Host wins over everything (it's the marquee
+    /// remote path); then Ollama over FM when the endpoint parses; else FM so a malformed
+    /// setting can't strand the user.
     static var active: Provider {
+        if let pairing = HostPairing.load() {
+            return .host(pairing)
+        }
         let endpoint = (KeychainHelper.load(key: "ollamaEndpoint") ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !endpoint.isEmpty, URL(string: endpoint) != nil {
@@ -127,6 +134,8 @@ enum ModelRouter {
         case .ollama(let endpoint):
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
+        case .host(let pairing):
+            return (try? await firstHostModel(pairing: pairing)) ?? remoteRestingName
         case .local:
             // Unreachable via `active` (structured-lever only); present for exhaustiveness.
             return "Private model"
@@ -143,6 +152,8 @@ enum ModelRouter {
             return try await generateFoundationModel(systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .ollama(let endpoint):
             return try await generateOllama(endpoint: endpoint, systemPrompt: systemPrompt, userPrompt: userPrompt)
+        case .host(let pairing):
+            return try await generateHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt)
         case .local:
             // Unreachable: `active` never resolves to .local — the on-device model serves only the
             // enrichment lever via `generateStructured`, not the free-text Librarian path. Defensive → FM.
@@ -178,6 +189,14 @@ enum ModelRouter {
                     case .ollama(let endpoint):
                         try await streamOllama(
                             endpoint: endpoint,
+                            systemPrompt: systemPrompt,
+                            userPrompt: userPrompt,
+                            continuation: continuation
+                        )
+                        continuation.finish()
+                    case .host(let pairing):
+                        try await streamHost(
+                            pairing: pairing,
                             systemPrompt: systemPrompt,
                             userPrompt: userPrompt,
                             continuation: continuation
@@ -269,7 +288,10 @@ enum ModelRouter {
         switch await structuredProvider() {
         case .local:
             return try await nodeSummaryLocal(prompt: prompt)
-        case .foundationModel, .ollama:
+        case .foundationModel, .ollama, .host:
+            // structuredProvider() only ever returns .foundationModel/.local; .ollama/.host are
+            // unreachable here (they're free-text chat providers, not the enrichment lever) but
+            // handled for exhaustiveness → the FM path.
             // The FM branch requires iOS 26; the `.local` branch above runs on the iOS 18
             // floor (LocalModelService has no OS floor, only a runtime Metal-GPU check). This
             // is GAP 27's shape in the type system — the availability guard belongs on the FM
@@ -327,7 +349,10 @@ enum ModelRouter {
         switch await structuredProvider() {
         case .local:
             return try await substrateLocal(prompt: prompt, responseLanguage: responseLanguage)
-        case .foundationModel, .ollama:
+        case .foundationModel, .ollama, .host:
+            // structuredProvider() only ever returns .foundationModel/.local; .ollama/.host are
+            // unreachable here (they're free-text chat providers, not the enrichment lever) but
+            // handled for exhaustiveness → the FM path.
             // The FM branch requires iOS 26; the `.local` branch above runs on the iOS 18 floor.
             guard #available(iOS 26.0, *) else { throw RouterError.foundationModelUnavailable }
             return try await substrateFoundationModel(prompt: prompt)
@@ -655,6 +680,118 @@ enum ModelRouter {
                 .trimmingCharacters(in: .whitespacesAndNewlines),
               !token.isEmpty else { return }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
+
+    // MARK: - Host (Stage 4: paired desktop Host over the tunnel, app-layer E2E)
+
+    /// Pinned browser User-Agent on every Host request (P8): Cloudflare's edge bot-management
+    /// 403s unusual UAs (measured). Kept identical to the UA the Host itself pins.
+    private static let hostUserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+
+    /// Discover the model to name in a chat request: the Host's FILTERED /v1/models over the tunnel.
+    private static func firstHostModel(pairing: HostPairing) async throws -> String {
+        guard let url = pairing.modelsURL else { throw RouterError.ollamaBadEndpoint(pairing.tunnelURL) }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await runRequest(req, path: "v1/models")
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw RouterError.ollamaHTTPError(path: "v1/models", status: http.statusCode,
+                                              body: String(data: data, encoding: .utf8) ?? "")
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let arr = json["data"] as? [[String: Any]],
+              let id = arr.compactMap({ $0["id"] as? String }).first
+        else { throw RouterError.ollamaNoModels }
+        return id
+    }
+
+    /// One-shot Host generation (accumulates the streamed answer).
+    private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String) async throws -> String {
+        var out = ""
+        let stream = AsyncThrowingStream<String, Error> { cont in
+            Task {
+                do {
+                    try await streamHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt, continuation: cont)
+                    cont.finish()
+                } catch { cont.finish(throwing: error) }
+            }
+        }
+        for try await d in stream { out += d }
+        return out
+    }
+
+    /// Streaming Host generation over the tunnel with app-layer E2E. Seals the OpenAI chat
+    /// request into an envelope, POSTs it, and opens each sealed SSE frame — yielding the inner
+    /// assistant deltas live. The edge sees only ciphertext; the Host decrypts on the user's own
+    /// machine and streams the local model's answer back sealed. Mirrors the Go/CryptoKit
+    /// conformance path exactly.
+    private static func streamHost(
+        pairing: HostPairing,
+        systemPrompt: String,
+        userPrompt: String,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws {
+        guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
+            throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
+        }
+        let model = try await firstHostModel(pairing: pairing)
+        let folded = systemPrompt.isEmpty ? userPrompt : "\(systemPrompt)\n\n\(userPrompt)"
+        let body: [String: Any] = ["model": model, "stream": true, "messages": [["role": "user", "content": folded]]]
+        let plaintext = try JSONSerialization.data(withJSONObject: body)
+        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
+
+        var request = URLRequest(url: chatURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
+        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(envelope)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do { (bytes, response) = try await URLSession.shared.bytes(for: request) }
+        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var data = Data()
+            for try await b in bytes { data.append(b) }
+            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
+                                              body: String(data: data, encoding: .utf8) ?? "")
+        }
+
+        // Sealed frames carry RAW upstream SSE byte-chunks (not line-aligned). Accumulate the
+        // decrypted bytes and parse complete `data:` lines to yield inner assistant deltas live.
+        var buffer = Data()
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            if payload == "[DONE]" { break } // outer (sealed-frame) stream end
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else { continue }
+            if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
+            guard let ct = obj["ct"] as? String else { continue }
+            buffer.append(try session.openFrame(ct))
+            drainInnerSSE(&buffer, continuation)
+        }
+    }
+
+    /// Parse complete inner `data:` lines out of the decrypted buffer, yielding assistant deltas.
+    private static func drainInnerSSE(_ buffer: inout Data, _ continuation: AsyncThrowingStream<String, Error>.Continuation) {
+        while let nl = buffer.firstIndex(of: 0x0A) {
+            let lineData = buffer[buffer.startIndex..<nl]
+            buffer = Data(buffer[buffer.index(after: nl)...])
+            guard var line = String(data: lineData, encoding: .utf8) else { continue }
+            if line.hasSuffix("\r") { line = String(line.dropLast()) }
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            if payload == "[DONE]" { continue }
+            if let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
+               let choices = obj["choices"] as? [[String: Any]],
+               let delta = choices.first?["delta"] as? [String: Any],
+               let c = delta["content"] as? String, !c.isEmpty {
+                continuation.yield(c)
+            }
+        }
     }
 }
 

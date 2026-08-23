@@ -250,7 +250,10 @@ final class ChatSession {
             if !partial.isEmpty {
                 messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true))
             } else {
-                lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                // Nothing streamed — a genuine failure. Classify it into a human
+                // banner (field findings #2/#3): unreachable/530 reads as "offline
+                // or asleep", and raw upstream HTML is never shown.
+                lastError = Self.humanError(for: error)
             }
         }
 
@@ -491,6 +494,64 @@ final class ChatSession {
                                 activity: ToolActivity(icon: icon, label: label, detail: detail, links: links)))
     }
     #endif
+
+    // MARK: - Failure presentation (BUG 36 field findings #2 / #3)
+
+    /// Turn a raw send failure into a calm, human banner. Field findings from the
+    /// device test: (#2) a 530 / unreachable / network-lost error means the Host
+    /// Mac is offline or asleep — say THAT, not a status code; (#3) NEVER render
+    /// raw upstream HTML (a Cloudflare 530 body is a full HTML page) in the
+    /// banner. Reached only when NOTHING streamed — a mid-stream drop that
+    /// already has partial text is kept as a partial turn (no banner), see send().
+    static func humanError(for error: Error) -> String {
+        let offline = "Your computer appears to be offline or asleep. Make sure the AirPad Host is running on it, then try again."
+
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost,
+                 .cannotFindHost, .dnsLookupFailed, .timedOut, .secureConnectionFailed:
+                return offline
+            default:
+                // A URLError we don't specifically classify — its own description
+                // is already human (and never HTML).
+                return urlError.localizedDescription
+            }
+        }
+
+        if let routerError = error as? ModelRouter.RouterError {
+            switch routerError {
+            case .ollamaTransport:
+                // Couldn't reach the endpoint at all — same human meaning.
+                return offline
+            case .ollamaHTTPError(_, let status, let body):
+                // 530 (Cloudflare: origin unreachable — tunnel down / Mac asleep)
+                // and the 502/503/504 gateway family read, to a person, as "the
+                // computer isn't answering."
+                if status == 530 || (502...504).contains(status) { return offline }
+                // Any other HTTP error: show the status, but strip the body FIRST
+                // so a raw HTML error page can never reach the banner (#3).
+                let clean = Self.sanitizedErrorBody(body)
+                return clean.isEmpty
+                    ? "Your computer's model returned an error (HTTP \(status))."
+                    : "Your computer's model returned an error (HTTP \(status)): \(clean)"
+            default:
+                return routerError.errorDescription ?? offline
+            }
+        }
+
+        return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+
+    /// Strip HTML (#3) so an error page never renders as raw markup in the
+    /// banner. Reuses the app's readability helpers (`WebReadability`), collapses
+    /// whitespace, and caps length. Empty → the caller shows a status-only line.
+    private static func sanitizedErrorBody(_ body: String) -> String {
+        let looksHTML = body.range(of: "<[a-zA-Z!/]", options: .regularExpression) != nil
+        var s = looksHTML ? WebReadability.decodeEntities(WebReadability.stripTags(body)) : body
+        s = s.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.count > 160 ? String(s.prefix(160)) + "…" : s
+    }
 
     /// Dismiss the transient failure banner without retrying.
     func clearError() {

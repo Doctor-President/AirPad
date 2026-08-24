@@ -293,6 +293,11 @@ struct CanvasView: View {
         return UIColor(hue: h, saturation: ns, brightness: nb, alpha: a)
     }
 
+    /// White-flash fix (queue.md:879): false until the SpriteView's scene has
+    /// rendered its first frame, so the map content (orbs + labels) is revealed
+    /// over the correct `mapBackground` instead of the host's opaque mount-backing.
+    @State private var mapContentRevealed = false
+
     @State private var scene: CorpusPhysicsScene = {
         let s = CorpusPhysicsScene(size: CGSize(width: 393, height: 852))
         s.scaleMode = .resizeFill
@@ -324,6 +329,15 @@ struct CanvasView: View {
             // reading it through a nil-prone `view?.traitCollection` (dropped
             // transmission on Analyze re-formation). Same signal as AppearancePalette.
             scene.appearanceIsLight = (mapColorScheme == .light)
+            // White-flash fix (queue.md:879): reveal the SpriteView + labels only
+            // once the scene has actually rendered its first frame, so its opaque
+            // mount-backing (the gray/white flash) never shows — the correct
+            // `mapBackground` covers the gap. Fires immediately if the scene has
+            // already rendered (set-after-render race guard in the scene).
+            mapContentRevealed = false
+            scene.onFirstRender = {
+                withAnimation(.easeOut(duration: 0.2)) { mapContentRevealed = true }
+            }
             scene.canvasState = canvasState
             scene.selection = selection
             store.canvasState = canvasState
@@ -573,6 +587,9 @@ struct CanvasView: View {
             .ignoresSafeArea()
             .blur(radius: (canvasState.isZoomed || isDismissing) ? 8 : 0)
             .animation(.easeInOut(duration: 0.25), value: canvasState.isZoomed)
+            // White-flash fix: hidden until the scene's first frame; the labels
+            // below carry the same gate so orbs + labels appear together.
+            .opacity(mapContentRevealed ? 1 : 0)
 
             if store.nodes(in: scope).isEmpty {
                 EmptyStateOverlay()
@@ -580,7 +597,9 @@ struct CanvasView: View {
             }
 
             clusterLabelOverlay
+                .opacity(mapContentRevealed ? 1 : 0)
             territoryLabelOverlay
+                .opacity(mapContentRevealed ? 1 : 0)
             focalEngagementOverlay
             nodeSummaryLayer
             drillDownBackButton

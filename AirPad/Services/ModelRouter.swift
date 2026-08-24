@@ -170,7 +170,8 @@ enum ModelRouter {
     /// present the identical delta contract to call sites.
     static func generateStreaming(
         systemPrompt: String,
-        userPrompt: String
+        userPrompt: String,
+        requestID: String? = nil
     ) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -199,6 +200,7 @@ enum ModelRouter {
                             pairing: pairing,
                             systemPrompt: systemPrompt,
                             userPrompt: userPrompt,
+                            requestID: requestID, // BUG 36: opt this turn into hold-and-resume
                             continuation: continuation
                         )
                         continuation.finish()
@@ -731,6 +733,7 @@ enum ModelRouter {
         pairing: HostPairing,
         systemPrompt: String,
         userPrompt: String,
+        requestID: String? = nil,
         continuation: AsyncThrowingStream<String, Error>.Continuation
     ) async throws {
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
@@ -738,7 +741,10 @@ enum ModelRouter {
         }
         let model = try await firstHostModel(pairing: pairing)
         let folded = systemPrompt.isEmpty ? userPrompt : "\(systemPrompt)\n\n\(userPrompt)"
-        let body: [String: Any] = ["model": model, "stream": true, "messages": [["role": "user", "content": folded]]]
+        var body: [String: Any] = ["model": model, "stream": true, "messages": [["role": "user", "content": folded]]]
+        // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
+        // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
+        if let requestID { body["requestID"] = requestID }
         let plaintext = try JSONSerialization.data(withJSONObject: body)
         let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
 
@@ -767,6 +773,68 @@ enum ModelRouter {
             guard line.hasPrefix("data: ") else { continue }
             let payload = String(line.dropFirst(6))
             if payload == "[DONE]" { break } // outer (sealed-frame) stream end
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else { continue }
+            if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
+            guard let ct = obj["ct"] as? String else { continue }
+            buffer.append(try session.openFrame(ct))
+            drainInnerSSE(&buffer, continuation)
+        }
+    }
+
+    // MARK: - Host resume (BUG 36 Pillar 2)
+
+    /// Re-attach to a HELD Host result after a mid-stream drop. Seals `{requestID}` into a
+    /// FRESH envelope, POSTs `/v1/chat/resume`, and opens the sealed SSE frames the Host
+    /// re-seals under a new handshake — yielding the inner deltas of the FULL held answer
+    /// (the Host replays from start). Throws `RouterError.ollamaHTTPError(status: 404)` when
+    /// the held result is gone (expired / already consumed), so the caller keeps its partial.
+    static func resumeHostStream(pairing: HostPairing, requestID: String) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    try await streamHostResume(pairing: pairing, requestID: requestID, continuation: continuation)
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
+            }
+        }
+    }
+
+    private static func streamHostResume(
+        pairing: HostPairing,
+        requestID: String,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) async throws {
+        guard let hpk = pairing.hostPublicKey, let resumeURL = pairing.resumeURL else {
+            throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
+        }
+        // The resume request body is just the id; the Host looks up the held result under it.
+        let plaintext = try JSONSerialization.data(withJSONObject: ["requestID": requestID])
+        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
+
+        var request = URLRequest(url: resumeURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
+        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(envelope)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do { (bytes, response) = try await URLSession.shared.bytes(for: request) }
+        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var data = Data()
+            for try await b in bytes { data.append(b) }
+            throw RouterError.ollamaHTTPError(path: "v1/chat/resume", status: http.statusCode,
+                                              body: String(data: data, encoding: .utf8) ?? "")
+        }
+
+        // Sealed frames carry raw upstream SSE byte-chunks (re-sealed under the fresh handshake).
+        var buffer = Data()
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            if payload == "[DONE]" { break }
             guard let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else { continue }
             if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
             guard let ct = obj["ct"] as? String else { continue }

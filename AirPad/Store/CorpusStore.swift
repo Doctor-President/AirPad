@@ -163,6 +163,13 @@ final class CorpusStore {
     }
     var canvasLayout: CanvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
 
+    /// Persisted CARD-basis geography for the tag-anchored Map, so a relaunch
+    /// RESTORES the last layout verbatim instead of re-deriving + animating it
+    /// (the map-relayout regression). Loaded at launch; written by the canvas on
+    /// every deliberate card-basis formation. `nil` ⇒ no snapshot ⇒ the Map forms
+    /// fresh and persists the result. See `TerritoryLayoutSnapshot`.
+    var territoryLayout: TerritoryLayoutSnapshot? = nil
+
     /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
     var nodeRadii: [String: CGFloat] = [:]
 
@@ -746,6 +753,11 @@ final class CorpusStore {
             }
             nodes = normalized.sorted { $0.createdAt > $1.createdAt }
             canvasLayout = layout ?? CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+            // Restore the persisted tag-anchored Map geography (map-relayout fix).
+            // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
+            // rather than crashing on a stale artifact (the brief's "loads silently
+            // fail" case, handled as a safe fall-through, not a fault).
+            territoryLayout = try? await service.loadTerritoryLayout()
             let minimumViableTagCount = 8
             if loadedTags.count < minimumViableTagCount {
                 let existingNames = Set(loadedTags.map { $0.name.lowercased() })
@@ -795,6 +807,12 @@ final class CorpusStore {
                 // for the shipped-empty state (config-independent logic).
                 if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
                     NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
+                }
+                // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
+                // decision logic so a re-introduced on-launch reform fails here
+                // instead of shipping quietly (the third resurrection).
+                if ProcessInfo.processInfo.arguments.contains("-TerritoryRestoreSelfTest") {
+                    NSLog("[TerritoryRestoreSelfTest] %@", TerritoryLayoutRestoreSelfTest.run())
                 }
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
@@ -926,6 +944,16 @@ final class CorpusStore {
         armIdleAnalysis()
         // Thread analysis is gated on batchProcessingComplete (end of Phase 4) — see batchImportText.
         // Single-node insert does not trigger evaluation against an incomplete corpus (SB123).
+    }
+
+    /// Persist the tag-anchored Map's derived geography so a relaunch restores it
+    /// (map-relayout fix). The canvas passes a card-basis snapshot only. Updates
+    /// the in-memory copy immediately (for same-session restores) and writes the
+    /// file off-actor, fire-and-forget: a write failure just means the next launch
+    /// re-forms (harmless), so it never blocks the interaction clock.
+    func persistTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot) {
+        territoryLayout = snapshot
+        Task { try? await service.saveTerritoryLayout(snapshot) }
     }
 
     /// Creates a new link node from a URL and kicks off the OG-fetch + AI
@@ -6337,6 +6365,10 @@ final class CorpusStore {
         nodes = []
         tags = []
         canvasLayout = CanvasLayout(version: 1, updatedAt: Date(), positions: [:])
+        // A wipe must not restore stale Map geography on the next launch. The
+        // signature would no longer match an empty corpus anyway, but clear it
+        // eagerly so the artifact can't outlive the data it described.
+        territoryLayout = nil
         reviewQueue = []
         canvasNeedsSync = UUID()
     }

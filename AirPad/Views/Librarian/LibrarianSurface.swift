@@ -315,6 +315,17 @@ struct LibrarianSurface: View {
                     partial: "A Cloudflare tunnel works by having a lightweight agent on your Mac dial OUT to Cloudflare's edge, so there's no inbound port to open. Your phone reaches a stable public hostname and Cloudflare routes that request down the"
                 )
             }
+            // `-ResumingState YES` — inject a partial turn + flip the auto-re-attach state
+            // (BUG 36 Pillar 2) so `-Screen` can confirm the quiet "Resuming…" bubble that
+            // replaces "Stopped early / Continue" while the held FULL answer is being fetched.
+            if UserDefaults.standard.bool(forKey: "ResumingState") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                router.chat.debugSetResuming(
+                    user: "Explain how a Cloudflare tunnel keeps my Mac reachable.",
+                    partial: "A Cloudflare tunnel works by having a lightweight agent on your Mac dial OUT to Cloudflare's edge, so there's no inbound port to open. Your phone reaches a stable public hostname and Cloudflare routes that request down the"
+                )
+            }
             // `-BraveDiag YES` — verify the Brave executor without a live subscription:
             // (1) parseBrave on a mock payload → mapped {title,url,snippet}; (2) backend
             // selection given key present/absent; (3) live request wiring (fake key from
@@ -350,6 +361,11 @@ struct LibrarianSurface: View {
             // once any chat activity exists — safe to call alongside
             // ChatView's own restore.
             await router.chat.restoreIfNeededFromStore()
+            // BUG 36 Pillar 2 — the Librarian is the PRIMARY chat surface, so a cold launch
+            // that restored a dropped Host partial (app KILL mid-stream) must re-attach here
+            // too (ChatView does the same). The foreground-return case is handled in the
+            // shared ChatTranscript (didBecomeActive), which the Librarian also hosts.
+            await router.chat.resumeHeldIfNeeded()
         }
         .onChange(of: hostScope) { _, _ in
             seedScopeFromHostIfNeeded(librarian: librarian)

@@ -63,14 +63,21 @@ final class ChatSession {
         /// synthesized Codable → legacy transcripts decode with `isPartial ==
         /// nil` (mirrors `citations` / `activity`).
         var isPartial: Bool?
+        /// ★ BUG 36 Pillar 2 — the client-generated id under which the HOST is holding the
+        /// full answer for this dropped turn. Set only on a Host partial; lets foreground
+        /// (or a cold-launch restore) re-attach via `/v1/chat/resume` and replace the
+        /// partial with the authoritative full answer. Optional + Codable → survives an app
+        /// kill (D3) and decodes nil on legacy transcripts.
+        var requestID: String?
 
-        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil) {
+        init(id: UUID = UUID(), role: Role, text: String, citations: [Citation]? = nil, activity: ToolActivity? = nil, isPartial: Bool? = nil, requestID: String? = nil) {
             self.id = id
             self.role = role
             self.text = text
             self.citations = citations
             self.activity = activity
             self.isPartial = isPartial
+            self.requestID = requestID
         }
     }
 
@@ -98,6 +105,11 @@ final class ChatSession {
     /// True while a response is streaming in. The view uses this to swap
     /// the send glyph for a streaming indicator and disable input.
     private(set) var isStreaming: Bool = false
+    /// ★ BUG 36 Pillar 2 — true while auto-re-attaching to a HELD Host result on
+    /// foreground (fetching the full answer to replace a dropped partial). Distinct
+    /// from `isStreaming` (a new turn): the view shows a quiet "Resuming…" state on the
+    /// partial bubble and disables input, without mounting a fresh streaming tail.
+    private(set) var isResuming: Bool = false
     /// In-flight assistant delta. Drained into a new `.assistant` message
     /// at stream end and reset to "".
     private(set) var streamingText: String = ""
@@ -159,6 +171,13 @@ final class ChatSession {
     @ObservationIgnored
     private var streamingMessageID = UUID()
 
+    /// ★ BUG 36 Pillar 2 — the requestID of the turn currently streaming over the Host
+    /// path (nil for FM/Ollama or when no turn is in flight). `flush()` tags the persisted
+    /// in-flight partial with it, so an app KILL mid-stream restores a partial that still
+    /// knows how to resume (D3). Cleared at turn end.
+    @ObservationIgnored
+    private var currentRequestID: String?
+
     /// Coalesce incremental partial persistence to ~this many newly-streamed
     /// characters (BUG 36) — durable-as-it-arrives without a per-token disk
     /// write. The `.background` flush (ChatView) captures whatever remains the
@@ -205,6 +224,12 @@ final class ChatSession {
         streamingText = ""
 
         streamingMessageID = UUID()
+        // ★ BUG 36 Pillar 2 — a HOST turn gets a client-generated requestID (D1) so a
+        // mid-stream drop can be RESUMED (the Host holds the full answer). Only the host
+        // path uses it; FM/Ollama ignore it. `currentRequestID` lets flush() tag a partial
+        // that survives an app KILL (D3), so a cold-launch restore can still re-attach.
+        let hostRequestID: String? = { if case .host = ModelRouter.active { return UUID().uuidString } else { return nil } }()
+        currentRequestID = hostRequestID
         let prompt = buildPrompt(current: modelText)
 
         // ★ BUG 36 — incremental delta persistence. The partial is made durable
@@ -215,7 +240,8 @@ final class ChatSession {
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
-                userPrompt: prompt
+                userPrompt: prompt,
+                requestID: hostRequestID
             ) {
                 streamingText += delta
                 if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
@@ -248,7 +274,8 @@ final class ChatSession {
             // `.user` message remains so retry can re-send it).
             let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !partial.isEmpty {
-                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true))
+                // Carry the requestID so foreground / relaunch can fetch the FULL answer.
+                messages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true, requestID: hostRequestID))
             } else {
                 // Nothing streamed — a genuine failure. Classify it into a human
                 // banner (field findings #2/#3): unreachable/530 reads as "offline
@@ -259,6 +286,7 @@ final class ChatSession {
 
         streamingText = ""
         isStreaming = false
+        currentRequestID = nil
 
         // Turn boundary — persist now that the assistant message is
         // committed. Not per-token: the store coalesces nothing today
@@ -271,6 +299,14 @@ final class ChatSession {
         // per chat; the next send() in this chat is a no-op for this
         // path. Runs detached so it never blocks the next user turn.
         scheduleTitleGenerationIfNeeded()
+
+        // ★ BUG 36 Pillar 2 — if this turn dropped into a resumable Host partial, try to
+        // re-attach right now. This covers the ordering where the drop's `catch` runs AFTER
+        // the app has already returned to the foreground; the scenePhase `.active` hook
+        // (ChatView) covers the reverse order. `resumeHeldIfNeeded` is idempotent + guarded.
+        if let last = messages.last, last.role == .assistant, last.isPartial == true, last.requestID != nil {
+            await resumeHeldIfNeeded()
+        }
     }
 
     /// ★ Agentic web-search turn (PRIVATE MODE + REMOTE ENDPOINT only). Runs the
@@ -473,6 +509,15 @@ final class ChatSession {
         messages.append(Message(role: .assistant, text: partial, isPartial: true))
     }
 
+    /// Headless verification hook (BUG 36 Pillar 2) — inject a partial turn AND flip the
+    /// auto-re-attach state, so `-Screen` can shoot the quiet "Resuming…" bubble that
+    /// replaces "Stopped early / Continue" while the held answer is being fetched.
+    func debugSetResuming(user: String, partial: String) {
+        messages.append(Message(role: .user, text: user))
+        messages.append(Message(role: .assistant, text: partial, isPartial: true, requestID: "debug"))
+        isResuming = true
+    }
+
     /// Headless verification hook — inject a web answer + its CITED chips, using the
     /// SAME `citedIndices` gating as the live loop, so `-Screen` can prove chips gate
     /// to cited (not searched).
@@ -585,6 +630,77 @@ final class ChatSession {
         messages.removeLast()               // assistant
         let userText = messages.removeLast().text
         await send(userText)
+    }
+
+    // MARK: - Host re-attach (BUG 36 Pillar 2 — the true walk-away)
+
+    /// ★ Automatic re-attach on foreground / relaunch. If the transcript ends in a HOST
+    /// partial turn (dropped mid-stream) carrying a `requestID`, and that Host is still
+    /// paired, fetch the HELD full answer over `/v1/chat/resume` and REPLACE the partial
+    /// with it — the true walk-away (background through the ENTIRE generation → return →
+    /// complete answer waiting). The Host replays from start, so the resumed text passes
+    /// through the partial's exact prefix; we GROW-ONLY the bubble (the shown text never
+    /// shrinks → no flicker), then clear `isPartial`. A 404 (held expired/consumed) or any
+    /// error leaves the partial + its "Continue" re-prompt fallback intact — never a
+    /// banner. Idempotent + guarded (safe to call from both scenePhase and send()).
+    func resumeHeldIfNeeded() async {
+        guard !isStreaming, !isResuming else { return }
+        guard let last = messages.last, last.role == .assistant,
+              last.isPartial == true, let requestID = last.requestID else { return }
+        guard case .host(let pairing) = ModelRouter.active else { return }
+        let partialID = last.id
+        let shownHead = last.text
+
+        lastError = nil              // each attempt starts clean; only a failed one surfaces
+        isResuming = true            // set BEFORE the first await so a concurrent call no-ops
+        defer { isResuming = false }
+
+        var resumed = ""
+        do {
+            for try await delta in ModelRouter.resumeHostStream(pairing: pairing, requestID: requestID) {
+                resumed += delta
+                // Grow-only: the held answer's prefix == what we already showed, so extend
+                // only once resume surpasses the partial. Re-find by id each time (a reset /
+                // load may have removed it → stop safely).
+                guard let i = messages.firstIndex(where: { $0.id == partialID }) else { return }
+                if resumed.count > messages[i].text.count {
+                    messages[i].text = resumed
+                }
+            }
+            // Completed — install the authoritative full answer + mark it complete.
+            let finalText = resumed.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let i = messages.firstIndex(where: { $0.id == partialID }) else { return }
+            if !finalText.isEmpty {
+                messages[i].text = finalText
+                messages[i].isPartial = nil
+                messages[i].requestID = nil
+                flush()
+            }
+        } catch {
+            // Restore the shown head if a truncated resume grew it then failed.
+            if let i = messages.firstIndex(where: { $0.id == partialID }),
+               messages[i].isPartial == true, messages[i].text.count < shownHead.count {
+                messages[i].text = shownHead
+            }
+            // ★ Only a genuine 404 (the held result expired past the TTL or was already
+            // consumed) may degrade SILENTLY to the "Continue" re-prompt fallback — that's
+            // expected. ANY OTHER failure (a transport error, a non-404 HTTP status, a
+            // decrypt failure) must SURFACE: a silent Continue there hides a broken re-attach
+            // — the exact trap that made this bug invisible in the field. Partial + Continue
+            // still remain beneath the transient banner.
+            if !Self.isHeldGone(error) {
+                lastError = Self.humanError(for: error)
+            }
+        }
+    }
+
+    /// A resume failure meaning the held result is simply GONE — expired past the TTL or
+    /// already consumed (HTTP 404). The ONLY resume error that may degrade silently to the
+    /// "Continue" fallback; everything else surfaces (BUG 36 field bisect — a swallowed
+    /// non-404 hid a broken re-attach).
+    private static func isHeldGone(_ error: Error) -> Bool {
+        if case ModelRouter.RouterError.ollamaHTTPError(_, 404, _) = error { return true }
+        return false
     }
 
     /// ★ BUG 36 — resume a turn that STOPPED EARLY. When the stream dropped
@@ -763,7 +879,9 @@ final class ChatSession {
         if isStreaming {
             let partial = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !partial.isEmpty {
-                snapshotMessages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true))
+                // Tag with the live requestID (D3) so an app KILL mid-stream restores a
+                // partial that still knows how to resume the held answer on next launch.
+                snapshotMessages.append(Message(id: streamingMessageID, role: .assistant, text: partial, isPartial: true, requestID: currentRequestID))
             }
         }
         guard let store, !snapshotMessages.isEmpty else { return }

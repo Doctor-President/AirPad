@@ -40,6 +40,8 @@ struct HostPairing: Codable, Equatable {
 
     /// The chat endpoint URL on the tunnel.
     var chatURL: URL? { endpoint("v1/chat/completions") }
+    /// The resume endpoint (BUG 36 Pillar 2 — collect a HELD result after a mid-stream drop).
+    var resumeURL: URL? { endpoint("v1/chat/resume") }
     /// The filtered model-list endpoint on the tunnel.
     var modelsURL: URL? { endpoint("v1/models") }
     /// The health endpoint (capability + host key discovery).

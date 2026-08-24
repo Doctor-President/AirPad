@@ -83,6 +83,17 @@ struct ChatTranscript: View {
             input = ""
             isPinnedToBottom = true
         }
+        // ★ BUG 36 Pillar 2 — foreground re-attach for EVERY chat host. This is the
+        // shared component behind both ChatView and the Librarian's "Ask" panel; the
+        // Librarian is a FloatingPanel-hosted VC where `@Environment(\.scenePhase)` does
+        // not reliably propagate, so we key off the app-wide `didBecomeActive`
+        // notification instead. On return to the foreground, re-attach to any held Host
+        // result whose stream dropped while backgrounded (the true walk-away).
+        // `resumeHeldIfNeeded` is idempotent + guarded, so this composes safely with
+        // ChatView's own scenePhase trigger and the send()-end trigger.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+            Task { await session.resumeHeldIfNeeded() }
+        }
     }
 
     // MARK: - Transcript
@@ -389,22 +400,31 @@ struct ChatTranscript: View {
     /// what `continuePartial()` merges onto), older partials just read as stopped.
     @ViewBuilder
     private func partialResumeControl(message: ChatSession.Message) -> some View {
+        let isLast = message.id == session.messages.last?.id
         HStack(spacing: 10) {
-            Label("Stopped early", systemImage: "pause.circle")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-            if message.id == session.messages.last?.id {
-                Button {
-                    Task { await session.continuePartial() }
-                } label: {
-                    Label("Continue", systemImage: "arrow.turn.down.right")
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color(hexString: "00BFFF"))
+            if isLast && session.isResuming {
+                // ★ BUG 36 Pillar 2 — auto re-attaching to the held FULL answer on the Host.
+                ProgressView().controlSize(.mini)
+                Text("Resuming…")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            } else {
+                Label("Stopped early", systemImage: "pause.circle")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                if isLast {
+                    Button {
+                        Task { await session.continuePartial() }
+                    } label: {
+                        Label("Continue", systemImage: "arrow.turn.down.right")
+                            .labelStyle(.titleAndIcon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color(hexString: "00BFFF"))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(session.isStreaming || session.isResuming)
+                    .accessibilityLabel("Continue the answer")
                 }
-                .buttonStyle(.plain)
-                .disabled(session.isStreaming)
-                .accessibilityLabel("Continue the answer")
             }
         }
         .padding(.top, 2)
@@ -484,7 +504,7 @@ struct ChatTranscript: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(session.isStreaming)
+                    .disabled(session.isStreaming || session.isResuming)
                     .accessibilityLabel("Regenerate response")
                 }
             }
@@ -528,7 +548,7 @@ struct ChatTranscript: View {
 
     private var sendButton: some View {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        let enabled = !trimmed.isEmpty && !session.isStreaming
+        let enabled = !trimmed.isEmpty && !session.isStreaming && !session.isResuming
         return Button {
             let text = trimmed
             input = ""

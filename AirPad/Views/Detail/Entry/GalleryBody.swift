@@ -17,17 +17,14 @@ struct GalleryBody: View {
     let item: NodeItem
     let nodeID: String
 
-    // SPIKE v2 (`spike-entry-spine`) — in-container heading row (the universality
-    // test: the same idiom as notes, on media). Defaults keep the legacy
-    // rendering byte-identical for callers that don't opt in. When `spineMode` is
-    // true, row 1 (displayName + a 3-thumb/count metadata stack) renders inside
-    // the gallery's tinted container and the media folds beneath it.
+    // ws-entry-containers — the gallery ALWAYS renders as the in-container heading
+    // row (row 1 = displayName + a 3-thumb/count metadata stack); the media grid
+    // folds beneath it. Rendered exclusively by `EntryCard` (mediaItems.count ≥ 2).
     var isExpanded: Bool = true
     var onToggleExpansion: () -> Void = {}
     var reorderActive: Bool = false
     var name: String = ""
     var nameFont: Font? = nil
-    var spineMode: Bool = false
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
@@ -80,41 +77,19 @@ struct GalleryBody: View {
     }
 
     var body: some View {
-        // Contract: `GalleryBody` is only reached from `EntryCard` when
-        // `mediaItems.count >= 2` (see EntryCard's `.imageVideo` dispatch).
-        // Belt-and-suspenders: if a future call site bypasses the dispatch
-        // and lands here with 0 or 1 items, render nothing rather than feed
-        // the layout planner degenerate input. `BentoLayout.plan` already
-        // returns an empty Plan for empty input — this guard keeps the
-        // contract enforcement in one place at the entry point.
-        if spineMode {
-            spineContainer
-        } else if galleryItems.count >= 2 {
-            galleryContent
+        // `GalleryBody` is only reached from `EntryCard` when `mediaItems.count >= 2`.
+        // Belt-and-suspenders: 0/1 items → render nothing rather than feed the layout
+        // planner degenerate input.
+        if galleryItems.count >= 2 {
+            container
         }
     }
 
-    /// Legacy (non-spine) rendering — the media/description/chrome inside the
-    /// tinted container, byte-equivalent to the pre-spike gallery.
-    private var galleryContent: some View {
-        galleryPresentations(
-            galleryInner
-                // ws-librarian-cleanup — Gallery background tint (Option A). Reuse the
-                // Detail section-container idiom (translucent ADAPTIVE ink, r12, v10·h12);
-                // the LIGHTER 0.03 weight (photos supply their own colour, so a heavier
-                // fill becomes a visible MAT framing the images).
-                .padding(.vertical, 10)
-                .padding(.horizontal, 12)
-                .background(AppearancePalette.ink.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
-        )
-    }
-
-    /// SPIKE v3 — the in-container heading row on media (the universality test).
-    /// Row 1 (displayName + 3-thumb/count metadata) sits inside the SAME unified
-    /// filled container as a note (A1 identical idiom); the media area folds
-    /// beneath it and runs FULL container width — it does NOT owe the text margin.
-    /// The container persists in both fold states; collapsed = row only.
-    private var spineContainer: some View {
+    /// The in-container heading row on media. Row 1 (displayName + 3-thumb/count
+    /// metadata) sits inside the SAME unified filled container as a note; the media
+    /// grid folds beneath it at FULL container width (it does NOT owe the text
+    /// margin). The container persists in both fold states; collapsed = row only.
+    private var container: some View {
         galleryPresentations(
             VStack(alignment: .leading, spacing: 0) {
                 EntrySpineRow(

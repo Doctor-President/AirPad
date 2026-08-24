@@ -21,33 +21,13 @@ struct TextEntryBody: View {
     let item: NodeItem
     let nodeID: String
 
-    // SPIKE v2 (`spike-entry-spine`) — in-container heading row. Defaults keep
-    // the legacy (non-spine) rendering byte-identical for callers that don't opt
-    // in. When `spineMode` is true, row 1 (the derived heading) renders inside
-    // the raised panel and the editor folds beneath it, driven by `isExpanded`.
+    // ws-entry-containers — the note ALWAYS renders as the in-container heading
+    // row (row 1 = the derived/edited title, the editor folds beneath it), driven
+    // by `isExpanded`. Rendered exclusively by `EntryCard`.
     var isExpanded: Bool = true
     var onToggleExpansion: () -> Void = {}
     var reorderActive: Bool = false
     var headingFont: Font? = nil
-    var spineMode: Bool = false
-
-    /// Raised-panel styling. The panel and the detail surface share a tone, so
-    /// these light cues (shadow + rim) are what make the note float — all
-    /// tunable so T can dial the lift on device.
-    private enum Panel {
-        static let cornerRadius: CGFloat = 24       // generous rounded panel
-        static let shadowOpacity: Double = 0.35     // soft black drop shadow
-        static let shadowRadius: CGFloat = 12       // (dark) shadow blur
-        static let shadowY: CGFloat = 4             // (dark) shadow downward offset
-        // Light (bake 2026-08-12, ground B): T device-dialed warm lift (#43372A hue,
-        // reused from the card shadow) off the same-colour ground — separation is
-        // the shadow, not hue. Dark keeps shadowRadius/shadowY above.
-        static let lightShadowOpacity: Double = 0.143
-        static let lightShadowRadius:  CGFloat = 5.6
-        static let lightShadowY:       CGFloat = 0
-        static let rimOpacity: Double = 0.10        // top-edge white rim light
-        static let rimWidth: CGFloat = 1            // rim hairline width
-    }
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -60,44 +40,15 @@ struct TextEntryBody: View {
     /// Bridge to ask the editor to insert an image at a remembered caret.
     @State private var imageInsertion = InlineImageInsertion()
 
-    // Note-primitive separation (bake 2026-08-12, ground B — T device-dialed). LIGHT:
-    // the note fills with the SAME card surface (#FFFFFA) as the detail ground, so it
-    // has no hue boundary and lifts purely by the drop shadow — a warm occlusion at
-    // T's dialed values. DARK: the shipped `bgElevated` + `panelShadow`, unchanged.
-    @Environment(\.colorScheme) private var colorScheme
-
-    /// Note panel fill. Light: the card surface (#FFFFFA), matching the detail ground
-    /// → separation is lift, not hue. Dark: `bgElevated` (#1A1A1A).
-    private var noteFill: Color {
-        colorScheme == .light
-            ? Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)   // #FFFFFA — = detail ground
-            : AppearancePalette.bgElevated
-    }
-    /// Note lift shadow. Light: the card's warm occlusion hue (#43372A, reused from
-    /// the card shadow path) at T's dialed strength. Dark: `panelShadow` (black@0.35).
-    private var noteShadowColor: Color {
-        colorScheme == .light
-            ? Color(hexString: CardSurfaceStore.read(.shadowHex)).opacity(Panel.lightShadowOpacity)
-            : AppearancePalette.panelShadow
-    }
-    private var noteShadowRadius: CGFloat {
-        colorScheme == .light ? Panel.lightShadowRadius : Panel.shadowRadius
-    }
-    private var noteShadowYOffset: CGFloat {
-        colorScheme == .light ? Panel.lightShadowY : Panel.shadowY
-    }
-
     private var shouldAutoFocus: Bool {
         !didConsumeAutoFocus && store.pendingAutoFocusItemID == item.id
     }
 
     var body: some View {
-        Group {
-            if spineMode { spineContainer } else { legacyPanel }
-        }
-        // editingText tracks item.content whether or not the body is in the tree
-        // (spine mode drops the editor when collapsed, but the derived heading
-        // still reads editingText), so these live on the OUTER view.
+        container
+        // editingText tracks item.content whether or not the editor is in the tree
+        // (collapsed drops the editor, but the derived heading still reads
+        // editingText), so these live on the OUTER view.
         .onChange(of: item.content) { old, new in
             // Sync the editor when the entry's content changes from OUTSIDE the
             // editor — e.g. PastePad routing pasted text into this (previously
@@ -114,11 +65,9 @@ struct TextEntryBody: View {
             router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
         .onAppear {
-            // R2 (v3.1 ruling) — DISPLAY-TRIM leading blank lines in spine mode so
-            // the first non-empty line (the styled title) sits at line 1 and the
-            // chevron/grip overlays align to it (consistent with the v2.1 ruling).
-            let raw = item.content ?? ""
-            editingText = spineMode ? Self.trimmingLeadingBlankLines(raw) : raw
+            // DISPLAY-TRIM leading blank lines so the first non-empty line (the
+            // styled title) sits at line 1 and the chevron/grip overlays align to it.
+            editingText = Self.trimmingLeadingBlankLines(item.content ?? "")
             if shouldAutoFocus {
                 didConsumeAutoFocus = true
                 store.pendingAutoFocusItemID = nil
@@ -135,26 +84,12 @@ struct TextEntryBody: View {
         return lines.joined(separator: "\n")
     }
 
-    /// Legacy (non-spine) rendering — byte-equivalent to the pre-spike panel for
-    /// any caller that doesn't opt into `spineMode`.
-    private var legacyPanel: some View {
-        notePanel(
-            editorCore(text: $editingText)
-                // Comfortable internal text padding; the panel sits in the normal
-                // inset column (the full-bleed `.padding(.horizontal, -32)` is gone).
-                .padding(.horizontal, 22)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        )
-    }
-
-    /// SPIKE v3 — the in-container heading row. Row 1 = the plain-text render of
-    /// the note's first non-empty line (A3); the body renders the content AFTER
-    /// that line (A4 — the derived text appears exactly once, never duplicated).
-    /// Both inside the unified filled container; the body indents to the shared
-    /// text margin so heading and body share a left edge. Collapsed = the same
-    /// container at row height (the editor drops out).
-    private var spineContainer: some View {
+    /// The in-container heading row. Row 1 = the note's first non-empty line: the
+    /// LIVE editor's first paragraph when expanded (title styled in place), the
+    /// derived plain-text render when collapsed. The derived text appears exactly
+    /// once. Body indents to the shared text margin. Collapsed = the same container
+    /// at row height (the editor drops out).
+    private var container: some View {
         VStack(alignment: .leading, spacing: 0) {
             if isExpanded {
                 // Model C — the editor renders the FULL content; paragraph 1 IS the
@@ -211,31 +146,8 @@ struct TextEntryBody: View {
             .allowsHitTesting(false)
     }
 
-    /// Legacy raised-panel chrome (fill + top rim light + drop shadow + clip) —
-    /// used ONLY by the non-spine path; spine mode uses `entrySpineContainer()`.
-    private func notePanel<V: View>(_ content: V) -> some View {
-        content
-            .background(noteFill)
-            .clipShape(RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [Color.white.opacity(Panel.rimOpacity), Color.white.opacity(0)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: Panel.rimWidth
-                    )
-            )
-            .shadow(color: noteShadowColor,
-                    radius: noteShadowRadius, x: 0, y: noteShadowYOffset)
-    }
-
-    /// The editable text surface + its edit-time hooks (picker). `text` differs
-    /// per rendering: legacy binds the FULL content (`$editingText`); spine binds
-    /// the body-after-heading (`bodyBinding`). The persistence closures read
-    /// `editingText` (the full-content source of truth), so both persist correctly.
+    /// The editable text surface + its edit-time hooks (picker). The persistence
+    /// closures read `editingText` (the full-content source of truth).
     private func editorCore(text: Binding<String>, firstParagraphAsTitle: Bool = false) -> some View {
         RichTextEditor(
             text: text,

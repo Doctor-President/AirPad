@@ -142,12 +142,11 @@ struct EntryCard: View {
             // chrome. In Display it hides so the body reads as a document
             // section. Entry titles aren't removed, just gated by mode.
             if isSpineType {
-                // SPIKE v2 (spine-entry) — the heading row lives INSIDE the
-                // entry's own rounded container (TextEntryBody / GalleryBody
-                // `spineMode`). The container renders in BOTH fold states; its
-                // body folds beneath row 1. No external EntryTitleRow chrome,
-                // and — unlike a normal entry — it is NOT gated on expansion
-                // (row 1 must persist when collapsed). Non-spine types untouched.
+                // ws-entry-containers — the heading row lives INSIDE the entry's
+                // own rounded container (TextEntryBody / GalleryBody). The container
+                // renders in BOTH fold states; its body folds beneath row 1. No
+                // external EntryTitleRow chrome, and — unlike a normal entry — it is
+                // NOT gated on expansion (row 1 must persist when collapsed).
                 switch item.type {
                 case .text:
                     TextEntryBody(
@@ -155,8 +154,7 @@ struct EntryCard: View {
                         isExpanded: effectiveExpansion,
                         onToggleExpansion: toggleExpansion,
                         reorderActive: presentation.reorderActive,
-                        headingFont: visualSettings.sectionTitle.resolvedFont(),
-                        spineMode: true
+                        headingFont: visualSettings.sectionTitle.resolvedFont()
                     )
                 case .imageVideo:
                     GalleryBody(
@@ -165,8 +163,7 @@ struct EntryCard: View {
                         onToggleExpansion: toggleExpansion,
                         reorderActive: presentation.reorderActive,
                         name: displayName,
-                        nameFont: visualSettings.sectionTitle.resolvedFont(),
-                        spineMode: true
+                        nameFont: visualSettings.sectionTitle.resolvedFont()
                     )
                 default:
                     EmptyView()

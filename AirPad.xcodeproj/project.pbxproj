@@ -236,6 +236,7 @@
 		CB2B608F43E8C59B2E14762E /* DocumentExtractionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */; };
 		CCD5B920FFC2E6B349140203 /* HDBSCANLinkage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD83A4DC76F83C28E144AA6D /* HDBSCANLinkage.swift */; };
 		CD7F0605807BAAE61280B1B3 /* HDBSCANReachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED287727ED25FF9291551213 /* HDBSCANReachability.swift */; };
+		CDB98919FE3A199E8BE0B80A /* TerritoryLayoutSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85995050BC812122755EEE8E /* TerritoryLayoutSnapshot.swift */; };
 		CE1698BA8F2CB57ED11C37F8 /* CaptureIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8376D171BB956C6EA17E5F9 /* CaptureIntent.swift */; };
 		CEC993D6DECF8273EFFFB647 /* ChatsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B63639E3606E8D188FB55AD /* ChatsListView.swift */; };
 		CEC9C7F4431D0776A1A4DC13 /* AirPad.icon in Resources */ = {isa = PBXBuildFile; fileRef = D86D98BB8BD1E493F884909C /* AirPad.icon */; };
@@ -274,6 +275,7 @@
 		EB83AF3EBDB104973AB2160B /* SourceSerif4-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = F66D3DA4639568EA375AC13E /* SourceSerif4-Bold.ttf */; };
 		EC2D01F833BB64A23B8CEC24 /* ChatSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C38EEC0DB9F051F85839CCE /* ChatSession.swift */; };
 		ED263E6AF87CC57F7DF48FA2 /* CaptureHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7382A39FD7A3008B7F5F0790 /* CaptureHeader.swift */; };
+		F2C9E94362C505F3F61061DF /* TerritoryLayoutRestoreSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C34AEE42CAC269D68078D15 /* TerritoryLayoutRestoreSelfTest.swift */; };
 		F37D50BEE893123479290739 /* SolarFlareTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33AB8A695AFDD807BC72EBE9 /* SolarFlareTuning.swift */; };
 		F39A0B2613577ADDA29F4230 /* HDBSCANTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */; };
 		F59A93CA70C8FE71BC12E118 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
@@ -453,6 +455,7 @@
 		804D3764E120F2398822E16A /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		841450783E48B41397FDDB34 /* MarkdownBlock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownBlock.swift; sourceTree = "<group>"; };
 		8587B8FB965733F87A837170 /* FieldValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldValue.swift; sourceTree = "<group>"; };
+		85995050BC812122755EEE8E /* TerritoryLayoutSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerritoryLayoutSnapshot.swift; sourceTree = "<group>"; };
 		88A13C2113DC9781B455DF42 /* PastePadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PastePadView.swift; sourceTree = "<group>"; };
 		88ABC9EFFF4787FFDF05A2CB /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		894DD6E70D91D9E9B00246B9 /* MediaPickerWrapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPickerWrapper.swift; sourceTree = "<group>"; };
@@ -477,6 +480,7 @@
 		99AE7198F824D189DAD581EE /* LeverButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeverButton.swift; sourceTree = "<group>"; };
 		9AA8521DD3D6E9D3A98EF6EB /* TodayCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayCardView.swift; sourceTree = "<group>"; };
 		9C20470AE11E1FAF10AF1071 /* TagSuggestionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagSuggestionService.swift; sourceTree = "<group>"; };
+		9C34AEE42CAC269D68078D15 /* TerritoryLayoutRestoreSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerritoryLayoutRestoreSelfTest.swift; sourceTree = "<group>"; };
 		9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateClusterRegistry.swift; sourceTree = "<group>"; };
 		9D21AB3DEE91993C6F039833 /* AirPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = AirPad.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9D28079BFC7E139E6C4C8D65 /* Fraunces_72pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Regular.ttf"; sourceTree = "<group>"; };
@@ -722,6 +726,8 @@
 				FE1EBAEDC8000E69D6FA9699 /* TagNormalization.swift */,
 				9C20470AE11E1FAF10AF1071 /* TagSuggestionService.swift */,
 				219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */,
+				9C34AEE42CAC269D68078D15 /* TerritoryLayoutRestoreSelfTest.swift */,
+				85995050BC812122755EEE8E /* TerritoryLayoutSnapshot.swift */,
 				B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */,
 				1004BF2AC849AC8BA745BD5D /* UberNodeService.swift */,
 				43F3E1E7BAA3B3C7B463E5D7 /* WordPieceTokenizer.swift */,
@@ -1503,6 +1509,8 @@
 				C903E8B2386E55E01245428C /* TagSelectionSheet.swift in Sources */,
 				E9CFDDDCF539C54F7C483DE8 /* TagSuggestionService.swift in Sources */,
 				334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */,
+				F2C9E94362C505F3F61061DF /* TerritoryLayoutRestoreSelfTest.swift in Sources */,
+				CDB98919FE3A199E8BE0B80A /* TerritoryLayoutSnapshot.swift in Sources */,
 				2303084ED2267E83C85ED87E /* TextCaptureSheet.swift in Sources */,
 				019EF67755B6DCAB5D16F595 /* TextEntryBody.swift in Sources */,
 				8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */,

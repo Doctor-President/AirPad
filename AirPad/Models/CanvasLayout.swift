@@ -11,7 +11,7 @@ struct CanvasLayout: Codable {
     }
 }
 
-struct CanvasPosition: Codable {
+struct CanvasPosition: Codable, Equatable {
     var x: Double
     var y: Double
 }

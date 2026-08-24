@@ -343,6 +343,27 @@ actor iCloudDriveService {
         return try JSONDecoder.airPad.decode(CanvasLayout.self, from: data)
     }
 
+    // MARK: - Territory layout (tag-anchored Map geography)
+
+    /// Persist the Map's derived card-basis geography so a relaunch RESTORES it
+    /// instead of re-deriving + animating it (the map-relayout fix). Separate file
+    /// from `canvas_layout.json`: that one is the CANONICAL (non-territory) layout,
+    /// written by capture/import/neighborhood/recompute — the territory geography
+    /// must never collide with it.
+    func saveTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot) throws {
+        let root = try requireRoot()
+        let data = try JSONEncoder.airPad.encode(snapshot)
+        try data.write(to: root.appendingPathComponent("territory_layout.json"), options: .atomic)
+    }
+
+    func loadTerritoryLayout() throws -> TerritoryLayoutSnapshot? {
+        let root = try requireRoot()
+        let fileURL = root.appendingPathComponent("territory_layout.json")
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder.airPad.decode(TerritoryLayoutSnapshot.self, from: data)
+    }
+
     // MARK: - Corpus index
 
     func saveCorpusIndex(_ index: CorpusIndex) throws {

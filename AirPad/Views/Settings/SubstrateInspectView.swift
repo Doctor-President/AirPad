@@ -60,6 +60,7 @@ struct SubstrateInspectView: View {
     @State private var entryMigrationSelfTestResult: String? = nil
     @State private var fieldValueSelfTestResult: String? = nil
     @State private var markdownBlockSelfTestResult: String? = nil
+    @State private var territoryRestoreSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestResult: String? = nil
     @State private var entryDeletionSelfTestInProgress: Bool = false
     @State private var clipboardRouterSelfTestResult: String? = nil
@@ -740,6 +741,24 @@ struct SubstrateInspectView: View {
             }
             .buttonStyle(.plain)
             if let r = markdownBlockSelfTestResult {
+                Text(r)
+                    .font(.caption2)
+                    .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+                territoryRestoreSelfTestResult = TerritoryLayoutRestoreSelfTest.run()
+            } label: {
+                Text("Run map-relayout (territory restore) self-tests")
+                    .font(.caption2)
+                    .foregroundStyle(.purple.opacity(0.7))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(AppearancePalette.ink.opacity(0.05))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            if let r = territoryRestoreSelfTestResult {
                 Text(r)
                     .font(.caption2)
                     .foregroundStyle(r.contains("FAIL") ? .red.opacity(0.8) : .green.opacity(0.8))

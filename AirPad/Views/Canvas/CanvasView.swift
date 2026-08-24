@@ -110,13 +110,21 @@ struct CanvasView: View {
     private struct FrozenTerritory {
         let layout: TagTerritoryLayout.Layout
         let colors: [String: UIColor]
+        /// Which basis this layout was formed on (or restored as). Only a `.card`
+        /// layout suppresses the on-launch warm+reform; a `.legacy` cold-start
+        /// layout is provisional and gets re-formed once card vectors warm.
+        var basis: LayoutBasis = .legacy
+        /// Signature of the inputs this layout was formed for. Lets the launch-time
+        /// warm+reform early-out when a restored card layout already matches.
+        var signature: String = ""
     }
 
     /// Deliberately (re)form territories and cache the result. The ONLY place
     /// `TagTerritoryLayout.layout` runs — never on the `nodes` observer. Clears
     /// the cache when the corpus/config has no territories. Logs so console and
     /// on-screen behavior can be reconciled (the old `[Layout]` line was blind
-    /// to this path).
+    /// to this path). A CARD-basis result is persisted so the next launch restores
+    /// it instead of re-forming + animating (the map-relayout fix).
     private func formTerritories(nodes: [Node], trigger: String) {
         guard !store.canvasAnchorTags.isEmpty || hasUserCollections else {
             territory = nil
@@ -127,8 +135,95 @@ struct CanvasView: View {
             nodes: nodes, anchors: store.canvasAnchorTags,
             collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
         )
-        territory = FrozenTerritory(layout: layout, colors: mapTerritoryColors(layout, nodes: nodes))
-        print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger)")
+        let colors = mapTerritoryColors(layout, nodes: nodes)
+        // The card basis is authoritative once `cardVectors` is warm — the same
+        // gate `SubstrateLayoutService.languageVector` uses. A cold-start form
+        // (cache cold) is `.legacy` and provisional; a form after the warm is
+        // `.card` and worth persisting.
+        let basis: LayoutBasis = SubstrateLayoutService.shared.cardVectors != nil ? .card : .legacy
+        let signature = territorySignature(nodes: nodes, basis: basis)
+        territory = FrozenTerritory(layout: layout, colors: colors, basis: basis, signature: signature)
+        print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger), basis: \(basis.rawValue)")
+        // Persist ONLY a card-basis geography. Persisting a legacy cold-start
+        // layout would let the next launch RESTORE a legacy layout that then never
+        // reforms — re-breaking the regression from the other side.
+        if basis == .card {
+            persistTerritory(layout: layout, colors: colors, signature: signature)
+        }
+    }
+
+    /// STABLE fingerprint of the current territory-determining inputs, for the
+    /// persist/restore gate. Extraction mirrors `TagTerritoryLayout.layout`'s own
+    /// membership rules (user collections + anchor tags); the hashing is delegated
+    /// to `TerritoryLayoutRestore.signature` (SHA-256, launch-stable, testable).
+    private func territorySignature(nodes: [Node], basis: LayoutBasis) -> String {
+        let userCollections = store.collections.filter {
+            !$0.isCorpus && !$0.isJournal && $0.id != NodeCollection.librarianSessionsID
+        }
+        let userCollectionIDs = userCollections.map(\.id)
+        let userCollectionIDSet = Set(userCollectionIDs)
+        let anchorSet = Set(store.canvasAnchorTags.map(\.name))
+        let memberships = nodes.map { node in
+            TerritoryLayoutRestore.NodeMembership(
+                id: node.id,
+                collectionIDs: node.collectionIDs.filter { userCollectionIDSet.contains($0) },
+                anchorTags: node.tags.filter { anchorSet.contains($0) }
+            )
+        }
+        return TerritoryLayoutRestore.signature(
+            memberships: memberships,
+            anchorNames: Array(anchorSet),
+            userCollectionIDs: userCollectionIDs,
+            weights: mapWeights,
+            basis: basis
+        )
+    }
+
+    /// Cold-start restore: if a persisted CARD-basis snapshot matches the current
+    /// inputs, reconstruct the frozen territory from it (placed instantly by
+    /// `syncScene`, no reform, no animation). `nil` ⇒ form fresh.
+    private func restoredTerritory(nodes: [Node]) -> FrozenTerritory? {
+        let sig = territorySignature(nodes: nodes, basis: .card)
+        guard TerritoryLayoutRestore.canRestore(store.territoryLayout, currentCardSignature: sig),
+              let snap = store.territoryLayout else { return nil }
+        var layout = TagTerritoryLayout.Layout()
+        layout.positions = snap.positions
+        layout.nodeTerritory = snap.nodeTerritory
+        layout.territories = snap.territories.map { .init(key: $0.key, name: $0.name) }
+        layout.centers = snap.centers.mapValues { CGPoint(x: $0.x, y: $0.y) }
+        layout.centroids = snap.centroids
+        var colors: [String: UIColor] = [:]
+        colors.reserveCapacity(snap.colorsHex.count)
+        for (id, hex) in snap.colorsHex { if let c = UIColor(hex: hex) { colors[id] = c } }
+        print("[Territory] Restored persisted card-basis geography (\(layout.positions.count) positions) — no reform")
+        return FrozenTerritory(layout: layout, colors: colors, basis: .card, signature: sig)
+    }
+
+    /// Encode the derived geography for persistence (card-basis only).
+    private func persistTerritory(layout: TagTerritoryLayout.Layout, colors: [String: UIColor], signature: String) {
+        let snapshot = TerritoryLayoutSnapshot(
+            version: TerritoryLayoutSnapshot.currentVersion,
+            updatedAt: Date(),
+            basis: .card,
+            signature: signature,
+            positions: layout.positions,
+            nodeTerritory: layout.nodeTerritory,
+            territories: layout.territories.map { .init(key: $0.key, name: $0.name) },
+            centers: layout.centers.mapValues { .init(x: Double($0.x), y: Double($0.y)) },
+            centroids: layout.centroids,
+            colorsHex: colors.mapValues { Self.territoryHexString($0) }
+        )
+        store.persistTerritoryLayout(snapshot)
+    }
+
+    /// `#RRGGBB` for a tint, for persistence (mirrors the scene's own encoder).
+    private static func territoryHexString(_ color: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X",
+                      Int((max(0, min(1, r)) * 255).rounded()),
+                      Int((max(0, min(1, g)) * 255).rounded()),
+                      Int((max(0, min(1, b)) * 255).rounded()))
     }
 
     /// B7 — warm the CARD-VECTOR cache, then RE-FORM the territories off it.
@@ -149,8 +244,18 @@ struct CanvasView: View {
     /// canvas) re-forms against the same basis and settles identically.
     private func warmCardVectorsThenReform() {
         guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
+        let nodes = store.visibleNodes(in: scope)
+        // MAP-RELAYOUT FIX: if the current territory is already a CARD-basis layout
+        // matching the live inputs — i.e. `syncScene` restored the persisted
+        // snapshot, or a deliberate reform already ran this session — the map is
+        // correct. Skip the async warm+reform+animate that otherwise re-lays-out
+        // the map on EVERY relaunch (the regression 94e5a48 introduced here).
+        if let t = territory, t.basis == .card,
+           t.signature == territorySignature(nodes: nodes, basis: .card) {
+            print("[Territory] card-basis layout already current — skipping warm-reform (no relayout)")
+            return
+        }
         Task { @MainActor in
-            let nodes = store.visibleNodes(in: scope)
             await SubstrateLayoutService.shared.preloadCardVectors(
                 allNodes: store.nodes, store: store
             )
@@ -944,7 +1049,16 @@ struct CanvasView: View {
             // tint, and territory. Re-formation happens only on deliberate
             // triggers (see `formTerritories`).
             if territory == nil {
-                formTerritories(nodes: nodes, trigger: "cold-start")
+                // MAP-RELAYOUT FIX: restore the persisted card-basis geography
+                // verbatim when it still matches the inputs (placed instantly
+                // below, no reform, no animation). Otherwise form fresh — a
+                // legacy cold-start form that the warm-reform will settle onto
+                // the card basis + persist.
+                if let restored = restoredTerritory(nodes: nodes) {
+                    territory = restored
+                } else {
+                    formTerritories(nodes: nodes, trigger: "cold-start")
+                }
             }
             if let frozen = territory {
                 let layout = frozen.layout

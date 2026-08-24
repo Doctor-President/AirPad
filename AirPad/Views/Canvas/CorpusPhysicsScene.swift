@@ -74,6 +74,18 @@ final class CorpusPhysicsScene: SKScene {
 
     var spriteCount: Int { nodeSprites.count }
 
+    /// White-flash fix (queue.md:879): fired once, the first time the scene has
+    /// begun rendering (first `update`), so CanvasView reveals the map only after
+    /// the SpriteView host has real content — its opaque mount-backing (the
+    /// gray/white flash on entering the Map) never shows. Re-armed on every
+    /// `didMove`. Assigning this AFTER the first render already happened fires it
+    /// immediately (guards the set-after-render race that would otherwise leave
+    /// the map hidden forever).
+    var onFirstRender: (() -> Void)? {
+        didSet { if hasRenderedFirstFrame { onFirstRender?() } }
+    }
+    private var hasRenderedFirstFrame = false
+
     /// Apply or remove the white outline child for a single node sprite.
     /// Mirrors the `addNewcomerHalo` pattern — the outline lives as a named
     /// child node so it tracks sprite motion automatically.
@@ -1165,6 +1177,9 @@ final class CorpusPhysicsScene: SKScene {
 
     override func didMove(to view: SKView) {
         self.isPaused = false
+        // White-flash fix: a re-presented scene must re-signal its first frame so
+        // CanvasView re-hides then reveals (each mount has the backing gap).
+        hasRenderedFirstFrame = false
         backgroundColor = .clear
         physicsWorld.gravity = .zero
         physicsWorld.speed = 1.0
@@ -1215,6 +1230,13 @@ final class CorpusPhysicsScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         if isPaused { return }
+
+        // White-flash fix (queue.md:879): first non-paused frame → tell CanvasView
+        // to reveal the map (orbs + labels) now that the host has real content.
+        if !hasRenderedFirstFrame {
+            hasRenderedFirstFrame = true
+            onFirstRender?()
+        }
 
         #if DEBUG
         sprTickFPS(currentTime)

@@ -73,14 +73,9 @@ struct NodeDetailView: View {
         Task { await store.deleteNode(id: nodeID) }
     }
 
-    // ws-display-edit-mode — global Caps-Lock session state (false = Edit,
-    // the launch default). Untyped nodes flip this directly; typed nodes use
-    // `localModeOverride` instead so their toggle never touches the global.
-    @AppStorage("airpad.detail.displayMode.isDisplay") private var globalIsDisplay = false
-    /// ws-display-edit-mode — per-view override seat for the typed-node
-    /// exception (dormant until a node-level type exists). Nil = follow the
-    /// resolved default (global state, or Display for a typed node).
-    @State private var localModeOverride: DisplayEditMode? = nil
+    // ws-entry-containers — Display/Edit mode RETIRED. Collapse/expand is
+    // ungated; the quiet container IS the presentation state. No global session
+    // state, no per-node toggle.
 
     // Editable fields (mirrored from node, written back on disappear)
     @State private var editedTitle = ""
@@ -590,13 +585,11 @@ struct NodeDetailView: View {
                 // pending C4. Empty content can't reach this callback
                 // (PastePadView gates the tap on isPrimed).
                 //
-                // ws-display-edit-mode — Paste Pad is an authoring affordance;
-                // it recedes in Display so the node reads as a document.
-                if !resolvedMode(node).isDisplay {
-                    PastePadView(onPaste: handlePastedContent)
-                        .transition(.opacity)
-                        .padding(.top, 24)   // tail past Related — fixed, not dialed
-                }
+                // Paste Pad — an always-available authoring affordance (Display/Edit
+                // mode retired; there is no read-only state to recede into).
+                PastePadView(onPaste: handlePastedContent)
+                    .transition(.opacity)
+                    .padding(.top, 24)   // tail past Related — fixed, not dialed
 
                 // Trailing spacer so the last entry isn't tucked under the
                 // floating "+" button. 80pt clears the 56pt button + 24pt
@@ -637,10 +630,7 @@ struct NodeDetailView: View {
             // RichTextEditor body via accessory toolbar). Stage 3.1b also
             // hides it during reorder mode — no new entries while
             // restructuring.
-            // ws-display-edit-mode — the "+" is a pure authoring affordance,
-            // hidden in Display so the node reads as a document not a workspace.
-            if !keyboardVisible && !reorderController.isReorderActive
-                && !resolvedMode(node).isDisplay {
+            if !keyboardVisible && !reorderController.isReorderActive {
                 floatingAddButton
                     .padding(.trailing, 24)
                     // Lift above the persistent Librarian peek pill so the
@@ -790,24 +780,8 @@ struct NodeDetailView: View {
                 // detail view now follows the app/system appearance like every
                 // other surface (List / Grid / Map have no in-app toggle either).
                 HStack(spacing: 0) {
-                // ws-display-edit-mode — mode toggle segment. Shows the
-                // DESTINATION action: an eye in Edit (tap → Display / read), a
-                // pencil in Display (tap → Edit). Hidden during capture (that
-                // surface is forced Edit).
-                if !isCaptureMode {
-                    Button {
-                        toggleMode(node)
-                    } label: {
-                        Image(systemName: resolvedMode(node).isDisplay ? "square.and.pencil" : "eye")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.85))
-                            .frame(width: 48, height: 48)
-                            // ws-glass-effect-hit-region — interactive glass
-                            // swallows taps without an explicit content shape.
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
+                // ws-entry-containers — the Display/Edit toggle is RETIRED (the
+                // container's collapse/expand is the presentation state now).
                 Menu {
                     Button {} label: {
                         Label("Share / Export", systemImage: "square.and.arrow.up")
@@ -971,9 +945,6 @@ struct NodeDetailView: View {
             }
         }
         .environment(reorderController)
-        // ws-display-edit-mode — the resolved mode propagates down to every
-        // EntryCard, which gates its header/timestamp/ellipsis chrome on it.
-        .environment(\.displayEditMode, resolvedMode(node))
         // hero-empty-picker (H1, revised) — Photos + node-images picker.
         // Lives on `content`'s chain (not body) because it needs `node`
         // in scope; the body-level sheets operate on state that doesn't
@@ -1294,44 +1265,6 @@ struct NodeDetailView: View {
 
     // (Stage 4.8's `hasRating` singleton gate removed in 5.2 — rating is now
     // the "Rating" preset field, added through the creation sheet.)
-
-    // MARK: - Display / Edit mode (ws-display-edit-mode)
-
-    /// Whether this node is a "typed" node (Recipe / Film / Review / Book /
-    /// Collectable, from ws-intelligent-link-scraping). Typed nodes open in
-    /// Display by default and treat the toggle as a per-node override. No
-    /// node-level type exists in the model yet, so this is always false today
-    /// — when the type lands, returning true here activates the
-    /// Display-default + local-override path below without further wiring.
-    private func isTyped(_ node: Node) -> Bool {
-        false
-    }
-
-    /// The resolved mode driving this detail view. Capture is always Edit (you
-    /// can't author into receded chrome); otherwise an explicit per-view
-    /// override wins, typed nodes default to Display, and untyped nodes follow
-    /// the global Caps-Lock state.
-    private func resolvedMode(_ node: Node) -> DisplayEditMode {
-        if isCaptureMode { return .edit }
-        if let localModeOverride { return localModeOverride }
-        if isTyped(node) { return .display }
-        return globalIsDisplay ? .display : .edit
-    }
-
-    /// Toggle action for the top-chrome control. Untyped nodes flip the global
-    /// Caps-Lock state (and clear any stale override); typed nodes set a local
-    /// override only, leaving the global untouched.
-    private func toggleMode(_ node: Node) {
-        let target: DisplayEditMode = resolvedMode(node).isDisplay ? .edit : .display
-        withAnimation(.easeInOut(duration: 0.25)) {
-            if isTyped(node) {
-                localModeOverride = target
-            } else {
-                globalIsDisplay = target.isDisplay
-                localModeOverride = nil
-            }
-        }
-    }
 
     // MARK: - Document capture helpers
 

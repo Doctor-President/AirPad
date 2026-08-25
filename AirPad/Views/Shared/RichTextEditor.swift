@@ -112,6 +112,10 @@ struct RichTextEditor: UIViewRepresentable {
         textView.textContainerInset = firstParagraphAsTitle
             ? UIEdgeInsets(top: 2, left: 0, bottom: 0, right: 0)
             : .zero
+        // ws-entry-containers (4b) — reserve the top-right for the overlaid "..."
+        // so a long title wraps around it (first line only; body stays full width).
+        // 68 = the "..." button (28) + reserved grip slot (26) + gaps, from the edge.
+        textView.titleTrailingReserve = firstParagraphAsTitle ? 68 : 0
         textView.textContainer.lineFragmentPadding = 0
         textView.adjustsFontForContentSizeCategory = true
         textView.placeholderText = placeholder
@@ -2422,6 +2426,48 @@ final class RichTextUIView: UITextView {
     }
     @objc private func noteStorageDidProcessEditing() { invalidateLayoutHeightCache() }
 
+    /// ws-entry-containers (4b) — when > 0, the note's FIRST line (the title, in a
+    /// Model-C container) wraps around a top-right exclusion of this width so a long
+    /// title never runs under the overlaid "..." options button. Body lines below the
+    /// title line keep full width. Set by the representable when `firstParagraphAsTitle`.
+    var titleTrailingReserve: CGFloat = 0 {
+        didSet {
+            guard oldValue != titleTrailingReserve else { return }
+            appliedExclusionContainerW = -1
+            invalidateLayoutHeightCache()
+            setNeedsLayout()
+        }
+    }
+    private var appliedExclusionContainerW: CGFloat = -1
+
+    /// Positions the first-line title exclusion at the container's top-right for a
+    /// given proposed width, so `sizeThatFits` + display layout both account for the
+    /// wrap. Idempotent per container width (guards against a layout loop).
+    private func applyTitleExclusion(width: CGFloat) {
+        guard titleTrailingReserve > 0, width > 0 else {
+            if !textContainer.exclusionPaths.isEmpty {
+                textContainer.exclusionPaths = []
+                appliedExclusionContainerW = -1
+            }
+            return
+        }
+        let containerW = width - textContainerInset.left - textContainerInset.right
+            - 2 * textContainer.lineFragmentPadding
+        guard containerW > titleTrailingReserve else { return }
+        if appliedExclusionContainerW == containerW { return }
+        appliedExclusionContainerW = containerW
+        // Height kept just under a full line so ONLY the title line wraps; 30pt
+        // covers the Fraunces-20 title line + the 2pt top inset.
+        let rect = CGRect(x: containerW - titleTrailingReserve, y: 0,
+                          width: titleTrailingReserve, height: 30)
+        textContainer.exclusionPaths = [UIBezierPath(rect: rect)]
+    }
+
+    override func layoutSubviews() {
+        applyTitleExclusion(width: bounds.width)
+        super.layoutSubviews()
+    }
+
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         setupPlaceholder()
@@ -2470,6 +2516,7 @@ final class RichTextUIView: UITextView {
     /// list on `layoutVersion`).
     override func sizeThatFits(_ size: CGSize) -> CGSize {
         if size.width == cacheWidth, cacheVersion == layoutVersion { return cacheFit }
+        applyTitleExclusion(width: size.width)   // title wraps around the "..." at THIS width
         let fit = super.sizeThatFits(size)
         cacheWidth = size.width
         cacheVersion = layoutVersion

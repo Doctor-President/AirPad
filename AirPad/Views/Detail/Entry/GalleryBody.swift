@@ -25,6 +25,10 @@ struct GalleryBody: View {
     var reorderActive: Bool = false
     var name: String = ""
     var nameFont: Font? = nil
+    /// ws-entry-containers — the "..." options menu content + the reorder grip drag
+    /// handle, both EntryCard-owned; forwarded straight to the spine row.
+    var optionsMenu: AnyView? = nil
+    var gripDragHandle: AnyView? = nil
 
     @Environment(CorpusStore.self) private var store
     @Environment(\.colorScheme) private var colorScheme
@@ -99,7 +103,9 @@ struct GalleryBody: View {
                     reorderActive: reorderActive,
                     nameFont: nameFont ?? .body,
                     onToggle: onToggleExpansion,
-                    trailing: { galleryMetadata }
+                    trailing: { galleryMetadata },
+                    optionsMenu: optionsMenu,
+                    gripDragHandle: gripDragHandle
                 )
                 if isExpanded {
                     galleryInner

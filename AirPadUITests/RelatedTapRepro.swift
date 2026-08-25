@@ -1,63 +1,42 @@
 import XCTest
 
-/// ws-entry-containers item 5 — verifies whether the F3 regression still reproduces:
-/// the keyboard-dismiss tap-catcher eating the FIRST tap on a Related NavigationLink
-/// while a note is focused. The `-SPINEGATE related` fixture applies
-/// `.dismissKeyboardOnTapOutside()` exactly as `NodeDetailView` does, so this is a
-/// faithful check of the F3 fix (`KeyboardDismissTapCatcher cancelsTouchesInView =
-/// false`). Observe, don't infer. Seeds: note "Roasted tomato base…" + related
-/// "Confit garlic method" / "Sourdough, day 3" → nav destination renders "dest".
+/// Dashboard Related-nav regression guard (2026-08-24). Root cause: `DashboardView`
+/// bound its NavigationStack to a TYPED `[DashboardRoute]` path, which silently
+/// DROPPED a Related link's `NavigationLink(value: NodeDetailRoute)` push (wrong
+/// element type) — "tap registers but never navigates," only via the Dashboard.
+/// Fix: type-erased `NavigationPath`. This drives the REAL `DashboardView` (started
+/// in a node's detail via `-SPINEGATE related` = `DashboardView(initialRoute:
+/// .node(src))`), taps a Related link, and observes `store.detailViewDepth` (the
+/// `navDepthHUD`): the fix takes it 1 → 2; the bug held it at 1. Observe, don't infer.
 final class RelatedTapRepro: XCTestCase {
 
-    private func launch() -> XCUIApplication {
+    func testDashboardRelatedPushNavigates() {
         let app = XCUIApplication()
         app.launchArguments = ["-SPINEGATE", "related"]
         app.launch()
-        Thread.sleep(forTimeInterval: 2.0)
-        return app
-    }
+        Thread.sleep(forTimeInterval: 3.0)   // dashboard + pushed detail + store seed settle
 
-    private func relatedLink(_ app: XCUIApplication) -> XCUIElement {
-        let byButton = app.buttons["Confit garlic method"]
-        return byButton.exists ? byButton : app.staticTexts["Confit garlic method"]
-    }
+        let hud = app.staticTexts["navDepthHUD"]
+        XCTAssertTrue(hud.waitForExistence(timeout: 6), "nav depth HUD missing")
+        let atDetail = hud.label   // expect depth:1 — started inside the src node's detail
 
-    private func attach(_ msg: String) {
+        var link = app.buttons["Confit garlic method"]
+        if !link.waitForExistence(timeout: 3) {
+            app.swipeUp(); Thread.sleep(forTimeInterval: 0.6)   // reveal Related if low
+            link = app.buttons["Confit garlic method"]
+        }
+        let target = link.exists ? link : app.staticTexts["Confit garlic method"]
+        let found = target.waitForExistence(timeout: 3)
+        if found { target.tap() }
+        Thread.sleep(forTimeInterval: 1.5)
+        let afterRelated = hud.label   // fix → depth:2 ; bug → stays depth:1
+
+        let msg = "DASH-NAV — atDetail=[\(atDetail)] relatedFound=\(found) afterRelatedTap=[\(afterRelated)]"
         let a = XCTAttachment(string: msg); a.lifetime = .keepAlways; add(a)
-    }
+        print("REPRO_DASH \(msg)")
 
-    /// The F3 scenario: note FOCUSED (keyboard up), then ONE tap on a Related link.
-    /// F3 present ⇒ the first tap dismisses the keyboard and does NOT navigate.
-    func testFirstTapNavigatesWithKeyboardUp() {
-        let app = launch()
-        let link = relatedLink(app)
-        XCTAssertTrue(link.waitForExistence(timeout: 5), "Related link not found (render check failed)")
-
-        let editor = app.textViews.firstMatch
-        XCTAssertTrue(editor.waitForExistence(timeout: 3), "note editor not found")
-        editor.tap()
-        Thread.sleep(forTimeInterval: 1.0)
-        let kbUp = app.keyboards.firstMatch.waitForExistence(timeout: 3)
-
-        link.tap()   // FIRST tap
-        let navigated = app.staticTexts["dest"].waitForExistence(timeout: 2.5)
-
-        let msg = "F3 — keyboardUp=\(kbUp) navigatedOnFirstTap=\(navigated)"
-        attach(msg); print("REPRO_F3 \(msg)")
-        XCTAssertTrue(kbUp, "keyboard didn't come up — not exercising F3 — \(msg)")
-        XCTAssertTrue(navigated, "FIRST tap on Related link did NOT navigate — F3 regression present — \(msg)")
-    }
-
-    /// Control: keyboard DOWN → the link must always navigate (rules out a dead link
-    /// / bad fixture, so a keyboard-up failure is unambiguously the F3 mechanism).
-    func testControlNavigatesWithKeyboardDown() {
-        let app = launch()
-        let link = relatedLink(app)
-        XCTAssertTrue(link.waitForExistence(timeout: 5))
-        link.tap()
-        let navigated = app.staticTexts["dest"].waitForExistence(timeout: 2.5)
-        let msg = "F3-CONTROL — navigatedKeyboardDown=\(navigated)"
-        attach(msg); print("REPRO_F3C \(msg)")
-        XCTAssertTrue(navigated, "Related link didn't navigate even with keyboard down — \(msg)")
+        XCTAssertTrue(atDetail.contains("depth:1"), "did not start in the src node's detail — \(msg)")
+        XCTAssertTrue(found, "Related link not present in the pushed NodeDetailView — \(msg)")
+        XCTAssertTrue(afterRelated.contains("depth:2"), "Dashboard Related push did NOT navigate (typed-path bug) — \(msg)")
     }
 }

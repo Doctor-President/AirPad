@@ -24,8 +24,8 @@ enum DashboardRoute: Hashable {
     case priority
     case node(Node)
     /// Passage-free FM chat surface (`ChatView`). Pushed via the header
-    /// chat icon. Detail-depth math (`detailDepth(in:)`) deliberately
-    /// excludes this case so the Librarian panel doesn't duck while the
+    /// chat icon. Detail-depth math (`detailDepth(count:)` + `landingOnStack`)
+    /// treats this as a landing so the Librarian panel doesn't duck while the
     /// chat lane is open.
     case chat
 }
@@ -40,13 +40,41 @@ struct DashboardView: View {
 
     init(initialRoute: DashboardRoute? = nil) {
         self.initialRoute = initialRoute
-        _path = State(initialValue: initialRoute.map { [$0] } ?? [])
+        var p = NavigationPath()
+        if let r = initialRoute { p.append(r) }
+        _path = State(initialValue: p)
+        _landingOnStack = State(initialValue: initialRoute.map(Self.isLanding) ?? false)
     }
 
     @Environment(AppRouter.self) private var router
     @Environment(CorpusStore.self) private var store
 
-    @State private var path: [DashboardRoute]
+    // Related-nav fix (2026-08-24): the dashboard stack path is TYPE-ERASED
+    // (`NavigationPath`), NOT a typed `[DashboardRoute]`. A Related link fires
+    // `NavigationLink(value: NodeDetailRoute)`; a typed `[DashboardRoute]` path
+    // silently DROPS that push (wrong element type) — the Recents→detail→Related
+    // "tap registers but never navigates" bug. Type-erased path accepts it.
+    @State private var path: NavigationPath
+    /// Whether a non-detail LANDING screen (.recents / .priority / .chat) is on the
+    /// stack. NavigationPath can't be inspected, so `detailDepth` subtracts this
+    /// instead of filtering `.node` cases. A landing is always the FIRST push and
+    /// the stack bottom, so it's present until the stack returns to root.
+    @State private var landingOnStack: Bool
+
+    private static func isLanding(_ route: DashboardRoute) -> Bool {
+        switch route {
+        case .recents, .priority, .chat: return true
+        case .node: return false
+        }
+    }
+
+    /// Pushes a `DashboardRoute` and tracks a landing screen. Related links push
+    /// `NodeDetailRoute` directly through the NavigationLink (bypassing this) and
+    /// count as details in `detailDepth`.
+    private func push(_ route: DashboardRoute) {
+        if Self.isLanding(route) { landingOnStack = true }
+        path.append(route)
+    }
     @State private var renameTarget: NodeCollection?
     @State private var deleteTarget: NodeCollection?
     @State private var showCreateCollectionSheet = false
@@ -106,9 +134,9 @@ struct DashboardView: View {
             .navigationDestination(for: DashboardRoute.self) { route in
                 switch route {
                 case .recents:
-                    RecentsView(onOpenNode: { node in path.append(.node(node)) })
+                    RecentsView(onOpenNode: { node in push(.node(node)) })
                 case .priority:
-                    PriorityView(onOpenNode: { node in path.append(.node(node)) })
+                    PriorityView(onOpenNode: { node in push(.node(node)) })
                 case .node(let node):
                     NodeDetailView(nodeID: node.id)
                 case .chat:
@@ -145,22 +173,25 @@ struct DashboardView: View {
                 guard let id = newValue,
                       let node = store.nodes.first(where: { $0.id == id })
                 else { return }
-                path.append(.node(node))
+                push(.node(node))
                 router.pendingNodeNavigationID = nil
             }
             // Capture-mode "Done" now returns to origin via NodeDetailView's
             // `dismiss()` (pops the pushed capture detail back to whatever surface
             // summoned it — Recents/Dashboard included), so no forced path reset
             // lives here anymore. See NodeDetailView.finishCapture.
-            // Authoritative depth signal. `path` is [DashboardRoute] mixing
-            // the pushed `.recents` landing with node details, so raw
-            // `path.count` would over-count — `detailDepth(in:)` counts only
-            // `.node` entries. ContentView's `isInDetailView` handler reads
-            // this for first-enter / last-exit panel choreography.
+            // Authoritative depth signal. The path now mixes an optional landing
+            // (.recents/.priority/.chat) with node details AND Related-pushed
+            // NodeDetailRoutes, and is type-erased (can't be filtered) — so
+            // `detailDepth(count:)` subtracts the single possible landing from the
+            // raw count. ContentView's `isInDetailView` handler reads this for
+            // first-enter / last-exit panel choreography. Reset the landing flag
+            // when the stack empties (a landing is the bottom, popped last).
             .onChange(of: path) { _, newPath in
-                store.detailViewDepth = detailDepth(in: newPath)
+                if newPath.isEmpty { landingOnStack = false }
+                store.detailViewDepth = detailDepth(count: newPath.count)
             }
-            .onAppear { store.detailViewDepth = detailDepth(in: path) }
+            .onAppear { store.detailViewDepth = detailDepth(count: path.count) }
             .confirmationDialog(
                 deleteTarget.map { "Delete \"\($0.name)\"?" } ?? "Delete collection?",
                 isPresented: deleteDialogBinding,
@@ -184,11 +215,11 @@ struct DashboardView: View {
         )
     }
 
-    /// Detail depth = node screens on the path. `.recents` also rides this
-    /// stack but isn't a detail, so it's excluded — keeps `isInDetailView`
-    /// (Librarian panel raise/duck) correct when Recents is on top.
-    private func detailDepth(in routes: [DashboardRoute]) -> Int {
-        routes.filter { if case .node = $0 { return true } else { return false } }.count
+    /// Detail depth = node-detail screens on the stack = total pushes minus the
+    /// single optional landing (.recents/.priority/.chat). Keeps `isInDetailView`
+    /// (Librarian panel raise/duck) correct when a landing is on top.
+    private func detailDepth(count: Int) -> Int {
+        max(0, count - (landingOnStack ? 1 : 0))
     }
 
     // MARK: - Header
@@ -245,7 +276,7 @@ struct DashboardView: View {
         TodayCardView(
             recentNodes: recentNodes,
             onJournalPromptTap: openTodayJournal,
-            onRecentTap: { node in path.append(.node(node)) }
+            onRecentTap: { node in push(.node(node)) }
         )
     }
 
@@ -259,7 +290,7 @@ struct DashboardView: View {
     private func openTodayJournal() {
         Task {
             if let node = await store.findOrCreateTodayJournalNode() {
-                path.append(.node(node))
+                push(.node(node))
             }
         }
     }
@@ -290,7 +321,7 @@ struct DashboardView: View {
     /// (flag icon + label + trailing count + chevron). Navigates to `PriorityView`.
     private var priorityRow: some View {
         Button {
-            path.append(.priority)
+            push(.priority)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "flag.fill")
@@ -317,7 +348,7 @@ struct DashboardView: View {
 
     private var recentsRow: some View {
         Button {
-            path.append(.recents)
+            push(.recents)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "clock.arrow.circlepath")

@@ -116,10 +116,24 @@ private struct SpineGateView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(AppearancePalette.bgBase.ignoresSafeArea())
+        // ws-entry-containers hold-drag repro HUD — reads the reorder controller
+        // live so a UI-test long-press can observe whether the background
+        // recognizer ever fired. Gated behind `-REORDERHUD YES` so normal visual
+        // gates stay clean; non-hit-testing so it never eats a press.
+        .overlay(alignment: .top) {
+            if UserDefaults.standard.bool(forKey: "REORDERHUD") {
+                Text("att:\(reorder.debugLiftAttempts) act:\(reorder.isReorderActive ? "Y" : "N") held:\(reorder.isCardLifted ? "Y" : "N")")
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.green)
+                    .padding(5)
+                    .background(Color.black)
+                    .accessibilityIdentifier("reorderHUD")
+                    .allowsHitTesting(false)
+            }
+        }
         .environment(store)
         .environment(reorder)
         .environment(router)
-        .environment(\.displayEditMode, DisplayEditMode.edit)
         .onAppear {
             store.nodes = section == "related" ? SpineGateView.relatedSeed() : [node]
         }
@@ -139,8 +153,15 @@ private struct SpineGateView: View {
     }
 
     /// F3 repro — the REAL NodeDetailView tail: a note EntryCard followed by the
-    /// RelatedNodesSection, in a NavigationStack (so its NavigationLinks resolve),
-    /// to see whether the spike degrades its rendering / hit area.
+    /// RelatedNodesSection, in a NavigationStack (so its NavigationLinks resolve).
+    /// ws-entry-containers item-5 verify (2026-08-24): applies
+    /// `.dismissKeyboardOnTapOutside()` on the ScrollView exactly as
+    /// `NodeDetailView:620` does — WITHOUT it the fixture can't reproduce F3 (the
+    /// dismiss tap-catcher eating the first tap on a Related link while the note is
+    /// focused), so a pass would be a false pass. With it, the XCUITest (focus note
+    /// → tap Related link → expect first-tap navigation to "dest") is a faithful
+    /// check of whether the F3 fix (KeyboardDismissTapCatcher `cancelsTouchesInView
+    /// = false`) is live.
     private var relatedRepro: some View {
         let src = SpineGateView.relatedSeed()[0]
         return NavigationStack {
@@ -155,6 +176,7 @@ private struct SpineGateView: View {
                 }
                 .padding(20)
             }
+            .dismissKeyboardOnTapOutside()
             .navigationDestination(for: NodeDetailRoute.self) { _ in Text("dest") }
         }
     }
@@ -199,6 +221,42 @@ private struct SpineGateView: View {
             it.isExpanded = expanded
             return it
         }
+        // ws-entry-containers step 3 — generic-container types.
+        func voice(_ id: String, _ duration: Double, _ transcript: String, _ expanded: Bool) -> NodeItem {
+            var n = NodeItem(id: id, type: .audio, createdAt: now)
+            n.displayName = "Idea walk 8/19"
+            n.durationSeconds = duration
+            n.transcript = transcript
+            n.isExpanded = expanded
+            return n
+        }
+        func singleMedia(_ id: String, _ expanded: Bool) -> NodeItem {
+            var n = NodeItem(id: id, type: .imageVideo, createdAt: now)
+            n.displayName = "Cover shot"
+            n.mediaItems = [GalleryItem(id: "\(id)-1", mediaType: .image, file: "\(id)-1.jpg", capturedAt: now)]
+            n.isExpanded = expanded
+            return n
+        }
+        func multiLink(_ id: String, _ count: Int, _ expanded: Bool) -> NodeItem {
+            var n = NodeItem(id: id, type: .link, createdAt: now)
+            n.displayName = "Reading list"
+            n.linkItems = (1...count).map { i in
+                LinkItem(id: "\(id)-\(i)", url: "https://example\(i).com",
+                         title: "Article \(i)", siteName: "example\(i).com", capturedAt: now)
+            }
+            n.isExpanded = expanded
+            return n
+        }
+        func multiDoc(_ id: String, _ count: Int, _ expanded: Bool) -> NodeItem {
+            var n = NodeItem(id: id, type: .document, createdAt: now)
+            n.displayName = "Specs"
+            n.documentItems = (1...count).map { i in
+                DocumentItem(id: "\(id)-\(i)", filePath: "\(id)-\(i).pdf",
+                             fileName: "doc-\(i).pdf", fileType: "pdf", capturedAt: now)
+            }
+            n.isExpanded = expanded
+            return n
+        }
 
         let items: [NodeItem]
         switch section {
@@ -236,6 +294,18 @@ private struct SpineGateView: View {
             items = [
                 gallery("g-exp", 6, true),
                 gallery("g-col", 6, false),
+            ]
+        case "types":
+            // Step-3 generic-container types: collapsed rows first (metadata is
+            // the thing to read), then expanded bodies.
+            items = [
+                voice("v-col", 161, "…what if pulling a thread felt like actually pulling…", false),
+                multiLink("ml-col", 3, false),
+                multiDoc("md-col", 2, false),
+                voice("v-exp", 161, "…what if pulling a thread felt like actually pulling — resistance, then release…", true),
+                singleMedia("sm-exp", true),
+                multiLink("ml-exp", 3, true),
+                multiDoc("md-exp", 2, true),
             ]
         default:
             items = [note("n", "Unknown SPINEGATE section '\(section)'", true)]

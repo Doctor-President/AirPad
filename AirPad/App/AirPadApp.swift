@@ -106,6 +106,8 @@ private struct SpineGateView: View {
     let section: String
     @State private var store = CorpusStore()
     @State private var reorder = EntryReorderController()
+    @State private var quarantineStore = QuarantineStore()
+    @State private var selectionService = SelectionService()
     private let router = AppRouter()
 
     private var node: Node { SpineGateView.node(for: section) }
@@ -131,8 +133,25 @@ private struct SpineGateView: View {
                     .allowsHitTesting(false)
             }
         }
+        // Dashboard Related-nav repro — the REAL DashboardView writes node-detail
+        // depth to `store.detailViewDepth`; this HUD exposes it so a UI-test can
+        // observe whether a Related push inside a Dashboard-pushed detail navigates
+        // (depth 1 → 2). The typed-[DashboardRoute]-path bug held it at 1.
+        .overlay(alignment: .top) {
+            if section == "related" {
+                Text("depth:\(store.detailViewDepth)")
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.green)
+                    .padding(5)
+                    .background(Color.black)
+                    .accessibilityIdentifier("navDepthHUD")
+                    .allowsHitTesting(false)
+            }
+        }
         .environment(store)
         .environment(reorder)
+        .environment(quarantineStore)
+        .environment(selectionService)
         .environment(router)
         .onAppear {
             store.nodes = section == "related" ? SpineGateView.relatedSeed() : [node]
@@ -152,33 +171,16 @@ private struct SpineGateView: View {
         }
     }
 
-    /// F3 repro — the REAL NodeDetailView tail: a note EntryCard followed by the
-    /// RelatedNodesSection, in a NavigationStack (so its NavigationLinks resolve).
-    /// ws-entry-containers item-5 verify (2026-08-24): applies
-    /// `.dismissKeyboardOnTapOutside()` on the ScrollView exactly as
-    /// `NodeDetailView:620` does — WITHOUT it the fixture can't reproduce F3 (the
-    /// dismiss tap-catcher eating the first tap on a Related link while the note is
-    /// focused), so a pass would be a false pass. With it, the XCUITest (focus note
-    /// → tap Related link → expect first-tap navigation to "dest") is a faithful
-    /// check of whether the F3 fix (KeyboardDismissTapCatcher `cancelsTouchesInView
-    /// = false`) is live.
+    /// Dashboard Related-nav repro (2026-08-24) — hosts the REAL `DashboardView`
+    /// started directly in the src node's detail (`initialRoute: .node(src)`), so
+    /// the FIRST push is a `DashboardRoute` on the Dashboard's own stack. Tapping a
+    /// Related link inside then fires `NavigationLink(value: NodeDetailRoute)` — the
+    /// exact push a typed `[DashboardRoute]` path silently dropped (the
+    /// Recents→detail→Related "registers but never navigates" bug). The
+    /// `navDepthHUD` (`store.detailViewDepth`) shows whether it navigates: the fix
+    /// (`NavigationPath`) takes it 1 → 2; the bug held it at 1.
     private var relatedRepro: some View {
-        let src = SpineGateView.relatedSeed()[0]
-        return NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(Array(src.items.enumerated()), id: \.element.id) { idx, item in
-                        EntryCard(item: item, nodeID: src.id, index: idx,
-                                  snapshotIDs: src.items.map(\.id), onBacklink: nil)
-                    }
-                    RelatedNodesSection(nodeID: src.id)
-                        .padding(.top, 20)
-                }
-                .padding(20)
-            }
-            .dismissKeyboardOnTapOutside()
-            .navigationDestination(for: NodeDetailRoute.self) { _ in Text("dest") }
-        }
+        DashboardView(initialRoute: .node(SpineGateView.relatedSeed()[0]))
     }
 
     private static func relatedSeed() -> [Node] {

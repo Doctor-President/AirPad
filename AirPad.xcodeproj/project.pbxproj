@@ -206,6 +206,7 @@
 		B22143F553374028E0FCAF87 /* Lato-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1DBE8572AE138177283E2B18 /* Lato-Bold.ttf */; };
 		B35E3505455954169FCEDDDB /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */; };
 		B3905779F4DC65E2E8AFB76A /* CollectionPillRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = C824F739A24F35A1EE96F481 /* CollectionPillRail.swift */; };
+		B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */; };
 		B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
@@ -258,6 +259,7 @@
 		E10CF1BD1B6C11C9F51094F3 /* FieldValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8587B8FB965733F87A837170 /* FieldValue.swift */; };
 		E127B43A0B3D942200798A71 /* ProposalSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D544BE360AD6B420154999B /* ProposalSelfTest.swift */; };
 		E138DAC05805DC2211707EE9 /* HDBSCAN.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE32F1BD5B9B909D92BB3B /* HDBSCAN.swift */; };
+		E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331D29B33502CD4329D9797D /* RelatedTapRepro.swift */; };
 		E3407B345AD8EB8E5775944D /* QuikCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67DA47C9C206AAD26121CA99 /* QuikCaptureView.swift */; };
 		E36FB1C888465AFE23431F29 /* card_parity_fixture.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B2FC18986ACC45F4CAA20A7 /* card_parity_fixture.json */; };
 		E4343E9BFBA0EAAF7E3C9D5B /* ThreadSuggestionCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C18730E4FB8233EBBEBAAD7 /* ThreadSuggestionCard.swift */; };
@@ -354,6 +356,7 @@
 		31AC6EC9380F63E183E91CFC /* HDBSCANTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HDBSCANTree.swift; sourceTree = "<group>"; };
 		321F93F7630A107A8A1266EF /* CardDocumentTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardDocumentTile.swift; sourceTree = "<group>"; };
 		328B8A79A32590B1D037ABEA /* BackgroundModelDownloader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundModelDownloader.swift; sourceTree = "<group>"; };
+		331D29B33502CD4329D9797D /* RelatedTapRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelatedTapRepro.swift; sourceTree = "<group>"; };
 		33412943BFC78174C4CB7437 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		3366166820015E0F584466E9 /* OGMetadataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGMetadataService.swift; sourceTree = "<group>"; };
 		338373B19F63427D62FB1D74 /* UMAPSGD.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSGD.swift; sourceTree = "<group>"; };
@@ -402,6 +405,7 @@
 		5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateSelfTest.swift; sourceTree = "<group>"; };
 		5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridView.swift; sourceTree = "<group>"; };
 		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
+		5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldDragRepro.swift; sourceTree = "<group>"; };
 		6005A33A7E6D6D1064AE551C /* LibrarianSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarianSurface.swift; sourceTree = "<group>"; };
 		60D13A13B22F4512A523EB58 /* ParityShots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParityShots.swift; sourceTree = "<group>"; };
 		6123D1D38AF585588EBDF3F2 /* CollectionCreationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionCreationSheet.swift; sourceTree = "<group>"; };
@@ -635,6 +639,8 @@
 			children = (
 				B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */,
 				A9C57830B6D6683951BF3F6E /* CaretTapTest.swift */,
+				5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */,
+				331D29B33502CD4329D9797D /* RelatedTapRepro.swift */,
 			);
 			path = AirPadUITests;
 			sourceTree = "<group>";
@@ -1283,6 +1289,8 @@
 			files = (
 				7D662BACA7CB206841C5BA3D /* CardSwipeRepro.swift in Sources */,
 				DDFA466B1F065DAF3DC13799 /* CaretTapTest.swift in Sources */,
+				B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */,
+				E33D0E04DA7D961FF7E4F164 /* RelatedTapRepro.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -21,23 +21,20 @@ struct TextEntryBody: View {
     let item: NodeItem
     let nodeID: String
 
-    /// Raised-panel styling. The panel and the detail surface share a tone, so
-    /// these light cues (shadow + rim) are what make the note float — all
-    /// tunable so T can dial the lift on device.
-    private enum Panel {
-        static let cornerRadius: CGFloat = 24       // generous rounded panel
-        static let shadowOpacity: Double = 0.35     // soft black drop shadow
-        static let shadowRadius: CGFloat = 12       // (dark) shadow blur
-        static let shadowY: CGFloat = 4             // (dark) shadow downward offset
-        // Light (bake 2026-08-12, ground B): T device-dialed warm lift (#43372A hue,
-        // reused from the card shadow) off the same-colour ground — separation is
-        // the shadow, not hue. Dark keeps shadowRadius/shadowY above.
-        static let lightShadowOpacity: Double = 0.143
-        static let lightShadowRadius:  CGFloat = 5.6
-        static let lightShadowY:       CGFloat = 0
-        static let rimOpacity: Double = 0.10        // top-edge white rim light
-        static let rimWidth: CGFloat = 1            // rim hairline width
-    }
+    // ws-entry-containers — the note ALWAYS renders as the in-container heading
+    // row (row 1 = the derived/edited title, the editor folds beneath it), driven
+    // by `isExpanded`. Rendered exclusively by `EntryCard`.
+    var isExpanded: Bool = true
+    var onToggleExpansion: () -> Void = {}
+    var reorderActive: Bool = false
+    var headingFont: Font? = nil
+    /// ws-entry-containers — the shared entry-level options (promote / rename /
+    /// duplicate / copy / backlink / delete), EntryCard-owned. Combined below Read
+    /// Aloud into the note's "..." menu (`noteGripMenu`). Nil → Read Aloud only.
+    var optionsMenu: AnyView? = nil
+    /// ws-entry-containers (4b) — the reorder grip drag handle (EntryCard's
+    /// `dragRecognizer`), forwarded to the collapsed row's grip. Nil → no grip.
+    var gripDragHandle: AnyView? = nil
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -50,40 +47,155 @@ struct TextEntryBody: View {
     /// Bridge to ask the editor to insert an image at a remembered caret.
     @State private var imageInsertion = InlineImageInsertion()
 
-    // Note-primitive separation (bake 2026-08-12, ground B — T device-dialed). LIGHT:
-    // the note fills with the SAME card surface (#FFFFFA) as the detail ground, so it
-    // has no hue boundary and lifts purely by the drop shadow — a warm occlusion at
-    // T's dialed values. DARK: the shipped `bgElevated` + `panelShadow`, unchanged.
-    @Environment(\.colorScheme) private var colorScheme
-
-    /// Note panel fill. Light: the card surface (#FFFFFA), matching the detail ground
-    /// → separation is lift, not hue. Dark: `bgElevated` (#1A1A1A).
-    private var noteFill: Color {
-        colorScheme == .light
-            ? Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)   // #FFFFFA — = detail ground
-            : AppearancePalette.bgElevated
-    }
-    /// Note lift shadow. Light: the card's warm occlusion hue (#43372A, reused from
-    /// the card shadow path) at T's dialed strength. Dark: `panelShadow` (black@0.35).
-    private var noteShadowColor: Color {
-        colorScheme == .light
-            ? Color(hexString: CardSurfaceStore.read(.shadowHex)).opacity(Panel.lightShadowOpacity)
-            : AppearancePalette.panelShadow
-    }
-    private var noteShadowRadius: CGFloat {
-        colorScheme == .light ? Panel.lightShadowRadius : Panel.shadowRadius
-    }
-    private var noteShadowYOffset: CGFloat {
-        colorScheme == .light ? Panel.lightShadowY : Panel.shadowY
-    }
-
     private var shouldAutoFocus: Bool {
         !didConsumeAutoFocus && store.pendingAutoFocusItemID == item.id
     }
 
     var body: some View {
+        container
+        // editingText tracks item.content whether or not the editor is in the tree
+        // (collapsed drops the editor, but the derived heading still reads
+        // editingText), so these live on the OUTER view.
+        .onChange(of: item.content) { old, new in
+            // Sync the editor when the entry's content changes from OUTSIDE the
+            // editor — e.g. PastePad routing pasted text into this (previously
+            // empty) entry. Guarded so it only applies when the user hasn't
+            // diverged locally (editingText still matches the old stored value),
+            // so it never clobbers active typing.
+            if editingText == (old ?? "") { editingText = new ?? "" }
+        }
+        // Capture-mode live signal + substrate mirror — hoisted off the editor so
+        // it fires in spine mode whether the note is expanded or collapsed.
+        .onChange(of: editingText) { _, newValue in
+            store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
+            guard router.isCapturing, router.captureNodeID == nodeID else { return }
+            router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        .onAppear {
+            // DISPLAY-TRIM leading blank lines so the first non-empty line (the
+            // styled title) sits at line 1 and the chevron/grip overlays align to it.
+            editingText = Self.trimmingLeadingBlankLines(item.content ?? "")
+            if shouldAutoFocus {
+                didConsumeAutoFocus = true
+                store.pendingAutoFocusItemID = nil
+            }
+        }
+    }
+
+    /// R2 — drop leading whitespace-only lines (keeps the rest verbatim).
+    private static func trimmingLeadingBlankLines(_ s: String) -> String {
+        var lines = s.components(separatedBy: "\n")
+        while let first = lines.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
+            lines.removeFirst()
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The in-container heading row. Row 1 = the note's first non-empty line: the
+    /// LIVE editor's first paragraph when expanded (title styled in place), the
+    /// derived plain-text render when collapsed. The derived text appears exactly
+    /// once. Body indents to the shared text margin. Collapsed = the same container
+    /// at row height (the editor drops out).
+    private var container: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if isExpanded {
+                // Model C — the editor renders the FULL content; paragraph 1 IS the
+                // title, styled in-editor (firstParagraphAsTitle). The derived text
+                // exists exactly once — it IS line 1 (A4 by construction). Chevron +
+                // grip float over line 1 (chevron in the gutter, grip trailing);
+                // tapping line 1 edits the title (tap-to-rename free).
+                editorCore(text: $editingText, firstParagraphAsTitle: true)
+                    .padding(.leading, EntrySpineRow<EmptyView>.textMargin)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .topLeading) { chevronOverlay }
+                    // Expanded: "..." ONLY (no grip — reorder is a collapsed-row
+                    // gesture), positioned at the SAME x it holds when collapsed.
+                    .overlay(alignment: .topTrailing) { optionsOverlay }
+            } else {
+                // Collapsed — the static derived first-line row (plain-text A3),
+                // same style/geometry as line 1 so the row reads invariant.
+                EntrySpineRow(
+                    name: split(editingText).heading,
+                    isPlaceholder: split(editingText).placeholder,
+                    isExpanded: false,
+                    reorderActive: reorderActive,
+                    nameFont: headingFont ?? .body,
+                    onToggle: onToggleExpansion,
+                    trailing: { EmptyView() },
+                    optionsMenu: noteGripMenu,
+                    gripDragHandle: gripDragHandle
+                )
+            }
+        }
+        .entrySpineContainer()
+    }
+
+    /// The note's grip options menu — Read Aloud (the note-specific action, which
+    /// needs the LIVE `editingText`, so it stays here rather than in EntryCard)
+    /// followed by the shared entry-level options (`optionsMenu`, EntryCard-owned).
+    private var noteGripMenu: AnyView {
+        let tts = SpeechSynthesisService.shared
+        let text = editingText
+        let speaking = tts.activeToken == item.id && tts.isSpeaking && !tts.isPaused
+        return AnyView(
+            Group {
+                Button {
+                    tts.toggle(token: item.id, text: text)
+                } label: {
+                    Label(speaking ? "Pause reading" : "Read aloud",
+                          systemImage: speaking ? "pause.fill" : "speaker.wave.2.fill")
+                }
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if let optionsMenu {
+                    Divider()
+                    optionsMenu
+                }
+            }
+        )
+    }
+
+    /// Expanded-state chevron — floats in the gutter, vertically centred on line 1
+    /// (which sits at the editor top). Matches the collapsed row's chevron.
+    private var chevronOverlay: some View {
+        Button(action: onToggleExpansion) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.40))
+                .rotationEffect(.degrees(90))   // expanded → down
+                .frame(width: EntrySpineRow<EmptyView>.textMargin,
+                       height: EntrySpineRow<EmptyView>.rowHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(reorderActive)
+    }
+
+    /// Expanded-state "..." options button — TAP-ONLY menu (Read Aloud + entry
+    /// options), tracking line 1 at the trailing edge. The `.trailing` padding =
+    /// the reserved grip-slot width + the row gap (10), so it holds the SAME
+    /// x-position as the collapsed row's "..." (which sits just left of the grip
+    /// slot). No grip in the expanded state — reorder is a collapsed-row gesture.
+    private var optionsOverlay: some View {
+        Menu { noteGripMenu } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.2 : 0.55))
+                .frame(width: EntrySpineRow<EmptyView>.optionsWidth,
+                       height: EntrySpineRow<EmptyView>.rowHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(reorderActive)
+        .padding(.trailing, EntrySpineRow<EmptyView>.gripSlotWidth + 10)
+        .accessibilityIdentifier("entryOptions")
+    }
+
+    /// The editable text surface + its edit-time hooks (picker). The persistence
+    /// closures read `editingText` (the full-content source of truth).
+    private func editorCore(text: Binding<String>, firstParagraphAsTitle: Bool = false) -> some View {
         RichTextEditor(
-            text: $editingText,
+            text: text,
             onEndEditing: {
                 // ws-card-catalog Change B — capture the text synchronously here
                 // so a Done/dismiss that tears the view down before this Task runs
@@ -123,77 +235,54 @@ struct TextEntryBody: View {
             inlineImageInsertion: imageInsertion,
             // Launcher bar `image` category → present the picker. The editor already
             // captured the caret at the tap (state.insertImage); this just presents.
-            onInsertImageTapped: { showPhotoPicker = true }
+            onInsertImageTapped: { showPhotoPicker = true },
+            // SPIKE v3 Model C — style paragraph 1 as the entry title (spine only).
+            firstParagraphAsTitle: firstParagraphAsTitle
         )
-        // Comfortable internal text padding; the panel sits in the normal inset
-        // column (the full-bleed `.padding(.horizontal, -32)` hack is gone).
-        .padding(.horizontal, 22)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // ws-dark-light-mode + note-primitive bake — the raised note panel fill.
-        // DARK #1A1A1A (identical to the matched-tone ground; lifts by shadow + rim).
-        // LIGHT: the card surface #FFFFFA — the SAME colour as the detail ground, so
-        // the note has no hue boundary and lifts purely by the shadow below. The note
-        // TEXT stays on NoteTypography (adaptive, preserved) — only the panel fill here.
-        .background(noteFill)
-        .clipShape(RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous))
-        // Top-edge rim light: brightest along the upper edge, fading down the
-        // sides, so the panel reads as catching ambient light from above. On a
-        // same-tone surface this is the load-bearing "float" cue.
-        .overlay(
-            RoundedRectangle(cornerRadius: Panel.cornerRadius, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white.opacity(Panel.rimOpacity), Color.white.opacity(0)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: Panel.rimWidth
-                )
-        )
-        // The drop shadow is the note's ONLY separation on light (note == ground).
-        // Themed: DARK black@0.35 / r12 / y4 (`panelShadow`, identical). LIGHT: the
-        // card's warm occlusion hue (#43372A) at T's dialed lift — see Panel.lightShadow*.
-        .shadow(color: noteShadowColor,
-                radius: noteShadowRadius, x: 0, y: noteShadowYOffset)
-        // Inline-image insertion now lives on the launcher bar's `image` category
-        // (ws-editor-chrome) — the orphaned top-right card button is gone. The picker
-        // is still presented from here; the caret was captured at the bar tap.
+        // Inline-image insertion lives on the launcher bar's `image` category
+        // (ws-editor-chrome); the picker is presented from here, caret captured
+        // at the bar tap.
         .photosPicker(isPresented: $showPhotoPicker, selection: $pickerItem,
                       matching: .images, photoLibrary: .shared())
         .onChange(of: pickerItem) { _, newItem in
             guard let newItem else { return }
             Task { await insertPickedImage(newItem) }
         }
-        // Capture mode: feed the live "has typed text" signal so the Cancel↔Done
-        // pill flips as the user types (content only persists on end-editing).
-        .onChange(of: editingText) { _, newValue in
-            // Mirror the live body text into the store so a lever fire can flush it
-            // before reading the node (commit-before-fire). The editor only persists on
-            // end-editing, so without this the substrate/generate see stale or empty
-            // body text. Runs on BOTH surfaces (detail + capture share this editor), so
-            // it must precede the capture-only guard below.
-            store.mirrorPendingItemEdit(itemID: item.id, text: newValue)
-            guard router.isCapturing, router.captureNodeID == nodeID else { return }
-            router.captureDraftHasText = !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        .onChange(of: item.content) { old, new in
-            // Sync the editor when the entry's content changes from OUTSIDE the
-            // editor — e.g. PastePad routing pasted text into this (previously
-            // empty) entry. Guarded so it only applies when the user hasn't
-            // diverged locally (editingText still matches the old stored value),
-            // so it never clobbers active typing. Mirrors NodeDetailView's
-            // editedTitle/editedSummary reconciliation.
-            if editingText == (old ?? "") { editingText = new ?? "" }
-        }
-        .onAppear {
-            editingText = item.content ?? ""
-            if shouldAutoFocus {
-                didConsumeAutoFocus = true
-                store.pendingAutoFocusItemID = nil
-            }
-        }
     }
+
+    // MARK: - A3 heading derivation + A4 body split
+
+    /// A3 — plain-text RENDER of one markdown line: links → label, `**/*/_/#` and
+    /// inline code stripped (decode applies them as attributes, not markers), HTML
+    /// tags removed, the display bullet glyph + image attachments dropped,
+    /// whitespace collapsed. A pure-markup / blank line renders empty.
+    private func plainTextRender(_ line: String) -> String {
+        var s = MarkdownCodec.decode(line).string
+        s = s.replacingOccurrences(of: "\u{FFFC}", with: "")           // image attachment glyph
+        if s.hasPrefix("• ") { s = String(s.dropFirst(2)) }             // display bullet glyph
+        s = s.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)  // HTML tags
+        s = s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+             .trimmingCharacters(in: .whitespaces)
+        return s
+    }
+
+    /// A3/A4 — split the note into (heading, body). `heading` = the plain-text
+    /// render of the first line that renders non-empty (blank + pure-markup lines
+    /// skipped). `body` = everything AFTER that line. `prefix` = everything up to
+    /// and INCLUDING it (preserved on reconstruction so no content is lost).
+    /// Entirely empty / markup-only note → "Untitled" ghost, empty body.
+    private func split(_ text: String) -> (heading: String, placeholder: Bool, prefix: String, body: String) {
+        let lines = text.components(separatedBy: "\n")
+        for i in lines.indices {
+            let rendered = plainTextRender(lines[i])
+            if rendered.isEmpty { continue }
+            let prefix = lines[0...i].joined(separator: "\n")
+            let body = i + 1 < lines.count ? lines[(i + 1)...].joined(separator: "\n") : ""
+            return (rendered, false, prefix, body)
+        }
+        return ("Untitled", true, text, "")
+    }
+
 
     /// Persist the picked image as an `.imageVideo` item, then insert its token at
     /// the caret remembered when the photo button was tapped — the editor splices a

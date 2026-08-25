@@ -38,10 +38,6 @@ struct EntryCard: View {
 
     @Environment(CorpusStore.self) private var store
     @Environment(EntryReorderController.self) private var reorder
-    /// ws-display-edit-mode — injected by `NodeDetailView`. Drives whether
-    /// this card's header chrome (title / timestamp / ellipsis) shows and
-    /// whether the reorder long-press is live.
-    @Environment(\.displayEditMode) private var displayEditMode
 
     /// Stage 4.4 — dev-only runtime visual settings (corner radius, body
     /// treatment, typography). The singleton is `@Observable`, so SwiftUI
@@ -79,16 +75,44 @@ struct EntryCard: View {
         return item.displayName ?? item.type.defaultDisplayName
     }
 
+    /// ws-entry-containers — types whose spine row is BODY-owned because row 1
+    /// carries body-specific content: a Note's name is its editor's first
+    /// paragraph (Model C); a multi-media Gallery's collapsed row carries the
+    /// 3-thumb stack. These call their body directly (the body renders the
+    /// container). Everything else that wears the idiom uses the generic
+    /// EntryCard-owned container below.
+    private var bodyOwnsContainer: Bool {
+        switch item.type {
+        case .text:       return true
+        case .imageVideo: return (item.mediaItems?.count ?? 0) >= 2
+        default:          return false
+        }
+    }
+
+    /// ws-entry-containers (step 3) — types whose body is a PURE content renderer
+    /// (no self-container). EntryCard wraps them in the shared generic spine
+    /// container: row 1 = displayName + type metadata (count / duration), the
+    /// body folds full-width below. Links, Documents, Voice, single media
+    /// (single `.imageVideo`, plus legacy `.image` / `.video`). `.chats` keeps
+    /// the legacy `EntryTitleRow`; atomics are filtered out upstream.
+    private var wearsGenericContainer: Bool {
+        switch item.type {
+        case .link, .document, .audio, .image, .video: return true
+        case .imageVideo:  return (item.mediaItems?.count ?? 0) <= 1   // single media
+        default:           return false
+        }
+    }
+
+    /// Any container-idiom entry (body-owned or generic) — drives the flush
+    /// vertical rhythm (the filled container self-separates; the inter-card gap
+    /// comes from the list spacing, not per-card padding).
+    private var wearsContainer: Bool { bodyOwnsContainer || wearsGenericContainer }
+
     /// Force-collapsed during reorder mode so every card renders as a
     /// uniform-height title row, which is what the controller's slotPitch
     /// math assumes. Restored to user-set expansion when reorder exits.
-    ///
-    /// ws-display-edit-mode — Display reads every entry open: there's no
-    /// chevron to expand a collapsed entry, and the node should read as a
-    /// continuous document.
     private var effectiveExpansion: Bool {
-        if displayEditMode.isDisplay { return true }
-        return reorder.isReorderActive ? false : isExpanded
+        reorder.isReorderActive ? false : isExpanded
     }
 
     /// True when this card sits inside the promoted "card view" region
@@ -112,6 +136,122 @@ struct EntryCard: View {
         return node.items.prefix(while: { $0.type.isAtomic }).count
     }
 
+    /// ws-entry-containers (4b) — the reorder drag handle, RELOCATED from the
+    /// card background onto the ⠿ GRIP (long-press only, collapsed rows). The
+    /// card-wide recognizer is gone, so the name/body are single-purpose (T's
+    /// gesture split, 2026-08-24): a drag is initiated ONLY from the grip.
+    /// Callbacks are unchanged from the Stage-3.1b reorder path.
+    var dragRecognizer: some View {
+        LongPressDragRecognizer(
+            onLift: { touchY in
+                reorder.lift(itemID: item.id, snapshotIDs: snapshotIDs)
+                // Seed the touch-Y so the AutoScrollDriver has a
+                // valid reading before the first `.changed` fires.
+                // Without this, lifting near an edge and holding
+                // still would never engage auto-scroll.
+                reorder.updateDrag(translationY: 0, touchWindowY: touchY)
+            },
+            onChange: { translationY, touchY in
+                reorder.updateDrag(translationY: translationY, touchWindowY: touchY)
+            },
+            onEnd: {
+                guard let (from, to, slotDelta) = reorder.release() else { return }
+                // Apply the in-memory reorder and the drag-offset
+                // compensation in the SAME synchronous @MainActor
+                // tick. SwiftUI batches both @Observable mutations
+                // into one render, so the lifted card's visible
+                // position is unchanged across the array reflow.
+                //
+                // Splitting these with an `await` (the prior shape:
+                // `await store.moveEntry` then compensate) let
+                // SwiftUI commit one frame with the new array order
+                // but uncompensated dragTranslation while the disk
+                // save was in flight — visible as a slotPitch ×
+                // slotDelta flash before the landing animation,
+                // which is why Apple's Notes/Reminders are
+                // jolt-free: the reorder and the offset adjustment
+                // are atomic to the view system.
+                //
+                // Stage 4.8 — the reorder controller's snapshot
+                // is payload IDs only, so `from` / `to` arrive in
+                // payload-relative index space. `applyMoveEntry`
+                // operates on raw `node.items` indices, so we
+                // shift by `atomicCount` (the size of the atomic
+                // prefix at the front of `node.items`).
+                //
+                // Stage 4.8 Commit C — fold-aware release. Snap
+                // the fold boundary in payload-relative space
+                // *before* any mutation so the membership check
+                // uses the same coordinates as `from` / `to`.
+                // `normalizeAtomicsToFront` guarantees
+                // `foldIndex ≥ atomicCount`, so `payloadFold ≥
+                // 0`. A drag that crosses the line shifts the
+                // boundary by ±1; same-zone drags leave it
+                // alone (pure reorder). `togglePromote` is the
+                // menu-path counterpart of this logic — same
+                // applyMoveEntry + setFoldIndex same-tick
+                // pattern, just driven by a tap instead of a
+                // release.
+                guard let preNode = store.nodes.first(where: { $0.id == nodeID }) else {
+                    reorder.exit()
+                    return
+                }
+                let prefix = atomicCount
+                let payloadFold = preNode.effectiveFoldIndex - prefix
+                let foldDelta: Int
+                if from >= payloadFold && to < payloadFold {
+                    foldDelta = 1   // below → above (promote)
+                } else if from < payloadFold && to >= payloadFold {
+                    foldDelta = -1  // above → below (demote)
+                } else {
+                    foldDelta = 0   // same-zone reorder
+                }
+
+                guard let moved = store.applyMoveEntry(
+                    nodeID: nodeID,
+                    from: from + prefix,
+                    to: to + prefix
+                ) else {
+                    reorder.exit()
+                    return
+                }
+
+                // Same @MainActor tick as the move so SwiftUI
+                // batches the array reflow and the fold change
+                // into one render — no one-frame flash of the
+                // card in the wrong zone. `setFoldIndex`
+                // clamps the upper bound to `items.count`; we
+                // clamp the lower bound to `prefix` here so
+                // the fold never enters the atomic prefix
+                // (the ±1 rule already keeps it in range, but
+                // this is the single enforcement point).
+                // `slotDelta` / `compensateForReorder` are
+                // visual offset compensation only — not
+                // entangled with the fold.
+                let latest: Node
+                if foldDelta != 0 {
+                    let rawFold = preNode.effectiveFoldIndex + foldDelta
+                    let clamped = max(prefix, rawFold)
+                    latest = store.setFoldIndex(clamped, nodeID: nodeID) ?? moved
+                } else {
+                    latest = moved
+                }
+
+                reorder.compensateForReorder(slotDelta: slotDelta)
+                Task {
+                    // Persist asynchronously; yield one render so
+                    // the compensated frame commits before exit()
+                    // triggers the landing animation from the
+                    // compensated value to 0.
+                    await store.persistNode(latest)
+                    await Task.yield()
+                    reorder.exit()
+                }
+            },
+            scrollDeltaProvider: { reorder.scrollDelta }
+        )
+    }
+
     var body: some View {
         let presentation = reorder.presentation(forItemID: item.id, atIndex: index)
         VStack(alignment: .leading, spacing: 0) {
@@ -124,11 +264,44 @@ struct EntryCard: View {
             // The hairline below (added by `NodeDetailView`) and the
             // fold-boundary divider (also added by `NodeDetailView`)
             // both sit at the outer view layer, not the row body.
-            // ws-display-edit-mode — the whole header row (display name,
-            // per-section timestamp, ellipsis menu, chevron) is Edit-only
-            // chrome. In Display it hides so the body reads as a document
-            // section. Entry titles aren't removed, just gated by mode.
-            if !displayEditMode.isDisplay {
+            if bodyOwnsContainer {
+                // ws-entry-containers — Note + multi-media Gallery own their
+                // container (TextEntryBody / GalleryBody) because row 1 carries
+                // body-specific content. The container renders in BOTH fold
+                // states; its body folds beneath row 1. No external EntryTitleRow
+                // chrome, and — unlike a normal entry — it is NOT gated on
+                // expansion (row 1 must persist when collapsed).
+                switch item.type {
+                case .text:
+                    TextEntryBody(
+                        item: item, nodeID: nodeID,
+                        isExpanded: effectiveExpansion,
+                        onToggleExpansion: toggleExpansion,
+                        reorderActive: presentation.reorderActive,
+                        headingFont: visualSettings.sectionTitle.resolvedFont(),
+                        optionsMenu: AnyView(entryOptionsMenu),
+                        gripDragHandle: AnyView(dragRecognizer)
+                    )
+                case .imageVideo:
+                    GalleryBody(
+                        item: item, nodeID: nodeID,
+                        isExpanded: effectiveExpansion,
+                        onToggleExpansion: toggleExpansion,
+                        reorderActive: presentation.reorderActive,
+                        name: displayName,
+                        nameFont: visualSettings.sectionTitle.resolvedFont(),
+                        optionsMenu: AnyView(entryOptionsMenu),
+                        gripDragHandle: AnyView(dragRecognizer)
+                    )
+                default:
+                    EmptyView()
+                }
+            } else if wearsGenericContainer {
+                // ws-entry-containers (step 3) — pure-content bodies wrapped in
+                // the shared generic container (Links / Documents / Voice / single
+                // media). Row 1 + metadata is EntryCard-owned; the body is unchanged.
+                genericContainer(reorderActive: presentation.reorderActive)
+            } else {
             EntryTitleRow(
                 displayName: displayName,
                 timestamp: item.updatedAt ?? item.createdAt,
@@ -158,19 +331,14 @@ struct EntryCard: View {
                         Task { await store.setCoverImage(relativePath: file, nodeID: nodeID) }
                     }
                     : nil,
-                // Read-aloud through the shared SpeechSynthesisService — notes only.
-                readAloud: item.type == .text
-                    ? NoteReadAloudButton(token: item.id, text: item.content ?? "")
-                    : nil,
                 isNote: item.type == .text
             )
             .transition(.opacity)
-            }
 
             if effectiveExpansion {
                 bodyView
-                    // No header above the body in Display → no gap needed.
-                    .padding(.top, displayEditMode.isDisplay ? 0 : 8)
+                    .padding(.top, 8)
+            }
             }
         }
         // #15 (T-dialed) — entry cards sit FLUSH with the 20pt title column
@@ -179,136 +347,11 @@ struct EntryCard: View {
         // title and to its siblings. Outer gutter only — the note's internal
         // text padding (TextEntryBody 22pt) is untouched.
         .padding(.horizontal, 0)
-        // Note headers tighten the vertical padding so the body + PastePad sit
-        // higher; other entry types keep the original vertical rhythm.
-        .padding(.vertical, item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding)
-        .background {
-            // Long-press recognizer lives in the background slot so foreground
-            // interactive widgets (chevron, menu, text editors, waveform
-            // scrub) claim their own hits via separate UIViews while touches
-            // that fall outside those widgets reach the recognizer. It races
-            // with the parent ScrollView's pan: hold still 0.5s → recognizer
-            // wins (lift); move → scroll wins. No fill behind it any more —
-            // Stage 4.8 stripped the card container; the recognizer's bounds
-            // are still the full row because `.background` sizes to its
-            // parent.
-            ZStack {
-                // ws-display-edit-mode — reorder is an Edit-only workspace
-                // gesture; its slotPitch math assumes uniform collapsed rows,
-                // which Display (headerless, all-open) breaks. Recognizer is
-                // omitted entirely in Display.
-                if !displayEditMode.isDisplay {
-                LongPressDragRecognizer(
-                    onLift: { touchY in
-                        reorder.lift(itemID: item.id, snapshotIDs: snapshotIDs)
-                        // Seed the touch-Y so the AutoScrollDriver has a
-                        // valid reading before the first `.changed` fires.
-                        // Without this, lifting near an edge and holding
-                        // still would never engage auto-scroll.
-                        reorder.updateDrag(translationY: 0, touchWindowY: touchY)
-                    },
-                    onChange: { translationY, touchY in
-                        reorder.updateDrag(translationY: translationY, touchWindowY: touchY)
-                    },
-                    onEnd: {
-                        guard let (from, to, slotDelta) = reorder.release() else { return }
-                        // Apply the in-memory reorder and the drag-offset
-                        // compensation in the SAME synchronous @MainActor
-                        // tick. SwiftUI batches both @Observable mutations
-                        // into one render, so the lifted card's visible
-                        // position is unchanged across the array reflow.
-                        //
-                        // Splitting these with an `await` (the prior shape:
-                        // `await store.moveEntry` then compensate) let
-                        // SwiftUI commit one frame with the new array order
-                        // but uncompensated dragTranslation while the disk
-                        // save was in flight — visible as a slotPitch ×
-                        // slotDelta flash before the landing animation,
-                        // which is why Apple's Notes/Reminders are
-                        // jolt-free: the reorder and the offset adjustment
-                        // are atomic to the view system.
-                        //
-                        // Stage 4.8 — the reorder controller's snapshot
-                        // is payload IDs only, so `from` / `to` arrive in
-                        // payload-relative index space. `applyMoveEntry`
-                        // operates on raw `node.items` indices, so we
-                        // shift by `atomicCount` (the size of the atomic
-                        // prefix at the front of `node.items`).
-                        //
-                        // Stage 4.8 Commit C — fold-aware release. Snap
-                        // the fold boundary in payload-relative space
-                        // *before* any mutation so the membership check
-                        // uses the same coordinates as `from` / `to`.
-                        // `normalizeAtomicsToFront` guarantees
-                        // `foldIndex ≥ atomicCount`, so `payloadFold ≥
-                        // 0`. A drag that crosses the line shifts the
-                        // boundary by ±1; same-zone drags leave it
-                        // alone (pure reorder). `togglePromote` is the
-                        // menu-path counterpart of this logic — same
-                        // applyMoveEntry + setFoldIndex same-tick
-                        // pattern, just driven by a tap instead of a
-                        // release.
-                        guard let preNode = store.nodes.first(where: { $0.id == nodeID }) else {
-                            reorder.exit()
-                            return
-                        }
-                        let prefix = atomicCount
-                        let payloadFold = preNode.effectiveFoldIndex - prefix
-                        let foldDelta: Int
-                        if from >= payloadFold && to < payloadFold {
-                            foldDelta = 1   // below → above (promote)
-                        } else if from < payloadFold && to >= payloadFold {
-                            foldDelta = -1  // above → below (demote)
-                        } else {
-                            foldDelta = 0   // same-zone reorder
-                        }
-
-                        guard let moved = store.applyMoveEntry(
-                            nodeID: nodeID,
-                            from: from + prefix,
-                            to: to + prefix
-                        ) else {
-                            reorder.exit()
-                            return
-                        }
-
-                        // Same @MainActor tick as the move so SwiftUI
-                        // batches the array reflow and the fold change
-                        // into one render — no one-frame flash of the
-                        // card in the wrong zone. `setFoldIndex`
-                        // clamps the upper bound to `items.count`; we
-                        // clamp the lower bound to `prefix` here so
-                        // the fold never enters the atomic prefix
-                        // (the ±1 rule already keeps it in range, but
-                        // this is the single enforcement point).
-                        // `slotDelta` / `compensateForReorder` are
-                        // visual offset compensation only — not
-                        // entangled with the fold.
-                        let latest: Node
-                        if foldDelta != 0 {
-                            let rawFold = preNode.effectiveFoldIndex + foldDelta
-                            let clamped = max(prefix, rawFold)
-                            latest = store.setFoldIndex(clamped, nodeID: nodeID) ?? moved
-                        } else {
-                            latest = moved
-                        }
-
-                        reorder.compensateForReorder(slotDelta: slotDelta)
-                        Task {
-                            // Persist asynchronously; yield one render so
-                            // the compensated frame commits before exit()
-                            // triggers the landing animation from the
-                            // compensated value to 0.
-                            await store.persistNode(latest)
-                            await Task.yield()
-                            reorder.exit()
-                        }
-                    },
-                    scrollDeltaProvider: { reorder.scrollDelta }
-                )
-                }
-            }
-        }
+        // SPIKE v3 — spine-type entries carry their OWN filled container (which
+        // self-separates via fill + shadow), so the outer vertical padding is
+        // dropped; the inter-container gap comes purely from the list spacing
+        // (reference ~16pt gap). Non-container types keep the original rhythm.
+        .padding(.vertical, wearsContainer ? 0 : (item.type == .text ? visualSettings.noteVerticalPadding : visualSettings.cardVerticalPadding))
         .scaleEffect(presentation.isLifted ? EntryReorderController.liftedScale : 1.0)
         .shadow(
             color: .black.opacity(presentation.isLifted ? EntryReorderController.liftedShadowOpacity : 0),
@@ -417,6 +460,102 @@ struct EntryCard: View {
             // exhaustiveness.
             EmptyView()
         }
+    }
+
+    // MARK: - Generic container (ws-entry-containers step 3)
+
+    /// ws-entry-containers (grip menu) — the shared entry-level options,
+    /// relocated from the retired `EntryTitleRow` `…` into the grip and passed to
+    /// EVERY container type (Notes prepend Read Aloud in `TextEntryBody`): promote ·
+    /// set-hero (standalone image only) · rename · duplicate · copy · backlink ·
+    /// change-type (disabled stub) · delete.
+    ///
+    /// "Reorder" is DELIBERATELY omitted (T, 2026-08-24): the menu-path
+    /// `.engaged` state is under-communicated + redundant with the working
+    /// hold-to-drag path, so it read as a dead item. Reordering is hold-drag on
+    /// the card; item 4b owns the reorder-from-collapsed redesign + the stale
+    /// `slotPitch` (92 → ~68 for container metrics). The legacy `EntryTitleRow`
+    /// (`.chats` only) keeps its Reorder item untouched.
+    @ViewBuilder
+    private var entryOptionsMenu: some View {
+        Button(isAboveFold ? "Remove from card" : "Show on card", action: togglePromote)
+        if item.type == .image, let file = item.file {
+            Button("Set as Hero Image") {
+                Task { await store.setCoverImage(relativePath: file, nodeID: nodeID) }
+            }
+        }
+        Divider()
+        Button("Rename", action: beginRename)
+        Button("Duplicate", action: duplicate)
+        Button("Copy", action: copyContent)
+        if let onBacklink {
+            Button("Backlink", systemImage: "link", action: onBacklink)
+        }
+        Button("Change type", action: {}).disabled(true)
+        Divider()
+        Button("Delete", role: .destructive) { showDeleteConfirmation = true }
+    }
+
+    /// The shared container for pure-content bodies (Links / Documents / Voice /
+    /// single media). Row 1 = chevron + displayName + type metadata + a
+    /// visual-only grip (the full options menu lands in the grip step); the body
+    /// renders at FULL container width (like the gallery grid — the app's rich
+    /// preview blocks read better full-bleed than the reference's indented text
+    /// rows) and folds beneath row 1. The body is the existing per-type
+    /// `bodyView`, unchanged; only chrome moves to the container.
+    @ViewBuilder
+    private func genericContainer(reorderActive: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            EntrySpineRow(
+                name: displayName,
+                isPlaceholder: false,
+                isExpanded: effectiveExpansion,
+                reorderActive: reorderActive,
+                nameFont: visualSettings.sectionTitle.resolvedFont(),
+                onToggle: toggleExpansion,
+                trailing: { spineMetadata },
+                optionsMenu: AnyView(entryOptionsMenu),
+                gripDragHandle: AnyView(dragRecognizer)
+            )
+            if effectiveExpansion {
+                bodyView
+                    .padding(.top, 10)   // reference `.body { margin-top: 10 }`
+            }
+        }
+        .entrySpineContainer()
+    }
+
+    /// Right-side metadata for a generic-container spine (reference `.meta`):
+    /// link / document COUNT (only for a true collection, ≥2 — a single link/doc
+    /// carries none, matching EntryCard's ≥2 gallery dispatch), Voice DURATION
+    /// (m:ss). Single media carries none.
+    @ViewBuilder
+    private var spineMetadata: some View {
+        switch item.type {
+        case .link:
+            if let n = item.linkItems?.count, n >= 2 { metaLabel("\(n)") }
+        case .document:
+            if let n = item.documentItems?.count, n >= 2 { metaLabel("\(n)") }
+        case .audio:
+            if let seconds = item.durationSeconds, seconds > 0 {
+                metaLabel(Self.durationString(seconds))
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    private func metaLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.30))
+            .monospacedDigit()
+    }
+
+    /// m:ss for a Voice entry's duration meta (reference `2:41`).
+    private static func durationString(_ seconds: Double) -> String {
+        let total = Int(seconds.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 
     // MARK: - Reorder entry (menu path)
@@ -532,32 +671,6 @@ struct EntryCard: View {
     }
 }
 
-/// Read-aloud control for a `.text` note — toggles TTS through the shared
-/// `SpeechSynthesisService` (the same on-device engine + Now Playing/lock-screen
-/// transport the Librarian uses). Play → pause → resume; the icon reflects
-/// whether THIS note is the one currently speaking. Feeds the service
-/// `item.content` (the saved text).
-private struct NoteReadAloudButton: View {
-    let token: String   // item.id — identifies this note to the shared service
-    let text: String    // item.content
-
-    var body: some View {
-        let tts = SpeechSynthesisService.shared
-        let isThisPlaying = tts.activeToken == token && tts.isSpeaking && !tts.isPaused
-        Button {
-            tts.toggle(token: token, text: text)
-        } label: {
-            Image(systemName: isThisPlaying ? "pause.fill" : "speaker.wave.2.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(isThisPlaying ? 0.9 : 0.6))
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-    }
-}
-
 // MARK: - Title row
 
 /// Title bar inside an `EntryCard`. Pure view: takes a name + state and
@@ -612,9 +725,6 @@ private struct EntryTitleRow: View {
     /// for every entry type the hero set-point doesn't apply to so the
     /// menu shape is unchanged outside `.image` entries.
     var onSetAsHero: (() -> Void)? = nil
-    /// Read-aloud control — passed only for `.text` notes (nil for every other
-    /// entry type, so their chrome is untouched).
-    var readAloud: NoteReadAloudButton? = nil
     /// Notes use a shorter title-row height so the body/PastePad sit higher.
     /// Other entry types keep the 44pt row. This is the dominant header-height
     /// lever — the fixed 44pt row (not outer padding) is what pushed content down.
@@ -660,8 +770,6 @@ private struct EntryTitleRow: View {
             Spacer(minLength: 0)
 
             if !reorderActive {
-                // Read-aloud (notes only; nil otherwise → renders nothing).
-                readAloud
                 Menu {
                     Button(isAboveFold ? "Remove from card" : "Show on card", action: onPromote)
                     if let onSetAsHero {
@@ -708,6 +816,211 @@ private struct EntryTitleRow: View {
         + Text(" ago")
             .font(timestampFont)
             .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+    }
+}
+
+// MARK: - Spine row + container (SPIKE v3: spine-entry — THROWAWAY)
+
+/// SPIKE v3 (`spike-entry-spine`) — the shared "row 1" that sits INSIDE an
+/// entry's own filled container, applied to two types this spike (Note +
+/// Gallery). Geometry maps the T-approved reference
+/// (`Ops/design-refs/entry-primitives-mockup.html`):
+///   `[chevron 16 · gap10 · name (flex) · gap10 · meta · gap10 · ⠿ grip]`, min-height 28.
+/// Chevron 16 + gap 10 puts the name's left edge at `textMargin` (26), the same
+/// edge the note body indents to. INVARIANT between fold states; only the
+/// chevron rotates. Gallery media does NOT owe the text margin (full width).
+/// `trailing` = metadata riding in BOTH states (Gallery: 3-thumb stack + count;
+/// Note: empty). Grip is VISUAL ONLY (no menu, no reorder wiring).
+struct EntrySpineRow<Trailing: View>: View {
+
+    let name: String
+    /// Ghost styling for a derived-but-empty name (a note's "Untitled").
+    let isPlaceholder: Bool
+    let isExpanded: Bool
+    let reorderActive: Bool
+    /// Entry-title type role (serif) — the app's `sectionTitle` role, mapping the
+    /// reference's Fraunces name.
+    let nameFont: Font
+    let onToggle: () -> Void
+    @ViewBuilder let trailing: () -> Trailing
+    /// The "..." options menu content (EntryCard-owned). Rendered as a TAP-ONLY
+    /// ellipsis button in a fixed inner slot immediately trailing the metadata,
+    /// present in BOTH fold states at the same x (the grip slot is always reserved
+    /// so this never reflows). Nil → no options button (slot still reserved).
+    var optionsMenu: AnyView? = nil
+    /// The reorder drag handle (EntryCard's `dragRecognizer`). LONG-PRESS ONLY;
+    /// hosted by the ⠿ grip, which renders ONLY in the collapsed state at the true
+    /// trailing edge. Nil → no grip.
+    var gripDragHandle: AnyView? = nil
+
+    /// The name's left edge = the note body's left edge below it. Reference:
+    /// chevron 16 + gap 10.
+    static var textMargin: CGFloat { 26 }
+    /// Reference `.spine { min-height: 28 }`.
+    static var rowHeight: CGFloat { 28 }
+    private static var chevronWidth: CGFloat { 16 }
+    private static var gap: CGFloat { 10 }
+    /// "..." ellipsis button slot width.
+    static var optionsWidth: CGFloat { 28 }
+    /// Grip slot width — RESERVED in BOTH fold states so the "..." button never
+    /// reflows when the grip appears (collapsed) / disappears (expanded).
+    static var gripSlotWidth: CGFloat { 26 }
+
+    var body: some View {
+        HStack(spacing: Self.gap) {
+            // Chevron: 16pt column, rotates on toggle (reference ▶→▼).
+            Button(action: onToggle) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.40))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: Self.chevronWidth, height: Self.rowHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(reorderActive)
+
+            // Name (flex). Tap-to-expand ONLY when collapsed (single-purpose — the
+            // drag handle lives on the grip now, so the name never lifts).
+            Text(name)
+                .font(nameFont)
+                .foregroundStyle(AppearancePalette.ink.opacity(isPlaceholder ? 0.3 : 1.0))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .allowsHitTesting(!isExpanded)
+                .onTapGesture { if !isExpanded { onToggle() } }
+
+            // Right-side metadata (Gallery thumbs + count; Note none).
+            trailing()
+
+            // "..." options — TAP ONLY, fixed inner slot, present in BOTH states.
+            optionsButton
+
+            // ⠿ grip — LONG-PRESS ONLY (drag), collapsed-only, at the true trailing
+            // edge. The slot width is reserved in both states so "..." never reflows.
+            gripSlot
+        }
+        .frame(minHeight: Self.rowHeight)
+    }
+
+    /// The "..." ellipsis options trigger — a Menu that opens on TAP. It has no
+    /// long-press-drag behavior and never touches the grip. Fixed-width slot so it
+    /// holds the same x-position across the fold transition.
+    @ViewBuilder
+    private var optionsButton: some View {
+        if let optionsMenu {
+            Menu { optionsMenu } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.2 : 0.55))
+                    .frame(width: Self.optionsWidth, height: Self.rowHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(reorderActive)
+            .accessibilityIdentifier("entryOptions")
+        } else {
+            Color.clear.frame(width: Self.optionsWidth, height: Self.rowHeight)
+        }
+    }
+
+    /// The reserved trailing grip slot. The ⠿ glyph + its long-press drag handle
+    /// render ONLY when collapsed; expanded, the slot is empty but keeps its width
+    /// so "..." holds its x-position. The glyph is inert; the drag recognizer sits
+    /// on top (clear) and responds to long-press ONLY — a plain tap never fires it,
+    /// so the grip has no tap behavior at all.
+    @ViewBuilder
+    private var gripSlot: some View {
+        ZStack {
+            if !isExpanded, let gripDragHandle {
+                Self.gripGlyph.allowsHitTesting(false)
+                gripDragHandle
+            }
+        }
+        .frame(width: Self.gripSlotWidth, height: Self.rowHeight)
+        .accessibilityIdentifier("entryGrip")
+    }
+
+    /// The ⠿ grip glyph — inert; hit-testing is owned by the drag handle above it.
+    @ViewBuilder static var gripGlyph: some View {
+        Text("⠿")
+            .font(.system(size: 14, weight: .regular))
+            .tracking(1)
+            .foregroundStyle(AppearancePalette.ink.opacity(0.30))
+    }
+}
+
+/// SPIKE v3 — the unified filled-panel container idiom (reference `.entry`):
+/// a FILLED surface (a step lighter than the detail ground), fixed 16pt radius,
+/// a top inset highlight + drop shadow, NO outline stroke, never a capsule.
+/// Identical for Note and Gallery. Collapsed = the same container at row height.
+struct EntryContainerStyle: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+
+    static let radius: CGFloat = 16
+    /// Reference container padding: `12px 14px`.
+    static let padH: CGFloat = 14
+    static let padV: CGFloat = 12
+
+    func body(content: Content) -> some View {
+        content
+            // ws-entry-containers hold-drag FIX (2026-08-24): the fill + rim are
+            // PURELY VISUAL and must not hit-test. Before this, the opaque fill sat
+            // in FRONT of the card's background `LongPressDragRecognizer` and
+            // consumed every touch, so hold-to-drag reorder never fired on any
+            // container entry (regression from the container idiom; the recognizer
+            // is designed to sit "in front of the color fill"). `allowsHitTesting
+            // (false)` lets touches on non-widget areas fall through to it.
+            .background { fill.allowsHitTesting(false) }
+            .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+            // Top rim light — same as the note panel's (`rimOpacity 0.10`).
+            .overlay(
+                RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(colors: [Color.white.opacity(0.10), Color.white.opacity(0)],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1
+                    )
+                    .allowsHitTesting(false)
+            )
+            .shadow(color: shadow, radius: shadowRadius, x: 0, y: shadowY)
+    }
+
+    /// The app's EXISTING raised-panel surface — the SAME tokens the note panel
+    /// (`TextEntryBody.noteFill`) uses, so the container is the app's semantic
+    /// panel role, not an invented value. DARK: `bgElevated` #1A1A1A (lifts by
+    /// shadow + rim, same-tone with the ground — the note's proven idiom). LIGHT:
+    /// the card surface #FFFFFA (`CardSurfaceResolved`), NOT `bgElevated` #FAF6EC
+    /// (which read warm-cream, off the light idiom the edge/tint work was tuned to).
+    static var fillDarkHex: String { "#1A1A1A" }              // AppearancePalette.bgElevated (dark)
+    static var fillLightHex: String { CardSurfaceResolved.resolvedCardBackgroundHex }  // #FFFFFA
+    private var fill: Color {
+        colorScheme == .dark
+            ? AppearancePalette.bgElevated
+            : Color(hexString: Self.fillLightHex)
+    }
+    /// Note-panel shadow: DARK black@0.35; LIGHT the card's warm occlusion
+    /// (#43372A @0.143) — the T-dialed note-panel light lift.
+    private var shadow: Color {
+        colorScheme == .dark
+            ? AppearancePalette.panelShadow
+            : Color(hexString: CardSurfaceStore.read(.shadowHex)).opacity(0.143)
+    }
+    private var shadowRadius: CGFloat { colorScheme == .dark ? 12 : 5.6 }
+    private var shadowY: CGFloat { colorScheme == .dark ? 4 : 0 }
+}
+
+extension View {
+    /// Applies the shared spike container (fill + radius + rim + shadow) with the
+    /// reference's interior padding.
+    func entrySpineContainer() -> some View {
+        self
+            .padding(.horizontal, EntryContainerStyle.padH)
+            .padding(.vertical, EntryContainerStyle.padV)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .modifier(EntryContainerStyle())
     }
 }
 

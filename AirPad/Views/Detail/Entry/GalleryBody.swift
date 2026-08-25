@@ -17,7 +17,21 @@ struct GalleryBody: View {
     let item: NodeItem
     let nodeID: String
 
+    // ws-entry-containers — the gallery ALWAYS renders as the in-container heading
+    // row (row 1 = displayName + a 3-thumb/count metadata stack); the media grid
+    // folds beneath it. Rendered exclusively by `EntryCard` (mediaItems.count ≥ 2).
+    var isExpanded: Bool = true
+    var onToggleExpansion: () -> Void = {}
+    var reorderActive: Bool = false
+    var name: String = ""
+    var nameFont: Font? = nil
+    /// ws-entry-containers — the "..." options menu content + the reorder grip drag
+    /// handle, both EntryCard-owned; forwarded straight to the spine row.
+    var optionsMenu: AnyView? = nil
+    var gripDragHandle: AnyView? = nil
+
     @Environment(CorpusStore.self) private var store
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var showingPicker = false
     /// #4 (launch list) — presents the drag-to-reorder sheet. The gallery's
@@ -67,19 +81,44 @@ struct GalleryBody: View {
     }
 
     var body: some View {
-        // Contract: `GalleryBody` is only reached from `EntryCard` when
-        // `mediaItems.count >= 2` (see EntryCard's `.imageVideo` dispatch).
-        // Belt-and-suspenders: if a future call site bypasses the dispatch
-        // and lands here with 0 or 1 items, render nothing rather than feed
-        // the layout planner degenerate input. `BentoLayout.plan` already
-        // returns an empty Plan for empty input — this guard keeps the
-        // contract enforcement in one place at the entry point.
+        // `GalleryBody` is only reached from `EntryCard` when `mediaItems.count >= 2`.
+        // Belt-and-suspenders: 0/1 items → render nothing rather than feed the layout
+        // planner degenerate input.
         if galleryItems.count >= 2 {
-            galleryContent
+            container
         }
     }
 
-    private var galleryContent: some View {
+    /// The in-container heading row on media. Row 1 (displayName + 3-thumb/count
+    /// metadata) sits inside the SAME unified filled container as a note; the media
+    /// grid folds beneath it at FULL container width (it does NOT owe the text
+    /// margin). The container persists in both fold states; collapsed = row only.
+    private var container: some View {
+        galleryPresentations(
+            VStack(alignment: .leading, spacing: 0) {
+                EntrySpineRow(
+                    name: name.isEmpty ? "Gallery" : name,
+                    isPlaceholder: false,
+                    isExpanded: isExpanded,
+                    reorderActive: reorderActive,
+                    nameFont: nameFont ?? .body,
+                    onToggle: onToggleExpansion,
+                    trailing: { galleryMetadata },
+                    optionsMenu: optionsMenu,
+                    gripDragHandle: gripDragHandle
+                )
+                if isExpanded {
+                    galleryInner
+                        .padding(.top, 10)   // reference `.grid { margin-top: 10 }`
+                }
+            }
+            .entrySpineContainer()
+        )
+    }
+
+    /// The media area + optional description + add/reorder/mode chrome. Shared by
+    /// the legacy and spine renderings. Full container width (no text-margin indent).
+    private var galleryInner: some View {
         VStack(alignment: .leading, spacing: 8) {
             mediaArea
 
@@ -121,48 +160,88 @@ struct GalleryBody: View {
                 }
             }
         }
-        // ws-librarian-cleanup — Gallery + Attributes background tint (Option A, T's call).
-        // Reuse the Detail View's existing section-container idiom (`RelatedNodesSection`:
-        // translucent ADAPTIVE ink in a rounded-12 rect, pad v10·h12) so the gallery reads
-        // as a distinct region on the Detail ground instead of free-floating content — NOT a
-        // new box treatment. ★ One idiom, TWO weights: Gallery is the LIGHTER tint (0.03) —
-        // photos supply their own colour, so a heavier fill becomes a visible MAT framing the
-        // images; Attributes (text/data) takes the firmer 0.05 edge (see CaptureAttributesSection).
-        // `ink` is adaptive → white@3% on the dark ground (#212121 over #1A1A1A) / ink@3% on
-        // light (#F8F9F4 over #FFFFFA).
-        .padding(.vertical, 10)
-        .padding(.horizontal, 12)
-        .background(AppearancePalette.ink.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
-        .sheet(isPresented: $showingPicker) {
-            MediaPickerWrapper { results in
-                Task { await handlePickedMedia(results) }
+    }
+
+    /// SPIKE v3 — right-side metadata for a gallery spine (reference geometry).
+    /// The 3-thumb overlap stack rides ONLY in the COLLAPSED row (it stands in for
+    /// the hidden media); the EXPANDED row shows the count alone (the grid is right
+    /// below it). Count is always present.
+    private var galleryMetadata: some View {
+        HStack(spacing: 6) {
+            if !isExpanded { thumbstack }
+            Text("\(galleryItems.count)")
+                .font(.system(size: 12))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.30))
+                .monospacedDigit()
+        }
+    }
+
+    /// Collapsed-row thumbstack: 3 overlapping thumbs (19pt, r5, 1.5pt
+    /// container-fill ring so overlaps don't collide — reference `margin-left:-7`).
+    private var thumbstack: some View {
+        let shown = Array(galleryItems.prefix(3))
+        let thumb: CGFloat = 19
+        let step: CGFloat = 12          // 19 thumb − 7 overlap
+        // Ring = the container fill (app raised-panel surface) so overlaps read cut out.
+        let ring = colorScheme == .dark
+            ? AppearancePalette.bgElevated
+            : Color(hexString: EntryContainerStyle.fillLightHex)
+        return ZStack(alignment: .leading) {
+            ForEach(Array(shown.enumerated()), id: \.element.id) { idx, gItem in
+                GalleryItemTile(galleryItem: gItem, nodeID: nodeID, parentItem: item)
+                    .frame(width: thumb, height: thumb)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .strokeBorder(ring, lineWidth: 1.5)
+                    )
+                    .offset(x: CGFloat(idx) * step)
+                    .zIndex(Double(shown.count - idx))
             }
         }
-        .sheet(isPresented: $showingReorder) {
-            GalleryReorderSheet(item: item, nodeID: nodeID)
-                .environment(store)
-        }
-        .fullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
-            GalleryFullscreenViewer(
-                galleryItems: galleryItems,
-                nodeID: nodeID,
-                parentItem: item,
-                startIndex: start.index,
-                onRequestDelete: { gItem in
-                    // Stash the ID — the actual store delete runs in the
-                    // dismiss callback above so the card behind the sheet
-                    // can't mutate while the viewer is still visible.
-                    pendingDeletion = gItem.id
+        // F2 — leading alignment: `.offset` doesn't grow the ZStack's intrinsic
+        // width (19pt), so a default (center) frame would push the offset thumbs
+        // PAST the frame's right edge, INTO the count. Leading pins thumb 0 at x=0
+        // so the last thumb's right edge = the frame width (no overflow into count).
+        .frame(width: thumb + CGFloat(max(shown.count - 1, 0)) * step, height: thumb,
+               alignment: .leading)
+    }
+
+    /// The gallery's presentations (add-picker, reorder sheet, fullscreen viewer,
+    /// import-failure alert). Applied by both renderings; only one is in the tree
+    /// per instance (spine vs legacy) so the bindings never double-present.
+    private func galleryPresentations<V: View>(_ content: V) -> some View {
+        content
+            .sheet(isPresented: $showingPicker) {
+                MediaPickerWrapper { results in
+                    Task { await handlePickedMedia(results) }
                 }
-            )
-            .environment(store)
-        }
-        .alert("Couldn’t add \(importFailureCount) \(importFailureCount == 1 ? "item" : "items")",
-               isPresented: $showImportFailure) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("They may be stored in iCloud and need to be downloaded first. Try again once they’ve finished downloading.")
-        }
+            }
+            .sheet(isPresented: $showingReorder) {
+                GalleryReorderSheet(item: item, nodeID: nodeID)
+                    .environment(store)
+            }
+            .fullScreenCover(item: $viewerStart, onDismiss: flushPendingDeletion) { start in
+                GalleryFullscreenViewer(
+                    galleryItems: galleryItems,
+                    nodeID: nodeID,
+                    parentItem: item,
+                    startIndex: start.index,
+                    onRequestDelete: { gItem in
+                        // Stash the ID — the actual store delete runs in the
+                        // dismiss callback above so the card behind the sheet
+                        // can't mutate while the viewer is still visible.
+                        pendingDeletion = gItem.id
+                    }
+                )
+                .environment(store)
+            }
+            .alert("Couldn’t add \(importFailureCount) \(importFailureCount == 1 ? "item" : "items")",
+                   isPresented: $showImportFailure) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("They may be stored in iCloud and need to be downloaded first. Try again once they’ve finished downloading.")
+            }
     }
 
     /// Runs after the fullscreen viewer fully dismisses. If a per-item

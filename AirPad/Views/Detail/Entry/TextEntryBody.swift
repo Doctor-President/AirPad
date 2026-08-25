@@ -28,6 +28,13 @@ struct TextEntryBody: View {
     var onToggleExpansion: () -> Void = {}
     var reorderActive: Bool = false
     var headingFont: Font? = nil
+    /// ws-entry-containers — the shared entry-level options (promote / rename /
+    /// duplicate / copy / backlink / delete), EntryCard-owned. Combined below Read
+    /// Aloud into the note's "..." menu (`noteGripMenu`). Nil → Read Aloud only.
+    var optionsMenu: AnyView? = nil
+    /// ws-entry-containers (4b) — the reorder grip drag handle (EntryCard's
+    /// `dragRecognizer`), forwarded to the collapsed row's grip. Nil → no grip.
+    var gripDragHandle: AnyView? = nil
 
     @Environment(CorpusStore.self) private var store
     @Environment(AppRouter.self) private var router
@@ -101,7 +108,9 @@ struct TextEntryBody: View {
                     .padding(.leading, EntrySpineRow<EmptyView>.textMargin)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .overlay(alignment: .topLeading) { chevronOverlay }
-                    .overlay(alignment: .topTrailing) { gripOverlay }
+                    // Expanded: "..." ONLY (no grip — reorder is a collapsed-row
+                    // gesture), positioned at the SAME x it holds when collapsed.
+                    .overlay(alignment: .topTrailing) { optionsOverlay }
             } else {
                 // Collapsed — the static derived first-line row (plain-text A3),
                 // same style/geometry as line 1 so the row reads invariant.
@@ -112,11 +121,38 @@ struct TextEntryBody: View {
                     reorderActive: reorderActive,
                     nameFont: headingFont ?? .body,
                     onToggle: onToggleExpansion,
-                    trailing: { EmptyView() }
+                    trailing: { EmptyView() },
+                    optionsMenu: noteGripMenu,
+                    gripDragHandle: gripDragHandle
                 )
             }
         }
         .entrySpineContainer()
+    }
+
+    /// The note's grip options menu — Read Aloud (the note-specific action, which
+    /// needs the LIVE `editingText`, so it stays here rather than in EntryCard)
+    /// followed by the shared entry-level options (`optionsMenu`, EntryCard-owned).
+    private var noteGripMenu: AnyView {
+        let tts = SpeechSynthesisService.shared
+        let text = editingText
+        let speaking = tts.activeToken == item.id && tts.isSpeaking && !tts.isPaused
+        return AnyView(
+            Group {
+                Button {
+                    tts.toggle(token: item.id, text: text)
+                } label: {
+                    Label(speaking ? "Pause reading" : "Read aloud",
+                          systemImage: speaking ? "pause.fill" : "speaker.wave.2.fill")
+                }
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                if let optionsMenu {
+                    Divider()
+                    optionsMenu
+                }
+            }
+        )
     }
 
     /// Expanded-state chevron — floats in the gutter, vertically centred on line 1
@@ -135,15 +171,24 @@ struct TextEntryBody: View {
         .disabled(reorderActive)
     }
 
-    /// Expanded-state grip — VISUAL ONLY, trailing, tracking line 1. Non-interactive
-    /// so touches reach the editor / background recognizer.
-    private var gripOverlay: some View {
-        Text("⠿")
-            .font(.system(size: 14, weight: .regular))
-            .tracking(1)
-            .foregroundStyle(AppearancePalette.ink.opacity(0.30))
-            .frame(height: EntrySpineRow<EmptyView>.rowHeight)
-            .allowsHitTesting(false)
+    /// Expanded-state "..." options button — TAP-ONLY menu (Read Aloud + entry
+    /// options), tracking line 1 at the trailing edge. The `.trailing` padding =
+    /// the reserved grip-slot width + the row gap (10), so it holds the SAME
+    /// x-position as the collapsed row's "..." (which sits just left of the grip
+    /// slot). No grip in the expanded state — reorder is a collapsed-row gesture.
+    private var optionsOverlay: some View {
+        Menu { noteGripMenu } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.2 : 0.55))
+                .frame(width: EntrySpineRow<EmptyView>.optionsWidth,
+                       height: EntrySpineRow<EmptyView>.rowHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(reorderActive)
+        .padding(.trailing, EntrySpineRow<EmptyView>.gripSlotWidth + 10)
+        .accessibilityIdentifier("entryOptions")
     }
 
     /// The editable text surface + its edit-time hooks (picker). The persistence

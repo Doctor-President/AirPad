@@ -59,6 +59,15 @@ final class EntryReorderController {
 
     private(set) var mode: Mode = .inactive
 
+    #if DEBUG
+    /// ws-entry-containers hold-drag repro (2026-08-24, THROWAWAY) — counts every
+    /// `lift(...)` call, i.e. every time the background `LongPressDragRecognizer`
+    /// fires `.began` and reaches the controller. A UI-test synthesized long-press
+    /// reads this via the `-SPINEGATE` HUD to OBSERVE whether the touch reached the
+    /// recognizer at all (vs. being consumed by foreground container content).
+    private(set) var debugLiftAttempts = 0
+    #endif
+
     /// Frozen at engage time. Used to compute drop indices and parting
     /// offsets without reading from the (potentially mutating) store.
     private(set) var snapshot: [String] = []
@@ -87,11 +96,16 @@ final class EntryReorderController {
 
     // MARK: - Tunables
 
-    /// Vertical pitch (card height + spacing) between consecutive collapsed
-    /// cards in the scroll list. Derived from EntryCard's collapsed height
-    /// (44pt title row + 12pt × 2 padding = 68pt) plus NodeDetailView's
-    /// VStack spacing (24pt). Re-tune if either changes.
-    static let slotPitch: CGFloat = 92
+    /// Vertical pitch (card height + spacing) between consecutive collapsed cards
+    /// in the scroll list. ws-entry-containers (4b, 2026-08-24): the container
+    /// idiom changed the collapsed card to `EntrySpineRow` (28pt row) +
+    /// `entrySpineContainer` vertical padding (12pt × 2) = 52pt, and
+    /// `NodeDetailView`'s inter-card spacing defaults to 4pt (`interCardSpacing`)
+    /// → 56pt. (Was 92 = the old 68pt title card + 24pt spacing, which drove the
+    /// drag parting/drop math ~36pt off per slot on container entries.) A
+    /// non-default `interCardSpacing` tuner value still drifts this — device-tune
+    /// if the drop target feels off.
+    static let slotPitch: CGFloat = 56
 
     static let liftedScale: CGFloat = 1.05
     static let liftedShadowOpacity: Double = 0.2
@@ -121,6 +135,9 @@ final class EntryReorderController {
     /// rejected it (already lifting something else, or item not found).
     @discardableResult
     func lift(itemID: String, snapshotIDs: [String]) -> Bool {
+        #if DEBUG
+        debugLiftAttempts += 1
+        #endif
         switch mode {
         case .lifted:
             return false

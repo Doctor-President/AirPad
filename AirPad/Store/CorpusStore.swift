@@ -4557,6 +4557,51 @@ final class CorpusStore {
         await updateNode(updated)
     }
 
+    // MARK: - Attributes arrange mode (ws-attributes-grid P2)
+
+    /// Commit an arrange-mode session's per-tile LAYOUT — SIZE and grid POSITION together
+    /// — in ONE write (ws-attributes-grid P3, the Home Screen model). Arranging is a
+    /// PRESENTATION choice, not a content edit, so `updatedAt` is deliberately LEFT
+    /// UNTOUCHED. Mutates the existing `AttributeTile` IN PLACE (so future provenance
+    /// survives), minting one only when absent.
+    ///
+    /// ★ This is also the LAZY MIGRATION: the caller passes the FULL resolved layout for
+    /// every `.field` tile on the node (including tiles the user didn't touch, at their
+    /// derived first-free positions), so a node's first arrange FREEZES its whole current
+    /// layout into stored positions — from then on the grid honours placement literally
+    /// and holes persist. Tiles already matching their target are skipped; a no-op arrange
+    /// writes nothing. Position REPLACES the old array-order reorder (`commitFieldOrder`
+    /// retired): the underlying `items` order is left untouched — layout is now positional.
+    func commitAttributeLayout(
+        _ layout: [String: (size: AttributeSizeClass, position: AttributeGridPosition)],
+        nodeID: String
+    ) async {
+        guard !layout.isEmpty,
+              let nIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
+        var updated = nodes[nIdx]
+        var changed = false
+        for (itemID, target) in layout {
+            guard let iIdx = updated.items.firstIndex(where: { $0.id == itemID && $0.type == .field })
+            else { continue }
+            let current = updated.items[iIdx].attributeTile
+            // Skip tiles already at the exact target (size AND position) — keeps a no-op
+            // arrange, or an unchanged tile in a real arrange, from a needless write.
+            if current?.sizeClass == target.size && current?.position == target.position { continue }
+            if updated.items[iIdx].attributeTile != nil {
+                updated.items[iIdx].attributeTile?.sizeClass = target.size
+                updated.items[iIdx].attributeTile?.position = target.position
+            } else {
+                updated.items[iIdx].attributeTile = AttributeTile(sizeClass: target.size,
+                                                                  position: target.position)
+            }
+            changed = true
+        }
+        guard changed else { return }
+        // updatedAt intentionally NOT bumped — arranging is not editing.
+        nodes[nIdx] = updated
+        await persistNode(updated)
+    }
+
     /// Stage 5.3 — add a value to a `vocabulary` definition's list. ★ This is the
     /// first value-editor write to CORPUS-LEVEL state — it mutates the DEFINITION
     /// and persists `field_definitions.json`, so the value is immediately

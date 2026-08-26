@@ -185,6 +185,15 @@ struct NodeItem: Codable, Identifiable, Equatable {
     /// non-chats entry and on legacy JSON — no `entrySchemaVersion` bump.
     var chatSessionIDs: [String]?
 
+    /// ws-attributes-grid — per-node presentation for an atomic attribute (`.field`
+    /// / `.rating`) in the attributes cell grid: the grid footprint it takes, which
+    /// SELECTS its rendering. Nil = the kind's migration/creation default
+    /// (`FieldKind.defaultSizeClass`). A typed nested struct shaped to carry future
+    /// per-attribute provenance without a migration (see `AttributeTile`). Additive
+    /// optional, synthesized decode-tolerant, nil on every non-atomic entry and on
+    /// legacy JSON — no `entrySchemaVersion` bump.
+    var attributeTile: AttributeTile?
+
     enum CodingKeys: String, CodingKey {
         case id, type, content, file, description, transcript, url, title, preview
         case createdAt = "created_at"
@@ -207,6 +216,7 @@ struct NodeItem: Codable, Identifiable, Equatable {
         case rating
         case chatSessionIDs = "chat_session_ids"
         case field
+        case attributeTile = "attribute_tile"
     }
 }
 

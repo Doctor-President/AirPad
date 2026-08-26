@@ -53,8 +53,35 @@ struct AttributeTile: Codable, Equatable {
     /// The tile's grid footprint, which selects its rendering.
     var sizeClass: AttributeSizeClass
 
+    /// ws-attributes-grid P3 — the tile's STORED grid position (the iOS-18 Home Screen
+    /// model, T 2026-08-25): position is placed, not derived from array order, so
+    /// deliberate empty cells (interior holes) are legitimate composition and a resize
+    /// never reshuffles neighbours. Coordinates live in the canonical 4-column space
+    /// (see `AttributeGridPosition`). Nil = the position hasn't been authored yet: the
+    /// grid DERIVES it from the same first-free-cell pack the pre-P3 layout used, so an
+    /// un-arranged node renders identically (lazy migration — the whole node's layout is
+    /// frozen into stored positions on its first arrange). Additive optional,
+    /// `decodeIfPresent` — no `entrySchemaVersion` bump.
+    var position: AttributeGridPosition?
+
     enum CodingKeys: String, CodingKey {
         case sizeClass = "size_class"
+        case position
+    }
+}
+
+/// A tile's placed position in the attributes cell grid — row (grows unbounded) and
+/// column (0..<4, the canonical grid width). Typed (not two bare Ints on `AttributeTile`)
+/// so a footprint that runs off the grid can never be represented ambiguously, matching
+/// the "typed nested struct" discipline the rest of this schema keeps.
+struct AttributeGridPosition: Codable, Equatable {
+    /// Row index (0-based, top). Rows grow as needed; there is no ceiling.
+    var row: Int
+    /// Column index in the 4-wide grid (0...3 for the tile's LEADING cell).
+    var col: Int
+
+    enum CodingKeys: String, CodingKey {
+        case row, col
     }
 }
 

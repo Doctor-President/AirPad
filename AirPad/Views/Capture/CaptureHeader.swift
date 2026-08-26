@@ -234,14 +234,18 @@ struct CaptureAttributesSection: View {
             Spacer(minLength: 0)
             if isArranging {
                 // Exit arrange mode → commits the new sizes (one write, updatedAt untouched).
-                Button("Done") { isArranging = false }
+                // P4 — animate so the ATTRIBUTES panel shrinks its phantom row (and the
+                // sections below slide back up) instead of popping.
+                Button("Done") { withAnimation(.snappy(duration: 0.26)) { isArranging = false } }
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                     .buttonStyle(.plain)
             } else {
                 // Q3 arrange glyph — quiet, only when there's something to arrange.
                 if !fieldItems.isEmpty {
-                    Button { isArranging = true } label: {
+                    // P4 — animate the panel GROWING one row (and pushing the sections below
+                    // down): the motion IS the "here's room to move things" signal.
+                    Button { withAnimation(.snappy(duration: 0.26)) { isArranging = true } } label: {
                         Image(systemName: "square.grid.2x2")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(AppearancePalette.ink.opacity(0.55))

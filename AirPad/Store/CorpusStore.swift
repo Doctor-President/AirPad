@@ -4559,50 +4559,45 @@ final class CorpusStore {
 
     // MARK: - Attributes arrange mode (ws-attributes-grid P2)
 
-    /// Commit an arrange-mode session's per-tile SIZES in ONE write. Resizing a tile is
-    /// a PRESENTATION choice, not a content edit, so `updatedAt` is deliberately LEFT
-    /// UNTOUCHED (same rule as reorder — "arranging is not editing"). Mutates
-    /// `attributeTile.sizeClass` IN PLACE where the tile already exists (so future
-    /// provenance fields survive), minting a fresh `AttributeTile` only when absent.
-    /// No-op if nothing actually changed. Persists via `persistNode` (which does not
-    /// bump `updatedAt`).
-    func commitAttributeSizes(_ sizes: [String: AttributeSizeClass], nodeID: String) async {
-        guard !sizes.isEmpty,
+    /// Commit an arrange-mode session's per-tile LAYOUT — SIZE and grid POSITION together
+    /// — in ONE write (ws-attributes-grid P3, the Home Screen model). Arranging is a
+    /// PRESENTATION choice, not a content edit, so `updatedAt` is deliberately LEFT
+    /// UNTOUCHED. Mutates the existing `AttributeTile` IN PLACE (so future provenance
+    /// survives), minting one only when absent.
+    ///
+    /// ★ This is also the LAZY MIGRATION: the caller passes the FULL resolved layout for
+    /// every `.field` tile on the node (including tiles the user didn't touch, at their
+    /// derived first-free positions), so a node's first arrange FREEZES its whole current
+    /// layout into stored positions — from then on the grid honours placement literally
+    /// and holes persist. Tiles already matching their target are skipped; a no-op arrange
+    /// writes nothing. Position REPLACES the old array-order reorder (`commitFieldOrder`
+    /// retired): the underlying `items` order is left untouched — layout is now positional.
+    func commitAttributeLayout(
+        _ layout: [String: (size: AttributeSizeClass, position: AttributeGridPosition)],
+        nodeID: String
+    ) async {
+        guard !layout.isEmpty,
               let nIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
         var updated = nodes[nIdx]
         var changed = false
-        for (itemID, size) in sizes {
-            guard let iIdx = updated.items.firstIndex(where: { $0.id == itemID && $0.type == .field }),
-                  updated.items[iIdx].attributeTile?.sizeClass != size else { continue }
+        for (itemID, target) in layout {
+            guard let iIdx = updated.items.firstIndex(where: { $0.id == itemID && $0.type == .field })
+            else { continue }
+            let current = updated.items[iIdx].attributeTile
+            // Skip tiles already at the exact target (size AND position) — keeps a no-op
+            // arrange, or an unchanged tile in a real arrange, from a needless write.
+            if current?.sizeClass == target.size && current?.position == target.position { continue }
             if updated.items[iIdx].attributeTile != nil {
-                updated.items[iIdx].attributeTile?.sizeClass = size
+                updated.items[iIdx].attributeTile?.sizeClass = target.size
+                updated.items[iIdx].attributeTile?.position = target.position
             } else {
-                updated.items[iIdx].attributeTile = AttributeTile(sizeClass: size)
+                updated.items[iIdx].attributeTile = AttributeTile(sizeClass: target.size,
+                                                                  position: target.position)
             }
             changed = true
         }
         guard changed else { return }
         // updatedAt intentionally NOT bumped — arranging is not editing.
-        nodes[nIdx] = updated
-        await persistNode(updated)
-    }
-
-    /// Commit an arrange-mode REORDER: reassign the `.field` items into `orderedFieldIDs`
-    /// order, WITHIN their existing atomic-prefix slots (non-field items stay put, so the
-    /// atomic-front + foldIndex invariants hold). `updatedAt` LEFT UNTOUCHED — reordering
-    /// is not editing. No-op if the order is unchanged or doesn't match the field set.
-    func commitFieldOrder(_ orderedFieldIDs: [String], nodeID: String) async {
-        guard let nIdx = nodes.firstIndex(where: { $0.id == nodeID }) else { return }
-        var updated = nodes[nIdx]
-        let fieldSlots = updated.items.indices.filter { updated.items[$0].type == .field }
-        let byID = Dictionary(updated.items.filter { $0.type == .field }.map { ($0.id, $0) },
-                              uniquingKeysWith: { a, _ in a })
-        let newFields = orderedFieldIDs.compactMap { byID[$0] }
-        guard newFields.count == fieldSlots.count else { return }   // safety: same set
-        // No-op if already in this order.
-        if fieldSlots.map({ updated.items[$0].id }) == newFields.map(\.id) { return }
-        for (slot, field) in zip(fieldSlots, newFields) { updated.items[slot] = field }
-        // updatedAt intentionally NOT bumped.
         nodes[nIdx] = updated
         await persistNode(updated)
     }

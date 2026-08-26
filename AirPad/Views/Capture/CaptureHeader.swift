@@ -174,6 +174,8 @@ struct CaptureAttributesSection: View {
 
     @Environment(CorpusStore.self) private var store
     @State private var editingItem: NodeItem? = nil
+    /// ws-attributes-grid P2 — arrange mode (resize tiles). Toggled by the header glyph.
+    @State private var isArranging = false
 
     private var node: Node? { store.nodes.first { $0.id == nodeID } }
 
@@ -189,7 +191,7 @@ struct CaptureAttributesSection: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader
             if !fieldItems.isEmpty {
-                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems)
+                FieldPairsGrid(nodeID: nodeID, fieldItems: fieldItems, isArranging: isArranging)
             }
             if !nonFieldAtomics.isEmpty {
                 VStack(alignment: .leading, spacing: 0) {
@@ -230,14 +232,33 @@ struct CaptureAttributesSection: View {
                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
                 .modifier(MeasureIf(measured: measured, id: "attrText"))
             Spacer(minLength: 0)
-            Button { showFieldSheet = true } label: {
-                Image(systemName: "plus")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+            if isArranging {
+                // Exit arrange mode → commits the new sizes (one write, updatedAt untouched).
+                Button("Done") { isArranging = false }
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                    .buttonStyle(.plain)
+            } else {
+                // Q3 arrange glyph — quiet, only when there's something to arrange.
+                if !fieldItems.isEmpty {
+                    Button { isArranging = true } label: {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { showFieldSheet = true } label: {
+                    Image(systemName: "plus")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 

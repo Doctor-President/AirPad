@@ -143,6 +143,7 @@
 		85903919E22420C824ADCD93 /* CanvasScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592EF17AD51166EAA3E577F2 /* CanvasScope.swift */; };
 		868B804EAA857627DC429F67 /* DocumentQuickLookViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B88D3F84112712169492D89 /* DocumentQuickLookViewer.swift */; };
 		86C3217B7B90105732A120FA /* ClipboardContentRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */; };
+		872217B757A952ED832C6741 /* AttributeTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */; };
 		8943F983244CAFA176DC3313 /* TagCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A18AD80C0FCB6B5E928844 /* TagCreationSheet.swift */; };
 		89E7C55E1D0C63E7C5D191D6 /* NodeItemType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */; };
 		8A4950423895F7ECE2B4D88E /* ThreadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B01CAFC639E0B10C51EF1BE3 /* ThreadService.swift */; };
@@ -287,6 +288,7 @@
 		FCC7997009DE3B635D382FFF /* VoiceCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A238E9F8D77085D1515EA6C /* VoiceCaptureSheet.swift */; };
 		FCF0EF49EFC72072CD23BFC4 /* EntryReorderController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187960A25A4BDEA3F5BABA31 /* EntryReorderController.swift */; };
 		FD2F516F643CD089B6E84F12 /* ClipboardContentRouterDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */; };
+		FFD48E6B856977AF776488D7 /* AttributeTile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -449,6 +451,7 @@
 		7B05C305C5A28D74F771BA11 /* UMAPFuzzySet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPFuzzySet.swift; sourceTree = "<group>"; };
 		7DA33E483A4D9242E12537AA /* UMAPFindAB.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPFindAB.swift; sourceTree = "<group>"; };
 		7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDeletionDiagnostic.swift; sourceTree = "<group>"; };
+		7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributeTile.swift; sourceTree = "<group>"; };
 		7ED3DACE683F20031A4F5E03 /* NodeItemType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NodeItemType.swift; sourceTree = "<group>"; };
 		7F19812DD57D0DCB22CB98F5 /* HostPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostPairing.swift; sourceTree = "<group>"; };
 		7F65B5EE1F36033500EF4B74 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
@@ -895,6 +898,7 @@
 		84008F6D3FD02352A4C35D02 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				7E766D5A76F8E33EC9A24C07 /* AttributeTile.swift */,
 				DD4733E2421E070A68925125 /* BatchParser.swift */,
 				6DA455CC2574E70F9D6202E3 /* CanvasLayout.swift */,
 				592EF17AD51166EAA3E577F2 /* CanvasScope.swift */,
@@ -1325,6 +1329,7 @@
 				D3E0730ECFE302BBC58A79C0 /* AppDelegate.swift in Sources */,
 				C333CD1EB11BAB691BB68679 /* AppRouter.swift in Sources */,
 				3687E0F23E8567FA598FD175 /* AppearancePalette.swift in Sources */,
+				FFD48E6B856977AF776488D7 /* AttributeTile.swift in Sources */,
 				536D8F5AEBC887BD1A87C990 /* AutoScrollDriver.swift in Sources */,
 				48043B3C310828936B349842 /* BGEMicro.mlpackage in Sources */,
 				1D608EF5021F6603E6048269 /* BackgroundGridNode.swift in Sources */,
@@ -1546,6 +1551,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				872217B757A952ED832C6741 /* AttributeTile.swift in Sources */,
 				A13084DE621F1F87415AC97F /* BatchParser.swift in Sources */,
 				F9BF2E691950BCBE9DA2906C /* CanvasLayout.swift in Sources */,
 				0322D64C0EE47E45F43BB07A /* CanvasScope.swift in Sources */,

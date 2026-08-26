@@ -121,6 +121,7 @@ private struct SpineGateView: View {
             else if section == "arrange" { arrangeRepro }
             else if section == "trunc" { truncRepro }
             else if section == "typesizes" { typeSizesRepro }
+            else if section == "sizematrix" { sizeMatrixRepro }
             else { entriesRepro }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -176,6 +177,7 @@ private struct SpineGateView: View {
                 store.fieldDefinitions = SpineGateView.truncDefs()
             case "typesizes":
                 store.fieldDefinitions = SpineGateView.recipeDefs()
+            case "sizematrix": break   // self-contained sampler (builds its own defs/values)
             default: store.nodes = [node]
             }
         }
@@ -279,6 +281,21 @@ private struct SpineGateView: View {
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("arrHUD")
                 #endif
+                // P4 — ONE-ROW node in arrange: the panel must contain the occupied row PLUS
+                // one empty "next page" row of recess cells, with NOTHING drawn outside the
+                // rounded background (the phantom row used to bleed onto the sections below).
+                mewtwoCaption("P4 — ONE ROW + phantom: 4 recess cells beneath, all inside the panel")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "mewtwo",
+                                   fieldItems: SpineGateView.oneRowItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05),
+                            in: RoundedRectangle(cornerRadius: 12))
+
                 mewtwoCaption("ARRANGE — grabber drag = resize · body long-press = reorder · body tap = nothing")
                 VStack(alignment: .leading, spacing: 12) {
                     FieldPairsGrid(nodeID: "mewtwo",
@@ -293,6 +310,22 @@ private struct SpineGateView: View {
             }
             .padding(16)
         }
+    }
+
+    /// P4 one-row fixture — two `.stacked` tiles fill row 0 (cols 0-1, 2-3); arrange mode
+    /// then reserves the phantom row 1 (four empty recess cells) inside the panel.
+    static func oneRowItems() -> [NodeItem] {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        func f(_ id: String, _ v: FieldPayload) -> NodeItem {
+            var it = NodeItem(id: "mf1-\(id)", type: .field, createdAt: now,
+                              field: FieldValue(definitionID: id, value: v))
+            it.attributeTile = AttributeTile(sizeClass: .stacked)
+            return it
+        }
+        return [
+            f("m-type", .vocabulary(valueIDs: ["psychic"])),
+            f("m-atk",  .number(8))
+        ]
     }
 
     /// Defect-2 probe: four tiles all forced to `.stacked` (2 units) — a vocabulary, a
@@ -397,6 +430,110 @@ private struct SpineGateView: View {
             f("r-taste",   .text("Citrusy, creamy, bright, fresh & tangy"), nil)   // default → .row
         ]
     }
+
+    // MARK: - `-SPINEGATE sizematrix` — attribute tile SHAPE-MATRIX sampler (DEBUG spike)
+
+    /// SPIKE (shape-matrix): renders EVERY `FieldKind` across the full w∈1…4 × h∈1…4 footprint
+    /// matrix (16 shapes) under a PROVISIONAL derived rendering rule (the hypothesis under
+    /// test — NOT a ruling) so T can SEE arbitrary shapes before deciding whether the fixed
+    /// footprint set {1×1,1×2,1×4,2×2} should exist at all. Fully self-contained + DEBUG-only:
+    /// builds its own definitions/values, touches NO production render path, deletes cleanly.
+    /// Launch args: `-SMKIND <kind raw>` (default number), `-SMWIDTH detail|card` (default
+    /// detail), `-SMLEN short|med|long` (default med).
+    @ViewBuilder private var sizeMatrixRepro: some View {
+        #if DEBUG
+        let kind = FieldKind(rawValue: UserDefaults.standard.string(forKey: "SMKIND") ?? "number") ?? .number
+        let isCard = (UserDefaults.standard.string(forKey: "SMWIDTH") ?? "detail") == "card"
+        let length = UserDefaults.standard.string(forKey: "SMLEN") ?? "med"
+        let columns = isCard ? 2 : 4
+        let containerW: CGFloat = isCard ? 190 : 370
+        let spacing: CGFloat = 10
+        let unitWidth = (containerW - CGFloat(columns - 1) * spacing) / CGFloat(columns)
+        let unitHeight: CGFloat = 52, rowSpacing: CGFloat = 12, colGap: CGFloat = 10
+        // The full 4×4 matrix laid out as a GRID (rows = h, cols = w) at TRUE tile sizes, then
+        // UNIFORMLY scaled to fit one screen (box + type scale together, so the empty-space
+        // ratio + clipping stay faithful) — one sheet = one screenshot.
+        let colW = (1...4).map { w -> CGFloat in let e = min(w, columns); return CGFloat(e) * unitWidth + CGFloat(e - 1) * spacing }
+        let rowH = (1...4).map { h -> CGFloat in CGFloat(h) * unitHeight + CGFloat(h - 1) * rowSpacing }
+        let gridW = colW.reduce(0, +) + colGap * 3
+        let gridH = rowH.reduce(0, +) + rowSpacing * 3
+        let scale = min(1, 384 / gridW)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("SHAPE MATRIX · \(kind.rawValue) · \(isCard ? "card 190 (2-up)" : "detail 370 (4-up)") · \(length) · ×\(String(format: "%.2f", scale))")
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.green)
+                Text("rule(HYPOTHESIS): h1&w≥3→row · w≥2&h≥2→large(big type) · 2×1→stacked · else→compact. Type FIXED (no height-scale). rows=h, cols=w. w→N badge = card collapse.")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: rowSpacing) {
+                    ForEach(1...4, id: \.self) { h in
+                        HStack(alignment: .top, spacing: colGap) {
+                            ForEach(1...4, id: \.self) { w in
+                                ShapeMatrixCell(kind: kind, w: w, h: h, length: length,
+                                                columns: columns, unitWidth: unitWidth, spacing: spacing)
+                            }
+                        }
+                    }
+                }
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: gridW * scale, height: gridH * scale, alignment: .topLeading)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        #else
+        EmptyView()
+        #endif
+    }
+
+    #if DEBUG
+    /// A realistic definition per kind for the shape-matrix sampler.
+    static func matrixDefinition(_ kind: FieldKind) -> FieldDefinition {
+        switch kind {
+        case .number:        return FieldDefinition(id: "sm", displayName: "Serves", kind: .number, config: FieldConfig())
+        case .measurement:   return FieldDefinition(id: "sm", displayName: "Weight", kind: .measurement, config: FieldConfig(dimension: .weight))
+        case .duration:      return FieldDefinition(id: "sm", displayName: "Cook time", kind: .duration, config: FieldConfig())
+        case .date:          return FieldDefinition(id: "sm", displayName: "Released", kind: .date, config: FieldConfig())
+        case .money:         return FieldDefinition(id: "sm", displayName: "Price", kind: .money, config: FieldConfig())
+        case .rating:        return FieldDefinition(id: "sm", displayName: "Rating", kind: .rating, config: FieldConfig(ratingScale: 5, ratingStyle: .stars))
+        case .location:      return FieldDefinition(id: "sm", displayName: "Origin", kind: .location, config: FieldConfig())
+        case .text:          return FieldDefinition(id: "sm", displayName: "Notes", kind: .text, config: FieldConfig())
+        case .vocabulary:    return FieldDefinition(id: "sm", displayName: "Cuisine", kind: .vocabulary,
+                                config: FieldConfig(vocabularyValues: [VocabularyValue(id: "a", label: "Dessert"), VocabularyValue(id: "b", label: "Thai"),
+                                                                       VocabularyValue(id: "c", label: "Korean"), VocabularyValue(id: "d", label: "Japanese"),
+                                                                       VocabularyValue(id: "e", label: "Chinese")]))
+        case .boolean:       return FieldDefinition(id: "sm", displayName: "Owned", kind: .boolean, config: FieldConfig())
+        case .url:           return FieldDefinition(id: "sm", displayName: "Link", kind: .url, config: FieldConfig())
+        case .nodeReference: return FieldDefinition(id: "sm", displayName: "Related", kind: .nodeReference, config: FieldConfig())
+        }
+    }
+
+    /// A realistic value per kind × length (short/med/long) — real content, not lorem.
+    static func matrixValue(_ kind: FieldKind, length: String) -> FieldPayload {
+        let short = length == "short", long = length == "long"
+        switch kind {
+        case .number:        return .number(short ? 4 : long ? 1234567890 : 1234)
+        case .measurement:   return .measurement(amount: short ? 120 : long ? 123456 : 1250, unit: "g")
+        case .duration:      return .duration(seconds: short ? 300 : long ? 356400 : 12600)
+        case .date:          return .date(Date(timeIntervalSince1970: 1_700_000_000), hasTime: long)
+        case .money:         return .money(amount: short ? 9 : long ? 1234567.89 : 1299.99, currencyCode: "USD")
+        case .rating:        return .rating(4)
+        case .location:      return .location(name: short ? "Paris" : long ? "Onomichi, Hiroshima Prefecture, Japan" : "San Francisco, CA", latitude: nil, longitude: nil)
+        case .text:          return .text(short ? "French"
+                                : long ? "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful of them all."
+                                : "Citrusy, creamy, bright, fresh & tangy")
+        case .vocabulary:    return .vocabulary(valueIDs: short ? ["a"] : long ? ["a", "b", "c", "d", "e"] : ["a", "b"])
+        case .boolean:       return .boolean(true)
+        case .url:           return .url(short ? "a.co" : long ? "https://very-long-subdomain.example-store.co.uk/catalog/item?ref=1234" : "example.com/recipes/soup")
+        case .nodeReference: return .nodeReference(nodeID: "n1")
+        }
+    }
+
+    static func matrixNodeTitle(length: String) -> String {
+        length == "short" ? "Mewtwo" : length == "long" ? "Mewtwo, the Genetic Pokémon (Kanto No. 150)" : "Mewtwo (Psychic)"
+    }
+    #endif
 
     static func truncDefs() -> [FieldDefinition] {
         [
@@ -652,6 +789,105 @@ private struct SpineGateView: View {
         }
         return Node(id: "spine-gate-\(section)", createdAt: now, updatedAt: now,
                     title: "Spine gate — \(section)", summary: "", tags: [], items: items)
+    }
+}
+
+/// One cell of the shape-matrix sampler (`-SPINEGATE sizematrix`): a kind's value rendered
+/// under the PROVISIONAL derived treatment at a true w×h box (with the card-back column
+/// clamp), FIXED type (no height-scaling), labelled with its "w×h". DEBUG-only survey scaffold
+/// — reuses `FieldValueFormatter` + `AttributeTileShell` for fidelity but does NOT touch the
+/// production `FieldPairCell` render path, so it deletes cleanly if T rules against the change.
+private struct ShapeMatrixCell: View {
+    let kind: FieldKind
+    let w: Int, h: Int
+    let length: String
+    let columns: Int
+    let unitWidth: CGFloat
+    let spacing: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let unitHeight: CGFloat = 52
+    private let rowSpacing: CGFloat = 12
+
+    private enum Treatment { case row, large, stacked, compact }
+    /// The hypothesis under test — derived from the ORIGINAL w,h (not the clamped width).
+    private var treatment: Treatment {
+        if h == 1 && w >= 3 { return .row }
+        if w >= 2 && h >= 2 { return .large }
+        if w == 2 && h == 1 { return .stacked }
+        return .compact
+    }
+    /// Card-back collapse: `columnMetrics` clamps a tile to the column count, so w=3/4 render
+    /// 2-wide at ~190pt — the survey reproduces that so the collapse is visible.
+    private var effW: Int { min(w, columns) }
+    private var tileW: CGFloat { CGFloat(effW) * unitWidth + CGFloat(effW - 1) * spacing }
+    private var tileH: CGFloat { CGFloat(h) * unitHeight + CGFloat(h - 1) * rowSpacing }
+
+    private var def: FieldDefinition { SpineGateView.matrixDefinition(kind) }
+    private var text: String? {
+        FieldValueFormatter.display(
+            FieldValue(definitionID: "sm", value: SpineGateView.matrixValue(kind, length: length)),
+            definition: def,
+            resolveNodeTitle: { _ in SpineGateView.matrixNodeTitle(length: length) })
+    }
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(width: tileW, height: tileH)
+            .background(AttributeTileShell.fill(colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(AttributeTileShell.rim(colorScheme), lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                Text("\(w)×\(h)\(effW != w ? "→\(effW)" : "")")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 2)
+                    .background(Color.black.opacity(0.35))
+                    .allowsHitTesting(false)
+            }
+    }
+
+    @ViewBuilder private var content: some View {
+        switch treatment {
+        case .row:
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                label.fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 8)
+                value(big: false)
+            }.padding(.horizontal, 12)
+        case .large:
+            VStack(alignment: .center, spacing: 6) { label; value(big: true) }.padding(12)
+        case .stacked, .compact:
+            VStack(alignment: .center, spacing: 3) { label; value(big: false) }.padding(.horizontal, 10)
+        }
+    }
+
+    private var label: some View {
+        Text(def.displayName.uppercased())
+            .font(.system(size: 9, weight: .medium, design: .serif).italic())
+            .tracking(0.7).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            .lineLimit(1).minimumScaleFactor(0.75)
+    }
+
+    @ViewBuilder private func value(big: Bool) -> some View {
+        if kind == .rating {
+            HStack(spacing: 3) {
+                ForEach(0..<5, id: \.self) { i in
+                    Image(systemName: i < 4 ? "star.fill" : "star")
+                        .font(.system(size: big ? 22 : 14, weight: .medium))
+                        .foregroundStyle(i < 4 ? Color(hexString: "FACC15") : AppearancePalette.ink.opacity(0.25))
+                }
+            }
+        } else {
+            Text(text ?? "\u{2014}")
+                .font(.system(size: big ? 34 : 14, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+                .lineLimit(treatment == .large ? 2 : 1)
+                .minimumScaleFactor(0.6)
+                .truncationMode(.tail)
+        }
     }
 }
 #endif

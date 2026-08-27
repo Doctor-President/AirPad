@@ -933,9 +933,6 @@ struct FieldPairCell: View {
     /// PROSE (text) reads from the top; every other kind is an ATOMIC-style value that
     /// centres. The anchoring split, §5.
     private var isProse: Bool { isTextKind }
-    /// A big-value LARGE tile that isn't prose or a rating row — renders the value hero-style
-    /// (fills the box). Kept as the existing large rendering; type scaling stays deferred.
-    private var isHero: Bool { treatment == .large && !isTextKind && !isRatingStars }
     private var isRatingStars: Bool {
         definition.kind == .rating && (definition.config.ratingStyle ?? .stars) == .stars
     }
@@ -1019,50 +1016,82 @@ struct FieldPairCell: View {
 
     @ViewBuilder
     private var content: some View {
-        // Content treatment DERIVED from the span's shape (§4); anchoring per §5 (prose
-        // leads/tops, atomic centres).
+        // Layout per treatment (label position); the VALUE renders per RULING 1 (T 2026-08-27):
+        // TEXT is always 14pt prose (wraps); ATOMIC FILLS the box (see `valueSlot`). Anchoring
+        // per §5 (prose leads/tops, atomic centres).
         switch treatment {
         case .row:
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                // The caption holds its intrinsic width (it's short); the VALUE is what
-                // truncates when the row is narrow — never the label down to one glyph.
-                label(large: false)
-                    .fixedSize(horizontal: true, vertical: false)
+            HStack(spacing: 10) {
+                label(large: false).fixedSize(horizontal: true, vertical: false)
                 Spacer(minLength: 8)
-                valueView(large: false, fillHeight: false)   // one horizontal line
+                valueSlot
             }
         case .large:
             VStack(alignment: isProse ? .leading : .center, spacing: 6) {
-                label(large: true)
-                if isHero {
-                    heroValue                                // atomic → big value fills (kept)
-                } else {
-                    valueView(large: true, fillHeight: true) // text prose fill / rating stars
-                }
+                label(large: true); valueSlot
             }
         case .stacked, .compact:
             VStack(alignment: isProse ? .leading : .center, spacing: 3) {
-                label(large: false)
-                valueView(large: false, fillHeight: true)
+                label(large: false); valueSlot
             }
         }
     }
 
-    /// The HERO value — sizes DYNAMICALLY to the space it's given: a short value ("106")
-    /// grows to fill; a longer one scales down. The base font is the box height (so it
-    /// fills vertically) and `minimumScaleFactor` shrinks it to fit the width — so the
-    /// value is as big as it can be in both dimensions, no dead space, no overflow.
-    private var heroValue: some View {
+    /// The value, by kind (RULING 1, T 2026-08-27): rating → stars; TEXT → 14pt prose that wraps;
+    /// everything else (ATOMIC) → FILLS the box. An empty value is a modest 14pt em dash.
+    @ViewBuilder private var valueSlot: some View {
+        if isRatingStars {
+            let v: Int = { if case .rating(let n)? = value.value { return n }; return 0 }()
+            stars(v, scale: definition.config.ratingScale ?? 5, large: treatment == .large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        } else if displayText == nil {
+            Text("\u{2014}")   // empty — present but unfilled (modest, does NOT fill)
+                .font(.system(size: 14 * typeScale, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isProse ? .topLeading : .center)
+        } else if isTextKind {
+            proseFill
+        } else {
+            fillValue
+        }
+    }
+
+    /// ATOMIC — the value FILLS THE BOX (T ruled 2026-08-27): the font grows to the allotted
+    /// HEIGHT and shrinks (via `minimumScaleFactor`) only to fit the WIDTH — whichever binds
+    /// first — FLOORED at the 14pt baseline (never below; it tail-truncates instead). No ceiling,
+    /// no per-tile normalisation (adjacent tiles WILL differ — that is the rule). ★ NO feedback
+    /// loop: the font is derived from the ALLOTTED `geo` (fixed by the footprint + label height),
+    /// and a GeometryReader is greedy — it never reports an intrinsic size back, so the fitted
+    /// font can't feed the height it's measured against (unlike the resize-gesture live frame).
+    private var fillValue: some View {
         GeometryReader { geo in
+            let h = max(geo.size.height, 14)
             Text(displayText ?? "\u{2014}")
-                .font(.system(size: max(geo.size.height, 1), weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(displayText == nil ? 0.3 : 1))
+                .font(.system(size: h, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.08)
-                // CENTER — the hero value centers with its label (was `.leading`, which
-                // left the big number left-aligned while the label centered).
+                .minimumScaleFactor(14 / h)   // shrink to fit WIDTH, but never below 14pt
+                .truncationMode(.tail)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// TEXT — 14pt prose (T ruled 2026-08-27: text is ALWAYS 14pt, never scales). Fills by
+    /// WRAPPING to as many whole lines as fit the height, top-aligned, tail-truncating past that.
+    /// NO minimumScaleFactor — it never shrinks below the baseline.
+    private var proseFill: some View {
+        let size = 14 * typeScale
+        let lineH = UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
+        return GeometryReader { geo in
+            Text(displayText ?? "\u{2014}")
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+                .lineLimit(max(1, Int((geo.size.height + 0.5) / lineH)))
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxHeight: .infinity)
     }
 
     private func label(large: Bool) -> some View {
@@ -1100,69 +1129,6 @@ struct FieldPairCell: View {
         }
     }
 
-    @ViewBuilder
-    private func valueView(large: Bool, fillHeight: Bool) -> some View {
-        if isRatingStars {
-            let v: Int = { if case .rating(let n)? = value.value { return n }; return 0 }()
-            let row = stars(v, scale: definition.config.ratingScale ?? 5, large: large)
-            // Stars are a single row (height-aware can't add rows) — CENTER them in a tall
-            // tile (atomic anchoring, §5). Type scaling to fill a tall rating is deferred.
-            if fillHeight { row.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center) }
-            else { row }
-        } else if let text = displayText {
-            if isProse && fillHeight {
-                // PROSE height-aware fill (§6): as many WHOLE lines as fit the ACTUAL height,
-                // top-aligned. NO minimumScaleFactor — the text renders at the SAME lineHeight
-                // the count is computed from (the latent bug was N at full size while
-                // minimumScaleFactor shrank the render, losing ~3 lines). Truncate with a tail
-                // ellipsis past what fits (intentional truncation — grow the tile for more).
-                let size = 14 * typeScale
-                let lineH = UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
-                GeometryReader { geo in
-                    Text(text)
-                        .font(.system(size: size, weight: .semibold))
-                        .foregroundStyle(AppearancePalette.ink)
-                        .lineLimit(attributeFillLineCount(height: geo.size.height, lineHeight: lineH))
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                }
-                .frame(maxHeight: .infinity)
-            } else {
-                // ATOMIC (or a single-line row): ONE line, centred by the outer frame (§5),
-                // scales to fit the width before it truncates (e.g. "French" on a 190pt back).
-                HStack(spacing: 5) {
-                    Text(text)
-                        .font(.system(size: (large ? 38 : 14) * typeScale, weight: .semibold))
-                        .foregroundStyle(AppearancePalette.ink)
-                        .lineLimit(1)
-                        .multilineTextAlignment(.center)
-                        .minimumScaleFactor(large ? 0.5 : 0.6)
-                        .truncationMode(.tail)
-                    urlArrow
-                }
-            }
-        } else {
-            Text("\u{2014}")   // em dash — present but unfilled
-                .font(.system(size: (large ? 38 : 14) * typeScale, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
-        }
-    }
-
-    @ViewBuilder private var urlArrow: some View {
-        if definition.kind == .url {
-            Image(systemName: "arrow.up.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-        }
-    }
-
-    /// Whole lines that fit `height` at `lineHeight` (≥1). ws-free-footprint §6: because the
-    /// prose fill uses NO minimumScaleFactor, the text renders at exactly `lineHeight`, so the
-    /// count is measured against the height it ACTUALLY renders at.
-    private func attributeFillLineCount(height: CGFloat, lineHeight: CGFloat) -> Int {
-        guard lineHeight > 0, height.isFinite, height > 0 else { return 1 }
-        return max(1, Int((height + 0.5) / lineHeight))
-    }
 
     /// Stars degrade to fit — a full row never CLIPS at a narrow size. `ViewThatFits`
     /// tries the full row, then a smaller row, then a "★ N" summary (which itself can

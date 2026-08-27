@@ -122,6 +122,7 @@ private struct SpineGateView: View {
             else if section == "trunc" { truncRepro }
             else if section == "typesizes" { typeSizesRepro }
             else if section == "sizematrix" { sizeMatrixRepro }
+            else if section == "decisions" { decisionsRepro }
             else { entriesRepro }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -178,6 +179,9 @@ private struct SpineGateView: View {
             case "typesizes":
                 store.fieldDefinitions = SpineGateView.recipeDefs()
             case "sizematrix": break   // self-contained sampler (builds its own defs/values)
+            case "decisions":
+                // Rulings 2 & 3 render PRODUCTION FieldPairsGrid → seed a text def + the mewtwo defs.
+                store.fieldDefinitions = SpineGateView.decisionDefs()
             default: store.nodes = [node]
             }
         }
@@ -648,6 +652,159 @@ private struct SpineGateView: View {
     }
     #endif
 
+    // MARK: - `-SPINEGATE decisions` — one DECISION SHEET per T ruling (DEBUG ballot)
+
+    /// The shape-matrix sheets re-shot BY RULING, one sheet = one question, labelled by the
+    /// RULING + the OPTION (not flag values). `-DECRULING 1|2|3`, `-DECOPT A|B|C`. Ruling 1
+    /// uses the sampler (type-scale isn't in production); Rulings 2 & 3 render the PRODUCTION
+    /// `FieldPairsGrid` for real fidelity. OBSERVE ONLY — no recommendation on the sheets.
+    @ViewBuilder private var decisionsRepro: some View {
+        #if DEBUG
+        let ruling = UserDefaults.standard.string(forKey: "DECRULING") ?? "1"
+        let opt = (UserDefaults.standard.string(forKey: "DECOPT") ?? "A").uppercased()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if ruling == "1" { decisionRuling1(opt) }
+                else if ruling == "2" { decisionRuling2(opt) }
+                else if ruling == "3" { decisionRuling3(opt) }
+                else { Text("-DECRULING 1|2|3  -DECOPT A|B|C").foregroundStyle(.red) }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        #else
+        EmptyView()
+        #endif
+    }
+
+    #if DEBUG
+    private func decHeader(_ ruling: String, _ question: String, _ option: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(ruling).font(.system(size: 15, weight: .heavy, design: .monospaced)).foregroundStyle(.green)
+            Text(question).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+            Text(option).font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(.primary)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(AppearancePalette.ink.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    // ── RULING 1 — TYPE SCALING (sampler; number + text at 6 shapes, one type-mode per sheet) ──
+    @ViewBuilder private func decisionRuling1(_ opt: String) -> some View {
+        let mode: SMTypeMode = opt == "B" ? .capped : opt == "C" ? .uncapped : .off
+        let optName = opt == "B" ? "OPTION B — CAPPED (type grows with height, cap \(Int(SMTypeMode.cap))pt)"
+                    : opt == "C" ? "OPTION C — UNCAPPED (type grows with height, no cap)"
+                    : "OPTION A — OFF (type fixed at current sizes — ships today)"
+        let shapes: [(Int, Int)] = [(1, 1), (2, 1), (2, 2), (2, 4), (4, 2), (4, 4)]
+        let spacing: CGFloat = 10
+        let unitWidth: CGFloat = (370 - 3 * spacing) / 4
+        // ONE uniform scale for the WHOLE sheet (T 2026-08-27) so type is comparable DOWN the
+        // sheet — the axis Ruling 1 is about. Binding constraint = the widest pair (the 4-wide
+        // shapes, number + text side by side). Everything scaled by this single factor.
+        let widths = shapes.map { (w, _) in 2 * (CGFloat(w) * unitWidth + CGFloat(w - 1) * spacing) + 14 }
+        let sheetScale = min(1, 356 / (widths.max() ?? 356))
+        let totalH = shapes.map { (_, h) in CGFloat(h) * 52 + CGFloat(h - 1) * 12 }.reduce(0, +) + 12 * CGFloat(shapes.count - 1)
+        VStack(alignment: .leading, spacing: 12) {
+            decHeader("RULING 1 — TYPE SCALING", "Should a value's type grow with the tile's height? (one rule for BOTH number and text)",
+                      "\(optName) · whole sheet ×\(String(format: "%.2f", sheetScale)) (single uniform scale) · blue badge = requested font pt")
+            Text("left = NUMBER (the OPEN question) · right = TEXT (RULED 2026-08-27: always 14pt, never scales) · uniform scale")
+                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(0..<shapes.count, id: \.self) { i in
+                    let (w, h) = shapes[i]
+                    HStack(alignment: .top, spacing: 14) {
+                        ShapeMatrixCell(kind: .number, w: w, h: h, length: "med",
+                                        columns: 4, unitWidth: unitWidth, spacing: spacing, typeMode: mode, showPt: true)
+                        ShapeMatrixCell(kind: .text, w: w, h: h, length: "med",
+                                        columns: 4, unitWidth: unitWidth, spacing: spacing, typeMode: mode, showPt: true)
+                    }
+                }
+            }
+            .scaleEffect(sheetScale, anchor: .topLeading)
+            .frame(width: (widths.max() ?? 356) * sheetScale, height: totalH * sheetScale, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // ── RULING 2 — TEXT-LARGE DEFAULT (PRODUCTION FieldPairsGrid; short/med/long/FLAVOR) ──
+    @ViewBuilder private func decisionRuling2(_ opt: String) -> some View {
+        let span = opt == "B" ? AttributeGridSpan(w: 4, h: 1)
+                 : opt == "C" ? AttributeGridSpan(w: 4, h: 2)
+                 : AttributeGridSpan(w: 2, h: 2)
+        let optName = opt == "B" ? "OPTION B — 4×1 (the old full-width growable block)"
+                    : opt == "C" ? "OPTION C — 4×2 (a wider default, proposed)"
+                    : "OPTION A — 2×2 (what the free-footprint build defaults to now)"
+        VStack(alignment: .leading, spacing: 12) {
+            decHeader("RULING 2 — TEXT-LARGE DEFAULT",
+                      "When a text attribute is made large, what shape should it DEFAULT to? (the user can still resize freely — this is only the default.)",
+                      optName)
+            Text("four tiles, all at this default shape: SHORT · MEDIUM · LONG · mewtwo FLAVOR (real content)")
+                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            FieldPairsGrid(nodeID: "dec2", fieldItems: SpineGateView.decision2Items(span: span),
+                           isArranging: false)
+                .frame(width: 370, alignment: .leading)
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    // ── RULING 3 — CARD-BACK COLLAPSE (PRODUCTION FieldPairsGrid at detail vs card width) ──
+    @ViewBuilder private func decisionRuling3(_ opt: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            decHeader("RULING 3 — CARD-BACK COLLAPSE",
+                      "On the card back (190pt → 2 columns) a deliberate 4-wide tile renders IDENTICALLY to a 2-wide one. Is that acceptable?",
+                      "OPTION A — ACCEPT (the card back is a summary; collapsing is fine)")
+            Text("SAME node, stacked: TOP = detail 370 (4-up) · BOTTOM = card 190 (2-up). The FLAVOR tile was made 4-wide. Watch it collapse to 2-wide below — indistinguishable from a 2×2.")
+                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("detail 370 — FLAVOR is 4-wide (full width)").font(.system(size: 9, design: .monospaced)).foregroundStyle(.green)
+                FieldPairsGrid(nodeID: "dec3", fieldItems: SpineGateView.decision3Items(),
+                               isArranging: false)
+                    .frame(width: 370, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("card 190 — the SAME 4-wide FLAVOR, clamped to 2-wide").font(.system(size: 9, design: .monospaced)).foregroundStyle(.green)
+                FieldPairsGrid(nodeID: "dec3b", fieldItems: SpineGateView.decision3Items(),
+                               isArranging: false)
+                    .frame(width: 190, alignment: .leading)
+            }
+            Text("NO real alternative short of changing the 2-column card-back FLOOR (which was ruled: stay 2-up at ~190, never a starved single column). So this is a ONE-OPTION ballot: ACCEPT, or re-open the column floor. No other choice is inventable.")
+                .font(.system(size: 11, weight: .medium)).foregroundStyle(.primary)
+                .padding(8).background(AppearancePalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    static func decisionDefs() -> [FieldDefinition] {
+        [FieldDefinition(id: "dec-text", displayName: "Flavor", kind: .text, config: FieldConfig()),
+         FieldDefinition(id: "dec-num", displayName: "Serves", kind: .number, config: FieldConfig()),
+         FieldDefinition(id: "dec-type", displayName: "Type", kind: .text, config: FieldConfig())]
+    }
+    private static func decItem(_ id: String, def: String, _ v: FieldPayload,
+                                _ span: AttributeGridSpan, _ row: Int, _ col: Int) -> NodeItem {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var it = NodeItem(id: "dec-\(id)", type: .field, createdAt: now,
+                          field: FieldValue(definitionID: def, value: v))
+        it.attributeTile = AttributeTile(span: span, position: AttributeGridPosition(row: row, col: col))
+        return it
+    }
+    /// Ruling 2 — four text tiles ALL at the option's span, stacked, SHORT/MED/LONG/FLAVOR.
+    static func decision2Items(span: AttributeGridSpan) -> [NodeItem] {
+        let long = "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful of them all."
+        let flavor = "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful Pokémon in the world."
+        let contents: [(String, String)] = [("s", "French"), ("m", "Citrusy, creamy, bright, fresh & tangy"), ("l", long), ("f", flavor)]
+        return contents.enumerated().map { (i, c) in
+            decItem("2\(c.0)", def: "dec-text", .text(c.1), span, i * span.h, 0)
+        }
+    }
+    /// Ruling 3 — a node whose FLAVOR the user made 4-wide, plus a couple of normal tiles.
+    static func decision3Items() -> [NodeItem] {
+        [ decItem("3type", def: "dec-type", .text("Psychic"), AttributeGridSpan(w: 2, h: 1), 0, 0),
+          decItem("3serves", def: "dec-num", .number(106), AttributeGridSpan(w: 2, h: 1), 0, 2),
+          decItem("3flavor", def: "dec-text",
+                  .text("Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments."),
+                  AttributeGridSpan(w: 4, h: 2), 1, 0) ]
+    }
+    #endif
+
     static func truncDefs() -> [FieldDefinition] {
         [
             FieldDefinition(id: "t-cuisine", displayName: "Cuisine", kind: .vocabulary,
@@ -910,6 +1067,13 @@ private struct SpineGateView: View {
 /// clamp), FIXED type (no height-scaling), labelled with its "w×h". DEBUG-only survey scaffold
 /// — reuses `FieldValueFormatter` + `AttributeTileShell` for fidelity but does NOT touch the
 /// production `FieldPairCell` render path, so it deletes cleanly if T rules against the change.
+/// Type-scale mode for RULING 1 (decision sheets). OFF = ships today (large ATOMIC fills like
+/// heroValue, everything else fixed 14pt); CAPPED/UNCAPPED grow every value's type with the
+/// tile height, capped at `SMTypeMode.cap` or unbounded.
+enum SMTypeMode { case off, capped, uncapped
+    static let cap: CGFloat = 80   // the cap that actually SPREADS across the range (56 bound at h=2)
+}
+
 private struct ShapeMatrixCell: View {
     let kind: FieldKind
     let w: Int, h: Int
@@ -917,6 +1081,8 @@ private struct ShapeMatrixCell: View {
     let columns: Int
     let unitWidth: CGFloat
     let spacing: CGFloat
+    var typeMode: SMTypeMode = .off
+    var showPt: Bool = false   // overlay the value's REQUESTED font pt (= rendered pt for text — no minScale)
     @Environment(\.colorScheme) private var colorScheme
 
     private let unitHeight: CGFloat = 52
@@ -960,6 +1126,32 @@ private struct ShapeMatrixCell: View {
                     .background(Color.black.opacity(0.35))
                     .allowsHitTesting(false)
             }
+            .overlay(alignment: .bottomTrailing) {
+                if showPt {
+                    // The value's requested font pt. For TEXT this IS the rendered pt (no
+                    // minimumScaleFactor); for NUMBER, minimumScaleFactor(0.4) may shrink it.
+                    Text("\(Int(valueFont))pt")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 2)
+                        .background(Color.blue.opacity(0.7))
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    /// RULING 1 — the value's font size for this shape under the type-scale mode. OFF: text is
+    /// always 14pt (height-aware line count); an ATOMIC large tile fills (∝ height, like
+    /// heroValue); everything else fixed 14pt. CAPPED/UNCAPPED: EVERY value grows ∝ height.
+    private var valueFont: CGFloat {
+        // ★ T ruled 2026-08-27: TEXT never scales with height — always 14pt, every option. So on
+        // the Ruling-1 sheets only the NUMBER varies with the type-scale mode; text is pinned.
+        if kind == .text { return 14 }
+        switch typeMode {
+        case .off:      return treatment == .large ? tileH * 0.5 : 14
+        case .capped:   return min(tileH * 0.5, SMTypeMode.cap)
+        case .uncapped: return tileH * 0.5
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -993,12 +1185,25 @@ private struct ShapeMatrixCell: View {
                         .foregroundStyle(i < 4 ? Color(hexString: "FACC15") : AppearancePalette.ink.opacity(0.25))
                 }
             }
+        } else if kind == .text {
+            // Prose fills the height with as many whole lines as fit at `valueFont` (§6 fix:
+            // no minimumScaleFactor, so the render lineHeight matches the computed one).
+            let lineH = UIFont.systemFont(ofSize: valueFont, weight: .semibold).lineHeight
+            GeometryReader { geo in
+                Text(text ?? "\u{2014}")
+                    .font(.system(size: valueFont, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .lineLimit(max(1, Int((geo.size.height + 0.5) / lineH)))
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         } else {
+            // Atomic — one line, scales to fit width before truncating; centred.
             Text(text ?? "\u{2014}")
-                .font(.system(size: big ? 34 : 14, weight: .semibold))
+                .font(.system(size: valueFont, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
-                .lineLimit(treatment == .large ? 2 : 1)
-                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
                 .truncationMode(.tail)
         }
     }

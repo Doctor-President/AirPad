@@ -19,6 +19,13 @@ enum AttrLabelStyle: CaseIterable {
     var reorders = 0
     var lifts = 0
     var moves = 0
+    /// Gesture-ambiguity diagnosis (T 2026-08-27, "holding to drag and resize gets mixed up").
+    /// Which gesture CLAIMED each arrange touch + where it landed relative to the tile and the
+    /// grabber's 44pt hit zone, newest last. `races` counts touches where a grabber drag had to
+    /// CANCEL an already-armed reorder lift — i.e. both gestures armed on the one touch.
+    var claims: [String] = []
+    var races = 0
+    func note(_ s: String) { claims.append(s); if claims.count > 6 { claims.removeFirst() } }
 }
 #endif
 
@@ -129,6 +136,9 @@ struct FieldPairsGrid: View {
     /// ws-free-footprint — the height ceiling (rows). Width ceiling is `columns`; T ruled
     /// any 1–4 × 1–4. Rows still grow unbounded for LAYOUT, but a single tile caps here.
     static let maxRows = 4
+    /// The grabber's hit-zone edge (Apple's 44pt minimum). The VISUAL grabber is 26pt — the
+    /// hit target is deliberately larger. Named here so the ambiguity probe can report against it.
+    static let grabberHit: CGFloat = 44
     static let unitSpacing: CGFloat = 10
     static let rowSpacing: CGFloat = 12
 
@@ -161,6 +171,28 @@ struct FieldPairsGrid: View {
         .background(alignment: .topLeading) { arrangeGridOverlay }   // faint 4-col grid behind tiles
         .overlay(alignment: .topLeading) { dropTargetHighlight }     // reorder landing ring above tiles
         .overlay(alignment: .topLeading) { resizeCandidateHighlight } // 2-D resize candidate outline
+        #if DEBUG
+        // Gesture-ambiguity probe HUD (T 2026-08-27) — toggle `ARRPROBE` to see, live in
+        // arrange mode, which gesture claimed each touch, where it landed vs the 44pt grabber
+        // zone, and the race count. Diagnosis only; no fix. Non-hit-testing.
+        .overlay(alignment: .top) {
+            if isArranging && UserDefaults.standard.bool(forKey: "ARRPROBE") {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("races:\(ArrangeGestureProbe.shared.races)  lifts:\(ArrangeGestureProbe.shared.lifts)  drags:\(ArrangeGestureProbe.shared.drags)")
+                        .foregroundStyle(.orange)
+                    ForEach(Array(ArrangeGestureProbe.shared.claims.enumerated()), id: \.offset) { _, c in
+                        Text(c)
+                    }
+                }
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.green)
+                .padding(4)
+                .background(Color.black.opacity(0.82))
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("arrProbeHUD")
+            }
+        }
+        #endif
         .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
         .onPreferenceChange(GridWidthKey.self) { gridWidth = $0 }
         // BUG C — the reorder gesture ended/cancelled: guarantee the lift is cleared even
@@ -355,7 +387,14 @@ struct FieldPairsGrid: View {
         ArrangeGestureProbe.shared.drags += 1
         #endif
         // The grabber owns this touch — cancel any reorder lift that raced in.
-        if draggingID != nil { draggingID = nil; dropTargetCell = nil }
+        if draggingID != nil {
+            #if DEBUG
+            // Both gestures armed on the same touch — the race the guards patch (ambiguity probe).
+            ArrangeGestureProbe.shared.races += 1
+            ArrangeGestureProbe.shared.note("RACE grab⇄lift")
+            #endif
+            draggingID = nil; dropTargetCell = nil
+        }
         let currentLayout = resolveLayout()
         guard let placed = currentLayout[tile.item.id] else { return }
         let spacing = Self.unitSpacing
@@ -364,6 +403,17 @@ struct FieldPairsGrid: View {
         if let a = activeResize, a.id == tile.item.id {
             session = a
         } else {
+            #if DEBUG
+            // Record WHERE the grabber claimed this touch — relative to the tile bounds and the
+            // 44pt grabber hit zone (bottom-trailing) — for the ambiguity diagnosis.
+            if let f = tileFrames[tile.item.id] {
+                let tx = Int(finger.x - f.minX), ty = Int(finger.y - f.minY)
+                let gx = Int(f.width - Self.grabberHit), gy = Int(f.height - Self.grabberHit)
+                let inGrab = CGFloat(tx) >= f.width - Self.grabberHit && CGFloat(ty) >= f.height - Self.grabberHit
+                ArrangeGestureProbe.shared.note(
+                    "GRAB @(\(tx),\(ty)) tile \(Int(f.width))x\(Int(f.height)) grab@[\(gx),\(gy),44] \(inGrab ? "IN" : "OUT")")
+            }
+            #endif
             // New gesture — CAPTURE the stable geometry NOW, before the tile goes live. Every
             // later frame reads these, never a fresh gridMetrics (whose unitHeight the live
             // frame would pollute — the feedback loop).
@@ -450,14 +500,19 @@ struct FieldPairsGrid: View {
     /// Long-press lifted a tile for a move.
     private func beginReorder(_ id: String) {
         // A grabber resize is in progress → the corner owns this touch; don't also lift.
-        guard activeResize == nil else { return }
+        guard activeResize == nil else {
+            #if DEBUG
+            ArrangeGestureProbe.shared.note("LIFT blocked (resize active)")   // both tried to arm
+            #endif
+            return
+        }
         draggingID = id
         dragOffset = .zero
         dragHomeOrigin = tileFrames[id]?.origin   // BUG A — the tile's top-left before it moves
         dropTargetCell = resolveLayout()[id].map { AttributeGridPosition(row: $0.row, col: $0.col) }
         #if DEBUG
-        print("[ARR] LIFT id=\(id)")
         ArrangeGestureProbe.shared.lifts += 1
+        ArrangeGestureProbe.shared.note("LIFT id=\(id.suffix(4))")   // long-press armed a reorder
         #endif
     }
 
@@ -1218,8 +1273,16 @@ enum AttributeTileShell {
     }
 
     static func fill(_ scheme: ColorScheme) -> Color {
-        let c = candidates[index]
-        return Color(hexString: scheme == .dark ? c.dark : c.light)
+        if scheme == .dark {
+            return Color(hexString: candidates[index].dark)   // dark unchanged (T ruled LIGHT only)
+        }
+        // LIGHT (T ruled 2026-08-27): the tile IS the DETAIL-VIEW GROUND, so it reads as RAISED
+        // out of the darker ink@0.05-tinted attributes zone (≈ #F4F4F0). Token =
+        // `CardSurfaceResolved.resolvedCardBackgroundHex` (#FFFFFA) — the SAME fill
+        // `NodeDetailView.detailGround` + the card faces use (derived from
+        // `AppearancePalette.cwParchmentHex`). NOT a new literal. Was the warm #FBF7EE lift,
+        // which under-contrasted the zone.
+        return Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
     }
 
     static func rim(_ scheme: ColorScheme) -> Color {

@@ -4531,6 +4531,18 @@ final class CorpusStore {
         var updated = nodes[nIdx]
         updated.items[iIdx].field?.value = value
         updated.items[iIdx].field?.upperValue = upperValue
+        // RULING 2 (T, 2026-08-27) — a TEXT attribute's DEFAULT footprint is proposed ONCE, the
+        // first time its content is created: full width, height computed to fit at 14pt, then
+        // stored like any other span. Only when the tile has no authored span yet
+        // (`attributeTile == nil`) — so it never re-grows as the user edits, and a user resize
+        // (which writes `attributeTile`) is never overridden. SAFE: a pure off-render span calc
+        // that reads the 52pt constant and never feeds row height (see `AttributeTextDefault`).
+        if updated.items[iIdx].attributeTile == nil,
+           case .text(let s)? = value,
+           !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           fieldDefinition(id: updated.items[iIdx].field?.definitionID ?? "")?.kind == .text {
+            updated.items[iIdx].attributeTile = AttributeTile(span: AttributeTextDefault.span(for: s))
+        }
         let now = Date()
         updated.items[iIdx].updatedAt = now
         updated.updatedAt = now

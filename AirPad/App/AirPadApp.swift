@@ -123,6 +123,7 @@ private struct SpineGateView: View {
             else if section == "typesizes" { typeSizesRepro }
             else if section == "sizematrix" { sizeMatrixRepro }
             else if section == "decisions" { decisionsRepro }
+            else if section == "r2default" { r2DefaultRepro }
             else { entriesRepro }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -179,7 +180,7 @@ private struct SpineGateView: View {
             case "typesizes":
                 store.fieldDefinitions = SpineGateView.recipeDefs()
             case "sizematrix": break   // self-contained sampler (builds its own defs/values)
-            case "decisions":
+            case "decisions", "r2default":
                 // Rulings 2 & 3 render PRODUCTION FieldPairsGrid → seed a text def + the mewtwo defs.
                 store.fieldDefinitions = SpineGateView.decisionDefs()
             default: store.nodes = [node]
@@ -769,6 +770,39 @@ private struct SpineGateView: View {
         }
     }
 
+    // ── RULING 2 VERIFICATION (T ruled the design, no sheet) — render each text length at the
+    // COMPUTED default span (`AttributeTextDefault.span`, the exact store path) at detail width,
+    // so the proposed at-creation heights + fill can be eyeballed in the REAL primitive. ──
+    @ViewBuilder private var r2DefaultRepro: some View {
+        let samples: [(String, String)] = [
+            ("SHORT", "French"),
+            ("MEDIUM", "Citrusy, creamy, bright, fresh & tangy"),
+            ("LONG", "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful of them all."),
+            ("FLAVOR", "A classic French almond-sponge cake layered with vanilla crème mousseline and fresh strawberries.")
+        ]
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("RULING 2 — TEXT-LARGE DEFAULT (computed ONCE at creation, then a stored span; w=4, h fits the text at 14pt; user resizes freely after)")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(.green)
+                ForEach(samples, id: \.0) { (label, text) in
+                    let span = AttributeTextDefault.span(for: text)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(label) → proposed default \(span.w)×\(span.h)")
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        FieldPairsGrid(nodeID: "r2d-\(label)",
+                                       fieldItems: [SpineGateView.decItem(label, def: "dec-text", .text(text), span, 0, 0)],
+                                       isArranging: false)
+                            .frame(width: 370, alignment: .leading)
+                            .padding(.vertical, 10).padding(.horizontal, 12)
+                            .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
     // ── RULING 2 — TEXT-LARGE DEFAULT (PRODUCTION FieldPairsGrid; short/med/long/FLAVOR) ──
     @ViewBuilder private func decisionRuling2(_ opt: String) -> some View {
         let span = opt == "B" ? AttributeGridSpan(w: 4, h: 1)
@@ -791,36 +825,65 @@ private struct SpineGateView: View {
         }
     }
 
-    // ── RULING 3 — CARD-BACK COLLAPSE (PRODUCTION FieldPairsGrid at detail vs card width) ──
+    // ── RULING 3 — CARD BACK: 2-UP vs 4-UP (a real A/B; the two options are BOTH T's own calls) ──
+    // Segmented by `-DECOPT` so each sheet is one screenshot: DECOPT A (default) = COST NODE @190
+    // (A vs B, content chosen to EXPOSE B's ~40pt cells); DECOPT B = FRAISIER honest case @190
+    // (A vs B); DECOPT C = detail 370 (A vs B, which should be IDENTICAL). A = adaptive
+    // (fixedFourUp:false, 2-up at 190); B-mode = fixedFourUp:true (4-up at 190, ~40pt cells).
     @ViewBuilder private func decisionRuling3(_ opt: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            decHeader("RULING 3 — CARD-BACK COLLAPSE",
-                      "On the card back (190pt → 2 columns) a deliberate 4-wide tile renders IDENTICALLY to a 2-wide one. Is that acceptable?",
-                      "OPTION A — ACCEPT (the card back is a summary; collapsing is fine)")
-            Text("SAME node, stacked: TOP = detail 370 (4-up) · BOTTOM = card 190 (2-up). The FLAVOR tile was made 4-wide. Watch it collapse to 2-wide below — indistinguishable from a 2×2.")
-                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("detail 370 — FLAVOR is 4-wide (full width)").font(.system(size: 9, design: .monospaced)).foregroundStyle(.green)
-                FieldPairsGrid(nodeID: "dec3", fieldItems: SpineGateView.decision3Items(),
-                               isArranging: false)
-                    .frame(width: 370, alignment: .leading)
+        VStack(alignment: .leading, spacing: 14) {
+            decHeader("RULING 3 — CARD BACK: 2-UP vs 4-UP",
+                      "Both calls are YOURS (quoted at FieldPairsGrid.swift:1343): \"stay 2-UP at ~190pt, never a single starved column\" AND \"the grid is 4 units wide\". The 2-up floor was the earlier call; the collapse is its consequence. You now want four columns everywhere (\"I don't want fragmentation\"). These sheets pick which COST you prefer — they do NOT recommend.",
+                      "A = LOSES the user's width choice on the card back (a 4-wide reads identical to a 2-wide)   ·   B = KEEPS it, but each cell is ~40pt narrow before spacing")
+            if opt == "C" {
+                // DETAIL 370 — should be IDENTICAL both ways (4-up is already what detail does).
+                Text("SHEET 3/3 · detail 370 — A and B should be IDENTICAL here (4-up is what detail already does → forcing 4-up changes NOTHING you already approved at detail width). Fraisier node.")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                r3Block("OPTION A — adaptive · 370", nid: "d3dA",
+                        items: SpineGateView.decision3FraisierItems(), width: 370, fixed: false)
+                r3Block("OPTION B — forced 4-up · 370", nid: "d3dB",
+                        items: SpineGateView.decision3FraisierItems(), width: 370, fixed: true)
+            } else if opt == "B" {
+                // FRAISIER — the honest real case (a 4-wide FLAVOR + a 2-wide RATING the user made wide).
+                Text("SHEET 2/3 · FRAISIER (honest case) @ card 190 — watch the 4-wide FLAVOR + the 2-wide RATING. A collapses both to 2-wide; B keeps them but at ~40pt units.")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                r3Block("OPTION A — 2-UP · 190", nid: "d3fA",
+                        items: SpineGateView.decision3FraisierItems(), width: 190, fixed: false)
+                r3Block("OPTION B — 4-UP FORCED · 190", nid: "d3fB",
+                        items: SpineGateView.decision3FraisierItems(), width: 190, fixed: true)
+            } else {
+                // COST NODE — content picked to expose B's ~40pt cells (French / a rating / 1,234 / a 4-wide).
+                Text("SHEET 1/3 · COST NODE @ card 190 — text \"French\" (1×1) · rating (1×1) · number 1,234 (1×1) · a 4-wide tile the user chose to keep wide. Does \"French\" fit at ~40pt? do the stars survive or fall to \"★ N\"? does 1,234 fit? (DECOPT B = Fraisier · C = detail 370)")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                r3Block("OPTION A — 2-UP (adaptive [2,4], ships today) · 190", nid: "d3cA",
+                        items: SpineGateView.decision3CostItems(), width: 190, fixed: false)
+                r3Block("OPTION B — 4-UP FORCED (fixedFourUp) · 190 → ~40pt cells", nid: "d3cB",
+                        items: SpineGateView.decision3CostItems(), width: 190, fixed: true)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("card 190 — the SAME 4-wide FLAVOR, clamped to 2-wide").font(.system(size: 9, design: .monospaced)).foregroundStyle(.green)
-                FieldPairsGrid(nodeID: "dec3b", fieldItems: SpineGateView.decision3Items(),
-                               isArranging: false)
-                    .frame(width: 190, alignment: .leading)
-            }
-            Text("NO real alternative short of changing the 2-column card-back FLOOR (which was ruled: stay 2-up at ~190, never a starved single column). So this is a ONE-OPTION ballot: ACCEPT, or re-open the column floor. No other choice is inventable.")
-                .font(.system(size: 11, weight: .medium)).foregroundStyle(.primary)
-                .padding(8).background(AppearancePalette.ink.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        }
+    }
+
+    /// One labelled RULING-3 render at a fixed width + column mode (recessed panel like the
+    /// production Attributes section, so tile fill reads truthfully).
+    private func r3Block(_ title: String, nid: String, items: [NodeItem],
+                         width: CGFloat, fixed: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(.green)
+            FieldPairsGrid(nodeID: nid, fieldItems: items, fixedFourUp: fixed, isArranging: false)
+                .frame(width: width, alignment: .leading)
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
     static func decisionDefs() -> [FieldDefinition] {
         [FieldDefinition(id: "dec-text", displayName: "Flavor", kind: .text, config: FieldConfig()),
          FieldDefinition(id: "dec-num", displayName: "Serves", kind: .number, config: FieldConfig()),
-         FieldDefinition(id: "dec-type", displayName: "Type", kind: .text, config: FieldConfig())]
+         FieldDefinition(id: "dec-type", displayName: "Type", kind: .text, config: FieldConfig()),
+         FieldDefinition(id: "dec-cuisine", displayName: "Cuisine", kind: .text, config: FieldConfig()),
+         FieldDefinition(id: "dec-cook", displayName: "Cook Time", kind: .number, config: FieldConfig()),
+         FieldDefinition(id: "dec-rating", displayName: "Rating", kind: .rating,
+                         config: FieldConfig(ratingScale: 5, ratingStyle: .stars))]
     }
     private static func decItem(_ id: String, def: String, _ v: FieldPayload,
                                 _ span: AttributeGridSpan, _ row: Int, _ col: Int) -> NodeItem {
@@ -839,13 +902,27 @@ private struct SpineGateView: View {
             decItem("2\(c.0)", def: "dec-text", .text(c.1), span, i * span.h, 0)
         }
     }
-    /// Ruling 3 — a node whose FLAVOR the user made 4-wide, plus a couple of normal tiles.
-    static func decision3Items() -> [NodeItem] {
-        [ decItem("3type", def: "dec-type", .text("Psychic"), AttributeGridSpan(w: 2, h: 1), 0, 0),
-          decItem("3serves", def: "dec-num", .number(106), AttributeGridSpan(w: 2, h: 1), 0, 2),
-          decItem("3flavor", def: "dec-text",
-                  .text("Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments."),
-                  AttributeGridSpan(w: 4, h: 2), 1, 0) ]
+    /// Ruling 3 COST NODE — content chosen to EXPOSE B's ~40pt cells (not flattering): a 1×1
+    /// text ("French"), a 1×1 rating (5-star row vs the "★ N" fallback), a 1×1 four-digit number,
+    /// and a 4-wide tile (the width choice the user is trying to preserve).
+    static func decision3CostItems() -> [NodeItem] {
+        [ decItem("3c-txt", def: "dec-cuisine", .text("French"), AttributeGridSpan(w: 1, h: 1), 0, 0),
+          decItem("3c-rat", def: "dec-rating", .rating(4), AttributeGridSpan(w: 1, h: 1), 0, 1),
+          decItem("3c-num", def: "dec-num", .number(1234), AttributeGridSpan(w: 1, h: 1), 0, 2),
+          decItem("3c-wide", def: "dec-text",
+                  .text("A four-wide flavor note the user deliberately kept wide."),
+                  AttributeGridSpan(w: 4, h: 1), 1, 0) ]
+    }
+    /// Ruling 3 FRAISIER — the honest real case: a 2-wide CUISINE, a COOK TIME + SERVES, a 2-wide
+    /// RATING, and a 4-wide FLAVOR (the deliberate width choice). Watch the wide tiles in each mode.
+    static func decision3FraisierItems() -> [NodeItem] {
+        [ decItem("3f-cui", def: "dec-cuisine", .text("French"), AttributeGridSpan(w: 2, h: 1), 0, 0),
+          decItem("3f-ck",  def: "dec-cook", .number(45), AttributeGridSpan(w: 1, h: 1), 0, 2),
+          decItem("3f-sv",  def: "dec-num", .number(8), AttributeGridSpan(w: 1, h: 1), 0, 3),
+          decItem("3f-rat", def: "dec-rating", .rating(5), AttributeGridSpan(w: 2, h: 1), 1, 0),
+          decItem("3f-fla", def: "dec-text",
+                  .text("A classic French almond-sponge cake layered with vanilla crème mousseline and fresh strawberries."),
+                  AttributeGridSpan(w: 4, h: 2), 2, 0) ]
     }
     #endif
 

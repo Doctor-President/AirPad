@@ -4573,7 +4573,7 @@ final class CorpusStore {
     /// writes nothing. Position REPLACES the old array-order reorder (`commitFieldOrder`
     /// retired): the underlying `items` order is left untouched — layout is now positional.
     func commitAttributeLayout(
-        _ layout: [String: (size: AttributeSizeClass, position: AttributeGridPosition)],
+        _ layout: [String: (span: AttributeGridSpan, position: AttributeGridPosition)],
         nodeID: String
     ) async {
         guard !layout.isEmpty,
@@ -4584,14 +4584,14 @@ final class CorpusStore {
             guard let iIdx = updated.items.firstIndex(where: { $0.id == itemID && $0.type == .field })
             else { continue }
             let current = updated.items[iIdx].attributeTile
-            // Skip tiles already at the exact target (size AND position) — keeps a no-op
+            // Skip tiles already at the exact target (span AND position) — keeps a no-op
             // arrange, or an unchanged tile in a real arrange, from a needless write.
-            if current?.sizeClass == target.size && current?.position == target.position { continue }
+            if current?.span == target.span && current?.position == target.position { continue }
             if updated.items[iIdx].attributeTile != nil {
-                updated.items[iIdx].attributeTile?.sizeClass = target.size
+                updated.items[iIdx].attributeTile?.span = target.span
                 updated.items[iIdx].attributeTile?.position = target.position
             } else {
-                updated.items[iIdx].attributeTile = AttributeTile(sizeClass: target.size,
+                updated.items[iIdx].attributeTile = AttributeTile(span: target.span,
                                                                   position: target.position)
             }
             changed = true

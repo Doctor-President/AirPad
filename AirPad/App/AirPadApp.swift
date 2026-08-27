@@ -286,6 +286,31 @@ private struct SpineGateView: View {
                     .accessibilityIdentifier("arrHUD")
                 #endif
 
+                // ALL-TALL regression repro (T's Fraisier cake): every tile h≥2, NO h==1 →
+                // the recess grid must NOT stretch ×h.
+                mewtwoCaption("ALL-TALL — every tile 1×3, no h==1 (recess must NOT stretch)")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "allTall",
+                                   fieldItems: SpineGateView.allTallItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // OCCURRENCE-3 — MIXED node (T's real Fraisier shape: one short h==1 tile + several
+                // tall). This exercises the `singles.max()` path the all-tall fix never touched: the
+                // recess must stay uniform at REST (before any resize), NOT stretch ~3×.
+                mewtwoCaption("MIXED — 1 short h==1 + several tall (recess uniform at rest — the device bug)")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "ffMix",
+                                   fieldItems: SpineGateView.mixedStretchItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
                 // ws-free-footprint VERTICAL-RESIZE FEEDBACK-LOOP fix — a MID-DRAG state forced
                 // via `debugForcedResize` (the bug lives mid-gesture; a correct end-state hides
                 // it). The first tile is stretched to a live 2-cell / 4-cell frame; with the fix
@@ -418,6 +443,25 @@ private struct SpineGateView: View {
         it.attributeTile = AttributeTile(span: AttributeGridSpan(w: w, h: h),
                                          position: AttributeGridPosition(row: row, col: col))
         return it
+    }
+    /// Repro for T's Fraisier-cake regression: a node where EVERY tile is tall (h≥2), NO h==1
+    /// tile → `AttributeGridRowHeight.unitHeight` fell back to a multi-row tile's FULL height,
+    /// stretching the recess grid ×h.
+    static func allTallItems() -> [NodeItem] {
+        [ spanItem("at1", def: "m-type", .vocabulary(valueIDs: ["psychic"]), w: 1, h: 3, 0, 0),
+          spanItem("at2", def: "m-atk", .number(10), w: 1, h: 3, 0, 1),
+          spanItem("at3", def: "m-hp", .number(45), w: 1, h: 3, 0, 2) ]
+    }
+    /// OCCURRENCE-3 repro (T's Fraisier-cake node is MIXED, not all-tall): ONE short h==1 tile
+    /// among several tall ones. The lone h==1 tile is exactly what the old `singles.max()`
+    /// sampled — if its atomic `fillValue` inflated the tile's measured height, EVERY recess row
+    /// stretched (~3×) at REST (the all-tall fix left this path untouched). With the constant unit
+    /// height the recess must stay uniform no matter what that tile's content measures.
+    static func mixedStretchItems() -> [NodeItem] {
+        [ spanItem("mx-cui", def: "m-type", .vocabulary(valueIDs: ["psychic"]), w: 2, h: 1, 0, 0),
+          spanItem("mx-ck",  def: "m-atk",  .number(35),  w: 1, h: 3, 1, 0),
+          spanItem("mx-sv",  def: "m-hp",   .number(8),   w: 1, h: 3, 1, 1),
+          spanItem("mx-rt",  def: "m-atk",  .number(120), w: 2, h: 4, 1, 2) ]
     }
     static func freeFootprintItems() -> [NodeItem] {
         [ spanItem("txt", def: "m-flavor",

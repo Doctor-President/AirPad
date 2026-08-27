@@ -216,19 +216,15 @@ struct FieldPairsGrid: View {
     }
 
     /// The tile currently rendering at a LIVE rubber-band size — the real in-flight resize, or
-    /// (DEBUG sim-gate) the forced mid-drag fixture. Both the per-tile `liveSize` and the
-    /// `unitHeight` exclusion read this, so a forced fixture behaves exactly like a live drag.
+    /// (DEBUG sim-gate) the forced mid-drag fixture. The per-tile `liveSize` reads this, so a
+    /// forced fixture behaves exactly like a live drag. (Was also read by the old content-measured
+    /// `unitHeight` to EXCLUDE the stretched tile; the row height is now a constant, so there is
+    /// no measurement to exclude — see `AttributeGridRowHeight`.)
     private func liveSize(for id: String) -> CGSize? {
         #if DEBUG
         if let d = debugForcedResize, d.tileID == id { return d.size }
         #endif
         return liveResizeFrame?.id == id ? liveResizeFrame?.size : nil
-    }
-    private var liveResizeID: String? {
-        #if DEBUG
-        if let d = debugForcedResize { return d.tileID }
-        #endif
-        return liveResizeFrame?.id
     }
 
     // MARK: - Grid occupancy helpers (pure, over the 4-column cell field)
@@ -608,31 +604,27 @@ struct FieldPairsGrid: View {
 
     private struct GridMetrics {
         let unitWidth: CGFloat
-        let unitHeight: CGFloat      // the uniform AttributeGridRowHeight.unitHeight (P4 source)
+        let unitHeight: CGFloat      // the uniform AttributeGridRowHeight.unit (design constant)
         let rowTops: [CGFloat]       // count = rowCount + 1
         let rowHeights: [CGFloat]    // count = rowCount
     }
 
-    /// Reconstruct the cell geometry from the true grid width + the rendered tile frames.
-    /// Non-flex rows are the uniform `unitHeight` (the SAME `AttributeGridRowHeight` rule the
-    /// Layout uses); a growable-text row takes its measured height. The row count is the
-    /// shared `displayedRowCount` — content rows plus the phantom "next page" row while
-    /// arranging — so this overlay's last row matches the panel's reserved bottom exactly.
+    /// Reconstruct the cell geometry from the true grid width + the shared row-height constant.
+    /// Every row is the uniform `AttributeGridRowHeight.unit` — the SAME value the Layout places
+    /// tiles at, so the recess and the tiles can't drift. The row count is the shared
+    /// `displayedRowCount` — content rows plus the phantom "next page" row while arranging — so
+    /// this overlay's last row matches the panel's reserved bottom exactly.
     private func gridMetrics() -> GridMetrics? {
         guard gridWidth > 0 else { return nil }
         let unitWidth = (gridWidth - CGFloat(Self.columns - 1) * Self.unitSpacing) / CGFloat(Self.columns)
         guard unitWidth > 0 else { return nil }
         let layout = resolveLayout()
-        // EXCLUDE the tile mid-resize — its rendered frame is the LIVE rubber-band size, not
-        // evidence of a row height. Including it inflates unitHeight (it's still h==1 in the
-        // model but stretched in points), which stretches every overlay row AND poisons the
-        // resize quantizer's denominator (T 2026-08-26, the vertical-resize feedback loop).
-        let resizingID = liveResizeID
-        let unitHeight = AttributeGridRowHeight.unitHeight(
-            from: layout.compactMap { (id, p) in
-                guard id != resizingID else { return nil }
-                return tileFrames[id].map { ($0.height, p.h, p.flexible) }
-            })
+        // The row height is a DESIGN CONSTANT (see `AttributeGridRowHeight`), NOT a measurement,
+        // so this overlay geometry reads the IDENTICAL value the Layout places tiles at — the
+        // recess can no longer drift from the tiles. This closes the OCCURRENCE-3 stretch: the
+        // old height was measured from `tileFrames` here and from `sizeThatFits` in the Layout
+        // (excluding the live-resize tile, T 2026-08-26) — two derivations that disagreed.
+        let unitHeight = AttributeGridRowHeight.unit
         let rowCount = displayedRowCount(layout)
         guard rowCount > 0 else {
             return GridMetrics(unitWidth: unitWidth, unitHeight: unitHeight, rowTops: [0], rowHeights: [])
@@ -1319,21 +1311,31 @@ extension View {
     }
 }
 
-/// ws-attributes-grid P4 — the ONE uniform cell-row-height rule, called by BOTH
-/// `AttributeCellGrid.layout(for:width:)` (measured subview heights) and
-/// `FieldPairsGrid.gridMetrics` (rendered tile-frame heights). Sharing the rule AND the
-/// fallback constant is what guarantees the panel's reserved bottom and the arrange
-/// overlay's last row land on the same pixel — the two derivations can no longer drift.
-/// The rule: the tallest NON-flex single-row tile sets the height (a 2-tall tile spans
-/// two; a flex text block owns its own variable band); else the tallest non-flex tile;
-/// else a constant.
+/// ws-attributes-grid — the ONE uniform cell-row height, read by BOTH
+/// `AttributeCellGrid.layout(for:width:)` (which PLACES the tiles) and
+/// `FieldPairsGrid.gridMetrics` (which draws the arrange recess + maps points to cells).
+/// It is a DESIGN CONSTANT, not a measurement — the OCCURRENCE-3 structural fix (T handoff
+/// 2026-08-27), the last of three grid-stretches that all shared ONE shape: a value COMPUTED
+/// FROM a measurement fed back as an INPUT to the same measurement.
+///
+/// Why a constant is now correct (it wasn't before the rulings). The old rule derived the row
+/// height from the tallest single-row tile's CONTENT — and the two callers measured that
+/// content DIFFERENTLY: the Layout from `sizeThatFits` (an INTRINSIC measurement), gridMetrics
+/// from the RENDERED tile frame (`tileFrames`). Two measurements of "the same" height, so they
+/// could drift (stale @State lag, a fitted-font intrinsic, an overflow past `minHeight`) and the
+/// recess cells stopped lining up 1-to-1 with the tiles. Each prior fix (exclude the live-resize
+/// frame; fall back when no h==1 tile exists) was correct for its trigger but only closed ONE
+/// path. RULING 1 removed the need for content to set the height at all: every h==1 tile now
+/// FILLS a fixed row — text is always 14pt and wraps, atomic values fill the box, stars are
+/// width-bound — so no single-row tile's content can ever require MORE than a fixed height. The
+/// row height is therefore a value NOTHING render-time can influence, and because both callers
+/// read THIS one value the panel's reserved bottom, the overlay's last row, and every placed
+/// tile frame agree by construction — there is nothing left to measure, so nothing left to drift.
+///
+/// 52pt = a stacked tile at the BASE 14pt value + 9pt label + padding (the pre-existing
+/// `fallback`, the shape-matrix sampler's constant, and the stacked-tile `minHeight`).
 enum AttributeGridRowHeight {
-    static let fallback: CGFloat = 52
-    static func unitHeight(from tiles: [(height: CGFloat, h: Int, flexible: Bool)]) -> CGFloat {
-        let singles = tiles.filter { $0.h == 1 && !$0.flexible }.map(\.height)
-        let nonFlex = tiles.filter { !$0.flexible }.map(\.height)
-        return max(singles.max() ?? nonFlex.max() ?? fallback, 1)
-    }
+    static let unit: CGFloat = 52
 }
 
 /// ws-attributes-grid — the Control Center cell grid. Evolves `StackedPairsFlow`'s
@@ -1411,7 +1413,7 @@ struct AttributeCellGrid: Layout {
     /// flex text block takes its intrinsic height.
     private func layout(for subviews: Subviews, width: CGFloat) -> (frames: [CGRect], unitHeight: CGFloat) {
         let (columns, unitWidth) = columnMetrics(for: width)
-        guard columns > 0 else { return ([], AttributeGridRowHeight.fallback) }
+        guard columns > 0 else { return ([], AttributeGridRowHeight.unit) }
 
         func tileWidth(_ w: Int) -> CGFloat {
             CGFloat(w) * unitWidth + CGFloat(max(0, w - 1)) * unitSpacing
@@ -1429,12 +1431,13 @@ struct AttributeCellGrid: Layout {
             return Spec(i: i, w: w, h: h, row: max(0, fp.row), col: max(0, fp.col),
                         measured: measured, flexible: fp.flexible, liveSize: fp.liveSize)
         }
-        // Uniform cell-row height — the SAME rule `FieldPairsGrid.gridMetrics` uses (so the
-        // panel bottom and the arrange overlay can't drift): tallest non-flex single-row tile.
-        // A tile mid-resize (liveSize set) is EXCLUDED — its frame is the live rubber-band
-        // size, not a row-height measurement (the vertical-resize feedback loop).
-        let unitHeight = AttributeGridRowHeight.unitHeight(
-            from: specs.filter { $0.liveSize == nil }.map { ($0.measured, $0.h, $0.flexible) })
+        // Uniform cell-row height — a DESIGN CONSTANT (see `AttributeGridRowHeight`), the SAME
+        // value `FieldPairsGrid.gridMetrics` reads, so the placed tiles and the arrange recess
+        // agree by construction. Deriving it from measured content HERE (sizeThatFits) versus the
+        // rendered frame THERE (tileFrames) is exactly what let the two drift and stretched the
+        // grid three times; there is nothing left to measure. (`specs.measured` survives only for
+        // the inert flex-stride path below — the retired growable-text band.)
+        let unitHeight = AttributeGridRowHeight.unit
 
         var placements: [(row: Int, col: Int, spec: Spec)] = []
         if columns >= canonicalColumns {

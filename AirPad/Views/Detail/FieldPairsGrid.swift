@@ -1338,6 +1338,58 @@ enum AttributeGridRowHeight {
     static let unit: CGFloat = 52
 }
 
+/// RULING 2 (T, 2026-08-27) — the DEFAULT footprint proposed for a TEXT attribute at the moment
+/// its content is first created: always FULL WIDTH (4 cells), with the HEIGHT computed ONCE to
+/// fit the text at the fixed 14pt baseline, then STORED as an ordinary span. It does NOT re-grow
+/// as the user edits, and the user may resize freely afterward (system proposes, human decides —
+/// the posture of every default in this arc). Computed off-render, in the store, on first content.
+///
+/// ★★ SAFE — this CANNOT reopen the grid-stretch feedback loop that the retired growable text
+/// block caused (see `AttributeGridRowHeight`). It is a pure SPAN CALCULATION: it measures the
+/// text ONCE, off the render path, at a canonical width, and DIVIDES by the fixed row height to
+/// get a whole-cell count. It READS `AttributeGridRowHeight.unit` (a constant) as a divisor; it
+/// never feeds a measured height back INTO row height. The old block let CONTENT drive the
+/// RENDERED tile height, which fed `unitHeight`; here content drives only a stored INTEGER, and
+/// render still reads the constant. Content → stored span (once); render → constant. Decoupled.
+enum AttributeTextDefault {
+    /// A reference full-grid width for the at-creation proposal (the store has no live grid
+    /// width). The result is only a PROPOSAL the user resizes on their real device, so ±1 row
+    /// from a width difference is immaterial. ~detail content width.
+    static let canonicalGridWidth: CGFloat = 370
+
+    /// The proposed span for a text value: width = 4; height = the fewest whole cells that hold
+    /// the text at 14pt. Empty → 4×1. One-liner → 4×1 (the `.row` treatment). Else the smallest
+    /// `.large` height whose prose area holds the wrapped text, capped at `maxRows`.
+    static func span(for text: String, columnWidth: CGFloat = canonicalGridWidth) -> AttributeGridSpan {
+        let w = FieldPairsGrid.columns
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return AttributeGridSpan(w: w, h: 1) }
+        let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        // Inner text width of a full-width tile = grid width minus the tile's 12pt side padding.
+        let inner = max(1, columnWidth - 2 * 12)
+        let ns = trimmed as NSString
+        // Fits one line? → a 4×1 row (caption leading, value trailing — the `.row` treatment).
+        if ns.size(withAttributes: [.font: font]).width <= inner {
+            return AttributeGridSpan(w: w, h: 1)
+        }
+        // Multi-line → the smallest `.large` cell-height whose prose area holds the wrapped text.
+        let textHeight = ns.boundingRect(
+            with: CGSize(width: inner, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font], context: nil).height
+        // Prose area of a 4×h `.large` tile = tileHeight − chrome (14pt top+bottom padding + the
+        // 6pt VStack gap + the ~15pt large label). tileHeight uses the SAME constants the Layout
+        // places cells at. A fixed estimate; being a proposal, ±1 row is fine.
+        let unit = AttributeGridRowHeight.unit
+        let chrome: CGFloat = 14 * 2 + 6 + 15
+        for h in 2...FieldPairsGrid.maxRows {
+            let tileH = CGFloat(h) * unit + CGFloat(h - 1) * FieldPairsGrid.rowSpacing
+            if tileH - chrome >= textHeight { return AttributeGridSpan(w: w, h: h) }
+        }
+        return AttributeGridSpan(w: w, h: FieldPairsGrid.maxRows)
+    }
+}
+
 /// ws-attributes-grid — the Control Center cell grid. Evolves `StackedPairsFlow`'s
 /// width-derived columns (kept — "extend, don't replace"): the unit-column count
 /// comes from AVAILABLE WIDTH, clamped to a **2-up floor** and a **4-unit ceiling**

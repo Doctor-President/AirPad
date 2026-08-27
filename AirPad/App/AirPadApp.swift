@@ -281,6 +281,74 @@ private struct SpineGateView: View {
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("arrHUD")
                 #endif
+
+                // ws-free-footprint VERTICAL-RESIZE FEEDBACK-LOOP fix — a MID-DRAG state forced
+                // via `debugForcedResize` (the bug lives mid-gesture; a correct end-state hides
+                // it). The first tile is stretched to a live 2-cell / 4-cell frame; with the fix
+                // the OTHER tiles + the recess grid do NOT stretch, and the outline resolves h.
+                mewtwoCaption("VERT-RESIZE (a) mid-drag h=2 — only the dragged tile stretches")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "vrA",
+                                   fieldItems: SpineGateView.resizeBeforeItems(),
+                                   debugForcedResize: (tileID: "rz-c0",
+                                                       size: CGSize(width: 84, height: 112),
+                                                       span: AttributeGridSpan(w: 1, h: 2)),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                mewtwoCaption("VERT-RESIZE (b) mid-drag h=4 — grid does not stretch")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "vrB",
+                                   fieldItems: SpineGateView.resizeBeforeItems(),
+                                   debugForcedResize: (tileID: "rz-c0",
+                                                       size: CGSize(width: 84, height: 232),
+                                                       span: AttributeGridSpan(w: 1, h: 4)),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // ws-attributes-resize-displace — THE REPRO (gate a): 4 compact tiles filling
+                // one row. BEFORE, none could reach .large (0 of 4). AFTER shows the computed
+                // end-state of dragging c0's grabber to .large — it grows 2×2 and displaces
+                // its right neighbour forward (Option A, T 2026-08-26). Rendered from explicit
+                // stored positions so resolveLayout honours the post-displacement layout.
+                mewtwoCaption("RESIZE-DISPLACE gate a — BEFORE: 4 compact fill one row")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "rzB",
+                                   fieldItems: SpineGateView.resizeBeforeItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                mewtwoCaption("RESIZE-DISPLACE gate a — AFTER: c0 grown to .large, c1 displaced down")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "rzA",
+                                   fieldItems: SpineGateView.resizeAfterItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // ws-free-footprint — derived treatments + anchoring (gates d/e), rendered
+                // NON-arranging (real render). Tall TEXT (4×3) fills with the height-aware
+                // line count; tall NUMBER (2×3) CENTRES; 2×2 text = the migrated-.large look.
+                mewtwoCaption("FREE FOOTPRINT — d: tall text fills · e: tall number centres")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "ffN",
+                                   fieldItems: SpineGateView.freeFootprintItems(),
+                                   isArranging: false)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
                 // P4 — ONE-ROW node in arrange: the panel must contain the occupied row PLUS
                 // one empty "next page" row of recess cells, with NOTHING drawn outside the
                 // rounded background (the phantom row used to bleed onto the sections below).
@@ -310,6 +378,51 @@ private struct SpineGateView: View {
             }
             .padding(16)
         }
+    }
+
+    /// Resize-displace gate-a fixtures. BEFORE: four compact numbers filling row 0.
+    /// AFTER: the deterministic end-state (verified by the logic replica) of resizing the
+    /// first tile to .large — c0 becomes 2×2 at (0,0); its displaced right neighbour c1
+    /// slides to (1,2); c2/c3 keep their cells. Explicit positions on every tile so the
+    /// grid renders the exact post-displacement layout (no re-home).
+    private static func compact(_ id: String, _ n: Int, size: AttributeSizeClass,
+                                _ row: Int, _ col: Int) -> NodeItem {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var it = NodeItem(id: "rz-\(id)", type: .field, createdAt: now,
+                          field: FieldValue(definitionID: "m-atk", value: .number(Decimal(n))))
+        it.attributeTile = AttributeTile(sizeClass: size, position: AttributeGridPosition(row: row, col: col))
+        return it
+    }
+    static func resizeBeforeItems() -> [NodeItem] {
+        [compact("c0", 1, size: .compact, 0, 0), compact("c1", 2, size: .compact, 0, 1),
+         compact("c2", 3, size: .compact, 0, 2), compact("c3", 4, size: .compact, 0, 3)]
+    }
+    static func resizeAfterItems() -> [NodeItem] {
+        [compact("c0", 1, size: .large, 0, 0), compact("c1", 2, size: .compact, 1, 2),
+         compact("c2", 3, size: .compact, 0, 2), compact("c3", 4, size: .compact, 0, 3)]
+    }
+
+    /// ws-free-footprint gate fixtures — explicit spans (any w×h) to show the derived
+    /// treatments + anchoring: a TALL TEXT tile fills with the height-aware line count
+    /// (gate d), a TALL NUMBER centres rather than jamming to the top (gate e), plus a 2×2
+    /// text block (the migrated-`.large` look) and a compact number.
+    private static func spanItem(_ id: String, def: String, _ v: FieldPayload,
+                                 w: Int, h: Int, _ row: Int, _ col: Int) -> NodeItem {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var it = NodeItem(id: "ff-\(id)", type: .field, createdAt: now,
+                          field: FieldValue(definitionID: def, value: v))
+        it.attributeTile = AttributeTile(span: AttributeGridSpan(w: w, h: h),
+                                         position: AttributeGridPosition(row: row, col: col))
+        return it
+    }
+    static func freeFootprintItems() -> [NodeItem] {
+        [ spanItem("txt", def: "m-flavor",
+                   .text("Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful Pokémon in the world."),
+                   w: 4, h: 3, 0, 0),
+          spanItem("num", def: "m-hp", .number(106), w: 2, h: 3, 3, 0),
+          spanItem("txt2", def: "m-flavor", .text("A short flavor note that wraps to a couple of lines here."),
+                   w: 2, h: 2, 3, 2),
+          spanItem("num2", def: "m-atk", .number(42), w: 1, h: 1, 5, 2) ]
     }
 
     /// P4 one-row fixture — two `.stacked` tiles fill row 0 (cols 0-1, 2-3); arrange mode

@@ -1,12 +1,12 @@
 import Foundation
 
-/// The closed set of grid footprints an attribute tile may take in the attributes
-/// cell grid (Control Center model — tiles snap to whole cells, columns are 4 units
-/// wide). The SIZE SELECTS THE RENDERING: the same attribute renders differently at
-/// each size (T, 2026-07-31), so this is a presentation choice made by shape.
-///
-/// Convention: `<height rows> × <width units>`. Width units come from the closed set
-/// {1, 2, 4}; height from {1, 2}.
+/// ws-free-footprint (T, 2026-08-26): the four size classes are RETIRED as the legal
+/// SET — a tile may take any width 1–4 × any height 1–4 (`AttributeGridSpan`). This enum
+/// SURVIVES only as the DEFAULTS + MIGRATION table: `defaultSizeClass` still PROPOSES a
+/// sensible starting shape (the system proposes; the human decides the ceiling), and its
+/// `widthUnits`/`heightUnits` map a pre-free stored `size_class` to an explicit span (a
+/// free migration — no data change). It no longer LIMITS what the user may choose, and
+/// rendering is now derived from the span's shape, not switched on this case.
 enum AttributeSizeClass: String, Codable, Equatable, CaseIterable {
     /// 1 × 2 — caption over value, STACKED (the shipped `StackedPairsFlow` treatment).
     case stacked
@@ -50,8 +50,10 @@ enum AttributeSizeClass: String, Codable, Equatable, CaseIterable {
 /// Additive optional on `NodeItem`; synthesized `Codable` decodes a missing key as
 /// nil (`decodeIfPresent` semantics) — no `entrySchemaVersion` bump.
 struct AttributeTile: Codable, Equatable {
-    /// The tile's grid footprint, which selects its rendering.
-    var sizeClass: AttributeSizeClass
+    /// ws-free-footprint — the tile's EXPLICIT grid span (any 1–4 × 1–4). Replaces the
+    /// four-value `size_class`; migration from a stored `size_class` is free (its
+    /// `widthUnits`/`heightUnits` map to a span). Rendering derives from this shape.
+    var span: AttributeGridSpan
 
     /// ws-attributes-grid P3 — the tile's STORED grid position (the iOS-18 Home Screen
     /// model, T 2026-08-25): position is placed, not derived from array order, so
@@ -64,10 +66,49 @@ struct AttributeTile: Codable, Equatable {
     /// `decodeIfPresent` — no `entrySchemaVersion` bump.
     var position: AttributeGridPosition?
 
+    init(span: AttributeGridSpan, position: AttributeGridPosition? = nil) {
+        self.span = span; self.position = position
+    }
+    /// Defaults/fixtures/migration convenience — build a span from a size class.
+    init(sizeClass: AttributeSizeClass, position: AttributeGridPosition? = nil) {
+        self.init(span: AttributeGridSpan(w: sizeClass.widthUnits, h: sizeClass.heightUnits),
+                  position: position)
+    }
+
     enum CodingKeys: String, CodingKey {
+        case span
         case sizeClass = "size_class"
         case position
     }
+
+    /// FREE migration: decode the explicit `span` if present; else map a pre-free stored
+    /// `size_class` through its `widthUnits`/`heightUnits`; else the stacked default.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.position = try c.decodeIfPresent(AttributeGridPosition.self, forKey: .position)
+        if let span = try c.decodeIfPresent(AttributeGridSpan.self, forKey: .span) {
+            self.span = span
+        } else if let sc = try c.decodeIfPresent(AttributeSizeClass.self, forKey: .sizeClass) {
+            self.span = AttributeGridSpan(w: sc.widthUnits, h: sc.heightUnits)
+        } else {
+            self.span = AttributeGridSpan(w: 2, h: 1)   // stacked default
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(span, forKey: .span)
+        try c.encodeIfPresent(position, forKey: .position)
+    }
+}
+
+/// A tile's grid span — width in cell units (1…4, the 4-wide grid) and height in rows
+/// (1…4). ws-free-footprint retired the four fixed size classes; this is the open set.
+/// Typed nested struct (like `AttributeGridPosition`) so the schema keeps its discipline.
+struct AttributeGridSpan: Codable, Equatable {
+    var w: Int
+    var h: Int
+
+    enum CodingKeys: String, CodingKey { case w, h }
 }
 
 /// A tile's placed position in the attributes cell grid — row (grows unbounded) and

@@ -19,6 +19,13 @@ enum AttrLabelStyle: CaseIterable {
     var reorders = 0
     var lifts = 0
     var moves = 0
+    /// Gesture-ambiguity diagnosis (T 2026-08-27, "holding to drag and resize gets mixed up").
+    /// Which gesture CLAIMED each arrange touch + where it landed relative to the tile and the
+    /// grabber's 44pt hit zone, newest last. `races` counts touches where a grabber drag had to
+    /// CANCEL an already-armed reorder lift — i.e. both gestures armed on the one touch.
+    var claims: [String] = []
+    var races = 0
+    func note(_ s: String) { claims.append(s); if claims.count > 6 { claims.removeFirst() } }
 }
 #endif
 
@@ -37,6 +44,13 @@ struct FieldPairsGrid: View {
     let fieldItems: [NodeItem]
     /// DEBUG-only geometry A/B (see `AttributeCellGrid.fixedFourUp`).
     var fixedFourUp: Bool = false
+    #if DEBUG
+    /// Sim-gate hook — force a MID-RESIZE visual state on appear (the vertical-resize feedback
+    /// loop lives in the mid-gesture frame, which a static screenshot can't otherwise reach):
+    /// one tile's live rubber-band frame + the resolved outline. Proves the OTHER rows don't
+    /// stretch while a tile is being sized up vertically.
+    var debugForcedResize: (tileID: String, size: CGSize, span: AttributeGridSpan)? = nil
+    #endif
     /// ws-attributes-grid P2/P3 — arrange mode (owned by the section header's glyph).
     /// While on, the grabber DRAG resizes a tile (growing only into free cells) and a
     /// body long-press LIFTS it to drag to another grid cell (the iOS-18 Home Screen
@@ -53,16 +67,44 @@ struct FieldPairsGrid: View {
     @Environment(CorpusStore.self) private var store
     @State private var editingItem: NodeItem?
     /// Pending per-tile size overrides during an arrange session (itemID → size).
-    @State private var pendingSizes: [String: AttributeSizeClass] = [:]
+    @State private var pendingSizes: [String: AttributeGridSpan] = [:]
     /// Pending per-tile POSITION overrides during an arrange session (itemID → cell). A
     /// drop (and any tiles it displaces) writes here; empty = every tile at its resolved
     /// (stored-or-derived) home. This is what makes placement survive a resize with NO
     /// neighbour reflow.
     @State private var pendingPositions: [String: AttributeGridPosition] = [:]
-    /// The in-flight corner-drag resize: which tile, the size index the drag began at (so
-    /// absolute finger travel maps to steps), and the last index applied (to fire the
-    /// spring + haptic only when the snapped size actually changes).
-    @State private var activeResize: (id: String, startIndex: Int, lastIndex: Int)?
+    /// The in-flight corner-drag resize (ws-free-footprint — RUBBER-BAND). The finger
+    /// describes a rectangle from the tile's FIXED top-left cell. Displacement is DEFERRED to
+    /// release: during the gesture only the tile's own frame follows the finger (in points,
+    /// `liveResizeFrame`) and the dashed outline shows the RESOLVED footprint (`resizeOutline`).
+    /// On release the resolved span is committed off the PRISTINE `base` (so nothing is moved
+    /// until the shape is settled). `span` is the last resolved footprint (for the haptic tick).
+    private struct ResizeSession {
+        let id: String
+        let originRow: Int          // the tile's top-left cell, fixed for the gesture
+        let originCol: Int
+        let base: [String: Placed]  // layout at gesture start — release recomputes off this
+        let originSpan: AttributeGridSpan // the tile's span at gesture start
+        var span: AttributeGridSpan // last resolved footprint (tick + release commit)
+        var everChanged: Bool = false // did the resolved span EVER differ from origin (even if
+                                      // it returned) — so a drag-out-and-back isn't read as a tap
+        // STABLE geometry captured at gesture start — the quantizer's denominators + the tile's
+        // top-left in points. Captured (not re-read each frame) because the live rubber-band
+        // frame pollutes the measured unitHeight; a quantizer whose denominator moves with the
+        // finger is not a quantizer (T 2026-08-26, the vertical-resize feedback loop).
+        let originX: CGFloat
+        let originY: CGFloat
+        let unitW: CGFloat
+        let unitH: CGFloat
+    }
+    @State private var activeResize: ResizeSession?
+    /// The resolved (cell-snapped) footprint the resize will land on — drives the dashed
+    /// landing outline (same treatment as the reorder drop target), live for the gesture.
+    @State private var resizeOutline: Placed?
+    /// RUBBER-BAND — the dragged tile's live point size (continuous, NOT cell-snapped) while
+    /// resizing. Passed to `AttributeCellGrid` so the tile's frame follows the finger; cleared
+    /// on release, when the tile animates from these points to the resolved cell rectangle.
+    @State private var liveResizeFrame: (id: String, size: CGSize)?
     /// Picker-detent haptic (the "tick" as a resize crosses each size threshold / a drop lands).
     private let resizeHaptic = UISelectionFeedbackGenerator()
     /// The tile currently lifted for a reorder drag + its live finger offset.
@@ -87,10 +129,16 @@ struct FieldPairsGrid: View {
     /// The grid's own width (from a background probe) — for point→cell mapping + overlay.
     @State private var gridWidth: CGFloat = 0
 
-    private static let gridSpace = "attrGrid"
+    static let gridSpace = "attrGrid"   // internal: FieldPairCell's resize gesture reports here
     /// The canonical grid width. Stored positions live in this 4-column space; a narrower
     /// container (the not-yet-built card back) falls back to a re-pack (see `AttributeCellGrid`).
     static let columns = 4
+    /// ws-free-footprint — the height ceiling (rows). Width ceiling is `columns`; T ruled
+    /// any 1–4 × 1–4. Rows still grow unbounded for LAYOUT, but a single tile caps here.
+    static let maxRows = 4
+    /// The grabber's hit-zone edge (Apple's 44pt minimum). The VISUAL grabber is 26pt — the
+    /// hit target is deliberately larger. Named here so the ambiguity probe can report against it.
+    static let grabberHit: CGFloat = 44
     static let unitSpacing: CGFloat = 10
     static let rowSpacing: CGFloat = 12
 
@@ -121,7 +169,30 @@ struct FieldPairsGrid: View {
             }
         )
         .background(alignment: .topLeading) { arrangeGridOverlay }   // faint 4-col grid behind tiles
-        .overlay(alignment: .topLeading) { dropTargetHighlight }     // landing-zone ring above tiles
+        .overlay(alignment: .topLeading) { dropTargetHighlight }     // reorder landing ring above tiles
+        .overlay(alignment: .topLeading) { resizeCandidateHighlight } // 2-D resize candidate outline
+        #if DEBUG
+        // Gesture-ambiguity probe HUD (T 2026-08-27) — toggle `ARRPROBE` to see, live in
+        // arrange mode, which gesture claimed each touch, where it landed vs the 44pt grabber
+        // zone, and the race count. Diagnosis only; no fix. Non-hit-testing.
+        .overlay(alignment: .top) {
+            if isArranging && UserDefaults.standard.bool(forKey: "ARRPROBE") {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("races:\(ArrangeGestureProbe.shared.races)  lifts:\(ArrangeGestureProbe.shared.lifts)  drags:\(ArrangeGestureProbe.shared.drags)")
+                        .foregroundStyle(.orange)
+                    ForEach(Array(ArrangeGestureProbe.shared.claims.enumerated()), id: \.offset) { _, c in
+                        Text(c)
+                    }
+                }
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.green)
+                .padding(4)
+                .background(Color.black.opacity(0.82))
+                .allowsHitTesting(false)
+                .accessibilityIdentifier("arrProbeHUD")
+            }
+        }
+        #endif
         .onPreferenceChange(TileFramesKey.self) { tileFrames = $0 }
         .onPreferenceChange(GridWidthKey.self) { gridWidth = $0 }
         // BUG C — the reorder gesture ended/cancelled: guarantee the lift is cleared even
@@ -142,6 +213,18 @@ struct FieldPairsGrid: View {
                 commitArrangement()                          // one write on exit (sizes + positions)
             }
         }
+    }
+
+    /// The tile currently rendering at a LIVE rubber-band size — the real in-flight resize, or
+    /// (DEBUG sim-gate) the forced mid-drag fixture. The per-tile `liveSize` reads this, so a
+    /// forced fixture behaves exactly like a live drag. (Was also read by the old content-measured
+    /// `unitHeight` to EXCLUDE the stretched tile; the row height is now a constant, so there is
+    /// no measurement to exclude — see `AttributeGridRowHeight`.)
+    private func liveSize(for id: String) -> CGSize? {
+        #if DEBUG
+        if let d = debugForcedResize, d.tileID == id { return d.size }
+        #endif
+        return liveResizeFrame?.id == id ? liveResizeFrame?.size : nil
     }
 
     // MARK: - Grid occupancy helpers (pure, over the 4-column cell field)
@@ -171,8 +254,10 @@ struct FieldPairsGrid: View {
         a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h
     }
     private func footprint(_ tile: ResolvedTile) -> (w: Int, h: Int, flexible: Bool) {
-        if tile.isGrowableText { return (Self.columns, 1, true) }   // growable text = full-width block
-        return (min(tile.sizeClass.widthUnits, Self.columns), tile.sizeClass.heightUnits, false)
+        // ws-free-footprint: the tile's explicit span, clamped to the grid. Growable text is
+        // retired — a text tile occupies its stored height like everything else and fills it
+        // with a height-aware line count (see FieldPairCell); `flexible` is no longer produced.
+        (min(max(1, tile.span.w), Self.columns), max(1, tile.span.h), false)
     }
 
     // MARK: - Displayed row count (P4 — the Home Screen "next page" row)
@@ -186,6 +271,13 @@ struct FieldPairsGrid: View {
               let placed = layout[id] else { return 0 }
         return cell.row + placed.h
     }
+    /// While a resize is in flight, extend the displayed rows to the resolved outline's bottom
+    /// (like `dragFloorRow` for a reorder) — so a tall vertical resize's dashed outline + recess
+    /// reach the resolved height instead of clamping to the pre-resize row count.
+    private func resizeFloorRow() -> Int {
+        guard isArranging, let o = effectiveResizeOutline else { return 0 }
+        return o.row + o.h
+    }
 
     /// How many grid rows to DISPLAY: the content rows, plus — while arranging — ONE empty
     /// trailing row past the greater of the content max row and the live drag target. Both
@@ -194,7 +286,7 @@ struct FieldPairsGrid: View {
     private func displayedRowCount(_ layout: [String: Placed]) -> Int {
         let occupied = layout.values.map { $0.row + $0.h }.max() ?? 0
         guard isArranging else { return occupied }
-        return max(occupied, dragFloorRow(layout)) + 1
+        return max(occupied, dragFloorRow(layout), resizeFloorRow()) + 1
     }
 
     // MARK: - Layout resolution (stored positions + lazy homing)
@@ -235,90 +327,150 @@ struct FieldPairsGrid: View {
         return result
     }
 
-    // MARK: - Resize (grabber drag → grow into FREE cells only; never moves a neighbour)
+    // MARK: - Resize (ws-free-footprint — RUBBER-BAND, identity quantizer, any w×h)
 
-    /// Grabber TAP (a11y): step to the next size that fits at the tile's fixed cell.
+    /// The a11y tap-cycle ladder — a small sensible set of footprints (the old four) the
+    /// grabber TAP steps through, since a tap can't express a free 2-D shape. The DRAG is
+    /// unconstrained.
+    private static let cycleLadder: [AttributeGridSpan] = [
+        .init(w: 1, h: 1), .init(w: 2, h: 1), .init(w: 2, h: 2), .init(w: 4, h: 1)
+    ]
+
+    /// Grabber TAP (a11y): step to the next ladder footprint, DISPLACING like the drag.
     private func cycleSize(_ tile: ResolvedTile) {
         #if DEBUG
-        print("[ARR] CYCLE id=\(tile.item.id)")
         ArrangeGestureProbe.shared.cycles += 1
         #endif
-        let options = tile.definition.kind.supportedSizeClasses
-        guard !options.isEmpty else { return }
         let layout = resolveLayout()
         guard let placed = layout[tile.item.id] else { return }
-        var occ = Set<Int>()
-        for (id, p) in layout where id != tile.item.id { markOccupied(&occ, p) }
-        let start = options.firstIndex(of: tile.sizeClass) ?? 0
-        // Try each subsequent size (wrapping); pick the first that fits at the fixed cell.
-        for step in 1...options.count {
-            let cand = options[(start + step) % options.count]
-            if sizeFits(cand, at: placed, occ: occ, kind: tile.definition.kind) {
-                pendingSizes[tile.item.id] = cand
-                return
-            }
+        let cur = AttributeGridSpan(w: placed.w, h: placed.h)
+        let ladder = Self.cycleLadder
+        let next = ladder[((ladder.firstIndex(of: cur) ?? -1) + 1) % ladder.count]
+        applyResize(tile.item.id, span: next, base: layout,
+                    originRow: placed.row, originCol: placed.col)
+    }
+
+    /// Commit a resize to `span` at the tile's fixed origin: displace collisions off `base`
+    /// (the same `placeDisplacing` path as drop), then PIN every position so `resolveLayout`
+    /// honours the new footprint. Shared by the drag RELEASE and the a11y tap-cycle. Only the
+    /// grid EDGE binds (a wider/taller footprint shifts left / floors at row 0).
+    private func applyResize(_ id: String, span: AttributeGridSpan, base: [String: Placed],
+                             originRow: Int, originCol: Int) {
+        let w = min(max(1, span.w), Self.columns)
+        let h = min(max(1, span.h), Self.maxRows)
+        var layout = base
+        let moved = Placed(row: max(0, originRow), col: min(max(0, originCol), Self.columns - w),
+                           w: w, h: h, flexible: false)
+        placeDisplacing(id, moved, in: &layout)
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+            pendingSizes[id] = AttributeGridSpan(w: w, h: h)
+            for (tid, p) in layout { pendingPositions[tid] = AttributeGridPosition(row: p.row, col: p.col) }
         }
+        resizeHaptic.selectionChanged()
     }
 
-    /// The candidate size's footprint at a fixed top-left, tested against `occ` (which
-    /// must EXCLUDE the resizing tile). Growable-text `.large` is the full-width block.
-    private func sizeFits(_ size: AttributeSizeClass, at placed: Placed,
-                          occ: Set<Int>, kind: FieldKind) -> Bool {
-        let w: Int, h: Int
-        if kind == .text && size == .large { w = Self.columns; h = 1 }
-        else { w = min(size.widthUnits, Self.columns); h = size.heightUnits }
-        return fits(occ, Placed(row: placed.row, col: placed.col, w: w, h: h, flexible: false))
-    }
-
-    /// Control-Center corner DRAG resize, in the Home Screen model: the tile's cell is
-    /// FIXED; the footprint grows/shrinks. A size is only reachable if it lands in free
-    /// cells — the drag STOPS at the wall of an occupied neighbour (or the grid edge)
-    /// rather than shoving anything. This is the whole point of stored positions: resizing
-    /// never reflows a neighbour.
-    private func resizeDrag(_ tile: ResolvedTile, translation: CGSize) {
+    /// Corner DRAG resize — ws-free-footprint RUBBER-BAND (T ruled it from Control Center).
+    /// During the gesture the tile's FRAME follows the finger continuously in POINTS
+    /// (`liveResizeFrame`, not cell-snapped) and the dashed outline shows the RESOLVED
+    /// footprint. The quantizer is now IDENTITY — the finger's cell extents map straight to
+    /// (w,h), clamp w 1…columns / h 1…maxRows; no nearest-of-four, no tie-break, no
+    /// class-hysteresis (there is no class boundary to flicker across — only cell boundaries,
+    /// and the rubber-band frame is continuous, so a resting finger doesn't jump). Displacement
+    /// is DEFERRED to release (`resizeEnd`) off the pristine base, so nothing moves until the
+    /// shape is settled.
+    private func resizeDrag(_ tile: ResolvedTile, finger: CGPoint) {
         #if DEBUG
-        print("[ARR] DRAG id=\(tile.item.id) dx=\(Int(translation.width)) dy=\(Int(translation.height))")
         ArrangeGestureProbe.shared.drags += 1
         #endif
         // The grabber owns this touch — cancel any reorder lift that raced in.
-        if draggingID != nil { draggingID = nil; dropTargetCell = nil }
-        let options = tile.definition.kind.supportedSizeClasses
-        guard options.count > 1 else { return }
-        let layout = resolveLayout()
-        guard let placed = layout[tile.item.id] else { return }
-        let startIndex: Int, lastIndex: Int
-        if let active = activeResize, active.id == tile.item.id {
-            startIndex = active.startIndex; lastIndex = active.lastIndex
+        if draggingID != nil {
+            #if DEBUG
+            // Both gestures armed on the same touch — the race the guards patch (ambiguity probe).
+            ArrangeGestureProbe.shared.races += 1
+            ArrangeGestureProbe.shared.note("RACE grab⇄lift")
+            #endif
+            draggingID = nil; dropTargetCell = nil
+        }
+        let currentLayout = resolveLayout()
+        guard let placed = currentLayout[tile.item.id] else { return }
+        let spacing = Self.unitSpacing
+
+        var session: ResizeSession
+        if let a = activeResize, a.id == tile.item.id {
+            session = a
         } else {
-            startIndex = options.firstIndex(of: tile.sizeClass) ?? 0
-            lastIndex = startIndex
-            activeResize = (tile.item.id, startIndex, startIndex)
+            #if DEBUG
+            // Record WHERE the grabber claimed this touch — relative to the tile bounds and the
+            // 44pt grabber hit zone (bottom-trailing) — for the ambiguity diagnosis.
+            if let f = tileFrames[tile.item.id] {
+                let tx = Int(finger.x - f.minX), ty = Int(finger.y - f.minY)
+                let gx = Int(f.width - Self.grabberHit), gy = Int(f.height - Self.grabberHit)
+                let inGrab = CGFloat(tx) >= f.width - Self.grabberHit && CGFloat(ty) >= f.height - Self.grabberHit
+                ArrangeGestureProbe.shared.note(
+                    "GRAB @(\(tx),\(ty)) tile \(Int(f.width))x\(Int(f.height)) grab@[\(gx),\(gy),44] \(inGrab ? "IN" : "OUT")")
+            }
+            #endif
+            // New gesture — CAPTURE the stable geometry NOW, before the tile goes live. Every
+            // later frame reads these, never a fresh gridMetrics (whose unitHeight the live
+            // frame would pollute — the feedback loop).
+            guard let m = gridMetrics() else { return }
+            session = ResizeSession(
+                id: tile.item.id, originRow: placed.row, originCol: placed.col,
+                base: currentLayout,
+                originSpan: AttributeGridSpan(w: placed.w, h: placed.h),
+                span: AttributeGridSpan(w: placed.w, h: placed.h),
+                originX: CGFloat(placed.col) * (m.unitWidth + spacing),
+                originY: m.rowTops[min(placed.row, max(0, m.rowTops.count - 1))],
+                unitW: m.unitWidth, unitH: m.unitHeight)
             resizeHaptic.prepare()
         }
-        // Occupancy of the OTHER tiles (this tile's cells are free to grow back into).
-        var occ = Set<Int>()
-        for (id, p) in layout where id != tile.item.id { markOccupied(&occ, p) }
+        defer { activeResize = session }
 
-        let stepPoints: CGFloat = 46   // finger travel per size step
-        let steps = Int(((translation.width + translation.height) / stepPoints).rounded())
-        let desired = min(max(0, startIndex + steps), options.count - 1)
-        // Walk from the desired index back toward the start until a size fits — this is the
-        // "stop at the wall" clamp (the footprints aren't monotonic, so test each one).
-        var target = desired
-        while target != startIndex
-              && !sizeFits(options[target], at: placed, occ: occ, kind: tile.definition.kind) {
-            target += (desired > startIndex ? -1 : 1)
+        // RUBBER-BAND — the tile's live frame follows the finger in points (floor one cell;
+        // clamped so a wider/taller footprint stays on the grid from the fixed origin). All
+        // arithmetic uses the CAPTURED geometry, so the denominator can't move under the finger.
+        let maxW = CGFloat(Self.columns - session.originCol) * (session.unitW + spacing) - spacing
+        let maxH = CGFloat(Self.maxRows) * (session.unitH + spacing) - spacing
+        let liveW = min(max(session.unitW, finger.x - session.originX), maxW)
+        let liveH = min(max(session.unitH, finger.y - session.originY), maxH)
+        liveResizeFrame = (tile.item.id, CGSize(width: liveW, height: liveH))
+
+        // IDENTITY quantizer — cell extents map straight to (w,h). (calcXY margin term.)
+        let w = min(max(1, Int(((finger.x - session.originX + spacing) / (session.unitW + spacing)).rounded())), Self.columns)
+        let h = min(max(1, Int(((finger.y - session.originY + spacing) / (session.unitH + spacing)).rounded())), Self.maxRows)
+        let col = min(max(0, session.originCol), Self.columns - w)
+        resizeOutline = Placed(row: max(0, session.originRow), col: col, w: w, h: h, flexible: false)
+
+        if session.span.w != w || session.span.h != h {   // crossed a cell boundary → tick
+            resizeHaptic.selectionChanged(); resizeHaptic.prepare()
+            session.span = AttributeGridSpan(w: w, h: h)
         }
-        if !sizeFits(options[target], at: placed, occ: occ, kind: tile.definition.kind) {
-            target = lastIndex   // nothing between fits → hold the current size
+        // Mark the moment the resolution first differs from origin (stays marked even if it
+        // later returns) — so a drag-out-and-back is a no-op, never a tap.
+        if w != session.originSpan.w || h != session.originSpan.h { session.everChanged = true }
+    }
+
+    /// Release — CLASSIFY BY OUTCOME, not by travel distance (T 2026-08-26 defect fix). The
+    /// identity quantizer resolves a new (w,h) as soon as the finger crosses a cell midpoint,
+    /// which from a corner grabber can be < the old 6pt SUMMED-travel tap threshold — so real
+    /// resizes were being thrown away as taps. Primary test: did the resolved span change from
+    /// the span at gesture start?
+    ///   · final span ≠ origin              → a RESIZE — commit off the pristine base (displace + snap).
+    ///   · never resolved away + still finger → a TAP  — cycle the a11y ladder (the tap's job).
+    ///   · resolved away then back to origin  → a drag returned home — commit nothing, no cycle.
+    /// The span change is the PRIMARY test; `everChanged`/`stillFinger` only distinguish a real
+    /// tap from a drag that happened to end near where it started (its NET travel is small too).
+    /// Per-axis, not summed — the arithmetic we retired from the resize model.
+    private func resizeEnd(stillFinger: Bool) {
+        guard let s = activeResize else { return }
+        defer { liveResizeFrame = nil; resizeOutline = nil; activeResize = nil }
+        if s.span != s.originSpan {
+            applyResize(s.id, span: s.span, base: s.base, originRow: s.originRow, originCol: s.originCol)
+        } else if !s.everChanged, stillFinger,
+                  let tile = resolvedTiles.first(where: { $0.item.id == s.id }) {
+            cycleSize(tile)   // a genuine tap (never dragged away) → step the ladder
         }
-        guard target != lastIndex else { return }
-        withAnimation(.spring(response: 0.30, dampingFraction: 0.72)) {
-            pendingSizes[tile.item.id] = options[target]
-        }
-        resizeHaptic.selectionChanged()
-        resizeHaptic.prepare()
-        activeResize = (tile.item.id, startIndex, target)
+        // else: dragged out and back to the same shape — nothing to commit, don't cycle.
     }
 
     /// Persist the arrange session's SIZES + POSITIONS as one write. Passes the FULL
@@ -327,13 +479,15 @@ struct FieldPairsGrid: View {
     /// migration. No-op tiles are skipped in the store; `updatedAt` untouched.
     private func commitArrangement() {
         let layout = resolveLayout()
-        var payload: [String: (size: AttributeSizeClass, position: AttributeGridPosition)] = [:]
+        var payload: [String: (span: AttributeGridSpan, position: AttributeGridPosition)] = [:]
         for t in resolvedTiles {
             guard let p = layout[t.item.id] else { continue }
-            payload[t.item.id] = (t.sizeClass, AttributeGridPosition(row: p.row, col: p.col))
+            payload[t.item.id] = (AttributeGridSpan(w: p.w, h: p.h),
+                                  AttributeGridPosition(row: p.row, col: p.col))
         }
         pendingSizes = [:]; pendingPositions = [:]
-        draggingID = nil; dropTargetCell = nil; dragOffset = .zero; dragHomeOrigin = nil; activeResize = nil
+        draggingID = nil; dropTargetCell = nil; dragOffset = .zero; dragHomeOrigin = nil
+        activeResize = nil; resizeOutline = nil
         Task { await store.commitAttributeLayout(payload, nodeID: nodeID) }
     }
 
@@ -342,14 +496,19 @@ struct FieldPairsGrid: View {
     /// Long-press lifted a tile for a move.
     private func beginReorder(_ id: String) {
         // A grabber resize is in progress → the corner owns this touch; don't also lift.
-        guard activeResize == nil else { return }
+        guard activeResize == nil else {
+            #if DEBUG
+            ArrangeGestureProbe.shared.note("LIFT blocked (resize active)")   // both tried to arm
+            #endif
+            return
+        }
         draggingID = id
         dragOffset = .zero
         dragHomeOrigin = tileFrames[id]?.origin   // BUG A — the tile's top-left before it moves
         dropTargetCell = resolveLayout()[id].map { AttributeGridPosition(row: $0.row, col: $0.col) }
         #if DEBUG
-        print("[ARR] LIFT id=\(id)")
         ArrangeGestureProbe.shared.lifts += 1
+        ArrangeGestureProbe.shared.note("LIFT id=\(id.suffix(4))")   // long-press armed a reorder
         #endif
     }
 
@@ -376,13 +535,45 @@ struct FieldPairsGrid: View {
     }
 
     /// Drop: place the dragged tile at the target cell; any tiles it lands on DISPLACE
-    /// (the Home Screen model, T 2026-08-25) — each moves to the dragged tile's vacated
-    /// footprint if it fits, else to the first free cell. Tiles the drop doesn't touch
-    /// stay exactly put (holes preserved). A resize can never trigger this path.
+    /// (the Home Screen model, T 2026-08-25) — via the same `placeDisplacing` path resize
+    /// uses, here preferring the dragged tile's vacated footprint (the classic same-size
+    /// swap). Tiles the drop doesn't touch stay exactly put (holes preserved).
     private func endReorder() {
         defer { draggingID = nil; dropTargetCell = nil; dragOffset = .zero; dragHomeOrigin = nil }
         guard let dragged = draggingID, let target = dropTargetCell else { return }
         applyDrop(dragged: dragged, to: target)
+    }
+
+    /// The ONE collision path shared by drop and resize (T 2026-08-26 — RESIZE DISPLACES).
+    /// Place `moved` at its footprint, evicting every tile it overlaps. Each evicted tile
+    /// goes to `preferred` (if given AND it fits) else the first free cell in reading order,
+    /// opening a new row if nothing fits. No cascade — an evicted tile never pushes a third;
+    /// holes it can't fill are left intact. Mutates `layout`; returns the evicted ids.
+    @discardableResult
+    private func placeDisplacing(_ movedID: String, _ moved: Placed,
+                                 in layout: inout [String: Placed],
+                                 preferred: ((Placed) -> Placed)? = nil) -> [String] {
+        let displaced = layout
+            .filter { $0.key != movedID && overlaps($0.value, moved) }
+            .sorted { ($0.value.row * Self.columns + $0.value.col)
+                    < ($1.value.row * Self.columns + $1.value.col) }
+            .map(\.key)
+        let displacedSet = Set(displaced)
+        var occ = Set<Int>()
+        for (id, p) in layout where id != movedID && !displacedSet.contains(id) { markOccupied(&occ, p) }
+        layout[movedID] = moved; markOccupied(&occ, moved)
+
+        let rowLimit = layout.count * 2 + 2
+        for id in displaced {
+            guard let p = layout[id] else { continue }
+            var dest = preferred?(p)
+            if dest == nil || !fits(occ, dest!) {   // no preference, or it's taken → first free
+                let free = firstFree(occ, w: p.w, h: p.h, rowLimit: rowLimit)
+                dest = Placed(row: free.row, col: free.col, w: p.w, h: p.h, flexible: p.flexible)
+            }
+            layout[id] = dest!; markOccupied(&occ, dest!)
+        }
+        return displaced
     }
 
     private func applyDrop(dragged: String, to target: AttributeGridPosition) {
@@ -393,34 +584,11 @@ struct FieldPairsGrid: View {
                            w: old.w, h: old.h, flexible: old.flexible)
         guard moved.row != old.row || moved.col != old.col else { return }   // no-op drop
 
-        // Occupants the dragged tile now overlaps → to be displaced (reading order).
-        let displaced = layout
-            .filter { $0.key != dragged && overlaps($0.value, moved) }
-            .sorted { ($0.value.row * Self.columns + $0.value.col)
-                    < ($1.value.row * Self.columns + $1.value.col) }
-            .map(\.key)
-        let displacedSet = Set(displaced)
-
-        // Occupancy of everything staying put (not the dragged tile, not the displaced).
-        var occ = Set<Int>()
-        for (id, p) in layout where id != dragged && !displacedSet.contains(id) { markOccupied(&occ, p) }
-        layout[dragged] = moved; markOccupied(&occ, moved)
-
-        let rowLimit = layout.count * 2 + 2
-        for id in displaced {
-            guard let p = layout[id] else { continue }
+        let displaced = placeDisplacing(dragged, moved, in: &layout, preferred: { p in
             // Prefer the dragged tile's vacated footprint (the classic same-size swap).
-            let atOld = Placed(row: old.row, col: min(max(0, old.col), Self.columns - p.w),
-                               w: p.w, h: p.h, flexible: p.flexible)
-            let dest: Placed
-            if fits(occ, atOld) {
-                dest = atOld
-            } else {
-                let free = firstFree(occ, w: p.w, h: p.h, rowLimit: rowLimit)
-                dest = Placed(row: free.row, col: free.col, w: p.w, h: p.h, flexible: p.flexible)
-            }
-            layout[id] = dest; markOccupied(&occ, dest)
-        }
+            Placed(row: old.row, col: min(max(0, old.col), Self.columns - p.w),
+                   w: p.w, h: p.h, flexible: p.flexible)
+        })
 
         withAnimation(.snappy(duration: 0.25)) {
             for (id, p) in layout { pendingPositions[id] = AttributeGridPosition(row: p.row, col: p.col) }
@@ -436,24 +604,31 @@ struct FieldPairsGrid: View {
 
     private struct GridMetrics {
         let unitWidth: CGFloat
+        let unitHeight: CGFloat      // the uniform AttributeGridRowHeight.unit (design constant)
         let rowTops: [CGFloat]       // count = rowCount + 1
         let rowHeights: [CGFloat]    // count = rowCount
     }
 
-    /// Reconstruct the cell geometry from the true grid width + the rendered tile frames.
-    /// Non-flex rows are the uniform `unitHeight` (the SAME `AttributeGridRowHeight` rule the
-    /// Layout uses); a growable-text row takes its measured height. The row count is the
-    /// shared `displayedRowCount` — content rows plus the phantom "next page" row while
-    /// arranging — so this overlay's last row matches the panel's reserved bottom exactly.
+    /// Reconstruct the cell geometry from the true grid width + the shared row-height constant.
+    /// Every row is the uniform `AttributeGridRowHeight.unit` — the SAME value the Layout places
+    /// tiles at, so the recess and the tiles can't drift. The row count is the shared
+    /// `displayedRowCount` — content rows plus the phantom "next page" row while arranging — so
+    /// this overlay's last row matches the panel's reserved bottom exactly.
     private func gridMetrics() -> GridMetrics? {
         guard gridWidth > 0 else { return nil }
         let unitWidth = (gridWidth - CGFloat(Self.columns - 1) * Self.unitSpacing) / CGFloat(Self.columns)
         guard unitWidth > 0 else { return nil }
         let layout = resolveLayout()
-        let unitHeight = AttributeGridRowHeight.unitHeight(
-            from: layout.compactMap { (id, p) in tileFrames[id].map { ($0.height, p.h, p.flexible) } })
+        // The row height is a DESIGN CONSTANT (see `AttributeGridRowHeight`), NOT a measurement,
+        // so this overlay geometry reads the IDENTICAL value the Layout places tiles at — the
+        // recess can no longer drift from the tiles. This closes the OCCURRENCE-3 stretch: the
+        // old height was measured from `tileFrames` here and from `sizeThatFits` in the Layout
+        // (excluding the live-resize tile, T 2026-08-26) — two derivations that disagreed.
+        let unitHeight = AttributeGridRowHeight.unit
         let rowCount = displayedRowCount(layout)
-        guard rowCount > 0 else { return GridMetrics(unitWidth: unitWidth, rowTops: [0], rowHeights: []) }
+        guard rowCount > 0 else {
+            return GridMetrics(unitWidth: unitWidth, unitHeight: unitHeight, rowTops: [0], rowHeights: [])
+        }
         var flexHeight: [Int: CGFloat] = [:]
         for (id, p) in layout where p.flexible { flexHeight[p.row] = tileFrames[id]?.height ?? unitHeight }
         var tops = [CGFloat](repeating: 0, count: rowCount + 1)
@@ -463,7 +638,7 @@ struct FieldPairsGrid: View {
             heights[r] = h
             tops[r + 1] = tops[r] + h + Self.rowSpacing
         }
-        return GridMetrics(unitWidth: unitWidth, rowTops: tops, rowHeights: heights)
+        return GridMetrics(unitWidth: unitWidth, unitHeight: unitHeight, rowTops: tops, rowHeights: heights)
     }
 
     /// Map a point (in the grid space) to the grid cell its LEADING corner should snap to,
@@ -535,6 +710,39 @@ struct FieldPairsGrid: View {
         }
     }
 
+    /// The candidate-footprint outline for an in-flight RESIZE — the same dashed landing
+    /// treatment as the reorder drop target, drawn on the cells the tile will occupy and
+    /// gliding to each new candidate as the tile springs to fill it, so the gesture reads as
+    /// directional and continuous (BUG B). Shows where the TILE lands; whether to also
+    /// preview which neighbours get evicted is a separate T taste call (not built).
+    /// The resolved footprint outline to draw — the live resize, or (DEBUG) the forced fixture.
+    private var effectiveResizeOutline: Placed? {
+        #if DEBUG
+        if let d = debugForcedResize, let p = resolveLayout()[d.tileID] {
+            return Placed(row: p.row, col: min(max(0, p.col), Self.columns - d.span.w),
+                          w: d.span.w, h: d.span.h, flexible: false)
+        }
+        #endif
+        return activeResize != nil ? resizeOutline : nil
+    }
+
+    @ViewBuilder private var resizeCandidateHighlight: some View {
+        if isArranging, let f = effectiveResizeOutline, let m = gridMetrics() {
+            let rect = cellRect(m, row: f.row, col: f.col, w: f.w, h: f.h)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(AppearancePalette.ink.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(AppearancePalette.ink.opacity(0.5),
+                                      style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+                )
+                .frame(width: rect.width, height: rect.height)
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
+                .animation(.spring(response: 0.30, dampingFraction: 0.72), value: f)
+        }
+    }
+
     // Extracted so the ForEach's ViewBuilder stays cheap to type-check.
     @ViewBuilder
     private func cell(for tile: ResolvedTile, placement: Placed?) -> some View {
@@ -542,7 +750,7 @@ struct FieldPairsGrid: View {
         FieldPairCell(
             value: tile.value,
             definition: tile.definition,
-            sizeClass: tile.sizeClass,
+            w: fp.w, h: fp.h,
             resolveNodeTitle: { id in store.nodes.first { $0.id == id }?.title },
             // Stage 5.3 — direct-manip write (boolean/rating) vs sheet edit.
             onDirectSet: { payload in
@@ -554,13 +762,15 @@ struct FieldPairsGrid: View {
                 }
             },
             onRequestEdit: { editingItem = tile.item },
-            // Arrange mode: DRAG the corner grabber to resize (grows into free cells only);
-            // tap the grabber to step one size (a11y). The tile BODY long-press → move.
+            // Arrange mode: DRAG the corner grabber to resize (rubber-band → any w×h);
+            // tap the grabber to step the a11y ladder. The tile BODY long-press → move.
             isArranging: isArranging,
-            canResize: tile.definition.kind.supportedSizeClasses.count > 1,
-            onResizeDrag: { resizeDrag(tile, translation: $0) },
-            onResizeEnd: { activeResize = nil },
-            onGrabberTap: { cycleSize(tile) },
+            canResize: true,   // ws-free-footprint: every tile may take any size
+            onResizeDrag: { resizeDrag(tile, finger: $0) },
+            // Release classifies by OUTCOME (span change), not travel — the a11y tap-cycle is
+            // now folded into `resizeEnd` (span unchanged + still finger). `stillFinger` is only
+            // the secondary jitter guard.
+            onResizeEnd: { resizeEnd(stillFinger: $0) },
             typeScale: typeScale,
             labelStyle: labelStyle
         )
@@ -583,7 +793,10 @@ struct FieldPairsGrid: View {
         // above it would hide the value.
         .attributeTileFootprint(
             w: fp.w, h: fp.h, flexible: fp.flexible,
-            row: placement?.row ?? 0, col: placement?.col ?? 0
+            row: placement?.row ?? 0, col: placement?.col ?? 0,
+            // RUBBER-BAND — while THIS tile is being dragged, its frame follows the finger in
+            // points (overrides the cell rect); the outline shows where it'll resolve.
+            liveSize: liveSize(for: tile.item.id)
         )
         // Report the tile's frame (grid space) so the grid geometry can be reconstructed.
         .background(
@@ -631,9 +844,9 @@ struct FieldPairsGrid: View {
         let item: NodeItem
         let value: FieldValue
         let definition: FieldDefinition
-        let sizeClass: AttributeSizeClass
-        /// A text attribute at `.large` — the full-width, vertically-growing prose block.
-        var isGrowableText: Bool { definition.kind == .text && sizeClass == .large }
+        /// ws-free-footprint — the tile's explicit span (any 1–4 × 1–4). Rendering derives
+        /// from this shape; there is no size-class enum on the render path any more.
+        let span: AttributeGridSpan
     }
 
     private var resolvedTiles: [ResolvedTile] {
@@ -641,44 +854,54 @@ struct FieldPairsGrid: View {
         // identity + the homing tiebreak for position-less tiles.
         fieldItems.compactMap { item in
             guard let fv = item.field, let def = store.fieldDefinition(id: fv.definitionID) else { return nil }
-            // Size resolution (a display rule, no data write): the in-flight arrange choice
-            // wins; else the node's stored size; else the kind's migration/creation default.
-            // Clamp to what the kind supports so a stale/foreign size can't render.
-            let resolved = pendingSizes[item.id] ?? item.attributeTile?.sizeClass ?? def.kind.defaultSizeClass
-            let size = def.kind.supportedSizeClasses.contains(resolved) ? resolved : def.kind.defaultSizeClass
-            return ResolvedTile(item: item, value: fv, definition: def, sizeClass: size)
+            // Span resolution (a display rule, no data write): the in-flight arrange choice
+            // wins; else the node's stored span; else the kind's default (proposed, not a
+            // ceiling). Clamped defensively to the grid (w ≤ columns, h ≥ 1).
+            let d = def.kind.defaultSizeClass
+            let raw = pendingSizes[item.id] ?? item.attributeTile?.span
+                ?? AttributeGridSpan(w: d.widthUnits, h: d.heightUnits)
+            let span = AttributeGridSpan(w: min(max(1, raw.w), Self.columns), h: max(1, raw.h))
+            return ResolvedTile(item: item, value: fv, definition: def, span: span)
         }
     }
 }
 
 /// ws-attributes-grid — a `.field` TILE: a discrete rounded shell (darker than the
 /// detail ground so tiles read as separate objects at any arrangement — retires the
-/// SERVES/VOLUME "down-or-across" ambiguity, which is why zebra striping stays
-/// rejected) whose CONTENT is arranged by `sizeClass`:
-///   · `.stacked` (1×2) — caption over value, the shipped stacked-pair treatment.
-///   · `.compact` (1×1) — the same, tighter, for a single narrow cell.
-///   · `.row`     (1×4) — caption LEADING, value TRAILING, one line.
-///   · `.large`   (2×2) — stacked again, rendered LARGER.
-/// Hierarchy is size + weight + spacing, never hue (T is colorblind).
+/// SERVES/VOLUME "down-or-across" ambiguity, which is why zebra striping stays rejected).
+/// ws-free-footprint: the tile takes any span (w × h) and its CONTENT treatment is DERIVED
+/// from that shape (not a size-class enum) —
+///   · `h==1 && w>=3` → ROW      (caption leading, value trailing, one line).
+///   · `w>=2 && h>=2` → LARGE    (caption over a big value that fills; text = prose block).
+///   · `w==2 && h==1` → STACKED  (caption over value).
+///   · otherwise      → COMPACT  (the same, tighter, for a narrow cell).
+/// ANCHORING (T, from the shape-matrix spike): prose (text) reads from the TOP; atomic
+/// values (number/money/date/duration/measurement/rating/boolean and other short values)
+/// CENTER — a centred value reads as an object placed in a space. Hierarchy is size +
+/// weight + spacing, never hue (T is colorblind).
 struct FieldPairCell: View {
 
     let value: FieldValue
     let definition: FieldDefinition
-    let sizeClass: AttributeSizeClass
+    /// ws-free-footprint — the tile's explicit span, from which the treatment is derived.
+    let w: Int
+    let h: Int
     let resolveNodeTitle: (String) -> String?
     /// Stage 5.3 — direct-manipulation write (boolean toggles; rating taps). Sheet-
     /// kinds route through `onRequestEdit` instead.
     var onDirectSet: (FieldPayload) -> Void = { _ in }
     var onRequestEdit: () -> Void = {}
-    /// P2 arrange mode — when on, DRAG the corner grabber to resize (Control Center
-    /// model); a plain tap cycles one step. Inner controls are inert; the grabber shows
-    /// if `canResize`.
+    /// P2 arrange mode — when on, DRAG the corner grabber to resize (rubber-band); a plain
+    /// tap steps the a11y ladder. Inner controls are inert; the grabber shows if `canResize`.
     var isArranging: Bool = false
     var canResize: Bool = false
-    var onResizeDrag: (CGSize) -> Void = { _ in }
-    var onResizeEnd: () -> Void = {}
-    /// Grabber TAP (a11y alternative to the drag) — steps one size. Body tap has NO role.
-    var onGrabberTap: () -> Void = {}
+    /// The live finger location, in the grid ("attrGrid") coordinate space, so the resize
+    /// rectangle can be measured from the tile's top-left. (Was the raw drag translation.)
+    var onResizeDrag: (CGPoint) -> Void = { _ in }
+    /// Release. The `Bool` is `stillFinger` — was the release near-zero travel (the secondary
+    /// tap/jitter guard). The PRIMARY resize-vs-tap decision is made by the grid off the
+    /// resolved-span change, not here.
+    var onResizeEnd: (Bool) -> Void = { _ in }
     /// Multiplies the value + label point sizes (1 = current). Lets a gate sample smaller
     /// type for T to pick from; the chosen scale gets baked into the constants.
     var typeScale: CGFloat = 1
@@ -687,11 +910,21 @@ struct FieldPairCell: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// The content treatment DERIVED from the span's shape (ws-free-footprint, §4). This is
+    /// the provisional rule the shape-matrix spike ran under — the starting point, not a
+    /// final answer.
+    enum Treatment { case row, large, stacked, compact }
+    private var treatment: Treatment {
+        if h == 1 && w >= 3 { return .row }
+        if w >= 2 && h >= 2 { return .large }
+        if w == 2 && h == 1 { return .stacked }
+        return .compact
+    }
+
     private var isTextKind: Bool { definition.kind == .text }
-    /// A text attribute at `.large` — the full-width prose block that grows vertically.
-    private var isGrowableText: Bool { isTextKind && sizeClass == .large }
-    /// A non-text `.large` tile — the 2×2 HERO whose value renders large to fill it.
-    private var isHero: Bool { sizeClass == .large && !isTextKind }
+    /// PROSE (text) reads from the top; every other kind is an ATOMIC-style value that
+    /// centres. The anchoring split, §5.
+    private var isProse: Bool { isTextKind }
     private var isRatingStars: Bool {
         definition.kind == .rating && (definition.config.ratingStyle ?? .stars) == .stars
     }
@@ -701,17 +934,16 @@ struct FieldPairCell: View {
 
     var body: some View {
         content
-            // Label-over-value tiles CENTER their content (T, 2026-08-25); the growable
-            // prose block stays left-aligned (prose reads left).
-            .frame(maxWidth: .infinity, alignment: isGrowableText ? .leading : .center)
+            // ANCHORING (§5): prose (text) reads from the TOP-LEADING; atomic values CENTER
+            // (an object placed in a space). Applies to the vertical fill and the horizontal
+            // content position both.
+            .frame(maxWidth: .infinity, alignment: isProse ? .leading : .center)
             .padding(.horizontal, 12)
-            .padding(.vertical, sizeClass == .large ? 14 : 10)
-            // maxHeight fills the grid's reserved cell height so a `.large` (2-row) tile
-            // has no dead gap below its content. Content is CENTERED (equal top/bottom
-            // padding + horizontally centered) — except the growable text block, which
-            // top-aligns left with its label.
-            .frame(minHeight: sizeClass == .large ? 84 : (sizeClass == .compact ? 44 : 52),
-                   maxHeight: .infinity, alignment: isGrowableText ? .topLeading : .center)
+            .padding(.vertical, treatment == .large ? 14 : 10)
+            // maxHeight fills the tile's reserved cell height (any h) so a value has no dead
+            // gap below it; content anchors per the split above.
+            .frame(minHeight: treatment == .large ? 84 : (treatment == .compact ? 44 : 52),
+                   maxHeight: .infinity, alignment: isProse ? .topLeading : .center)
             // In arrange mode only the tile-level tap (size cycle) is live — inner
             // controls (stars, links) must not intercept.
             .allowsHitTesting(!isArranging)
@@ -735,14 +967,17 @@ struct FieldPairCell: View {
                     // HIGH priority so a touch on the grabber always wins over the tile
                     // body's reorder long-press (grabber = resize, body = reorder).
                     .highPriorityGesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                            .onChanged { onResizeDrag($0.translation) }
+                        // Report the finger in the grid space so the resize rectangle is
+                        // measured from the tile's top-left (the 2-D continuous model).
+                        DragGesture(minimumDistance: 0, coordinateSpace: .named(FieldPairsGrid.gridSpace))
+                            .onChanged { onResizeDrag($0.location) }
                             .onEnded { v in
-                                // Negligible travel = a TAP → step one size (a11y path).
-                                if abs(v.translation.width) + abs(v.translation.height) < 6 {
-                                    onGrabberTap()
-                                }
-                                onResizeEnd()
+                                // The grid classifies by OUTCOME (did the resolved span change).
+                                // We only pass whether the finger barely moved — the secondary
+                                // tap/jitter guard. PER-AXIS, not summed (a diagonal tap must
+                                // still count as still), floor 4pt.
+                                let still = max(abs(v.translation.width), abs(v.translation.height)) < 4
+                                onResizeEnd(still)
                             }
                     )
                 }
@@ -773,67 +1008,82 @@ struct FieldPairCell: View {
 
     @ViewBuilder
     private var content: some View {
-        if isGrowableText {
-            // GROWABLE BLOCK: label over full prose that wraps and grows — no truncation.
-            VStack(alignment: .leading, spacing: 6) {
-                label(large: false)
-                growableValue
+        // Layout per treatment (label position); the VALUE renders per RULING 1 (T 2026-08-27):
+        // TEXT is always 14pt prose (wraps); ATOMIC FILLS the box (see `valueSlot`). Anchoring
+        // per §5 (prose leads/tops, atomic centres).
+        switch treatment {
+        case .row:
+            HStack(spacing: 10) {
+                label(large: false).fixedSize(horizontal: true, vertical: false)
+                Spacer(minLength: 8)
+                valueSlot
             }
-        } else {
-            switch sizeClass {
-            case .row:
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    // The caption holds its intrinsic width (it's short); the VALUE is what
-                    // truncates when the row is narrow — never the label down to one glyph.
-                    label(large: false)
-                        .fixedSize(horizontal: true, vertical: false)
-                    Spacer(minLength: 8)
-                    valueView(large: false)
-                }
-            case .large:
-                // HERO — label small over a large value that dynamically fills the square.
-                VStack(alignment: .center, spacing: 6) {
-                    label(large: true)
-                    if isRatingStars {
-                        valueView(large: true)
-                    } else {
-                        heroValue
-                    }
-                }
-            case .stacked, .compact:
-                VStack(alignment: .center, spacing: 3) {
-                    label(large: false)
-                    valueView(large: false)
-                }
+        case .large:
+            VStack(alignment: isProse ? .leading : .center, spacing: 6) {
+                label(large: true); valueSlot
+            }
+        case .stacked, .compact:
+            VStack(alignment: isProse ? .leading : .center, spacing: 3) {
+                label(large: false); valueSlot
             }
         }
     }
 
-    /// The growable prose value — wraps to as many lines as the text needs and lets the
-    /// tile grow vertically (`.fixedSize(vertical:)` = never truncate).
-    private var growableValue: some View {
-        Text(displayText ?? "\u{2014}")
-            .font(.system(size: 18 * typeScale, weight: .regular))
-            .foregroundStyle(AppearancePalette.ink.opacity(displayText == nil ? 0.3 : 0.92))
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    /// The value, by kind (RULING 1, T 2026-08-27): rating → stars; TEXT → 14pt prose that wraps;
+    /// everything else (ATOMIC) → FILLS the box. An empty value is a modest 14pt em dash.
+    @ViewBuilder private var valueSlot: some View {
+        if isRatingStars {
+            let v: Int = { if case .rating(let n)? = value.value { return n }; return 0 }()
+            stars(v, scale: definition.config.ratingScale ?? 5, large: treatment == .large)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        } else if displayText == nil {
+            Text("\u{2014}")   // empty — present but unfilled (modest, does NOT fill)
+                .font(.system(size: 14 * typeScale, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isProse ? .topLeading : .center)
+        } else if isTextKind {
+            proseFill
+        } else {
+            fillValue
+        }
     }
 
-    /// The HERO value — sizes DYNAMICALLY to the space it's given: a short value ("106")
-    /// grows to fill; a longer one scales down. The base font is the box height (so it
-    /// fills vertically) and `minimumScaleFactor` shrinks it to fit the width — so the
-    /// value is as big as it can be in both dimensions, no dead space, no overflow.
-    private var heroValue: some View {
+    /// ATOMIC — the value FILLS THE BOX (T ruled 2026-08-27): the font grows to the allotted
+    /// HEIGHT and shrinks (via `minimumScaleFactor`) only to fit the WIDTH — whichever binds
+    /// first — FLOORED at the 14pt baseline (never below; it tail-truncates instead). No ceiling,
+    /// no per-tile normalisation (adjacent tiles WILL differ — that is the rule). ★ NO feedback
+    /// loop: the font is derived from the ALLOTTED `geo` (fixed by the footprint + label height),
+    /// and a GeometryReader is greedy — it never reports an intrinsic size back, so the fitted
+    /// font can't feed the height it's measured against (unlike the resize-gesture live frame).
+    private var fillValue: some View {
         GeometryReader { geo in
+            let h = max(geo.size.height, 14)
             Text(displayText ?? "\u{2014}")
-                .font(.system(size: max(geo.size.height, 1), weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(displayText == nil ? 0.3 : 1))
+                .font(.system(size: h, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.08)
-                // CENTER — the hero value centers with its label (was `.leading`, which
-                // left the big number left-aligned while the label centered).
+                .minimumScaleFactor(14 / h)   // shrink to fit WIDTH, but never below 14pt
+                .truncationMode(.tail)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// TEXT — 14pt prose (T ruled 2026-08-27: text is ALWAYS 14pt, never scales). Fills by
+    /// WRAPPING to as many whole lines as fit the height, top-aligned, tail-truncating past that.
+    /// NO minimumScaleFactor — it never shrinks below the baseline.
+    private var proseFill: some View {
+        let size = 14 * typeScale
+        let lineH = UIFont.systemFont(ofSize: size, weight: .semibold).lineHeight
+        return GeometryReader { geo in
+            Text(displayText ?? "\u{2014}")
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink)
+                .lineLimit(max(1, Int((geo.size.height + 0.5) / lineH)))
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxHeight: .infinity)
     }
 
     private func label(large: Bool) -> some View {
@@ -871,40 +1121,6 @@ struct FieldPairCell: View {
         }
     }
 
-    @ViewBuilder
-    private func valueView(large: Bool) -> some View {
-        if definition.kind == .rating,
-           (definition.config.ratingStyle ?? .stars) == .stars {
-            let v: Int = { if case .rating(let n)? = value.value { return n }; return 0 }()
-            stars(v, scale: definition.config.ratingScale ?? 5, large: large)
-        } else if let text = FieldValueFormatter.display(
-            value, definition: definition, resolveNodeTitle: resolveNodeTitle
-        ) {
-            HStack(spacing: 5) {
-                Text(text)
-                    // HERO (`large`) renders the value big to fill the 2×2 square.
-                    .font(.system(size: (large ? 38 : 14) * typeScale, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink)
-                    .lineLimit(sizeClass == .large ? 2 : 1)
-                    .multilineTextAlignment(.center)
-                    // The value SCALES to fit a tight tile before it truncates — same one
-                    // system at every width (full size when there's room; shrinks only when
-                    // cramped, e.g. "French" on a 190pt card back). Tail-truncates only past
-                    // the floor. This is what keeps a compact tile from feeling crowded.
-                    .minimumScaleFactor(large ? 0.5 : 0.6)
-                    .truncationMode(.tail)
-                if definition.kind == .url {
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                }
-            }
-        } else {
-            Text("\u{2014}")   // em dash — present but unfilled
-                .font(.system(size: (large ? 38 : 14) * typeScale, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
-        }
-    }
 
     /// Stars degrade to fit — a full row never CLIPS at a narrow size. `ViewThatFits`
     /// tries the full row, then a smaller row, then a "★ N" summary (which itself can
@@ -1015,8 +1231,16 @@ enum AttributeTileShell {
     }
 
     static func fill(_ scheme: ColorScheme) -> Color {
-        let c = candidates[index]
-        return Color(hexString: scheme == .dark ? c.dark : c.light)
+        if scheme == .dark {
+            return Color(hexString: candidates[index].dark)   // dark unchanged (T ruled LIGHT only)
+        }
+        // LIGHT (T ruled 2026-08-27): the tile IS the DETAIL-VIEW GROUND, so it reads as RAISED
+        // out of the darker ink@0.05-tinted attributes zone (≈ #F4F4F0). Token =
+        // `CardSurfaceResolved.resolvedCardBackgroundHex` (#FFFFFA) — the SAME fill
+        // `NodeDetailView.detailGround` + the card faces use (derived from
+        // `AppearancePalette.cwParchmentHex`). NOT a new literal. Was the warm #FBF7EE lift,
+        // which under-contrasted the zone.
+        return Color(hexString: CardSurfaceResolved.resolvedCardBackgroundHex)
     }
 
     static func rim(_ scheme: ColorScheme) -> Color {
@@ -1047,6 +1271,10 @@ struct AttributeTileFootprint: Equatable {
     /// literally — no packing — so interior holes persist.
     var row: Int = 0
     var col: Int = 0
+    /// ws-free-footprint RUBBER-BAND — while this tile is being drag-resized, its frame is
+    /// this LIVE POINT size (not the cell rectangle), anchored at its cell origin, so it
+    /// follows the finger continuously. Nil otherwise (the tile snaps to its w×h cells).
+    var liveSize: CGSize? = nil
 }
 
 /// Defaults to a 2×1 (`.stacked`) footprint at the origin for any subview that doesn't declare one.
@@ -1076,26 +1304,89 @@ private struct GridWidthKey: PreferenceKey {
 extension View {
     /// Declares a tile's grid footprint + resolved cell to the enclosing `AttributeCellGrid`.
     func attributeTileFootprint(w: Int, h: Int, flexible: Bool = false,
-                                row: Int = 0, col: Int = 0) -> some View {
+                                row: Int = 0, col: Int = 0, liveSize: CGSize? = nil) -> some View {
         layoutValue(key: AttributeTileFootprintKey.self,
-                    value: AttributeTileFootprint(w: w, h: h, flexible: flexible, row: row, col: col))
+                    value: AttributeTileFootprint(w: w, h: h, flexible: flexible,
+                                                  row: row, col: col, liveSize: liveSize))
     }
 }
 
-/// ws-attributes-grid P4 — the ONE uniform cell-row-height rule, called by BOTH
-/// `AttributeCellGrid.layout(for:width:)` (measured subview heights) and
-/// `FieldPairsGrid.gridMetrics` (rendered tile-frame heights). Sharing the rule AND the
-/// fallback constant is what guarantees the panel's reserved bottom and the arrange
-/// overlay's last row land on the same pixel — the two derivations can no longer drift.
-/// The rule: the tallest NON-flex single-row tile sets the height (a 2-tall tile spans
-/// two; a flex text block owns its own variable band); else the tallest non-flex tile;
-/// else a constant.
+/// ws-attributes-grid — the ONE uniform cell-row height, read by BOTH
+/// `AttributeCellGrid.layout(for:width:)` (which PLACES the tiles) and
+/// `FieldPairsGrid.gridMetrics` (which draws the arrange recess + maps points to cells).
+/// It is a DESIGN CONSTANT, not a measurement — the OCCURRENCE-3 structural fix (T handoff
+/// 2026-08-27), the last of three grid-stretches that all shared ONE shape: a value COMPUTED
+/// FROM a measurement fed back as an INPUT to the same measurement.
+///
+/// Why a constant is now correct (it wasn't before the rulings). The old rule derived the row
+/// height from the tallest single-row tile's CONTENT — and the two callers measured that
+/// content DIFFERENTLY: the Layout from `sizeThatFits` (an INTRINSIC measurement), gridMetrics
+/// from the RENDERED tile frame (`tileFrames`). Two measurements of "the same" height, so they
+/// could drift (stale @State lag, a fitted-font intrinsic, an overflow past `minHeight`) and the
+/// recess cells stopped lining up 1-to-1 with the tiles. Each prior fix (exclude the live-resize
+/// frame; fall back when no h==1 tile exists) was correct for its trigger but only closed ONE
+/// path. RULING 1 removed the need for content to set the height at all: every h==1 tile now
+/// FILLS a fixed row — text is always 14pt and wraps, atomic values fill the box, stars are
+/// width-bound — so no single-row tile's content can ever require MORE than a fixed height. The
+/// row height is therefore a value NOTHING render-time can influence, and because both callers
+/// read THIS one value the panel's reserved bottom, the overlay's last row, and every placed
+/// tile frame agree by construction — there is nothing left to measure, so nothing left to drift.
+///
+/// 52pt = a stacked tile at the BASE 14pt value + 9pt label + padding (the pre-existing
+/// `fallback`, the shape-matrix sampler's constant, and the stacked-tile `minHeight`).
 enum AttributeGridRowHeight {
-    static let fallback: CGFloat = 52
-    static func unitHeight(from tiles: [(height: CGFloat, h: Int, flexible: Bool)]) -> CGFloat {
-        let singles = tiles.filter { $0.h == 1 && !$0.flexible }.map(\.height)
-        let nonFlex = tiles.filter { !$0.flexible }.map(\.height)
-        return max(singles.max() ?? nonFlex.max() ?? fallback, 1)
+    static let unit: CGFloat = 52
+}
+
+/// RULING 2 (T, 2026-08-27) — the DEFAULT footprint proposed for a TEXT attribute at the moment
+/// its content is first created: always FULL WIDTH (4 cells), with the HEIGHT computed ONCE to
+/// fit the text at the fixed 14pt baseline, then STORED as an ordinary span. It does NOT re-grow
+/// as the user edits, and the user may resize freely afterward (system proposes, human decides —
+/// the posture of every default in this arc). Computed off-render, in the store, on first content.
+///
+/// ★★ SAFE — this CANNOT reopen the grid-stretch feedback loop that the retired growable text
+/// block caused (see `AttributeGridRowHeight`). It is a pure SPAN CALCULATION: it measures the
+/// text ONCE, off the render path, at a canonical width, and DIVIDES by the fixed row height to
+/// get a whole-cell count. It READS `AttributeGridRowHeight.unit` (a constant) as a divisor; it
+/// never feeds a measured height back INTO row height. The old block let CONTENT drive the
+/// RENDERED tile height, which fed `unitHeight`; here content drives only a stored INTEGER, and
+/// render still reads the constant. Content → stored span (once); render → constant. Decoupled.
+enum AttributeTextDefault {
+    /// A reference full-grid width for the at-creation proposal (the store has no live grid
+    /// width). The result is only a PROPOSAL the user resizes on their real device, so ±1 row
+    /// from a width difference is immaterial. ~detail content width.
+    static let canonicalGridWidth: CGFloat = 370
+
+    /// The proposed span for a text value: width = 4; height = the fewest whole cells that hold
+    /// the text at 14pt. Empty → 4×1. One-liner → 4×1 (the `.row` treatment). Else the smallest
+    /// `.large` height whose prose area holds the wrapped text, capped at `maxRows`.
+    static func span(for text: String, columnWidth: CGFloat = canonicalGridWidth) -> AttributeGridSpan {
+        let w = FieldPairsGrid.columns
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return AttributeGridSpan(w: w, h: 1) }
+        let font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        // Inner text width of a full-width tile = grid width minus the tile's 12pt side padding.
+        let inner = max(1, columnWidth - 2 * 12)
+        let ns = trimmed as NSString
+        // Fits one line? → a 4×1 row (caption leading, value trailing — the `.row` treatment).
+        if ns.size(withAttributes: [.font: font]).width <= inner {
+            return AttributeGridSpan(w: w, h: 1)
+        }
+        // Multi-line → the smallest `.large` cell-height whose prose area holds the wrapped text.
+        let textHeight = ns.boundingRect(
+            with: CGSize(width: inner, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font], context: nil).height
+        // Prose area of a 4×h `.large` tile = tileHeight − chrome (14pt top+bottom padding + the
+        // 6pt VStack gap + the ~15pt large label). tileHeight uses the SAME constants the Layout
+        // places cells at. A fixed estimate; being a proposal, ±1 row is fine.
+        let unit = AttributeGridRowHeight.unit
+        let chrome: CGFloat = 14 * 2 + 6 + 15
+        for h in 2...FieldPairsGrid.maxRows {
+            let tileH = CGFloat(h) * unit + CGFloat(h - 1) * FieldPairsGrid.rowSpacing
+            if tileH - chrome >= textHeight { return AttributeGridSpan(w: w, h: h) }
+        }
+        return AttributeGridSpan(w: w, h: FieldPairsGrid.maxRows)
     }
 }
 
@@ -1174,7 +1465,7 @@ struct AttributeCellGrid: Layout {
     /// flex text block takes its intrinsic height.
     private func layout(for subviews: Subviews, width: CGFloat) -> (frames: [CGRect], unitHeight: CGFloat) {
         let (columns, unitWidth) = columnMetrics(for: width)
-        guard columns > 0 else { return ([], AttributeGridRowHeight.fallback) }
+        guard columns > 0 else { return ([], AttributeGridRowHeight.unit) }
 
         func tileWidth(_ w: Int) -> CGFloat {
             CGFloat(w) * unitWidth + CGFloat(max(0, w - 1)) * unitSpacing
@@ -1183,19 +1474,22 @@ struct AttributeCellGrid: Layout {
         // Footprint + declared cell per tile. A FLEXIBLE tile spans every column and takes
         // its intrinsic (measured) height; every other tile snaps to whole cells.
         struct Spec { let i: Int; let w: Int; let h: Int; let row: Int; let col: Int
-                      let measured: CGFloat; let flexible: Bool }
+                      let measured: CGFloat; let flexible: Bool; let liveSize: CGSize? }
         let specs: [Spec] = subviews.enumerated().map { (i, sv) in
             let fp = sv[AttributeTileFootprintKey.self]
             let w = fp.flexible ? columns : min(max(1, fp.w), columns)
             let h = max(1, fp.h)
             let measured = sv.sizeThatFits(ProposedViewSize(width: tileWidth(w), height: nil)).height
             return Spec(i: i, w: w, h: h, row: max(0, fp.row), col: max(0, fp.col),
-                        measured: measured, flexible: fp.flexible)
+                        measured: measured, flexible: fp.flexible, liveSize: fp.liveSize)
         }
-        // Uniform cell-row height — the SAME rule `FieldPairsGrid.gridMetrics` uses (so the
-        // panel bottom and the arrange overlay can't drift): tallest non-flex single-row tile.
-        let unitHeight = AttributeGridRowHeight.unitHeight(
-            from: specs.map { ($0.measured, $0.h, $0.flexible) })
+        // Uniform cell-row height — a DESIGN CONSTANT (see `AttributeGridRowHeight`), the SAME
+        // value `FieldPairsGrid.gridMetrics` reads, so the placed tiles and the arrange recess
+        // agree by construction. Deriving it from measured content HERE (sizeThatFits) versus the
+        // rendered frame THERE (tileFrames) is exactly what let the two drift and stretched the
+        // grid three times; there is nothing left to measure. (`specs.measured` survives only for
+        // the inert flex-stride path below — the retired growable-text band.)
+        let unitHeight = AttributeGridRowHeight.unit
 
         var placements: [(row: Int, col: Int, spec: Spec)] = []
         if columns >= canonicalColumns {
@@ -1248,10 +1542,16 @@ struct AttributeCellGrid: Layout {
         for p in placements {
             let x = CGFloat(p.col) * (unitWidth + unitSpacing)
             let y = rowTop[p.row]
-            let h: CGFloat = p.spec.flexible
-                ? p.spec.measured
-                : rowTop[p.row + p.spec.h] - rowTop[p.row] - rowSpacing
-            out[p.spec.i] = CGRect(x: x, y: y, width: tileWidth(p.spec.w), height: h)
+            if let live = p.spec.liveSize {
+                // RUBBER-BAND — the drag-resized tile follows the finger in points, anchored
+                // at its cell origin (overrides the cell rectangle until release).
+                out[p.spec.i] = CGRect(x: x, y: y, width: live.width, height: live.height)
+            } else {
+                let h: CGFloat = p.spec.flexible
+                    ? p.spec.measured
+                    : rowTop[p.row + p.spec.h] - rowTop[p.row] - rowSpacing
+                out[p.spec.i] = CGRect(x: x, y: y, width: tileWidth(p.spec.w), height: h)
+            }
         }
         return (out, unitHeight)
     }

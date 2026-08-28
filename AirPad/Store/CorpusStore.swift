@@ -4531,6 +4531,18 @@ final class CorpusStore {
         var updated = nodes[nIdx]
         updated.items[iIdx].field?.value = value
         updated.items[iIdx].field?.upperValue = upperValue
+        // RULING 2 (T, 2026-08-27) — a TEXT attribute's DEFAULT footprint is proposed ONCE, the
+        // first time its content is created: full width, height computed to fit at 14pt, then
+        // stored like any other span. Only when the tile has no authored span yet
+        // (`attributeTile == nil`) — so it never re-grows as the user edits, and a user resize
+        // (which writes `attributeTile`) is never overridden. SAFE: a pure off-render span calc
+        // that reads the 52pt constant and never feeds row height (see `AttributeTextDefault`).
+        if updated.items[iIdx].attributeTile == nil,
+           case .text(let s)? = value,
+           !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           fieldDefinition(id: updated.items[iIdx].field?.definitionID ?? "")?.kind == .text {
+            updated.items[iIdx].attributeTile = AttributeTile(span: AttributeTextDefault.span(for: s))
+        }
         let now = Date()
         updated.items[iIdx].updatedAt = now
         updated.updatedAt = now
@@ -4573,7 +4585,7 @@ final class CorpusStore {
     /// writes nothing. Position REPLACES the old array-order reorder (`commitFieldOrder`
     /// retired): the underlying `items` order is left untouched — layout is now positional.
     func commitAttributeLayout(
-        _ layout: [String: (size: AttributeSizeClass, position: AttributeGridPosition)],
+        _ layout: [String: (span: AttributeGridSpan, position: AttributeGridPosition)],
         nodeID: String
     ) async {
         guard !layout.isEmpty,
@@ -4584,14 +4596,14 @@ final class CorpusStore {
             guard let iIdx = updated.items.firstIndex(where: { $0.id == itemID && $0.type == .field })
             else { continue }
             let current = updated.items[iIdx].attributeTile
-            // Skip tiles already at the exact target (size AND position) — keeps a no-op
+            // Skip tiles already at the exact target (span AND position) — keeps a no-op
             // arrange, or an unchanged tile in a real arrange, from a needless write.
-            if current?.sizeClass == target.size && current?.position == target.position { continue }
+            if current?.span == target.span && current?.position == target.position { continue }
             if updated.items[iIdx].attributeTile != nil {
-                updated.items[iIdx].attributeTile?.sizeClass = target.size
+                updated.items[iIdx].attributeTile?.span = target.span
                 updated.items[iIdx].attributeTile?.position = target.position
             } else {
-                updated.items[iIdx].attributeTile = AttributeTile(sizeClass: target.size,
+                updated.items[iIdx].attributeTile = AttributeTile(span: target.span,
                                                                   position: target.position)
             }
             changed = true

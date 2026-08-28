@@ -122,6 +122,8 @@ private struct SpineGateView: View {
             else if section == "trunc" { truncRepro }
             else if section == "typesizes" { typeSizesRepro }
             else if section == "sizematrix" { sizeMatrixRepro }
+            else if section == "decisions" { decisionsRepro }
+            else if section == "r2default" { r2DefaultRepro }
             else { entriesRepro }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -178,6 +180,9 @@ private struct SpineGateView: View {
             case "typesizes":
                 store.fieldDefinitions = SpineGateView.recipeDefs()
             case "sizematrix": break   // self-contained sampler (builds its own defs/values)
+            case "decisions", "r2default":
+                // Rulings 2 & 3 render PRODUCTION FieldPairsGrid → seed a text def + the mewtwo defs.
+                store.fieldDefinitions = SpineGateView.decisionDefs()
             default: store.nodes = [node]
             }
         }
@@ -281,6 +286,99 @@ private struct SpineGateView: View {
                     .foregroundStyle(.green)
                     .accessibilityIdentifier("arrHUD")
                 #endif
+
+                // ALL-TALL regression repro (T's Fraisier cake): every tile h≥2, NO h==1 →
+                // the recess grid must NOT stretch ×h.
+                mewtwoCaption("ALL-TALL — every tile 1×3, no h==1 (recess must NOT stretch)")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "allTall",
+                                   fieldItems: SpineGateView.allTallItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // OCCURRENCE-3 — MIXED node (T's real Fraisier shape: one short h==1 tile + several
+                // tall). This exercises the `singles.max()` path the all-tall fix never touched: the
+                // recess must stay uniform at REST (before any resize), NOT stretch ~3×.
+                mewtwoCaption("MIXED — 1 short h==1 + several tall (recess uniform at rest — the device bug)")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "ffMix",
+                                   fieldItems: SpineGateView.mixedStretchItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // ws-free-footprint VERTICAL-RESIZE FEEDBACK-LOOP fix — a MID-DRAG state forced
+                // via `debugForcedResize` (the bug lives mid-gesture; a correct end-state hides
+                // it). The first tile is stretched to a live 2-cell / 4-cell frame; with the fix
+                // the OTHER tiles + the recess grid do NOT stretch, and the outline resolves h.
+                mewtwoCaption("VERT-RESIZE (a) mid-drag h=2 — only the dragged tile stretches")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "vrA",
+                                   fieldItems: SpineGateView.resizeBeforeItems(),
+                                   debugForcedResize: (tileID: "rz-c0",
+                                                       size: CGSize(width: 84, height: 112),
+                                                       span: AttributeGridSpan(w: 1, h: 2)),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                mewtwoCaption("VERT-RESIZE (b) mid-drag h=4 — grid does not stretch")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "vrB",
+                                   fieldItems: SpineGateView.resizeBeforeItems(),
+                                   debugForcedResize: (tileID: "rz-c0",
+                                                       size: CGSize(width: 84, height: 232),
+                                                       span: AttributeGridSpan(w: 1, h: 4)),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // ws-attributes-resize-displace — THE REPRO (gate a): 4 compact tiles filling
+                // one row. BEFORE, none could reach .large (0 of 4). AFTER shows the computed
+                // end-state of dragging c0's grabber to .large — it grows 2×2 and displaces
+                // its right neighbour forward (Option A, T 2026-08-26). Rendered from explicit
+                // stored positions so resolveLayout honours the post-displacement layout.
+                mewtwoCaption("RESIZE-DISPLACE gate a — BEFORE: 4 compact fill one row")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "rzB",
+                                   fieldItems: SpineGateView.resizeBeforeItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                mewtwoCaption("RESIZE-DISPLACE gate a — AFTER: c0 grown to .large, c1 displaced down")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "rzA",
+                                   fieldItems: SpineGateView.resizeAfterItems(),
+                                   isArranging: true)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+
+                // ws-free-footprint — derived treatments + anchoring (gates d/e), rendered
+                // NON-arranging (real render). Tall TEXT (4×3) fills with the height-aware
+                // line count; tall NUMBER (2×3) CENTRES; 2×2 text = the migrated-.large look.
+                mewtwoCaption("FREE FOOTPRINT — d: tall text fills · e: tall number centres")
+                VStack(alignment: .leading, spacing: 12) {
+                    FieldPairsGrid(nodeID: "ffN",
+                                   fieldItems: SpineGateView.freeFootprintItems(),
+                                   isArranging: false)
+                }
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
                 // P4 — ONE-ROW node in arrange: the panel must contain the occupied row PLUS
                 // one empty "next page" row of recess cells, with NOTHING drawn outside the
                 // rounded background (the phantom row used to bleed onto the sections below).
@@ -310,6 +408,70 @@ private struct SpineGateView: View {
             }
             .padding(16)
         }
+    }
+
+    /// Resize-displace gate-a fixtures. BEFORE: four compact numbers filling row 0.
+    /// AFTER: the deterministic end-state (verified by the logic replica) of resizing the
+    /// first tile to .large — c0 becomes 2×2 at (0,0); its displaced right neighbour c1
+    /// slides to (1,2); c2/c3 keep their cells. Explicit positions on every tile so the
+    /// grid renders the exact post-displacement layout (no re-home).
+    private static func compact(_ id: String, _ n: Int, size: AttributeSizeClass,
+                                _ row: Int, _ col: Int) -> NodeItem {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var it = NodeItem(id: "rz-\(id)", type: .field, createdAt: now,
+                          field: FieldValue(definitionID: "m-atk", value: .number(Decimal(n))))
+        it.attributeTile = AttributeTile(sizeClass: size, position: AttributeGridPosition(row: row, col: col))
+        return it
+    }
+    static func resizeBeforeItems() -> [NodeItem] {
+        [compact("c0", 1, size: .compact, 0, 0), compact("c1", 2, size: .compact, 0, 1),
+         compact("c2", 3, size: .compact, 0, 2), compact("c3", 4, size: .compact, 0, 3)]
+    }
+    static func resizeAfterItems() -> [NodeItem] {
+        [compact("c0", 1, size: .large, 0, 0), compact("c1", 2, size: .compact, 1, 2),
+         compact("c2", 3, size: .compact, 0, 2), compact("c3", 4, size: .compact, 0, 3)]
+    }
+
+    /// ws-free-footprint gate fixtures — explicit spans (any w×h) to show the derived
+    /// treatments + anchoring: a TALL TEXT tile fills with the height-aware line count
+    /// (gate d), a TALL NUMBER centres rather than jamming to the top (gate e), plus a 2×2
+    /// text block (the migrated-`.large` look) and a compact number.
+    private static func spanItem(_ id: String, def: String, _ v: FieldPayload,
+                                 w: Int, h: Int, _ row: Int, _ col: Int) -> NodeItem {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var it = NodeItem(id: "ff-\(id)", type: .field, createdAt: now,
+                          field: FieldValue(definitionID: def, value: v))
+        it.attributeTile = AttributeTile(span: AttributeGridSpan(w: w, h: h),
+                                         position: AttributeGridPosition(row: row, col: col))
+        return it
+    }
+    /// Repro for T's Fraisier-cake regression: a node where EVERY tile is tall (h≥2), NO h==1
+    /// tile → `AttributeGridRowHeight.unitHeight` fell back to a multi-row tile's FULL height,
+    /// stretching the recess grid ×h.
+    static func allTallItems() -> [NodeItem] {
+        [ spanItem("at1", def: "m-type", .vocabulary(valueIDs: ["psychic"]), w: 1, h: 3, 0, 0),
+          spanItem("at2", def: "m-atk", .number(10), w: 1, h: 3, 0, 1),
+          spanItem("at3", def: "m-hp", .number(45), w: 1, h: 3, 0, 2) ]
+    }
+    /// OCCURRENCE-3 repro (T's Fraisier-cake node is MIXED, not all-tall): ONE short h==1 tile
+    /// among several tall ones. The lone h==1 tile is exactly what the old `singles.max()`
+    /// sampled — if its atomic `fillValue` inflated the tile's measured height, EVERY recess row
+    /// stretched (~3×) at REST (the all-tall fix left this path untouched). With the constant unit
+    /// height the recess must stay uniform no matter what that tile's content measures.
+    static func mixedStretchItems() -> [NodeItem] {
+        [ spanItem("mx-cui", def: "m-type", .vocabulary(valueIDs: ["psychic"]), w: 2, h: 1, 0, 0),
+          spanItem("mx-ck",  def: "m-atk",  .number(35),  w: 1, h: 3, 1, 0),
+          spanItem("mx-sv",  def: "m-hp",   .number(8),   w: 1, h: 3, 1, 1),
+          spanItem("mx-rt",  def: "m-atk",  .number(120), w: 2, h: 4, 1, 2) ]
+    }
+    static func freeFootprintItems() -> [NodeItem] {
+        [ spanItem("txt", def: "m-flavor",
+                   .text("Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful Pokémon in the world."),
+                   w: 4, h: 3, 0, 0),
+          spanItem("num", def: "m-hp", .number(106), w: 2, h: 3, 3, 0),
+          spanItem("txt2", def: "m-flavor", .text("A short flavor note that wraps to a couple of lines here."),
+                   w: 2, h: 2, 3, 2),
+          spanItem("num2", def: "m-atk", .number(42), w: 1, h: 1, 5, 2) ]
     }
 
     /// P4 one-row fixture — two `.stacked` tiles fill row 0 (cols 0-1, 2-3); arrange mode
@@ -532,6 +694,235 @@ private struct SpineGateView: View {
 
     static func matrixNodeTitle(length: String) -> String {
         length == "short" ? "Mewtwo" : length == "long" ? "Mewtwo, the Genetic Pokémon (Kanto No. 150)" : "Mewtwo (Psychic)"
+    }
+    #endif
+
+    // MARK: - `-SPINEGATE decisions` — one DECISION SHEET per T ruling (DEBUG ballot)
+
+    /// The shape-matrix sheets re-shot BY RULING, one sheet = one question, labelled by the
+    /// RULING + the OPTION (not flag values). `-DECRULING 1|2|3`, `-DECOPT A|B|C`. Ruling 1
+    /// uses the sampler (type-scale isn't in production); Rulings 2 & 3 render the PRODUCTION
+    /// `FieldPairsGrid` for real fidelity. OBSERVE ONLY — no recommendation on the sheets.
+    @ViewBuilder private var decisionsRepro: some View {
+        #if DEBUG
+        let ruling = UserDefaults.standard.string(forKey: "DECRULING") ?? "1"
+        let opt = (UserDefaults.standard.string(forKey: "DECOPT") ?? "A").uppercased()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if ruling == "1" { decisionRuling1(opt) }
+                else if ruling == "2" { decisionRuling2(opt) }
+                else if ruling == "3" { decisionRuling3(opt) }
+                else { Text("-DECRULING 1|2|3  -DECOPT A|B|C").foregroundStyle(.red) }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        #else
+        EmptyView()
+        #endif
+    }
+
+    #if DEBUG
+    private func decHeader(_ ruling: String, _ question: String, _ option: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(ruling).font(.system(size: 15, weight: .heavy, design: .monospaced)).foregroundStyle(.green)
+            Text(question).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+            Text(option).font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(.primary)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(AppearancePalette.ink.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    // ── RULING 1 — TYPE SCALING (sampler; number + text at 6 shapes, one type-mode per sheet) ──
+    @ViewBuilder private func decisionRuling1(_ opt: String) -> some View {
+        let mode: SMTypeMode = opt == "B" ? .capped : opt == "C" ? .uncapped : .off
+        let optName = opt == "B" ? "OPTION B — CAPPED (type grows with height, cap \(Int(SMTypeMode.cap))pt)"
+                    : opt == "C" ? "OPTION C — UNCAPPED (type grows with height, no cap)"
+                    : "OPTION A — OFF (type fixed at current sizes — ships today)"
+        let shapes: [(Int, Int)] = [(1, 1), (2, 1), (2, 2), (2, 4), (4, 2), (4, 4)]
+        let spacing: CGFloat = 10
+        let unitWidth: CGFloat = (370 - 3 * spacing) / 4
+        // ONE uniform scale for the WHOLE sheet (T 2026-08-27) so type is comparable DOWN the
+        // sheet — the axis Ruling 1 is about. Binding constraint = the widest pair (the 4-wide
+        // shapes, number + text side by side). Everything scaled by this single factor.
+        let widths = shapes.map { (w, _) in 2 * (CGFloat(w) * unitWidth + CGFloat(w - 1) * spacing) + 14 }
+        let sheetScale = min(1, 356 / (widths.max() ?? 356))
+        let totalH = shapes.map { (_, h) in CGFloat(h) * 52 + CGFloat(h - 1) * 12 }.reduce(0, +) + 12 * CGFloat(shapes.count - 1)
+        VStack(alignment: .leading, spacing: 12) {
+            decHeader("RULING 1 — TYPE SCALING", "Should a value's type grow with the tile's height? (one rule for BOTH number and text)",
+                      "\(optName) · whole sheet ×\(String(format: "%.2f", sheetScale)) (single uniform scale) · blue badge = requested font pt")
+            Text("left = NUMBER (the OPEN question) · right = TEXT (RULED 2026-08-27: always 14pt, never scales) · uniform scale")
+                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(0..<shapes.count, id: \.self) { i in
+                    let (w, h) = shapes[i]
+                    HStack(alignment: .top, spacing: 14) {
+                        ShapeMatrixCell(kind: .number, w: w, h: h, length: "med",
+                                        columns: 4, unitWidth: unitWidth, spacing: spacing, typeMode: mode, showPt: true)
+                        ShapeMatrixCell(kind: .text, w: w, h: h, length: "med",
+                                        columns: 4, unitWidth: unitWidth, spacing: spacing, typeMode: mode, showPt: true)
+                    }
+                }
+            }
+            .scaleEffect(sheetScale, anchor: .topLeading)
+            .frame(width: (widths.max() ?? 356) * sheetScale, height: totalH * sheetScale, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // ── RULING 2 VERIFICATION (T ruled the design, no sheet) — render each text length at the
+    // COMPUTED default span (`AttributeTextDefault.span`, the exact store path) at detail width,
+    // so the proposed at-creation heights + fill can be eyeballed in the REAL primitive. ──
+    @ViewBuilder private var r2DefaultRepro: some View {
+        let samples: [(String, String)] = [
+            ("SHORT", "French"),
+            ("MEDIUM", "Citrusy, creamy, bright, fresh & tangy"),
+            ("LONG", "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful of them all."),
+            ("FLAVOR", "A classic French almond-sponge cake layered with vanilla crème mousseline and fresh strawberries.")
+        ]
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("RULING 2 — TEXT-LARGE DEFAULT (computed ONCE at creation, then a stored span; w=4, h fits the text at 14pt; user resizes freely after)")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(.green)
+                ForEach(samples, id: \.0) { (label, text) in
+                    let span = AttributeTextDefault.span(for: text)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(label) → proposed default \(span.w)×\(span.h)")
+                            .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                        FieldPairsGrid(nodeID: "r2d-\(label)",
+                                       fieldItems: [SpineGateView.decItem(label, def: "dec-text", .text(text), span, 0, 0)],
+                                       isArranging: false)
+                            .frame(width: 370, alignment: .leading)
+                            .padding(.vertical, 10).padding(.horizontal, 12)
+                            .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    // ── RULING 2 — TEXT-LARGE DEFAULT (PRODUCTION FieldPairsGrid; short/med/long/FLAVOR) ──
+    @ViewBuilder private func decisionRuling2(_ opt: String) -> some View {
+        let span = opt == "B" ? AttributeGridSpan(w: 4, h: 1)
+                 : opt == "C" ? AttributeGridSpan(w: 4, h: 2)
+                 : AttributeGridSpan(w: 2, h: 2)
+        let optName = opt == "B" ? "OPTION B — 4×1 (the old full-width growable block)"
+                    : opt == "C" ? "OPTION C — 4×2 (a wider default, proposed)"
+                    : "OPTION A — 2×2 (what the free-footprint build defaults to now)"
+        VStack(alignment: .leading, spacing: 12) {
+            decHeader("RULING 2 — TEXT-LARGE DEFAULT",
+                      "When a text attribute is made large, what shape should it DEFAULT to? (the user can still resize freely — this is only the default.)",
+                      optName)
+            Text("four tiles, all at this default shape: SHORT · MEDIUM · LONG · mewtwo FLAVOR (real content)")
+                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            FieldPairsGrid(nodeID: "dec2", fieldItems: SpineGateView.decision2Items(span: span),
+                           isArranging: false)
+                .frame(width: 370, alignment: .leading)
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    // ── RULING 3 — CARD BACK: 2-UP vs 4-UP (a real A/B; the two options are BOTH T's own calls) ──
+    // Segmented by `-DECOPT` so each sheet is one screenshot: DECOPT A (default) = COST NODE @190
+    // (A vs B, content chosen to EXPOSE B's ~40pt cells); DECOPT B = FRAISIER honest case @190
+    // (A vs B); DECOPT C = detail 370 (A vs B, which should be IDENTICAL). A = adaptive
+    // (fixedFourUp:false, 2-up at 190); B-mode = fixedFourUp:true (4-up at 190, ~40pt cells).
+    @ViewBuilder private func decisionRuling3(_ opt: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            decHeader("RULING 3 — CARD BACK: 2-UP vs 4-UP",
+                      "Both calls are YOURS (quoted at FieldPairsGrid.swift:1343): \"stay 2-UP at ~190pt, never a single starved column\" AND \"the grid is 4 units wide\". The 2-up floor was the earlier call; the collapse is its consequence. You now want four columns everywhere (\"I don't want fragmentation\"). These sheets pick which COST you prefer — they do NOT recommend.",
+                      "A = LOSES the user's width choice on the card back (a 4-wide reads identical to a 2-wide)   ·   B = KEEPS it, but each cell is ~40pt narrow before spacing")
+            if opt == "C" {
+                // DETAIL 370 — should be IDENTICAL both ways (4-up is already what detail does).
+                Text("SHEET 3/3 · detail 370 — A and B should be IDENTICAL here (4-up is what detail already does → forcing 4-up changes NOTHING you already approved at detail width). Fraisier node.")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                r3Block("OPTION A — adaptive · 370", nid: "d3dA",
+                        items: SpineGateView.decision3FraisierItems(), width: 370, fixed: false)
+                r3Block("OPTION B — forced 4-up · 370", nid: "d3dB",
+                        items: SpineGateView.decision3FraisierItems(), width: 370, fixed: true)
+            } else if opt == "B" {
+                // FRAISIER — the honest real case (a 4-wide FLAVOR + a 2-wide RATING the user made wide).
+                Text("SHEET 2/3 · FRAISIER (honest case) @ card 190 — watch the 4-wide FLAVOR + the 2-wide RATING. A collapses both to 2-wide; B keeps them but at ~40pt units.")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                r3Block("OPTION A — 2-UP · 190", nid: "d3fA",
+                        items: SpineGateView.decision3FraisierItems(), width: 190, fixed: false)
+                r3Block("OPTION B — 4-UP FORCED · 190", nid: "d3fB",
+                        items: SpineGateView.decision3FraisierItems(), width: 190, fixed: true)
+            } else {
+                // COST NODE — content picked to expose B's ~40pt cells (French / a rating / 1,234 / a 4-wide).
+                Text("SHEET 1/3 · COST NODE @ card 190 — text \"French\" (1×1) · rating (1×1) · number 1,234 (1×1) · a 4-wide tile the user chose to keep wide. Does \"French\" fit at ~40pt? do the stars survive or fall to \"★ N\"? does 1,234 fit? (DECOPT B = Fraisier · C = detail 370)")
+                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                r3Block("OPTION A — 2-UP (adaptive [2,4], ships today) · 190", nid: "d3cA",
+                        items: SpineGateView.decision3CostItems(), width: 190, fixed: false)
+                r3Block("OPTION B — 4-UP FORCED (fixedFourUp) · 190 → ~40pt cells", nid: "d3cB",
+                        items: SpineGateView.decision3CostItems(), width: 190, fixed: true)
+            }
+        }
+    }
+
+    /// One labelled RULING-3 render at a fixed width + column mode (recessed panel like the
+    /// production Attributes section, so tile fill reads truthfully).
+    private func r3Block(_ title: String, nid: String, items: [NodeItem],
+                         width: CGFloat, fixed: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(.green)
+            FieldPairsGrid(nodeID: nid, fieldItems: items, fixedFourUp: fixed, isArranging: false)
+                .frame(width: width, alignment: .leading)
+                .padding(.vertical, 10).padding(.horizontal, 12)
+                .background(AppearancePalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    static func decisionDefs() -> [FieldDefinition] {
+        [FieldDefinition(id: "dec-text", displayName: "Flavor", kind: .text, config: FieldConfig()),
+         FieldDefinition(id: "dec-num", displayName: "Serves", kind: .number, config: FieldConfig()),
+         FieldDefinition(id: "dec-type", displayName: "Type", kind: .text, config: FieldConfig()),
+         FieldDefinition(id: "dec-cuisine", displayName: "Cuisine", kind: .text, config: FieldConfig()),
+         FieldDefinition(id: "dec-cook", displayName: "Cook Time", kind: .number, config: FieldConfig()),
+         FieldDefinition(id: "dec-rating", displayName: "Rating", kind: .rating,
+                         config: FieldConfig(ratingScale: 5, ratingStyle: .stars))]
+    }
+    private static func decItem(_ id: String, def: String, _ v: FieldPayload,
+                                _ span: AttributeGridSpan, _ row: Int, _ col: Int) -> NodeItem {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        var it = NodeItem(id: "dec-\(id)", type: .field, createdAt: now,
+                          field: FieldValue(definitionID: def, value: v))
+        it.attributeTile = AttributeTile(span: span, position: AttributeGridPosition(row: row, col: col))
+        return it
+    }
+    /// Ruling 2 — four text tiles ALL at the option's span, stacked, SHORT/MED/LONG/FLAVOR.
+    static func decision2Items(span: AttributeGridSpan) -> [NodeItem] {
+        let long = "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful of them all."
+        let flavor = "Created by a scientist after years of horrific gene-splicing and DNA-engineering experiments, it was designed to be the most powerful Pokémon in the world."
+        let contents: [(String, String)] = [("s", "French"), ("m", "Citrusy, creamy, bright, fresh & tangy"), ("l", long), ("f", flavor)]
+        return contents.enumerated().map { (i, c) in
+            decItem("2\(c.0)", def: "dec-text", .text(c.1), span, i * span.h, 0)
+        }
+    }
+    /// Ruling 3 COST NODE — content chosen to EXPOSE B's ~40pt cells (not flattering): a 1×1
+    /// text ("French"), a 1×1 rating (5-star row vs the "★ N" fallback), a 1×1 four-digit number,
+    /// and a 4-wide tile (the width choice the user is trying to preserve).
+    static func decision3CostItems() -> [NodeItem] {
+        [ decItem("3c-txt", def: "dec-cuisine", .text("French"), AttributeGridSpan(w: 1, h: 1), 0, 0),
+          decItem("3c-rat", def: "dec-rating", .rating(4), AttributeGridSpan(w: 1, h: 1), 0, 1),
+          decItem("3c-num", def: "dec-num", .number(1234), AttributeGridSpan(w: 1, h: 1), 0, 2),
+          decItem("3c-wide", def: "dec-text",
+                  .text("A four-wide flavor note the user deliberately kept wide."),
+                  AttributeGridSpan(w: 4, h: 1), 1, 0) ]
+    }
+    /// Ruling 3 FRAISIER — the honest real case: a 2-wide CUISINE, a COOK TIME + SERVES, a 2-wide
+    /// RATING, and a 4-wide FLAVOR (the deliberate width choice). Watch the wide tiles in each mode.
+    static func decision3FraisierItems() -> [NodeItem] {
+        [ decItem("3f-cui", def: "dec-cuisine", .text("French"), AttributeGridSpan(w: 2, h: 1), 0, 0),
+          decItem("3f-ck",  def: "dec-cook", .number(45), AttributeGridSpan(w: 1, h: 1), 0, 2),
+          decItem("3f-sv",  def: "dec-num", .number(8), AttributeGridSpan(w: 1, h: 1), 0, 3),
+          decItem("3f-rat", def: "dec-rating", .rating(5), AttributeGridSpan(w: 2, h: 1), 1, 0),
+          decItem("3f-fla", def: "dec-text",
+                  .text("A classic French almond-sponge cake layered with vanilla crème mousseline and fresh strawberries."),
+                  AttributeGridSpan(w: 4, h: 2), 2, 0) ]
     }
     #endif
 
@@ -797,6 +1188,13 @@ private struct SpineGateView: View {
 /// clamp), FIXED type (no height-scaling), labelled with its "w×h". DEBUG-only survey scaffold
 /// — reuses `FieldValueFormatter` + `AttributeTileShell` for fidelity but does NOT touch the
 /// production `FieldPairCell` render path, so it deletes cleanly if T rules against the change.
+/// Type-scale mode for RULING 1 (decision sheets). OFF = ships today (large ATOMIC fills like
+/// heroValue, everything else fixed 14pt); CAPPED/UNCAPPED grow every value's type with the
+/// tile height, capped at `SMTypeMode.cap` or unbounded.
+enum SMTypeMode { case off, capped, uncapped
+    static let cap: CGFloat = 80   // the cap that actually SPREADS across the range (56 bound at h=2)
+}
+
 private struct ShapeMatrixCell: View {
     let kind: FieldKind
     let w: Int, h: Int
@@ -804,6 +1202,8 @@ private struct ShapeMatrixCell: View {
     let columns: Int
     let unitWidth: CGFloat
     let spacing: CGFloat
+    var typeMode: SMTypeMode = .off
+    var showPt: Bool = false   // overlay the value's REQUESTED font pt (= rendered pt for text — no minScale)
     @Environment(\.colorScheme) private var colorScheme
 
     private let unitHeight: CGFloat = 52
@@ -847,6 +1247,32 @@ private struct ShapeMatrixCell: View {
                     .background(Color.black.opacity(0.35))
                     .allowsHitTesting(false)
             }
+            .overlay(alignment: .bottomTrailing) {
+                if showPt {
+                    // The value's requested font pt. For TEXT this IS the rendered pt (no
+                    // minimumScaleFactor); for NUMBER, minimumScaleFactor(0.4) may shrink it.
+                    Text("\(Int(valueFont))pt")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 2)
+                        .background(Color.blue.opacity(0.7))
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    /// RULING 1 — the value's font size for this shape under the type-scale mode. OFF: text is
+    /// always 14pt (height-aware line count); an ATOMIC large tile fills (∝ height, like
+    /// heroValue); everything else fixed 14pt. CAPPED/UNCAPPED: EVERY value grows ∝ height.
+    private var valueFont: CGFloat {
+        // ★ T ruled 2026-08-27: TEXT never scales with height — always 14pt, every option. So on
+        // the Ruling-1 sheets only the NUMBER varies with the type-scale mode; text is pinned.
+        if kind == .text { return 14 }
+        switch typeMode {
+        case .off:      return treatment == .large ? tileH * 0.5 : 14
+        case .capped:   return min(tileH * 0.5, SMTypeMode.cap)
+        case .uncapped: return tileH * 0.5
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -880,12 +1306,25 @@ private struct ShapeMatrixCell: View {
                         .foregroundStyle(i < 4 ? Color(hexString: "FACC15") : AppearancePalette.ink.opacity(0.25))
                 }
             }
+        } else if kind == .text {
+            // Prose fills the height with as many whole lines as fit at `valueFont` (§6 fix:
+            // no minimumScaleFactor, so the render lineHeight matches the computed one).
+            let lineH = UIFont.systemFont(ofSize: valueFont, weight: .semibold).lineHeight
+            GeometryReader { geo in
+                Text(text ?? "\u{2014}")
+                    .font(.system(size: valueFont, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .lineLimit(max(1, Int((geo.size.height + 0.5) / lineH)))
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         } else {
+            // Atomic — one line, scales to fit width before truncating; centred.
             Text(text ?? "\u{2014}")
-                .font(.system(size: big ? 34 : 14, weight: .semibold))
+                .font(.system(size: valueFont, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink)
-                .lineLimit(treatment == .large ? 2 : 1)
-                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .minimumScaleFactor(0.4)
                 .truncationMode(.tail)
         }
     }

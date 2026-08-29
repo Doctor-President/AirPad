@@ -161,18 +161,28 @@ enum ModelRouter {
         }
     }
 
-    /// Streaming text generation. Yields incremental string deltas as they
-    /// arrive. For Ollama this is real SSE streaming via `URLSession.bytes`
-    /// — the per-chunk clock dissolves the silent 60s timeout that plagues
-    /// the one-shot `generate(...)` path. For Foundation Model this is
-    /// `LanguageModelSession.streamResponse(to:)`, whose cumulative snapshots
-    /// are converted to deltas in `streamFoundationModel` so both providers
-    /// present the identical delta contract to call sites.
+    /// Two channels a model turn can carry. `.answer` is the reply that persists; `.thinking`
+    /// is a reasoning-model's thought process — EPHEMERAL to the latest turn, never persisted
+    /// (the TYPE enforces the split, not a remembered `if`). Only the Host path emits `.thinking`
+    /// (its native /api/chat separates the two, translated at the Host); FM/Ollama emit `.answer`.
+    enum ModelDelta: Sendable {
+        case answer(String)
+        case thinking(String)
+    }
+
+    /// Streaming text generation. Yields incremental deltas as they arrive. For Ollama this is
+    /// real SSE streaming via `URLSession.bytes` — the per-chunk clock dissolves the silent 60s
+    /// timeout that plagues the one-shot `generate(...)` path. For Foundation Model this is
+    /// `LanguageModelSession.streamResponse(to:)`, whose cumulative snapshots are converted to
+    /// deltas in `streamFoundationModel` so both providers present the identical delta contract.
+    /// `think` (per-chat, OFF by default) reaches only the Host path — the sole endpoint that
+    /// honors it (Ollama's native /api/chat, via the Host).
     static func generateStreaming(
         systemPrompt: String,
         userPrompt: String,
-        requestID: String? = nil
-    ) -> AsyncThrowingStream<String, Error> {
+        requestID: String? = nil,
+        think: Bool = false
+    ) -> AsyncThrowingStream<ModelDelta, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -201,6 +211,7 @@ enum ModelRouter {
                             systemPrompt: systemPrompt,
                             userPrompt: userPrompt,
                             requestID: requestID, // BUG 36: opt this turn into hold-and-resume
+                            think: think,
                             continuation: continuation
                         )
                         continuation.finish()
@@ -447,7 +458,7 @@ enum ModelRouter {
     private static func streamFoundationModel(
         systemPrompt: String,
         userPrompt: String,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
+        continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard SystemLanguageModel.default.isAvailable else {
             throw RouterError.foundationModelUnavailable
@@ -467,11 +478,11 @@ enum ModelRouter {
                 // silently patch: yield the tail so nothing is lost, but flag
                 // it loudly so this surfaces during device verify.
                 print("[ModelRouter] FM snapshot NOT append-only. Stop.")
-                continuation.yield(String(full.dropFirst(emitted.count)))
+                continuation.yield(.answer(String(full.dropFirst(emitted.count))))
                 emitted = full
                 continue
             }
-            continuation.yield(String(full.dropFirst(emitted.count)))
+            continuation.yield(.answer(String(full.dropFirst(emitted.count))))
             emitted = full
         }
     }
@@ -549,7 +560,7 @@ enum ModelRouter {
         endpoint: String,
         systemPrompt: String,
         userPrompt: String,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
+        continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard let base = URL(string: endpoint) else {
             throw RouterError.ollamaBadEndpoint(endpoint)
@@ -600,7 +611,7 @@ enum ModelRouter {
                let choices = parsed["choices"] as? [[String: Any]],
                let delta = choices.first?["delta"] as? [String: Any],
                let content = delta["content"] as? String {
-                continuation.yield(content)
+                continuation.yield(.answer(content))
             }
         }
     }
@@ -712,7 +723,7 @@ enum ModelRouter {
     /// One-shot Host generation (accumulates the streamed answer).
     private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String) async throws -> String {
         var out = ""
-        let stream = AsyncThrowingStream<String, Error> { cont in
+        let stream = AsyncThrowingStream<ModelDelta, Error> { cont in
             Task {
                 do {
                     try await streamHost(pairing: pairing, systemPrompt: systemPrompt, userPrompt: userPrompt, continuation: cont)
@@ -720,7 +731,7 @@ enum ModelRouter {
                 } catch { cont.finish(throwing: error) }
             }
         }
-        for try await d in stream { out += d }
+        for try await d in stream { if case .answer(let t) = d { out += t } } // one-shot: answer only
         return out
     }
 
@@ -734,14 +745,17 @@ enum ModelRouter {
         systemPrompt: String,
         userPrompt: String,
         requestID: String? = nil,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
+        think: Bool = false,
+        continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
         }
         let model = try await firstHostModel(pairing: pairing)
         let folded = systemPrompt.isEmpty ? userPrompt : "\(systemPrompt)\n\n\(userPrompt)"
-        var body: [String: Any] = ["model": model, "stream": true, "messages": [["role": "user", "content": folded]]]
+        // `think` (per-chat, off by default) is honored only by the Host's /api/chat path. The
+        // Host translates the resulting two channels back into the sealed SSE this stream opens.
+        var body: [String: Any] = ["model": model, "stream": true, "think": think, "messages": [["role": "user", "content": folded]]]
         // BUG 36 Pillar 2: a client-generated requestID (sealed inside the body — D1) opts this
         // generation into the Host's finish-and-hold, so a mid-stream drop can be resumed.
         if let requestID { body["requestID"] = requestID }
@@ -788,7 +802,7 @@ enum ModelRouter {
     /// re-seals under a new handshake — yielding the inner deltas of the FULL held answer
     /// (the Host replays from start). Throws `RouterError.ollamaHTTPError(status: 404)` when
     /// the held result is gone (expired / already consumed), so the caller keeps its partial.
-    static func resumeHostStream(pairing: HostPairing, requestID: String) -> AsyncThrowingStream<String, Error> {
+    static func resumeHostStream(pairing: HostPairing, requestID: String) -> AsyncThrowingStream<ModelDelta, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -802,7 +816,7 @@ enum ModelRouter {
     private static func streamHostResume(
         pairing: HostPairing,
         requestID: String,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
+        continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation
     ) async throws {
         guard let hpk = pairing.hostPublicKey, let resumeURL = pairing.resumeURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
@@ -844,7 +858,7 @@ enum ModelRouter {
     }
 
     /// Parse complete inner `data:` lines out of the decrypted buffer, yielding assistant deltas.
-    private static func drainInnerSSE(_ buffer: inout Data, _ continuation: AsyncThrowingStream<String, Error>.Continuation) {
+    private static func drainInnerSSE(_ buffer: inout Data, _ continuation: AsyncThrowingStream<ModelDelta, Error>.Continuation) {
         while let nl = buffer.firstIndex(of: 0x0A) {
             let lineData = buffer[buffer.startIndex..<nl]
             buffer = Data(buffer[buffer.index(after: nl)...])
@@ -855,9 +869,11 @@ enum ModelRouter {
             if payload == "[DONE]" { continue }
             if let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
                let choices = obj["choices"] as? [[String: Any]],
-               let delta = choices.first?["delta"] as? [String: Any],
-               let c = delta["content"] as? String, !c.isEmpty {
-                continuation.yield(c)
+               let delta = choices.first?["delta"] as? [String: Any] {
+                // Two channels (Host /api/chat, translated): reasoning = thought process, content
+                // = the answer. `.thinking` is rendered live + discarded; `.answer` is the reply.
+                if let r = delta["reasoning"] as? String, !r.isEmpty { continuation.yield(.thinking(r)) }
+                if let c = delta["content"] as? String, !c.isEmpty { continuation.yield(.answer(c)) }
             }
         }
     }

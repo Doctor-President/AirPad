@@ -113,6 +113,12 @@ final class ChatSession {
     /// In-flight assistant delta. Drained into a new `.assistant` message
     /// at stream end and reset to "".
     private(set) var streamingText: String = ""
+    /// The reasoning-model thought process of the LATEST turn — streamed live (rendered by the
+    /// Thought-process block) and NEVER persisted; ephemeral by design. Reset at each stream start.
+    private(set) var streamingThinking: String = ""
+    /// Per-chat Thinking toggle, OFF by default. The picker sheet's toggle sets it; send() passes
+    /// it to the Host — the only path that honors `think`.
+    var thinkEnabled: Bool = false
     /// Echoed back as a `.user` message the moment send() fires so the
     /// transcript shows the turn instantly while the model starts.
     private(set) var pendingUser: String? = nil
@@ -237,16 +243,23 @@ final class ChatSession {
         // background / drop / kill never loses what's already on screen. `flush()`
         // folds the in-flight `streamingText` into the persisted snapshot.
         var lastPersistedLength = 0
+        streamingThinking = ""
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: systemPrompt,
                 userPrompt: prompt,
-                requestID: hostRequestID
+                requestID: hostRequestID,
+                think: thinkEnabled
             ) {
-                streamingText += delta
-                if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
-                    lastPersistedLength = streamingText.count
-                    flush()
+                switch delta {
+                case .thinking(let t):
+                    streamingThinking += t   // ephemeral — the Thought-process block renders it (increment 7)
+                case .answer(let t):
+                    streamingText += t
+                    if streamingText.count - lastPersistedLength >= Self.partialPersistThreshold {
+                        lastPersistedLength = streamingText.count
+                        flush()
+                    }
                 }
             }
             let finalText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -656,9 +669,12 @@ final class ChatSession {
         defer { isResuming = false }
 
         var resumed = ""
+        streamingThinking = ""
         do {
             for try await delta in ModelRouter.resumeHostStream(pairing: pairing, requestID: requestID) {
-                resumed += delta
+                if case .thinking(let t) = delta { streamingThinking += t; continue } // ephemeral, off the persisted answer
+                guard case .answer(let a) = delta else { continue }
+                resumed += a
                 // Grow-only: the held answer's prefix == what we already showed, so extend
                 // only once resume surpasses the partial. Re-find by id each time (a reset /
                 // load may have removed it → stop safely).
@@ -727,12 +743,17 @@ final class ChatSession {
         streamingMessageID = last.id   // continuation upserts onto the same turn
 
         let prompt = buildContinuationPrompt(partialHead: head)
+        streamingThinking = ""
         do {
             for try await delta in ModelRouter.generateStreaming(
                 systemPrompt: Self.systemPrompt,
-                userPrompt: prompt
+                userPrompt: prompt,
+                think: thinkEnabled
             ) {
-                streamingText += delta
+                switch delta {
+                case .thinking(let t): streamingThinking += t
+                case .answer(let t): streamingText += t
+                }
             }
             mergeContinuation(tail: streamingText, complete: true)
         } catch {

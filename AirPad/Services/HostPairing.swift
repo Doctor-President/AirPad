@@ -44,6 +44,9 @@ struct HostPairing: Codable, Equatable {
     var resumeURL: URL? { endpoint("v1/chat/resume") }
     /// The filtered model-list endpoint on the tunnel.
     var modelsURL: URL? { endpoint("v1/models") }
+    /// The curated catalog endpoint (per-model state/size/capabilities/copy) — the picker's data
+    /// source AND, via `state == installed-loaded`, which model is RESIDENT (LOAD = SELECT).
+    var catalogURL: URL? { endpoint("v1/catalog") }
     /// The health endpoint (capability + host key discovery).
     var healthURL: URL? { endpoint("health") }
 

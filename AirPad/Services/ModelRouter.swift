@@ -135,6 +135,11 @@ enum ModelRouter {
             guard let base = URL(string: endpoint) else { return remoteRestingName }
             return (try? await firstOllamaModel(base: base)) ?? remoteRestingName
         case .host(let pairing):
+            // LOAD = SELECT: the label reflects what is RESIDENT (true by construction); only if
+            // nothing is loaded do we fall back to the filtered list, then the resting label.
+            if let resident = try? await residentHostModel(pairing: pairing), !resident.isEmpty {
+                return resident
+            }
             return (try? await firstHostModel(pairing: pairing)) ?? remoteRestingName
         case .local:
             // Unreachable via `active` (structured-lever only); present for exhaustiveness.
@@ -720,6 +725,23 @@ enum ModelRouter {
         return id
     }
 
+    /// The model the Mac currently holds IN MEMORY. Under LOAD = SELECT, the resident model IS the
+    /// selection (one at a time), so this is what should answer — NOT `.first of /v1/models`
+    /// (install-order), which left a deliberately-loaded 30B unreachable from the phone. Reads
+    /// /v1/catalog and returns the tag whose `state == "installed-loaded"`, or nil if none is
+    /// loaded (the caller falls back; the Host's residency mode then decides what an ask does).
+    private static func residentHostModel(pairing: HostPairing) async throws -> String? {
+        guard let url = pairing.catalogURL else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        req.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent")
+        let (data, response) = try await runRequest(req, path: "v1/catalog")
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return nil }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let models = json["models"] as? [[String: Any]] else { return nil }
+        return models.first(where: { ($0["state"] as? String) == "installed-loaded" })?["tag"] as? String
+    }
+
     /// One-shot Host generation (accumulates the streamed answer).
     private static func generateHost(pairing: HostPairing, systemPrompt: String, userPrompt: String) async throws -> String {
         var out = ""
@@ -751,7 +773,14 @@ enum ModelRouter {
         guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
             throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
         }
-        let model = try await firstHostModel(pairing: pairing)
+        // LOAD = SELECT: name the RESIDENT model. Only if nothing is loaded do we fall back to the
+        // filtered list (the Host's residency mode decides what an ask does with a non-resident pick).
+        let model: String
+        if let resident = try await residentHostModel(pairing: pairing) {
+            model = resident
+        } else {
+            model = try await firstHostModel(pairing: pairing)
+        }
         let folded = systemPrompt.isEmpty ? userPrompt : "\(systemPrompt)\n\n\(userPrompt)"
         // `think` (per-chat, off by default) is honored only by the Host's /api/chat path. The
         // Host translates the resulting two channels back into the sealed SSE this stream opens.

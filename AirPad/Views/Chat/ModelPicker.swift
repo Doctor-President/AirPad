@@ -27,12 +27,15 @@ struct ModelPillRow: View {
     var catalog: HostCatalog
     @Binding var thinkEnabled: Bool
     var onTapModel: () -> Void
+    /// Chat View shows its own Private pill; the Librarian already has the Private/Corpus toggle,
+    /// so it passes false and provides that pill itself (no double "Private").
+    var includePrivate: Bool = true
 
     private var canThink: Bool { catalog.resident?.supportsThinking == true }
 
     var body: some View {
         HStack(spacing: 8) {
-            privatePill
+            if includePrivate { privatePill }
             modelPill
             Spacer(minLength: 12)
             if canThink { thinkingPill }

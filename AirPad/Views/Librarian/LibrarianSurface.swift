@@ -40,6 +40,8 @@ struct LibrarianSurface: View {
 
     @State private var currentWhisperIndex = 0
     @State private var textOpacity: Double = 0.55
+    /// Phase 2 — the model-picker sheet, opened by tapping the Model pill.
+    @State private var showModelPicker = false
     @State private var presentedCitation: PresentedCitation? = nil
     @State private var researchExportCopied = false
     /// Ask chat/home toggle. False → Librarian home (capability-tile
@@ -1320,8 +1322,19 @@ struct LibrarianSurface: View {
             // legible, never hidden). Leading-aligned near the feather.
             HStack(spacing: 8) {
                 corpusModeToggle(librarian: librarian)
-                activeModelLabelView(librarian: librarian)
-                Spacer(minLength: 0)
+                if HostCatalog.shared.isPaired {
+                    // The shared picker pill (Model + Thinking). corpusModeToggle above IS the
+                    // Private/Corpus pill, so the shared row omits its own Private pill.
+                    ModelPillRow(
+                        catalog: HostCatalog.shared,
+                        thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
+                        onTapModel: { showModelPicker = true },
+                        includePrivate: false
+                    )
+                } else {
+                    activeModelLabelView(librarian: librarian) // FM / Ollama: the plain label (unchanged)
+                    Spacer(minLength: 0)
+                }
             }
             .padding(.leading, 6)
 
@@ -1363,6 +1376,14 @@ struct LibrarianSurface: View {
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 10)
+        .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
+        .sheet(isPresented: $showModelPicker) {
+            ModelPickerSheet(
+                catalog: HostCatalog.shared,
+                thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 })
+            )
+            .presentationDetents([.medium, .large])
+        }
     }
 
     /// ★ Private ↔ Corpus mode pill. Default is Private (model's own knowledge,

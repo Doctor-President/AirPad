@@ -62,6 +62,8 @@ struct ChatTranscript: View {
     /// Piece 1 — assistant turns whose citation footer is expanded. Collapsed by
     /// default (Claude-style); tapping toggles. No navigation yet (Piece 2).
     @State private var expandedCitations: Set<UUID> = []
+    /// Phase 2 — the model-picker sheet (opened by tapping the Model pill).
+    @State private var showPicker = false
 
     private static let tailAnchor = "__chat_transcript_tail__"
     private static let bottomFollowThreshold: CGFloat = 80
@@ -73,9 +75,26 @@ struct ChatTranscript: View {
                 errorBanner(error)
             }
             if showsComposer {
+                if HostCatalog.shared.isPaired {
+                    // Placement A (T-ruled): a persistent Private · Model · Thinking row above the composer.
+                    ModelPillRow(
+                        catalog: HostCatalog.shared,
+                        thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
+                        onTapModel: { showPicker = true }
+                    )
+                    .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 2)
+                }
                 Divider().overlay(AppearancePalette.ink.opacity(0.08))
                 inputRow
             }
+        }
+        .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
+        .sheet(isPresented: $showPicker) {
+            ModelPickerSheet(
+                catalog: HostCatalog.shared,
+                thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 })
+            )
+            .presentationDetents([.medium, .large])
         }
         // Conversation identity changed (new chat / switched chat): drop the
         // half-typed composer text and re-arm bottom-follow for the new thread.

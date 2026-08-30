@@ -249,3 +249,56 @@ private struct ModelSheetRow: View {
         .disabled(busy || catalog.busyTag != nil)
     }
 }
+
+// MARK: - thought-process block (increment 7)
+
+/// The reasoning-model thought process of the LATEST turn — NAMED "Thought process" (the ARTIFACT),
+/// deliberately NOT "Thinking" (the SETTING/pill; T: two different things must not share a word).
+/// Collapsed by default, expandable; SHIMMERS while it streams and resolves to a static row once the
+/// answer begins. Ephemeral: it reads session.streamingThinking, which is never persisted and resets
+/// each turn — send another message and the previous thought process is gone.
+struct ThoughtProcessBlock: View {
+    var session: ChatSession
+    @State private var expanded = false
+    @State private var pulse = false
+
+    /// Still thinking = streaming AND the answer hasn't started.
+    private var thinking: Bool { session.isStreaming && session.streamingText.isEmpty }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } label: {
+                HStack(spacing: 6) {
+                    Text("Thought process")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(thinking ? (pulse ? 0.75 : 0.32) : 0.45))
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expanded {
+                Text(session.streamingThinking)
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(AppearancePalette.ink.opacity(0.04)))
+        .onChange(of: thinking) { _, t in setPulse(t) }
+        .onAppear { setPulse(thinking) }
+    }
+
+    private func setPulse(_ on: Bool) {
+        if on {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
+        } else {
+            pulse = false
+        }
+    }
+}

@@ -47,6 +47,11 @@ struct HostPairing: Codable, Equatable {
     /// The curated catalog endpoint (per-model state/size/capabilities/copy) — the picker's data
     /// source AND, via `state == installed-loaded`, which model is RESIDENT (LOAD = SELECT).
     var catalogURL: URL? { endpoint("v1/catalog") }
+    /// Model-management endpoints the picker sheet drives (catalog-ID-only; the Host performs the
+    /// curated action). Bearer-authed plaintext over the tunnel, like /v1/models — not E2E-sealed.
+    var loadURL: URL? { endpoint("v1/models/load") }
+    var ejectURL: URL? { endpoint("v1/models/eject") }
+    var installURL: URL? { endpoint("v1/models/install") }
     /// The health endpoint (capability + host key discovery).
     var healthURL: URL? { endpoint("health") }
 

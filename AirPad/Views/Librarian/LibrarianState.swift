@@ -492,6 +492,7 @@ final class LibrarianState {
     func groundedSend(query rawQuery: String, store: CorpusStore, chat: ChatSession) async {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
+        chat.thinkEnabled = thinkEnabled // Phase 2: the Librarian's per-session Thinking toggle → the Host
 
         // ★ Private mode (DEFAULT, corpusAware == false): do NOT retrieve. Send the
         // bare question with a plain assistant prompt — no passages, no citation
@@ -881,6 +882,10 @@ final class LibrarianState {
     var corpusAware: Bool = UserDefaults.standard.bool(forKey: "librarianCorpusAware") {
         didSet { UserDefaults.standard.set(corpusAware, forKey: "librarianCorpusAware") }
     }
+    /// Phase 2 — per-session Thinking toggle, OFF by default. Ephemeral to the Librarian session
+    /// (no persistent thread to store it on); the pill/sheet write it; `groundedSend` forwards it
+    /// to the ChatSession, which sends `think` to the Host (the only path that honors it).
+    var thinkEnabled: Bool = false
 
     /// Read-only indicator of the model that will answer the next Ask (the FM
     /// friendly name, or a remote endpoint's model id). STORED + observable so the

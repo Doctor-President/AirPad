@@ -60,6 +60,7 @@
 		2DDA27FA6C4F26BC05D7EA97 /* UMAPGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */; };
 		2E8726CA49E4BE479EED79CC /* FeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3FFA73288300E8E7B5FBA46 /* FeatureFlags.swift */; };
 		334550772B8C8599E8D99C30 /* TagTerritoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */; };
+		33BCDE66EDD07EFE3F1CBB6A /* ModelPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D283503B6CC7FE116CC91F /* ModelPicker.swift */; };
 		3421335809DAF6820317ADDC /* LibrarianSheetBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51379886273900EA232831C5 /* LibrarianSheetBackground.swift */; };
 		3437F7F4A49EF84BA0BCB836 /* FieldCreationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E92C2D35B0BE6D96A64B830 /* FieldCreationSheet.swift */; };
 		348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D44A25A6703788139F657ECD /* GalleryFullscreenViewer.swift */; };
@@ -86,6 +87,7 @@
 		4B9C908546B44C7D1416ADAB /* AlphabetScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78147F82EB55E186C5934A2 /* AlphabetScrubber.swift */; };
 		4D418B5B931D8B8170E67A3A /* Lato-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 26DA962A10457FCFA38D1141 /* Lato-Regular.ttf */; };
 		4F5641FAA2E71DD840D37C09 /* Proposal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFC577B59F540670E2A5588 /* Proposal.swift */; };
+		5048F5164E5E3770C115FDD7 /* HostCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */; };
 		505E0F8BA9D6E93F476B35C0 /* LinkViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 770199F6D56D0EDB0BCA874A /* LinkViewModeToggle.swift */; };
 		50C127660FA44B5A72487C59 /* BlobField.metal in Sources */ = {isa = PBXBuildFile; fileRef = BD12D156A4CBC12E872BDEC7 /* BlobField.metal */; };
 		50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194292F01A21193B880F16FA /* ContentView.swift */; };
@@ -354,6 +356,7 @@
 		217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPairsGrid.swift; sourceTree = "<group>"; };
 		219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagTerritoryLayout.swift; sourceTree = "<group>"; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
+		21D283503B6CC7FE116CC91F /* ModelPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelPicker.swift; sourceTree = "<group>"; };
 		22331897C26EB8AA6E253BD6 /* CollectionPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionPickerMenu.swift; sourceTree = "<group>"; };
 		239B75A26B2BA53534F71428 /* LayoutService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutService.swift; sourceTree = "<group>"; };
 		25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateColoringPass.swift; sourceTree = "<group>"; };
@@ -506,6 +509,7 @@
 		B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = iCloudDriveService.swift; sourceTree = "<group>"; };
 		B6410795D74C090F46198216 /* CaptureChromeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureChromeBar.swift; sourceTree = "<group>"; };
 		B65719255B960A7B6876EC2A /* CardBlurTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardBlurTest.swift; sourceTree = "<group>"; };
+		B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostCatalog.swift; sourceTree = "<group>"; };
 		B88DD76629EBF533BCDC9ADE /* SourceSerif4-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-Regular.ttf"; sourceTree = "<group>"; };
 		B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardSwipeRepro.swift; sourceTree = "<group>"; };
 		B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateWhitening.swift; sourceTree = "<group>"; };
@@ -701,6 +705,7 @@
 				39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */,
 				04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */,
 				6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */,
+				B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */,
 				01439497F74FDC8285B4AB62 /* HostE2E.swift */,
 				7F19812DD57D0DCB22CB98F5 /* HostPairing.swift */,
 				EB23955C4460CA1D6E2710E9 /* HostPairingStore.swift */,
@@ -763,6 +768,7 @@
 				09D0243E524E09781995DF68 /* CitationReference.swift */,
 				841450783E48B41397FDDB34 /* MarkdownBlock.swift */,
 				360B7A6DADF89ED7B6D1DD3E /* MarkdownBlockParserSelfTest.swift */,
+				21D283503B6CC7FE116CC91F /* ModelPicker.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -1422,6 +1428,7 @@
 				60D696FF61EBB144201B1E88 /* HDBSCANSelfTest.swift in Sources */,
 				F39A0B2613577ADDA29F4230 /* HDBSCANTree.swift in Sources */,
 				AB1987E40736EECE7D0FDD13 /* HistoryPanel.swift in Sources */,
+				5048F5164E5E3770C115FDD7 /* HostCatalog.swift in Sources */,
 				C886B7D6197D62C8419E17BD /* HostE2E.swift in Sources */,
 				7276BA1A930FFE1E2B132F45 /* HostPairing.swift in Sources */,
 				790E62A06880D73E5FE759EA /* HostPairingSheet.swift in Sources */,
@@ -1454,6 +1461,7 @@
 				B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */,
 				588C140B790E7DD63A55BCC1 /* MediaPickerWrapper.swift in Sources */,
 				2066C6BE5B2E00550E919724 /* MediaThumbnailLoader.swift in Sources */,
+				33BCDE66EDD07EFE3F1CBB6A /* ModelPicker.swift in Sources */,
 				E76F2F630607772910AA020A /* ModelProcessingIndicator.swift in Sources */,
 				2813856C0295021A410E3FE1 /* ModelRouter.swift in Sources */,
 				79EBBD07CEAF35CA5E4CF8A3 /* Neighborhood.swift in Sources */,

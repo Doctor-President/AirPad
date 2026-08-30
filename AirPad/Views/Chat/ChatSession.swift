@@ -586,6 +586,12 @@ final class ChatSession {
                 // and the 502/503/504 gateway family read, to a person, as "the
                 // computer isn't answering."
                 if status == 530 || (502...504).contains(status) { return offline }
+                // 409 model_not_loaded (Hands-on, nothing resident) and any Host refusal that
+                // carries a composed {message, action}: surface the HOST'S OWN words VERBATIM —
+                // never invent phone-side copy for a Host refusal, never show Ollama text.
+                if let refusal = Self.hostRefusal(body) {
+                    return refusal.action.isEmpty ? refusal.message : "\(refusal.message) \(refusal.action)"
+                }
                 // Any other HTTP error: show the status, but strip the body FIRST
                 // so a raw HTML error page can never reach the banner (#3).
                 let clean = Self.sanitizedErrorBody(body)
@@ -598,6 +604,18 @@ final class ChatSession {
         }
 
         return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+
+    /// Parse a Host refusal envelope `{"error":{"message","action"}}` — the Host-COMPOSED,
+    /// action-named copy (e.g. 409 model_not_loaded: "No model is loaded. Load one on your Mac.").
+    /// nil when the body isn't that shape (a raw/Ollama error → the caller sanitizes instead).
+    private static func hostRefusal(_ body: String) -> (message: String, action: String)? {
+        guard let data = body.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let err = json["error"] as? [String: Any],
+              let message = err["message"] as? String, !message.isEmpty
+        else { return nil }
+        return (message, err["action"] as? String ?? "")
     }
 
     /// Strip HTML (#3) so an error page never renders as raw markup in the

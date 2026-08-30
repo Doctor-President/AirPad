@@ -126,6 +126,12 @@ struct ChatTranscript: View {
                         bubble(for: message)
                             .id(message.id)
                     }
+                    if !session.streamingThinking.isEmpty {
+                        // The reasoning-model thought process of the LATEST turn — ephemeral
+                        // (never persisted); shimmers while it streams, static once the answer begins.
+                        ThoughtProcessBlock(session: session)
+                            .id("__thought_process__")
+                    }
                     if session.isStreaming {
                         // Isolated: the ONLY reader of streamingText. Owns the
                         // pinned-only stream-follow. Its own id is the follow

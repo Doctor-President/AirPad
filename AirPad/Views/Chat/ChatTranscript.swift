@@ -75,17 +75,22 @@ struct ChatTranscript: View {
                 errorBanner(error)
             }
             if showsComposer {
-                if HostCatalog.shared.isPaired {
-                    // Placement A (T-ruled): a persistent Private · Model · Thinking row above the composer.
-                    ModelPillRow(
-                        catalog: HostCatalog.shared,
-                        thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
-                        onTapModel: { showPicker = true }
-                    )
-                    .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 2)
-                }
+                // Divider separates the TRANSCRIPT from the composer (was mistakenly between the
+                // pill row and the field, cramming them). The composer itself is the shared
+                // ComposerScaffold — same spacing + field metrics as the Librarian's Ask composer.
                 Divider().overlay(AppearancePalette.ink.opacity(0.08))
-                inputRow
+                ComposerScaffold {
+                    if HostCatalog.shared.isPaired {
+                        // Placement A (T-ruled): a persistent Private · Model · Thinking row above the field.
+                        ModelPillRow(
+                            catalog: HostCatalog.shared,
+                            thinkEnabled: Binding(get: { session.thinkEnabled }, set: { session.thinkEnabled = $0 }),
+                            onTapModel: { showPicker = true }
+                        )
+                    }
+                    inputRow
+                }
+                .background(AppearancePalette.bgBase)
             }
         }
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
@@ -550,51 +555,43 @@ struct ChatTranscript: View {
     // MARK: - Composer
 
     private var inputRow: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message", text: $input, axis: .vertical)
-                .font(.system(size: 15))
-                .foregroundStyle(AppearancePalette.ink)
-                .tint(Color(hexString: "00BFFF"))
-                .focused($inputFocused)
-                .lineLimit(1...6)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(AppearancePalette.ink.opacity(0.06))
+        let enabled = !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !session.isStreaming && !session.isResuming
+        return TextField("Message", text: $input, axis: .vertical)
+            .font(.system(size: ComposerMetrics.fieldFontSize))
+            .foregroundStyle(AppearancePalette.ink)
+            .tint(Color(hexString: "00BFFF"))
+            .focused($inputFocused)
+            .lineLimit(1...6)
+            .padding(.leading, 14)
+            // Reserve for the INLINE send/mic control (shared with the Librarian) — the send is now
+            // incorporated into the field's trailing end, not a separate circular button.
+            .padding(.trailing, ComposerMetrics.sendControlReserve)
+            .padding(.vertical, ComposerMetrics.fieldTextVerticalPadding)
+            .frame(minHeight: ComposerMetrics.fieldSingleLineHeight)
+            .background(
+                RoundedRectangle(cornerRadius: ComposerMetrics.fieldCornerRadius, style: .continuous)
+                    .fill(AppearancePalette.ink.opacity(0.06))
+            )
+            .overlay(alignment: .bottomTrailing) {
+                ComposerSendControls(
+                    text: $input,
+                    sendEnabled: enabled,
+                    onSend: {
+                        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+                        input = ""
+                        Task { await session.send(text) }
+                    },
+                    dictationToken: "chat"
                 )
-
-            sendButton
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(AppearancePalette.bgBase)
+                .frame(height: ComposerMetrics.fieldLineHeight)
+                .padding(.trailing, 10)
+                .padding(.bottom, ComposerMetrics.fieldTextVerticalPadding)
+            }
     }
 
-    private var sendButton: some View {
-        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-        let enabled = !trimmed.isEmpty && !session.isStreaming && !session.isResuming
-        return Button {
-            let text = trimmed
-            input = ""
-            Task { await session.send(text) }
-        } label: {
-            Image(systemName: "arrow.up.circle.fill")
-                .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(
-                    enabled
-                        ? AnyShapeStyle(LinearGradient(
-                            colors: [Color(hexString: "00BFFF"), Color(hexString: "1B59C2")],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ))
-                        : AnyShapeStyle(AppearancePalette.ink.opacity(0.18))
-                )
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .frame(width: 36, height: 36)
-    }
+    // (was sendButton — a separate trailing circle) The send arrow is now the SHARED, INLINE
+    // `ComposerSendControls` mounted on the field's trailing end (see inputRow), matching the
+    // Librarian's treatment: the send control is shared idiom.
 
     // MARK: - Error banner
 

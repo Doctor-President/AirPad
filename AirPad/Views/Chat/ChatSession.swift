@@ -332,8 +332,14 @@ final class ChatSession {
     /// the user bubble, one activity row per phase, and the final answer.
     func sendWithTools(displayText: String, systemPrompt: String, executor: ToolExecutor) async {
         guard !displayText.isEmpty, !isStreaming else { return }
-        guard case .ollama(let endpoint) = ModelRouter.active else {
-            // Caller guarantees remote; defensive fallback to plain chat.
+        // The agentic tool loop runs over a direct .ollama endpoint OR the sealed .host pairing.
+        // (It was .ollama-ONLY — the reason web search never worked over a paired Host: it was
+        // NEVER WIRED for .host, not a regression from the /api/chat switch.) Any other provider
+        // (FM) has no tool API → plain chat.
+        let toolProvider = ModelRouter.active
+        switch toolProvider {
+        case .ollama, .host: break
+        default:
             await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
             return
         }
@@ -349,7 +355,21 @@ final class ChatSession {
         var producedActivity = false
 
         do {
-            let model = try await ModelRouter.firstModelID(endpoint: endpoint)
+            // Resolve the backend once: .ollama needs its model id up front; .host resolves the
+            // resident model inside the sealed turn.
+            let backend: ModelRouter.AgentBackend
+            switch toolProvider {
+            case .ollama(let endpoint):
+                backend = .ollama(endpoint: endpoint, model: try await ModelRouter.firstModelID(endpoint: endpoint))
+            case .host(let pairing):
+                backend = .host(pairing: pairing)
+            default:
+                return // unreachable — guarded above
+            }
+            // Stream the assistant's partial answer into the live transcript (shared by both paths).
+            let onDelta: @Sendable (String) -> Void = { [weak self] delta in
+                Task { @MainActor in self?.streamingText += delta }
+            }
 
             // OpenAI working-set (system + prior chat turns + this turn). Activity
             // rows are display-only — skipped here.
@@ -372,17 +392,20 @@ final class ChatSession {
             var sawUnavailable = false
             for step in 0..<maxToolSteps {
                 streamingText = ""
-                let turn = try await ModelRouter.streamAgentTurn(
-                    endpoint: endpoint,
-                    model: model,
-                    messages: working,
-                    // Withhold the tool schema once a tool reported it has no backend — the
-                    // model can't retry a tool that can't succeed, so it answers honestly.
-                    tools: sawUnavailable ? nil : AgentTools.schema,
-                    onContentDelta: { [weak self] delta in
-                        Task { @MainActor in self?.streamingText += delta }
-                    }
-                )
+                // Withhold the tool schema once a tool reported it has no backend — the model
+                // can't retry a tool that can't succeed, so it answers honestly.
+                let turnTools = sawUnavailable ? nil : AgentTools.schema
+                let turn: AgentTurn
+                switch backend {
+                case .ollama(let endpoint, let model):
+                    turn = try await ModelRouter.streamAgentTurn(
+                        endpoint: endpoint, model: model, messages: working,
+                        tools: turnTools, onContentDelta: onDelta)
+                case .host(let pairing):
+                    turn = try await ModelRouter.streamHostAgentTurn(
+                        pairing: pairing, messages: working,
+                        tools: turnTools, onContentDelta: onDelta)
+                }
 
                 if turn.toolCalls.isEmpty {
                     finalAnswer = turn.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -590,7 +613,10 @@ final class ChatSession {
                 // carries a composed {message, action}: surface the HOST'S OWN words VERBATIM —
                 // never invent phone-side copy for a Host refusal, never show Ollama text.
                 if let refusal = Self.hostRefusal(body) {
-                    return refusal.action.isEmpty ? refusal.message : "\(refusal.message) \(refusal.action)"
+                    // The Host's message is self-contained (the copy rule: every error names its own
+                    // action). The `action` field is a BUTTON LABEL, not text to append — appending it
+                    // duplicated the instruction ("…Load a model, then ask again. Load a model").
+                    return refusal.message
                 }
                 // Any other HTTP error: show the status, but strip the body FIRST
                 // so a raw HTML error page can never reach the banner (#3).

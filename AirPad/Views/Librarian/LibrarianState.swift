@@ -508,7 +508,15 @@ final class LibrarianState {
             // → plain chat with NO tools (different tool API, not the near-term
             // target — behaves exactly as before). A non-tool remote model simply
             // never calls a tool and answers normally, so this degrades silently.
-            if case .ollama = ModelRouter.active {
+            // The agentic web-search loop runs over a direct .ollama endpoint OR the sealed .host
+            // pairing (previously .ollama-ONLY — which is why web search never worked over a paired
+            // Host). FM has no tool API → plain chat.
+            let toolCapable: Bool
+            switch ModelRouter.active {
+            case .ollama, .host: toolCapable = true
+            default: toolCapable = false
+            }
+            if toolCapable {
                 // Tool loop steers with the tool-aware prompt (real date + "trust the
                 // live results, don't hedge") — NOT the plain private prompt, which
                 // told the model to answer "from your own knowledge" (the bug).

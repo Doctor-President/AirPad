@@ -52,6 +52,8 @@ struct HostPairing: Codable, Equatable {
     var loadURL: URL? { endpoint("v1/models/load") }
     var ejectURL: URL? { endpoint("v1/models/eject") }
     var installURL: URL? { endpoint("v1/models/install") }
+    var deleteURL: URL? { endpoint("v1/models/delete") }
+    var residencyURL: URL? { endpoint("v1/residency") }
     /// The health endpoint (capability + host key discovery).
     var healthURL: URL? { endpoint("health") }
 

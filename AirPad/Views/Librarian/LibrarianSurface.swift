@@ -80,8 +80,9 @@ struct LibrarianSurface: View {
     /// grows. Shared by the field shape AND its focus glow so they can't disagree.
     @State private var askFieldHeight: CGFloat = LibrarianSurface.askSingleLineHeight
     /// The Ask field's single-line height (`.frame(minHeight:)`). Half of it is
-    /// the pinned corner radius once the field wraps.
-    static let askSingleLineHeight: CGFloat = 52
+    /// the pinned corner radius once the field wraps. Sourced from the SHARED
+    /// `ComposerMetrics` (== 52) so Chat View's field can't drift from this one.
+    static let askSingleLineHeight: CGFloat = ComposerMetrics.fieldSingleLineHeight
     /// Messages-style corner from the live height: capsule at one line (radius =
     /// half-height), pinned to `askSingleLineHeight/2` (=26) once it grows taller.
     private var askCornerRadius: CGFloat {
@@ -1315,7 +1316,10 @@ struct LibrarianSurface: View {
     /// composer is off via `showsComposer: false`).
     @ViewBuilder
     private func askComposer(librarian: LibrarianState) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // The SHARED composer layout (ComposerScaffold): the pill row above the field at the shared
+        // spacing (8) + outer margins (14/14/10) — the same box Chat View mounts, so the pill→field
+        // gap and the field width can't drift between the two surfaces. Values UNCHANGED from before.
+        ComposerScaffold {
             // ★ Corpus-aware toggle + active-model indicator — always visible above
             // the Ask field so the user knows which mode the next question runs in AND
             // which model will answer (hybrid-authorship: the system's behaviour is
@@ -1371,11 +1375,6 @@ struct LibrarianSurface: View {
                     value: isInputFocused
                 )
         }
-        // 14pt screen margins to match the Search field (width = geo−28 →
-        // 14 each side) so the two fields sit at the same width.
-        .padding(.horizontal, 14)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
         .task { HostCatalog.shared.refreshPaired(); await HostCatalog.shared.refresh() } // off-render
         .sheet(isPresented: $showModelPicker) {
             ModelPickerSheet(
@@ -1476,64 +1475,9 @@ struct LibrarianSurface: View {
         .accessibilityHint("Opens Settings to connect a model for chat")
     }
 
-    /// Trailing mic/send/clear cluster — extracted so it can be a BOTTOM-TRAILING
-    /// OVERLAY on the field (not an HStack sibling). As a sibling it had to be
-    /// sized to the field height to bottom-align, which ratcheted the height up
-    /// and blocked shrink; as an overlay the field height is TextField-driven
-    /// (grows AND shrinks) and the cluster just pins to the bottom.
-    @ViewBuilder
-    private func askTrailingControls(librarian: LibrarianState, kleinGrad: LinearGradient) -> some View {
-        let hasText = !librarian.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let isHot = dictation.isListening && dictation.activeToken == "ask"
-        HStack(spacing: 8) {
-            if hasText {
-                Button { librarian.inputText = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear input")
-            }
-            if hasText {
-                Button {
-                    if dictation.isListening && dictation.activeToken == "ask" { dictation.stop() }
-                    let text = librarian.inputText
-                    librarian.inputText = ""
-                    isViewingActiveChat = true
-                    panelModel.expandToFull(animated: true)
-                    Task { await librarian.groundedSend(query: text, store: store, chat: router.chat) }
-                } label: {
-                    let enabled = sendIsEnabled(librarian: librarian)
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundStyle(enabled ? AnyShapeStyle(kleinGrad)
-                                                 : AnyShapeStyle(AppearancePalette.ink.opacity(0.2)))
-                }
-                .buttonStyle(.plain)
-                .disabled(!sendIsEnabled(librarian: librarian))
-            } else if isHot {
-                Button {
-                    dictation.toggle(token: "ask", baseline: librarian.inputText,
-                                     onUpdate: { librarian.inputText = $0 })
-                } label: {
-                    Image(systemName: "stop.fill").font(.system(size: 22)).foregroundStyle(kleinGrad)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Stop dictation")
-            } else {
-                Button {
-                    dictation.toggle(token: "ask", baseline: librarian.inputText,
-                                     onUpdate: { librarian.inputText = $0 })
-                } label: {
-                    Image(systemName: "mic.fill").font(.system(size: 22))
-                        .foregroundStyle(kleinGrad).opacity(0.8)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Dictate")
-            }
-        }
-    }
+    // (was askTrailingControls) — the inline send/mic/clear cluster is now the SHARED
+    // `ComposerSendControls`, mounted as the field's bottom-trailing overlay above. T's
+    // correction: the send control is shared idiom, not Librarian identity.
 
     /// The Ask input row — the panel's persistent bottom composer. The one
     /// flexing element — chat-app convention: history scrolls above,
@@ -1579,7 +1523,7 @@ struct LibrarianSurface: View {
         // trailing mic/send on the LAST line's box; at one line those coincide, so
         // both read centred with no special-casing. All values fall out of the font
         // line height, so they stay correct if the font/size changes.
-        let askLineHeight = UIFont.systemFont(ofSize: 16, weight: .regular).lineHeight
+        let askLineHeight = UIFont.systemFont(ofSize: ComposerMetrics.fieldFontSize, weight: .regular).lineHeight
         // TextField vertical padding chosen so a single line == the parity height
         // (52), removing the minHeight-forced extra space that decoupled the glyphs
         // from the text before.
@@ -1614,7 +1558,7 @@ struct LibrarianSurface: View {
                 set: { librarian.inputText = $0 }
             ), axis: .vertical)
                 .focused($isInputFocused)
-                .font(.system(size: 16, weight: .regular))
+                .font(.system(size: ComposerMetrics.fieldFontSize, weight: .regular))
                 .foregroundStyle(AppearancePalette.ink)
                 .tint(klein)
                 // Leading 4 (+ the HStack's 8pt spacing) = 12pt from the
@@ -1624,8 +1568,8 @@ struct LibrarianSurface: View {
                 .padding(.leading, 4)
                 // Trailing clearance for the mic/send, which are now a
                 // bottom-trailing OVERLAY (not an HStack sibling) — so the text
-                // column stops before them at every height.
-                .padding(.trailing, 56)
+                // column stops before them at every height. Shared with Chat View.
+                .padding(.trailing, ComposerMetrics.sendControlReserve)
                 // Derived so a single line == the 52pt parity height (no minHeight
                 // forcing → glyphs stay locked to the text line box).
                 .padding(.vertical, askTextVPad)
@@ -1651,10 +1595,23 @@ struct LibrarianSurface: View {
         // centred; as the field grows it rides the last line. (Feather is top-
         // pinned on line one in the HStack above.)
         .overlay(alignment: .bottomTrailing) {
-            askTrailingControls(librarian: librarian, kleinGrad: kleinGrad)
-                .frame(height: askLineHeight)
-                .padding(.trailing, 10)
-                .padding(.bottom, askTextVPad)
+            // The SHARED inline send/mic control (was `askTrailingControls`; identical render).
+            // Librarian-only pieces (feather, Klein glow, morphing corner, bounce) stay above/around.
+            ComposerSendControls(
+                text: Binding(get: { librarian.inputText }, set: { librarian.inputText = $0 }),
+                sendEnabled: sendIsEnabled(librarian: librarian),
+                onSend: {
+                    let text = librarian.inputText
+                    librarian.inputText = ""
+                    isViewingActiveChat = true
+                    panelModel.expandToFull(animated: true)
+                    Task { await librarian.groundedSend(query: text, store: store, chat: router.chat) }
+                },
+                dictationToken: "ask"
+            )
+            .frame(height: askLineHeight)
+            .padding(.trailing, 10)
+            .padding(.bottom, askTextVPad)
         }
         // Whole-capsule tap target — single-tap focuses Ask from
         // anywhere on the pill (icons, the padded gap to the right of

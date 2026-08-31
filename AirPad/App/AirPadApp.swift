@@ -43,6 +43,11 @@ struct AirPadApp: App {
                 // taps) so the container/spine idiom can be screenshot + diffed
                 // against the T-approved reference before any TestFlight upload.
                 SpineGateView(section: spine)
+            } else if let proto = UserDefaults.standard.string(forKey: "PROTO"), !proto.isEmpty {
+                // PHASE 2 model-picker DESIGN PROTOTYPE — throwaway, mock data, NO
+                // wiring. `-PROTO pills|sheet|sheetThinkOn` renders one state for T
+                // to rule on the SHAPE from a screenshot before the real build.
+                ModelPickerProtoView(state: proto)
             } else {
                 mainContent
             }
@@ -93,6 +98,413 @@ private struct SPRMeasureView: View {
         )
         .ignoresSafeArea()
         .background(.black)
+    }
+}
+
+// MARK: - PHASE 2 model-picker DESIGN PROTOTYPE (throwaway; delete when the shape is ruled)
+
+/// Renders the model pill row OR the picker sheet with MOCK data and NO wiring,
+/// so T can rule on the SHAPE from screenshots. Uses the real `AppearancePalette`
+/// + the `corpusModeToggle` pill idiom so the look is honest. `-PROTO pills` shows
+/// the answer-footer pill lifecycle; `-PROTO sheet` / `-PROTO sheetThinkOn` show
+/// the picker sheet. GREEN check hex `#2E9E4F` is a placeholder for T to dial.
+private struct ModelPickerProtoView: View {
+    let state: String
+    var body: some View {
+        ZStack {
+            AppearancePalette.bgBase.ignoresSafeArea()
+            switch state {
+            case "sheet":         ProtoSheet(expandedCopy: false)
+            case "sheetExpanded": ProtoSheet(expandedCopy: true)
+            case "thinkIcons":    ProtoThinkIcons()
+            case "chatFooter":    ProtoChatContext(perAnswer: false)
+            case "chatPerAnswer": ProtoChatContext(perAnswer: true)
+            case "thinking":      ProtoThinkingMarker()
+            default:              ProtoPillRows()
+            }
+        }
+    }
+}
+
+/// The corpusModeToggle capsule idiom, generalized for the prototype.
+private struct ProtoPill<Content: View>: View {
+    var filled: Bool = false
+    var stroked: Bool = false
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        content()
+            .padding(.horizontal, 11).padding(.vertical, 5)
+            .background(Capsule().fill(AppearancePalette.ink.opacity(filled ? 0.12 : 0.05)))
+            .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(stroked ? 0.28 : 0), lineWidth: 1))
+            .contentShape(Capsule())
+    }
+}
+
+private enum ProtoModelState { case autoLoad, load, loading, resident }
+
+private struct ProtoModelPill: View {
+    let state: ProtoModelState
+    let name: String
+    private var divider: some View {
+        Text("|").font(.system(size: 12, weight: .regular)).foregroundStyle(AppearancePalette.ink.opacity(0.25))
+    }
+    var body: some View {
+        ProtoPill {
+            HStack(spacing: 5) {
+                switch state {
+                case .resident:
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color(hexString: "2E9E4F"))
+                    Text(name).font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                case .autoLoad, .load, .loading:
+                    Text(state == .loading ? "loading" : (state == .load ? "load" : "auto-load"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    divider
+                    Text(name).font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.9))
+                }
+            }
+        }
+    }
+}
+
+private struct ProtoPrivatePill: View {
+    var body: some View {
+        ProtoPill {
+            HStack(spacing: 5) {
+                Image(systemName: "lock.fill").font(.system(size: 11, weight: .semibold))
+                Text("Private").font(.system(size: 12, weight: .semibold))
+            }.foregroundStyle(AppearancePalette.ink.opacity(0.55))
+        }
+    }
+}
+
+private struct ProtoThinkingPill: View {
+    let on: Bool
+    var icon: String? = nil   // DEFAULT: no icon — the label carries the meaning (T killed the sparkle)
+    var body: some View {
+        ProtoPill(filled: on, stroked: !on) {
+            HStack(spacing: 5) {
+                if let icon { Image(systemName: icon).font(.system(size: 11, weight: .semibold)) }
+                Text(on ? "Thinking on" : "Thinking off").font(.system(size: 12, weight: .semibold))
+            }.foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))
+        }
+    }
+}
+
+/// One answer-footer row: Private + Model on the left, Thinking pushed to the far
+/// trailing edge (deliberate gap — two adjacent tap targets is where mis-taps come from).
+private struct ProtoFooterRow: View {
+    let model: ProtoModelState
+    let name: String
+    let thinking: Bool?   // nil = model can't think → pill ABSENT (not greyed)
+    let thinkingOn: Bool
+    var body: some View {
+        HStack(spacing: 8) {
+            ProtoPrivatePill()
+            ProtoModelPill(state: model, name: name)
+            Spacer(minLength: 12)
+            if thinking == true { ProtoThinkingPill(on: thinkingOn) }
+        }
+    }
+}
+
+private struct ProtoPillRows: View {
+    private func caption(_ s: String) -> some View {
+        Text(s).font(.system(size: 11, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 26) {
+            Text("Answer footer — the pill lifecycle")
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+            Group {
+                VStack(alignment: .leading, spacing: 7) {
+                    caption("not resident (Balanced/Always) — will auto-load on ask")
+                    ProtoFooterRow(model: .autoLoad, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: false)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    caption("Hands-on, nothing loaded — “load”, not “auto-load” (must not lie)")
+                    ProtoFooterRow(model: .load, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: false)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    caption("loading")
+                    ProtoFooterRow(model: .loading, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: false)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    caption("resident + answering (green ✓) — thinking OFF (default)")
+                    ProtoFooterRow(model: .resident, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: false)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    caption("resident — thinking ON (filled)")
+                    ProtoFooterRow(model: .resident, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: true)
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    caption("resident model can’t think → Thinking pill ABSENT (row changes shape)")
+                    ProtoFooterRow(model: .resident, name: "Llama 3.2", thinking: nil, thinkingOn: false)
+                }
+            }
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// MARK: sheet prototype
+
+private struct ProtoModel {
+    let name: String
+    let meta: String        // summary line: "19 GB · reasoning, tools · Can think · ✓ tested"
+    let capability: String  // full curated copy.capability (the prose the Mac window already shows)
+    let posture: String     // copy.posture (maker · license · caveat)
+    let trailing: ProtoModelRow.Trailing
+}
+
+private struct ProtoModelRow: View {
+    enum Trailing { case resident, load, download }
+    let model: ProtoModel
+    let expanded: Bool      // full curated copy visible
+    let disclosable: Bool   // show the chevron affordance (the collapsed variant)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(model.name).font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                if model.trailing == .resident {
+                    Text("in memory").font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 2)
+                        .background(Capsule().fill(Color(hexString: "1B59C2")))
+                }
+                Spacer(minLength: 8)
+                trailingControl
+            }
+            HStack(spacing: 6) {
+                Text(model.meta).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                if disclosable {
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+                }
+            }
+            if expanded {
+                Text(model.capability).font(.system(size: 13)).foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(model.posture).font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 12)
+    }
+    @ViewBuilder private var trailingControl: some View {
+        switch model.trailing {
+        case .resident: ProtoActionPill(title: "Eject", ghost: true)
+        case .load:     ProtoActionPill(title: "Load", ghost: false)
+        case .download: ProtoActionPill(title: "Download", ghost: false)
+        }
+    }
+}
+
+private struct ProtoActionPill: View {
+    let title: String
+    let ghost: Bool
+    var body: some View {
+        Text(title).font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(ghost ? AppearancePalette.ink.opacity(0.9) : .white)
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(Capsule().fill(ghost ? AppearancePalette.ink.opacity(0.10) : Color(hexString: "1B59C2")))
+    }
+}
+
+/// A section label + a rounded TINTED container the rows sit inside (attributes-zone idiom).
+private struct ProtoSectionBox<Content: View>: View {
+    let label: String
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(label).font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.4)).padding(.leading, 4)
+            VStack(spacing: 0) { content() }
+                .padding(.horizontal, 14)
+                .background(RoundedRectangle(cornerRadius: 18).fill(AppearancePalette.ink.opacity(0.05)))
+        }
+    }
+}
+
+private let protoInstalled: [ProtoModel] = [
+    ProtoModel(name: "Qwen3 30B-A3B",
+               meta: "19 GB · reasoning, tools · Can think · ✓ tested",
+               capability: "A big, capable model that stays fast — it only wakes the part it needs for each answer, so you get large-model quality at a smaller model's speed. Good for detailed work, long notes, and using tools in the app.",
+               posture: "Made by Alibaba (Qwen). Open license (Apache-2.0). May decline some topics.",
+               trailing: .resident),
+    ProtoModel(name: "Qwen3 8B",
+               meta: "5 GB · chat, tools · Can think · candidate",
+               capability: "A capable all-round model for chat and everyday questions — a real step up from the model your phone runs on its own.",
+               posture: "Made by Alibaba (Qwen). Open license (Apache-2.0). May decline some topics.",
+               trailing: .load),
+]
+private let protoAvailable: [ProtoModel] = [
+    ProtoModel(name: "Qwen3 4B",
+               meta: "3 GB · chat · No thinking · candidate",
+               capability: "A small, quick model for short questions and quick edits, when you want the fastest possible answer.",
+               posture: "Made by Alibaba (Qwen). Open license (Apache-2.0).",
+               trailing: .download),
+    ProtoModel(name: "Gemma 3 12B",
+               meta: "8 GB · chat, vision · No thinking · candidate",
+               capability: "A mid-size model that can also read images you share — good when a question is about a picture, not just text.",
+               posture: "Made by Google. Gemma license. May decline some topics.",
+               trailing: .download),
+]
+
+private struct ProtoSheet: View {
+    let expandedCopy: Bool
+    private var rowDivider: some View { Divider().overlay(AppearancePalette.ink.opacity(0.08)) }
+    var body: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Capsule().fill(AppearancePalette.ink.opacity(0.2)).frame(width: 36, height: 5)
+                        .frame(maxWidth: .infinity)
+                    ProtoSectionBox(label: "THINKING") {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Thinking").font(.system(size: 16, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+                                Text("Slower, more careful answers. Off by default.")
+                                    .font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                            }
+                            Spacer()
+                            ProtoThinkingPill(on: false)
+                        }.padding(.vertical, 12)
+                    }
+                    ProtoSectionBox(label: "INSTALLED") {
+                        ProtoModelRow(model: protoInstalled[0], expanded: expandedCopy, disclosable: !expandedCopy)
+                        rowDivider
+                        ProtoModelRow(model: protoInstalled[1], expanded: expandedCopy, disclosable: !expandedCopy)
+                    }
+                    ProtoSectionBox(label: "AVAILABLE TO DOWNLOAD") {
+                        ProtoModelRow(model: protoAvailable[0], expanded: expandedCopy, disclosable: !expandedCopy)
+                        rowDivider
+                        ProtoModelRow(model: protoAvailable[1], expanded: expandedCopy, disclosable: !expandedCopy)
+                        rowDivider
+                        HStack {
+                            Text("More models").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.8))
+                            Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                            Spacer()
+                            Text("the full Ollama library · post-V1 · STUB").font(.system(size: 11)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+                        }.padding(.vertical, 14)
+                    }
+                }
+                .padding(20)
+            }
+            .frame(maxHeight: 800)
+            .background(
+                UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24).fill(AppearancePalette.bgElevated)
+            )
+        }
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+// MARK: thinking-icon alternates (T killed the sparkle; default = no icon)
+
+private struct ProtoThinkIcons: View {
+    private func rowFor(_ label: String, _ icon: String?) -> some View {
+        HStack(spacing: 14) {
+            Text(label).font(.system(size: 13, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .frame(width: 150, alignment: .leading)
+            ProtoThinkingPill(on: false, icon: icon)
+            ProtoThinkingPill(on: true, icon: icon)
+        }
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Text("Thinking pill — icon options").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppearancePalette.ink)
+            rowFor("No icon (default)", nil)
+            Text("Alternates name the COST, not the mechanism:").font(.system(size: 12)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            rowFor("timer", "timer")
+            rowFor("clock", "clock")
+            rowFor("tortoise", "tortoise")
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+// MARK: chat placement options + the "Thinking…" activity marker
+
+/// A minimal mock chat so T can rule WHERE the pill row sits in Chat View.
+private struct ProtoChatContext: View {
+    let perAnswer: Bool
+    private var userBubble: some View {
+        HStack {
+            Spacer()
+            Text("What's a good way to structure these notes?")
+                .font(.system(size: 16)).foregroundStyle(AppearancePalette.ink)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 18).fill(Color(hexString: "00BFFF").opacity(0.18)))
+        }
+    }
+    private var answer: some View {
+        Text("Group them by the question each one answers, not by when you wrote them — then a few links between the clusters do the rest.")
+            .font(.system(size: 18)).foregroundStyle(AppearancePalette.ink.opacity(0.9))
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private var footerRow: some View {
+        ProtoFooterRow(model: .resident, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: false)
+    }
+    private var composer: some View {
+        HStack(spacing: 10) {
+            Text("Message…").font(.system(size: 16)).foregroundStyle(AppearancePalette.ink.opacity(0.35))
+            Spacer()
+            Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(AppearancePalette.ink.opacity(0.3))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(Capsule().fill(AppearancePalette.ink.opacity(0.06)))
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(perAnswer ? "Chat placement B — per-answer footer (under the answer)"
+                           : "Chat placement A — persistent row above the composer")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            userBubble
+            answer
+            if perAnswer { footerRow }     // B: sits under this answer
+            Spacer()
+            if !perAnswer { footerRow }    // A: persistent, just above the composer
+            composer
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// The "Thinking…" activity marker — Host-composed, shown while a reasoning model
+/// works before the first content token (so silence never reads as a glitch).
+private struct ProtoThinkingMarker: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("“Thinking…” marker (Thinking ON, before the first token)")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            HStack {
+                Spacer()
+                Text("Compare these two approaches for me.")
+                    .font(.system(size: 16)).foregroundStyle(AppearancePalette.ink)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 18).fill(Color(hexString: "00BFFF").opacity(0.18)))
+            }
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.8)
+                Text("Thinking…").font(.system(size: 15, weight: .medium)).foregroundStyle(AppearancePalette.ink.opacity(0.5))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Capsule().fill(AppearancePalette.ink.opacity(0.05)))
+            Spacer()
+            ProtoFooterRow(model: .resident, name: "Qwen3 30B-A3B", thinking: true, thinkingOn: true)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

@@ -824,6 +824,129 @@ enum ModelRouter {
         }
     }
 
+    // MARK: - Host agentic tool turn (web search over the SEALED path)
+
+    /// Which remote path runs the agentic tool loop.
+    enum AgentBackend {
+        case ollama(endpoint: String, model: String)
+        case host(pairing: HostPairing)
+    }
+
+    /// One agentic model turn over the SEALED `.host` path — the tool-loop sibling of
+    /// `streamAgentTurn` (which only ever ran against a direct `.ollama` endpoint; that is why web
+    /// search never worked over a paired Host — it was NEVER WIRED for `.host`, not a regression
+    /// from the `/api/chat` switch). Seals the OpenAI working-set + tool schema exactly like
+    /// `streamHost`, then accumulates content + `tool_calls` out of the sealed SSE (the Host now
+    /// translates Ollama's native `tool_calls` back into `delta.tool_calls`). It does NOT opt into
+    /// BUG 36 hold/resume (no requestID): an agentic turn is short and the loop owns retries, so the
+    /// one-shot hold path (`streamHost`) stays byte-for-byte untouched.
+    static func streamHostAgentTurn(
+        pairing: HostPairing,
+        messages: [[String: Any]],
+        tools: [[String: Any]]?,
+        onContentDelta: @Sendable @escaping (String) -> Void
+    ) async throws -> AgentTurn {
+        guard let hpk = pairing.hostPublicKey, let chatURL = pairing.chatURL else {
+            throw RouterError.ollamaBadEndpoint(pairing.tunnelURL)
+        }
+        let model: String
+        if let resident = try await residentHostModel(pairing: pairing) {
+            model = resident
+        } else {
+            model = try await firstHostModel(pairing: pairing)
+        }
+        var body: [String: Any] = ["model": model, "stream": true, "think": false, "messages": messages]
+        if let tools { body["tools"] = tools }
+        let plaintext = try JSONSerialization.data(withJSONObject: body)
+        let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
+
+        var request = URLRequest(url: chatURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(hostUserAgent, forHTTPHeaderField: "User-Agent") // P8
+        request.setValue("Bearer \(pairing.authToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONEncoder().encode(envelope)
+
+        let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+        do { (bytes, response) = try await URLSession.shared.bytes(for: request) }
+        catch { throw RouterError.ollamaTransport(error.localizedDescription) }
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            var data = Data()
+            for try await b in bytes { data.append(b) }
+            throw RouterError.ollamaHTTPError(path: "v1/chat/completions", status: http.statusCode,
+                                              body: String(data: data, encoding: .utf8) ?? "")
+        }
+
+        var buffer = Data()
+        var content = ""
+        var accum: [Int: (id: String, name: String, args: String)] = [:]
+        for try await line in bytes.lines {
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            if payload == "[DONE]" { break } // outer sealed-frame stream end
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any] else { continue }
+            if let epk = obj["epk"] as? String { try session.setHostEphemeral(epk); continue }
+            guard let ct = obj["ct"] as? String else { continue }
+            buffer.append(try session.openFrame(ct))
+            drainInnerAgentSSE(&buffer, content: &content, accum: &accum, onContentDelta: onContentDelta)
+        }
+        let toolCalls = accum.sorted { $0.key < $1.key }.map { idx, e in
+            ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)
+        }
+        return AgentTurn(content: content, toolCalls: toolCalls)
+    }
+
+    /// Parse complete inner `data:` lines out of the decrypted buffer, ACCUMULATING content +
+    /// tool-call fragments — the agentic sibling of `drainInnerSSE` (which yields live ModelDeltas).
+    private static func drainInnerAgentSSE(
+        _ buffer: inout Data,
+        content: inout String,
+        accum: inout [Int: (id: String, name: String, args: String)],
+        onContentDelta: @Sendable (String) -> Void
+    ) {
+        while let nl = buffer.firstIndex(of: 0x0A) {
+            let lineData = buffer[buffer.startIndex..<nl]
+            buffer = Data(buffer[buffer.index(after: nl)...])
+            guard var line = String(data: lineData, encoding: .utf8) else { continue }
+            if line.hasSuffix("\r") { line = String(line.dropLast()) }
+            guard line.hasPrefix("data: ") else { continue }
+            let payload = String(line.dropFirst(6))
+            if payload == "[DONE]" { continue }
+            if let obj = try? JSONSerialization.jsonObject(with: Data(payload.utf8)) as? [String: Any],
+               let choices = obj["choices"] as? [[String: Any]],
+               let delta = choices.first?["delta"] as? [String: Any] {
+                accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta)
+            }
+        }
+    }
+
+    /// Fold one OpenAI `delta` into the running content + tool-call accumulator (keyed by index) —
+    /// the ONE definition both the `.ollama` (streamAgentTurn) and `.host` (streamHostAgentTurn)
+    /// loops use, so the two parse `tool_calls` identically and can't drift.
+    static func accumulateAgentDelta(
+        _ delta: [String: Any],
+        content: inout String,
+        accum: inout [Int: (id: String, name: String, args: String)],
+        onContentDelta: @Sendable (String) -> Void
+    ) {
+        if let c = delta["content"] as? String, !c.isEmpty {
+            content += c
+            onContentDelta(c)
+        }
+        if let calls = delta["tool_calls"] as? [[String: Any]] {
+            for call in calls {
+                let idx = call["index"] as? Int ?? 0
+                var e = accum[idx] ?? (id: "", name: "", args: "")
+                if let id = call["id"] as? String, !id.isEmpty { e.id = id }
+                if let fn = call["function"] as? [String: Any] {
+                    if let n = fn["name"] as? String { e.name += n }
+                    if let a = fn["arguments"] as? String { e.args += a }
+                }
+                accum[idx] = e
+            }
+        }
+    }
+
     // MARK: - Host resume (BUG 36 Pillar 2)
 
     /// Re-attach to a HELD Host result after a mid-stream drop. Seals `{requestID}` into a
@@ -1050,22 +1173,7 @@ extension ModelRouter {
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let delta = choices.first?["delta"] as? [String: Any] else { continue }
-            if let c = delta["content"] as? String, !c.isEmpty {
-                content += c
-                onContentDelta(c)
-            }
-            if let calls = delta["tool_calls"] as? [[String: Any]] {
-                for call in calls {
-                    let idx = call["index"] as? Int ?? 0
-                    var e = accum[idx] ?? (id: "", name: "", args: "")
-                    if let id = call["id"] as? String, !id.isEmpty { e.id = id }
-                    if let fn = call["function"] as? [String: Any] {
-                        if let n = fn["name"] as? String { e.name += n }
-                        if let a = fn["arguments"] as? String { e.args += a }
-                    }
-                    accum[idx] = e
-                }
-            }
+            Self.accumulateAgentDelta(delta, content: &content, accum: &accum, onContentDelta: onContentDelta)
         }
         let toolCalls = accum.sorted { $0.key < $1.key }.map { idx, e in
             ToolCall(id: e.id.isEmpty ? "call_\(idx)" : e.id, name: e.name, argumentsJSON: e.args)

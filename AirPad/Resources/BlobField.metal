@@ -119,6 +119,28 @@ static float blobFalloff(float f, float peak) {
     }
 }
 
+// Full Photoshop/AE separable blend set (2026-09-05, ws-ios-polish item 5 — the blob-blend
+// tuner). Selects how each successive blob's colour combines with what's accumulated beneath it.
+// `m` = mode; m < 0.5 (NORMAL) is never routed here (the callers keep the exact premultiplied
+// source-over for byte-identity), but is defined for completeness. `b` = base (accumulated,
+// UN-premultiplied straight colour), `s` = source (this blob's straight colour). DEBUG-driven
+// only: BlobFieldView passes 0 in Release, so this whole path is dead there → byte-identical.
+static half3 blendColor(half3 b, half3 s, float m) {
+    if (m < 0.5)  return s;                                                            // 0 NORMAL
+    if (m < 1.5)  return b + s;                                                        // 1 ADD
+    if (m < 2.5)  return b + s - b * s;                                                // 2 SCREEN
+    if (m < 3.5)  return max(b, s);                                                    // 3 LIGHTEN
+    if (m < 4.5)  return min(b, s);                                                    // 4 DARKEN
+    if (m < 5.5)  return b * s;                                                        // 5 MULTIPLY
+    if (m < 6.5)  return mix(2.0h*b*s, 1.0h - 2.0h*(1.0h-b)*(1.0h-s), step(half3(0.5h), b)); // 6 OVERLAY
+    if (m < 7.5)  return (1.0h - 2.0h*s) * b * b + 2.0h*s*b;                           // 7 SOFT LIGHT (Pegtop)
+    if (m < 8.5)  return mix(2.0h*b*s, 1.0h - 2.0h*(1.0h-b)*(1.0h-s), step(half3(0.5h), s)); // 8 HARD LIGHT
+    if (m < 9.5)  return min(half3(1.0h), b / max(1.0h - s, half3(0.0015h)));          // 9 COLOUR DODGE
+    if (m < 10.5) return 1.0h - min(half3(1.0h), (1.0h - b) / max(s, half3(0.0015h))); // 10 COLOUR BURN
+    if (m < 11.5) return abs(b - s);                                                   // 11 DIFFERENCE
+    return b + s - 2.0h * b * s;                                                       // 12 EXCLUSION
+}
+
 // LAVA — four wide ambient blobs, additive, sampled in normalized space.
 // Byte-for-byte the Stage-1 math; do not disturb.
 static half4 lavaField(float2 samplePos, float time, float2 size,
@@ -162,7 +184,7 @@ static half4 lavaField(float2 samplePos, float time, float2 size,
 // last front), so overlaps read exactly like the SwiftUI ZStack of blurred
 // Circles. Coordinates are absolute points (center + drift), not fractions.
 static half4 cardField(float2 samplePos, float time, float2 size,
-                       float2 anchor, float bloom, device const float *params, int paramCount) {
+                       float2 anchor, float bloom, float blend, device const float *params, int paramCount) {
     // Rest reference for the blobs. (0.5,0.5) = card center (default);
     // (0.5,1.0) = bottom edge, so on a hero-image card the color pools at
     // the floor beneath the photo instead of bleeding up into it.
@@ -214,10 +236,21 @@ static half4 cardField(float2 samplePos, float time, float2 size,
         float d = length(relW);
         float a = peak * (1.0 - smoothstep(radius - blurWidth, radius + blurWidth, d));
 
-        // Source-over, premultiplied: this blob on top of everything so far.
+        // Blob-blend (DEBUG tuner): how this blob's colour combines with what's beneath it.
+        // blend < 0.5 keeps the EXACT premultiplied source-over path → Release byte-identical.
         half sa = half(a);
-        accumRGB = col * sa + accumRGB * (1.0h - sa);
-        accumA   = sa      + accumA   * (1.0h - sa);
+        if (blend < 0.5) {
+            accumRGB = col * sa + accumRGB * (1.0h - sa);
+        } else {
+            half3 base = accumA > 1e-4h ? accumRGB / accumA : half3(0.0h);   // un-premultiply
+            // AE-correct: the mode only applies where the underlying blob is PRESENT — fade the
+            // blended colour toward plain source (`col`) by the dst coverage `accumA`, so a blob's
+            // soft rim stays soft (no hard max()/screen crossover at the coverage edge). Then
+            // composite by the source alpha ramp `sa`. Normal (blended==col) → exact source-over.
+            half3 srcEff = mix(col, blendColor(base, col, blend), accumA);
+            accumRGB = srcEff * sa + accumRGB * (1.0h - sa);
+        }
+        accumA = sa + accumA * (1.0h - sa);
 
         // Imagery bloom: a soft additive halo in THIS blob's colour, e-folding OUTSIDE the warped
         // boundary (radius, in warped space). bloom 0 → skipped → byte-identical. Follows the colour.
@@ -240,7 +273,7 @@ static half4 cardField(float2 samplePos, float time, float2 size,
 // CPU BlobShape used to build a 60-point outline — moved from "build the shape"
 // to "test each pixel against the shape." Plus drift, buoyancy, breathing.
 static half4 heroField(float2 samplePos, float time, float2 size,
-                       float bloom, device const float *params, int paramCount) {
+                       float bloom, float blend, device const float *params, int paramCount) {
     float2 center = size * 0.5;
 
     half3 accumRGB = half3(0.0);
@@ -291,9 +324,20 @@ static half4 heroField(float2 samplePos, float time, float2 size,
 
         float a = peak * (1.0 - smoothstep(boundaryR - blurWidth, boundaryR + blurWidth, d));
 
+        // Blob-blend (DEBUG tuner) — blend < 0.5 keeps exact source-over → Release byte-identical.
         half sa = half(a);
-        accumRGB = col * sa + accumRGB * (1.0h - sa);
-        accumA   = sa      + accumA   * (1.0h - sa);
+        if (blend < 0.5) {
+            accumRGB = col * sa + accumRGB * (1.0h - sa);
+        } else {
+            half3 base = accumA > 1e-4h ? accumRGB / accumA : half3(0.0h);
+            // AE-correct: the mode only applies where the underlying blob is PRESENT — fade the
+            // blended colour toward plain source (`col`) by the dst coverage `accumA`, so a blob's
+            // soft rim stays soft (no hard max()/screen crossover at the coverage edge). Then
+            // composite by the source alpha ramp `sa`. Normal (blended==col) → exact source-over.
+            half3 srcEff = mix(col, blendColor(base, col, blend), accumA);
+            accumRGB = srcEff * sa + accumRGB * (1.0h - sa);
+        }
+        accumA = sa + accumA * (1.0h - sa);
 
         // Imagery bloom (same as cardField; e-folds over baseR here). bloom 0 → byte-identical.
         if (bloom > 0.0) {
@@ -331,6 +375,7 @@ static float2 blobWarp(float2 p, float t, float scale, float amount) {
                                  float noiseAmount,
                                  float noiseScale,
                                  float bloom,
+                                 float blend,
                                  device const float *params,
                                  int paramCount) {
     // sharedField switch: local space by default; offset the sample point by
@@ -344,10 +389,10 @@ static float2 blobWarp(float2 p, float t, float scale, float amount) {
     }
 
     if (style < 0.5) {
-        return lavaField(samplePos, time, size, params, paramCount);
+        return lavaField(samplePos, time, size, params, paramCount);   // lava keeps its native additive
     } else if (style < 1.5) {
-        return cardField(samplePos, time, size, anchor, bloom, params, paramCount);
+        return cardField(samplePos, time, size, anchor, bloom, blend, params, paramCount);
     } else {
-        return heroField(samplePos, time, size, bloom, params, paramCount);
+        return heroField(samplePos, time, size, bloom, blend, params, paramCount);
     }
 }

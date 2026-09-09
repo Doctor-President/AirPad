@@ -558,7 +558,14 @@ final class CorpusPhysicsScene: SKScene {
         var pos: [String: CGPoint] = [:]
         for e in band { ids.append(e.id); rad[e.id] = e.r; pos[e.id] = e.home }
         // Pairwise PBD push-apart from resting homes (transient, recomputed each frame).
+        // ★ item 2: orbs OVERLAP because the physics bodies are STATIC (isDynamic=false → no collision
+        // resolution at all); separation is ONLY this PBD, and its gap was fixed. Dialing it wider
+        // pushes amplified orbs apart (the real lever — a body-radius sync would do nothing here).
+        #if DEBUG
+        let gap = CGFloat(BlobFieldTuning.shared.orbGap)
+        #else
         let gap = AnnulusTuning.breathingGap
+        #endif
         for _ in 0..<max(0, AnnulusTuning.relaxPasses) {
             for i in 0..<ids.count {
                 for j in (i + 1)..<ids.count {
@@ -683,6 +690,8 @@ final class CorpusPhysicsScene: SKScene {
         // baked). Same call site for fit + render, so metrics stay consistent. The
         // bundled/system faces fall back to the SourceSerif4 voice-unifier if a load
         // fails (which would show up as a face reading identical to `.sourceSerif`).
+        // NB the orb-title FONT is selected at the MSDF-atlas level (see makeTitleSprite), since
+        // titles render from a baked atlas — this UIFont only supplies pointSize for the tier fit.
         switch TypeTuning.fontChoice {
         case .sfSemibold:
             return UIFont.systemFont(ofSize: size, weight: .semibold)
@@ -755,6 +764,11 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var territoryLabelData: [TerritoryLabel] = []
+    #if DEBUG
+    /// Item-3 label-separation solver state — each region label's persistent SCREEN position, eased each
+    /// frame away from orbs and tethered toward its centroid, so labels settle in gaps between orbs.
+    private var labelSolverPos: [String: CGPoint] = [:]
+    #endif
     /// True after we last wrote an empty territory-label set, so we clear the
     /// overlay once instead of every idle frame.
     private var lastTerritoryLabelsEmpty = true
@@ -1217,6 +1231,8 @@ final class CorpusPhysicsScene: SKScene {
         // in the dedicated SPRMeasureView host, never the normal app.
         if UserDefaults.standard.bool(forKey: "SPRMeasure") {
             runSPRMeasure()
+        } else if UserDefaults.standard.bool(forKey: "SPRBand") {
+            runBandSpike()   // ws-ios-polish item 5 SPIKE — band treatment + blend comparison
         }
         #endif
     }
@@ -1243,6 +1259,10 @@ final class CorpusPhysicsScene: SKScene {
         #endif
 
         refreshGrazeTuning()  // pull live Graze dials into cached properties
+        #if DEBUG
+        refreshOrbTuning()    // pull live orb-tuner dials (dark dimensionality / opacity / title / blend)
+        updateOrbGlow()       // glow-beneath overlay (addendum C), when the tuner's glow is on
+        #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {
@@ -1311,6 +1331,10 @@ final class CorpusPhysicsScene: SKScene {
         // the base layout), so nodes settle home as they leave the band.
         applyOrbScales()
         applyBandRelaxation()
+
+        #if DEBUG
+        if bandSpikeEnabled { updateBandSpike(currentTime: currentTime) }   // ws-ios-polish item 5 SPIKE
+        #endif
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
@@ -1598,6 +1622,21 @@ final class CorpusPhysicsScene: SKScene {
             let regionMatDrop = RegionLabelTuning.materialDropThreshold
             let regionMaterialAlpha = smoothstepClamp(regionMatDrop,
                                                       min(regionMatDrop + 0.2, 1.0), regionRaw)
+            // Item 3: pre-project every orb's screen centre + radius ONCE per frame (not per label), so
+            // the separation solver stays cheap. Only when the tuner's label separation is on.
+            #if DEBUG
+            let labelSepOn = BlobFieldTuning.shared.labelSepOn
+            let labelTether = CGFloat(BlobFieldTuning.shared.labelTether)
+            let camScale = max(cameraNode.xScale, 0.0001)
+            var orbScreen: [(p: CGPoint, r: CGFloat)] = []
+            if labelSepOn {
+                orbScreen.reserveCapacity(nodeSprites.count)
+                for (id, sprite) in nodeSprites {
+                    let r = (nodeIntrinsicRadii[id] ?? 30) * sprite.xScale / camScale
+                    orbScreen.append((view.convert(sprite.position, from: self), r))
+                }
+            }
+            #endif
             for label in territoryLabelData {
                 var sum = CGPoint.zero
                 var n: CGFloat = 0
@@ -1609,7 +1648,32 @@ final class CorpusPhysicsScene: SKScene {
                 }
                 guard n > 0 else { continue }
                 let world = CGPoint(x: sum.x / n, y: sum.y / n)
-                let screen = view.convert(world, from: self)
+                let screenCentroid = view.convert(world, from: self)
+                var screen = screenCentroid
+                #if DEBUG
+                // Item 3: repel the label from nearby orbs + tether it toward its centroid, so it
+                // settles in a GAP rather than sitting on an orb. Persistent + damped (no jitter). In a
+                // fully dense cluster with NO gap the tether wins → it holds near the centroid (still on
+                // orbs); the tether dial is the taste call (low = escapes to a gap, high = hugs region).
+                if labelSepOn {
+                    var p = labelSolverPos[label.key] ?? screenCentroid
+                    let halfW = CGFloat(label.name.count) * 4.5 + 18   // rough label half-width (screen pt)
+                    var fx: CGFloat = 0, fy: CGFloat = 0
+                    for o in orbScreen {
+                        let dx = p.x - o.p.x, dy = p.y - o.p.y
+                        let d = hypot(dx, dy)
+                        let minD = o.r + halfW * 0.5
+                        if d > 0.1 && d < minD { let push = minD - d; fx += dx / d * push; fy += dy / d * push }
+                    }
+                    fx += (screenCentroid.x - p.x) * labelTether
+                    fy += (screenCentroid.y - p.y) * labelTether
+                    p.x += fx * 0.2; p.y += fy * 0.2      // damped step
+                    labelSolverPos[label.key] = p
+                    screen = p
+                } else {
+                    labelSolverPos[label.key] = screenCentroid
+                }
+                #endif
                 out.append(CanvasState.TerritoryLabelInfo(
                     key: label.key,
                     name: label.name,
@@ -2468,14 +2532,23 @@ final class CorpusPhysicsScene: SKScene {
                                    isLight: Bool) {
         // Fill/stroke → per-node attributes on the shared-shader sprite orb.
         let metaAlpha: CGFloat = isMeta ? 0.55 : 1.0
-        let fillAlpha = isLight ? metaAlpha * Self.cwPigment : metaAlpha
-        let fill = baseFill.withAlphaComponent(fillAlpha)
+        var fillAlpha = isLight ? metaAlpha * Self.cwPigment : metaAlpha
         // Meta keeps its soft-purple rim in both rooms (reads on cream); only the
         // near-invisible white@0.12 non-meta stroke flips to ink.
-        let stroke: UIColor = isMeta
+        var stroke: UIColor = isMeta
             ? UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
             : (isLight ? Self.lightInk.withAlphaComponent(Self.cwStrokeInk)
                        : UIColor.white.withAlphaComponent(0.12))
+        #if DEBUG
+        // Orb tuner (item 1) — fill + stroke opacity dials, off unless orbOverride is on.
+        if BlobFieldTuning.shared.orbOverride {
+            // SET (not multiply) so 1.0 = a SOLID fill even in light — bypasses the cwPigment (0.60)
+            // dilution that otherwise lets the dot grid show through and defeats the orb blend modes.
+            fillAlpha = metaAlpha * CGFloat(BlobFieldTuning.shared.orbFillOpacity)
+            stroke = stroke.withAlphaComponent(stroke.cgColor.alpha * CGFloat(BlobFieldTuning.shared.orbStrokeOpacity))
+        }
+        #endif
+        let fill = baseFill.withAlphaComponent(fillAlpha)
         let lineWidth: CGFloat = isMeta ? 1.5 : 1.0
 
         // Diagonal wash, now a shader term (was a circular child sprite): light
@@ -2507,6 +2580,182 @@ final class CorpusPhysicsScene: SKScene {
                               isLight: isLight)
         }
     }
+
+    #if DEBUG
+    private var lastOrbTuningSig = ""
+    /// Poll the in-app ORB tuner each frame; apply only on change. Pushes dark-dimensionality uniforms
+    /// live, restyles fills/strokes (opacity dials), rebuilds titles (font / colour / opacity / size —
+    /// addendum A), and sets each orb SPRITE's SKBlendMode PER APPEARANCE (addendum B). orbOverride OFF
+    /// restores the baked look; and if it was NEVER on, the whole method no-ops (zero startup cost, so
+    /// the shipped look is byte-identical until T dials). `currentIsLight` is in the signature so a
+    /// light↔dark flip re-applies the per-appearance blend.
+    func refreshOrbTuning() {
+        let t = BlobFieldTuning.shared
+        let on = t.orbOverride
+        let sig = on
+            ? "\(currentIsLight)|\(t.orbFillOpacity)|\(t.orbStrokeOpacity)|\(t.orbDarkSat)|\(t.orbDarkVal)|\(t.orbDarkRim)|\(t.orbTitleScale)|\(t.orbTitleFont)|\(t.orbTitleColorHex)|\(t.orbTitleOpacity)|\(t.orbBlendLight)|\(t.orbBlendDark)"
+            : "off"
+        guard sig != lastOrbTuningSig else { return }
+        let wasApplying = !lastOrbTuningSig.isEmpty && lastOrbTuningSig != "off"
+        lastOrbTuningSig = sig
+        guard on || wasApplying else { return }   // never dialed → leave the baked look untouched
+
+        func setU(_ name: String, _ v: Float) { orbSpriteShader.uniforms.first(where: { $0.name == name })?.floatValue = v }
+        setU("u_dark_sat", on ? Float(t.orbDarkSat) : Float(DarkOrbTuning.sat))
+        setU("u_dark_val", on ? Float(t.orbDarkVal) : Float(DarkOrbTuning.val))
+        setU("u_dark_rim", on ? Float(t.orbDarkRim) : Float(DarkOrbTuning.rim))
+        restyleUnfocusedOrbs()   // fill / stroke opacity
+        restyleTitles()          // font / colour / opacity / size
+        let bl = on ? BlobFieldTuning.skBlend(currentIsLight ? t.orbBlendLight : t.orbBlendDark) : .alpha
+        for (_, shape) in nodeSprites { (shape as? SKSpriteNode)?.blendMode = bl }
+    }
+
+    /// Rebuild every resting orb's title (needed for a live font / colour / opacity change — those are
+    /// baked into the MSDF glyph container at build time). `makeTitleSprite` reads the tuner overrides;
+    /// we recompute the same displayText/radius `addNodeSprite` used, then re-apply the title-size scale.
+    func restyleTitles() {
+        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let on = BlobFieldTuning.shared.orbOverride
+        let s = on ? CGFloat(BlobFieldTuning.shared.orbTitleScale) : 1.0
+        for (id, shape) in nodeSprites {
+            guard let node = byID[id] else { continue }   // synthetic corpus has no currentNodes → skip
+            shape.children.first(where: { $0.name == "titleLabel" })?.removeFromParent()
+            let radius = (shape.userData?["radius"] as? CGFloat) ?? (((shape as? SKSpriteNode)?.size.width ?? 60) / 2)
+            let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
+            let title = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node))
+            title.setScale(s)
+            shape.addChild(title)
+        }
+    }
+
+    // ── GLOW beneath the orbs (addendum C) — soft radial glow per orb, screen-accumulated so
+    // neighbouring glows POOL into regional washes on the map ground. z = 0.5: ABOVE the grid
+    // (−1000), BELOW the orbs (z 1) and their title children → guaranteed never over an orb or its
+    // text (T's hard requirement). 12 slots (nearest-center orbs) = 26 uniforms, under the 31 cap.
+    private static let glowSlots = 12
+    private var orbGlowOverlay: SKSpriteNode?
+    private var glowOrbUniforms: [SKUniform] = []
+    private var glowColUniforms: [SKUniform] = []
+    private var glowReachU: SKUniform?
+    private var glowBlendU: SKUniform?
+    private var glowFallU: SKUniform?
+    private var glowAspectU: SKUniform?
+
+    func updateOrbGlow() {
+        let t = BlobFieldTuning.shared
+        guard t.glowOn else {
+            if orbGlowOverlay != nil { orbGlowOverlay?.removeFromParent(); orbGlowOverlay = nil }
+            return
+        }
+        guard let view = view else { return }
+        if orbGlowOverlay == nil {
+            let node = SKSpriteNode(texture: whiteUVTexture)   // texture → valid v_tex_coord
+            node.size = view.bounds.size
+            node.position = .zero
+            node.zPosition = 0.5           // beneath orbs + titles, above grid
+            node.blendMode = .alpha
+            node.shader = makeOrbGlowShader()
+            cameraNode.addChild(node)
+            orbGlowOverlay = node
+        }
+        guard let overlay = orbGlowOverlay else { return }
+        let viewW = view.bounds.width, viewH = view.bounds.height
+        if overlay.size != view.bounds.size { overlay.size = view.bounds.size }
+        glowAspectU?.floatValue = Float(viewW / max(viewH, 1))
+        glowReachU?.floatValue = Float(t.glowRadius)
+        glowFallU?.floatValue = Float(t.glowFalloff)
+        glowBlendU?.floatValue = Float(currentIsLight ? t.glowBlendLight : t.glowBlendDark)   // pool blend, per appearance
+        // GROUND blend (the "muddy on light" lever) — how the glow LAYER sits on the map ground.
+        overlay.blendMode = BlobFieldTuning.skBlend(currentIsLight ? t.glowGroundLight : t.glowGroundDark)
+        let cameraScale = cameraNode.xScale
+        let envelope = AnnulusTuning.envelope(cameraScale)
+        let camPos = cameraNode.position
+        var scored: [(d: CGFloat, id: String)] = []
+        for (id, sprite) in nodeSprites {
+            let p = nodeRestingPositions[id] ?? sprite.position
+            scored.append((hypot(p.x - camPos.x, p.y - camPos.y), id))
+        }
+        scored.sort { $0.d < $1.d }
+        var slot = 0
+        for e in scored.prefix(Self.glowSlots) {
+            guard let sprite = nodeSprites[e.id] else { continue }
+            let off = CGPoint(x: (sprite.position.x - camPos.x) / cameraScale,
+                              y: (sprite.position.y - camPos.y) / cameraScale)
+            let intrinsic = nodeIntrinsicRadii[e.id] ?? 30
+            // Reach from the RESTING radius (NOT the annulus-amplified xScale) so the glow SIZE stays
+            // stable — the annulus modulates INTENSITY, not existence. Persistent (T ruling): every orb
+            // gets `baseline`, in-band orbs add `inBand × centrality`. So the wash is always present.
+            let rUV = Float((intrinsic * (nodeRestingScales[e.id] ?? 1) / cameraScale) / viewH)
+            let centrality = Float(annulusFalloff(e.d, cameraScale: cameraScale)) * Float(envelope)
+            let inten = min(2.0, Float(t.glowBaseline) + Float(t.glowInBand) * centrality)
+            let fill = sprite.value(forAttributeNamed: "a_node_color")?.vectorFloat4Value
+            glowOrbUniforms[slot].vectorFloat4Value = vector_float4(Float(0.5 + off.x / viewW),
+                                                                    Float(0.5 + off.y / viewH), rUV, inten)
+            glowColUniforms[slot].vectorFloat3Value = vector_float3(fill?.x ?? 1, fill?.y ?? 1, fill?.z ?? 1)
+            slot += 1
+        }
+        for i in slot..<Self.glowSlots { glowOrbUniforms[i].vectorFloat4Value = vector_float4(0, 0, 0, 0) }
+    }
+
+    private func makeOrbGlowShader() -> SKShader {
+        let blocks = (0..<Self.glowSlots).map { i in """
+                {
+                    vec4 P = u_gorb\(i);
+                    if (P.w > 0.001) {
+                        vec2 dv = v_tex_coord - P.xy; dv.x *= u_gaspect;
+                        float reach = P.z * u_greach;
+                        float dist = length(dv);
+                        if (dist <= reach && reach > 0.0001) {
+                            float g = clamp(P.w * pow(clamp(1.0 - dist / reach, 0.0, 1.0), 1.0 + u_gfall * 4.0), 0.0, 1.0);
+                            accum.rgb = mix(accum.rgb, blendColor(accum.rgb, u_gcol\(i), gmode), g);
+                            accum.a = accum.a + g - accum.a * g;
+                        }
+                    }
+                }
+        """ }.joined(separator: "\n")
+        let src = """
+        // Full 13-mode blend set (per appearance) for the glow pooling — pure (no uniforms/varyings).
+        vec3 blendColor(vec3 b, vec3 s, float m) {
+            if (m < 0.5)  return s;
+            if (m < 1.5)  return b + s;
+            if (m < 2.5)  return b + s - b * s;
+            if (m < 3.5)  return max(b, s);
+            if (m < 4.5)  return min(b, s);
+            if (m < 5.5)  return b * s;
+            if (m < 6.5)  return mix(2.0*b*s, 1.0 - 2.0*(1.0-b)*(1.0-s), step(vec3(0.5), b));
+            if (m < 7.5)  return (1.0 - 2.0*s) * b * b + 2.0*s*b;
+            if (m < 8.5)  return mix(2.0*b*s, 1.0 - 2.0*(1.0-b)*(1.0-s), step(vec3(0.5), s));
+            if (m < 9.5)  return min(vec3(1.0), b / max(1.0 - s, vec3(0.0015)));
+            if (m < 10.5) return 1.0 - min(vec3(1.0), (1.0 - b) / max(s, vec3(0.0015)));
+            if (m < 11.5) return abs(b - s);
+            return b + s - 2.0 * b * s;
+        }
+        void main() {
+            float gmode = u_gblend;     // local copy — pass to blendColor(), not the uniform
+            vec4 accum = vec4(0.0);
+        \(blocks)
+            gl_FragColor = vec4(clamp(accum.rgb, 0.0, 1.0) * accum.a, clamp(accum.a, 0.0, 1.0));
+        }
+        """
+        let shader = SKShader(source: src)
+        var uniforms: [SKUniform] = []
+        glowOrbUniforms.removeAll(); glowColUniforms.removeAll()
+        for i in 0..<Self.glowSlots {
+            let o = SKUniform(name: "u_gorb\(i)", vectorFloat4: vector_float4(0, 0, 0, 0))
+            let c = SKUniform(name: "u_gcol\(i)", vectorFloat3: vector_float3(1, 1, 1))
+            glowOrbUniforms.append(o); glowColUniforms.append(c)
+            uniforms.append(o); uniforms.append(c)
+        }
+        let reach = SKUniform(name: "u_greach", float: 3.0)
+        let blend = SKUniform(name: "u_gblend", float: 2.0)   // Screen default
+        let fall = SKUniform(name: "u_gfall", float: 0.6)
+        let aspect = SKUniform(name: "u_gaspect", float: 0.46)
+        glowReachU = reach; glowBlendU = blend; glowFallU = fall; glowAspectU = aspect
+        uniforms.append(contentsOf: [reach, blend, fall, aspect])
+        shader.uniforms = uniforms
+        return shader
+    }
+    #endif
 
     /// Recolor every resting (non-focal) glyph label on APPEARANCE FLIP — the DARK ink
     /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in
@@ -2800,6 +3049,323 @@ final class CorpusPhysicsScene: SKScene {
                 print("[SPRMEASURE] READY light=\(self.appearanceIsLight)")
             }
         }
+    }
+    #endif
+
+    // MARK: - Band-treatment shader SPIKE — ROUND 2 (THROWAWAY — ws-ios-polish item 5)
+    //
+    // ★★ THIS IS A PROTOTYPE TO LEARN, NOT PRODUCTION. It DUPLICATES BlobField.metal's
+    // blob-radiance math in a SECOND file (GLSL here vs Metal there) — exactly the drift
+    // condition this project spent a week eliminating. It exists ONLY so T can dial the
+    // look on-device. If the look validates, the SHIPPING shape is Path A: render the map
+    // radiance as a SwiftUI `.colorEffect(blobField)` LAYER (band positions bridged via
+    // CanvasState, like clusterCentroidScreenPositions) so ONE BlobField.metal serves
+    // detail + cards + map — UNLESS its fill-rate cost rules it out, which is then a
+    // KNOWING decision, not inertia. Do not inherit this SKShader copy as production.
+    //
+    // Round 2 = the MAP ask, clarified (T ⇄ Companion): PORT the detail/card blob look
+    // (soft wide blurred radiance, drift, undulation, buoyancy) onto the ~10 amplified
+    // band orbs — NOT round-1's fbm-energy churn. The real idea: as you zoom in, the
+    // orbs' WIDE soft fields POOL into regional colour washes (reading the canvas's real
+    // physical clustering), IF the blend keeps the hue. So the harness dials:
+    //   • FALLOFF RADIUS / orb-spacing (u_falloff) — the regions-vs-mush art-direction band.
+    //   • GAIN (u_gain) — field intensity, the parameter that pairs with falloff.
+    //   • FAMILY palette (u_family + u_spread) — N-blobs-from-one-family, seeded per node,
+    //     so a region reads as ONE identity without going flat monochrome; A/B vs the
+    //     CURRENT unrelated palette (u_family 0).
+    //   • The FULL 13-mode blend set (u_blend) — Photoshop/AE, live, so a motion artist can
+    //     SEE which pool legibly (screen/lighten keep regions; additive washes to white;
+    //     multiply/darken/burn go black on a dark ground — dead, included as the test).
+    // Cost INVERTS to fill-rate (wide fields cover far more screen); the round-1 draws-4→5
+    // fact still holds (one overlay) but fps must be read vs falloff radius on T's device.
+    // Shipping orb batch + blob surfaces UNTOUCHED; this section + the -SPRBand host delete
+    // cleanly. The synthetic corpus is CLUSTERED here (spatial regions, shared base hue) so
+    // the pooling-into-regions idea is actually testable. Reached only via -SPRBand.
+    #if DEBUG
+    // 10 slots = 26 SKUniforms (10 orb vec4 + 10 fam vec4 + 6 dials) — under SpriteKit's
+    // Metal 31-buffer-binding ceiling; matches T's "~5-10 band orbs, NOT every orb".
+    private static let bandSlotCount = 10
+
+    private var bandOverlay: SKSpriteNode?
+    private var bandOrbUniforms: [SKUniform] = []   // per-slot (cx, cy, rUV, peak)
+    private var bandFamUniforms: [SKUniform] = []   // per-slot (regionHue, seed, unrelatedHue, spare)
+    private var bandBlendUniform: SKUniform?
+    private var bandFalloffUniform: SKUniform?
+    private var bandGainUniform: SKUniform?
+    private var bandSpreadUniform: SKUniform?
+    private var bandFamilyUniform: SKUniform?
+    private var bandAspectUniform: SKUniform?   // u_time is a SpriteKit built-in — not ours
+    var bandSpikeEnabled = false
+
+    /// Per band-orb colour metadata, set at injection: the orb's REGION (family) hue, a
+    /// per-node seed (stable family variant), and an independent UNRELATED hue (the A/B
+    /// baseline = today's per-tag palette). Keyed by node id.
+    private var bandOrbMeta: [String: (regionHue: CGFloat, seed: CGFloat, unrelatedHue: CGFloat)] = [:]
+
+    /// Live fps for the -SPRBand host readout (the same smoothed clock the SPR HUD uses).
+    var currentBandFPS: Double { sprSmoothedFPS }
+    /// Number of band orbs the overlay is currently treating (for the host readout).
+    private(set) var bandActiveCount: Int = 0
+
+    /// 0 normal · 1 add · 2 screen · 3 lighten · 4 darken · 5 multiply · 6 overlay ·
+    /// 7 softlight · 8 hardlight · 9 dodge · 10 burn · 11 difference · 12 exclusion.
+    func bandSpikeSetBlend(_ i: Int) { bandBlendUniform?.floatValue = Float(i) }
+    func bandSpikeSetFalloff(_ v: CGFloat) { bandFalloffUniform?.floatValue = Float(v) }
+    func bandSpikeSetGain(_ v: CGFloat) { bandGainUniform?.floatValue = Float(v) }
+    func bandSpikeSetSpread(_ v: CGFloat) { bandSpreadUniform?.floatValue = Float(v) }
+    func bandSpikeSetFamily(_ on: Bool) { bandFamilyUniform?.floatValue = on ? 1 : 0 }
+    func bandSpikeSetOverlay(_ on: Bool) { bandOverlay?.isHidden = !on }
+
+    /// `-SPRBand` entry (from `didMove`). CLUSTERED synthetic corpus (spatial regions),
+    /// forced dark, camera at rest so the annulus envelope is fully open, then the overlay.
+    func runBandSpike() {
+        bandSpikeEnabled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self else { return }
+            self.appearanceIsLight = false
+            self.backgroundColor = UIColor(white: 0.04, alpha: 1)   // dark field for luminous orbs
+            self.injectClusteredCorpus(count: 700)
+            self.cameraNode.setScale(1.0)   // envelope(1.0) == 1 → band fully bloomed
+            self.applyOrbScales()
+            self.mountBandOverlay()
+        }
+    }
+
+    /// Data-dependent synthetic corpus for the pooling test: orbs are grouped into
+    /// `regionCount` SPATIAL clusters, each with one region base hue. Every orb stores its
+    /// region hue + a per-node seed + an independent unrelated hue (for the A/B baseline);
+    /// its disc is tinted a family variant of the region hue so the STATIC map already
+    /// reads as regions and the band overlay layers the animated pooling on top.
+    private func injectClusteredCorpus(count: Int) {
+        cameraNode.position = .zero
+        cameraNode.setScale(1.0)
+        for (_, orb) in nodeSprites { orb.removeFromParent() }
+        nodeSprites.removeAll(); bandOrbMeta.removeAll()
+        let halfW = (view?.bounds.width ?? 393) * 0.46
+        let halfH = (view?.bounds.height ?? 852) * 0.46
+        let regionCount = 8
+        var centers: [CGPoint] = []
+        var regionHues: [CGFloat] = []
+        for r in 0..<regionCount {
+            let ang = CGFloat(r) / CGFloat(regionCount) * .pi * 2
+            centers.append(CGPoint(x: cos(ang) * halfW * 0.62, y: sin(ang) * halfH * 0.62))
+            regionHues.append(CGFloat(r) / CGFloat(regionCount))
+        }
+        for i in 0..<count {
+            let region = i % regionCount
+            let c = centers[region]
+            // sum-of-uniforms ≈ gaussian scatter so each region reads as a soft blob
+            let sx = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) * halfW * 0.20
+            let sy = (CGFloat.random(in: -1...1) + CGFloat.random(in: -1...1)) * halfH * 0.20
+            let pos = CGPoint(x: min(max(c.x + sx, -halfW), halfW),
+                              y: min(max(c.y + sy, -halfH), halfH))
+            let seed = CGFloat.random(in: 0...1)
+            let regionHue = regionHues[region]
+            let unrelatedHue = CGFloat.random(in: 0...1)
+            var discHue = (regionHue + (seed - 0.5) * 0.06).truncatingRemainder(dividingBy: 1.0)
+            if discHue < 0 { discHue += 1 }
+            let color = UIColor(hue: discHue, saturation: 0.82, brightness: 0.9, alpha: 1)
+            let radius = CGFloat.random(in: 16...40) * OrbTuning.sizeScale
+            let id = "clus-\(i)"
+            let orb = makeShape(radius: radius, fillColor: color, isMeta: false, nodeID: id)
+            orb.name = "node:\(id)"
+            orb.position = pos
+            addChild(orb)
+            nodeSprites[id] = orb
+            nodeIntrinsicRadii[id] = radius
+            nodeRestingScales[id] = 1.0
+            nodeRestingPositions[id] = pos
+            bandOrbMeta[id] = (regionHue, seed, unrelatedHue)
+        }
+    }
+
+    private func mountBandOverlay() {
+        guard bandOverlay == nil else { return }
+        let node = SKSpriteNode(texture: whiteUVTexture)   // texture → valid v_tex_coord
+        node.size = view?.bounds.size ?? CGSize(width: 393, height: 852)
+        node.position = .zero          // camera-local center == screen center
+        node.zPosition = 0.5           // above grid (-1000), BEHIND orbs (z=1) → orbs emit light
+        node.blendMode = .alpha        // the overlay itself sits source-over on the ground
+        node.shader = makeBandTreatmentShader()
+        cameraNode.addChild(node)
+        bandOverlay = node
+    }
+
+    /// The single-pass band-radiance shader. 10 inlined per-orb blocks (SpriteKit GLSL has
+    /// no array uniforms → slots are unrolled) each add a soft WIDE blob field, composited
+    /// through the live blend. See [[airpad-spritekit-skshader-translation]] for why every
+    /// helper is PURE (plain vec2/float, no uniforms/varyings/inout) and all uniform reads
+    /// live in main(); `u_time` is a SpriteKit built-in (never redeclare it).
+    private func makeBandTreatmentShader() -> SKShader {
+        let blocks = (0..<Self.bandSlotCount).map { i in """
+                {
+                    vec4 P = u_orb\(i);                       // cx, cy, rUV, peak
+                    if (P.w > 0.001) {
+                        float rUV = P.z;
+                        float reach = rUV * u_falloff;        // FALLOFF RADIUS dial (in orb radii)
+                        vec2 dv0 = v_tex_coord - P.xy; dv0.x *= u_aspect;
+                        if (length(dv0) <= reach * 1.25) {    // cheap proximity gate (bounds fbm cost)
+                            vec4 F = u_fam\(i);               // regionHue, seed, unrelatedHue, spare
+                            float seed = F.y;
+                            // blob language — gentle drift + buoyancy so the field breathes
+                            vec2 drift = vec2(sin(u_time * 0.50 + seed * 6.28),
+                                              cos(u_time * 0.40 + seed * 6.28)) * (rUV * 0.10);
+                            drift.y += sin(u_time * 0.30 + seed * 3.0) * (rUV * 0.08);
+                            vec2 dv = v_tex_coord - (P.xy + drift); dv.x *= u_aspect;
+                            vec2 q = dv / max(rUV, 0.0001);
+                            float ts = u_time * 0.12;
+                            // undulation — domain-warp the sample → organic, churning edge
+                            vec2 warp = vec2(fbm(q * 1.4 + vec2(seed * 10.0 + ts, seed * 10.0)),
+                                             fbm(q * 1.4 + vec2(seed * 10.0, seed * 10.0 - ts) + 7.0)) - 0.5;
+                            float d = length(dv + warp * (rUV * 0.35));
+                            float field = P.w * u_gain * (1.0 - smoothstep(rUV * 0.12, reach, d));
+                            if (field > 0.001) {
+                                float w = clamp(field, 0.0, 1.0);
+                                // FAMILY colour — variants of the REGION hue, seeded per node,
+                                // spread-dialable (0 → flat family, 1 → toward unrelated look).
+                                vec2 fs = q * 0.7 + vec2(seed * 17.0, seed * 29.0);
+                                float hn = fbm(fs) - 0.5, sn = fbm(fs + 5.0), vn = fbm(fs + 9.0);
+                                float hue = F.x + u_spread * 0.14 * hn;
+                                float sat = clamp(0.85 * (1.0 - u_spread * 0.45 * sn), 0.15, 1.0);
+                                float val = clamp(0.95 * (1.0 - u_spread * 0.25 * vn), 0.30, 1.0);
+                                vec3 famCol = hsv2rgb(vec3(fract(hue), sat, val));
+                                vec3 curCol = hsv2rgb(vec3(F.z, 0.85, 0.95));   // current UNRELATED palette
+                                vec3 s = mix(curCol, famCol, u_family);         // 0 current · 1 family
+                                // straight-colour over-composite; blend decides the OVERLAP colour
+                                vec3 blended = blendMode(accum.rgb, s, bmode);
+                                float outA = w + accum.a * (1.0 - w);
+                                accum.rgb = (blended * w + accum.rgb * accum.a * (1.0 - w)) / max(outA, 0.0001);
+                                accum.a = outA;
+                            }
+                        }
+                    }
+                }
+        """ }.joined(separator: "\n")
+        let src = """
+        // --- PURE helpers (plain vec2/float in, value out; no uniforms/varyings) ---
+        float hash21(vec2 p) {
+            p = fract(p * vec2(123.34, 345.45));
+            p += dot(p, p + 34.345);
+            return fract(p.x * p.y);
+        }
+        float vnoise(vec2 p) {
+            vec2 i = floor(p); vec2 f = fract(p);
+            vec2 u = f * f * (3.0 - 2.0 * f);
+            float a = hash21(i), b = hash21(i + vec2(1.0, 0.0));
+            float c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
+            return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+        }
+        float fbm(vec2 p) {
+            float v = 0.0, amp = 0.5, norm = 0.0;
+            for (int k = 0; k < 3; k++) { v += amp * vnoise(p); norm += amp; p *= 2.0; amp *= 0.5; }
+            return v / norm;
+        }
+        vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+        // Full Photoshop/AE separable blend set. `m` is a plain float (a local copy of
+        // u_blend passed in — never the uniform directly, to dodge the translator's
+        // hidden-param injection). `b` = base (accumulated), `s` = source (this orb).
+        vec3 blendMode(vec3 b, vec3 s, float m) {
+            if (m < 0.5)  return s;                                                       // 0 NORMAL
+            if (m < 1.5)  return b + s;                                                   // 1 ADD
+            if (m < 2.5)  return b + s - b * s;                                           // 2 SCREEN
+            if (m < 3.5)  return max(b, s);                                               // 3 LIGHTEN
+            if (m < 4.5)  return min(b, s);                                               // 4 DARKEN (dead on dark)
+            if (m < 5.5)  return b * s;                                                   // 5 MULTIPLY (dead on dark)
+            if (m < 6.5)  return mix(2.0*b*s, 1.0 - 2.0*(1.0-b)*(1.0-s), step(vec3(0.5), b)); // 6 OVERLAY
+            if (m < 7.5)  return (1.0 - 2.0*s) * b * b + 2.0*s*b;                         // 7 SOFT LIGHT (Pegtop)
+            if (m < 8.5)  return mix(2.0*b*s, 1.0 - 2.0*(1.0-b)*(1.0-s), step(vec3(0.5), s)); // 8 HARD LIGHT
+            if (m < 9.5)  return min(vec3(1.0), b / max(1.0 - s, vec3(0.0015)));          // 9 COLOUR DODGE
+            if (m < 10.5) return 1.0 - min(vec3(1.0), (1.0 - b) / max(s, vec3(0.0015)));  // 10 COLOUR BURN (dead on dark)
+            if (m < 11.5) return abs(b - s);                                             // 11 DIFFERENCE
+            return b + s - 2.0 * b * s;                                                   // 12 EXCLUSION
+        }
+
+        void main() {
+            float bmode = u_blend;              // local copy — pass to blendMode(), not the uniform
+            vec4 accum = vec4(0.0);             // vec4(straight rgb, coverage)
+        \(blocks)
+            // premultiply straight colour by coverage → correct source-over on the ground
+            gl_FragColor = vec4(clamp(accum.rgb, 0.0, 1.0) * accum.a, clamp(accum.a, 0.0, 1.0));
+        }
+        """
+        let shader = SKShader(source: src)
+        var uniforms: [SKUniform] = []
+        bandOrbUniforms.removeAll(); bandFamUniforms.removeAll()
+        for i in 0..<Self.bandSlotCount {
+            let o = SKUniform(name: "u_orb\(i)", vectorFloat4: vector_float4(0, 0, 0, 0))
+            let f = SKUniform(name: "u_fam\(i)", vectorFloat4: vector_float4(0, 0, 0, 0))
+            bandOrbUniforms.append(o); bandFamUniforms.append(f)
+            uniforms.append(o); uniforms.append(f)
+        }
+        // Initial mode dialable from launch args (host UI reads the same):
+        // `-SPRBandBlend 0..12` · `-SPRBandFamily 0|1`.
+        let defBlend = Float(UserDefaults.standard.string(forKey: "SPRBandBlend").flatMap(Int.init) ?? 2)
+        let defFamily = Float((UserDefaults.standard.object(forKey: "SPRBandFamily") as? String).flatMap(Int.init) ?? 1)
+        // NB `u_time` is a SpriteKit BUILT-IN (elapsed seconds) — referenced directly in
+        // main(); declaring our own would make the translator inject it twice.
+        let blend = SKUniform(name: "u_blend", float: defBlend)     // default SCREEN
+        let falloff = SKUniform(name: "u_falloff", float: 3.0)      // reach in orb radii
+        let gain = SKUniform(name: "u_gain", float: 1.0)
+        let spread = SKUniform(name: "u_spread", float: 0.5)
+        let family = SKUniform(name: "u_family", float: defFamily)  // 1 = family, 0 = unrelated baseline
+        let aspect = SKUniform(name: "u_aspect", float: 0.46)
+        bandBlendUniform = blend; bandFalloffUniform = falloff; bandGainUniform = gain
+        bandSpreadUniform = spread; bandFamilyUniform = family; bandAspectUniform = aspect
+        uniforms.append(contentsOf: [blend, falloff, gain, spread, family, aspect])
+        shader.uniforms = uniforms
+        return shader
+    }
+
+    /// Per-frame: pick the ≤10 most-central amplified orbs, project each to screen-uv, and
+    /// push (position, radius, centrality peak) + (regionHue, seed, unrelatedHue) into the
+    /// slot uniforms. Reuses the exact annulus math the shipping magnify already runs.
+    func updateBandSpike(currentTime: TimeInterval) {
+        guard let overlay = bandOverlay, let view = view else { return }
+        let viewW = view.bounds.width, viewH = view.bounds.height
+        bandAspectUniform?.floatValue = Float(viewW / max(viewH, 1))
+        if overlay.size != view.bounds.size { overlay.size = view.bounds.size }
+
+        let cameraScale = cameraNode.xScale
+        let envelope = AnnulusTuning.envelope(cameraScale)
+        let camPos = cameraNode.position
+
+        var band: [(dist: CGFloat, id: String)] = []
+        if envelope > 0.001 {
+            for (id, _) in nodeSprites {
+                guard let home = nodeRestingPositions[id] else { continue }
+                let dist = hypot(home.x - camPos.x, home.y - camPos.y)
+                if annulusAmplify(dist, cameraScale: cameraScale, envelope: envelope) > 1.02 {
+                    band.append((dist, id))
+                }
+            }
+            band.sort { $0.dist < $1.dist }
+        }
+
+        var slot = 0
+        for e in band.prefix(Self.bandSlotCount) {
+            guard let sprite = nodeSprites[e.id] else { continue }
+            let off = CGPoint(x: (sprite.position.x - camPos.x) / cameraScale,
+                              y: (sprite.position.y - camPos.y) / cameraScale)
+            let uvx = Float(0.5 + off.x / viewW)
+            let uvy = Float(0.5 + off.y / viewH)
+            let intrinsic = nodeIntrinsicRadii[e.id] ?? 30
+            let screenR = intrinsic * sprite.xScale / cameraScale
+            let rUV = Float(screenR / viewH)
+            let peak = Float(min(1.0, annulusFalloff(e.dist, cameraScale: cameraScale) * envelope))
+            let meta = bandOrbMeta[e.id]
+            bandOrbUniforms[slot].vectorFloat4Value = vector_float4(uvx, uvy, rUV, peak)
+            bandFamUniforms[slot].vectorFloat4Value = vector_float4(
+                Float(meta?.regionHue ?? 0), Float(meta?.seed ?? 0), Float(meta?.unrelatedHue ?? 0), 0)
+            slot += 1
+        }
+        for i in slot..<Self.bandSlotCount {
+            bandOrbUniforms[i].vectorFloat4Value = vector_float4(0, 0, 0, 0)   // peak 0 = empty
+        }
+        bandActiveCount = slot
     }
     #endif
 
@@ -3142,12 +3708,37 @@ final class CorpusPhysicsScene: SKScene {
         // (legibleInk over the dark-boosted fill). Returns a container child of the orb
         // named "titleLabel", z 2 — resolution-independent (crisp at any zoom) + batched.
         let side = radius * LensTuning.labelBoxFactor
+        #if DEBUG
+        // Orb-title FONT (addendum A) — the selected MSDF atlas (curated set). MSDF renders + measures
+        // from the SAME atlas, so a font change reshapes the glyphs (rebuilt via restyleTitles on change,
+        // CorpusPhysicsScene). Load failure → visible: keep Fraunces + set a tuner warning (not silent).
+        var font = MSDFFont.shared
+        if BlobFieldTuning.shared.orbOverride {
+            let i = BlobFieldTuning.shared.orbTitleFont
+            if i >= 0, i < BlobFieldTuning.orbFontAtlases.count {
+                let sel = MSDFFont.named(BlobFieldTuning.orbFontAtlases[i])
+                if sel.loaded { font = sel }
+                else { BlobFieldTuning.shared.fontLoadWarning = "⚠ \(BlobFieldTuning.orbFontAtlases[i]) failed to load" }
+            }
+        }
+        #else
+        let font = MSDFFont.shared
+        #endif
         let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
-            MSDFLabel.textWidth(s, pointSize: f.pointSize)
+            MSDFLabel.textWidth(s, pointSize: f.pointSize, font: font)
         }
         let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
+        var titleColor = legibleInk(over: inkFill).ink
+        #if DEBUG
+        // Orb-title colour / opacity override (addendum A).
+        if BlobFieldTuning.shared.orbOverride {
+            let t = BlobFieldTuning.shared
+            if !t.orbTitleColorHex.isEmpty, let c = UIColor(hex: t.orbTitleColorHex) { titleColor = c }
+            if t.orbTitleOpacity < 0.999 { titleColor = titleColor.withAlphaComponent(CGFloat(t.orbTitleOpacity)) }
+        }
+        #endif
         return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
-                                       color: legibleInk(over: inkFill).ink, fullTitle: text)
+                                       color: titleColor, fullTitle: text, font: font)
     }
 
     /// The resting orb physics body for a given radius — extracted so a rebuild

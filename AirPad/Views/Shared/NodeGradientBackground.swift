@@ -115,6 +115,45 @@ struct NodeGradientLayer: View {
     /// read as slow ambient breathing, not shimmer, now that they animate.
     var driftSpeedScale: CGFloat = 1.0
 
+    /// Per-expression tuner tag (addendum D): -1 = none · 0 vscroll · 1 carousel · 2 grid · 3 hero.
+    /// When the DEBUG blob tuner's per-expression override is on, this surface reads its OWN
+    /// spread/anim/distort/blur from the tuner instead of the values passed at the call site.
+    var blobExpr: Int = -1
+
+    #if DEBUG
+    private var blobExprIdx: Int? {
+        let t = BlobFieldTuning.shared
+        guard t.blobExprOverride, blobExpr >= 0, blobExpr < 4 else { return nil }
+        return blobExpr
+    }
+    #endif
+    /// Effective per-format knobs — the tuner's per-expression value when overriding, else the
+    /// call-site value (so Release + un-dialed DEBUG are byte-identical).
+    private var effOffsetScale: CGFloat {
+        #if DEBUG
+        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobSpread[i]) }
+        #endif
+        return offsetScale
+    }
+    private var effBlurScale: CGFloat {
+        #if DEBUG
+        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobBlur[i]) }
+        #endif
+        return blurScale
+    }
+    private var effDriftScale: CGFloat {
+        #if DEBUG
+        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobAnim[i]) }
+        #endif
+        return driftSpeedScale
+    }
+    private var effUndulation: CGFloat {
+        #if DEBUG
+        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobDistort[i]) }
+        #endif
+        return undulation
+    }
+
     /// OPTIONAL blob-distribution override (hero-LEFT look-see only, DEBUG). `nil`
     /// (default) leaves EVERY existing caller on the untouched `cardBlobs()` path —
     /// carousel, grid, and detail hero render byte-identically. When set, the three
@@ -167,9 +206,76 @@ struct NodeGradientLayer: View {
         case "pal4": return 4
         case "pal5": return 5
         case "pal6": return 6
-        default: return abs(tagName.hashValue) % 7
+        default: return Int(stableHash(tagName) % 7)
         }
     }
+
+    /// DJB2 stable hash — deterministic across processes AND OS versions. Swift's
+    /// `String.hashValue` is RANDOMLY SEEDED PER PROCESS (a deliberate hash-flooding
+    /// defense), so hashing a tag with it made a node's blob palette CHANGE ON EVERY
+    /// LAUNCH — the "colours seem random and change each launch" defect. Same tag →
+    /// same slot, forever. Mirrors `CorpusPhysicsScene.stableHash` (same idiom, same
+    /// trap avoided; see also `TerritoryLayoutSnapshot`'s SHA-256 signature).
+    static func stableHash(_ s: String) -> UInt64 {
+        var hash: UInt64 = 5381
+        for byte in s.utf8 { hash = hash &* 33 &+ UInt64(byte) }
+        return hash
+    }
+
+    /// The blob-colour triple. Release + normal DEBUG → the stable tag palette. When the
+    /// DEBUG blob tuner's FAMILY mode is on → three variants of ONE node-seeded base hue
+    /// (spread-dialable) so the whole surface reads as a single colour FAMILY, not three
+    /// unrelated pigments (ws-ios-polish item 5, applied to the blob surfaces).
+    private var effectiveColors: (String, String, String) {
+        #if DEBUG
+        if BlobFieldTuning.shared.family {
+            return Self.familyColors(for: node, spread: CGFloat(BlobFieldTuning.shared.spread))
+        }
+        #endif
+        return Self.circleColors[paletteIndex % Self.circleColors.count]
+    }
+
+    #if DEBUG
+    /// Three hex colours from ONE family: a node-STABLE base hue (consistent across launches —
+    /// leans on the paletteSlot stable-hash fix), fanned by `spread` in hue with paired
+    /// saturation/lightness variation. spread 0 → near-monochrome; 1 → wide (toward today's
+    /// unrelated look). Seeded on the node so different nodes read related-but-distinct. Pure
+    /// HSV→hex (no UIKit) so it slots into the existing hex triple.
+    static func familyColors(for node: Node, spread: CGFloat) -> (String, String, String) {
+        let slot = paletteSlot(for: node)
+        let seed = Double(stableHash(node.primaryTag ?? node.id) % 1000) / 1000.0
+        var baseHue = Double(slot) / 7.0 + seed * 0.05
+        baseHue -= floor(baseHue)
+        func hsvHex(_ h: Double, _ s: Double, _ v: Double) -> String {
+            let i = Int(h * 6), f = h * 6 - Double(Int(h * 6))
+            let p = v * (1 - s), q = v * (1 - f * s), t = v * (1 - (1 - f) * s)
+            var r = v, g = t, b = p
+            switch ((i % 6) + 6) % 6 {
+            case 0: (r, g, b) = (v, t, p)
+            case 1: (r, g, b) = (q, v, p)
+            case 2: (r, g, b) = (p, v, t)
+            case 3: (r, g, b) = (p, q, v)
+            case 4: (r, g, b) = (t, p, v)
+            default: (r, g, b) = (v, p, q)
+            }
+            return String(format: "%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+        }
+        // WIDE hue fan (T's dial): spread 0 → monochrome (all baseHue); spread 1 → an evenly-spaced
+        // TRIAD (baseHue ± 0.34 of the wheel), wider than the tag palette's ~0.28 adjacent spacing.
+        // So T sweeps from near-mono, THROUGH a tag-palette-equivalent variance, to well past it, and
+        // picks the point himself. (The old 0.11 coefficient maxed at ±0.11 → read as "does nothing".)
+        let fan = Double(spread) * 0.34
+        func variant(_ i: Int) -> String {
+            let d = Double(i) - 1                                   // -1, 0, +1
+            var h = baseHue + d * fan
+            h -= floor(h)
+            let s = 0.80 - 0.05 * Double(i % 2)                     // small fixed sat variation
+            let v = 0.94 - 0.05 * abs(d)                            // outer blobs a touch dimmer
+            return hsvHex(h, s, v)
+        }
+        return (variant(0), variant(1), variant(2))
+    }
+    #endif
 
     // MARK: - Luminance-aware ink
 
@@ -299,7 +405,7 @@ struct NodeGradientLayer: View {
     /// premultiplied source-over), so the blend leaves bare paper untouched.
     @ViewBuilder
     private var pigmentField: some View {
-        let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
+        let colors = effectiveColors
         let size: CGFloat = 180 * circleScale
         if let dist = blobDistribution {
             // Hero-LEFT: column-relative, vertically distributed blobs (measured).
@@ -318,7 +424,7 @@ struct NodeGradientLayer: View {
     }
 
     private var gradientFill: some View {
-        let colors = Self.circleColors[paletteIndex % Self.circleColors.count]
+        let colors = effectiveColors
         let size: CGFloat = 180 * circleScale
         return Group {
             if blobSet == .hero {
@@ -354,7 +460,11 @@ struct NodeGradientLayer: View {
     @ViewBuilder
     private func staticFill(colors: (String, String, String), size: CGFloat) -> some View {
         ZStack {
-            Color(red: 0.027, green: 0.027, blue: 0.039)
+            // Card dark base = the SHARED ground token (item 3 fix). Was the old `#07070A` "Void"
+            // literal, which never tracked when T dialed the map/card ground to `#111115` — so a
+            // gradient-only card read blacker than a hero card (whose `paper` already used this
+            // token). Routed through the one resolver so the two card paths can't drift again.
+            AppearancePalette.mapBackground(dark: true)
             if let dist = blobDistribution {
                 GeometryReader { g in
                     BlobFieldView(cardBlobs: distributedBlobs(colors: colors, dist: dist, size: g.size),
@@ -380,7 +490,7 @@ struct NodeGradientLayer: View {
         let radius = dist.blobScale * colW
         let centerX = dist.horizontalOffset * colW
         let gap = dist.verticalSpread * size.height * (1 - dist.overlap)
-        let blurWidth: CGFloat = 40 * blurScale
+        let blurWidth: CGFloat = 40 * effBlurScale
         let ph = CGFloat(phase)
         let hexes = [colors.0, colors.1, colors.2]
         // Same per-blob drift frequencies / phase seeds as cardBlobs().
@@ -393,8 +503,8 @@ struct NodeGradientLayer: View {
         return (0..<3).map { i -> BlobFieldView.CardBlob in
             let baseY: CGFloat = CGFloat(i - 1) * gap
             let offset = CGPoint(x: centerX - size.width / 2, y: baseY)
-            let freq = CGSize(width: dFreq[i].width * driftSpeedScale,
-                              height: dFreq[i].height * driftSpeedScale)
+            let freq = CGSize(width: dFreq[i].width * effDriftScale,
+                              height: dFreq[i].height * effDriftScale)
             let dph = CGSize(width: ph * dPhase[i].width, height: ph * dPhase[i].height)
             let sd: CGFloat = ph + CGFloat(i) * 1.7
             return BlobFieldView.CardBlob(
@@ -408,7 +518,7 @@ struct NodeGradientLayer: View {
                 peak: 1,
                 // Same card-morph as cardBlobs() so the list (hero-left) warps too; undulation 0
                 // → no-op → byte-identical to the pre-morph distributed blob.
-                undulation: undulation,
+                undulation: effUndulation,
                 seed: sd,
                 warpScale: warpScale
             )
@@ -420,8 +530,8 @@ struct NodeGradientLayer: View {
     /// (`circleScale` via `size`, `blurScale`, `offsetScale`, `centerYOffset`).
     private func cardBlobs(colors: (String, String, String), size: CGFloat) -> [BlobFieldView.CardBlob] {
         let radius: CGFloat = size / 2          // size = 180 * circleScale
-        let blurWidth: CGFloat = 40 * blurScale
-        let spread: CGFloat = 80 * offsetScale
+        let blurWidth: CGFloat = 40 * effBlurScale
+        let spread: CGFloat = 80 * effOffsetScale
         let amp: CGFloat = 30
         let ph = CGFloat(phase)
 
@@ -430,7 +540,7 @@ struct NodeGradientLayer: View {
             BlobFieldView.CardBlob(
                 baseOffset: CGPoint(x: baseX, y: centerYOffset),
                 radius: radius,
-                driftFreq: CGSize(width: fx * driftSpeedScale, height: fy * driftSpeedScale),
+                driftFreq: CGSize(width: fx * effDriftScale, height: fy * effDriftScale),
                 driftPhase: CGSize(width: ph * px, height: ph * py),
                 driftAmp: amp,
                 blurWidth: blurWidth,
@@ -439,7 +549,7 @@ struct NodeGradientLayer: View {
                 // card-morph: the caller's `undulation` (amplitude) + `warpScale` (wavelength) drive
                 // the fbm domain warp; `sd` de-syncs each disc. At undulation 0 the warp is a no-op
                 // → byte-identical to the plain disc.
-                undulation: undulation,
+                undulation: effUndulation,
                 seed: sd,
                 warpScale: warpScale
             )
@@ -458,8 +568,8 @@ struct NodeGradientLayer: View {
     /// The wobble itself is evaluated per-pixel in the shader; here we just hand
     /// it the same numbers.
     private func heroBlobs(colors: (String, String, String), size: CGFloat) -> [BlobFieldView.HeroBlob] {
-        let spread: CGFloat = 80 * offsetScale
-        let blurWidth: CGFloat = 40 * blurScale
+        let spread: CGFloat = 80 * effOffsetScale
+        let blurWidth: CGFloat = 40 * effBlurScale
         let ks = blobMorphKs.map { CGFloat($0) }
 
         func hero(index: Int, baseX: CGFloat, color: Color) -> BlobFieldView.HeroBlob {
@@ -476,7 +586,7 @@ struct NodeGradientLayer: View {
                 harmonicKs: ks,
                 harmonicAmps: blobMorphAmps,
                 harmonicSpeeds: speeds,
-                undulation: undulation,
+                undulation: effUndulation,
                 blurWidth: blurWidth,
                 color: color,
                 peak: 1
@@ -490,7 +600,7 @@ struct NodeGradientLayer: View {
             // 4th blob — density only, hue blended from the outer two so it
             // doesn't introduce a new colour. Pull this line if the hero reads
             // too busy.
-            hero(index: 3, baseX: -30 * offsetScale, color: blendHex(colors.0, colors.2)),
+            hero(index: 3, baseX: -30 * effOffsetScale, color: blendHex(colors.0, colors.2)),
         ]
     }
 
@@ -649,7 +759,7 @@ struct BandGradientExpanded: View {
         NodeGradientLayer(node: node, circleScale: GradientBake.bandCircle,
                           vignette: GradientBake.bandVignette, glowStart: GradientBake.bandGlowStart, glowEnd: GradientBake.bandGlowEnd,
                           glowStrength: GradientBake.bandRadial, bloom: GradientBake.bandBloom,
-                          undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale)
+                          undulation: GradientBake.bandAmplitude, warpScale: GradientBake.bandScale, blobExpr: 3)
             .frame(height: totalHeight)
             .overlay(BandScrim(top: BandGradient.scrimTop, bottom: BandGradient.scrimBottom))
             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))

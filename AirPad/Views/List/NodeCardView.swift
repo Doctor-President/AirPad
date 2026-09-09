@@ -225,7 +225,8 @@ struct NodeCardView: View {
                                       centerYOffset: gradientCenterY,
                                       undulation: GradientBake.cardAmplitude,
                                       warpScale: GradientBake.cardScale,
-                                      anchor: hasHero ? .bottom : .center)
+                                      anchor: hasHero ? .bottom : .center,
+                                      blobExpr: 1)   // carousel/canvas (addendum D)
                     if hasHero {
                         heroOverlay(width: geo.size.width, height: geo.size.height)
                     }
@@ -305,6 +306,7 @@ struct NodeCardView: View {
                             bloom: GradientBake.cardBloom,
                             undulation: GradientBake.cardAmplitude,
                             warpScale: GradientBake.cardScale,
+                            blobExpr: 0,   // vertical-scroll / list (addendum D)
                             blobDistribution: NodeGradientLayer.BlobDistribution(
                                 columnFrac: CGFloat(heroLeftWidthFrac),
                                 blobScale: CGFloat(heroBlobScale),

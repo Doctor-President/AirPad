@@ -289,10 +289,12 @@ final class CorpusPhysicsScene: SKScene {
         expandingFrom: CGPoint? = nil,
         neighborhoodCache: NeighborhoodCache? = nil,
         nodeRadii: [String: CGFloat] = [:],
-        territoryColors: [String: UIColor] = [:]
+        territoryColors: [String: UIColor] = [:],
+        territorySlots: [String: Int] = [:]
     ) {
         self.tagColors = tagColors
         self.territoryColors = territoryColors
+        self.territorySlots = territorySlots
         positionMap = layoutPositions
         self.neighborhoodCache = neighborhoodCache
         self.nodeRadii = nodeRadii
@@ -629,6 +631,10 @@ final class CorpusPhysicsScene: SKScene {
     /// Tag-anchored Map — per-node territory tint (nodeID → its territory tag's
     /// color). Empty in every other mode. Takes precedence in `bubbleColor`.
     private var territoryColors: [String: UIColor] = [:]
+    /// Tag-anchored Map — per-node TERRITORY INDEX (nodeID → its territory's order in the layout).
+    /// Lets `bubbleColor` re-resolve the tint live from a `RegionPalette` FAMILY (commit 2) instead
+    /// of the frozen `territoryColors` snapshot. Empty in other modes / when Current family is active.
+    private var territorySlots: [String: Int] = [:]
 
     /// Re-tint the sprites already on screen for a live designate/demote — new
     /// sprites already read this via `bubbleColor`. Passing `[:]` restores each
@@ -2592,13 +2598,16 @@ final class CorpusPhysicsScene: SKScene {
     func refreshOrbTuning() {
         let t = BlobFieldTuning.shared
         let on = t.orbOverride
-        let sig = on
-            ? "\(currentIsLight)|\(t.orbFillOpacity)|\(t.orbStrokeOpacity)|\(t.orbDarkSat)|\(t.orbDarkVal)|\(t.orbDarkRim)|\(t.orbTitleScale)|\(t.orbTitleFont)|\(t.orbTitleColorHex)|\(t.orbTitleOpacity)|\(t.orbBlendLight)|\(t.orbBlendDark)"
+        // Region palette (commit 2) is an INDEPENDENT trigger — a family change must re-tint the orbs
+        // even when the orb override is off. `regionSig` folds in the family + every dialled param.
+        let regionOn = t.regionFamily != 0
+        let sig = (on || regionOn)
+            ? "\(currentIsLight)|\(on ? "\(t.orbFillOpacity)|\(t.orbStrokeOpacity)|\(t.orbDarkSat)|\(t.orbDarkVal)|\(t.orbDarkRim)|\(t.orbTitleScale)|\(t.orbTitleFont)|\(t.orbTitleColorHex)|\(t.orbTitleOpacity)|\(t.orbBlendLight)|\(t.orbBlendDark)" : "orbOff")|region:\(t.regionSig)"
             : "off"
         guard sig != lastOrbTuningSig else { return }
         let wasApplying = !lastOrbTuningSig.isEmpty && lastOrbTuningSig != "off"
         lastOrbTuningSig = sig
-        guard on || wasApplying else { return }   // never dialed → leave the baked look untouched
+        guard on || regionOn || wasApplying else { return }   // never dialed → leave the baked look untouched
 
         func setU(_ name: String, _ v: Float) { orbSpriteShader.uniforms.first(where: { $0.name == name })?.floatValue = v }
         setU("u_dark_sat", on ? Float(t.orbDarkSat) : Float(DarkOrbTuning.sat))
@@ -3840,6 +3849,15 @@ final class CorpusPhysicsScene: SKScene {
     /// Über-nodes are not routed here — they have their own path via
     /// `makeUberNodeShape` + `sampleChildColors`, which still reads `tagColors`.
     private func bubbleColor(for node: Node) -> UIColor {
+        #if DEBUG
+        // REGION PALETTE FAMILY (commit 2): when a non-Current family is active, re-resolve the
+        // territory tint LIVE from the family + THIS scene's appearance, keyed on the node's frozen
+        // territory index. Current family (default) falls straight through to the snapshot below →
+        // byte-identical. Only the tag-anchored path has slots, so other modes are untouched.
+        if RegionPalette.activeFamily != .current, let slot = territorySlots[node.id] {
+            return RegionPalette.color(isLight: currentIsLight, slot: slot)
+        }
+        #endif
         // Tag-anchored Map — territory tint takes precedence when the node sits
         // in a designated-anchor territory (paired with the on-canvas label for
         // colorblind-safe reading).

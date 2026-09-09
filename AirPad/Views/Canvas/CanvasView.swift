@@ -1054,6 +1054,7 @@ struct CanvasView: View {
         // fitted, canonical otherwise.
         let layoutPositions: [String: CanvasPosition]
         var territoryColors: [String: UIColor] = [:]
+        var territorySlots: [String: Int] = [:]   // node → territory index (for RegionPalette families, commit 2)
         var territoryLabels: [CorpusPhysicsScene.TerritoryLabel] = []
         if let drilledClusterID = canvasState.drilledInto,
            store.uberNodeCache?.clusters.first(where: { $0.id == drilledClusterID }) != nil,
@@ -1087,6 +1088,11 @@ struct CanvasView: View {
                 for (nodeID, key) in layout.nodeTerritory {
                     membersByKey[key, default: []].append(nodeID)
                 }
+                // Territory index per node (same order territoryColorMap assigns the palette) so the
+                // scene can re-resolve a RegionPalette FAMILY tint live (commit 2).
+                var slotByKey: [String: Int] = [:]
+                for (i, terr) in layout.territories.enumerated() { slotByKey[terr.key] = i }
+                for (nodeID, key) in layout.nodeTerritory { if let s = slotByKey[key] { territorySlots[nodeID] = s } }
                 // Drift the newly captured node into the frozen formation.
                 if let newNodeID, positions[newNodeID] == nil,
                    let newNode = nodes.first(where: { $0.id == newNodeID }) {
@@ -1210,7 +1216,8 @@ struct CanvasView: View {
             expandingFrom: expandingFrom,
             neighborhoodCache: store.neighborhoodCache,
             nodeRadii: store.nodeRadii,
-            territoryColors: territoryColors
+            territoryColors: territoryColors,
+            territorySlots: territorySlots
         )
         // Tag-anchored Map — territory name labels (empty in non-Map modes,
         // which clears any previously drawn labels).

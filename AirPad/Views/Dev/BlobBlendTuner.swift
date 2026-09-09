@@ -112,6 +112,30 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var mapGroundHex: String { didSet { UserDefaults.standard.set(mapGroundHex, forKey: "blobTuner.mapGroundHex") } }
     var cardGroundHex: String { didSet { UserDefaults.standard.set(cardGroundHex, forKey: "blobTuner.cardGroundHex") } }
 
+    // ── REGION PALETTE FAMILIES (commit 2) — the map territory tints. 0 = Current (shipping hex,
+    // byte-identical A/B baseline) · 1 Subdued · 2 Jewel · 3 Pastel · 4 Neon (see RegionPaletteFamily).
+    // The scene re-tints orbs live off `regionFamily`; families 1…4 regenerate 12 slots from HSL params.
+    var regionFamily: Int { didSet { UserDefaults.standard.set(regionFamily, forKey: "blobTuner.regionFamily") } }
+    /// Per (family, appearance) dialled params + per-slot hue nudges, keyed "<fam>.<L|D>.<key>".
+    /// family-level keys: hueStart/hueSpread/sat/light · per-slot: "s<slot>h" (hue offset). Empty = defaults.
+    var regionParams: [String: Double] { didSet { UserDefaults.standard.set(regionParams, forKey: "blobTuner.regionParams") } }
+    /// Which appearance's params the panel EDITS (the panel chrome is forced-dark, so it can't infer
+    /// the map's appearance). The scene always resolves with its OWN `currentIsLight`; this only
+    /// selects which set of numbers the sliders write. Default dark (where mud matters most).
+    var regionEditLight: Bool { didSet { UserDefaults.standard.set(regionEditLight, forKey: "blobTuner.regionEditLight") } }
+
+    private func regionKey(_ fam: Int, _ isLight: Bool, _ k: String) -> String { "\(fam).\(isLight ? "L" : "D").\(k)" }
+    func regionParam(_ fam: Int, _ isLight: Bool, _ k: String, default d: Double) -> Double { regionParams[regionKey(fam, isLight, k)] ?? d }
+    func setRegionParam(_ fam: Int, _ isLight: Bool, _ k: String, _ v: Double) { regionParams[regionKey(fam, isLight, k)] = v }
+    func regionSlotHueOffset(_ fam: Int, _ isLight: Bool, _ slot: Int) -> Double { regionParams[regionKey(fam, isLight, "s\(slot)h")] ?? 0 }
+    func setRegionSlotHue(_ fam: Int, _ isLight: Bool, _ slot: Int, _ v: Double) { regionParams[regionKey(fam, isLight, "s\(slot)h")] = v }
+    func resetRegion(_ fam: Int, _ isLight: Bool) {
+        let keys = ["hueStart", "hueSpread", "sat", "light"] + (0..<12).map { "s\($0)h" }
+        for k in keys { regionParams[regionKey(fam, isLight, k)] = nil }
+    }
+    /// Poll signature — any family/param change re-tints the orbs (via the scene's refreshOrbTuning).
+    var regionSig: String { "\(regionFamily)|" + regionParams.keys.sorted().map { "\($0):\(regionParams[$0]!)" }.joined(separator: ",") }
+
     private init() {
         blend = UserDefaults.standard.integer(forKey: "blobTuner.blend")   // default 0 = NORMAL
         // Default FAMILY ON — the blend comparison is only meaningful within a colour family
@@ -155,6 +179,9 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         blobAnim        = (UserDefaults.standard.array(forKey: "blobTuner.blobAnim") as? [Double]) ?? [1, 1, 1, 1]
         blobDistort     = (UserDefaults.standard.array(forKey: "blobTuner.blobDistort") as? [Double]) ?? [0, 0, 0, 0]
         blobBlur        = (UserDefaults.standard.array(forKey: "blobTuner.blobBlur") as? [Double]) ?? [1, 1, 1, 1]
+        regionFamily    = UserDefaults.standard.integer(forKey: "blobTuner.regionFamily")   // 0 = Current
+        regionParams    = (UserDefaults.standard.dictionary(forKey: "blobTuner.regionParams") as? [String: Double]) ?? [:]
+        regionEditLight = UserDefaults.standard.bool(forKey: "blobTuner.regionEditLight")   // default dark
     }
 
     /// Orb-title CURATED FONT SET — baked MSDF atlases (Resources/MSDF/*.{png,json}). Index → name +
@@ -331,6 +358,7 @@ struct BlobTunerHost: ViewModifier {
 struct BlobTunerPanel: View {
     @Bindable var tuning: BlobFieldTuning
     @StateObject private var meter = BlobFPSMeter()
+    @State private var showRegionSlots = false
 
     var body: some View {
         VStack(spacing: 8) {
@@ -341,6 +369,7 @@ struct BlobTunerPanel: View {
                     paletteSection
                     exprSection
                     orbSection
+                    regionSection
                     glowSection
                     separationSection
                     backgroundSection
@@ -433,6 +462,63 @@ struct BlobTunerPanel: View {
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             } else {
                 Text("off → baked orb look (byte-identical)").font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
+            }
+        }
+    }
+
+    private func regionBind(_ key: String, _ def: Double) -> Binding<Double> {
+        Binding(get: { tuning.regionParam(tuning.regionFamily, tuning.regionEditLight, key, default: def) },
+                set: { tuning.setRegionParam(tuning.regionFamily, tuning.regionEditLight, key, $0) })
+    }
+    private func regionSlotBind(_ slot: Int) -> Binding<Double> {
+        Binding(get: { tuning.regionSlotHueOffset(tuning.regionFamily, tuning.regionEditLight, slot) },
+                set: { tuning.setRegionSlotHue(tuning.regionFamily, tuning.regionEditLight, slot, $0) })
+    }
+
+    private var regionSection: some View {
+        let fam = RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current
+        let isLight = tuning.regionEditLight
+        let def = RegionPalette.defaults(fam, isLight: isLight)
+        return VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("REGION PALETTE — map territory tints (families)")
+            menuPick("Family", $tuning.regionFamily, RegionPaletteFamily.allCases.map { $0.displayName })
+            if fam == .current {
+                Text("Current = shipping Paul Tol set, byte-identical. Pick a family to move the region hues OUT of the muddy mid-lightness zone. Subdued (desaturate) is the direct opposite of muddy — try it first.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
+            } else {
+                Picker("", selection: $tuning.regionEditLight) {
+                    Text("Editing: Dark").tag(false); Text("Editing: Light").tag(true)
+                }.pickerStyle(.segmented)
+                slider("Saturation", regionBind("sat", def.sat), 0...1)
+                slider("Lightness", regionBind("light", def.light), 0...1)
+                slider("Hue rotate", regionBind("hueStart", def.hueStart), 0...1)
+                slider("Hue spread", regionBind("hueSpread", def.hueSpread), 0.1...1)
+                let distinct = RegionPalette.distinctSlotCount(fam, isLight: isLight)
+                Text("Distinguishable: \(distinct)/12 slots  (ΔE≥12, normal-vision)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(distinct >= 12 ? .green : (distinct >= 9 ? .yellow : .red))
+                HStack(spacing: 2) {
+                    ForEach(0..<RegionPalette.slotCount, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color(RegionPalette.color(isLight: isLight, slot: i)))
+                            .frame(height: 16)
+                    }
+                }
+                Toggle("Per-slot hue nudge", isOn: $showRegionSlots)
+                    .font(.system(size: 10, design: .monospaced))
+                if showRegionSlots {
+                    ForEach(0..<RegionPalette.slotCount, id: \.self) { i in
+                        slider("Slot \(i) hue", regionSlotBind(i), -0.08...0.08)
+                    }
+                }
+                if fam.darkFavoured {
+                    Text("\(fam.displayName) is DARK-FAVOURED — high-lightness colour needs a dark ground; on light it's pushed darker/more saturated (best it can do), never silently washed out.")
+                        .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.85))
+                }
+                Button("Reset \(fam.displayName)/\(isLight ? "light" : "dark")") { tuning.resetRegion(tuning.regionFamily, isLight) }
+                    .buttonStyle(.bordered).controlSize(.mini)
+                Text("Live on the map orbs. Family + S/L/spread + per-slot hue persist per appearance; Copy exports the 12 resolved hex.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             }
         }
     }
@@ -579,6 +665,8 @@ struct BlobTunerPanel: View {
         \(exprRow(2))
         \(exprRow(3))
         bg: mapGround=\(tuning.mapGroundHex.isEmpty ? "(token)" : tuning.mapGroundHex) cardGround=\(tuning.cardGroundHex.isEmpty ? "(token)" : tuning.cardGroundHex)
+        region: family=\((RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current).displayName) editing=\(tuning.regionEditLight ? "light" : "dark") distinct=\(RegionPalette.distinctSlotCount(RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current, isLight: tuning.regionEditLight))/12
+          hex[\(tuning.regionEditLight ? "light" : "dark")]=\(RegionPalette.resolvedHex(isLight: tuning.regionEditLight).joined(separator: " "))
         fps=\(f(meter.fps))
         """
     }

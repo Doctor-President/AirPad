@@ -63,7 +63,7 @@ private struct ArrowToAddButton: View {
 
 #Preview {
     ZStack {
-        Color(red: 0.027, green: 0.027, blue: 0.039)
+        AppearancePalette.mapBackground(dark: true)
         EmptyStateOverlay()
     }
     .ignoresSafeArea()

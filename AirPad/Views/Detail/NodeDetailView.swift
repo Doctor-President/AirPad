@@ -2331,7 +2331,7 @@ struct RatingEditSheet: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(red: 0.027, green: 0.027, blue: 0.039))
+        .background(AppearancePalette.mapBackground(dark: true))
     }
 }
 
@@ -2407,7 +2407,7 @@ private struct HeroImagePickerSheet: View {
                 }
                 .padding(16)
             }
-            .background(Color(red: 0.027, green: 0.027, blue: 0.039).ignoresSafeArea())
+            .background(AppearancePalette.mapBackground(dark: true).ignoresSafeArea())
             .scrollContentBackground(.hidden)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)

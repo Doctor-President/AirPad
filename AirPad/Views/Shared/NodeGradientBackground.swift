@@ -447,7 +447,7 @@ struct NodeGradientLayer: View {
     // (overlay) + vignette composite over it in `body`, same as the card path.
     private func heroFill(colors: (String, String, String), size: CGFloat) -> some View {
         ZStack {
-            Color(red: 0.027, green: 0.027, blue: 0.039)
+            AppearancePalette.mapBackground(dark: true)
             BlobFieldView(heroBlobs: heroBlobs(colors: colors, size: size),
                           animated: animated, bloom: bloom)
         }

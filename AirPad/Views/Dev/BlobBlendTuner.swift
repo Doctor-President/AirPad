@@ -123,6 +123,12 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     /// the map's appearance). The scene always resolves with its OWN `currentIsLight`; this only
     /// selects which set of numbers the sliders write. Default dark (where mud matters most).
     var regionEditLight: Bool { didSet { UserDefaults.standard.set(regionEditLight, forKey: "blobTuner.regionEditLight") } }
+    /// IN-ORB gradient SPIKE (commit 3) — in-band orbs get an evolving gradient inside their circle,
+    /// in the active family's colour. Off by default. Intensity is PER FAMILY+appearance (stored in
+    /// regionParams "inorb") — a neon family needs less than a subdued one to read the same.
+    var inOrbOn: Bool { didSet { UserDefaults.standard.set(inOrbOn, forKey: "blobTuner.inOrbOn") } }
+    /// Cheap alternative: STATIC in-orb gradient (no u_time) instead of the evolving one — the A/B.
+    var inOrbCheap: Bool { didSet { UserDefaults.standard.set(inOrbCheap, forKey: "blobTuner.inOrbCheap") } }
 
     private func regionKey(_ fam: Int, _ isLight: Bool, _ k: String) -> String { "\(fam).\(isLight ? "L" : "D").\(k)" }
     func regionParam(_ fam: Int, _ isLight: Bool, _ k: String, default d: Double) -> Double { regionParams[regionKey(fam, isLight, k)] ?? d }
@@ -182,6 +188,8 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         regionFamily    = UserDefaults.standard.integer(forKey: "blobTuner.regionFamily")   // 0 = Current
         regionParams    = (UserDefaults.standard.dictionary(forKey: "blobTuner.regionParams") as? [String: Double]) ?? [:]
         regionEditLight = UserDefaults.standard.bool(forKey: "blobTuner.regionEditLight")   // default dark
+        inOrbOn         = UserDefaults.standard.bool(forKey: "blobTuner.inOrbOn")           // default off (spike)
+        inOrbCheap      = UserDefaults.standard.bool(forKey: "blobTuner.inOrbCheap")        // default evolving
     }
 
     /// Orb-title CURATED FONT SET — baked MSDF atlases (Resources/MSDF/*.{png,json}). Index → name +
@@ -370,6 +378,7 @@ struct BlobTunerPanel: View {
                     exprSection
                     orbSection
                     regionSection
+                    inOrbSection
                     glowSection
                     separationSection
                     backgroundSection
@@ -518,6 +527,29 @@ struct BlobTunerPanel: View {
                 Button("Reset \(fam.displayName)/\(isLight ? "light" : "dark")") { tuning.resetRegion(tuning.regionFamily, isLight) }
                     .buttonStyle(.bordered).controlSize(.mini)
                 Text("Live on the map orbs. Family + S/L/spread + per-slot hue persist per appearance; Copy exports the 12 resolved hex.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
+            }
+        }
+    }
+
+    private var inOrbSection: some View {
+        let fam = RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current
+        let isLight = tuning.regionEditLight
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                sectionLabel("IN-ORB GRADIENT — SPIKE (throwaway, do not ship)")
+                Spacer()
+                Toggle("", isOn: $tuning.inOrbOn).labelsHidden().scaleEffect(0.85)
+            }
+            if tuning.inOrbOn {
+                slider("Intensity · \(fam.displayName)/\(isLight ? "light" : "dark")", regionBind("inorb", 0.5), 0...1)
+                Button(tuning.inOrbCheap ? "Cheap: STATIC gradient" : "Primary: EVOLVING gradient") { tuning.inOrbCheap.toggle() }
+                    .buttonStyle(.borderedProminent).tint(tuning.inOrbCheap ? .gray : .green)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                Text("Evolving gradient INSIDE in-band orbs, in the active family's own colour (NOT the ground glow). Intensity is per family+appearance (a neon family needs less than a subdued one). Runs in the shared batch (+0 draws). Cheap A/B = a STATIC gradient (no time term). ★ Judge on device: does it read as focal awareness, and does fps hold at a 620+ node corpus DURING a drag?")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
+            } else {
+                Text("off → orbs flat (byte-identical).")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             }
         }

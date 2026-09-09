@@ -38,7 +38,17 @@ private struct MSDFAtlasJSON: Decodable {
 // MARK: - Atlas loader (loaded once)
 
 final class MSDFFont {
-    static let shared = MSDFFont()
+    static let shared = MSDFFont(atlas: "fraunces_msdf")
+    /// Curated MSDF atlases loaded by NAME, cached (one texture each; sub-rects still batch).
+    /// Used by the orb-title font picker. A missing/unloadable atlas → `.loaded == false` (visible,
+    /// not a silent fallback) so the tuner can flag it.
+    private static var cache: [String: MSDFFont] = [:]
+    static func named(_ name: String) -> MSDFFont {
+        if name == "fraunces_msdf" { return shared }
+        if let f = cache[name] { return f }
+        let f = MSDFFont(atlas: name); cache[name] = f; return f
+    }
+    let atlasName: String
 
     let loaded: Bool
     let atlasTexture: SKTexture
@@ -49,13 +59,14 @@ final class MSDFFont {
     private let glyphs: [Int: MSDFAtlasJSON.Glyph]
     private var subTexCache: [Int: SKTexture] = [:]
 
-    private init() {
-        guard let jsonURL = Bundle.main.url(forResource: "fraunces_msdf", withExtension: "json"),
-              let pngPath = Bundle.main.path(forResource: "fraunces_msdf", ofType: "png"),
+    private init(atlas: String) {
+        atlasName = atlas
+        guard let jsonURL = Bundle.main.url(forResource: atlas, withExtension: "json"),
+              let pngPath = Bundle.main.path(forResource: atlas, ofType: "png"),
               let data = try? Data(contentsOf: jsonURL),
               let parsed = try? JSONDecoder().decode(MSDFAtlasJSON.self, from: data),
               let tex = MSDFFont.loadDataTexture(path: pngPath) else {
-            print("[MSDF] ERROR — atlas not found/loadable (fraunces_msdf.png/.json)")
+            print("[MSDF] ERROR — atlas not found/loadable (\(atlas).png/.json)")
             loaded = false
             atlasTexture = SKTexture()
             atlasW = 1; atlasH = 1; distanceRange = 4; atlasSize = 48; lineHeightEm = 1.2; glyphs = [:]
@@ -161,8 +172,8 @@ enum MSDFLabel {
 
     /// Rendered width (points) of `text` at `pointSize` — the measurer the glyph-space
     /// line breaker feeds to the shared resolveTitleLines pass logic.
-    static func textWidth(_ text: String, pointSize: CGFloat) -> CGFloat {
-        MSDFFont.shared.width(text, pointSize: pointSize)
+    static func textWidth(_ text: String, pointSize: CGFloat, font: MSDFFont = .shared) -> CGFloat {
+        font.width(text, pointSize: pointSize)
     }
 
     /// Build a MULTI-LINE MSDF glyph container from pre-broken `lines` (Phase 2: the
@@ -172,7 +183,7 @@ enum MSDFLabel {
     /// CENTERED vertically on the origin. Returns an `SKNode` named `containerName`
     /// (drop-in for the raster title sprite: child of orb, z 2, alpha-driven by LOD).
     static func makeContainer(lines: [String], pointSize: CGFloat, color: UIColor,
-                              fullTitle: String) -> SKNode {
+                              fullTitle: String, font: MSDFFont = .shared) -> SKNode {
         let container = SKNode()
         container.zPosition = 2
         container.name = containerName
@@ -182,7 +193,6 @@ enum MSDFLabel {
         container.userData?[markerKey] = true
         container.userData?[pointSizeKey] = pointSize
 
-        let font = MSDFFont.shared
         guard font.loaded, pointSize > 0, !lines.isEmpty else { return container }
 
         let midCaps: CGFloat = 0.355                 // cap-box center (em) → vertical centering

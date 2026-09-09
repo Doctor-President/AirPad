@@ -1253,13 +1253,7 @@ struct NodeDetailView: View {
                 Label("More…", systemImage: "ellipsis")
             }
         } label: {
-            Image(systemName: "plus")
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(.black)
-                .frame(width: 56, height: 56)
-                .background(.white)
-                .clipShape(Circle())
-                .shadow(color: .white.opacity(0.15), radius: 8, y: 2)
+            CaptureButtonLabel() // shared visual — unified with the map/list/card capture button
         }
     }
 

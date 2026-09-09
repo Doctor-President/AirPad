@@ -74,20 +74,38 @@ enum AppearancePalette {
     /// Dark: `#1A1A1A` neutral near-black (the landed `NoteTypography.background`
     /// dark value — a NEUTRAL gray, R=G=B, not "warm"). Light: warm parchment,
     /// Tomoe River register — NOT stark white (`.systemBackground` would glare).
-    static let bgBase = dynamic(dark: "1A1A1A", light: "F4EFE3")
+    static var bgBase: Color {
+        #if DEBUG
+        PaletteTuner.color("bgBase", dark: "1A1A1A", light: "F4EFE3")
+        #else
+        dynamic(dark: "1A1A1A", light: "F4EFE3")
+        #endif
+    }
 
     /// `--bg-elevated` — the raised note panel.
     /// Dark: `#1A1A1A` (matched to the ground — the panel floats by light, not
     /// color). Light: a hair brighter/warmer than the ground so it lifts by
     /// luminance (transmissive — light falls ONTO the paper).
-    static let bgElevated = dynamic(dark: "1A1A1A", light: "FAF6EC")
+    static var bgElevated: Color {
+        #if DEBUG
+        PaletteTuner.color("bgElevated", dark: "1A1A1A", light: "FAF6EC")
+        #else
+        dynamic(dark: "1A1A1A", light: "FAF6EC")
+        #endif
+    }
 
     /// Primary foreground — text and icons. Used directly and at the same
     /// opacities the chrome used with `.white`. Dark `#FFFFFF` makes every
     /// `.white → ink` substitution identical in dark; light is a cool
     /// fountain-pen blue-black (the Tomoe-River pairing, and the "cool presence"
     /// the theme calls for) — dark enough to read on parchment.
-    static let ink = dynamic(dark: "FFFFFF", light: "232A2E")
+    static var ink: Color {
+        #if DEBUG
+        PaletteTuner.color("ink", dark: "FFFFFF", light: "232A2E")
+        #else
+        dynamic(dark: "FFFFFF", light: "232A2E")
+        #endif
+    }
 
     /// Ink for text placed on a card FACE (over the warm-cream card art), at a
     /// given opacity. Dark reproduces the shipped warm-cream (`#FFF9F0`)
@@ -119,8 +137,13 @@ enum AppearancePalette {
     /// The note panel's lift shadow. Dark: `black@0.35` (the landed value —
     /// identical). Light: soft, low, diffused — no hard shadow ("cloud cover is
     /// a reprieve").
-    static let panelShadow = dynamic(dark: "000000", darkAlpha: 0.35,
-                                     light: "000000", lightAlpha: 0.10)
+    static var panelShadow: Color {
+        #if DEBUG
+        PaletteTuner.colorAlpha("panelShadow", dark: "000000", darkAlpha: 0.35, light: "000000", lightAlpha: 0.10)
+        #else
+        dynamic(dark: "000000", darkAlpha: 0.35, light: "000000", lightAlpha: 0.10)
+        #endif
+    }
 
     /// The card lift shadow that separates a card FACE (carousel + grid tiles)
     /// from the ground. ONE token so the two surfaces can't drift.
@@ -147,11 +170,23 @@ enum AppearancePalette {
     /// that soft grid-card value verbatim and it read as NO separation on
     /// parchment (T device-verified), so T dialed the lift up here (paired with
     /// `radius 26 · y 11` at the NodeListView call site).
-    static let listRowLift = Color(UIColor { trait in
-        trait.userInterfaceStyle == .dark
-            ? .clear
-            : UIColor(red: 67/255, green: 55/255, blue: 42/255, alpha: 0.75)
-    })
+    static var listRowLift: Color {
+        #if DEBUG
+        let lHex = PaletteTuner.shared.hex("listRowLift", dark: false) ?? "43372A"
+        let lA = PaletteTuner.shared.overrides["listRowLift.alpha.light"].flatMap { Float($0) }.map { CGFloat($0) } ?? 0.75
+        return Color(UIColor { trait in
+            if trait.userInterfaceStyle == .dark { return .clear }
+            let (r, g, b) = rgb(lHex)
+            return UIColor(red: r, green: g, blue: b, alpha: lA)
+        })
+        #else
+        return Color(UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? .clear
+                : UIColor(red: 67/255, green: 55/255, blue: 42/255, alpha: 0.75)
+        })
+        #endif
+    }
 
     /// Foreground for a glyph placed ON an `ink`-filled SOLID (the capture "+":
     /// an `ink` circle with this glyph cut out of it). Dark: pure `#000000` —
@@ -160,7 +195,13 @@ enum AppearancePalette {
     /// as cut out of the dark `ink` circle on cream. Surface 6's "+" has no
     /// designed treatment yet (Solar Flare's white-on-dark was a default, not a
     /// decision) — this is a plausible, high-contrast first pass; T art-directs.
-    static let onInk = dynamic(dark: "000000", light: "F4EFE3")
+    static var onInk: Color {
+        #if DEBUG
+        PaletteTuner.color("onInk", dark: "000000", light: "F4EFE3")
+        #else
+        dynamic(dark: "000000", light: "F4EFE3")
+        #endif
+    }
 
     /// Map dot-matrix dot color for the `BackgroundGridNode` shader
     /// (`u_dot_color`), which needs raw sRGB floats, not a SwiftUI `Color`.
@@ -171,7 +212,12 @@ enum AppearancePalette {
     /// visible but not assertive" on parchment. This is only the hue/luma floor
     /// — the exact PRESENCE is T's to dial via the tuner's dot-opacity slider.
     static func mapGridDotRGB(dark: Bool) -> (r: Float, g: Float, b: Float) {
-        let (r, g, b) = rgb(dark ? "FFFFFF" : "2E3A40")
+        #if DEBUG
+        let hex = PaletteTuner.shared.hex("mapGridDotRGB", dark: dark) ?? (dark ? "FFFFFF" : "2E3A40")
+        #else
+        let hex = dark ? "FFFFFF" : "2E3A40"
+        #endif
+        let (r, g, b) = rgb(hex)
         return (Float(r), Float(g), Float(b))
     }
 
@@ -182,7 +228,11 @@ enum AppearancePalette {
     /// on cream). Pushed live from the Map's per-frame trait resolution
     /// alongside `mapGridDotRGB`.
     static func mapGridDotOpacity(dark: Bool) -> Float {
+        #if DEBUG
+        PaletteTuner.floatVal("mapGridDotOpacity", dark: dark, bakedDark: 0.18, bakedLight: 0.47)
+        #else
         dark ? 0.18 : 0.47
+        #endif
     }
 
     /// The Map canvas background. Dark: `#111115` (T's dialed near-black — a
@@ -192,7 +242,14 @@ enum AppearancePalette {
     /// ★ Light hex via `CardSurfaceResolved.ground`; DARK is the literal `#111115`.
     /// T kept the ground at `#F4EFE3`, so light is unchanged in this build too.
     static func mapBackground(dark: Bool) -> Color {
-        CardSurfaceResolved.ground(dark: dark)
+        #if DEBUG
+        // Blob tuner item 2 — preview the MAP ground diverging from the card ground BEFORE splitting
+        // the shared token. Empty → falls through to the shared ground (so setting only the card also
+        // moves the map = the coupling, shown not enforced); non-empty → map overrides independently.
+        let o = BlobFieldTuning.shared.mapGroundHex
+        if !o.isEmpty { return Color(hexString: o) }
+        #endif
+        return CardSurfaceResolved.ground(dark: dark)
     }
 
     // MARK: - Cucumber Water light pigment (shared: node cards + dashboard lava)

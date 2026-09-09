@@ -252,15 +252,26 @@ enum CardSurfaceResolved {
     /// interpolation and will not animate. The two card surfaces use
     /// ONE resolver, so the carousel and the grid cannot drift from each other.
     static var cardShadow: Color {
-        let hex = CardSurfaceStore.read(.shadowHex)
-        let alpha = CardSurfaceStore.read(.shadowAlpha)
+        let bakedHex = CardSurfaceStore.read(.shadowHex)
+        let bakedAlpha = CardSurfaceStore.read(.shadowAlpha)
+        #if DEBUG
+        let lHex = PaletteTuner.shared.hex("cardShadow", dark: false) ?? bakedHex
+        let lA = PaletteTuner.shared.overrides["cardShadow.alpha.light"].flatMap { Double($0) } ?? bakedAlpha
+        let dA = PaletteTuner.shared.overrides["cardShadow.alpha.dark"].flatMap { Double($0) } ?? 0.32
+        return Color(UIColor { trait in
+            if trait.userInterfaceStyle == .dark { return UIColor(red: 0, green: 0, blue: 0, alpha: CGFloat(dA)) }
+            let (r, g, b) = rgb(lHex)
+            return UIColor(red: r, green: g, blue: b, alpha: CGFloat(lA))
+        })
+        #else
         return Color(UIColor { trait in
             if trait.userInterfaceStyle == .dark {
                 return UIColor(red: 0, green: 0, blue: 0, alpha: 0.32)
             }
-            let (r, g, b) = rgb(hex)
-            return UIColor(red: r, green: g, blue: b, alpha: CGFloat(alpha))
+            let (r, g, b) = rgb(bakedHex)
+            return UIColor(red: r, green: g, blue: b, alpha: CGFloat(bakedAlpha))
         })
+        #endif
     }
 
     /// The shadow colour the card surfaces actually render, as a PLAIN `Color` so
@@ -280,7 +291,18 @@ enum CardSurfaceResolved {
 
     /// Dark branch is the shipped literal `#111115`, byte-identical.
     static func ground(dark: Bool) -> Color {
-        let hex = dark ? "111115" : CardSurfaceStore.read(.groundHex)
+        #if DEBUG
+        // Blob tuner item 2 — preview the CARD ground diverging from the map ground before splitting
+        // the token. Non-empty → cards override independently (map only follows if its own is empty).
+        let cardO = BlobFieldTuning.shared.cardGroundHex
+        if !cardO.isEmpty { return Color(hexString: cardO) }
+        #endif
+        let baked = dark ? "111115" : CardSurfaceStore.read(.groundHex)
+        #if DEBUG
+        let hex = PaletteTuner.shared.hex("mapBackground", dark: dark) ?? baked
+        #else
+        let hex = baked
+        #endif
         let (r, g, b) = rgb(hex)
         return Color(red: Double(r), green: Double(g), blue: Double(b))
     }

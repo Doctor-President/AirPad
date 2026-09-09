@@ -216,6 +216,17 @@ struct BlobFieldView: View {
         }
     }
 
+    /// Blob-compositing blend index (order matches `BlobField.metal`'s `blendColor`).
+    /// Release is ALWAYS 0 (NORMAL / source-over) → the shader's fast path → byte-identical.
+    /// In DEBUG the persisted tuner can override it live on the real card + hero surfaces.
+    private var blendValue: Float {
+        #if DEBUG
+        return Float(BlobFieldTuning.shared.blend)
+        #else
+        return 0
+        #endif
+    }
+
     private func canvas(size: CGSize, origin: CGPoint, time: Float) -> some View {
         Rectangle()
             .fill(.black)
@@ -230,6 +241,7 @@ struct BlobFieldView: View {
                     .float(noiseAmount),
                     .float(noiseScale),
                     .float(bloom),
+                    .float(blendValue),
                     .floatArray(packed)
                 )
             )

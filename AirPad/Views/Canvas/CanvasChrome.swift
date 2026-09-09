@@ -83,17 +83,7 @@ struct CanvasChrome: View {
                 router.pendingNodeNavigationID = node.id
             }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 24, weight: .semibold))
-                // ws-dark-light-mode item 2 — capture "+". Dark byte-identical
-                // (onInk #000000 glyph on ink #FFFFFF circle == the old
-                // .black-on-.white); light = a cream glyph cut out of a dark
-                // ink circle so it reads on cream. T art-directs (surface 6).
-                .foregroundStyle(AppearancePalette.onInk)
-                .frame(width: 60, height: 60)
-                .background(AppearancePalette.ink)
-                .clipShape(Circle())
-                .shadow(color: AppearancePalette.panelShadow, radius: 12, y: 4)
+            CaptureButtonLabel() // shared visual — see CaptureButtonLabel.swift
         }
         .buttonStyle(.plain)
     }

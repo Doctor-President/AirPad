@@ -72,7 +72,7 @@ struct CardItemView: View {
             ZStack {
                 TimelineView(.animation) { timeline in
                     ZStack {
-                        Color(red: 0.027, green: 0.027, blue: 0.039)
+                        AppearancePalette.mapBackground(dark: true)
                         let time = timeline.date.timeIntervalSinceReferenceDate
                         Circle()
                             .fill(Color(hexString: color1))

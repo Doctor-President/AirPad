@@ -222,7 +222,7 @@ struct BlobBlendCompareView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            Color(red: 0.027, green: 0.027, blue: 0.039).ignoresSafeArea()
+            AppearancePalette.mapBackground(dark: true).ignoresSafeArea()
             VStack(spacing: 14) {
                 Text("DETAIL HERO — \(blendNames[safe: tuning.blend] ?? "?") · \(tuning.family ? "family s\(String(format: "%.1f", tuning.spread))" : "tag palette")")
                     .font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(.white.opacity(0.7))

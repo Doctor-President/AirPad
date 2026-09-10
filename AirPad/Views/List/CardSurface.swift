@@ -294,7 +294,7 @@ enum CardSurfaceResolved {
         #if DEBUG
         // Blob tuner item 2 — preview the CARD ground diverging from the map ground before splitting
         // the token. Non-empty → cards override independently (map only follows if its own is empty).
-        let cardO = BlobFieldTuning.shared.cardGroundHex
+        let cardO = BlobFieldTuning.shared.apHexAt("cardGroundHex", "", light: !dark)   // per-appearance override
         if !cardO.isEmpty { return Color(hexString: cardO) }
         #endif
         let baked = dark ? "111115" : CardSurfaceStore.read(.groundHex)

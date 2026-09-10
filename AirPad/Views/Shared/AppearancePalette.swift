@@ -246,7 +246,7 @@ enum AppearancePalette {
         // Blob tuner item 2 — preview the MAP ground diverging from the card ground BEFORE splitting
         // the shared token. Empty → falls through to the shared ground (so setting only the card also
         // moves the map = the coupling, shown not enforced); non-empty → map overrides independently.
-        let o = BlobFieldTuning.shared.mapGroundHex
+        let o = BlobFieldTuning.shared.apHexAt("mapGroundHex", "", light: !dark)   // per-appearance override
         if !o.isEmpty { return Color(hexString: o) }
         #endif
         return CardSurfaceResolved.ground(dark: dark)

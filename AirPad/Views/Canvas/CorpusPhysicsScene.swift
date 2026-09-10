@@ -2647,18 +2647,26 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    // ── GLOW beneath the orbs (addendum C) — soft radial glow per orb, screen-accumulated so
-    // neighbouring glows POOL into regional washes on the map ground. z = 0.5: ABOVE the grid
-    // (−1000), BELOW the orbs (z 1) and their title children → guaranteed never over an orb or its
-    // text (T's hard requirement). 12 slots (nearest-center orbs) = 26 uniforms, under the 31 cap.
-    private static let glowSlots = 12
+    // ── GLOW/SHADOW beneath the orbs (addendum C) — soft radial darkening (or glow) per orb,
+    // screen-accumulated so neighbours POOL into regional washes on the map ground. z = 0.5: ABOVE
+    // the grid (−1000), BELOW the orbs (z 1) and their title children.
+    // ★ RANK GATE RETIRED (2026-09-10): orb data now rides a DATA TEXTURE the shader samples in a
+    // loop (3 texels/orb: 16-bit pos · rad+intensity · colour), so the slot ceiling is the texture
+    // width (hundreds), NOT the ~31 Metal uniform-binding limit that forced the old 12. The DISTANCE
+    // gate (baseline 0 + annulusFalloff→0 at the annulus radius) makes an orb's contribution fade to
+    // ZERO before it would ever be dropped by the slot cap → the cap is unobservable. Cost is
+    // fill-rate LINEAR in the active slot count (the per-pixel loop), so `glowSlotCount` is a dial.
+    static let maxGlowSlots = 128                 // texture-width ceiling (hard max)
+    private static let glowTexelsPerSlot = 3
+    private static let glowRadMax: Double = 0.30  // rUV_eff encoding range (screen-height fraction)
     private var orbGlowOverlay: SKSpriteNode?
-    private var glowOrbUniforms: [SKUniform] = []
-    private var glowColUniforms: [SKUniform] = []
+    private var glowDataU: SKUniform?
+    private var glowCountU: SKUniform?
     private var glowReachU: SKUniform?
     private var glowBlendU: SKUniform?
     private var glowFallU: SKUniform?
     private var glowAspectU: SKUniform?
+    private var glowMaskU: SKUniform?             // annular mask width (bleed-under-orb fix)
 
     func updateOrbGlow() {
         let t = BlobFieldTuning.shared
@@ -2683,57 +2691,86 @@ final class CorpusPhysicsScene: SKScene {
         glowAspectU?.floatValue = Float(viewW / max(viewH, 1))
         glowReachU?.floatValue = Float(t.glowRadius)
         glowFallU?.floatValue = Float(t.glowFalloff)
+        glowMaskU?.floatValue = Float(t.glowMaskInner)   // annular mask (0 = fill under orb; >0 = ring)
         glowBlendU?.floatValue = Float(currentIsLight ? t.glowBlendLight : t.glowBlendDark)   // pool blend, per appearance
         // GROUND blend (the "muddy on light" lever) — how the glow LAYER sits on the map ground.
         overlay.blendMode = BlobFieldTuning.skBlend(currentIsLight ? t.glowGroundLight : t.glowGroundDark)
+
+        // Colour: FOLLOW the orb's own colour, or a MANUALLY dialled colour per appearance.
+        let follow = t.glowColorFollow
+        let manualHex = currentIsLight ? t.glowColorHexLight : t.glowColorHexDark
+        let manual = UIColor(hex: manualHex.isEmpty ? "000000" : manualHex) ?? .black
+        var mr: CGFloat = 0, mg: CGFloat = 0, mb: CGFloat = 0, ma: CGFloat = 0
+        manual.getRed(&mr, green: &mg, blue: &mb, alpha: &ma)
+
+        // Own curves (separate from the SCALE's smoothstep): a gamma on opacity (arrive earlier than
+        // size when < 1) and an OPTIONAL radius growth off the same centrality.
+        let opGamma = max(0.05, t.glowOpGamma)
+        let radGamma = max(0.05, t.glowRadGamma)
+        let radGrow = t.glowRadGrow
+        let baseline = t.glowBaseline          // default 0 → entering orb ramps from nothing
+        let inBand = t.glowInBand
+
         let cameraScale = cameraNode.xScale
         let envelope = AnnulusTuning.envelope(cameraScale)
         let camPos = cameraNode.position
+        // Nearest-first, so any orb the slot cap drops is the FARTHEST — i.e. the LOWEST centrality
+        // (already faded toward 0 by the distance gate). With enough slots, none nonzero is dropped.
         var scored: [(d: CGFloat, id: String)] = []
         for (id, sprite) in nodeSprites {
             let p = nodeRestingPositions[id] ?? sprite.position
             scored.append((hypot(p.x - camPos.x, p.y - camPos.y), id))
         }
         scored.sort { $0.d < $1.d }
+
+        let slotCount = min(Self.maxGlowSlots, max(1, t.glowSlotCount))
+        let stride = Self.glowTexelsPerSlot * 4
+        var bytes = [UInt8](repeating: 0, count: Self.maxGlowSlots * stride)
+        func u16(_ v: Double) -> (UInt8, UInt8) {
+            let s = Int((min(1, max(0, v)) * 65535).rounded()); return (UInt8(s >> 8), UInt8(s & 0xFF))
+        }
+        func u8(_ v: Double) -> UInt8 { UInt8((min(1, max(0, v)) * 255).rounded()) }
         var slot = 0
-        for e in scored.prefix(Self.glowSlots) {
+        for e in scored {
+            if slot >= slotCount { break }
+            let centrality = Double(annulusFalloff(e.d, cameraScale: cameraScale)) * Double(envelope)
+            let inten = min(2.0, baseline + inBand * pow(centrality, opGamma))
+            if inten <= 0.001 { continue }   // DISTANCE GATE — beyond the annulus radius / zoomed out → skip
             guard let sprite = nodeSprites[e.id] else { continue }
             let off = CGPoint(x: (sprite.position.x - camPos.x) / cameraScale,
                               y: (sprite.position.y - camPos.y) / cameraScale)
             let intrinsic = nodeIntrinsicRadii[e.id] ?? 30
-            // Reach from the RESTING radius (NOT the annulus-amplified xScale) so the glow SIZE stays
-            // stable — the annulus modulates INTENSITY, not existence. Persistent (T ruling): every orb
-            // gets `baseline`, in-band orbs add `inBand × centrality`. So the wash is always present.
-            let rUV = Float((intrinsic * (nodeRestingScales[e.id] ?? 1) / cameraScale) / viewH)
-            let centrality = Float(annulusFalloff(e.d, cameraScale: cameraScale)) * Float(envelope)
-            let inten = min(2.0, Float(t.glowBaseline) + Float(t.glowInBand) * centrality)
-            let fill = sprite.value(forAttributeNamed: "a_node_color")?.vectorFloat4Value
-            glowOrbUniforms[slot].vectorFloat4Value = vector_float4(Float(0.5 + off.x / viewW),
-                                                                    Float(0.5 + off.y / viewH), rUV, inten)
-            glowColUniforms[slot].vectorFloat3Value = vector_float3(fill?.x ?? 1, fill?.y ?? 1, fill?.z ?? 1)
+            let rUV = Double(intrinsic * (nodeRestingScales[e.id] ?? 1) / cameraScale) / Double(viewH)
+            let rUVeff = rUV * (1.0 + radGrow * pow(centrality, radGamma))   // radius own curve
+            let posX = 0.5 + Double(off.x) / Double(viewW)
+            let posY = 0.5 + Double(off.y) / Double(viewH)
+            let col: (Double, Double, Double)
+            if follow {
+                let f = sprite.value(forAttributeNamed: "a_node_color")?.vectorFloat4Value
+                col = (Double(f?.x ?? 1), Double(f?.y ?? 1), Double(f?.z ?? 1))
+            } else {
+                col = (Double(mr), Double(mg), Double(mb))
+            }
+            let base = slot * stride
+            let (xh, xl) = u16(posX), (yh, yl) = u16(posY)
+            bytes[base + 0] = xh; bytes[base + 1] = xl; bytes[base + 2] = yh; bytes[base + 3] = yl
+            bytes[base + 4] = u8(rUVeff / Self.glowRadMax); bytes[base + 5] = u8(inten / 2.0)
+            bytes[base + 8] = u8(col.0); bytes[base + 9] = u8(col.1); bytes[base + 10] = u8(col.2)
             slot += 1
         }
-        for i in slot..<Self.glowSlots { glowOrbUniforms[i].vectorFloat4Value = vector_float4(0, 0, 0, 0) }
+        let texW = Self.maxGlowSlots * Self.glowTexelsPerSlot
+        let tex = SKTexture(data: Data(bytes), size: CGSize(width: texW, height: 1))
+        tex.filteringMode = .nearest                     // exact per-texel reads, no slot bleed
+        glowDataU?.textureValue = tex
+        glowCountU?.floatValue = Float(slot)
     }
 
     private func makeOrbGlowShader() -> SKShader {
-        let blocks = (0..<Self.glowSlots).map { i in """
-                {
-                    vec4 P = u_gorb\(i);
-                    if (P.w > 0.001) {
-                        vec2 dv = v_tex_coord - P.xy; dv.x *= u_gaspect;
-                        float reach = P.z * u_greach;
-                        float dist = length(dv);
-                        if (dist <= reach && reach > 0.0001) {
-                            float g = clamp(P.w * pow(clamp(1.0 - dist / reach, 0.0, 1.0), 1.0 + u_gfall * 4.0), 0.0, 1.0);
-                            accum.rgb = mix(accum.rgb, blendColor(accum.rgb, u_gcol\(i), gmode), g);
-                            accum.a = accum.a + g - accum.a * g;
-                        }
-                    }
-                }
-        """ }.joined(separator: "\n")
+        // Orb data rides `u_gdata` (3 texels/orb): [posX16, posY16] · [rad, intensity] · [colour].
+        // The loop samples up to maxGlowSlots and breaks at u_gcount → cost is linear in the ACTIVE
+        // slot count, not the ceiling. No per-orb uniforms → no 31-binding wall.
         let src = """
-        // Full 13-mode blend set (per appearance) for the glow pooling — pure (no uniforms/varyings).
+        // Full 13-mode blend set (per appearance) for the pooling — pure (no uniforms/varyings).
         vec3 blendColor(vec3 b, vec3 s, float m) {
             if (m < 0.5)  return s;
             if (m < 1.5)  return b + s;
@@ -2750,28 +2787,53 @@ final class CorpusPhysicsScene: SKScene {
             return b + s - 2.0 * b * s;
         }
         void main() {
-            float gmode = u_gblend;     // local copy — pass to blendColor(), not the uniform
+            float gmode = u_gblend;
+            int cnt = int(u_gcount + 0.5);
+            float invW = 1.0 / u_gtexw;
             vec4 accum = vec4(0.0);
-        \(blocks)
+            for (int i = 0; i < 128; i++) {
+                if (i >= cnt) break;
+                float b = float(i * 3);
+                vec4 P = texture2D(u_gdata, vec2((b + 0.5) * invW, 0.5));   // posX16, posY16
+                vec4 Q = texture2D(u_gdata, vec2((b + 1.5) * invW, 0.5));   // rad, intensity
+                vec4 C = texture2D(u_gdata, vec2((b + 2.5) * invW, 0.5));   // colour
+                float inten = Q.g * 2.0;
+                if (inten <= 0.001) continue;
+                vec2 center = vec2((P.r * 256.0 + P.g) / 257.0, (P.b * 256.0 + P.a) / 257.0);
+                float rUV = Q.r * 0.30;                       // glowRadMax
+                float reach = rUV * u_greach;
+                if (reach < 0.0001) continue;
+                vec2 dv = v_tex_coord - center; dv.x *= u_gaspect;
+                float dist = length(dv);
+                if (dist > reach) continue;
+                float nd = clamp(1.0 - dist / reach, 0.0, 1.0);            // 1 center → 0 edge
+                // ANNULAR MASK (bleed fix): u_gmask 0 → fill under the orb (soft radial); >0 → cut the
+                // inner disc so the glow is a RING outside the orb radius → can't show through the orb's
+                // translucent AA rim under an additive/bright blend.
+                float innerR = rUV * u_gmask;
+                float mask = smoothstep(innerR * 0.85, innerR * 1.05 + 0.0005, dist);
+                float g = clamp(inten * pow(nd, 1.0 + u_gfall * 4.0) * mask, 0.0, 1.0);
+                accum.rgb = mix(accum.rgb, blendColor(accum.rgb, C.rgb, gmode), g);
+                accum.a = accum.a + g - accum.a * g;
+            }
             gl_FragColor = vec4(clamp(accum.rgb, 0.0, 1.0) * accum.a, clamp(accum.a, 0.0, 1.0));
         }
         """
         let shader = SKShader(source: src)
-        var uniforms: [SKUniform] = []
-        glowOrbUniforms.removeAll(); glowColUniforms.removeAll()
-        for i in 0..<Self.glowSlots {
-            let o = SKUniform(name: "u_gorb\(i)", vectorFloat4: vector_float4(0, 0, 0, 0))
-            let c = SKUniform(name: "u_gcol\(i)", vectorFloat3: vector_float3(1, 1, 1))
-            glowOrbUniforms.append(o); glowColUniforms.append(c)
-            uniforms.append(o); uniforms.append(c)
-        }
+        let texW = Self.maxGlowSlots * Self.glowTexelsPerSlot
+        let zero = SKTexture(data: Data(count: texW * 4), size: CGSize(width: texW, height: 1))
+        zero.filteringMode = .nearest
+        let data = SKUniform(name: "u_gdata", texture: zero)
+        let count = SKUniform(name: "u_gcount", float: 0)
         let reach = SKUniform(name: "u_greach", float: 3.0)
         let blend = SKUniform(name: "u_gblend", float: 2.0)   // Screen default
         let fall = SKUniform(name: "u_gfall", float: 0.6)
         let aspect = SKUniform(name: "u_gaspect", float: 0.46)
-        glowReachU = reach; glowBlendU = blend; glowFallU = fall; glowAspectU = aspect
-        uniforms.append(contentsOf: [reach, blend, fall, aspect])
-        shader.uniforms = uniforms
+        let texw = SKUniform(name: "u_gtexw", float: Float(texW))
+        let mask = SKUniform(name: "u_gmask", float: 0)
+        glowDataU = data; glowCountU = count; glowReachU = reach; glowBlendU = blend
+        glowFallU = fall; glowAspectU = aspect; glowMaskU = mask
+        shader.uniforms = [data, count, reach, blend, fall, aspect, texw, mask]
         return shader
     }
     #endif

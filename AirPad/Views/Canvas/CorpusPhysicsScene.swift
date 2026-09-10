@@ -1273,7 +1273,8 @@ final class CorpusPhysicsScene: SKScene {
         refreshGrazeTuning()  // pull live Graze dials into cached properties
         #if DEBUG
         refreshOrbTuning()    // pull live orb-tuner dials (dark dimensionality / opacity / title / blend)
-        updateOrbGlow()       // glow-beneath overlay (addendum C), when the tuner's glow is on
+        updateGridWarp()      // grid-deformation spike (pooling glow retired 2026-09-11)
+        updateDropShadows()   // cheap per-orb drop shadow, zoom-gated
         #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
@@ -2672,6 +2673,12 @@ final class CorpusPhysicsScene: SKScene {
     private var glowMaskU: SKUniform?             // annular mask width (bleed-under-orb fix)
     private var glowWireLog = 0                    // one-shot: log actual packed values (GlowWireTest)
 
+    // ── GRID-WARP + DROP-SHADOW SPIKE (2026-09-11, replaces the retired pooling glow) ──────────────
+    private var lastWarpMode = 0
+    private var dropShadowLayer: SKNode?          // one batched layer of soft shadow sprites (z below orbs)
+    private var shadowSprites: [String: SKSpriteNode] = [:]
+    private lazy var dropShadowTexture: SKTexture = Self.makeRadialShadowTexture()
+
     func updateOrbGlow() {
         let t = BlobFieldTuning.shared
         guard t.glowOn else {
@@ -2850,6 +2857,148 @@ final class CorpusPhysicsScene: SKScene {
         glowFallU = fall; glowAspectU = aspect; glowMaskU = mask
         shader.uniforms = [data, count, reach, blend, fall, aspect, texw, mask]
         return shader
+    }
+
+    // MARK: - Grid-warp spike (feeds BackgroundGridNode; pooling glow retired)
+
+    /// Per frame: push the warp state into the grid shader. Mode 1 (in-shader) packs the nearest
+    /// orbs' screen positions into a 48×1 texture; mode 2 (field) also CPU-builds a low-res
+    /// displacement field. Mode 0 leaves the resting grid byte-identical.
+    func updateGridWarp() {
+        let t = BlobFieldTuning.shared
+        guard let grid = gridNode, let view = view else { return }
+        let mode = Float(t.warpMode)
+        guard mode > 0.5 else {
+            if lastWarpMode != 0 {
+                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, orbData: nil, field: nil)
+                lastWarpMode = 0
+            }
+            return
+        }
+        lastWarpMode = Int(mode)
+        let cameraScale = cameraNode.xScale, camPos = cameraNode.position
+        let viewW = Double(view.bounds.width), viewH = Double(view.bounds.height)
+        var scored: [(d: CGFloat, sx: Double, sy: Double)] = []
+        scored.reserveCapacity(nodeSprites.count)
+        for (_, sprite) in nodeSprites {
+            let p = sprite.position
+            let sx = 0.5 + Double((p.x - camPos.x) / cameraScale) / viewW
+            let sy = 0.5 + Double((p.y - camPos.y) / cameraScale) / viewH
+            scored.append((hypot(p.x - camPos.x, p.y - camPos.y), sx, sy))
+        }
+        scored.sort { $0.d < $1.d }
+        let n = BackgroundGridNode.maxWarpOrbs
+        var orbBytes = [UInt8](repeating: 0, count: n * 4)
+        for (i, e) in scored.prefix(n).enumerated() where e.sx > -0.5 && e.sx < 1.5 && e.sy > -0.5 && e.sy < 1.5 {
+            let b = i * 4
+            orbBytes[b] = UInt8(min(1, max(0, e.sx)) * 255)
+            orbBytes[b + 1] = UInt8(min(1, max(0, e.sy)) * 255)
+            orbBytes[b + 2] = 255   // active
+        }
+        let orbTex = SKTexture(data: Data(orbBytes), size: CGSize(width: n, height: 1))
+        orbTex.filteringMode = .nearest
+        var field: SKTexture? = nil
+        if mode > 1.5 {
+            field = buildWarpField(orbs: Array(scored.prefix(n)), reach: Double(t.warpReach),
+                                   falloff: Double(t.warpFalloff), aspect: viewW / max(viewH, 1))
+        }
+        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(t.warpStrength), reach: Float(t.warpReach),
+                                   falloff: Float(t.warpFalloff), react: Float(t.warpReact), orbData: orbTex, field: field)
+    }
+
+    /// B — CPU-build a low-res signed-pull field (rg = 0.5-biased pull). Cost O(texels × orbs), done
+    /// ONCE per frame → the grid shader's per-fragment cost is then constant regardless of orb count.
+    private func buildWarpField(orbs: [(d: CGFloat, sx: Double, sy: Double)], reach: Double, falloff: Double, aspect: Double) -> SKTexture {
+        let fw = 40, fh = 80
+        let reachN = reach / 852.0   // ≈ screen-height fraction (viewport-agnostic enough for a field)
+        var bytes = [UInt8](repeating: 128, count: fw * fh * 4)   // 128 = 0.5 = no pull
+        for j in 0..<fh {
+            let fy = (Double(j) + 0.5) / Double(fh)
+            for i in 0..<fw {
+                let fx = (Double(i) + 0.5) / Double(fw)
+                var px = 0.0, py = 0.0
+                for o in orbs {
+                    var dx = o.sx - fx, dy = o.sy - fy
+                    dx *= aspect
+                    let dist = (dx * dx + dy * dy).squareRoot()
+                    if dist > reachN || dist < 1e-4 { continue }
+                    let f = pow(max(0, 1 - dist / reachN), 1 + falloff * 4)
+                    px += (dx / dist) * f; py += (dy / dist) * f
+                }
+                let ex = min(1, max(-1, px)), ey = min(1, max(-1, py))
+                let b = (j * fw + i) * 4
+                bytes[b] = UInt8((0.5 + ex * 0.5) * 255)
+                bytes[b + 1] = UInt8((0.5 + ey * 0.5) * 255)
+            }
+        }
+        let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
+        tex.filteringMode = .linear
+        return tex
+    }
+
+    // MARK: - Drop shadow spike (cheap per-orb radial sprite, zoom-gated, batched layer)
+
+    /// Soft radial-gradient disc, pre-rendered ONCE. Shared by every shadow sprite → they batch.
+    private static func makeRadialShadowTexture() -> SKTexture {
+        let px = 128
+        let size = CGSize(width: px, height: px)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let img = renderer.image { ctx in
+            let c = ctx.cgContext
+            let center = CGPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2)
+            let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])!
+            c.drawRadialGradient(grad, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(px) / 2, options: [])
+        }
+        let tex = SKTexture(image: img)
+        tex.filteringMode = .linear
+        return tex
+    }
+
+    /// Per frame: a soft dark disc behind each orb. ZOOM-GATED (eases in as you zoom in past a
+    /// threshold, absent below) — no per-orb ranking, no centrality, no boundary to pop across.
+    func updateDropShadows() {
+        let t = BlobFieldTuning.shared
+        let cameraScale = cameraNode.xScale
+        // gate: 1 when zoomed IN past the threshold (cameraScale ≤ thr−ease), 0 when out (≥ thr).
+        let thr = CGFloat(t.shadowZoomThreshold), ease = max(0.01, CGFloat(t.shadowZoomEase))
+        let gate = t.shadowOn ? Float(1 - smoothstepClamp(thr - ease, thr, cameraScale)) : 0
+        if gate <= 0.001 {
+            if dropShadowLayer != nil { dropShadowLayer?.isHidden = true }
+            return
+        }
+        let layer: SKNode
+        if let l = dropShadowLayer { layer = l; l.isHidden = false }
+        else { let l = SKNode(); l.zPosition = 0.4; addChild(l); dropShadowLayer = l; layer = l }
+
+        let opacity = CGFloat(t.shadowOpacity)     // per appearance (store, at mapIsLight == currentIsLight)
+        let spread = CGFloat(t.shadowSpread)
+        let off = CGPoint(x: CGFloat(t.shadowOffsetX), y: CGFloat(t.shadowOffsetY))
+        let colHex = t.shadowColor
+        let color = UIColor(hex: colHex.isEmpty ? "000000" : colHex) ?? .black
+        let blend = BlobFieldTuning.skBlend(t.shadowBlend)
+
+        var live = Set<String>()
+        for (id, sprite) in nodeSprites {
+            guard sprite.parent != nil else { continue }
+            live.insert(id)
+            let sh: SKSpriteNode
+            if let s = shadowSprites[id] { sh = s }
+            else {
+                let s = SKSpriteNode(texture: dropShadowTexture)
+                s.colorBlendFactor = 1
+                layer.addChild(s); shadowSprites[id] = s; sh = s
+            }
+            let r = (nodeIntrinsicRadii[id] ?? 30) * (nodeRestingScales[id] ?? 1) * sprite.xScale
+            let diam = r * 2 * spread
+            sh.size = CGSize(width: diam, height: diam)
+            sh.position = CGPoint(x: sprite.position.x + off.x, y: sprite.position.y + off.y)
+            sh.color = color
+            sh.blendMode = blend
+            sh.alpha = CGFloat(gate) * opacity
+        }
+        // Reap shadows for orbs that left.
+        for (id, s) in shadowSprites where !live.contains(id) { s.removeFromParent(); shadowSprites.removeValue(forKey: id) }
     }
     #endif
 

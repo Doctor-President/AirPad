@@ -112,6 +112,23 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var glowColorHexLight: String { didSet { UserDefaults.standard.set(glowColorHexLight, forKey: "blobTuner.glowColorHexLight") } }
     var glowColorHexDark: String { didSet { UserDefaults.standard.set(glowColorHexDark, forKey: "blobTuner.glowColorHexDark") } }
 
+    // ── GRID-WARP + DROP-SHADOW SPIKE (2026-09-11) — pooling glow retired. Warp dials per appearance;
+    // mode (approach A/B/off) is shared. Shadow: master + zoom-gate + geometry shared, look per appearance.
+    var warpMode: Int { didSet { UserDefaults.standard.set(warpMode, forKey: "blobTuner.warpMode") } }   // 0 off · 1 in-shader · 2 field
+    var warpStrength: Double { get { apD("warpStrength", 22) } set { setD("warpStrength", newValue) } }    // displacement px
+    var warpReach: Double { get { apD("warpReach", 220) } set { setD("warpReach", newValue) } }            // influence radius px
+    var warpFalloff: Double { get { apD("warpFalloff", 0.5) } set { setD("warpFalloff", newValue) } }
+    var warpReact: Double { get { apD("warpReact", 0.0) } set { setD("warpReact", newValue) } }             // colour reaction (0 = off)
+    var shadowOn: Bool { didSet { UserDefaults.standard.set(shadowOn, forKey: "blobTuner.shadowOn") } }
+    var shadowZoomThreshold: Double { didSet { UserDefaults.standard.set(shadowZoomThreshold, forKey: "blobTuner.shadowZoomThreshold") } }  // cameraScale below which shadows appear
+    var shadowZoomEase: Double { didSet { UserDefaults.standard.set(shadowZoomEase, forKey: "blobTuner.shadowZoomEase") } }
+    var shadowOffsetX: Double { didSet { UserDefaults.standard.set(shadowOffsetX, forKey: "blobTuner.shadowOffsetX") } }
+    var shadowOffsetY: Double { didSet { UserDefaults.standard.set(shadowOffsetY, forKey: "blobTuner.shadowOffsetY") } }
+    var shadowSpread: Double { get { apD("shadowSpread", 1.6) } set { setD("shadowSpread", newValue) } }
+    var shadowOpacity: Double { get { apD("shadowOpacity", 0.35) } set { setD("shadowOpacity", newValue) } }
+    var shadowColor: String { get { apHexAt("shadowColor", "", light: mapIsLight) } set { apHex[apk("shadowColor")] = newValue } }
+    var shadowBlend: Int { get { apScalar[apk("shadowBlend")].map { Int($0.rounded()) } ?? 0 } set { apScalar[apk("shadowBlend")] = Double(newValue) } }
+
     /// Orb separation gap (item 2) — the band-relaxation `breathingGap`, dialable so amplified orbs
     /// push further apart (they overlap because bodies are STATIC — no physics collision — and the PBD
     /// gap was fixed). Default 30 = baked. (Body-radius sync is a non-fix: the bodies don't collide.)
@@ -213,6 +230,12 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         regionEditLight = UserDefaults.standard.bool(forKey: "blobTuner.regionEditLight")   // legacy; region now follows mapIsLight
         inOrbOn         = UserDefaults.standard.bool(forKey: "blobTuner.inOrbOn")           // default off (spike)
         inOrbCheap      = UserDefaults.standard.bool(forKey: "blobTuner.inOrbCheap")        // default evolving
+        warpMode        = UserDefaults.standard.integer(forKey: "blobTuner.warpMode")       // 0 off
+        shadowOn        = UserDefaults.standard.bool(forKey: "blobTuner.shadowOn")          // default off
+        shadowZoomThreshold = dbl("blobTuner.shadowZoomThreshold", 1.8)   // appear as cameraScale drops below this (zoom IN)
+        shadowZoomEase  = dbl("blobTuner.shadowZoomEase", 0.6)
+        shadowOffsetX   = dbl("blobTuner.shadowOffsetX", 0)
+        shadowOffsetY   = dbl("blobTuner.shadowOffsetY", -8)
     }
 
     /// Orb-title CURATED FONT SET — baked MSDF atlases (Resources/MSDF/*.{png,json}). Index → name +
@@ -403,7 +426,8 @@ struct BlobTunerPanel: View {
                     orbSection
                     regionSection
                     inOrbSection
-                    glowSection
+                    warpSection
+                    shadowSection
                     separationSection
                     backgroundSection
                 }
@@ -590,6 +614,43 @@ struct BlobTunerPanel: View {
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
             } else {
                 Text("off → orbs flat (byte-identical).")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
+            }
+        }
+    }
+
+    private var warpSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("GRID WARP — deform the dot grid around orbs (spike)")
+            menuPick("Approach", $tuning.warpMode, ["Off", "In-shader A", "Field B"])
+            if tuning.warpMode > 0 {
+                slider("Strength", $tuning.warpStrength, 0...80)
+                slider("Reach px", $tuning.warpReach, 40...500)
+                slider("Falloff", $tuning.warpFalloff, 0...1)
+                slider("Colour react", $tuning.warpReact, 0...0.2)
+                Text("A = per-fragment pull from the 48 nearest orbs (truest; cost scales with count). B = low-res field, CONSTANT grid cost at any orb count (may read blurrier / a frame behind = swim). Colour-react raises dot opacity where the grid compresses — may make the DARK grid legible. ★ Judge WHILE PANNING on device — wobble/jitter is invisible in a still.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
+            }
+        }
+    }
+
+    private var shadowSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                sectionLabel("DROP SHADOW — per orb, zoom-gated (spike)")
+                Spacer()
+                Toggle("", isOn: $tuning.shadowOn).labelsHidden().scaleEffect(0.85)
+            }
+            if tuning.shadowOn {
+                slider("Zoom threshold", $tuning.shadowZoomThreshold, 0.5...4)   // cameraScale below which shadows show
+                slider("Zoom ease", $tuning.shadowZoomEase, 0.05...2)
+                slider("Spread", $tuning.shadowSpread, 0.5...3)
+                slider("Opacity", $tuning.shadowOpacity, 0...1)
+                slider("Offset X", $tuning.shadowOffsetX, -40...40)
+                slider("Offset Y", $tuning.shadowOffsetY, -40...40)
+                hexRow("Colour", $tuning.shadowColor)
+                menuPick("Blend", $tuning.shadowBlend, BlobFieldTuning.orbBlendNames)
+                Text("Soft dark disc behind each orb (one shared texture → batches). ZOOM-GATED: eases in as you zoom IN past the threshold, absent zoomed out — no per-orb ranking, no centrality, no boundary to pop across. Spread/opacity/colour/blend per appearance; threshold/ease/offset shared.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             }
         }

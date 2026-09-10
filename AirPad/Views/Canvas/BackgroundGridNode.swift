@@ -100,14 +100,15 @@ enum BackgroundGridNode {
     private static func makeShader(viewportSize: CGSize,
                                    dotSizePx: Float, dotOpacity: Float,
                                    period: Float, ratio: Float, lodLevels: Float) -> SKShader {
+        // GRID-WARP SPIKE (2026-09-11): the pooling glow is retired; this warps the SAMPLED
+        // coordinate before the existing SDF runs (nothing new is drawn). Two approaches, live-
+        // switchable by u_warp_mode: 1 = IN-SHADER (per-fragment summed orb pull, CONSTANT loop
+        // bound = 48 to dodge the uniform-gated-loop → Metal landmine); 2 = FIELD TEXTURE (a low-res
+        // displacement field, CPU-built once/frame → constant per-fragment cost). 0 = off (byte-id).
+        // MAXWARPORBS is a compile constant so the loop unrolls.
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
 
-        // Adaptive opacity for one grid level, by screen-space period.
-        // Steepness 0.3: each level visible for ~6.67 octaves (vs 4 at 0.5).
-        // Adjacent ratio-5 levels overlap ~4.35 octaves so 2-3 levels are
-        // typically active at once -- finer dots fade in earlier as you
-        // zoom in, coarser ones linger as you zoom out.
         float levelOpacity(float screenPeriod, float targetPx) {
             float t = log2(screenPeriod / targetPx);
             return clamp(1.0 - abs(t) * 0.3, 0.0, 1.0);
@@ -116,12 +117,38 @@ enum BackgroundGridNode {
         // --- Main ---
 
         void main() {
-            // Reconstruct world position of this fragment.
-            // SpriteKit camera convention: xScale > 1 = zoomed out (more world
-            // visible per screen point). So 1 screen point = u_camera_scale
-            // world points -> world = camPos + screenOffset * u_camera_scale.
+            // Screen offset (px from viewport centre) BEFORE any warp.
             vec2 screenOffset = (v_tex_coord - vec2(0.5)) * u_viewport_size;
-            vec2 worldPos = u_camera_position + screenOffset * u_camera_scale;
+            float aspect = u_viewport_size.x / max(u_viewport_size.y, 1.0);
+
+            // WARP: accumulate a screen-space displacement (px) from nearby orbs.
+            vec2 warp = vec2(0.0);
+            if (u_warp_mode > 0.5 && u_warp_mode < 1.5) {
+                // A — IN-SHADER. Orb screen positions ride u_orb_data (1 texel/orb: rg = pos 0..1,
+                // b = active). Constant 48-iteration loop (unrolls); inactive orbs contribute 0.
+                float reachN = u_warp_reach / max(u_viewport_size.y, 1.0);   // reach as screen fraction
+                for (int i = 0; i < 48; i++) {
+                    vec4 P = texture2D(u_orb_data, vec2((float(i) + 0.5) / u_orb_texw, 0.5));
+                    if (P.b < 0.5) continue;                                 // inactive slot
+                    vec2 d = P.rg - v_tex_coord;                             // orb - fragment (0..1)
+                    d.x *= aspect;                                          // isotropic distance
+                    float dist = length(d);
+                    if (dist > reachN) continue;
+                    float f = pow(clamp(1.0 - dist / reachN, 0.0, 1.0), 1.0 + u_warp_falloff * 4.0);
+                    vec2 dir = dist > 1e-4 ? d / dist : vec2(0.0);
+                    warp += dir * f;                                        // pull TOWARD the orb
+                }
+                warp *= u_warp_strength;
+            } else if (u_warp_mode > 1.5) {
+                // B — FIELD TEXTURE. rg = signed pull (0.5-biased), CPU-built at low res once/frame.
+                vec4 F = texture2D(u_disp_field, v_tex_coord);
+                warp = (F.rg - vec2(0.5)) * 2.0 * u_warp_strength;
+            }
+            float warpMag = length(warp);                                   // px, for the colour reaction
+
+            // Reconstruct world position from the WARPED screen offset. SpriteKit camera convention:
+            // xScale > 1 = zoomed out. world = camPos + screenOffset * u_camera_scale.
+            vec2 worldPos = u_camera_position + (screenOffset + warp) * u_camera_scale;
 
             // --- LOD constants ---
             // Three layers, ratio 5: p1 (period) sits near the 60px visibility
@@ -180,6 +207,11 @@ enum BackgroundGridNode {
             float coverage = max(c1, max(c0g, c2g));
             float alpha    = clamp(coverage * baseOpac, 0.0, 1.0);
 
+            // COLOUR REACTION: compressed regions (high displacement) read hotter — raise the dot
+            // opacity where mass warps the grid. May make the dark-mode grid legible: texture where
+            // there's mass, quiet elsewhere. `u_warp_react` 0 = off (byte-identical).
+            alpha = clamp(alpha * (1.0 + u_warp_react * warpMag), 0.0, 1.0);
+
             // Premultiplied output. u_dot_color is the per-theme dot tint
             // (default white → dark byte-identical: (1,1,1)*alpha reproduces the
             // old vec4(alpha,alpha,alpha,alpha)); light mode pushes a cool
@@ -189,6 +221,12 @@ enum BackgroundGridNode {
         """
 
         let shader = SKShader(source: source)
+        // Placeholder textures (warp off until the scene feeds them). u_orb_data = 48×1 RGBA;
+        // u_disp_field = a low-res field the CPU rewrites each frame.
+        let orbZero = SKTexture(data: Data(count: maxWarpOrbs * 4), size: CGSize(width: maxWarpOrbs, height: 1))
+        orbZero.filteringMode = .nearest
+        let fieldZero = SKTexture(data: Data(count: 4), size: CGSize(width: 1, height: 1))
+        fieldZero.filteringMode = .linear
         shader.uniforms = [
             SKUniform(name: "u_camera_position", vectorFloat2: vector_float2(0, 0)),
             SKUniform(name: "u_camera_scale",    float: 1.0),
@@ -199,8 +237,40 @@ enum BackgroundGridNode {
             SKUniform(name: "u_period1",     float: period),
             SKUniform(name: "u_ratio",       float: ratio),
             SKUniform(name: "u_lod_levels",  float: lodLevels),
-            SKUniform(name: "u_dot_color",   vectorFloat3: vector_float3(1, 1, 1))
+            SKUniform(name: "u_dot_color",   vectorFloat3: vector_float3(1, 1, 1)),
+            // Warp (grid-deformation spike). Mode 0 = off → byte-identical resting grid.
+            SKUniform(name: "u_warp_mode",     float: 0),
+            SKUniform(name: "u_warp_strength", float: 0),
+            SKUniform(name: "u_warp_reach",    float: 220),
+            SKUniform(name: "u_warp_falloff",  float: 0.5),
+            SKUniform(name: "u_warp_react",    float: 0),
+            SKUniform(name: "u_orb_texw",      float: Float(maxWarpOrbs)),
+            SKUniform(name: "u_orb_data",      texture: orbZero),
+            SKUniform(name: "u_disp_field",    texture: fieldZero)
         ]
         return shader
+    }
+
+    /// In-shader loop bound (constant → unrolls, dodges the uniform-gated-loop landmine).
+    static let maxWarpOrbs = 48
+
+    /// Per-frame push of the warp state (spike). `mode` 0 off · 1 in-shader · 2 field.
+    /// `orbData` (48×1 RGBA: rg = orb screen pos 0..1, b = active) drives mode 1; `field` (low-res
+    /// RG signed-pull) drives mode 2. Pass nil to leave a texture untouched.
+    static func setWarp(_ shape: SKShapeNode, mode: Float, strength: Float, reach: Float,
+                        falloff: Float, react: Float, orbData: SKTexture?, field: SKTexture?) {
+        guard let uniforms = shape.fillShader?.uniforms else { return }
+        for u in uniforms {
+            switch u.name {
+            case "u_warp_mode":     u.floatValue = mode
+            case "u_warp_strength": u.floatValue = strength
+            case "u_warp_reach":    u.floatValue = reach
+            case "u_warp_falloff":  u.floatValue = falloff
+            case "u_warp_react":    u.floatValue = react
+            case "u_orb_data":      if let t = orbData { u.textureValue = t }
+            case "u_disp_field":    if let t = field { u.textureValue = t }
+            default: break
+            }
+        }
     }
 }

@@ -191,8 +191,12 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         glowOn          = UserDefaults.standard.bool(forKey: "blobTuner.glowOn")          // default off
         glowBlendLight  = UserDefaults.standard.object(forKey: "blobTuner.glowBlendLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowBlendLight") : 2  // Screen
         glowBlendDark   = UserDefaults.standard.object(forKey: "blobTuner.glowBlendDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowBlendDark") : 2
-        glowGroundLight = UserDefaults.standard.object(forKey: "blobTuner.glowGroundLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundLight") : 3  // MULTIPLY (item 2)
-        glowGroundDark  = UserDefaults.standard.object(forKey: "blobTuner.glowGroundDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundDark") : 3   // MULTIPLY (T: darkness behind in dark works)
+        // ★ DEFAULT ALPHA (0), not Multiply — proven 2026-09-10: SKBlendMode.multiply on a FULL-SCREEN
+        // overlay multiplies its TRANSPARENT (premultiplied-black) pixels onto the ground → the whole
+        // map goes black where there's no glow. Alpha (source-over) with a DARK colour is the correct
+        // drop shadow (darkens only where the glow is). Multiply/Mult×2/Replace are overlay-UNSAFE.
+        glowGroundLight = UserDefaults.standard.object(forKey: "blobTuner.glowGroundLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundLight") : 0
+        glowGroundDark  = UserDefaults.standard.object(forKey: "blobTuner.glowGroundDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundDark") : 0
         glowColorHexLight = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexLight") ?? ""
         glowColorHexDark  = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexDark") ?? ""
         orbGap          = dbl("blobTuner.orbGap", 30.0)
@@ -638,7 +642,7 @@ struct BlobTunerPanel: View {
                 menuPick("Pool · dark", $tuning.glowBlendDark, BlobFieldTuning.blendNames)
                 menuPick("Ground · light", $tuning.glowGroundLight, BlobFieldTuning.orbBlendNames)  // SKBlendMode
                 menuPick("Ground · dark", $tuning.glowGroundDark, BlobFieldTuning.orbBlendNames)
-                Text("RANK GATE RETIRED — Slots is a real dial (data-texture, no 12-cap); cost is ~linear in slots (read fps at 30 vs 60). Baseline 0 + the distance gate make the boundary unobservable. Opacity/Radius γ<1 = depth arrives before size. GROUND blend = Multiply/Darken → a DROP SHADOW that darkens (cream & black both have headroom). Inner mask >0 → ring (kills any bleed through the orb's soft edge).")
+                Text("RANK GATE RETIRED — Slots is a real dial (data-texture, no 12-cap); cost is ~linear in slots (read fps at 30 vs 60). Baseline 0 + the distance gate make the boundary unobservable. Opacity/Radius γ<1 = depth arrives before size. Inner mask >0 → ring (kills any bleed through the orb's soft edge). ★ GROUND blend: use ALPHA with a DARK manual colour for a drop shadow (darkens only where the glow is). ⚠️ Multiply/Mult×2/Replace BLACKEN the whole ground (a full-screen overlay's transparent pixels × ground = black) — do not use them here.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             } else {
                 Text("off → no glow/shadow layer").font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.4))

@@ -2670,6 +2670,7 @@ final class CorpusPhysicsScene: SKScene {
     private var glowFallU: SKUniform?
     private var glowAspectU: SKUniform?
     private var glowMaskU: SKUniform?             // annular mask width (bleed-under-orb fix)
+    private var glowWireLog = 0                    // one-shot: log actual packed values (GlowWireTest)
 
     func updateOrbGlow() {
         let t = BlobFieldTuning.shared
@@ -2766,6 +2767,17 @@ final class CorpusPhysicsScene: SKScene {
         tex.filteringMode = .nearest                     // exact per-texel reads, no slot bleed
         glowDataU?.textureValue = tex
         glowCountU?.floatValue = Float(slot)
+
+        if glowWireLog > 0 {
+            glowWireLog -= 1
+            backgroundColor = UIColor(red: 0.957, green: 0.937, blue: 0.890, alpha: 1)  // force cream each frame (defeat any reset)
+            let gIdx = currentIsLight ? t.glowGroundLight : t.glowGroundDark
+            let pIdx = currentIsLight ? t.glowBlendLight : t.glowBlendDark
+            let mHex = currentIsLight ? t.glowColorHexLight : t.glowColorHexDark
+            // The ACTUAL bytes packed into slot 0 (colour texel = base+8..10), not the panel's state.
+            let s0 = bytes.count >= 12 ? "packedCol0=(\(bytes[8]),\(bytes[9]),\(bytes[10])) packedInten0=\(bytes[5])" : "no-slot"
+            NSLog("[GLOWWIRE] light=\(currentIsLight) follow=\(follow) manualHex=\(mHex) manualRGB=(\(Int(mr*255)),\(Int(mg*255)),\(Int(mb*255))) groundBlendIdx=\(gIdx) poolBlendIdx=\(pIdx) overlayBlendMode=\(overlay.blendMode.rawValue) baseline=\(baseline) inBand=\(inBand) slotsPacked=\(slot) \(s0)")
+        }
     }
 
     private func makeOrbGlowShader() -> SKShader {
@@ -3136,8 +3148,40 @@ final class CorpusPhysicsScene: SKScene {
             }
             if UserDefaults.standard.bool(forKey: "SPRLabels") {
                 self.injectLabelTestSpread()
+            } else if UserDefaults.standard.bool(forKey: "GlowWireTest") {
+                self.injectSyntheticCorpus(count: 9)   // SPARSE → the ground (and its glow) is VISIBLE between orbs
             } else {
                 self.injectSyntheticCorpus(count: 700)
+            }
+            // `-GlowWireTest YES` — a MAXIMALLY-VISIBLE glow config to prove the manual colour + ground
+            // blend actually reach the shader on the forced appearance (audit addendum 2026-09-10). Cream
+            // ground + deep-blue manual + high baseline (in-band-independent) so nothing can be "subtle".
+            // `-GlowGround N` sets the ground SKBlendMode index (3=Multiply default · 0=Alpha for the A/B).
+            if UserDefaults.standard.bool(forKey: "GlowWireTest") {
+                let t = BlobFieldTuning.shared
+                t.mapIsLight = self.appearanceIsLight        // write the values into THIS appearance's keys
+                self.backgroundColor = UIColor(red: 0.957, green: 0.937, blue: 0.890, alpha: 1)  // cream #F4EFE3
+                t.glowOn = true
+                t.glowColorFollow = false
+                if self.appearanceIsLight { t.glowColorHexLight = "1B2A6B" } else { t.glowColorHexDark = "1B2A6B" }  // deep blue
+                t.glowBaseline = 0.90        // high → visible regardless of annulus/zoom
+                t.glowInBand = 0.0
+                t.glowRadius = 4.0
+                t.glowSlotCount = 40
+                t.glowMaskInner = 0.0
+                let g = UserDefaults.standard.object(forKey: "GlowGround") != nil ? UserDefaults.standard.integer(forKey: "GlowGround") : 3
+                if self.appearanceIsLight { t.glowGroundLight = g } else { t.glowGroundDark = g }
+                self.gridNode?.isHidden = true
+                // A guaranteed CREAM ground DIRECTLY behind the glow overlay (z=0.5): a full-screen
+                // sprite at z=0.2 (above grid, below glow), so the glow composites onto cream — proving
+                // the multiply-vs-alpha difference on the real light ground, not the SKView's black.
+                if let v = self.view {
+                    let cream = SKSpriteNode(color: UIColor(red: 0.957, green: 0.937, blue: 0.890, alpha: 1), size: v.bounds.size)
+                    cream.zPosition = 0.2; cream.position = .zero; cream.name = "glowWireCream"
+                    self.cameraNode.addChild(cream)
+                }
+                self.glowWireLog = 120   // log the actual packed values across several frames
+                NSLog("[GLOWWIRE] config applied: light=\(self.appearanceIsLight) ground=\(g)")
             }
             // `-SPRZoom 3.0` → programmatically zoom the camera so CC can verify the
             // Lens (a) idle ramp: idle orbs shrink, labels cull, positions unchanged.

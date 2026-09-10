@@ -2603,6 +2603,9 @@ final class CorpusPhysicsScene: SKScene {
     /// light↔dark flip re-applies the per-appearance blend.
     func refreshOrbTuning() {
         let t = BlobFieldTuning.shared
+        // Keep the tuner's editing-appearance in SYNC with the map's actual appearance, so every
+        // per-appearance value the panel shows/edits is the one the scene renders (audit 2026-09-10).
+        if t.mapIsLight != currentIsLight { t.mapIsLight = currentIsLight }
         let on = t.orbOverride
         // Region palette (commit 2) is an INDEPENDENT trigger — a family change must re-tint the orbs
         // even when the orb override is off. `regionSig` folds in the family + every dialled param.

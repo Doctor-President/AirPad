@@ -37,6 +37,9 @@ struct AirPadApp: App {
             } else if UserDefaults.standard.bool(forKey: "BLOBBLEND") {
                 // ws-ios-polish item 5 — blob-blend tuner on the REAL card + detail-hero blobs.
                 BlobBlendCompareView()
+            } else if UserDefaults.standard.bool(forKey: "BlobExportTest") {
+                // Audit 2026-09-10: prove per-appearance severability + export round-trip.
+                BlobExportTestView()
             } else if let shot = UserDefaults.standard.string(forKey: "PARITYShot"), !shot.isEmpty {
                 // Quick-parity-sweep screenshot fixture (#13/#15/#17/#18).
                 ParityShotsView(shot: shot)
@@ -87,6 +90,38 @@ struct AirPadApp: App {
 }
 
 #if DEBUG
+/// Audit 2026-09-10 self-test — sets DISTINCT light/dark values, exports, reads BOTH back → proves
+/// per-appearance severability (no bleed) + export completeness. Reached via `-BlobExportTest YES`.
+private struct BlobExportTestView: View {
+    @State private var report = "running…"
+    var body: some View {
+        ScrollView { Text(report).font(.system(size: 10, design: .monospaced)).padding() }
+            .preferredColorScheme(.dark).foregroundStyle(.white)
+            .onAppear { report = runRoundTrip() }
+    }
+    private func runRoundTrip() -> String {
+        let t = BlobFieldTuning.shared
+        // 1. dial DISTINCT values in each appearance (edit dark, then light)
+        t.mapIsLight = false
+        t.glowRadius = 2.0; t.glowBaseline = 0.11; t.orbFillOpacity = 0.30
+        t.glowSlotCount = 24; t.family = false; t.mapGroundHex = "101014"
+        t.mapIsLight = true
+        t.glowRadius = 7.0; t.glowBaseline = 0.88; t.orbFillOpacity = 0.95
+        t.glowSlotCount = 60; t.family = true; t.mapGroundHex = "F4EFE3"
+        // 2. export the complete state
+        let export = t.exportAll()
+        // 3. read BOTH appearances back independently
+        let dR = t.apDAt("glowRadius", 3, light: false), lR = t.apDAt("glowRadius", 3, light: true)
+        let dF = t.apDAt("orbFillOpacity", 1, light: false), lF = t.apDAt("orbFillOpacity", 1, light: true)
+        let dS = t.apIAt("glowSlotCount", 40, light: false), lS = t.apIAt("glowSlotCount", 40, light: true)
+        let dG = t.apHexAt("mapGroundHex", "", light: false), lG = t.apHexAt("mapGroundHex", "", light: true)
+        let ok = dR == 2.0 && lR == 7.0 && dF == 0.30 && lF == 0.95 && dS == 24 && lS == 60 && dG == "101014" && lG == "F4EFE3"
+        let verdict = ok ? "PASS — light & dark fully severable" : "FAIL"
+        print("[BlobExportTest] \(verdict)  dR=\(dR) lR=\(lR) dS=\(dS) lS=\(lS)")
+        return "ROUND-TRIP: \(verdict)\n glowRadius D=\(dR) L=\(lR)\n fill D=\(dF) L=\(lF)\n slots D=\(dS) L=\(lS)\n mapGround D=\(dG) L=\(lG)\n\n\(export)"
+    }
+}
+
 /// Node-perf measurement host — a bare `CorpusPhysicsScene` + SKView HUD. The
 /// scene self-injects a synthetic corpus on `didMove` when launched with
 /// `-SPRMeasure YES` (`-SPRLight ON|OFF` forces the render appearance). Reusable

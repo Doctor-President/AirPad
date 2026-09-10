@@ -33,29 +33,48 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     /// Whether the floating in-app tuner panel is showing (NOT persisted — session UI state).
     var isPresented = false
 
-    /// Blob-compositing blend index, order matches `BlobField.metal`'s `blendColor` (0 = NORMAL /
-    /// source-over = today's card/hero look → byte-identical).
-    var blend: Int { didSet { UserDefaults.standard.set(blend, forKey: "blobTuner.blend") } }
-    /// FAMILY palette: node-seeded variants of one base hue instead of the 3-colour tag palette.
-    var family: Bool { didSet { UserDefaults.standard.set(family, forKey: "blobTuner.family") } }
-    /// Family hue spread: 0 → near-monochrome family · 1 → wide (toward the unrelated look).
-    var spread: Double { didSet { UserDefaults.standard.set(spread, forKey: "blobTuner.spread") } }
+    // ── PER-APPEARANCE STORE (2026-09-10 audit) — every APPEARANCE-AFFECTING value is stored twice,
+    // keyed "<name>.L" / "<name>.D", so a value that reads on cream never overwrites the one for black.
+    // `mapIsLight` is kept in SYNC with the scene's current appearance (the scene writes it), so the
+    // computed accessors below transparently return the RIGHT appearance for BOTH the scene (reads at
+    // its own appearance) AND the panel (edits the appearance it's showing) — the panel header names it.
+    /// The appearance the panel is editing = the map's CURRENT appearance (scene-synced, not persisted).
+    var mapIsLight: Bool = true
+    private var apScalar: [String: Double] { didSet { UserDefaults.standard.set(apScalar, forKey: "blobTuner.apScalar") } }
+    private var apHex: [String: String] { didSet { UserDefaults.standard.set(apHex, forKey: "blobTuner.apHex") } }
+    private func apk(_ n: String) -> String { "\(n).\(mapIsLight ? "L" : "D")" }
+    /// Typed per-appearance accessors (current appearance). `*At` variants take an explicit appearance
+    /// (used by the export to dump BOTH, and available to callers that need the off-appearance).
+    func apD(_ n: String, _ def: Double) -> Double { apScalar[apk(n)] ?? def }
+    func setD(_ n: String, _ v: Double) { apScalar[apk(n)] = v }
+    func apDAt(_ n: String, _ def: Double, light: Bool) -> Double { apScalar["\(n).\(light ? "L" : "D")"] ?? def }
+    func apIAt(_ n: String, _ def: Int, light: Bool) -> Int { apScalar["\(n).\(light ? "L" : "D")"].map { Int($0.rounded()) } ?? def }
+    func apBAt(_ n: String, _ def: Bool, light: Bool) -> Bool { apScalar["\(n).\(light ? "L" : "D")"].map { $0 > 0.5 } ?? def }
+    func apHexAt(_ n: String, _ def: String, light: Bool) -> String { apHex["\(n).\(light ? "L" : "D")"] ?? def }
+    private func bindingD(_ n: String, _ def: Double) -> Double { apScalar[apk(n)] ?? def }
+
+    /// Blob-compositing blend index (per appearance). Order matches `BlobField.metal`'s `blendColor`.
+    var blend: Int { get { apScalar[apk("blend")].map { Int($0.rounded()) } ?? 0 } set { apScalar[apk("blend")] = Double(newValue) } }
+    /// FAMILY palette (per appearance): node-seeded variants of one base hue vs the 3-colour tag palette.
+    var family: Bool { get { apScalar[apk("family")].map { $0 > 0.5 } ?? true } set { apScalar[apk("family")] = newValue ? 1 : 0 } }
+    /// Family hue spread (per appearance): 0 → near-monochrome · 1 → wide.
+    var spread: Double { get { apScalar[apk("spread")] ?? 0.5 } set { apScalar[apk("spread")] = newValue } }
 
     // ── ORB controls (CorpusPhysicsScene) — off by default → baked look byte-identical until dialed.
     /// Master switch: when false the scene ignores every orb value below (uses the baked DarkOrbTuning
     /// / styleUnfocusedOrb / title values). The scene polls this in `update()` and restyles on change.
-    var orbOverride: Bool { didSet { UserDefaults.standard.set(orbOverride, forKey: "blobTuner.orbOverride") } }
-    var orbFillOpacity: Double { didSet { UserDefaults.standard.set(orbFillOpacity, forKey: "blobTuner.orbFillOpacity") } }
-    var orbStrokeOpacity: Double { didSet { UserDefaults.standard.set(orbStrokeOpacity, forKey: "blobTuner.orbStrokeOpacity") } }
-    var orbDarkSat: Double { didSet { UserDefaults.standard.set(orbDarkSat, forKey: "blobTuner.orbDarkSat") } }   // dark hue richness
-    var orbDarkVal: Double { didSet { UserDefaults.standard.set(orbDarkVal, forKey: "blobTuner.orbDarkVal") } }
-    var orbDarkRim: Double { didSet { UserDefaults.standard.set(orbDarkRim, forKey: "blobTuner.orbDarkRim") } }
-    var orbTitleScale: Double { didSet { UserDefaults.standard.set(orbTitleScale, forKey: "blobTuner.orbTitleScale") } }
-    var orbTitleOpacity: Double { didSet { UserDefaults.standard.set(orbTitleOpacity, forKey: "blobTuner.orbTitleOpacity") } }
-    /// Orb title FONT (addendum A): 0 = baked (TypeTuning.fontChoice) · 1…N = MapLabelFont.allCases[i-1].
+    var orbOverride: Bool { didSet { UserDefaults.standard.set(orbOverride, forKey: "blobTuner.orbOverride") } }   // SHARED master
+    var orbFillOpacity: Double { get { apD("orbFillOpacity", 1.0) } set { setD("orbFillOpacity", newValue) } }       // per appearance
+    var orbStrokeOpacity: Double { get { apD("orbStrokeOpacity", 1.0) } set { setD("orbStrokeOpacity", newValue) } } // per appearance
+    var orbDarkSat: Double { didSet { UserDefaults.standard.set(orbDarkSat, forKey: "blobTuner.orbDarkSat") } }   // DARK-ONLY (light path never reads)
+    var orbDarkVal: Double { didSet { UserDefaults.standard.set(orbDarkVal, forKey: "blobTuner.orbDarkVal") } }   // DARK-ONLY
+    var orbDarkRim: Double { didSet { UserDefaults.standard.set(orbDarkRim, forKey: "blobTuner.orbDarkRim") } }   // DARK-ONLY
+    var orbTitleScale: Double { get { apD("orbTitleScale", 1.0) } set { setD("orbTitleScale", newValue) } }         // per appearance
+    var orbTitleOpacity: Double { get { apD("orbTitleOpacity", 1.0) } set { setD("orbTitleOpacity", newValue) } }   // per appearance
+    /// Orb title FONT (addendum A): 0 = baked · 1…N. SHARED — a typeface is the same in both modes.
     var orbTitleFont: Int { didSet { UserDefaults.standard.set(orbTitleFont, forKey: "blobTuner.orbTitleFont") } }
-    /// Orb title COLOUR override — empty = the auto-contrast `legibleInk`; hex = forced.
-    var orbTitleColorHex: String { didSet { UserDefaults.standard.set(orbTitleColorHex, forKey: "blobTuner.orbTitleColorHex") } }
+    /// Orb title COLOUR override (per appearance) — empty = the auto-contrast `legibleInk`; hex = forced.
+    var orbTitleColorHex: String { get { apHexAt("orbTitleColorHex", "", light: mapIsLight) } set { apHex[apk("orbTitleColorHex")] = newValue } }
     /// Orb BLEND (addendum B) — how the orb SPRITE composites onto the ground, PER APPEARANCE. Index into
     /// the SpriteKit-native `SKBlendMode` set (0 = alpha/source-over = baked). NOT the 13-mode blob set:
     /// orbs are separate sprites and can't read the ground, so only SKBlendMode is available here.
@@ -64,14 +83,12 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
 
     // ── GLOW beneath the orbs (addendum C) — a soft radial glow per orb, pooling onto the map
     // ground BELOW the orbs + titles (z-guaranteed). Off by default → no overlay → byte-identical.
-    var glowOn: Bool { didSet { UserDefaults.standard.set(glowOn, forKey: "blobTuner.glowOn") } }
-    var glowRadius: Double { didSet { UserDefaults.standard.set(glowRadius, forKey: "blobTuner.glowRadius") } }      // reach in orb radii (resting → not annulus-tied)
-    /// PERSISTENT glow (T ruling): baseline intensity everywhere (>0 = the wash is always present, a
-    /// PROPERTY of the field) + an in-band MULTIPLIER the annulus adds on top. Decoupled so the annulus
-    /// curve and the glow can be tuned independently.
-    var glowBaseline: Double { didSet { UserDefaults.standard.set(glowBaseline, forKey: "blobTuner.glowBaseline") } }
-    var glowInBand: Double { didSet { UserDefaults.standard.set(glowInBand, forKey: "blobTuner.glowInBand") } }
-    var glowFalloff: Double { didSet { UserDefaults.standard.set(glowFalloff, forKey: "blobTuner.glowFalloff") } }   // e-fold softness
+    var glowOn: Bool { didSet { UserDefaults.standard.set(glowOn, forKey: "blobTuner.glowOn") } }   // SHARED master (zero the per-mode values to disable per appearance)
+    // ★ ALL of these are now PER APPEARANCE (2026-09-10 audit — T: "the glow doesn't obey the split").
+    var glowRadius: Double { get { apD("glowRadius", 3.0) } set { setD("glowRadius", newValue) } }
+    var glowBaseline: Double { get { apD("glowBaseline", 0.0) } set { setD("glowBaseline", newValue) } }
+    var glowInBand: Double { get { apD("glowInBand", 1.0) } set { setD("glowInBand", newValue) } }
+    var glowFalloff: Double { get { apD("glowFalloff", 0.6) } set { setD("glowFalloff", newValue) } }
     /// Glow POOL blend per appearance (full 13-set — how overlapping glows combine WITH EACH OTHER;
     /// single-pass shader so it can do all 13).
     var glowBlendLight: Int { didSet { UserDefaults.standard.set(glowBlendLight, forKey: "blobTuner.glowBlendLight") } }
@@ -85,12 +102,13 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     // ── Rank-gate retirement (2026-09-10): slot count is now a DIAL (data-texture, no 12-cap), plus
     // own opacity/radius curves (arrive earlier than the size bump), an annular mask (bleed fix), and
     // colour control (follow the orb, or a manual hex per appearance).
-    var glowSlotCount: Int { didSet { UserDefaults.standard.set(glowSlotCount, forKey: "blobTuner.glowSlotCount") } }
-    var glowOpGamma: Double { didSet { UserDefaults.standard.set(glowOpGamma, forKey: "blobTuner.glowOpGamma") } }   // <1 = shadow arrives earlier
-    var glowRadGrow: Double { didSet { UserDefaults.standard.set(glowRadGrow, forKey: "blobTuner.glowRadGrow") } }    // 0 = radius fixed (today)
-    var glowRadGamma: Double { didSet { UserDefaults.standard.set(glowRadGamma, forKey: "blobTuner.glowRadGamma") } }
-    var glowMaskInner: Double { didSet { UserDefaults.standard.set(glowMaskInner, forKey: "blobTuner.glowMaskInner") } } // 0 = under orb; 1 = ring at edge
-    var glowColorFollow: Bool { didSet { UserDefaults.standard.set(glowColorFollow, forKey: "blobTuner.glowColorFollow") } }
+    var glowSlotCount: Int { get { apScalar[apk("glowSlotCount")].map { Int($0.rounded()) } ?? 40 } set { apScalar[apk("glowSlotCount")] = Double(newValue) } }
+    var glowOpGamma: Double { get { apD("glowOpGamma", 1.0) } set { setD("glowOpGamma", newValue) } }   // <1 = shadow arrives earlier
+    var glowRadGrow: Double { get { apD("glowRadGrow", 0.0) } set { setD("glowRadGrow", newValue) } }    // 0 = radius fixed (today)
+    var glowRadGamma: Double { get { apD("glowRadGamma", 1.0) } set { setD("glowRadGamma", newValue) } }
+    var glowMaskInner: Double { get { apD("glowMaskInner", 0.0) } set { setD("glowMaskInner", newValue) } } // 0 = under orb; 1 = ring at edge
+    var glowColorFollow: Bool { get { apScalar[apk("glowColorFollow")].map { $0 > 0.5 } ?? true } set { apScalar[apk("glowColorFollow")] = newValue ? 1 : 0 } }
+    // glowColorHexLight/Dark stay EXPLICIT L/D (already per-appearance) — the scene picks by currentIsLight.
     var glowColorHexLight: String { didSet { UserDefaults.standard.set(glowColorHexLight, forKey: "blobTuner.glowColorHexLight") } }
     var glowColorHexDark: String { didSet { UserDefaults.standard.set(glowColorHexDark, forKey: "blobTuner.glowColorHexDark") } }
 
@@ -120,8 +138,9 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     // ── BACKGROUND per view (item 2) — currently ONE token (mapBackground / CardSurfaceResolved.ground).
     // Empty = follow the shared token. Non-empty = override THIS view's ground, so T can preview map and
     // card grounds DIVERGING before ruling on whether to split the token. (Show-don't-enforce.)
-    var mapGroundHex: String { didSet { UserDefaults.standard.set(mapGroundHex, forKey: "blobTuner.mapGroundHex") } }
-    var cardGroundHex: String { didSet { UserDefaults.standard.set(cardGroundHex, forKey: "blobTuner.cardGroundHex") } }
+    // Ground overrides — now PER APPEARANCE (a cream override must not also override black, and vice versa).
+    var mapGroundHex: String { get { apHexAt("mapGroundHex", "", light: mapIsLight) } set { apHex[apk("mapGroundHex")] = newValue } }
+    var cardGroundHex: String { get { apHexAt("cardGroundHex", "", light: mapIsLight) } set { apHex[apk("cardGroundHex")] = newValue } }
 
     // ── REGION PALETTE FAMILIES (commit 2) — the map territory tints. 0 = Current (shipping hex,
     // byte-identical A/B baseline) · 1 Subdued · 2 Jewel · 3 Pastel · 4 Neon (see RegionPaletteFamily).
@@ -154,45 +173,26 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var regionSig: String { "\(regionFamily)|" + regionParams.keys.sorted().map { "\($0):\(regionParams[$0]!)" }.joined(separator: ",") }
 
     private init() {
-        blend = UserDefaults.standard.integer(forKey: "blobTuner.blend")   // default 0 = NORMAL
-        // Default FAMILY ON — the blend comparison is only meaningful within a colour family
-        // (across unrelated tag colours, screen/add just wash to white). Tag palette is the A/B.
-        family = (UserDefaults.standard.object(forKey: "blobTuner.family") as? Bool) ?? true
-        // `double(forKey:)` also parses a launch-arg string ("-blobTuner.spread 0.9") for screenshots.
-        spread = UserDefaults.standard.object(forKey: "blobTuner.spread") != nil
-            ? UserDefaults.standard.double(forKey: "blobTuner.spread") : 0.5
         func dbl(_ k: String, _ d: Double) -> Double {
             UserDefaults.standard.object(forKey: k) != nil ? UserDefaults.standard.double(forKey: k) : d
         }
+        // Per-appearance store (backs every computed appearance value above). Empty on a fresh
+        // install → the getters supply the per-key defaults.
+        apScalar        = (UserDefaults.standard.dictionary(forKey: "blobTuner.apScalar") as? [String: Double]) ?? [:]
+        apHex           = (UserDefaults.standard.dictionary(forKey: "blobTuner.apHex") as? [String: String]) ?? [:]
+        // SHARED (not appearance-split): masters, dark-only levers, font, geometry, controls, region, in-orb.
         orbOverride     = UserDefaults.standard.bool(forKey: "blobTuner.orbOverride")   // default false = baked
-        orbFillOpacity  = dbl("blobTuner.orbFillOpacity", 1.0)
-        orbStrokeOpacity = dbl("blobTuner.orbStrokeOpacity", 1.0)
-        orbDarkSat      = dbl("blobTuner.orbDarkSat", 2.00)   // DarkOrbTuning baked defaults
+        orbDarkSat      = dbl("blobTuner.orbDarkSat", 2.00)   // DARK-ONLY (light path never reads)
         orbDarkVal      = dbl("blobTuner.orbDarkVal", 1.25)
         orbDarkRim      = dbl("blobTuner.orbDarkRim", 0.20)
-        orbTitleScale   = dbl("blobTuner.orbTitleScale", 1.0)
-        orbTitleOpacity = dbl("blobTuner.orbTitleOpacity", 1.0)
         orbTitleFont    = UserDefaults.standard.integer(forKey: "blobTuner.orbTitleFont")   // 0 = baked
-        orbTitleColorHex = UserDefaults.standard.string(forKey: "blobTuner.orbTitleColorHex") ?? ""
         orbBlendLight   = UserDefaults.standard.integer(forKey: "blobTuner.orbBlendLight")   // 0 = alpha
         orbBlendDark    = UserDefaults.standard.integer(forKey: "blobTuner.orbBlendDark")
-        mapGroundHex    = UserDefaults.standard.string(forKey: "blobTuner.mapGroundHex") ?? ""
-        cardGroundHex   = UserDefaults.standard.string(forKey: "blobTuner.cardGroundHex") ?? ""
         glowOn          = UserDefaults.standard.bool(forKey: "blobTuner.glowOn")          // default off
-        glowRadius      = dbl("blobTuner.glowRadius", 3.0)
-        glowBaseline    = dbl("blobTuner.glowBaseline", 0.0)    // ★ default 0 (was 0.35) — entering orb ramps from nothing, no 0→floor snap
-        glowInBand      = dbl("blobTuner.glowInBand", 1.0)      // annulus adds this on top
-        glowFalloff     = dbl("blobTuner.glowFalloff", 0.6)
         glowBlendLight  = UserDefaults.standard.object(forKey: "blobTuner.glowBlendLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowBlendLight") : 2  // Screen
         glowBlendDark   = UserDefaults.standard.object(forKey: "blobTuner.glowBlendDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowBlendDark") : 2
-        glowGroundLight = UserDefaults.standard.object(forKey: "blobTuner.glowGroundLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundLight") : 3  // default MULTIPLY (item 2): on near-white cream, source-over/Add have no headroom to add light → a muddy wash. Multiply DEEPENS the cream toward the glow hue = colour reads as a tint. (Coloured LIGHT pooling only reads on a dark ground.)
-        glowGroundDark  = UserDefaults.standard.object(forKey: "blobTuner.glowGroundDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundDark") : 3   // default MULTIPLY too — T: "a little darkness behind these in dark mode works"
-        glowSlotCount   = UserDefaults.standard.object(forKey: "blobTuner.glowSlotCount") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowSlotCount") : 40
-        glowOpGamma     = dbl("blobTuner.glowOpGamma", 1.0)
-        glowRadGrow     = dbl("blobTuner.glowRadGrow", 0.0)
-        glowRadGamma    = dbl("blobTuner.glowRadGamma", 1.0)
-        glowMaskInner   = dbl("blobTuner.glowMaskInner", 0.0)
-        glowColorFollow = (UserDefaults.standard.object(forKey: "blobTuner.glowColorFollow") as? Bool) ?? true
+        glowGroundLight = UserDefaults.standard.object(forKey: "blobTuner.glowGroundLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundLight") : 3  // MULTIPLY (item 2)
+        glowGroundDark  = UserDefaults.standard.object(forKey: "blobTuner.glowGroundDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundDark") : 3   // MULTIPLY (T: darkness behind in dark works)
         glowColorHexLight = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexLight") ?? ""
         glowColorHexDark  = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexDark") ?? ""
         orbGap          = dbl("blobTuner.orbGap", 30.0)
@@ -206,7 +206,7 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         blobBlur        = (UserDefaults.standard.array(forKey: "blobTuner.blobBlur") as? [Double]) ?? [1, 1, 1, 1]
         regionFamily    = UserDefaults.standard.integer(forKey: "blobTuner.regionFamily")   // 0 = Current
         regionParams    = (UserDefaults.standard.dictionary(forKey: "blobTuner.regionParams") as? [String: Double]) ?? [:]
-        regionEditLight = UserDefaults.standard.bool(forKey: "blobTuner.regionEditLight")   // default dark
+        regionEditLight = UserDefaults.standard.bool(forKey: "blobTuner.regionEditLight")   // legacy; region now follows mapIsLight
         inOrbOn         = UserDefaults.standard.bool(forKey: "blobTuner.inOrbOn")           // default off (spike)
         inOrbCheap      = UserDefaults.standard.bool(forKey: "blobTuner.inOrbCheap")        // default evolving
     }
@@ -386,11 +386,11 @@ struct BlobTunerPanel: View {
     @Bindable var tuning: BlobFieldTuning
     @StateObject private var meter = BlobFPSMeter()
     @State private var showRegionSlots = false
-    @State private var glowManualLight = false   // which appearance's manual glow colour the picker edits
 
     var body: some View {
         VStack(spacing: 8) {
             header
+            editingBanner
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     blendSection
@@ -430,6 +430,25 @@ struct BlobTunerPanel: View {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.6))
             }
         }
+    }
+
+    /// The one, unambiguous "which appearance am I editing" indicator. Follows the MAP's live
+    /// appearance (scene-synced), so every per-appearance slider below edits exactly this mode — T
+    /// switches the device light/dark to edit the other. (Audit 2026-09-10: "the panel must say
+    /// which appearance it is editing.")
+    private var editingBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: tuning.mapIsLight ? "sun.max.fill" : "moon.fill")
+            Text("EDITING: \(tuning.mapIsLight ? "LIGHT" : "DARK") MODE")
+                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+            Text("· follows the map · switch device appearance to edit the other")
+                .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.55))
+            Spacer()
+        }
+        .foregroundStyle(tuning.mapIsLight ? .yellow : .cyan)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((tuning.mapIsLight ? Color.yellow : Color.cyan).opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func sectionLabel(_ s: String) -> some View {
@@ -496,17 +515,17 @@ struct BlobTunerPanel: View {
     }
 
     private func regionBind(_ key: String, _ def: Double) -> Binding<Double> {
-        Binding(get: { tuning.regionParam(tuning.regionFamily, tuning.regionEditLight, key, default: def) },
-                set: { tuning.setRegionParam(tuning.regionFamily, tuning.regionEditLight, key, $0) })
+        Binding(get: { tuning.regionParam(tuning.regionFamily, tuning.mapIsLight, key, default: def) },
+                set: { tuning.setRegionParam(tuning.regionFamily, tuning.mapIsLight, key, $0) })
     }
     private func regionSlotBind(_ slot: Int) -> Binding<Double> {
-        Binding(get: { tuning.regionSlotHueOffset(tuning.regionFamily, tuning.regionEditLight, slot) },
-                set: { tuning.setRegionSlotHue(tuning.regionFamily, tuning.regionEditLight, slot, $0) })
+        Binding(get: { tuning.regionSlotHueOffset(tuning.regionFamily, tuning.mapIsLight, slot) },
+                set: { tuning.setRegionSlotHue(tuning.regionFamily, tuning.mapIsLight, slot, $0) })
     }
 
     private var regionSection: some View {
         let fam = RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current
-        let isLight = tuning.regionEditLight
+        let isLight = tuning.mapIsLight
         let def = RegionPalette.defaults(fam, isLight: isLight)
         return VStack(alignment: .leading, spacing: 6) {
             sectionLabel("REGION PALETTE — map territory tints (families)")
@@ -515,9 +534,6 @@ struct BlobTunerPanel: View {
                 Text("Current = shipping Paul Tol set, byte-identical. Pick a family to move the region hues OUT of the muddy mid-lightness zone. Subdued (desaturate) is the direct opposite of muddy — try it first.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             } else {
-                Picker("", selection: $tuning.regionEditLight) {
-                    Text("Editing: Dark").tag(false); Text("Editing: Light").tag(true)
-                }.pickerStyle(.segmented)
                 slider("Saturation", regionBind("sat", def.sat), 0...1)
                 slider("Lightness", regionBind("light", def.light), 0...1)
                 slider("Hue rotate", regionBind("hueStart", def.hueStart), 0...1)
@@ -554,7 +570,7 @@ struct BlobTunerPanel: View {
 
     private var inOrbSection: some View {
         let fam = RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current
-        let isLight = tuning.regionEditLight
+        let isLight = tuning.mapIsLight
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 sectionLabel("IN-ORB GRADIENT — SPIKE (throwaway, do not ship)")
@@ -613,12 +629,10 @@ struct BlobTunerPanel: View {
                 .buttonStyle(.borderedProminent).tint(tuning.glowColorFollow ? .green : .gray)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 if !tuning.glowColorFollow {
-                    Picker("", selection: $glowManualLight) {
-                        Text("Manual: Dark").tag(false); Text("Manual: Light").tag(true)
-                    }.pickerStyle(.segmented)
+                    // Edits the CURRENT appearance's manual colour (the global header names it).
                     HSLColorPicker(hex: Binding(
-                        get: { glowManualLight ? tuning.glowColorHexLight : tuning.glowColorHexDark },
-                        set: { if glowManualLight { tuning.glowColorHexLight = $0 } else { tuning.glowColorHexDark = $0 } }))
+                        get: { tuning.mapIsLight ? tuning.glowColorHexLight : tuning.glowColorHexDark },
+                        set: { if tuning.mapIsLight { tuning.glowColorHexLight = $0 } else { tuning.glowColorHexDark = $0 } }))
                 }
                 menuPick("Pool · light", $tuning.glowBlendLight, BlobFieldTuning.blendNames)     // 13-set (glow↔glow)
                 menuPick("Pool · dark", $tuning.glowBlendDark, BlobFieldTuning.blendNames)
@@ -725,24 +739,56 @@ struct BlobTunerPanel: View {
     }
 
     private func copyAll() {
-        func f(_ d: Double) -> String { String(format: "%.2f", d) }
-        func exprRow(_ i: Int) -> String {
-            "  \(BlobFieldTuning.exprNames[i]): spread=\(f(tuning.blobSpread[i])) anim=\(f(tuning.blobAnim[i])) distort=\(f(tuning.blobDistort[i])) blur=\(f(tuning.blobBlur[i]))"
+        UIPasteboard.general.string = tuning.exportAll(fps: meter.fps)
+    }
+}
+
+extension BlobFieldTuning {
+    /// COMPLETE tuner state — every parameter, BOTH appearances, per blob expression, labelled so CC
+    /// can bake it directly and T can read it back. Emits the EFFECTIVE value (stored-or-default) for
+    /// every param so nothing is omitted for being at a default (a later default change can't then
+    /// silently alter a settled value). Round-trip: this is the sole source the bake reads.
+    func exportAll(fps: Double = 0) -> String {
+        func f(_ d: Double) -> String { String(format: "%.3f", d) }
+        func blendN(_ i: Int) -> String { Self.blendNames[safe: i] ?? "?" }
+        func orbN(_ i: Int) -> String { Self.orbBlendNames[safe: i] ?? "?" }
+        func appBlock(_ L: Bool) -> String {
+            func d(_ n: String, _ def: Double) -> String { f(apDAt(n, def, light: L)) }
+            let tc = apHexAt("orbTitleColorHex", "", light: L)
+            let mg = apHexAt("mapGroundHex", "", light: L)
+            let cg = apHexAt("cardGroundHex", "", light: L)
+            let gcol = L ? glowColorHexLight : glowColorHexDark
+            let rfam = RegionPaletteFamily(rawValue: regionFamily) ?? .current
+            return """
+            [\(L ? "LIGHT" : "DARK")]
+              blob: blend=\(blendN(apIAt("blend", 0, light: L))) family=\(apBAt("family", true, light: L)) spread=\(d("spread", 0.5))
+              orb: fill=\(d("orbFillOpacity", 1)) stroke=\(d("orbStrokeOpacity", 1)) titleScale=\(d("orbTitleScale", 1)) titleOpacity=\(d("orbTitleOpacity", 1)) titleColour=\(tc.isEmpty ? "(auto)" : tc) blend=\(orbN(L ? orbBlendLight : orbBlendDark))
+              glow: radius=\(d("glowRadius", 3)) baseline=\(d("glowBaseline", 0)) inBand=\(d("glowInBand", 1)) falloff=\(d("glowFalloff", 0.6)) slots=\(apIAt("glowSlotCount", 40, light: L)) opGamma=\(d("glowOpGamma", 1)) radGrow=\(d("glowRadGrow", 0)) radGamma=\(d("glowRadGamma", 1)) mask=\(d("glowMaskInner", 0)) colour=\(apBAt("glowColorFollow", true, light: L) ? "follow-orb" : "manual:\(gcol.isEmpty ? "-" : gcol)") pool=\(blendN(L ? glowBlendLight : glowBlendDark)) ground=\(orbN(L ? glowGroundLight : glowGroundDark))
+              ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
+              region: family=\(rfam.displayName) distinct=\(RegionPalette.distinctSlotCount(rfam, isLight: L))/12 resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
+            """
         }
-        UIPasteboard.general.string = """
-        blob: blend=\(BlobFieldTuning.blendNames[safe: tuning.blend] ?? "?") hueSpread=\(f(tuning.spread)) family=\(tuning.family)
-        orb(override=\(tuning.orbOverride)): fillOpacity=\(f(tuning.orbFillOpacity)) strokeOpacity=\(f(tuning.orbStrokeOpacity)) darkSat=\(f(tuning.orbDarkSat)) darkVal=\(f(tuning.orbDarkVal)) darkRim=\(f(tuning.orbDarkRim)) titleSize=\(f(tuning.orbTitleScale)) titleOpacity=\(f(tuning.orbTitleOpacity)) titleFont=\(BlobFieldTuning.orbFontNames[safe: tuning.orbTitleFont] ?? "?") titleColour=\(tuning.orbTitleColorHex.isEmpty ? "(auto)" : tuning.orbTitleColorHex) blendLight=\(BlobFieldTuning.orbBlendNames[safe: tuning.orbBlendLight] ?? "?") blendDark=\(BlobFieldTuning.orbBlendNames[safe: tuning.orbBlendDark] ?? "?")
-        glow(on=\(tuning.glowOn)): slots=\(tuning.glowSlotCount) radius=\(f(tuning.glowRadius)) inBand=\(f(tuning.glowInBand)) baseline=\(f(tuning.glowBaseline)) opγ=\(f(tuning.glowOpGamma)) radGrow=\(f(tuning.glowRadGrow)) radγ=\(f(tuning.glowRadGamma)) falloff=\(f(tuning.glowFalloff)) mask=\(f(tuning.glowMaskInner)) colour=\(tuning.glowColorFollow ? "follow" : "manual L:\(tuning.glowColorHexLight) D:\(tuning.glowColorHexDark)") poolL=\(BlobFieldTuning.blendNames[safe: tuning.glowBlendLight] ?? "?") poolD=\(BlobFieldTuning.blendNames[safe: tuning.glowBlendDark] ?? "?") groundL=\(BlobFieldTuning.orbBlendNames[safe: tuning.glowGroundLight] ?? "?") groundD=\(BlobFieldTuning.orbBlendNames[safe: tuning.glowGroundDark] ?? "?")
-        separation: orbGap=\(f(tuning.orbGap)) labelSep=\(tuning.labelSepOn) labelTether=\(f(tuning.labelTether))
-        per-expression blobs (override=\(tuning.blobExprOverride)):
+        func exprRow(_ i: Int) -> String {
+            "  \(Self.exprNames[i]): spread=\(f(blobSpread[safe: i] ?? 1)) anim=\(f(blobAnim[safe: i] ?? 1)) distort=\(f(blobDistort[safe: i] ?? 0)) blur=\(f(blobBlur[safe: i] ?? 1))"
+        }
+        let regionDump = regionParams.keys.sorted().map { "\($0)=\(f(regionParams[$0]!))" }.joined(separator: " ")
+        return """
+        ===== AirPad TUNER — COMPLETE STATE (both appearances) =====
+        \(appBlock(false))
+        \(appBlock(true))
+        [SHARED — not appearance-split]
+          orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
+          glow: on=\(glowOn)
+          separation: orbGap=\(f(orbGap)) labelSep=\(labelSepOn) tether=\(f(labelTether))
+          per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):
         \(exprRow(0))
         \(exprRow(1))
         \(exprRow(2))
         \(exprRow(3))
-        bg: mapGround=\(tuning.mapGroundHex.isEmpty ? "(token)" : tuning.mapGroundHex) cardGround=\(tuning.cardGroundHex.isEmpty ? "(token)" : tuning.cardGroundHex)
-        region: family=\((RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current).displayName) editing=\(tuning.regionEditLight ? "light" : "dark") distinct=\(RegionPalette.distinctSlotCount(RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current, isLight: tuning.regionEditLight))/12
-          hex[\(tuning.regionEditLight ? "light" : "dark")]=\(RegionPalette.resolvedHex(isLight: tuning.regionEditLight).joined(separator: " "))
-        fps=\(f(meter.fps))
+          in-orb spike: on=\(inOrbOn) cheap=\(inOrbCheap)
+          region: familyIndex=\(regionFamily)  params{ \(regionDump.isEmpty ? "(all default)" : regionDump) }
+        fps=\(f(fps))  (editing now: \(mapIsLight ? "LIGHT" : "DARK"))
+        ===== END =====
         """
     }
 }

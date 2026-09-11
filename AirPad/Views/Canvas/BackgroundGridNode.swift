@@ -141,12 +141,17 @@ enum BackgroundGridNode {
                     warp += dir * f * w;                                   // px (× strength below)
                 }
                 warp *= u_warp_strength * u_warp_sign;
-            } else if (u_warp_mode > 1.5) {
+            } else if (u_warp_mode > 1.5 && u_warp_mode < 2.5) {
                 // B — FIELD TEXTURE. rg = signed AWAY-pull (0.5-biased), same px sign convention as A.
                 vec4 F = texture2D(u_disp_field, v_tex_coord);
                 warp = (F.rg - vec2(0.5)) * 2.0 * u_warp_strength * u_warp_sign;
             }
+            // C (mode 3) leaves worldPos UNSHIFTED — dots move, space doesn't (no smear); the SDF below
+            // relocates cell centres. Still capture the fragment's pull for the colour reaction.
             float warpMag = length(warp);                                   // px, for the colour reaction
+            if (u_warp_mode > 2.5) {
+                warpMag = length((texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * 2.0) * u_warp_strength;
+            }
 
             // Reconstruct world position from the WARPED screen offset. SpriteKit camera convention:
             // xScale > 1 = zoomed out. world = camPos + screenOffset * u_camera_scale.
@@ -179,28 +184,50 @@ enum BackgroundGridNode {
             float a1 = levelOpacity(p1 / u_camera_scale, targetPx);
             float a2 = levelOpacity(p2 / u_camera_scale, targetPx);
 
-            // Each layer: SDF against the containing cell's centre dot.
-            // cell index = floor(worldPos / period); center = (cell + 0.5) *
-            // period; distance = length(worldPos - center) - baseR (negative
-            // inside the dot). Uniform radius per layer (noise removed).
-
-            // --- Layer 0 (finest) ---
-            vec2  cell0     = floor(worldPos / p0);
-            vec2  center0   = (cell0 + 0.5) * p0;
-            float d0        = length(worldPos - center0) - baseR;
-            float c0        = (1.0 - smoothstep(0.0, feather, d0)) * a0;
-
-            // --- Layer 1 (default-visible) ---
-            vec2  cell1     = floor(worldPos / p1);
-            vec2  center1   = (cell1 + 0.5) * p1;
-            float d1        = length(worldPos - center1) - baseR;
-            float c1        = (1.0 - smoothstep(0.0, feather, d1)) * a1;
-
-            // --- Layer 2 (coarsest) ---
-            vec2  cell2     = floor(worldPos / p2);
-            vec2  center2   = (cell2 + 0.5) * p2;
-            float d2        = length(worldPos - center2) - baseR;
-            float c2        = (1.0 - smoothstep(0.0, feather, d2)) * a2;
+            float c0, c1, c2;
+            if (u_warp_mode > 2.5) {
+                // ── MODE C: DOT RELOCATION ──────────────────────────────────────────────────────
+                // MOVE each dot's centre by the field-sampled warp, then measure a ROUND dot around
+                // the MOVED centre. A circle evaluated around a point cannot smear (the sample-
+                // coordinate reformulations do). Check the containing cell + its 8 NEIGHBOURS (3×3 =
+                // 9 cells/layer) because a moved dot can land in a neighbour's cell. Dots also SHRINK
+                // near mass (a depression recedes from the viewer). All bounds constant → unrolls.
+                float ps[3]; ps[0] = p0; ps[1] = p1; ps[2] = p2;
+                float as[3]; as[0] = a0; as[1] = a1; as[2] = a2;
+                float covs[3]; covs[0] = 0.0; covs[1] = 0.0; covs[2] = 0.0;
+                for (int L = 0; L < 3; L++) {
+                    float p = ps[L];
+                    vec2 cell = floor(worldPos / p);
+                    float cov = 0.0;
+                    for (int ny = -1; ny <= 1; ny++) {
+                        for (int nx = -1; nx <= 1; nx++) {
+                            vec2 cc = (cell + vec2(float(nx), float(ny)) + 0.5) * p;    // cell centre, world
+                            vec2 ccUV = ((cc - u_camera_position) / u_camera_scale) / u_viewport_size + vec2(0.5);
+                            vec2 pull = (texture2D(u_disp_field, ccUV).rg - vec2(0.5)) * 2.0;   // AWAY-from-orb
+                            // RELOCATION inverts vs sample-displacement: to CONVERGE, move the dot
+                            // centre TOWARD the orb (−away). sign flips it (button: Converge/Diverge).
+                            vec2 moved = cc - pull * (u_warp_strength * u_warp_sign * u_camera_scale);
+                            float shrink = clamp(1.0 - u_warp_shrink * length(pull), 0.15, 1.0);
+                            float d = length(worldPos - moved) - baseR * shrink;
+                            cov = max(cov, 1.0 - smoothstep(0.0, feather, d));
+                        }
+                    }
+                    covs[L] = cov * as[L];
+                }
+                c0 = covs[0]; c1 = covs[1]; c2 = covs[2];
+            } else {
+                // Modes 0/1/2: SDF against the containing cell's centre (worldPos already sample-warped
+                // for 1/2; unwarped for 0). center = (cell+0.5)*period; d = dist - baseR.
+                vec2  cell0   = floor(worldPos / p0);
+                float d0      = length(worldPos - (cell0 + 0.5) * p0) - baseR;
+                c0 = (1.0 - smoothstep(0.0, feather, d0)) * a0;
+                vec2  cell1   = floor(worldPos / p1);
+                float d1      = length(worldPos - (cell1 + 0.5) * p1) - baseR;
+                c1 = (1.0 - smoothstep(0.0, feather, d1)) * a1;
+                vec2  cell2   = floor(worldPos / p2);
+                float d2      = length(worldPos - (cell2 + 0.5) * p2) - baseR;
+                c2 = (1.0 - smoothstep(0.0, feather, d2)) * a2;
+            }
 
             // Recursion gate: u_lod_levels 1 = c1 only, 2 = + coarse, 3 = all.
             // Baked to 3 (the shipped level count) — all layers composite.
@@ -247,6 +274,7 @@ enum BackgroundGridNode {
             SKUniform(name: "u_warp_falloff",  float: 0.5),
             SKUniform(name: "u_warp_react",    float: 0),
             SKUniform(name: "u_warp_sign",     float: 1),
+            SKUniform(name: "u_warp_shrink",   float: 0.4),   // mode 3: dots shrink near mass (depression recedes)
             SKUniform(name: "u_orb_texw",      float: Float(maxWarpOrbs)),
             SKUniform(name: "u_orb_data",      texture: orbZero),
             SKUniform(name: "u_disp_field",    texture: fieldZero)
@@ -261,7 +289,7 @@ enum BackgroundGridNode {
     /// `orbData` (48×1 RGBA: rg = orb screen pos 0..1, b = active) drives mode 1; `field` (low-res
     /// RG signed-pull) drives mode 2. Pass nil to leave a texture untouched.
     static func setWarp(_ shape: SKShapeNode, mode: Float, strength: Float, reach: Float,
-                        falloff: Float, react: Float, sign: Float, orbData: SKTexture?, field: SKTexture?) {
+                        falloff: Float, react: Float, sign: Float, shrink: Float, orbData: SKTexture?, field: SKTexture?) {
         guard let uniforms = shape.fillShader?.uniforms else { return }
         for u in uniforms {
             switch u.name {
@@ -271,6 +299,7 @@ enum BackgroundGridNode {
             case "u_warp_falloff":  u.floatValue = falloff
             case "u_warp_react":    u.floatValue = react
             case "u_warp_sign":     u.floatValue = sign
+            case "u_warp_shrink":   u.floatValue = shrink
             case "u_orb_data":      if let t = orbData { u.textureValue = t }
             case "u_disp_field":    if let t = field { u.textureValue = t }
             default: break

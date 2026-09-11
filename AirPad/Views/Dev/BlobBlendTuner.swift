@@ -123,6 +123,7 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var warpZoomFade: Double { get { apD("warpZoomFade", 1) } set { setD("warpZoomFade", newValue) } }       // fade the warp out when zoomed out (anti-alias)
     var warpZoomThreshold: Double { get { apD("warpZoomThreshold", 1.5) } set { setD("warpZoomThreshold", newValue) } }  // cameraScale beyond which the fade starts
     var warpZoomWiden: Double { get { apD("warpZoomWiden", 0) } set { setD("warpZoomWiden", newValue) } }    // widen reach with zoom (smoother field)
+    var warpShrink: Double { get { apD("warpShrink", 0.4) } set { setD("warpShrink", newValue) } }           // mode C: dots shrink near mass (depression recedes)
     var shadowOn: Bool { didSet { UserDefaults.standard.set(shadowOn, forKey: "blobTuner.shadowOn") } }
     var shadowZoomThreshold: Double { didSet { UserDefaults.standard.set(shadowZoomThreshold, forKey: "blobTuner.shadowZoomThreshold") } }  // cameraScale below which shadows appear
     var shadowZoomEase: Double { didSet { UserDefaults.standard.set(shadowZoomEase, forKey: "blobTuner.shadowZoomEase") } }
@@ -626,7 +627,7 @@ struct BlobTunerPanel: View {
     private var warpSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("GRID WARP — deform the dot grid around orbs (spike)")
-            menuPick("Approach", $tuning.warpMode, ["Off", "In-shader A", "Field B"])
+            menuPick("Approach", $tuning.warpMode, ["Off", "In-shader A", "Field B", "Relocate C"])
             if tuning.warpMode > 0 {
                 Button(tuning.warpSign >= 0 ? "Direction: CONVERGE (mass dimple)" : "Direction: DIVERGE (bulge)") {
                     tuning.warpSign = tuning.warpSign >= 0 ? -1 : 1
@@ -636,11 +637,12 @@ struct BlobTunerPanel: View {
                 slider("Strength", $tuning.warpStrength, 0...80)
                 slider("Reach px", $tuning.warpReach, 40...500)
                 slider("Falloff", $tuning.warpFalloff, 0...1)
+                if tuning.warpMode == 3 { slider("Dot shrink", $tuning.warpShrink, 0...1) }   // C: dots shrink near mass
                 slider("Colour react", $tuning.warpReact, 0...0.2)
                 slider("Zoom fade", $tuning.warpZoomFade, 0...1)          // anti-alias: fade warp when zoomed out
                 slider("Zoom fade start", $tuning.warpZoomThreshold, 0.8...4)
                 slider("Zoom widen", $tuning.warpZoomWiden, 0...1)         // widen reach with zoom → smoother field
-                Text("CONVERGE = dots densify toward the orb (mass on a sheet). A = per-fragment pull from the 48 nearest (truest; cost scales); B = low-res field, CONSTANT grid cost (may swim / read a frame behind). Zoom-out JITTER is aliasing (a sharp field at low zoom) — Zoom-fade removes it (fade past the start scale); Zoom-widen keeps it smooth. Membership fade at the 48-set edge kills the set-swap pop. ★ Judge WHILE PANNING on device.")
+                Text("CONVERGE = dots densify toward the orb (mass on a sheet). A = per-fragment pull (truest, cost scales); B = low-res field (constant grid cost, may swim). ★ C = DOT RELOCATION: moves each dot's CENTRE + draws a ROUND dot (uses B's field) so dots don't SMEAR — and they SHRINK near mass (depression recedes). Zoom-fade/widen kill the zoom-out aliasing. ★ Judge WHILE PANNING on device.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
             }
         }

@@ -2877,14 +2877,14 @@ final class CorpusPhysicsScene: SKScene {
             let m = Float(max(1, t.warpMode))
             var f: SKTexture? = nil
             if m > 1.5 { f = buildWarpField(orbs: [(0.5, 0.5, 1.0)], reach: 240, falloff: 0.4, viewW: Double(view.bounds.width), viewH: Double(view.bounds.height)) }
-            BackgroundGridNode.setWarp(grid, mode: m, strength: 70, reach: 240, falloff: 0.4, react: 0, sign: 1, orbData: tex, field: f)
+            BackgroundGridNode.setWarp(grid, mode: m, strength: 70, reach: 240, falloff: 0.4, react: 0, sign: 1, shrink: Float(t.warpShrink), orbData: tex, field: f)
             lastWarpMode = Int(m)
             return
         }
         let mode = Float(t.warpMode)
         guard mode > 0.5 else {
             if lastWarpMode != 0 {
-                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, sign: 1, orbData: nil, field: nil)
+                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, sign: 1, shrink: 0, orbData: nil, field: nil)
                 lastWarpMode = 0
             }
             return
@@ -2932,7 +2932,7 @@ final class CorpusPhysicsScene: SKScene {
         }
         BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff), reach: Float(reachEff),
                                    falloff: Float(t.warpFalloff), react: Float(t.warpReact), sign: Float(t.warpSign),
-                                   orbData: orbTex, field: field)
+                                   shrink: Float(t.warpShrink), orbData: orbTex, field: field)
     }
 
     /// B — CPU-build a low-res signed AWAY-pull field (rg = 0.5-biased). Same sign as A (converge).

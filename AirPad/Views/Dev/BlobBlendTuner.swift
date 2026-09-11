@@ -119,6 +119,10 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var warpReach: Double { get { apD("warpReach", 220) } set { setD("warpReach", newValue) } }            // influence radius px
     var warpFalloff: Double { get { apD("warpFalloff", 0.5) } set { setD("warpFalloff", newValue) } }
     var warpReact: Double { get { apD("warpReact", 0.0) } set { setD("warpReact", newValue) } }             // colour reaction (0 = off)
+    var warpSign: Double { get { apD("warpSign", 1) } set { setD("warpSign", newValue) } }                  // +1 converge (mass dimple) · −1 diverge
+    var warpZoomFade: Double { get { apD("warpZoomFade", 1) } set { setD("warpZoomFade", newValue) } }       // fade the warp out when zoomed out (anti-alias)
+    var warpZoomThreshold: Double { get { apD("warpZoomThreshold", 1.5) } set { setD("warpZoomThreshold", newValue) } }  // cameraScale beyond which the fade starts
+    var warpZoomWiden: Double { get { apD("warpZoomWiden", 0) } set { setD("warpZoomWiden", newValue) } }    // widen reach with zoom (smoother field)
     var shadowOn: Bool { didSet { UserDefaults.standard.set(shadowOn, forKey: "blobTuner.shadowOn") } }
     var shadowZoomThreshold: Double { didSet { UserDefaults.standard.set(shadowZoomThreshold, forKey: "blobTuner.shadowZoomThreshold") } }  // cameraScale below which shadows appear
     var shadowZoomEase: Double { didSet { UserDefaults.standard.set(shadowZoomEase, forKey: "blobTuner.shadowZoomEase") } }
@@ -624,11 +628,19 @@ struct BlobTunerPanel: View {
             sectionLabel("GRID WARP — deform the dot grid around orbs (spike)")
             menuPick("Approach", $tuning.warpMode, ["Off", "In-shader A", "Field B"])
             if tuning.warpMode > 0 {
+                Button(tuning.warpSign >= 0 ? "Direction: CONVERGE (mass dimple)" : "Direction: DIVERGE (bulge)") {
+                    tuning.warpSign = tuning.warpSign >= 0 ? -1 : 1
+                }
+                .buttonStyle(.borderedProminent).tint(tuning.warpSign >= 0 ? .green : .orange)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 slider("Strength", $tuning.warpStrength, 0...80)
                 slider("Reach px", $tuning.warpReach, 40...500)
                 slider("Falloff", $tuning.warpFalloff, 0...1)
                 slider("Colour react", $tuning.warpReact, 0...0.2)
-                Text("A = per-fragment pull from the 48 nearest orbs (truest; cost scales with count). B = low-res field, CONSTANT grid cost at any orb count (may read blurrier / a frame behind = swim). Colour-react raises dot opacity where the grid compresses — may make the DARK grid legible. ★ Judge WHILE PANNING on device — wobble/jitter is invisible in a still.")
+                slider("Zoom fade", $tuning.warpZoomFade, 0...1)          // anti-alias: fade warp when zoomed out
+                slider("Zoom fade start", $tuning.warpZoomThreshold, 0.8...4)
+                slider("Zoom widen", $tuning.warpZoomWiden, 0...1)         // widen reach with zoom → smoother field
+                Text("CONVERGE = dots densify toward the orb (mass on a sheet). A = per-fragment pull from the 48 nearest (truest; cost scales); B = low-res field, CONSTANT grid cost (may swim / read a frame behind). Zoom-out JITTER is aliasing (a sharp field at low zoom) — Zoom-fade removes it (fade past the start scale); Zoom-widen keeps it smooth. Membership fade at the 48-set edge kills the set-swap pop. ★ Judge WHILE PANNING on device.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
             }
         }

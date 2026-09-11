@@ -2870,7 +2870,7 @@ final class CorpusPhysicsScene: SKScene {
         let mode = Float(t.warpMode)
         guard mode > 0.5 else {
             if lastWarpMode != 0 {
-                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, orbData: nil, field: nil)
+                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, sign: 1, orbData: nil, field: nil)
                 lastWarpMode = 0
             }
             return
@@ -2888,42 +2888,57 @@ final class CorpusPhysicsScene: SKScene {
         }
         scored.sort { $0.d < $1.d }
         let n = BackgroundGridNode.maxWarpOrbs
+        // MEMBERSHIP WEIGHT (fix 3): fade each orb's contribution to 0 over the last ~25% of the
+        // nearest-48 set, so an orb entering/leaving (rank crossing 48) does so at ~0 weight → no pop.
+        // Same shape as the retired glow's distance gate; kills the set-swap discontinuity.
+        func weight(_ i: Int) -> Double { 1 - smoothstepD(0.75, 1.0, Double(i) / Double(n)) }
+        var packed: [(sx: Double, sy: Double, w: Double)] = []
+        packed.reserveCapacity(n)
         var orbBytes = [UInt8](repeating: 0, count: n * 4)
-        for (i, e) in scored.prefix(n).enumerated() where e.sx > -0.5 && e.sx < 1.5 && e.sy > -0.5 && e.sy < 1.5 {
+        for (i, e) in scored.prefix(n).enumerated() {
+            let w = weight(i)
+            packed.append((e.sx, e.sy, w))
+            guard e.sx > -0.5, e.sx < 1.5, e.sy > -0.5, e.sy < 1.5 else { continue }
             let b = i * 4
             orbBytes[b] = UInt8(min(1, max(0, e.sx)) * 255)
             orbBytes[b + 1] = UInt8(min(1, max(0, e.sy)) * 255)
-            orbBytes[b + 2] = 255   // active
+            orbBytes[b + 2] = UInt8(min(1, max(0, w)) * 255)   // membership weight
         }
         let orbTex = SKTexture(data: Data(orbBytes), size: CGSize(width: n, height: 1))
         orbTex.filteringMode = .nearest
+        // ZOOM-OUT ALIASING (fix 2): (a) fade the warp as you zoom out; (b) widen the reach with zoom
+        // so the field stays smooth relative to pixel size. Both dials, per appearance.
+        let cs = Double(cameraScale)
+        let zf = 1 - t.warpZoomFade * min(1, max(0, (cs - t.warpZoomThreshold) / max(t.warpZoomThreshold, 0.1)))
+        let reachEff = t.warpReach * (1 + t.warpZoomWiden * max(0, cs - 1))
+        let strengthEff = t.warpStrength * zf
         var field: SKTexture? = nil
         if mode > 1.5 {
-            field = buildWarpField(orbs: Array(scored.prefix(n)), reach: Double(t.warpReach),
-                                   falloff: Double(t.warpFalloff), aspect: viewW / max(viewH, 1))
+            field = buildWarpField(orbs: packed, reach: reachEff, falloff: Double(t.warpFalloff), aspect: viewW / max(viewH, 1))
         }
-        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(t.warpStrength), reach: Float(t.warpReach),
-                                   falloff: Float(t.warpFalloff), react: Float(t.warpReact), orbData: orbTex, field: field)
+        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff), reach: Float(reachEff),
+                                   falloff: Float(t.warpFalloff), react: Float(t.warpReact), sign: Float(t.warpSign),
+                                   orbData: orbTex, field: field)
     }
 
-    /// B — CPU-build a low-res signed-pull field (rg = 0.5-biased pull). Cost O(texels × orbs), done
-    /// ONCE per frame → the grid shader's per-fragment cost is then constant regardless of orb count.
-    private func buildWarpField(orbs: [(d: CGFloat, sx: Double, sy: Double)], reach: Double, falloff: Double, aspect: Double) -> SKTexture {
+    /// B — CPU-build a low-res signed AWAY-pull field (rg = 0.5-biased). Same sign as A (converge).
+    /// Cost O(texels × orbs), done ONCE/frame → the grid's per-fragment cost is constant at any count.
+    private func buildWarpField(orbs: [(sx: Double, sy: Double, w: Double)], reach: Double, falloff: Double, aspect: Double) -> SKTexture {
         let fw = 40, fh = 80
-        let reachN = reach / 852.0   // ≈ screen-height fraction (viewport-agnostic enough for a field)
+        let reachN = reach / 852.0   // ≈ screen-height fraction
         var bytes = [UInt8](repeating: 128, count: fw * fh * 4)   // 128 = 0.5 = no pull
         for j in 0..<fh {
             let fy = (Double(j) + 0.5) / Double(fh)
             for i in 0..<fw {
                 let fx = (Double(i) + 0.5) / Double(fw)
                 var px = 0.0, py = 0.0
-                for o in orbs {
-                    var dx = o.sx - fx, dy = o.sy - fy
-                    dx *= aspect
-                    let dist = (dx * dx + dy * dy).squareRoot()
+                for o in orbs where o.w > 0.01 {
+                    let dx = fx - o.sx, dy = fy - o.sy        // FRAGMENT - orb = AWAY (converge, matches A)
+                    let dist = ((dx * aspect) * (dx * aspect) + dy * dy).squareRoot()
                     if dist > reachN || dist < 1e-4 { continue }
                     let f = pow(max(0, 1 - dist / reachN), 1 + falloff * 4)
-                    px += (dx / dist) * f; py += (dy / dist) * f
+                    let len = (dx * dx + dy * dy).squareRoot()
+                    px += (dx / len) * f * o.w; py += (dy / len) * f * o.w
                 }
                 let ex = min(1, max(-1, px)), ey = min(1, max(-1, py))
                 let b = (j * fw + i) * 4
@@ -2934,6 +2949,11 @@ final class CorpusPhysicsScene: SKScene {
         let tex = SKTexture(data: Data(bytes), size: CGSize(width: fw, height: fh))
         tex.filteringMode = .linear
         return tex
+    }
+
+    /// Double smoothstep (the shader has one; the scene didn't).
+    private func smoothstepD(_ e0: Double, _ e1: Double, _ x: Double) -> Double {
+        let t = min(1, max(0, (x - e0) / max(e1 - e0, 1e-6))); return t * t * (3 - 2 * t)
     }
 
     // MARK: - Drop shadow spike (cheap per-orb radial sprite, zoom-gated, batched layer)

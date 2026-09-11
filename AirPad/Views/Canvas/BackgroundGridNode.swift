@@ -121,28 +121,31 @@ enum BackgroundGridNode {
             vec2 screenOffset = (v_tex_coord - vec2(0.5)) * u_viewport_size;
             float aspect = u_viewport_size.x / max(u_viewport_size.y, 1.0);
 
-            // WARP: accumulate a screen-space displacement (px) from nearby orbs.
+            // WARP: displace the SAMPLE coordinate to make the dot lattice CONVERGE toward each orb
+            // (a mass on a stretched sheet, viewed top-down — density rises near the orb). Displacement
+            // maps invert: pushing the lookup AWAY drags the visible pattern INWARD. u_warp_sign flips it.
             vec2 warp = vec2(0.0);
             if (u_warp_mode > 0.5 && u_warp_mode < 1.5) {
-                // A — IN-SHADER. Orb screen positions ride u_orb_data (1 texel/orb: rg = pos 0..1,
-                // b = active). Constant 48-iteration loop (unrolls); inactive orbs contribute 0.
-                float reachN = u_warp_reach / max(u_viewport_size.y, 1.0);   // reach as screen fraction
+                // A — IN-SHADER. u_orb_data: rg = orb screen pos 0..1, b = MEMBERSHIP WEIGHT (fades to 0
+                // at the nearest-48 boundary so orbs entering/leaving the set don't POP). Constant loop.
+                float reachN = u_warp_reach / max(u_viewport_size.y, 1.0);
                 for (int i = 0; i < 48; i++) {
                     vec4 P = texture2D(u_orb_data, vec2((float(i) + 0.5) / u_orb_texw, 0.5));
-                    if (P.b < 0.5) continue;                                 // inactive slot
-                    vec2 d = P.rg - v_tex_coord;                             // orb - fragment (0..1)
-                    d.x *= aspect;                                          // isotropic distance
-                    float dist = length(d);
+                    float w = P.b;                                          // membership weight (0..1)
+                    if (w < 0.01) continue;
+                    vec2 rel = v_tex_coord - P.rg;                          // FRAGMENT - orb = AWAY (converge)
+                    vec2 relA = vec2(rel.x * aspect, rel.y);
+                    float dist = length(relA);
                     if (dist > reachN) continue;
                     float f = pow(clamp(1.0 - dist / reachN, 0.0, 1.0), 1.0 + u_warp_falloff * 4.0);
-                    vec2 dir = dist > 1e-4 ? d / dist : vec2(0.0);
-                    warp += dir * f;                                        // pull TOWARD the orb
+                    vec2 dir = length(rel) > 1e-4 ? rel / length(rel) : vec2(0.0);
+                    warp += dir * f * w;
                 }
-                warp *= u_warp_strength;
+                warp *= u_warp_strength * u_warp_sign;
             } else if (u_warp_mode > 1.5) {
-                // B — FIELD TEXTURE. rg = signed pull (0.5-biased), CPU-built at low res once/frame.
+                // B — FIELD TEXTURE. rg = signed AWAY-pull (0.5-biased), same sign convention as A.
                 vec4 F = texture2D(u_disp_field, v_tex_coord);
-                warp = (F.rg - vec2(0.5)) * 2.0 * u_warp_strength;
+                warp = (F.rg - vec2(0.5)) * 2.0 * u_warp_strength * u_warp_sign;
             }
             float warpMag = length(warp);                                   // px, for the colour reaction
 
@@ -244,6 +247,7 @@ enum BackgroundGridNode {
             SKUniform(name: "u_warp_reach",    float: 220),
             SKUniform(name: "u_warp_falloff",  float: 0.5),
             SKUniform(name: "u_warp_react",    float: 0),
+            SKUniform(name: "u_warp_sign",     float: 1),
             SKUniform(name: "u_orb_texw",      float: Float(maxWarpOrbs)),
             SKUniform(name: "u_orb_data",      texture: orbZero),
             SKUniform(name: "u_disp_field",    texture: fieldZero)
@@ -258,7 +262,7 @@ enum BackgroundGridNode {
     /// `orbData` (48×1 RGBA: rg = orb screen pos 0..1, b = active) drives mode 1; `field` (low-res
     /// RG signed-pull) drives mode 2. Pass nil to leave a texture untouched.
     static func setWarp(_ shape: SKShapeNode, mode: Float, strength: Float, reach: Float,
-                        falloff: Float, react: Float, orbData: SKTexture?, field: SKTexture?) {
+                        falloff: Float, react: Float, sign: Float, orbData: SKTexture?, field: SKTexture?) {
         guard let uniforms = shape.fillShader?.uniforms else { return }
         for u in uniforms {
             switch u.name {
@@ -267,6 +271,7 @@ enum BackgroundGridNode {
             case "u_warp_reach":    u.floatValue = reach
             case "u_warp_falloff":  u.floatValue = falloff
             case "u_warp_react":    u.floatValue = react
+            case "u_warp_sign":     u.floatValue = sign
             case "u_orb_data":      if let t = orbData { u.textureValue = t }
             case "u_disp_field":    if let t = field { u.textureValue = t }
             default: break

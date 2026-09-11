@@ -2867,6 +2867,20 @@ final class CorpusPhysicsScene: SKScene {
     func updateGridWarp() {
         let t = BlobFieldTuning.shared
         guard let grid = gridNode, let view = view else { return }
+        // `-GridWarpTest YES` — ONE orb dead-centre, strong. The distortion must be RADIALLY SYMMETRIC
+        // and CENTRED on the orb (still-frame verifiable). If it isn't, registration is still wrong.
+        if UserDefaults.standard.bool(forKey: "GridWarpTest") {
+            let n = BackgroundGridNode.maxWarpOrbs
+            var b = [UInt8](repeating: 0, count: n * 4)
+            b[0] = 128; b[1] = 128; b[2] = 255   // orb at screen (0.5, 0.5), weight 1
+            let tex = SKTexture(data: Data(b), size: CGSize(width: n, height: 1)); tex.filteringMode = .nearest
+            let m = Float(max(1, t.warpMode))
+            var f: SKTexture? = nil
+            if m > 1.5 { f = buildWarpField(orbs: [(0.5, 0.5, 1.0)], reach: 240, falloff: 0.4, viewW: Double(view.bounds.width), viewH: Double(view.bounds.height)) }
+            BackgroundGridNode.setWarp(grid, mode: m, strength: 70, reach: 240, falloff: 0.4, react: 0, sign: 1, orbData: tex, field: f)
+            lastWarpMode = Int(m)
+            return
+        }
         let mode = Float(t.warpMode)
         guard mode > 0.5 else {
             if lastWarpMode != 0 {
@@ -2914,7 +2928,7 @@ final class CorpusPhysicsScene: SKScene {
         let strengthEff = t.warpStrength * zf
         var field: SKTexture? = nil
         if mode > 1.5 {
-            field = buildWarpField(orbs: packed, reach: reachEff, falloff: Double(t.warpFalloff), aspect: viewW / max(viewH, 1))
+            field = buildWarpField(orbs: packed, reach: reachEff, falloff: Double(t.warpFalloff), viewW: viewW, viewH: viewH)
         }
         BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff), reach: Float(reachEff),
                                    falloff: Float(t.warpFalloff), react: Float(t.warpReact), sign: Float(t.warpSign),
@@ -2923,22 +2937,23 @@ final class CorpusPhysicsScene: SKScene {
 
     /// B — CPU-build a low-res signed AWAY-pull field (rg = 0.5-biased). Same sign as A (converge).
     /// Cost O(texels × orbs), done ONCE/frame → the grid's per-fragment cost is constant at any count.
-    private func buildWarpField(orbs: [(sx: Double, sy: Double, w: Double)], reach: Double, falloff: Double, aspect: Double) -> SKTexture {
+    private func buildWarpField(orbs: [(sx: Double, sy: Double, w: Double)], reach: Double, falloff: Double, viewW: Double, viewH: Double) -> SKTexture {
         let fw = 40, fh = 80
-        let reachN = reach / 852.0   // ≈ screen-height fraction
         var bytes = [UInt8](repeating: 128, count: fw * fh * 4)   // 128 = 0.5 = no pull
         for j in 0..<fh {
             let fy = (Double(j) + 0.5) / Double(fh)
+            let fragPy = (fy - 0.5) * viewH
             for i in 0..<fw {
                 let fx = (Double(i) + 0.5) / Double(fw)
+                let fragPx = (fx - 0.5) * viewW
                 var px = 0.0, py = 0.0
                 for o in orbs where o.w > 0.01 {
-                    let dx = fx - o.sx, dy = fy - o.sy        // FRAGMENT - orb = AWAY (converge, matches A)
-                    let dist = ((dx * aspect) * (dx * aspect) + dy * dy).squareRoot()
-                    if dist > reachN || dist < 1e-4 { continue }
-                    let f = pow(max(0, 1 - dist / reachN), 1 + falloff * 4)
-                    let len = (dx * dx + dy * dy).squareRoot()
-                    px += (dx / len) * f * o.w; py += (dy / len) * f * o.w
+                    let dx = fragPx - (o.sx - 0.5) * viewW      // FRAGMENT - orb, in PIXELS = AWAY (matches A)
+                    let dy = fragPy - (o.sy - 0.5) * viewH
+                    let dist = (dx * dx + dy * dy).squareRoot()  // real px, isotropic
+                    if dist > reach || dist < 1e-3 { continue }
+                    let f = pow(max(0, 1 - dist / reach), 1 + falloff * 4)
+                    px += (dx / dist) * f * o.w; py += (dy / dist) * f * o.w
                 }
                 let ex = min(1, max(-1, px)), ey = min(1, max(-1, py))
                 let b = (j * fw + i) * 4
@@ -3317,6 +3332,8 @@ final class CorpusPhysicsScene: SKScene {
             }
             if UserDefaults.standard.bool(forKey: "SPRLabels") {
                 self.injectLabelTestSpread()
+            } else if UserDefaults.standard.bool(forKey: "GridWarpTest") {
+                self.injectSyntheticCorpus(count: 1)   // grid must be VISIBLE for the single-orb symmetry test
             } else if UserDefaults.standard.bool(forKey: "GlowWireTest") {
                 self.injectSyntheticCorpus(count: 9)   // SPARSE → the ground (and its glow) is VISIBLE between orbs
             } else {

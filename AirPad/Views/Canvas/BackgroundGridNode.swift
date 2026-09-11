@@ -117,9 +117,9 @@ enum BackgroundGridNode {
         // --- Main ---
 
         void main() {
-            // Screen offset (px from viewport centre) BEFORE any warp.
+            // Screen offset (px from viewport centre) BEFORE any warp. EVERYTHING below is in PIXEL
+            // space — pixels are isotropic, so there is NO aspect correction and no unit mismatch.
             vec2 screenOffset = (v_tex_coord - vec2(0.5)) * u_viewport_size;
-            float aspect = u_viewport_size.x / max(u_viewport_size.y, 1.0);
 
             // WARP: displace the SAMPLE coordinate to make the dot lattice CONVERGE toward each orb
             // (a mass on a stretched sheet, viewed top-down — density rises near the orb). Displacement
@@ -128,22 +128,21 @@ enum BackgroundGridNode {
             if (u_warp_mode > 0.5 && u_warp_mode < 1.5) {
                 // A — IN-SHADER. u_orb_data: rg = orb screen pos 0..1, b = MEMBERSHIP WEIGHT (fades to 0
                 // at the nearest-48 boundary so orbs entering/leaving the set don't POP). Constant loop.
-                float reachN = u_warp_reach / max(u_viewport_size.y, 1.0);
                 for (int i = 0; i < 48; i++) {
                     vec4 P = texture2D(u_orb_data, vec2((float(i) + 0.5) / u_orb_texw, 0.5));
                     float w = P.b;                                          // membership weight (0..1)
                     if (w < 0.01) continue;
-                    vec2 rel = v_tex_coord - P.rg;                          // FRAGMENT - orb = AWAY (converge)
-                    vec2 relA = vec2(rel.x * aspect, rel.y);
-                    float dist = length(relA);
-                    if (dist > reachN) continue;
-                    float f = pow(clamp(1.0 - dist / reachN, 0.0, 1.0), 1.0 + u_warp_falloff * 4.0);
-                    vec2 dir = length(rel) > 1e-4 ? rel / length(rel) : vec2(0.0);
-                    warp += dir * f * w;
+                    vec2 orbPx = (P.rg - vec2(0.5)) * u_viewport_size;      // orb, px from centre
+                    vec2 rel = screenOffset - orbPx;                        // FRAGMENT - orb = AWAY (converge)
+                    float dist = length(rel);                              // real px (isotropic)
+                    if (dist > u_warp_reach) continue;
+                    float f = pow(clamp(1.0 - dist / u_warp_reach, 0.0, 1.0), 1.0 + u_warp_falloff * 4.0);
+                    vec2 dir = dist > 1e-3 ? rel / dist : vec2(0.0);       // unit direction, px space
+                    warp += dir * f * w;                                   // px (× strength below)
                 }
                 warp *= u_warp_strength * u_warp_sign;
             } else if (u_warp_mode > 1.5) {
-                // B — FIELD TEXTURE. rg = signed AWAY-pull (0.5-biased), same sign convention as A.
+                // B — FIELD TEXTURE. rg = signed AWAY-pull (0.5-biased), same px sign convention as A.
                 vec4 F = texture2D(u_disp_field, v_tex_coord);
                 warp = (F.rg - vec2(0.5)) * 2.0 * u_warp_strength * u_warp_sign;
             }

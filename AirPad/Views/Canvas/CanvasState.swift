@@ -121,6 +121,10 @@ final class CanvasState {
         /// in-scene on the shared curve; the pill applies `lodAlpha` to its text and
         /// `materialAlpha` to its capsule/stroke/shadow. Defaults to 1.
         var materialAlpha: CGFloat = 1
+        /// Declutter/edge fade [0,1], eased in-scene across frames. SEPARATE
+        /// from lodAlpha (zoom LOD) and materialAlpha (fill drop-out): this is
+        /// "is this label placed and on screen", not "how zoomed in are we".
+        var declutterAlpha: CGFloat = 1
         var id: String { key }
     }
 }

@@ -1638,56 +1638,65 @@ private struct LabelPill: View {
     }
 }
 
+/// Shared pill-box geometry for the Map region labels — ONE definition read by
+/// both the SwiftUI render (`TerritoryLabelPill`) and the in-scene declutter pass
+/// (`CorpusPhysicsScene.syncTerritoryLabelsToCanvasState`). Two copies of these
+/// numbers that can silently disagree is the exact failure this hoist prevents:
+/// the declutter box must match the pill it stands in for. `internal` so the scene
+/// (a different file, same module) can read it.
+enum RegionLabelPillMetrics {
+    static let fontSize: CGFloat = 15
+    static let hPad: CGFloat = 14
+    static let vPad: CGFloat = 7
+    static let minHeight: CGFloat = 30
+    static let approxGlyphWidth: CGFloat = 10.5  // Source Serif 4 15pt uppercase + tracking, empirical
+    /// Default overlap-declutter inset = `haloPlace` (a newcomer trying to WIN a slot).
+    /// The scene derives `haloKeep` (an incumbent) as this minus the tuner's hysteresis gap.
+    static let halo: CGFloat = 6
+
+    /// The RAW (un-haloed) pill box for a `charCount`-character label centred at `center`.
+    /// The halo is applied by the overlap test (which varies it for hysteresis); the edge
+    /// fade measures against this raw box.
+    static func box(charCount: Int, center: CGPoint) -> CGRect {
+        let textW = CGFloat(charCount) * approxGlyphWidth
+        let w = textW + hPad * 2
+        let h = max(fontSize + vPad * 2, minHeight)
+        return CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
+    }
+}
+
 /// Tag-anchored Map — territory name pills, screen-positioned from bridged
 /// centroids. Real `.ultraThinMaterial` glass; Source Serif 4; palette stroke.
+/// Visibility (edge fade + declutter hysteresis) is decided IN THE SCENE and
+/// carried on `declutterAlpha`; this layer only renders — it no longer culls.
 private struct TerritoryLabelLayer: View {
     let labels: [CanvasState.TerritoryLabelInfo]
 
-    private static let fontSize: CGFloat = 15
-    private static let hPad: CGFloat = 14
-    private static let vPad: CGFloat = 7
-    private static let minHeight: CGFloat = 30
-    private static let approxGlyphWidth: CGFloat = 10.5  // Source Serif 4 15pt uppercase + tracking, empirical
-    private static let halo: CGFloat = 6
-
     var body: some View {
+        // GeometryReader kept deliberately: it pins the pill coordinate space to the
+        // full-bleed overlay bounds (origin = view-bounds origin), matching the
+        // `view.convert` screen positions the scene bridges. Nothing here reads
+        // `geo` except the one-time DEBUG size probe (verifies geo.size == view.bounds.size).
         GeometryReader { geo in
-            let bounds = CGRect(origin: .zero, size: geo.size)
-            let visible = declutter(in: bounds)
             ZStack(alignment: .topLeading) {
-                ForEach(visible) { label in
-                    // Region-label zoom fade (computed in-scene, shared curve):
-                    // TEXT fades to a low floor; MATERIAL drops to 0 near the floor
-                    // so faint text alone can't obscure a legible node title.
+                #if DEBUG
+                Color.clear.onAppear {
+                    print("[region-labels] overlay geo.size=\(geo.size)")
+                }
+                #endif
+                // Render only what the scene has faded IN. Below epsilon the pill is
+                // DROPPED from the view tree (not `.opacity(0)`) — `.ultraThinMaterial`
+                // still rasterizes at zero opacity, so leaving it in defeats the point.
+                ForEach(labels.filter { $0.declutterAlpha > 0.001 }) { label in
+                    // Both scene-computed alphas fold in the declutter fade at the call
+                    // site (TerritoryLabelPill's own alpha handling is unchanged).
                     TerritoryLabelPill(text: label.name, colorHex: label.colorHex,
-                                       textAlpha: label.lodAlpha,
-                                       materialAlpha: label.materialAlpha)
+                                       textAlpha: label.lodAlpha * label.declutterAlpha,
+                                       materialAlpha: label.materialAlpha * label.declutterAlpha)
                         .position(label.screenPosition)
                 }
             }
         }
-    }
-
-    /// Greedy declutter in layout order (the engine already emits larger
-    /// continents first). Off-screen candidates are dropped; a candidate whose
-    /// padded bbox hits an already-placed one is skipped.
-    private func declutter(in bounds: CGRect) -> [CanvasState.TerritoryLabelInfo] {
-        var placed: [CGRect] = []
-        var visible: [CanvasState.TerritoryLabelInfo] = []
-        for label in labels {
-            let textW = CGFloat(label.name.count) * Self.approxGlyphWidth
-            let w = textW + Self.hPad * 2
-            let h = max(Self.fontSize + Self.vPad * 2, Self.minHeight)
-            let box = CGRect(x: label.screenPosition.x - w / 2,
-                             y: label.screenPosition.y - h / 2,
-                             width: w, height: h)
-                .insetBy(dx: -Self.halo, dy: -Self.halo)
-            if !box.intersects(bounds) { continue }
-            if placed.contains(where: { $0.intersects(box) }) { continue }
-            placed.append(box)
-            visible.append(label)
-        }
-        return visible
     }
 }
 
@@ -1706,15 +1715,17 @@ private struct TerritoryLabelPill: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.custom("SourceSerif4-Bold", size: 15))
+            // Font size + padding + minHeight read the SHARED RegionLabelPillMetrics so the
+            // rendered pill and the scene's declutter box can't drift apart.
+            .font(.custom("SourceSerif4-Bold", size: RegionLabelPillMetrics.fontSize))
             .tracking(1.5)
             // Dark (Solar Flare): byte-identical white@0.95. Light (Cucumber
             // Water): AppearancePalette.ink — the same token the detail view uses.
             .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.95) : AppearancePalette.ink)
             .opacity(textAlpha)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .frame(minHeight: 30)
+            .padding(.horizontal, RegionLabelPillMetrics.hPad)
+            .padding(.vertical, RegionLabelPillMetrics.vPad)
+            .frame(minHeight: RegionLabelPillMetrics.minHeight)
             // MATERIAL (fill + stroke + shadow) on its OWN alpha, so it can drop out
             // from under the still-visible text as the pill approaches its floor.
             .background {

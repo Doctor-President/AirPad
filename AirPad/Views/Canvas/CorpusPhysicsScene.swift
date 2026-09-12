@@ -686,6 +686,9 @@ final class CorpusPhysicsScene: SKScene {
     /// space for the SwiftUI overlay. Passing `[]` clears the overlay.
     func setTerritoryLabels(_ labels: [TerritoryLabel]) {
         territoryLabelData = labels
+        // C4: a rebuild / mode switch must not resurrect stale fade or incumbency.
+        regionLabelDeclutterAlpha.removeAll()
+        regionLabelPlacedLastFrame.removeAll()
     }
 
     /// Condensed system label font (SF Compact / condensed width) for the tiny
@@ -787,6 +790,58 @@ final class CorpusPhysicsScene: SKScene {
     /// True after we last wrote an empty territory-label set, so we clear the
     /// overlay once instead of every idle frame.
     private var lastTerritoryLabelsEmpty = true
+
+    // ── REGION-LABEL DECLUTTER / EDGE FADE (SHIPPING — runs in Release) ──────────────────────────
+    // Moved out of the SwiftUI layer so ONE place decides visibility, on LIVE positions (the layer
+    // had a frame-stale copy), and so the decision has per-frame state to EASE against — fixing the
+    // two pop causes: the hard screen-edge cull and the greedy overlap drop with no fade.
+    //
+    /// Per-key eased declutter/edge alpha [0,1], toward (placed ? edgeAlpha : 0). A new key starts at
+    /// 0 so it fades IN rather than popping. Pruned to live keys each frame; cleared in
+    /// `setTerritoryLabels` so a map rebuild / mode switch can't resurrect stale alphas.
+    private var regionLabelDeclutterAlpha: [String: CGFloat] = [:]
+    /// Keys that WON a slot last frame — incumbents. They get first refusal this frame with the
+    /// smaller `haloKeep`, so a pair straddling the overlap threshold stops oscillating.
+    private var regionLabelPlacedLastFrame: Set<String> = []
+    #if DEBUG
+    /// One-shot: log `view.bounds.size` once so it can be eyeballed against the overlay's
+    /// `geo.size` (logged in TerritoryLabelLayer) — the brief's coordinate-space check.
+    private var didLogRegionLabelBounds = false
+    #endif
+
+    /// Fade duration (s) for the region-label declutter ease. DEBUG reads the live tuner (T dials on
+    /// TestFlight); Release uses a provisional baked default (BlobFieldTuning is compiled out of
+    /// Release) — replace with T's dialed value when the arc bakes.
+    private var regionLabelFadeDuration: TimeInterval {
+        #if DEBUG
+        return max(0.05, BlobFieldTuning.shared.regionFadeDuration)
+        #else
+        return 0.45
+        #endif
+    }
+    /// Edge-fade margin M (points past the real bounds over which a leaving label fades out).
+    private var regionLabelEdgeMargin: CGFloat {
+        #if DEBUG
+        return CGFloat(BlobFieldTuning.shared.regionEdgeMargin)
+        #else
+        return 120
+        #endif
+    }
+    /// Hysteresis gap = haloPlace − haloKeep (points). haloPlace is the shared metric halo.
+    private var regionLabelHysteresisGap: CGFloat {
+        #if DEBUG
+        return CGFloat(BlobFieldTuning.shared.regionHysteresisGap)
+        #else
+        return 6   // matches the DEBUG spike default; haloKeep floors at 0 (max hysteresis)
+        #endif
+    }
+
+    /// Distance from `box` to `rect`: 0 while they intersect, growing as `box` moves outside.
+    private func rectGap(from box: CGRect, to rect: CGRect) -> CGFloat {
+        let dx = max(0, max(rect.minX - box.maxX, box.minX - rect.maxX))
+        let dy = max(0, max(rect.minY - box.maxY, box.minY - rect.maxY))
+        return hypot(dx, dy)
+    }
 
     private var neighborhoodCache: NeighborhoodCache? = nil
     private var nodeRadii: [String: CGFloat] = [:]
@@ -1354,7 +1409,7 @@ final class CorpusPhysicsScene: SKScene {
 
         updateCardPresentation()   // tap-driven card morph → SwiftUI overlay
         syncClusterCentroidsToCanvasState()
-        syncTerritoryLabelsToCanvasState()
+        syncTerritoryLabelsToCanvasState(currentTime: currentTime)
 
         // Resting state: continuous physics disabled (forces governed by algorithmic layout)
         // applyNeighborhoodForces and checkConvergence removed
@@ -1607,20 +1662,39 @@ final class CorpusPhysicsScene: SKScene {
     /// the mean of the territory members' LIVE sprite positions (so the pill
     /// rides with its nodes through pan/zoom/engagement), projected via
     /// `view.convert(_:from:)`. Empty data clears the overlay once.
-    private func syncTerritoryLabelsToCanvasState() {
+    private func syncTerritoryLabelsToCanvasState(currentTime: TimeInterval) {
         guard let view = self.view else { return }
+        // Local type (function body, not the closure) so it's capturable below.
+        struct RegionCandidate {
+            let key: String
+            let name: String
+            let colorHex: String
+            let screen: CGPoint
+            let box: CGRect
+        }
         MainActor.assumeIsolated {
             guard !territoryLabelData.isEmpty else {
                 if !lastTerritoryLabelsEmpty {
                     canvasState?.territoryLabels = []
                     lastTerritoryLabelsEmpty = true
                 }
+                // C4: an empty set clears the fade + incumbency state too.
+                regionLabelDeclutterAlpha.removeAll()
+                regionLabelPlacedLastFrame.removeAll()
                 return
             }
             lastTerritoryLabelsEmpty = false
 
-            var out: [CanvasState.TerritoryLabelInfo] = []
-            out.reserveCapacity(territoryLabelData.count)
+            #if DEBUG
+            if !didLogRegionLabelBounds {
+                didLogRegionLabelBounds = true
+                // Verify (brief §C): the overlay's geo.size (logged in TerritoryLabelLayer) should
+                // equal this — both are the same full-bleed frame. If they diverge, the pill
+                // positions (view coords) and the edge-fade bounds are in different spaces.
+                print("[region-labels] view.bounds.size=\(view.bounds.size)")
+            }
+            #endif
+
             // Region-label zoom fade — macro complement of the per-orb title LOD, at
             // T's device-dialed + accepted literals (ws-map-labels 2026-07-29; baked in
             // RegionLabelTuning, tuner deleted). xScale small = zoomed IN → floored;
@@ -1653,6 +1727,13 @@ final class CorpusPhysicsScene: SKScene {
                 }
             }
             #endif
+
+            // ── PASS 0 — project each label's LIVE centroid to screen (+ the DEBUG separation solver),
+            // and compute its RAW pill box. Stable order = territoryLabelData order (set once via
+            // setTerritoryLabels, never rebuilt per frame) → incumbency is meaningful downstream.
+            // Labels with no live members are skipped, exactly as before.
+            var candidates: [RegionCandidate] = []
+            candidates.reserveCapacity(territoryLabelData.count)
             for label in territoryLabelData {
                 var sum = CGPoint.zero
                 var n: CGFloat = 0
@@ -1690,15 +1771,79 @@ final class CorpusPhysicsScene: SKScene {
                     labelSolverPos[label.key] = screenCentroid
                 }
                 #endif
+                candidates.append(RegionCandidate(
+                    key: label.key, name: label.name, colorHex: label.colorHex,
+                    screen: screen,
+                    box: RegionLabelPillMetrics.box(charCount: label.name.count, center: screen)))
+            }
+
+            // ── DECLUTTER (moved from SwiftUI; runs AFTER the sep solver, on LIVE boxes) ──
+            // C1 edge fade replaces the old hard `intersects(bounds)` cull; C2 is a two-pass
+            // hysteresis overlap so a threshold-straddling pair stops fluttering.
+            let viewBounds = view.bounds
+            let M = regionLabelEdgeMargin
+            let expanded = viewBounds.insetBy(dx: -M, dy: -M)
+            let haloPlace = RegionLabelPillMetrics.halo
+            let haloKeep = max(0, haloPlace - regionLabelHysteresisGap)
+
+            var placedBoxes: [CGRect] = []
+            placedBoxes.reserveCapacity(candidates.count)
+            var placedKeys = Set<String>()
+            placedKeys.reserveCapacity(candidates.count)
+            // Claim a slot if, padded by the applicable halo, the box clears everything already
+            // claimed. Beyond the edge-fade margin it's never a candidate (target alpha 0). The
+            // claimed box is stored padded by its OWN halo, so incumbent↔incumbent clearance is
+            // 2·haloKeep while a newcomer must clear more → keeping is cheaper than winning: the gap.
+            func tryPlace(_ c: RegionCandidate, halo: CGFloat) {
+                guard c.box.intersects(expanded) else { return }
+                let padded = c.box.insetBy(dx: -halo, dy: -halo)
+                if placedBoxes.contains(where: { $0.intersects(padded) }) { return }
+                placedBoxes.append(padded)
+                placedKeys.insert(c.key)
+            }
+            // Pass 1: incumbents (placed last frame) first, in stable order, with the smaller haloKeep.
+            for c in candidates where regionLabelPlacedLastFrame.contains(c.key) {
+                tryPlace(c, halo: haloKeep)
+            }
+            // Pass 2: everyone else, in stable order, with the larger haloPlace, against pass-1's claims.
+            for c in candidates where !regionLabelPlacedLastFrame.contains(c.key) {
+                tryPlace(c, halo: haloPlace)
+            }
+
+            // ── C3 EASE + C1 edge alpha + C5 emit. dt = the scene's frame delta: lastUpdateTime is
+            // written at the END of update(), so here it still holds the previous frame's time.
+            // Clamped so a stale first frame can't produce a giant step.
+            let dt = min(max(currentTime - lastUpdateTime, 0), 0.1)
+            let fadeStep = CGFloat(dt / max(regionLabelFadeDuration, 0.001))   // full 0→1 fade in `duration` s
+            var out: [CanvasState.TerritoryLabelInfo] = []
+            out.reserveCapacity(candidates.count)
+            for c in candidates {
+                let placed = placedKeys.contains(c.key)
+                let d = rectGap(from: c.box, to: viewBounds)      // 0 on screen, → M as the box leaves
+                let edgeAlpha = 1 - smoothstepClamp(0, M, d)
+                let target: CGFloat = placed ? edgeAlpha : 0
+                var a = regionLabelDeclutterAlpha[c.key] ?? 0     // new key → fade IN from 0, never pop
+                if target > a { a = min(target, a + fadeStep) }
+                else if target < a { a = max(target, a - fadeStep) }
+                regionLabelDeclutterAlpha[c.key] = a
+                // C5: omit from the bridged array only ONCE the ease actually reached ~0 — never as a
+                // shortcut for target==0, or a fading-out label would vanish instead of being seen out.
+                guard a > 0.001 else { continue }
                 out.append(CanvasState.TerritoryLabelInfo(
-                    key: label.key,
-                    name: label.name,
-                    colorHex: label.colorHex,
-                    screenPosition: screen,
+                    key: c.key,
+                    name: c.name,
+                    colorHex: c.colorHex,
+                    screenPosition: c.screen,
                     lodAlpha: regionLodAlpha,
-                    materialAlpha: regionMaterialAlpha
+                    materialAlpha: regionMaterialAlpha,
+                    declutterAlpha: a
                 ))
             }
+            // C4: prune keys no longer in territoryLabelData (setTerritoryLabels also clears on
+            // rebuild; this keeps the dict size == live label count — the verify step checks it).
+            let liveKeys = Set(territoryLabelData.map { $0.key })
+            regionLabelDeclutterAlpha = regionLabelDeclutterAlpha.filter { liveKeys.contains($0.key) }
+            regionLabelPlacedLastFrame = placedKeys
             canvasState?.territoryLabels = out
         }
     }

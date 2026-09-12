@@ -157,6 +157,14 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var labelSepOn: Bool { didSet { UserDefaults.standard.set(labelSepOn, forKey: "blobTuner.labelSepOn") } }
     var labelTether: Double { didSet { UserDefaults.standard.set(labelTether, forKey: "blobTuner.labelTether") } }
 
+    /// Region-label fade + declutter hysteresis (ws-ios-polish) — the SHIPPING fix for pills popping
+    /// in/out while panning. The fade + hysteresis themselves run in Release; only THESE dials are
+    /// DEBUG-only (BlobFieldTuning is compiled out of Release, so CorpusPhysicsScene bakes provisional
+    /// Release defaults). Defaults are LOUD on purpose so the effect is obvious — T dials down, CC bakes.
+    var regionFadeDuration: Double { didSet { UserDefaults.standard.set(regionFadeDuration, forKey: "blobTuner.regionFadeDuration") } }   // seconds, full 0→1 fade
+    var regionEdgeMargin: Double { didSet { UserDefaults.standard.set(regionEdgeMargin, forKey: "blobTuner.regionEdgeMargin") } }         // points past the real edge over which a leaving label fades
+    var regionHysteresisGap: Double { didSet { UserDefaults.standard.set(regionHysteresisGap, forKey: "blobTuner.regionHysteresisGap") } } // haloPlace(6) − haloKeep; saturates at 6
+
     // ── PER-EXPRESSION blob params (addendum D) — 4 surfaces × {spread, anim, distort, blur}, each
     // INDEPENDENT. The card trio (vscroll/carousel/canvas) currently SHARE one set; this adds the axis.
     // Order = BlobExpr indices: 0 vscroll · 1 carousel · 2 grid · 3 hero. Off → each call site's baked values.
@@ -236,6 +244,11 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         orbGap          = dbl("blobTuner.orbGap", 30.0)
         labelSepOn      = UserDefaults.standard.bool(forKey: "blobTuner.labelSepOn")
         labelTether     = dbl("blobTuner.labelTether", 0.5)
+        // LOUD spike defaults (see the scene for the matching Release bakes): 0.45s fade, 120pt edge
+        // band, 6pt gap (haloKeep 0 = max hysteresis). NOT final — T dials, CC bakes.
+        regionFadeDuration  = dbl("blobTuner.regionFadeDuration", 0.45)
+        regionEdgeMargin    = dbl("blobTuner.regionEdgeMargin", 120.0)
+        regionHysteresisGap = dbl("blobTuner.regionHysteresisGap", 6.0)
         blobExprOverride = UserDefaults.standard.bool(forKey: "blobTuner.blobExprOverride")
         blobExprSel     = UserDefaults.standard.integer(forKey: "blobTuner.blobExprSel")
         blobSpread      = (UserDefaults.standard.array(forKey: "blobTuner.blobSpread") as? [Double]) ?? [1, 1, 1, 1]
@@ -446,6 +459,7 @@ struct BlobTunerPanel: View {
                     warpSection
                     shadowSection
                     separationSection
+                    regionLabelsSection
                     backgroundSection
                 }
                 .padding(.bottom, 6)
@@ -758,6 +772,17 @@ struct BlobTunerPanel: View {
         }
     }
 
+    private var regionLabelsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionLabel("REGION LABELS — fade + declutter hysteresis")
+            slider("Fade sec", $tuning.regionFadeDuration, 0.05...1.0)
+            slider("Edge margin", $tuning.regionEdgeMargin, 0...200)
+            slider("Hyst gap", $tuning.regionHysteresisGap, 0...40)
+            Text("Fixes pills POPPING while panning. Edge margin = the fade-out band (pt) past the real screen edge (0 = hard cull, today's bug). Declutter runs IN-SCENE now (live positions): two passes — incumbents keep their slot with a smaller halo, newcomers must clear haloPlace \(Int(RegionLabelPillMetrics.halo)) — so a threshold-straddling pair stops fluttering. Hyst gap = haloPlace − haloKeep; it SATURATES at \(Int(RegionLabelPillMetrics.halo)) (haloKeep floors at 0). Defaults LOUD — dial down, then CC bakes.")
+                .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
+        }
+    }
+
     private var exprSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -878,6 +903,7 @@ extension BlobFieldTuning {
           orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
           glow: on=\(glowOn)
           separation: orbGap=\(f(orbGap)) labelSep=\(labelSepOn) tether=\(f(labelTether))
+          region-labels: fadeDur=\(f(regionFadeDuration)) edgeMargin=\(f(regionEdgeMargin)) hysteresisGap=\(f(regionHysteresisGap))
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
           shadow: on=\(shadowOn) zoomThreshold=\(f(shadowZoomThreshold)) zoomEase=\(f(shadowZoomEase)) offset=(\(f(shadowOffsetX)), \(f(shadowOffsetY)))
           per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):

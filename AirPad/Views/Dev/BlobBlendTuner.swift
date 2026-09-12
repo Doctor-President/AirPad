@@ -443,11 +443,26 @@ struct BlobTunerPanel: View {
     @Bindable var tuning: BlobFieldTuning
     @StateObject private var meter = BlobFPSMeter()
     @State private var showRegionSlots = false
+    @State private var confirmImport = false
+    @State private var importReport: String?   // last import's applied/unknown/malformed summary
 
     var body: some View {
         VStack(spacing: 8) {
             header
             editingBanner
+            if let rep = importReport {
+                HStack(alignment: .top, spacing: 6) {
+                    Text(rep)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(.white).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button { importReport = nil } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                .padding(8)
+                .background(.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     blendSection
@@ -485,10 +500,21 @@ struct BlobTunerPanel: View {
             Text("real app · live").font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.5))
             Spacer()
             Button("Copy") { copyAll() }.buttonStyle(.bordered).controlSize(.small)
+            Button("Import") { confirmImport = true }.buttonStyle(.bordered).controlSize(.small).tint(.orange)
             Button { tuning.isPresented = false } label: {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.white.opacity(0.6))
             }
         }
+        .confirmationDialog("Replace ALL dials from the pasteboard's COMPLETE STATE export? This is NOT undoable.",
+                            isPresented: $confirmImport, titleVisibility: .visible) {
+            Button("Import — replace all dials", role: .destructive) { runImport() }
+            Button("Cancel", role: .cancel) { }
+        }
+    }
+
+    private func runImport() {
+        let res = tuning.importAll(UIPasteboard.general.string ?? "")
+        importReport = res.summary
     }
 
     /// The one, unambiguous "which appearance am I editing" indicator. Follows the MAP's live
@@ -916,6 +942,267 @@ extension BlobFieldTuning {
         fps=\(f(fps))  (editing now: \(mapIsLight ? "LIGHT" : "DARK"))
         ===== END =====
         """
+    }
+
+    /// Outcome of an `importAll`, surfaced in the panel. `applied` = dials restored; `ignored` =
+    /// recognised output-only/derived tokens deliberately skipped (resolvedHex, distinct, fps, the
+    /// per-appearance region display, editing-now); `unknown`/`malformed` are the ones worth showing.
+    struct ImportResult {
+        var applied = 0
+        var ignored = 0
+        var unknown: [String] = []
+        var malformed: [String] = []
+        var summary: String {
+            var s = "IMPORT: \(applied) applied · \(ignored) derived-skipped · \(unknown.count) unknown · \(malformed.count) malformed"
+            if !unknown.isEmpty  { s += "\nunknown: "  + unknown.joined(separator: ", ") }
+            if !malformed.isEmpty { s += "\nmalformed: " + malformed.joined(separator: ", ") }
+            if unknown.isEmpty && malformed.isEmpty { s += "\n✓ clean" }
+            return s
+        }
+    }
+
+    /// Parse a COMPLETE STATE export (the exact unversioned format `exportAll` emits) back into the
+    /// dials, THROUGH the normal setters so didSet-persistence and @Observable observers fire exactly
+    /// as when dialing. The DARK/LIGHT/SHARED split is honoured by SECTION HEADER, never by key name —
+    /// writing a DARK value onto a LIGHT property is the single worst failure here. Unknown keys are
+    /// skipped (not fatal), missing keys leave the current value untouched, malformed values are
+    /// skipped; the import never throws. Returns counts + skipped names for the panel to SHOW.
+    func importAll(_ text: String) -> ImportResult {
+        var r = ImportResult()
+        enum Sect { case dark, light, shared, none }
+        var sect: Sect = .none
+
+        // Per-appearance setters target `mapIsLight`; flip it to the section's appearance while that
+        // section is processed and restore at the end. All synchronous, so the scene never sees the
+        // transient value. (SHARED has no apk-based keys, so its appearance doesn't matter.)
+        let savedMapIsLight = mapIsLight
+        defer { mapIsLight = savedMapIsLight }
+
+        func bl(_ s: String) -> Bool? { s == "true" ? true : (s == "false" ? false : nil) }
+        func after(_ s: String, _ marker: String) -> String? {
+            guard let rng = s.range(of: marker) else { return nil }
+            return String(s[rng.upperBound...])
+        }
+        func kvDict(_ s: String) -> [String: String] {
+            var out: [String: String] = [:]
+            for tok in s.split(separator: " ") {
+                guard let eq = tok.firstIndex(of: "=") else { continue }
+                out[String(tok[..<eq])] = String(tok[tok.index(after: eq)...])
+            }
+            return out
+        }
+        // Apply a Double-valued key from a kv dict via a setter, counting applied/malformed. Missing
+        // key → leave untouched. `keyPath` is the dotted label for the report (e.g. "DARK.warp.mass").
+        func dbl(_ kv: inout [String: String], _ key: String, _ report: String, _ set: (Double) -> Void) {
+            guard let raw = kv.removeValue(forKey: key) else { return }
+            if let v = Double(raw) { set(v); r.applied += 1 } else { r.malformed.append(report) }
+        }
+        func boolean(_ kv: inout [String: String], _ key: String, _ report: String, _ set: (Bool) -> Void) {
+            guard let raw = kv.removeValue(forKey: key) else { return }
+            if let v = bl(raw) { set(v); r.applied += 1 } else { r.malformed.append(report) }
+        }
+        func intg(_ kv: inout [String: String], _ key: String, _ report: String, _ set: (Int) -> Void) {
+            guard let raw = kv.removeValue(forKey: key) else { return }
+            if let v = Int(raw) { set(v); r.applied += 1 } else { r.malformed.append(report) }
+        }
+        // Name→index via a table (blend/orb-blend/font). Malformed if the name isn't in the table.
+        func named(_ kv: inout [String: String], _ key: String, _ table: [String], _ report: String, _ set: (Int) -> Void) {
+            guard let raw = kv.removeValue(forKey: key) else { return }
+            if let i = table.firstIndex(of: raw) { set(i); r.applied += 1 } else { r.malformed.append(report) }
+        }
+        // Hex-or-sentinel: "(auto)"/"(token)"/"-" → empty string; else the literal.
+        func hex(_ kv: inout [String: String], _ key: String, _ report: String, _ set: (String) -> Void) {
+            guard let raw = kv.removeValue(forKey: key) else { return }
+            set((raw == "(auto)" || raw == "(token)" || raw == "-") ? "" : raw)
+            r.applied += 1
+        }
+        // Anything left in a kv dict after the known keys were pulled = unknown.
+        func drainUnknown(_ kv: [String: String], _ prefix: String) {
+            for k in kv.keys { r.unknown.append("\(prefix).\(k)") }
+        }
+        let modeNames = ["Off", "In-shader A", "Field B", "Relocate C"]
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("=====") { continue }
+            if line.hasPrefix("[") {
+                if line.hasPrefix("[DARK") { sect = .dark; mapIsLight = false }
+                else if line.hasPrefix("[LIGHT") { sect = .light; mapIsLight = true }
+                else if line.hasPrefix("[SHARED") { sect = .shared }
+                continue
+            }
+            if line.hasPrefix("fps=") { r.ignored += 1; continue }   // output-only
+            let isLight = (sect == .light)
+
+            // per-expression header (no ':' until a trailing "):", so handle before the colon split)
+            if line.hasPrefix("per-expression") {
+                if let ov = after(line, "override=")?.split(separator: " ").first.map(String.init), let b = bl(ov) {
+                    blobExprOverride = b; r.applied += 1
+                }
+                if let ed = after(line, "editing=") {
+                    let name = ed.replacingOccurrences(of: "):", with: "").trimmingCharacters(in: .whitespaces)
+                    if let i = Self.exprNames.firstIndex(of: name) { blobExprSel = i; r.applied += 1 }
+                    else { r.malformed.append("SHARED.per-expression.editing") }
+                }
+                continue
+            }
+
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let label = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+            let rest = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            let tag = "\(sect == .dark ? "DARK" : sect == .light ? "LIGHT" : sect == .shared ? "SHARED" : "?").\(label)"
+            var kv = kvDict(rest)
+
+            switch (label, sect) {
+            // ── PER-APPEARANCE ────────────────────────────────────────────────────────────────────
+            case ("blob", .dark), ("blob", .light):
+                named(&kv, "blend", Self.blendNames, "\(tag).blend") { self.blend = $0 }
+                boolean(&kv, "family", "\(tag).family") { self.family = $0 }
+                dbl(&kv, "spread", "\(tag).spread") { self.spread = $0 }
+                drainUnknown(kv, tag)
+            case ("orb", .dark), ("orb", .light):
+                dbl(&kv, "fill", "\(tag).fill") { self.orbFillOpacity = $0 }
+                dbl(&kv, "stroke", "\(tag).stroke") { self.orbStrokeOpacity = $0 }
+                dbl(&kv, "titleScale", "\(tag).titleScale") { self.orbTitleScale = $0 }
+                dbl(&kv, "titleOpacity", "\(tag).titleOpacity") { self.orbTitleOpacity = $0 }
+                hex(&kv, "titleColour", "\(tag).titleColour") { self.orbTitleColorHex = $0 }
+                named(&kv, "blend", Self.orbBlendNames, "\(tag).blend") { if isLight { self.orbBlendLight = $0 } else { self.orbBlendDark = $0 } }
+                drainUnknown(kv, tag)
+            case ("glow", .dark), ("glow", .light):
+                dbl(&kv, "radius", "\(tag).radius") { self.glowRadius = $0 }
+                dbl(&kv, "baseline", "\(tag).baseline") { self.glowBaseline = $0 }
+                dbl(&kv, "inBand", "\(tag).inBand") { self.glowInBand = $0 }
+                dbl(&kv, "falloff", "\(tag).falloff") { self.glowFalloff = $0 }
+                intg(&kv, "slots", "\(tag).slots") { self.glowSlotCount = $0 }
+                dbl(&kv, "opGamma", "\(tag).opGamma") { self.glowOpGamma = $0 }
+                dbl(&kv, "radGrow", "\(tag).radGrow") { self.glowRadGrow = $0 }
+                dbl(&kv, "radGamma", "\(tag).radGamma") { self.glowRadGamma = $0 }
+                dbl(&kv, "mask", "\(tag).mask") { self.glowMaskInner = $0 }
+                if let c = kv.removeValue(forKey: "colour") {
+                    if c == "follow-orb" { self.glowColorFollow = true; r.applied += 1 }
+                    else if c.hasPrefix("manual:") {
+                        self.glowColorFollow = false
+                        let h = String(c.dropFirst("manual:".count))
+                        let hexVal = (h == "-") ? "" : h
+                        if isLight { self.glowColorHexLight = hexVal } else { self.glowColorHexDark = hexVal }
+                        r.applied += 1
+                    } else { r.malformed.append("\(tag).colour") }
+                }
+                named(&kv, "pool", Self.blendNames, "\(tag).pool") { if isLight { self.glowBlendLight = $0 } else { self.glowBlendDark = $0 } }
+                named(&kv, "ground", Self.orbBlendNames, "\(tag).ground") { if isLight { self.glowGroundLight = $0 } else { self.glowGroundDark = $0 } }
+                drainUnknown(kv, tag)
+            case ("warp", .dark), ("warp", .light):
+                dbl(&kv, "strength", "\(tag).strength") { self.warpStrength = $0 }
+                dbl(&kv, "reach", "\(tag).reach") { self.warpReach = $0 }
+                dbl(&kv, "falloff", "\(tag).falloff") { self.warpFalloff = $0 }
+                dbl(&kv, "shrink", "\(tag).shrink") { self.warpShrink = $0 }
+                dbl(&kv, "mass", "\(tag).mass") { self.warpMass = $0 }
+                dbl(&kv, "massLaw", "\(tag).massLaw") { self.warpMassExp = $0 }
+                dbl(&kv, "massReach", "\(tag).massReach") { self.warpMassReach = $0 }
+                dbl(&kv, "react", "\(tag).react") { self.warpReact = $0 }
+                if let s = kv.removeValue(forKey: "sign") {
+                    if s == "converge" { self.warpSign = 1; r.applied += 1 }
+                    else if s == "diverge" { self.warpSign = -1; r.applied += 1 }
+                    else { r.malformed.append("\(tag).sign") }
+                }
+                dbl(&kv, "zoomFade", "\(tag).zoomFade") { self.warpZoomFade = $0 }
+                dbl(&kv, "zoomStart", "\(tag).zoomStart") { self.warpZoomThreshold = $0 }
+                dbl(&kv, "zoomWiden", "\(tag).zoomWiden") { self.warpZoomWiden = $0 }
+                drainUnknown(kv, tag)
+            case ("shadow", .dark), ("shadow", .light):
+                dbl(&kv, "spread", "\(tag).spread") { self.shadowSpread = $0 }
+                dbl(&kv, "opacity", "\(tag).opacity") { self.shadowOpacity = $0 }
+                hex(&kv, "colour", "\(tag).colour") { self.shadowColor = $0 }
+                named(&kv, "blend", Self.orbBlendNames, "\(tag).blend") { self.shadowBlend = $0 }
+                drainUnknown(kv, tag)
+            case ("ground", .dark), ("ground", .light):
+                hex(&kv, "map", "\(tag).map") { self.mapGroundHex = $0 }
+                hex(&kv, "card", "\(tag).card") { self.cardGroundHex = $0 }
+                drainUnknown(kv, tag)
+            case ("region", .dark), ("region", .light):
+                r.ignored += 1   // family/distinct/resolvedHex are all DERIVED display of SHARED state
+
+            // ── SHARED ────────────────────────────────────────────────────────────────────────────
+            case ("orb", .shared):
+                boolean(&kv, "override", "\(tag).override") { self.orbOverride = $0 }
+                dbl(&kv, "darkSat", "\(tag).darkSat") { self.orbDarkSat = $0 }
+                dbl(&kv, "darkVal", "\(tag).darkVal") { self.orbDarkVal = $0 }
+                dbl(&kv, "darkRim", "\(tag).darkRim") { self.orbDarkRim = $0 }
+                kv.removeValue(forKey: "titleFont")   // value has spaces → handled from `rest` below
+                if let raw = after(rest, "titleFont=") {
+                    let name = String(raw.prefix(while: { $0 != "(" })).trimmingCharacters(in: .whitespaces)
+                    if let i = Self.orbFontNames.firstIndex(of: name) { self.orbTitleFont = i; r.applied += 1 }
+                    else { r.malformed.append("\(tag).titleFont") }
+                }
+                drainUnknown(kv, tag)
+            case ("glow", .shared):
+                boolean(&kv, "on", "\(tag).on") { self.glowOn = $0 }
+                drainUnknown(kv, tag)
+            case ("separation", .shared):
+                dbl(&kv, "orbGap", "\(tag).orbGap") { self.orbGap = $0 }
+                boolean(&kv, "labelSep", "\(tag).labelSep") { self.labelSepOn = $0 }
+                dbl(&kv, "tether", "\(tag).tether") { self.labelTether = $0 }
+                drainUnknown(kv, tag)
+            case ("region-labels", .shared):
+                dbl(&kv, "fadeDur", "\(tag).fadeDur") { self.regionFadeDuration = $0 }
+                dbl(&kv, "edgeMargin", "\(tag).edgeMargin") { self.regionEdgeMargin = $0 }
+                dbl(&kv, "hysteresisGap", "\(tag).hysteresisGap") { self.regionHysteresisGap = $0 }
+                drainUnknown(kv, tag)
+            case ("warp", .shared):   // mode=<name with a space>
+                if let m = after(rest, "mode=")?.trimmingCharacters(in: .whitespaces) {
+                    if let i = modeNames.firstIndex(of: m) { self.warpMode = i; r.applied += 1 }
+                    else { r.malformed.append("\(tag).mode") }
+                }
+            case ("shadow", .shared):
+                boolean(&kv, "on", "\(tag).on") { self.shadowOn = $0 }
+                dbl(&kv, "zoomThreshold", "\(tag).zoomThreshold") { self.shadowZoomThreshold = $0 }
+                dbl(&kv, "zoomEase", "\(tag).zoomEase") { self.shadowZoomEase = $0 }
+                kv.removeValue(forKey: "offset")   // "(x, y)" has a space → parse from `rest`
+                if let raw = after(rest, "offset=(") {
+                    let nums = raw.replacingOccurrences(of: ")", with: "").split(separator: ",")
+                    if nums.count == 2, let x = Double(nums[0].trimmingCharacters(in: .whitespaces)),
+                       let y = Double(nums[1].trimmingCharacters(in: .whitespaces)) {
+                        self.shadowOffsetX = x; self.shadowOffsetY = y; r.applied += 2
+                    } else { r.malformed.append("\(tag).offset") }
+                }
+                drainUnknown(kv, tag)
+            case ("in-orb spike", .shared):
+                boolean(&kv, "on", "\(tag).on") { self.inOrbOn = $0 }
+                boolean(&kv, "cheap", "\(tag).cheap") { self.inOrbCheap = $0 }
+                drainUnknown(kv, tag)
+            case ("region", .shared):   // familyIndex=<int>  params{ k=v … }
+                if let fi = after(rest, "familyIndex=")?.split(separator: " ").first.map(String.init) {
+                    if let i = Int(fi) { self.regionFamily = i; r.applied += 1 } else { r.malformed.append("\(tag).familyIndex") }
+                }
+                if let o = rest.firstIndex(of: "{"), let c = rest.lastIndex(of: "}") {
+                    let body = String(rest[rest.index(after: o)..<c]).trimmingCharacters(in: .whitespaces)
+                    if body == "(all default)" {
+                        self.regionParams = [:]        // dumped whole → imported whole (round-trip)
+                    } else {
+                        var params: [String: Double] = [:]
+                        for tok in body.split(separator: " ") {
+                            guard let eq = tok.firstIndex(of: "=") else { continue }
+                            let k = String(tok[..<eq]); let v = String(tok[tok.index(after: eq)...])
+                            if let dv = Double(v) { params[k] = dv; r.applied += 1 } else { r.malformed.append("\(tag).params.\(k)") }
+                        }
+                        self.regionParams = params      // replace wholesale (the export dumps all of them)
+                    }
+                }
+
+            // ── per-expression rows (SHARED) ────────────────────────────────────────────────────────
+            case ("V-scroll", _), ("Carousel", _), ("Grid", _), ("Hero", _):
+                let i = Self.exprNames.firstIndex(of: label) ?? 0
+                dbl(&kv, "spread", "\(tag).spread") { var a = self.blobSpread; if i < a.count { a[i] = $0; self.blobSpread = a } }
+                dbl(&kv, "anim", "\(tag).anim") { var a = self.blobAnim; if i < a.count { a[i] = $0; self.blobAnim = a } }
+                dbl(&kv, "distort", "\(tag).distort") { var a = self.blobDistort; if i < a.count { a[i] = $0; self.blobDistort = a } }
+                dbl(&kv, "blur", "\(tag).blur") { var a = self.blobBlur; if i < a.count { a[i] = $0; self.blobBlur = a } }
+                drainUnknown(kv, tag)
+
+            default:
+                drainUnknown(kv, tag)   // unrecognised line label
+            }
+        }
+        return r
     }
 }
 

@@ -372,6 +372,9 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         computeCharacteristicSpacing()
+        #if DEBUG
+        cachedMeanRestingRadius = nil   // grid-warp mass reference re-derives from the new layout
+        #endif
     }
 
     // MARK: - Lens (a): global zoom-ramp on idle orb scale + label LOD
@@ -2675,6 +2678,10 @@ final class CorpusPhysicsScene: SKScene {
 
     // ── GRID-WARP + DROP-SHADOW SPIKE (2026-09-11, replaces the retired pooling glow) ──────────────
     private var lastWarpMode = 0
+
+    /// Cached corpus-wide resting-radius references (the grid-warp mass normalisers). Invalidated by
+    /// `captureRestingState`; the count/exponent checks are a second line of defence.
+    private var cachedMeanRestingRadius: (count: Int, exponent: Double, linear: Double, mass: Double)?
     private var dropShadowLayer: SKNode?          // one batched layer of soft shadow sprites (z below orbs)
     private var shadowSprites: [String: SKSpriteNode] = [:]
     private lazy var dropShadowTexture: SKTexture = Self.makeRadialShadowTexture()
@@ -2870,21 +2877,26 @@ final class CorpusPhysicsScene: SKScene {
         // `-GridWarpTest YES` — ONE orb dead-centre, strong. The distortion must be RADIALLY SYMMETRIC
         // and CENTRED on the orb (still-frame verifiable). If it isn't, registration is still wrong.
         if UserDefaults.standard.bool(forKey: "GridWarpTest") {
+            // Registration probe ONLY — mass stays uniform (range 1, reach ×1) so this keeps testing
+            // the one thing it exists to test: is the distortion radially symmetric and centred?
             let n = BackgroundGridNode.maxWarpOrbs
             var b = [UInt8](repeating: 0, count: n * 4)
             b[0] = 128; b[1] = 128; b[2] = 255   // orb at screen (0.5, 0.5), weight 1
+            b[3] = encodeReachMul(1)             // reach ×1
             let tex = SKTexture(data: Data(b), size: CGSize(width: n, height: 1)); tex.filteringMode = .nearest
             let m = Float(max(1, t.warpMode))
             var f: SKTexture? = nil
-            if m > 1.5 { f = buildWarpField(orbs: [(0.5, 0.5, 1.0)], reach: 240, falloff: 0.4, viewW: Double(view.bounds.width), viewH: Double(view.bounds.height)) }
-            BackgroundGridNode.setWarp(grid, mode: m, strength: 70, reach: 240, falloff: 0.4, react: 0, sign: 1, shrink: Float(t.warpShrink), orbData: tex, field: f)
+            if m > 1.5 { f = buildWarpField(orbs: [(0.5, 0.5, 1.0, 240)], falloff: 0.4, massRange: 1, viewW: Double(view.bounds.width), viewH: Double(view.bounds.height)) }
+            BackgroundGridNode.setWarp(grid, mode: m, strength: 70, reach: 240, falloff: 0.4, react: 0, sign: 1,
+                                       shrink: Float(t.warpShrink), massRange: 1, orbData: tex, field: f)
             lastWarpMode = Int(m)
             return
         }
         let mode = Float(t.warpMode)
         guard mode > 0.5 else {
             if lastWarpMode != 0 {
-                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, sign: 1, shrink: 0, orbData: nil, field: nil)
+                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, sign: 1,
+                                           shrink: 0, massRange: 1, orbData: nil, field: nil)
                 lastWarpMode = 0
             }
             return
@@ -2892,54 +2904,143 @@ final class CorpusPhysicsScene: SKScene {
         lastWarpMode = Int(mode)
         let cameraScale = cameraNode.xScale, camPos = cameraNode.position
         let viewW = Double(view.bounds.width), viewH = Double(view.bounds.height)
-        var scored: [(d: CGFloat, sx: Double, sy: Double)] = []
-        scored.reserveCapacity(nodeSprites.count)
-        for (_, sprite) in nodeSprites {
-            let p = sprite.position
-            let sx = 0.5 + Double((p.x - camPos.x) / cameraScale) / viewW
-            let sy = 0.5 + Double((p.y - camPos.y) / cameraScale) / viewH
-            scored.append((hypot(p.x - camPos.x, p.y - camPos.y), sx, sy))
-        }
-        scored.sort { $0.d < $1.d }
-        let n = BackgroundGridNode.maxWarpOrbs
-        // MEMBERSHIP WEIGHT (fix 3): fade each orb's contribution to 0 over the last ~25% of the
-        // nearest-48 set, so an orb entering/leaving (rank crossing 48) does so at ~0 weight → no pop.
-        // Same shape as the retired glow's distance gate; kills the set-swap discontinuity.
-        func weight(_ i: Int) -> Double { 1 - smoothstepD(0.75, 1.0, Double(i) / Double(n)) }
-        var packed: [(sx: Double, sy: Double, w: Double)] = []
-        packed.reserveCapacity(n)
-        var orbBytes = [UInt8](repeating: 0, count: n * 4)
-        for (i, e) in scored.prefix(n).enumerated() {
-            let w = weight(i)
-            packed.append((e.sx, e.sy, w))
-            guard e.sx > -0.5, e.sx < 1.5, e.sy > -0.5, e.sy < 1.5 else { continue }
-            let b = i * 4
-            orbBytes[b] = UInt8(min(1, max(0, e.sx)) * 255)
-            orbBytes[b + 1] = UInt8(min(1, max(0, e.sy)) * 255)
-            orbBytes[b + 2] = UInt8(min(1, max(0, w)) * 255)   // membership weight
-        }
-        let orbTex = SKTexture(data: Data(orbBytes), size: CGSize(width: n, height: 1))
-        orbTex.filteringMode = .nearest
         // ZOOM-OUT ALIASING (fix 2): (a) fade the warp as you zoom out; (b) widen the reach with zoom
-        // so the field stays smooth relative to pixel size. Both dials, per appearance.
+        // so the field stays smooth relative to pixel size. Both dials, per appearance. Hoisted above
+        // the orb loop because the per-orb reach (and therefore the ranking) is derived from it.
         let cs = Double(cameraScale)
         let zf = 1 - t.warpZoomFade * min(1, max(0, (cs - t.warpZoomThreshold) / max(t.warpZoomThreshold, 0.1)))
         let reachEff = t.warpReach * (1 + t.warpZoomWiden * max(0, cs - 1))
         let strengthEff = t.warpStrength * zf
+
+        // ── MASS ────────────────────────────────────────────────────────────────────────────────
+        // Pre-mass, u_orb_data carried NO radius term, so every orb displaced the lattice equally:
+        // a tiny node pinched as hard as the biggest one and the pinch bore no relation to what was
+        // visibly on screen. Weight each orb by its AMPLIFIED radius — the one the annulus produces
+        // and T actually sees — so an orb entering the annulus DEEPENS its dimple as it grows.
+        //
+        // ZOOM-INVARIANT by construction: sprite.xScale = resting × zoomRamp × annulusAmplify, so
+        // dividing by the ramp cancels the zoom term and leaves size + live annulus growth. That
+        // keeps warpZoomFade/warpZoomWiden the SOLE authority on zoom response — two independent
+        // derivations of "how should zoom change the warp" is how the recess bug got three guards.
+        //
+        // The references are corpus-wide and deliberately FRAME-INVARIANT: normalising against a
+        // per-frame max would make an orb's mass change because some OTHER orb moved — precisely the
+        // invisible driver this change exists to remove.
+        let ramp = max(Double(zoomRampScale(cameraScale)), 0.0001)
+        let influence = min(1, max(0, t.warpMass))
+        let exponent = max(0.1, t.warpMassExp)
+        // Reach influence is a SHARE of the mass influence, not a rival dial — otherwise "mass 0"
+        // wouldn't actually be the uniform baseline T is A/B-ing against.
+        let reachInfluence = min(1, max(0, t.warpMassReach)) * influence
+        let massCeil = Double(BackgroundGridNode.warpMassCeiling)
+        let massRange = BackgroundGridNode.warpMassRange(influence: influence)
+        let refs = massReferenceRadii(exponent: exponent)
+
+        var scored: [(key: Double, sx: Double, sy: Double, mass: Double, reach: Double)] = []
+        scored.reserveCapacity(nodeSprites.count)
+        for (id, sprite) in nodeSprites {
+            let p = sprite.position
+            let sx = 0.5 + Double((p.x - camPos.x) / cameraScale) / viewW
+            let sy = 0.5 + Double((p.y - camPos.y) / cameraScale) / viewH
+            let rWorld = Double((nodeIntrinsicRadii[id] ?? 30) * sprite.xScale) / ramp
+            // MASS LAW: displacement ∝ r^exponent. 1 = linear in radius; 2 = AREA, i.e. the actual
+            // mass of a disc — physically truer, and it makes big orbs dominate much harder.
+            // Mixed against 1.0 by the influence dial → influence 0 reproduces the uniform behaviour
+            // EXACTLY (and with massRange 1 the encodings below stay byte-identical to pre-mass).
+            let mass = min(massCeil, (1 - influence) + influence * pow(rWorld / refs.mass, exponent))
+            // REACH widens with the LINEAR radius ratio, never with the exponent — a disc of 4× the
+            // area is 2× the radius, so it deforms a ~2× wider region, not a 4× wider one. It also
+            // uses its OWN reference, so changing the mass law can't quietly move the reach too.
+            let rRatio = max(0.05, rWorld / refs.linear)            // 1 = a corpus-average orb
+            let reach = reachEff * min(3, max(0.25, 1 + reachInfluence * (rRatio - 1)))
+            // RANK by how far the orb's INFLUENCE CIRCLE is from the camera centre, not the orb
+            // itself: a heavy orb reaches further, so it must not be evicted from the 48-set by a
+            // nearer small one — the membership ramp below is now multiplied by mass, so it is a
+            // far louder artifact on a big orb than it ever was. At reachInfluence 0 this subtracts
+            // a constant from every key, so the ordering is identical to the pre-mass build.
+            let screenDist = Double(hypot(p.x - camPos.x, p.y - camPos.y)) / cs
+            scored.append((screenDist - reach, sx, sy, mass, reach))
+        }
+        scored.sort { $0.key < $1.key }
+        let n = BackgroundGridNode.maxWarpOrbs
+        // MEMBERSHIP WEIGHT (fix 3): fade each orb's contribution to 0 over the last ~25% of the
+        // nearest-48 set, so an orb entering/leaving (rank crossing 48) does so at ~0 weight → no pop.
+        // Same shape as the retired glow's distance gate; kills the set-swap discontinuity.
+        func membership(_ i: Int) -> Double { 1 - smoothstepD(0.75, 1.0, Double(i) / Double(n)) }
+        var packed: [(sx: Double, sy: Double, w: Double, reach: Double)] = []
+        packed.reserveCapacity(n)
+        var orbBytes = [UInt8](repeating: 0, count: n * 4)
+        for (i, e) in scored.prefix(n).enumerated() {
+            let w = membership(i) * e.mass
+            packed.append((e.sx, e.sy, w, e.reach))
+            guard e.sx > -0.5, e.sx < 1.5, e.sy > -0.5, e.sy < 1.5 else { continue }
+            let b = i * 4
+            orbBytes[b] = UInt8(min(1, max(0, e.sx)) * 255)
+            orbBytes[b + 1] = UInt8(min(1, max(0, e.sy)) * 255)
+            // b = membership × mass, divided by the SAME massRange the shader multiplies back in.
+            orbBytes[b + 2] = UInt8(min(255, max(0, w / massRange * 255)))
+            // a = this orb's reach multiplier (was the unused channel).
+            orbBytes[b + 3] = encodeReachMul(e.reach / max(reachEff, 0.001))
+        }
+        let orbTex = SKTexture(data: Data(orbBytes), size: CGSize(width: n, height: 1))
+        orbTex.filteringMode = .nearest
         var field: SKTexture? = nil
         if mode > 1.5 {
-            field = buildWarpField(orbs: packed, reach: reachEff, falloff: Double(t.warpFalloff), viewW: viewW, viewH: viewH)
+            field = buildWarpField(orbs: packed, falloff: Double(t.warpFalloff), massRange: massRange,
+                                   viewW: viewW, viewH: viewH)
         }
         BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff), reach: Float(reachEff),
                                    falloff: Float(t.warpFalloff), react: Float(t.warpReact), sign: Float(t.warpSign),
-                                   shrink: Float(t.warpShrink), orbData: orbTex, field: field)
+                                   shrink: Float(t.warpShrink), massRange: Float(massRange),
+                                   orbData: orbTex, field: field)
+    }
+
+    /// Pack a per-orb reach multiplier into the orb-data ALPHA channel (full-scale
+    /// `BackgroundGridNode.warpReachEncodeMax`). 8-bit → ~0.4% error at ×1; invisible on a reach of
+    /// 220px, and only mode A reads it at all (B/C get exact Doubles through `buildWarpField`).
+    private func encodeReachMul(_ mul: Double) -> UInt8 {
+        let full = Double(BackgroundGridNode.warpReachEncodeMax)
+        return UInt8(min(255, max(0, (mul / full * 255).rounded())))
+    }
+
+    /// The two corpus-wide reference radii the grid-warp mass normalises against (world units).
+    ///
+    /// `linear` = the plain mean resting radius, used for the REACH widening (which must not move
+    /// when the mass law changes). `mass` = the power mean `(mean rᵉ)^(1/e)`, chosen so that the
+    /// MEAN MASS over the resting corpus is exactly 1 whatever the exponent — switching the law
+    /// between linear and area then redistributes weight between big and small orbs WITHOUT
+    /// changing the overall gain, so T's already-dialled Strength keeps its meaning and the A/B
+    /// compares one thing at a time.
+    ///
+    /// Cached on (node count, exponent) and invalidated from `captureRestingState`. It must NOT
+    /// vary per frame, or an orb's mass would change because another orb moved — which is the
+    /// invisible driver this whole change exists to remove.
+    private func massReferenceRadii(exponent: Double) -> (linear: Double, mass: Double) {
+        if let c = cachedMeanRestingRadius, c.count == nodeSprites.count, c.exponent == exponent {
+            return (c.linear, c.mass)
+        }
+        var sum = 0.0, sumPow = 0.0
+        for id in nodeSprites.keys {
+            let r = Double(nodeRadii[id] ?? nodeIntrinsicRadii[id] ?? 30)
+            sum += r; sumPow += pow(r, exponent)
+        }
+        let n = Double(max(nodeSprites.count, 1))
+        let linear = nodeSprites.isEmpty ? 30 : max(1, sum / n)
+        let mass = nodeSprites.isEmpty ? 30 : max(1, pow(sumPow / n, 1 / exponent))
+        cachedMeanRestingRadius = (nodeSprites.count, exponent, linear, mass)
+        return (linear, mass)
     }
 
     /// B — CPU-build a low-res signed AWAY-pull field (rg = 0.5-biased). Same sign as A (converge).
     /// Cost O(texels × orbs), done ONCE/frame → the grid's per-fragment cost is constant at any count.
-    private func buildWarpField(orbs: [(sx: Double, sy: Double, w: Double)], reach: Double, falloff: Double, viewW: Double, viewH: Double) -> SKTexture {
+    /// `orbs.w` already carries membership × mass and `orbs.reach` is that orb's own mass-widened
+    /// reach, so B and C agree with A. This is the ONLY consumer for modes B/C, and it works in full
+    /// Double precision — the 8-bit squeeze happens once, at the encode below.
+    private func buildWarpField(orbs: [(sx: Double, sy: Double, w: Double, reach: Double)],
+                                falloff: Double, massRange: Double, viewW: Double, viewH: Double) -> SKTexture {
         let fw = 40, fh = 80
         var bytes = [UInt8](repeating: 128, count: fw * fh * 4)   // 128 = 0.5 = no pull
+        let invRange = 1 / max(massRange, 0.001)
         for j in 0..<fh {
             let fy = (Double(j) + 0.5) / Double(fh)
             let fragPy = (fy - 0.5) * viewH
@@ -2947,15 +3048,19 @@ final class CorpusPhysicsScene: SKScene {
                 let fx = (Double(i) + 0.5) / Double(fw)
                 let fragPx = (fx - 0.5) * viewW
                 var px = 0.0, py = 0.0
-                for o in orbs where o.w > 0.01 {
+                for o in orbs where o.w > 0.001 {
                     let dx = fragPx - (o.sx - 0.5) * viewW      // FRAGMENT - orb, in PIXELS = AWAY (matches A)
                     let dy = fragPy - (o.sy - 0.5) * viewH
                     let dist = (dx * dx + dy * dy).squareRoot()  // real px, isotropic
-                    if dist > reach || dist < 1e-3 { continue }
-                    let f = pow(max(0, 1 - dist / reach), 1 + falloff * 4)
+                    if dist > o.reach || dist < 1e-3 { continue }
+                    let f = pow(max(0, 1 - dist / o.reach), 1 + falloff * 4)
                     px += (dx / dist) * f * o.w; py += (dy / dist) * f * o.w
                 }
-                let ex = min(1, max(-1, px)), ey = min(1, max(-1, py))
+                // Encode against the same full-scale the shader decodes with. At influence 0 the
+                // range is 1 and this is the pre-mass encoding byte-for-byte; at influence 1 it is
+                // the mass ceiling, which is what stops a heavy orb's dimple CLIPPING flat at its
+                // core (the pre-mass field already saturated at 1.0 directly under an orb).
+                let ex = min(1, max(-1, px * invRange)), ey = min(1, max(-1, py * invRange))
                 let b = (j * fw + i) * 4
                 bytes[b] = UInt8((0.5 + ex * 0.5) * 255)
                 bytes[b + 1] = UInt8((0.5 + ey * 0.5) * 255)

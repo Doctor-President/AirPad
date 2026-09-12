@@ -124,6 +124,18 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var warpZoomThreshold: Double { get { apD("warpZoomThreshold", 1.5) } set { setD("warpZoomThreshold", newValue) } }  // cameraScale beyond which the fade starts
     var warpZoomWiden: Double { get { apD("warpZoomWiden", 0) } set { setD("warpZoomWiden", newValue) } }    // widen reach with zoom (smoother field)
     var warpShrink: Double { get { apD("warpShrink", 0.4) } set { setD("warpShrink", newValue) } }           // mode C: dots shrink near mass (depression recedes)
+    // MASS — how strongly an orb's own SIZE drives how deep/wide it dents the lattice. 0 = uniform
+    // (every orb displaces equally: the pre-mass behaviour, kept as the honest A/B baseline).
+    var warpMass: Double { get { apD("warpMass", 1) } set { setD("warpMass", newValue) } }                   // 0 uniform · 1 fully size-proportional
+    // Mass law. Defaults to 1 (LINEAR in radius), NOT 2 (area). Area is physically truer, but mode C
+    // is a dot-RELOCATION model: a dot can't move more than ~1 lattice cell without dropping out of
+    // the shader's 3×3 search, which caps the expressible pull at ~3.4 at T's dialled strength. The
+    // annulus alone multiplies radius by 2.2 — squared that's 4.84, i.e. area spends MORE than the
+    // whole usable range on growth and every orb in the band clamps flat. That is the same "all orbs
+    // pinch identically" failure being fixed here, just at the saturated end. Slider goes to 2.5 so
+    // the saturation is inspectable rather than asserted.
+    var warpMassExp: Double { get { apD("warpMassExp", 1) } set { setD("warpMassExp", newValue) } }          // 1 = linear in radius · 2 = AREA (a disc's real mass)
+    var warpMassReach: Double { get { apD("warpMassReach", 1) } set { setD("warpMassReach", newValue) } }    // big mass deforms a WIDER region, not only a deeper one
     var shadowOn: Bool { didSet { UserDefaults.standard.set(shadowOn, forKey: "blobTuner.shadowOn") } }
     var shadowZoomThreshold: Double { didSet { UserDefaults.standard.set(shadowZoomThreshold, forKey: "blobTuner.shadowZoomThreshold") } }  // cameraScale below which shadows appear
     var shadowZoomEase: Double { didSet { UserDefaults.standard.set(shadowZoomEase, forKey: "blobTuner.shadowZoomEase") } }
@@ -638,12 +650,17 @@ struct BlobTunerPanel: View {
                 slider("Reach px", $tuning.warpReach, 40...500)
                 slider("Falloff", $tuning.warpFalloff, 0...1)
                 if tuning.warpMode == 3 { slider("Dot shrink", $tuning.warpShrink, 0...1) }   // C: dots shrink near mass
+                slider("Mass influence", $tuning.warpMass, 0...1)               // 0 = uniform (pre-mass baseline)
+                slider("Mass law  1=r · 2=r² area", $tuning.warpMassExp, 0.5...2.5)
+                slider("Mass → reach", $tuning.warpMassReach, 0...1)            // big mass = WIDER dent too
                 slider("Colour react", $tuning.warpReact, 0...0.2)
                 slider("Zoom fade", $tuning.warpZoomFade, 0...1)          // anti-alias: fade warp when zoomed out
                 slider("Zoom fade start", $tuning.warpZoomThreshold, 0.8...4)
                 slider("Zoom widen", $tuning.warpZoomWiden, 0...1)         // widen reach with zoom → smoother field
                 Text("CONVERGE = dots densify toward the orb (mass on a sheet). A = per-fragment pull (truest, cost scales); B = low-res field (constant grid cost, may swim). ★ C = DOT RELOCATION: moves each dot's CENTRE + draws a ROUND dot (uses B's field) so dots don't SMEAR — and they SHRINK near mass (depression recedes). Zoom-fade/widen kill the zoom-out aliasing. ★ Judge WHILE PANNING on device.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
+                Text("★ MASS: each orb now dents the lattice in proportion to its AMPLIFIED radius (the size the annulus makes, ÷ the corpus mean) — so a dimple DEEPENS as its orb grows through the band, instead of every orb pinching equally. ★ Influence 0 = the old uniform behaviour, the honest A/B baseline (it gates Mass→reach too, so one dial gets you back). Law defaults to 1 (LINEAR in radius): mode C can only move a dot ~1 cell, so pull above ~3.4 does nothing, and area (r²) spends 4.8× of that on annulus growth alone → every orb in the band clamps flat, which is the same failure at the other end. Push it to 2 to SEE that saturate. The law only redistributes weight — mean mass stays 1 — so Strength keeps its meaning either way. Mass→reach widens the dent with the LINEAR radius (4× area = 2× radius = ~2× wider). Zoom-INVARIANT on purpose — Zoom fade/widen stay the only zoom authority.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.cyan.opacity(0.85))
             }
         }
     }
@@ -843,6 +860,8 @@ extension BlobFieldTuning {
               blob: blend=\(blendN(apIAt("blend", 0, light: L))) family=\(apBAt("family", true, light: L)) spread=\(d("spread", 0.5))
               orb: fill=\(d("orbFillOpacity", 1)) stroke=\(d("orbStrokeOpacity", 1)) titleScale=\(d("orbTitleScale", 1)) titleOpacity=\(d("orbTitleOpacity", 1)) titleColour=\(tc.isEmpty ? "(auto)" : tc) blend=\(orbN(L ? orbBlendLight : orbBlendDark))
               glow: radius=\(d("glowRadius", 3)) baseline=\(d("glowBaseline", 0)) inBand=\(d("glowInBand", 1)) falloff=\(d("glowFalloff", 0.6)) slots=\(apIAt("glowSlotCount", 40, light: L)) opGamma=\(d("glowOpGamma", 1)) radGrow=\(d("glowRadGrow", 0)) radGamma=\(d("glowRadGamma", 1)) mask=\(d("glowMaskInner", 0)) colour=\(apBAt("glowColorFollow", true, light: L) ? "follow-orb" : "manual:\(gcol.isEmpty ? "-" : gcol)") pool=\(blendN(L ? glowBlendLight : glowBlendDark)) ground=\(orbN(L ? glowGroundLight : glowGroundDark))
+              warp: strength=\(d("warpStrength", 22)) reach=\(d("warpReach", 220)) falloff=\(d("warpFalloff", 0.5)) shrink=\(d("warpShrink", 0.4)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 2)) massReach=\(d("warpMassReach", 1)) react=\(d("warpReact", 0)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge") zoomFade=\(d("warpZoomFade", 1)) zoomStart=\(d("warpZoomThreshold", 1.5)) zoomWiden=\(d("warpZoomWiden", 0))
+              shadow: spread=\(d("shadowSpread", 1.6)) opacity=\(d("shadowOpacity", 0.35)) colour=\(apHexAt("shadowColor", "", light: L).isEmpty ? "(auto)" : apHexAt("shadowColor", "", light: L)) blend=\(orbN(apIAt("shadowBlend", 0, light: L)))
               ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
               region: family=\(rfam.displayName) distinct=\(RegionPalette.distinctSlotCount(rfam, isLight: L))/12 resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
             """
@@ -859,6 +878,8 @@ extension BlobFieldTuning {
           orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
           glow: on=\(glowOn)
           separation: orbGap=\(f(orbGap)) labelSep=\(labelSepOn) tether=\(f(labelTether))
+          warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
+          shadow: on=\(shadowOn) zoomThreshold=\(f(shadowZoomThreshold)) zoomEase=\(f(shadowZoomEase)) offset=(\(f(shadowOffsetX)), \(f(shadowOffsetY)))
           per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):
         \(exprRow(0))
         \(exprRow(1))

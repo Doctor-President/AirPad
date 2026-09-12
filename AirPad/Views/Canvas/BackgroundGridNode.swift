@@ -104,8 +104,17 @@ enum BackgroundGridNode {
         // coordinate before the existing SDF runs (nothing new is drawn). Two approaches, live-
         // switchable by u_warp_mode: 1 = IN-SHADER (per-fragment summed orb pull, CONSTANT loop
         // bound = 48 to dodge the uniform-gated-loop → Metal landmine); 2 = FIELD TEXTURE (a low-res
-        // displacement field, CPU-built once/frame → constant per-fragment cost). 0 = off (byte-id).
+        // displacement field, CPU-built once/frame → constant per-fragment cost); 3 = DOT RELOCATION
+        // (mode C, the one T is ruling on — moves dot CENTRES using B's field). 0 = off (byte-id).
         // MAXWARPORBS is a compile constant so the loop unrolls.
+        //
+        // MASS (2026-09-11 addendum): every orb used to displace the lattice by exactly the same
+        // amount — a tiny node pinched as hard as the biggest one, so visual weight and gravitational
+        // weight didn't correspond and the deformation read as unnatural. Each orb's contribution is
+        // now weighted by its AMPLIFIED radius (the size the annulus produces, i.e. the size actually
+        // on screen), and its reach widens with that radius too. The CPU packs the result; the shader
+        // just decodes it against `u_warp_mass_range` (= 1 when the mass-influence dial is 0, which
+        // makes BOTH the orb texture and the field byte-identical to the pre-mass encoding).
         let source = """
         // --- Helpers (must precede main per GLSL ES rules) ---
 
@@ -126,31 +135,39 @@ enum BackgroundGridNode {
             // maps invert: pushing the lookup AWAY drags the visible pattern INWARD. u_warp_sign flips it.
             vec2 warp = vec2(0.0);
             if (u_warp_mode > 0.5 && u_warp_mode < 1.5) {
-                // A — IN-SHADER. u_orb_data: rg = orb screen pos 0..1, b = MEMBERSHIP WEIGHT (fades to 0
-                // at the nearest-48 boundary so orbs entering/leaving the set don't POP). Constant loop.
+                // A — IN-SHADER. u_orb_data, per orb:
+                //   rg = orb screen pos 0..1
+                //   b  = MEMBERSHIP × MASS, ÷ u_warp_mass_range. Membership fades to 0 at the
+                //        nearest-48 boundary so orbs entering/leaving the set don't POP; mass is the
+                //        orb's amplified radius relative to the corpus mean (1 = an average orb).
+                //   a  = that orb's OWN REACH multiplier, ÷ \(Self.warpReachEncodeMax) — a big mass
+                //        deforms a WIDER region, not only a deeper one.
+                // Constant loop bound.
                 for (int i = 0; i < 48; i++) {
                     vec4 P = texture2D(u_orb_data, vec2((float(i) + 0.5) / u_orb_texw, 0.5));
-                    float w = P.b;                                          // membership weight (0..1)
-                    if (w < 0.01) continue;
+                    float w = P.b * u_warp_mass_range;                      // membership × mass
+                    if (w < 0.002) continue;
+                    float reach = u_warp_reach * (P.a * \(Self.warpReachEncodeMax));   // per-orb, mass-widened
                     vec2 orbPx = (P.rg - vec2(0.5)) * u_viewport_size;      // orb, px from centre
                     vec2 rel = screenOffset - orbPx;                        // FRAGMENT - orb = AWAY (converge)
                     float dist = length(rel);                              // real px (isotropic)
-                    if (dist > u_warp_reach) continue;
-                    float f = pow(clamp(1.0 - dist / u_warp_reach, 0.0, 1.0), 1.0 + u_warp_falloff * 4.0);
+                    if (dist > reach) continue;
+                    float f = pow(clamp(1.0 - dist / reach, 0.0, 1.0), 1.0 + u_warp_falloff * 4.0);
                     vec2 dir = dist > 1e-3 ? rel / dist : vec2(0.0);       // unit direction, px space
                     warp += dir * f * w;                                   // px (× strength below)
                 }
                 warp *= u_warp_strength * u_warp_sign;
             } else if (u_warp_mode > 1.5 && u_warp_mode < 2.5) {
-                // B — FIELD TEXTURE. rg = signed AWAY-pull (0.5-biased), same px sign convention as A.
+                // B — FIELD TEXTURE. rg = signed AWAY-pull (0.5-biased), full-scale = u_warp_mass_range,
+                // same px sign convention as A.
                 vec4 F = texture2D(u_disp_field, v_tex_coord);
-                warp = (F.rg - vec2(0.5)) * 2.0 * u_warp_strength * u_warp_sign;
+                warp = (F.rg - vec2(0.5)) * (2.0 * u_warp_mass_range) * u_warp_strength * u_warp_sign;
             }
             // C (mode 3) leaves worldPos UNSHIFTED — dots move, space doesn't (no smear); the SDF below
             // relocates cell centres. Still capture the fragment's pull for the colour reaction.
             float warpMag = length(warp);                                   // px, for the colour reaction
             if (u_warp_mode > 2.5) {
-                warpMag = length((texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * 2.0) * u_warp_strength;
+                warpMag = length((texture2D(u_disp_field, v_tex_coord).rg - vec2(0.5)) * (2.0 * u_warp_mass_range)) * u_warp_strength;
             }
 
             // Reconstruct world position from the WARPED screen offset. SpriteKit camera convention:
@@ -192,22 +209,32 @@ enum BackgroundGridNode {
                 // coordinate reformulations do). Check the containing cell + its 8 NEIGHBOURS (3×3 =
                 // 9 cells/layer) because a moved dot can land in a neighbour's cell. Dots also SHRINK
                 // near mass (a depression recedes from the viewer). All bounds constant → unrolls.
+                // The field's pull now carries MASS (full-scale u_warp_mass_range), so a big orb both
+                // moves dots further and shrinks them harder — the dimple deepens with visible size.
+                float kBase = u_warp_strength * u_camera_scale;   // world units per unit of pull
                 float ps[3]; ps[0] = p0; ps[1] = p1; ps[2] = p2;
                 float as[3]; as[0] = a0; as[1] = a1; as[2] = a2;
                 float covs[3]; covs[0] = 0.0; covs[1] = 0.0; covs[2] = 0.0;
                 for (int L = 0; L < 3; L++) {
                     float p = ps[L];
+                    // The 3×3 search can only find a dot that stayed inside ONE cell. Mass lets the
+                    // offset exceed a cell (the FINE lattice p0 could already overshoot pre-mass), and
+                    // past that a dot silently vanishes — so cap the offset per LAYER, not globally.
+                    float maxOff = 0.9 * p;
                     vec2 cell = floor(worldPos / p);
                     float cov = 0.0;
                     for (int ny = -1; ny <= 1; ny++) {
                         for (int nx = -1; nx <= 1; nx++) {
                             vec2 cc = (cell + vec2(float(nx), float(ny)) + 0.5) * p;    // cell centre, world
                             vec2 ccUV = ((cc - u_camera_position) / u_camera_scale) / u_viewport_size + vec2(0.5);
-                            vec2 pull = (texture2D(u_disp_field, ccUV).rg - vec2(0.5)) * 2.0;   // AWAY-from-orb
+                            vec2 pull = (texture2D(u_disp_field, ccUV).rg - vec2(0.5)) * (2.0 * u_warp_mass_range);
+                            float pullLen = length(pull);                  // reused by the shrink below
                             // RELOCATION inverts vs sample-displacement: to CONVERGE, move the dot
                             // centre TOWARD the orb (−away). sign flips it (button: Converge/Diverge).
-                            vec2 moved = cc - pull * (u_warp_strength * u_warp_sign * u_camera_scale);
-                            float shrink = clamp(1.0 - u_warp_shrink * length(pull), 0.15, 1.0);
+                            float off = pullLen * kBase;
+                            float k = off > maxOff ? kBase * (maxOff / off) : kBase;
+                            vec2 moved = cc - pull * (k * u_warp_sign);
+                            float shrink = clamp(1.0 - u_warp_shrink * pullLen, 0.15, 1.0);
                             float d = length(worldPos - moved) - baseR * shrink;
                             cov = max(cov, 1.0 - smoothstep(0.0, feather, d));
                         }
@@ -275,6 +302,7 @@ enum BackgroundGridNode {
             SKUniform(name: "u_warp_react",    float: 0),
             SKUniform(name: "u_warp_sign",     float: 1),
             SKUniform(name: "u_warp_shrink",   float: 0.4),   // mode 3: dots shrink near mass (depression recedes)
+            SKUniform(name: "u_warp_mass_range", float: 1),   // 1 = mass influence 0 → encodings byte-identical
             SKUniform(name: "u_orb_texw",      float: Float(maxWarpOrbs)),
             SKUniform(name: "u_orb_data",      texture: orbZero),
             SKUniform(name: "u_disp_field",    texture: fieldZero)
@@ -285,23 +313,48 @@ enum BackgroundGridNode {
     /// In-shader loop bound (constant → unrolls, dodges the uniform-gated-loop landmine).
     static let maxWarpOrbs = 48
 
-    /// Per-frame push of the warp state (spike). `mode` 0 off · 1 in-shader · 2 field.
-    /// `orbData` (48×1 RGBA: rg = orb screen pos 0..1, b = active) drives mode 1; `field` (low-res
-    /// RG signed-pull) drives mode 2. Pass nil to leave a texture untouched.
+    /// Ceiling on a single orb's mass multiplier, and therefore the full-scale of BOTH 8-bit
+    /// encodings (orb-data `b` and the displacement field's `rg`) at mass influence 1. Doubles as
+    /// the clip point of the summed field — pre-mass it was 1.0, which orb centres already SATURATED,
+    /// so without this headroom a heavy orb's dimple would flatten to a normal orb's at its core.
+    ///
+    /// 4 is not arbitrary: mode C clamps a dot's relocation to 0.9 of a lattice cell (see the shader),
+    /// which at the dialled strength caps the expressible pull at ~3.4, and the dot-shrink term floors
+    /// out around 2.1. Past ~4 the extra magnitude is invisible but would still cost every encoded
+    /// value precision, so this is the point where headroom stops buying anything.
+    static let warpMassCeiling: Float = 4
+
+    /// Full-scale of the per-orb REACH multiplier packed into orb-data `a`.
+    static let warpReachEncodeMax: Float = 4
+
+    /// The single source of truth for the mass encoding scale: the CPU divides by it, the shader
+    /// multiplies by it (`u_warp_mass_range`). At influence 0 it is exactly 1, so both encodings
+    /// reduce to the pre-mass ones and the A/B baseline is a true baseline.
+    static func warpMassRange(influence: Double) -> Double {
+        1 + min(1, max(0, influence)) * (Double(warpMassCeiling) - 1)
+    }
+
+    /// Per-frame push of the warp state (spike). `mode` 0 off · 1 in-shader · 2 field · 3 relocate.
+    /// `orbData` (48×1 RGBA: rg = orb screen pos 0..1 · b = membership × mass ÷ `massRange` ·
+    /// a = per-orb reach multiplier ÷ `warpReachEncodeMax`) drives mode 1; `field` (low-res RG
+    /// signed-pull, same `massRange` full-scale) drives modes 2 and 3. Pass nil to leave a texture
+    /// untouched. `massRange` MUST be `warpMassRange(influence:)` — it is what both ends decode with.
     static func setWarp(_ shape: SKShapeNode, mode: Float, strength: Float, reach: Float,
-                        falloff: Float, react: Float, sign: Float, shrink: Float, orbData: SKTexture?, field: SKTexture?) {
+                        falloff: Float, react: Float, sign: Float, shrink: Float, massRange: Float,
+                        orbData: SKTexture?, field: SKTexture?) {
         guard let uniforms = shape.fillShader?.uniforms else { return }
         for u in uniforms {
             switch u.name {
-            case "u_warp_mode":     u.floatValue = mode
-            case "u_warp_strength": u.floatValue = strength
-            case "u_warp_reach":    u.floatValue = reach
-            case "u_warp_falloff":  u.floatValue = falloff
-            case "u_warp_react":    u.floatValue = react
-            case "u_warp_sign":     u.floatValue = sign
-            case "u_warp_shrink":   u.floatValue = shrink
-            case "u_orb_data":      if let t = orbData { u.textureValue = t }
-            case "u_disp_field":    if let t = field { u.textureValue = t }
+            case "u_warp_mode":       u.floatValue = mode
+            case "u_warp_strength":   u.floatValue = strength
+            case "u_warp_reach":      u.floatValue = reach
+            case "u_warp_falloff":    u.floatValue = falloff
+            case "u_warp_react":      u.floatValue = react
+            case "u_warp_sign":       u.floatValue = sign
+            case "u_warp_shrink":     u.floatValue = shrink
+            case "u_warp_mass_range": u.floatValue = massRange
+            case "u_orb_data":        if let t = orbData { u.textureValue = t }
+            case "u_disp_field":      if let t = field { u.textureValue = t }
             default: break
             }
         }

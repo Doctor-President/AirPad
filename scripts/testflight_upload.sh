@@ -8,6 +8,12 @@
 #
 # Usage:  ~/Developer/AirPad/scripts/testflight_upload.sh
 #
+#   AIRPAD_TF_DEV_TUNERS=1  — compile the `#if DEBUG` dev tuners INTO the Release archive
+#   (SWIFT_ACTIVE_COMPILATION_CONDITIONS gains DEBUG, still -O). This is how T dials a spike
+#   on TestFlight, where neither print() nor os_log reaches him. It is deliberately a FLAG and
+#   never project.yml, so an App Store build can't pick it up by accident — and it verifies a
+#   known tuner symbol is actually in the binary afterwards rather than trusting the flag.
+#
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,6 +63,11 @@ say "Xcode: $(xcodebuild -version | head -1)  |  Key $ASC_KEY_ID  Team $TEAM_ID 
 # ---- 1. Archive (Release). API key lets xcodebuild provision the ----
 #         distribution cert + App Store profile headlessly on first run.
 rm -rf "$ARCHIVE_PATH" "$EXPORT_DIR"
+DEV_TUNER_ARGS=()
+if [[ "${AIRPAD_TF_DEV_TUNERS:-0}" == "1" ]]; then
+  say "dev tuners: ON — DEBUG code compiled into the Release archive"
+  DEV_TUNER_ARGS+=("SWIFT_ACTIVE_COMPILATION_CONDITIONS=\$(inherited) DEBUG")
+fi
 say "Archiving…"
 xcodebuild \
   -project AirPad.xcodeproj \
@@ -65,11 +76,38 @@ xcodebuild \
   -destination 'generic/platform=iOS' \
   -archivePath "$ARCHIVE_PATH" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+  "${DEV_TUNER_ARGS[@]+"${DEV_TUNER_ARGS[@]}"}" \
   -allowProvisioningUpdates \
   -authenticationKeyPath "$ASC_KEY_PATH" \
   -authenticationKeyID "$ASC_KEY_ID" \
   -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
   archive || die "Archive failed — see xcodebuild output above."
+
+# The flag is not the evidence: a silently dropped build setting looks exactly like a clean build,
+# so confirm the tuner is really in the shipped Mach-O before uploading.
+#
+# Two traps this has already hit, hence the shape below:
+#   • Swift stores string literals of <=15 UTF-8 bytes INLINE in the String struct, so they never
+#     appear in the binary. A short probe reports 0 and reads as "absent". Probes must be LONG.
+#   • `grep -r` over a Mach-O does not find them either; `strings` does. And under `set -o pipefail`
+#     a no-match grep in a $( ) assignment kills the script with NO message at all.
+# So: use strings, tolerate no-match, and require a POSITIVE CONTROL — a string known to ship in
+# Release — to pass first. Without the control, "0 hits" proves nothing about the build.
+if [[ "${AIRPAD_TF_DEV_TUNERS:-0}" == "1" ]]; then
+  APP_DIR="$ARCHIVE_PATH/Products/Applications/AirPad.app"
+  BINS=("$APP_DIR/AirPad")
+  [[ -f "$APP_DIR/AirPad.debug.dylib" ]] && BINS+=("$APP_DIR/AirPad.debug.dylib")   # Xcode 16+ split
+  count_in() { local pat="$1" n=0 b hits; for b in "${BINS[@]}"; do
+      hits=$(strings -a "$b" | grep -cF "$pat" || true); n=$(( n + hits )); done; printf '%s' "$n"; }
+
+  control=$(count_in "u_camera_position")                        # a Release-shipping literal
+  (( control > 0 )) || die "Verification is broken: the control string is absent too, so a 0 for the
+  tuner would mean nothing. Not uploading."
+  tuner=$(count_in "COMPLETE STATE (both appearances)")           # tuner export header, DEBUG-only
+  (( tuner > 0 )) || die "Dev tuners requested but absent from the archive — the flag did not take
+  (control probe found $control, so the check itself is sound). Not uploading."
+  say "dev tuners verified in the archive (tuner $tuner hit(s), control $control)"
+fi
 
 # ---- 2. Export for the App Store (produces the .ipa) ----
 say "Exporting (App Store)…"

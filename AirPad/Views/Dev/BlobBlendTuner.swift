@@ -624,10 +624,22 @@ struct BlobTunerPanel: View {
                 slider("Lightness", regionBind("lightness", def.lightness), 0...1)
                 slider("Hue rotate", regionBind("hueStart", def.hueStart), 0...1)
                 slider("Hue spread", regionBind("hueSpread", def.hueSpread), 0.1...1)
-                let distinct = RegionPalette.distinctSlotCount(fam, isLight: isLight)
-                Text("Distinguishable: \(distinct)/12 slots  (ΔE≥12, normal-vision)")
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(distinct >= 12 ? .green : (distinct >= 9 ? .yellow : .red))
+                let dc = RegionPalette.distinctCounts(fam, isLight: isLight)
+                // Three readings side by side: a family that only separates for normal vision is
+                // not good enough — ~8% of users (and T) see the D/P columns.
+                HStack(spacing: 8) {
+                    Text("distinct")
+                        .font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.5))
+                    Text("N \(dc.normal)/12")
+                        .foregroundStyle(dc.normal >= 12 ? .green : (dc.normal >= 9 ? .yellow : .red))
+                    Text("· D \(dc.deutan)/12")
+                        .foregroundStyle(dc.deutan >= 12 ? .green : (dc.deutan >= 9 ? .yellow : .red))
+                    Text("· P \(dc.protan)/12")
+                        .foregroundStyle(dc.protan >= 12 ? .green : (dc.protan >= 9 ? .yellow : .red))
+                }
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                Text("N = normal vision · D = deuteranopia · P = protanopia (Machado 2009 @1.0, ΔE≥12). Hue alone separates poorly under CVD — LIGHTNESS spread is what survives, which is why the generator holds OKLCH L constant and you vary it per family.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.cyan.opacity(0.8))
                 HStack(spacing: 2) {
                     ForEach(0..<RegionPalette.slotCount, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 2)
@@ -900,6 +912,7 @@ extension BlobFieldTuning {
             let cg = apHexAt("cardGroundHex", "", light: L)
             let gcol = L ? glowColorHexLight : glowColorHexDark
             let rfam = RegionPaletteFamily(rawValue: regionFamily) ?? .current
+            let rdc = RegionPalette.distinctCounts(rfam, isLight: L)   // one pass; 3 readings
             return """
             [\(L ? "LIGHT" : "DARK")]
               blob: blend=\(blendN(apIAt("blend", 0, light: L))) family=\(apBAt("family", true, light: L)) spread=\(d("spread", 0.5))
@@ -908,7 +921,7 @@ extension BlobFieldTuning {
               warp: strength=\(d("warpStrength", 22)) reach=\(d("warpReach", 220)) falloff=\(d("warpFalloff", 0.5)) shrink=\(d("warpShrink", 0.4)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 2)) massReach=\(d("warpMassReach", 1)) react=\(d("warpReact", 0)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge") zoomFade=\(d("warpZoomFade", 1)) zoomStart=\(d("warpZoomThreshold", 1.5)) zoomWiden=\(d("warpZoomWiden", 0))
               shadow: spread=\(d("shadowSpread", 1.6)) opacity=\(d("shadowOpacity", 0.35)) colour=\(apHexAt("shadowColor", "", light: L).isEmpty ? "(auto)" : apHexAt("shadowColor", "", light: L)) blend=\(orbN(apIAt("shadowBlend", 0, light: L)))
               ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
-              region: family=\(rfam.displayName) distinct=\(RegionPalette.distinctSlotCount(rfam, isLight: L))/12 resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
+              region: family=\(rfam.displayName) distinct=\(rdc.normal)/12 cvd=D\(rdc.deutan)/P\(rdc.protan) resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
             """
         }
         func exprRow(_ i: Int) -> String {

@@ -138,24 +138,58 @@ enum RegionPalette {
 
     // MARK: - Distinguishability
 
-    /// How many of the 12 slots stay mutually DISTINCT (min pairwise CIE76 ΔE ≥ `threshold`) in a
-    /// family + appearance. A family with narrow hue span / very low chroma / extreme lightness
-    /// collapses hues → fewer distinct slots. Reported to T (hard constraint: a dozen+ regions
-    /// must be told apart). ΔE ~12 ≈ "clearly different"; caveat: this is normal-vision ΔE, not CVD.
-    static func distinctSlotCount(_ f: RegionPaletteFamily, isLight: Bool, threshold: Double = 12) -> Int {
-        var cols: [(Double, Double, Double)] = []
+    /// The three distinctness readings for a family + appearance.
+    struct DistinctCounts { var normal: Int; var deutan: Int; var protan: Int }
+
+    /// How many of the 12 slots stay mutually DISTINCT (min pairwise CIE76 ΔE ≥ `threshold`) —
+    /// for NORMAL vision and under deuteranopia / protanopia simulation.
+    ///
+    /// ★ Why CVD is counted too: the old reading was normal-vision ΔE by its own admission, which
+    /// is the wrong test for this app — T is colourblind, and so is ~8% of the male population.
+    /// A family that only separates for a normal-vision reviewer fails the actual users. The
+    /// constraint ("a dozen+ regions must be tellable apart") has to hold under simulation.
+    /// Simulation is Machado et al. 2009 at severity 1.0, applied in LINEAR RGB (the space the
+    /// matrices are defined in), then converted to Lab for the same greedy ΔE count.
+    static func distinctCounts(_ f: RegionPaletteFamily, isLight: Bool, threshold: Double = 12) -> DistinctCounts {
+        var linear: [(Double, Double, Double)] = []
+        linear.reserveCapacity(slotCount)
         for s in 0..<slotCount {
             let c = color(isLight: isLight, slot: s)
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
             c.getRed(&r, green: &g, blue: &b, alpha: &a)
-            cols.append(rgbToLab(Double(r), Double(g), Double(b)))
+            linear.append((srgbToLinear(Double(r)), srgbToLinear(Double(g)), srgbToLinear(Double(b))))
         }
-        // Greedily keep slots whose ΔE to every already-kept slot is ≥ threshold.
-        var kept: [(Double, Double, Double)] = []
-        for c in cols {
-            if kept.allSatisfy({ deltaE($0, c) >= threshold }) { kept.append(c) }
+        func count(_ transform: ((Double, Double, Double)) -> (Double, Double, Double)) -> Int {
+            // Greedily keep slots whose ΔE to every already-kept slot is ≥ threshold.
+            var kept: [(Double, Double, Double)] = []
+            for c in linear {
+                let lab = labFromLinear(transform(c))
+                if kept.allSatisfy({ deltaE($0, lab) >= threshold }) { kept.append(lab) }
+            }
+            return kept.count
         }
-        return kept.count
+        return DistinctCounts(normal: count { $0 },
+                              deutan: count(simulateDeutan),
+                              protan: count(simulateProtan))
+    }
+
+    /// Normal-vision count (unchanged behaviour/signature — callers that only want the headline).
+    static func distinctSlotCount(_ f: RegionPaletteFamily, isLight: Bool, threshold: Double = 12) -> Int {
+        distinctCounts(f, isLight: isLight, threshold: threshold).normal
+    }
+
+    // MARK: - CVD simulation (Machado et al. 2009, severity 1.0) — LINEAR RGB in, linear RGB out.
+
+    private static func simulateDeutan(_ c: (Double, Double, Double)) -> (Double, Double, Double) {
+        ( 0.367322 * c.0 + 0.860646 * c.1 - 0.227968 * c.2,
+          0.280085 * c.0 + 0.672501 * c.1 + 0.047413 * c.2,
+         -0.011820 * c.0 + 0.042940 * c.1 + 0.968881 * c.2)
+    }
+
+    private static func simulateProtan(_ c: (Double, Double, Double)) -> (Double, Double, Double) {
+        ( 0.152286 * c.0 + 1.052583 * c.1 - 0.204868 * c.2,
+          0.114503 * c.0 + 0.786281 * c.1 + 0.099216 * c.2,
+         -0.003882 * c.0 - 0.048116 * c.1 + 1.051998 * c.2)
     }
 
     // MARK: - Colour maths — sRGB ↔ linear ↔ OKLab ↔ OKLCH (Ottosson), plus Lab/ΔE for distinctness.
@@ -217,7 +251,13 @@ enum RegionPalette {
     }
 
     private static func rgbToLab(_ r: Double, _ g: Double, _ b: Double) -> (Double, Double, Double) {
-        let R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b)
+        labFromLinear((srgbToLinear(r), srgbToLinear(g), srgbToLinear(b)))
+    }
+
+    /// CIE-Lab from LINEAR sRGB — the entry point the CVD path needs (its matrices operate in
+    /// linear RGB, so re-encoding to sRGB just to decode again would be lossy noise).
+    private static func labFromLinear(_ c: (Double, Double, Double)) -> (Double, Double, Double) {
+        let R = clamp01(c.0), G = clamp01(c.1), B = clamp01(c.2)
         let x = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047
         let y = (R * 0.2126 + G * 0.7152 + B * 0.0722)
         let z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883

@@ -163,7 +163,7 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     /// Release defaults). Defaults are LOUD on purpose so the effect is obvious — T dials down, CC bakes.
     var regionFadeDuration: Double { didSet { UserDefaults.standard.set(regionFadeDuration, forKey: "blobTuner.regionFadeDuration") } }   // seconds, full 0→1 fade
     var regionEdgeMargin: Double { didSet { UserDefaults.standard.set(regionEdgeMargin, forKey: "blobTuner.regionEdgeMargin") } }         // points past the real edge over which a leaving label fades
-    var regionHysteresisGap: Double { didSet { UserDefaults.standard.set(regionHysteresisGap, forKey: "blobTuner.regionHysteresisGap") } } // haloPlace(6) − haloKeep; saturates at 6
+    var regionHysteresisGap: Double { didSet { UserDefaults.standard.set(regionHysteresisGap, forKey: "blobTuner.regionHysteresisGap") } } // EXTRA inset a newcomer needs beyond an incumbent: haloPlace = 6 + this (0 = none)
 
     // ── PER-EXPRESSION blob params (addendum D) — 4 surfaces × {spread, anim, distort, blur}, each
     // INDEPENDENT. The card trio (vscroll/carousel/canvas) currently SHARE one set; this adds the axis.
@@ -245,7 +245,7 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         labelSepOn      = UserDefaults.standard.bool(forKey: "blobTuner.labelSepOn")
         labelTether     = dbl("blobTuner.labelTether", 0.5)
         // LOUD spike defaults (see the scene for the matching Release bakes): 0.45s fade, 120pt edge
-        // band, 6pt gap (haloKeep 0 = max hysteresis). NOT final — T dials, CC bakes.
+        // band, 6pt newcomer-extra (a newcomer must clear 12 vs an incumbent's 6). NOT final.
         regionFadeDuration  = dbl("blobTuner.regionFadeDuration", 0.45)
         regionEdgeMargin    = dbl("blobTuner.regionEdgeMargin", 120.0)
         regionHysteresisGap = dbl("blobTuner.regionHysteresisGap", 6.0)
@@ -803,8 +803,8 @@ struct BlobTunerPanel: View {
             sectionLabel("REGION LABELS — fade + declutter hysteresis")
             slider("Fade sec", $tuning.regionFadeDuration, 0.05...1.0)
             slider("Edge margin", $tuning.regionEdgeMargin, 0...200)
-            slider("Hyst gap", $tuning.regionHysteresisGap, 0...40)
-            Text("Fixes pills POPPING while panning. Edge margin = the fade-out band (pt) past the real screen edge (0 = hard cull, today's bug). Declutter runs IN-SCENE now (live positions): two passes — incumbents keep their slot with a smaller halo, newcomers must clear haloPlace \(Int(RegionLabelPillMetrics.halo)) — so a threshold-straddling pair stops fluttering. Hyst gap = haloPlace − haloKeep; it SATURATES at \(Int(RegionLabelPillMetrics.halo)) (haloKeep floors at 0). Defaults LOUD — dial down, then CC bakes.")
+            slider("Newcomer extra", $tuning.regionHysteresisGap, 0...40)
+            Text("Fixes pills POPPING while panning. Edge margin = the fade-out band (pt) past the real screen edge (0 = hard cull, today's bug). Declutter runs IN-SCENE now (live positions): two passes — an incumbent KEEPS its slot at the fixed \(Int(RegionLabelPillMetrics.halo))pt inset, a NEWCOMER must clear that PLUS 'Newcomer extra' — so a threshold-straddling pair stops fluttering. ★ Newcomer extra = the EXTRA inset beyond an incumbent (0 = no hysteresis, the old behaviour); the whole 0–40 is live now — it used to saturate at \(Int(RegionLabelPillMetrics.halo)), so any value dialed before is INVALID and needs re-dialing. Defaults LOUD — dial down, then CC bakes.")
                 .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
         }
     }

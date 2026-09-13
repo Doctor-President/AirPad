@@ -203,7 +203,6 @@
 		989BB937F008E0994246E6CC /* CoverFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C49FE808E3476860F4E68D4F /* CoverFlowView.swift */; };
 		98B5E99326DE7512F0B6C859 /* CitationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE654FD7C01A6BC0AAB228A /* CitationSheet.swift */; };
 		99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0642041A7F8A258DF0FF065C /* QuarantineStore.swift */; };
-		9A345FF14942AC2FA3C5C20C /* RegionLabelSKSpike.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2158A7029A9A3B95B5635A9E /* RegionLabelSKSpike.swift */; };
 		9BBBB45D21CADBD3E042E4E9 /* StrandService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 780B6A68830590DBDA5189D1 /* StrandService.swift */; };
 		9CA473D3F2ECA00AAC3BBEC2 /* SubstrateWhitening.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */; };
 		9CC24D2F472D010E7128EB08 /* NodeGradientBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 497A2D223E494E948D445DFF /* NodeGradientBackground.swift */; };
@@ -385,7 +384,6 @@
 		1F0919534CCB6765FBE4D8F0 /* Fraunces_72pt-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Fraunces_72pt-Bold.ttf"; sourceTree = "<group>"; };
 		20ED1D435BF9E254D634DF37 /* AirPadShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = AirPadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		2130A9999E650B2EDAEFA80B /* SourceSerif4-BoldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceSerif4-BoldItalic.ttf"; sourceTree = "<group>"; };
-		2158A7029A9A3B95B5635A9E /* RegionLabelSKSpike.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionLabelSKSpike.swift; sourceTree = "<group>"; };
 		217AB37B8F4C87CAF915AFD6 /* FieldPairsGrid.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FieldPairsGrid.swift; sourceTree = "<group>"; };
 		219BB28A054C465CCA88BA43 /* TagTerritoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagTerritoryLayout.swift; sourceTree = "<group>"; };
 		21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryMigrationSelfTest.swift; sourceTree = "<group>"; };
@@ -1084,7 +1082,6 @@
 				C7F45D427FC028C393CD6750 /* PaletteColor.swift */,
 				24A76658D9047C8ABB7EF041 /* PaletteTuner.swift */,
 				F6A7D8000EB2ADF84A179855 /* PaletteTunerPanel.swift */,
-				2158A7029A9A3B95B5635A9E /* RegionLabelSKSpike.swift */,
 			);
 			path = Dev;
 			sourceTree = "<group>";
@@ -1609,7 +1606,6 @@
 				99570B5D8F06DF317DEB07A5 /* QuarantineStore.swift in Sources */,
 				E3407B345AD8EB8E5775944D /* QuikCaptureView.swift in Sources */,
 				128BD8D7EEBF8F107B575D9B /* RecentsView.swift in Sources */,
-				9A345FF14942AC2FA3C5C20C /* RegionLabelSKSpike.swift in Sources */,
 				16FBFD3D0D3D8FB758DAFEF2 /* RegionPalette.swift in Sources */,
 				8FFDCAEF4D4015563015B420 /* RejectedBlock.swift in Sources */,
 				0DAFF676BA9C3EAA6A1D04FB /* RelatedNodesSection.swift in Sources */,

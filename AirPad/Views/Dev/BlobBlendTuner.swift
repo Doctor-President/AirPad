@@ -808,7 +808,7 @@ struct BlobTunerPanel: View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("REGION LABELS — fade + declutter hysteresis")
             slider("Fade sec", $tuning.regionFadeDuration, 0.05...1.0)
-            slider("Edge margin", $tuning.regionEdgeMargin, 0...200)
+            slider("Edge margin", $tuning.regionEdgeMargin, 0...500)   // was 0...200 — T railed it for 3 exports
             slider("Newcomer extra", $tuning.regionHysteresisGap, 0...40)
             Text("Fixes pills POPPING while panning. Edge margin = the fade-out band (pt) past the real screen edge (0 = hard cull, today's bug). Declutter runs IN-SCENE now (live positions): two passes — an incumbent KEEPS its slot at the fixed \(Int(RegionLabelPillMetrics.halo))pt inset, a NEWCOMER must clear that PLUS 'Newcomer extra' — so a threshold-straddling pair stops fluttering. ★ Newcomer extra = the EXTRA inset beyond an incumbent (0 = no hysteresis, the old behaviour); the whole 0–40 is live now — it used to saturate at \(Int(RegionLabelPillMetrics.halo)), so any value dialed before is INVALID and needs re-dialing. Defaults LOUD — dial down, then CC bakes.")
                 .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))

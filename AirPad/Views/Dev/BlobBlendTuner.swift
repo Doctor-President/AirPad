@@ -151,11 +151,10 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     /// gap was fixed). Default 30 = baked. (Body-radius sync is a non-fix: the bodies don't collide.)
     var orbGap: Double { didSet { UserDefaults.standard.set(orbGap, forKey: "blobTuner.orbGap") } }
 
-    /// Region-label separation (item 3): labels get a repel-from-orbs + tether-to-centroid solver so they
-    /// settle in gaps. Off = today's raw centroid. Tether strength dial: low = escapes to gaps, high =
-    /// hugs the region.
-    var labelSepOn: Bool { didSet { UserDefaults.standard.set(labelSepOn, forKey: "blobTuner.labelSepOn") } }
-    var labelTether: Double { didSet { UserDefaults.standard.set(labelTether, forKey: "blobTuner.labelTether") } }
+    // (The region-label separation solver — `labelSepOn` / `labelTether` — was REMOVED 2026-09-13.
+    // Its persistent screen-space damped step was the label "swim"; T ruled the SwiftUI pill's
+    // 1-frame lag invisible without it. Old exports still carry `labelSep=`/`tether=`; the importer
+    // SKIPS them as unknown rather than failing. See ws-ios-polish.)
 
     /// Region-label fade + declutter hysteresis (ws-ios-polish) — the SHIPPING fix for pills popping
     /// in/out while panning. The fade + hysteresis themselves run in Release; only THESE dials are
@@ -249,8 +248,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         glowColorHexLight = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexLight") ?? ""
         glowColorHexDark  = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexDark") ?? ""
         orbGap          = dbl("blobTuner.orbGap", 30.0)
-        labelSepOn      = UserDefaults.standard.bool(forKey: "blobTuner.labelSepOn")
-        labelTether     = dbl("blobTuner.labelTether", 0.5)
         // LOUD spike defaults (see the scene for the matching Release bakes): 0.45s fade, 120pt edge
         // band, 6pt newcomer-extra (a newcomer must clear 12 vs an incumbent's 6). NOT final.
         regionFadeDuration  = dbl("blobTuner.regionFadeDuration", 0.45)
@@ -796,16 +793,9 @@ struct BlobTunerPanel: View {
 
     private var separationSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("SEPARATION — orb gap + region labels")
+            sectionLabel("SEPARATION — orb gap")
             slider("Orb gap", $tuning.orbGap, 0...120)   // item 2: amplified orbs overlap; push apart
-            HStack {
-                Text("Label sep").font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white).frame(width: 88, alignment: .leading)
-                Toggle("", isOn: $tuning.labelSepOn).labelsHidden().scaleEffect(0.85)
-                Spacer()
-            }
-            if tuning.labelSepOn { slider("Tether", $tuning.labelTether, 0...2) }
-            Text("Orb gap: bodies are STATIC (no collision) → this PBD gap is the only separation. Labels: repel from orbs + tether to centroid; low tether = escapes to a gap, high = hugs the region.")
+            Text("Orb gap: bodies are STATIC (no collision) → this PBD gap is the only separation. (The region-label repel/tether solver was REMOVED 2026-09-13 — its damped screen-space step was the label 'swim'; the zoom fade now does its on-orb-avoidance job.)")
                 .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
         }
     }
@@ -955,7 +945,7 @@ extension BlobFieldTuning {
         [SHARED — not appearance-split]
           orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
           glow: on=\(glowOn)
-          separation: orbGap=\(f(orbGap)) labelSep=\(labelSepOn) tether=\(f(labelTether))
+          separation: orbGap=\(f(orbGap))
           region-labels: fadeDur=\(f(regionFadeDuration)) edgeMargin=\(f(regionEdgeMargin)) hysteresisGap=\(f(regionHysteresisGap))
           region-label-spike: renderer=\(RegionLabelSpikeMode(rawValue: regionLabelMode)?.name ?? "?") capsule=\(RegionLabelSpikeTreatment(rawValue: regionLabelTreatment)?.name ?? "?")
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
@@ -1168,8 +1158,9 @@ extension BlobFieldTuning {
                 drainUnknown(kv, tag)
             case ("separation", .shared):
                 dbl(&kv, "orbGap", "\(tag).orbGap") { self.orbGap = $0 }
-                boolean(&kv, "labelSep", "\(tag).labelSep") { self.labelSepOn = $0 }
-                dbl(&kv, "tether", "\(tag).tether") { self.labelTether = $0 }
+                // `labelSep` / `tether` (retired 2026-09-13) are left in `kv` deliberately → they
+                // fall through to drainUnknown and are REPORTED as skipped. T's filed exports carry
+                // them; a retired key must never fail the whole import.
                 drainUnknown(kv, tag)
             case ("region-labels", .shared):
                 dbl(&kv, "fadeDur", "\(tag).fadeDur") { self.regionFadeDuration = $0 }

@@ -782,11 +782,6 @@ final class CorpusPhysicsScene: SKScene {
     }
 
     private var territoryLabelData: [TerritoryLabel] = []
-    #if DEBUG
-    /// Item-3 label-separation solver state — each region label's persistent SCREEN position, eased each
-    /// frame away from orbs and tethered toward its centroid, so labels settle in gaps between orbs.
-    private var labelSolverPos: [String: CGPoint] = [:]
-    #endif
     /// True after we last wrote an empty territory-label set, so we clear the
     /// overlay once instead of every idle frame.
     private var lastTerritoryLabelsEmpty = true
@@ -1725,25 +1720,9 @@ final class CorpusPhysicsScene: SKScene {
             let regionMatDrop = RegionLabelTuning.materialDropThreshold
             let regionMaterialAlpha = smoothstepClamp(regionMatDrop,
                                                       min(regionMatDrop + 0.2, 1.0), regionRaw)
-            // Item 3: pre-project every orb's screen centre + radius ONCE per frame (not per label), so
-            // the separation solver stays cheap. Only when the tuner's label separation is on.
-            #if DEBUG
-            let labelSepOn = BlobFieldTuning.shared.labelSepOn
-            let labelTether = CGFloat(BlobFieldTuning.shared.labelTether)
-            let camScale = max(cameraNode.xScale, 0.0001)
-            var orbScreen: [(p: CGPoint, r: CGFloat)] = []
-            if labelSepOn {
-                orbScreen.reserveCapacity(nodeSprites.count)
-                for (id, sprite) in nodeSprites {
-                    let r = (nodeIntrinsicRadii[id] ?? 30) * sprite.xScale / camScale
-                    orbScreen.append((view.convert(sprite.position, from: self), r))
-                }
-            }
-            #endif
-
-            // ── PASS 0 — project each label's LIVE centroid to screen (+ the DEBUG separation solver),
-            // and compute its RAW pill box. Stable order = territoryLabelData order (set once via
-            // setTerritoryLabels, never rebuilt per frame) → incumbency is meaningful downstream.
+            // ── PASS 0 — project each label's LIVE centroid to screen and compute its RAW pill box.
+            // Stable order = territoryLabelData order (set once via setTerritoryLabels, never rebuilt
+            // per frame) → incumbency is meaningful downstream.
             // Labels with no live members are skipped, exactly as before.
             var candidates: [RegionCandidate] = []
             candidates.reserveCapacity(territoryLabelData.count)
@@ -1758,32 +1737,13 @@ final class CorpusPhysicsScene: SKScene {
                 }
                 guard n > 0 else { continue }
                 let world = CGPoint(x: sum.x / n, y: sum.y / n)
-                let screenCentroid = view.convert(world, from: self)
-                var screen = screenCentroid
-                #if DEBUG
-                // Item 3: repel the label from nearby orbs + tether it toward its centroid, so it
-                // settles in a GAP rather than sitting on an orb. Persistent + damped (no jitter). In a
-                // fully dense cluster with NO gap the tether wins → it holds near the centroid (still on
-                // orbs); the tether dial is the taste call (low = escapes to a gap, high = hugs region).
-                if labelSepOn {
-                    var p = labelSolverPos[label.key] ?? screenCentroid
-                    let halfW = CGFloat(label.name.count) * 4.5 + 18   // rough label half-width (screen pt)
-                    var fx: CGFloat = 0, fy: CGFloat = 0
-                    for o in orbScreen {
-                        let dx = p.x - o.p.x, dy = p.y - o.p.y
-                        let d = hypot(dx, dy)
-                        let minD = o.r + halfW * 0.5
-                        if d > 0.1 && d < minD { let push = minD - d; fx += dx / d * push; fy += dy / d * push }
-                    }
-                    fx += (screenCentroid.x - p.x) * labelTether
-                    fy += (screenCentroid.y - p.y) * labelTether
-                    p.x += fx * 0.2; p.y += fy * 0.2      // damped step
-                    labelSolverPos[label.key] = p
-                    screen = p
-                } else {
-                    labelSolverPos[label.key] = screenCentroid
-                }
-                #endif
+                // The label sits ON its members' live centroid, projected once. (The DEBUG
+                // repel-from-orbs + tether solver that used to displace this was REMOVED 2026-09-13:
+                // it kept a PERSISTENT screen-space position and eased toward the target by a damped
+                // step, so every pan left the label trailing its orbs for several frames — that was
+                // the "swim". Its on-orb-collision job is now done by the zoom fade: labels vanish
+                // before orbs are big enough to sit under them. See ws-ios-polish.)
+                let screen = view.convert(world, from: self)
                 // SPIKE: convert the FINAL screen point (post-separation-solver) back to world, so the
                 // SK node sits exactly where the SwiftUI pill does — the A/B compares renderers, not
                 // positions. `view.convert(_:to:)` is the inverse of the projection used above.

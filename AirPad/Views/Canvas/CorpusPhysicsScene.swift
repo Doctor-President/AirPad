@@ -827,12 +827,16 @@ final class CorpusPhysicsScene: SKScene {
         return 120
         #endif
     }
-    /// Hysteresis gap = haloPlace − haloKeep (points). haloPlace is the shared metric halo.
+    /// Hysteresis gap (points) = the EXTRA inset a newcomer must clear beyond an incumbent:
+    /// `haloKeep` is fixed at the shared metric halo and `haloPlace = haloKeep + gap`.
+    /// (Originally the gap shrank `haloKeep` toward 0 with `haloPlace` fixed at 6, so the 0–40 dial
+    /// SATURATED at 6 — every value above it behaved identically and recorded nothing. Widening
+    /// outward instead keeps gap=0 exactly equal to no-hysteresis and makes the full range live.)
     private var regionLabelHysteresisGap: CGFloat {
         #if DEBUG
         return CGFloat(BlobFieldTuning.shared.regionHysteresisGap)
         #else
-        return 6   // matches the DEBUG spike default; haloKeep floors at 0 (max hysteresis)
+        return 6   // provisional bake; matches the DEBUG default (newcomer needs 6pt more than an incumbent)
         #endif
     }
 
@@ -1783,8 +1787,10 @@ final class CorpusPhysicsScene: SKScene {
             let viewBounds = view.bounds
             let M = regionLabelEdgeMargin
             let expanded = viewBounds.insetBy(dx: -M, dy: -M)
-            let haloPlace = RegionLabelPillMetrics.halo
-            let haloKeep = max(0, haloPlace - regionLabelHysteresisGap)
+            // The gap widens haloPlace OUTWARD from the fixed keep inset (it used to shrink haloKeep
+            // toward 0, which saturated the whole dial at halo=6 — see the note on the property).
+            let haloKeep = RegionLabelPillMetrics.halo
+            let haloPlace = haloKeep + max(0, regionLabelHysteresisGap)
 
             var placedBoxes: [CGRect] = []
             placedBoxes.reserveCapacity(candidates.count)
@@ -1793,7 +1799,7 @@ final class CorpusPhysicsScene: SKScene {
             // Claim a slot if, padded by the applicable halo, the box clears everything already
             // claimed. Beyond the edge-fade margin it's never a candidate (target alpha 0). The
             // claimed box is stored padded by its OWN halo, so incumbent↔incumbent clearance is
-            // 2·haloKeep while a newcomer must clear more → keeping is cheaper than winning: the gap.
+            // 2·haloKeep while a newcomer must clear haloKeep+gap → keeping is cheaper than winning.
             func tryPlace(_ c: RegionCandidate, halo: CGFloat) {
                 guard c.box.intersects(expanded) else { return }
                 let padded = c.box.insetBy(dx: -halo, dy: -halo)

@@ -165,6 +165,13 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var regionEdgeMargin: Double { didSet { UserDefaults.standard.set(regionEdgeMargin, forKey: "blobTuner.regionEdgeMargin") } }         // points past the real edge over which a leaving label fades
     var regionHysteresisGap: Double { didSet { UserDefaults.standard.set(regionHysteresisGap, forKey: "blobTuner.regionHysteresisGap") } } // EXTRA inset a newcomer needs beyond an incumbent: haloPlace = 6 + this (0 = none)
 
+    /// SPIKE (throwaway, see Ops/briefs/region-label-native-sk-spike.md): which renderer draws the
+    /// region labels — 0 SwiftUI only · 1 SK only · 2 both — and the SK capsule treatment
+    /// (0 flat · 1 gradient · 2 baked frost). Answers the SWIM (SwiftUI is a second renderer on a
+    /// second clock, so its pills trail the orbs) and what the look costs without live glass.
+    var regionLabelMode: Int { didSet { UserDefaults.standard.set(regionLabelMode, forKey: "blobTuner.regionLabelMode") } }
+    var regionLabelTreatment: Int { didSet { UserDefaults.standard.set(regionLabelTreatment, forKey: "blobTuner.regionLabelTreatment") } }
+
     // ── PER-EXPRESSION blob params (addendum D) — 4 surfaces × {spread, anim, distort, blur}, each
     // INDEPENDENT. The card trio (vscroll/carousel/canvas) currently SHARE one set; this adds the axis.
     // Order = BlobExpr indices: 0 vscroll · 1 carousel · 2 grid · 3 hero. Off → each call site's baked values.
@@ -249,6 +256,11 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         regionFadeDuration  = dbl("blobTuner.regionFadeDuration", 0.45)
         regionEdgeMargin    = dbl("blobTuner.regionEdgeMargin", 120.0)
         regionHysteresisGap = dbl("blobTuner.regionHysteresisGap", 6.0)
+        // SPIKE defaults: SwiftUI-only (0) = today's shipping behaviour, so the spike is INERT until
+        // T switches modes; frost (2) = the treatment closest to the shipping glass.
+        regionLabelMode      = UserDefaults.standard.integer(forKey: "blobTuner.regionLabelMode")
+        regionLabelTreatment = UserDefaults.standard.object(forKey: "blobTuner.regionLabelTreatment") != nil
+            ? UserDefaults.standard.integer(forKey: "blobTuner.regionLabelTreatment") : 2
         blobExprOverride = UserDefaults.standard.bool(forKey: "blobTuner.blobExprOverride")
         blobExprSel     = UserDefaults.standard.integer(forKey: "blobTuner.blobExprSel")
         blobSpread      = (UserDefaults.standard.array(forKey: "blobTuner.blobSpread") as? [Double]) ?? [1, 1, 1, 1]
@@ -804,9 +816,24 @@ struct BlobTunerPanel: View {
             slider("Fade sec", $tuning.regionFadeDuration, 0.05...1.0)
             slider("Edge margin", $tuning.regionEdgeMargin, 0...200)
             slider("Newcomer extra", $tuning.regionHysteresisGap, 0...40)
+            regionLabelSpikeControls
             Text("Fixes pills POPPING while panning. Edge margin = the fade-out band (pt) past the real screen edge (0 = hard cull, today's bug). Declutter runs IN-SCENE now (live positions): two passes — an incumbent KEEPS its slot at the fixed \(Int(RegionLabelPillMetrics.halo))pt inset, a NEWCOMER must clear that PLUS 'Newcomer extra' — so a threshold-straddling pair stops fluttering. ★ Newcomer extra = the EXTRA inset beyond an incumbent (0 = no hysteresis, the old behaviour); the whole 0–40 is live now — it used to saturate at \(Int(RegionLabelPillMetrics.halo)), so any value dialed before is INVALID and needs re-dialing. Defaults LOUD — dial down, then CC bakes.")
                 .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
         }
+    }
+
+    /// SPIKE controls (throwaway) — renderer A/B + SK capsule treatment.
+    /// Ops/briefs/region-label-native-sk-spike.md
+    @ViewBuilder
+    private var regionLabelSpikeControls: some View {
+        Divider().overlay(.white.opacity(0.15))
+        sectionLabel("★ SPIKE — native SK labels (throwaway)")
+        menuPick("Renderer", $tuning.regionLabelMode, RegionLabelSpikeMode.allCases.map { $0.name })
+        if tuning.regionLabelMode != RegionLabelSpikeMode.swiftUIOnly.rawValue {
+            menuPick("SK capsule", $tuning.regionLabelTreatment, RegionLabelSpikeTreatment.allCases.map { $0.name })
+        }
+        Text("SWIM TEST: the SwiftUI pill is drawn by a SECOND renderer on a SECOND clock, so it trails the orbs by ~a frame (worse as fps dips). The SK label is a node in this scene — same pass, same camera, same tick — so it cannot swim. ★ Use BOTH to judge the swim BY EYE (one sticks, one trails). ⚠️ fps in BOTH mode is MEANINGLESS — you're paying for both renderers at once; only read fps in the two SINGLE modes. Capsule: Flat/Gradient are cheap solid draws; FROST is a real .ultraThinMaterial capsule BAKED ONCE to a texture — it looks like the shipping glass but is STATIC, it can't react to what passes behind it. That's the trade you're ruling on.")
+            .font(.system(size: 8, design: .monospaced)).foregroundStyle(.cyan.opacity(0.85))
     }
 
     private var exprSection: some View {
@@ -930,6 +957,7 @@ extension BlobFieldTuning {
           glow: on=\(glowOn)
           separation: orbGap=\(f(orbGap)) labelSep=\(labelSepOn) tether=\(f(labelTether))
           region-labels: fadeDur=\(f(regionFadeDuration)) edgeMargin=\(f(regionEdgeMargin)) hysteresisGap=\(f(regionHysteresisGap))
+          region-label-spike: renderer=\(RegionLabelSpikeMode(rawValue: regionLabelMode)?.name ?? "?") capsule=\(RegionLabelSpikeTreatment(rawValue: regionLabelTreatment)?.name ?? "?")
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
           shadow: on=\(shadowOn) zoomThreshold=\(f(shadowZoomThreshold)) zoomEase=\(f(shadowZoomEase)) offset=(\(f(shadowOffsetX)), \(f(shadowOffsetY)))
           per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):
@@ -1147,6 +1175,10 @@ extension BlobFieldTuning {
                 dbl(&kv, "fadeDur", "\(tag).fadeDur") { self.regionFadeDuration = $0 }
                 dbl(&kv, "edgeMargin", "\(tag).edgeMargin") { self.regionEdgeMargin = $0 }
                 dbl(&kv, "hysteresisGap", "\(tag).hysteresisGap") { self.regionHysteresisGap = $0 }
+                drainUnknown(kv, tag)
+            case ("region-label-spike", .shared):   // SPIKE (throwaway) — renderer + capsule A/B
+                named(&kv, "renderer", RegionLabelSpikeMode.allCases.map { $0.name }, "\(tag).renderer") { self.regionLabelMode = $0 }
+                named(&kv, "capsule", RegionLabelSpikeTreatment.allCases.map { $0.name }, "\(tag).capsule") { self.regionLabelTreatment = $0 }
                 drainUnknown(kv, tag)
             case ("warp", .shared):   // mode=<name with a space>
                 if let m = after(rest, "mode=")?.trimmingCharacters(in: .whitespaces) {

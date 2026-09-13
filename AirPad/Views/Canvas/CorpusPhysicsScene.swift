@@ -807,6 +807,9 @@ final class CorpusPhysicsScene: SKScene {
     /// One-shot: log `view.bounds.size` once so it can be eyeballed against the overlay's
     /// `geo.size` (logged in TerritoryLabelLayer) — the brief's coordinate-space check.
     private var didLogRegionLabelBounds = false
+    /// SPIKE (throwaway): native-SK region labels, for the swim/look/fps A/B. Created lazily the
+    /// first time the tuner selects a mode that needs it. See RegionLabelSKSpike.swift.
+    var regionLabelSKLayer: RegionLabelSKLayer?
     #endif
 
     /// Fade duration (s) for the region-label declutter ease. DEBUG reads the live tuner (T dials on
@@ -1675,6 +1678,9 @@ final class CorpusPhysicsScene: SKScene {
             let colorHex: String
             let screen: CGPoint
             let box: CGRect
+            /// SPIKE: the same point in WORLD space, so the native-SK label can be positioned by the
+            /// scene graph (same camera transform as the orbs = no cross-renderer swim).
+            let world: CGPoint
         }
         MainActor.assumeIsolated {
             guard !territoryLabelData.isEmpty else {
@@ -1685,6 +1691,9 @@ final class CorpusPhysicsScene: SKScene {
                 // C4: an empty set clears the fade + incumbency state too.
                 regionLabelDeclutterAlpha.removeAll()
                 regionLabelPlacedLastFrame.removeAll()
+                #if DEBUG
+                regionLabelSKLayer?.setHidden(true)   // SPIKE: no labels → nothing to draw
+                #endif
                 return
             }
             lastTerritoryLabelsEmpty = false
@@ -1775,10 +1784,15 @@ final class CorpusPhysicsScene: SKScene {
                     labelSolverPos[label.key] = screenCentroid
                 }
                 #endif
+                // SPIKE: convert the FINAL screen point (post-separation-solver) back to world, so the
+                // SK node sits exactly where the SwiftUI pill does — the A/B compares renderers, not
+                // positions. `view.convert(_:to:)` is the inverse of the projection used above.
+                let worldFinal = view.convert(screen, to: self)
                 candidates.append(RegionCandidate(
                     key: label.key, name: label.name, colorHex: label.colorHex,
                     screen: screen,
-                    box: RegionLabelPillMetrics.box(charCount: label.name.count, center: screen)))
+                    box: RegionLabelPillMetrics.box(charCount: label.name.count, center: screen),
+                    world: worldFinal))
             }
 
             // ── DECLUTTER (moved from SwiftUI; runs AFTER the sep solver, on LIVE boxes) ──
@@ -1823,6 +1837,12 @@ final class CorpusPhysicsScene: SKScene {
             let fadeStep = CGFloat(dt / max(regionLabelFadeDuration, 0.001))   // full 0→1 fade in `duration` s
             var out: [CanvasState.TerritoryLabelInfo] = []
             out.reserveCapacity(candidates.count)
+            #if DEBUG
+            // SPIKE (ws-ios-polish 2026-09-12): collect the same labels in WORLD space for the
+            // native-SK A/B. Same alphas, same positions → the only variable is the renderer.
+            var skItems: [(key: String, text: String, world: CGPoint, alpha: CGFloat, colorHex: String)] = []
+            let spikeMode = RegionLabelSpikeMode(rawValue: BlobFieldTuning.shared.regionLabelMode) ?? .swiftUIOnly
+            #endif
             for c in candidates {
                 let placed = placedKeys.contains(c.key)
                 let d = rectGap(from: c.box, to: viewBounds)      // 0 on screen, → M as the box leaves
@@ -1835,6 +1855,12 @@ final class CorpusPhysicsScene: SKScene {
                 // C5: omit from the bridged array only ONCE the ease actually reached ~0 — never as a
                 // shortcut for target==0, or a fading-out label would vanish instead of being seen out.
                 guard a > 0.001 else { continue }
+                #if DEBUG
+                // The SK label multiplies in the zoom-LOD the SwiftUI pill applies to its text, so
+                // both renderers fade together and the comparison stays fair.
+                skItems.append((c.key, c.name, c.world, a * regionLodAlpha, c.colorHex))
+                if spikeMode == .skOnly { continue }   // suppress the SwiftUI pill entirely
+                #endif
                 out.append(CanvasState.TerritoryLabelInfo(
                     key: c.key,
                     name: c.name,
@@ -1845,6 +1871,20 @@ final class CorpusPhysicsScene: SKScene {
                     declutterAlpha: a
                 ))
             }
+            #if DEBUG
+            // Drive the SK layer (created lazily on first use so a SwiftUI-only session pays nothing).
+            if spikeMode == .swiftUIOnly {
+                regionLabelSKLayer?.setHidden(true)
+            } else {
+                if regionLabelSKLayer == nil { regionLabelSKLayer = RegionLabelSKLayer(parent: self) }
+                regionLabelSKLayer?.setHidden(false)
+                let treatment = RegionLabelSpikeTreatment(rawValue: BlobFieldTuning.shared.regionLabelTreatment) ?? .frost
+                regionLabelSKLayer?.update(items: skItems,
+                                           cameraScale: cameraNode.xScale,
+                                           treatment: treatment,
+                                           isLight: currentIsLight)
+            }
+            #endif
             // C4: prune keys no longer in territoryLabelData (setTerritoryLabels also clears on
             // rebuild; this keeps the dict size == live label count — the verify step checks it).
             let liveKeys = Set(territoryLabelData.map { $0.key })

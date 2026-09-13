@@ -1751,8 +1751,12 @@ private struct TerritoryLabelPill: View {
 //     ≤ fadeBandEnd, full (zoomed OUT) at ≥ fadeBandStart. T's accepted band spans
 //     the whole zoom range. Do NOT "correct" start > end — that's the dialed shape,
 //     consumed via the (end, start) argument order, not a bug.
-//   • alphaFloor — the label never fully disappears; the region name stays faintly
-//     present (T's low-alpha-floor decision).
+//   • alphaFloor = 0 — the label fades ENTIRELY OUT when zoomed in (was 0.255, T's
+//     original "stays faintly present" decision; changed 2026-09-13). At legible zoom
+//     the orbs are large enough to sit underneath a pill, and the DEBUG repel-from-orbs
+//     separation solver that used to dodge them is GONE (its damped screen-space step
+//     was the label "swim"). Vanishing at that zoom IS the collision fix: node titles
+//     have taken over by then, so the region name has no job left. See ws-ios-polish.
 //   • materialDropThreshold = 0 — the pill's MATERIAL (capsule fill + stroke +
 //     shadow) stays full through almost the whole fade and drops to 0 only over the
 //     final 0.2 of fade progress (regionRaw 0.2 → 0): the capsule persists until the
@@ -1769,7 +1773,7 @@ private struct TerritoryLabelPill: View {
 enum RegionLabelTuning {
     static let fadeBandStart: CGFloat = 2.45
     static let fadeBandEnd: CGFloat = 0.55
-    static let alphaFloor: CGFloat = 0.255
+    static let alphaFloor: CGFloat = 0
     static let materialDropThreshold: CGFloat = 0.0
 }
 

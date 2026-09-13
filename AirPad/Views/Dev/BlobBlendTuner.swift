@@ -211,7 +211,7 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     func regionSlotHueOffset(_ fam: Int, _ isLight: Bool, _ slot: Int) -> Double { regionParams[regionKey(fam, isLight, "s\(slot)h")] ?? 0 }
     func setRegionSlotHue(_ fam: Int, _ isLight: Bool, _ slot: Int, _ v: Double) { regionParams[regionKey(fam, isLight, "s\(slot)h")] = v }
     func resetRegion(_ fam: Int, _ isLight: Bool) {
-        let keys = ["hueStart", "hueSpread", "sat", "light"] + (0..<12).map { "s\($0)h" }
+        let keys = ["hueStart", "hueSpread", "chroma", "lightness"] + (0..<12).map { "s\($0)h" }
         for k in keys { regionParams[regionKey(fam, isLight, k)] = nil }
     }
     /// Poll signature — any family/param change re-tints the orbs (via the scene's refreshOrbTuning).
@@ -620,8 +620,8 @@ struct BlobTunerPanel: View {
                 Text("Current = shipping Paul Tol set, byte-identical. Pick a family to move the region hues OUT of the muddy mid-lightness zone. Subdued (desaturate) is the direct opposite of muddy — try it first.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             } else {
-                slider("Saturation", regionBind("sat", def.sat), 0...1)
-                slider("Lightness", regionBind("light", def.light), 0...1)
+                slider("Chroma", regionBind("chroma", def.chroma), 0...1)
+                slider("Lightness", regionBind("lightness", def.lightness), 0...1)
                 slider("Hue rotate", regionBind("hueStart", def.hueStart), 0...1)
                 slider("Hue spread", regionBind("hueSpread", def.hueSpread), 0.1...1)
                 let distinct = RegionPalette.distinctSlotCount(fam, isLight: isLight)
@@ -648,7 +648,7 @@ struct BlobTunerPanel: View {
                 }
                 Button("Reset \(fam.displayName)/\(isLight ? "light" : "dark")") { tuning.resetRegion(tuning.regionFamily, isLight) }
                     .buttonStyle(.bordered).controlSize(.mini)
-                Text("Live on the map orbs. Family + S/L/spread + per-slot hue persist per appearance; Copy exports the 12 resolved hex.")
+                Text("Live on the map orbs. Generated in OKLCH: chroma/lightness are PERCEPTUAL (equal L reads equally bright across hues, unlike HSL), and out-of-gamut slots lose CHROMA, never lightness/hue. Family + C/L/spread + per-slot hue persist per appearance; Copy exports the 12 resolved hex.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             }
         }
@@ -1178,6 +1178,17 @@ extension BlobFieldTuning {
                         for tok in body.split(separator: " ") {
                             guard let eq = tok.firstIndex(of: "=") else { continue }
                             let k = String(tok[..<eq]); let v = String(tok[tok.index(after: eq)...])
+                            // ★ RETIRED HSL KEYS. The generator moved to OKLCH (2026-09-13) and the
+                            // params were renamed sat→chroma, light→lightness. An old export's
+                            // "<fam>.<L|D>.sat" / ".light" hold HSL numbers that mean something
+                            // DIFFERENT in OKLCH, so they are SKIPPED and listed — never stored,
+                            // because a silently-carried stale value is the failure this rename exists
+                            // to prevent. T re-dials chroma/lightness on the new build.
+                            let leaf = k.split(separator: ".").last.map(String.init) ?? k
+                            if leaf == "sat" || leaf == "light" {
+                                r.unknown.append("\(tag).params.\(k) (retired HSL key)")
+                                continue
+                            }
                             if let dv = Double(v) { params[k] = dv; r.applied += 1 } else { r.malformed.append("\(tag).params.\(k)") }
                         }
                         self.regionParams = params      // replace wholesale (the export dumps all of them)

@@ -196,12 +196,8 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     /// the map's appearance). The scene always resolves with its OWN `currentIsLight`; this only
     /// selects which set of numbers the sliders write. Default dark (where mud matters most).
     var regionEditLight: Bool { didSet { UserDefaults.standard.set(regionEditLight, forKey: "blobTuner.regionEditLight") } }
-    /// IN-ORB gradient SPIKE (commit 3) — in-band orbs get an evolving gradient inside their circle,
-    /// in the active family's colour. Off by default. Intensity is PER FAMILY+appearance (stored in
-    /// regionParams "inorb") — a neon family needs less than a subdued one to read the same.
-    var inOrbOn: Bool { didSet { UserDefaults.standard.set(inOrbOn, forKey: "blobTuner.inOrbOn") } }
-    /// Cheap alternative: STATIC in-orb gradient (no u_time) instead of the evolving one — the A/B.
-    var inOrbCheap: Bool { didSet { UserDefaults.standard.set(inOrbCheap, forKey: "blobTuner.inOrbCheap") } }
+    // (The IN-ORB gradient SPIKE was DELETED at the bake, 2026-09-14 — it never shipped and T's
+    // final export has it off. Old exports carry `in-orb spike:`; the importer skips it.)
 
     private func regionKey(_ fam: Int, _ isLight: Bool, _ k: String) -> String { "\(fam).\(isLight ? "L" : "D").\(k)" }
     func regionParam(_ fam: Int, _ isLight: Bool, _ k: String, default d: Double) -> Double { regionParams[regionKey(fam, isLight, k)] ?? d }
@@ -257,8 +253,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         regionFamily    = UserDefaults.standard.integer(forKey: "blobTuner.regionFamily")   // 0 = Current
         regionParams    = (UserDefaults.standard.dictionary(forKey: "blobTuner.regionParams") as? [String: Double]) ?? [:]
         regionEditLight = UserDefaults.standard.bool(forKey: "blobTuner.regionEditLight")   // legacy; region now follows mapIsLight
-        inOrbOn         = UserDefaults.standard.bool(forKey: "blobTuner.inOrbOn")           // default off (spike)
-        inOrbCheap      = UserDefaults.standard.bool(forKey: "blobTuner.inOrbCheap")        // default evolving
         warpMode        = UserDefaults.standard.integer(forKey: "blobTuner.warpMode")       // 0 off
 
         // Retired warp dials (2026-09-14 orb-unit re-base) — drop their dead per-appearance keys so they
@@ -475,7 +469,6 @@ struct BlobTunerPanel: View {
                     exprSection
                     orbSection
                     regionSection
-                    inOrbSection
                     warpSection
                     separationSection
                     regionLabelsSection
@@ -664,29 +657,6 @@ struct BlobTunerPanel: View {
                 Button("Reset \(fam.displayName)/\(isLight ? "light" : "dark")") { tuning.resetRegion(tuning.regionFamily, isLight) }
                     .buttonStyle(.bordered).controlSize(.mini)
                 Text("Live on the map orbs. Generated in OKLCH: chroma/lightness are PERCEPTUAL (equal L reads equally bright across hues, unlike HSL), and out-of-gamut slots lose CHROMA, never lightness/hue. Family + C/L/spread + per-slot hue persist per appearance; Copy exports the 12 resolved hex.")
-                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-            }
-        }
-    }
-
-    private var inOrbSection: some View {
-        let fam = RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current
-        let isLight = tuning.mapIsLight
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                sectionLabel("IN-ORB GRADIENT — SPIKE (throwaway, do not ship)")
-                Spacer()
-                Toggle("", isOn: $tuning.inOrbOn).labelsHidden().scaleEffect(0.85)
-            }
-            if tuning.inOrbOn {
-                slider("Intensity · \(fam.displayName)/\(isLight ? "light" : "dark")", regionBind("inorb", 0.5), 0...1)
-                Button(tuning.inOrbCheap ? "Cheap: STATIC gradient" : "Primary: EVOLVING gradient") { tuning.inOrbCheap.toggle() }
-                    .buttonStyle(.borderedProminent).tint(tuning.inOrbCheap ? .gray : .green)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                Text("Evolving gradient INSIDE in-band orbs, in the active family's own colour (NOT the ground glow). Intensity is per family+appearance (a neon family needs less than a subdued one). Runs in the shared batch (+0 draws). Cheap A/B = a STATIC gradient (no time term). ★ Judge on device: does it read as focal awareness, and does fps hold at a 620+ node corpus DURING a drag?")
-                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
-            } else {
-                Text("off → orbs flat (byte-identical).")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
             }
         }
@@ -918,7 +888,6 @@ extension BlobFieldTuning {
         \(exprRow(1))
         \(exprRow(2))
         \(exprRow(3))
-          in-orb spike: on=\(inOrbOn) cheap=\(inOrbCheap)
           region: familyIndex=\(regionFamily)  params{ \(regionDump.isEmpty ? "(all default)" : regionDump) }
         fps=\(f(fps))  (editing now: \(mapIsLight ? "LIGHT" : "DARK"))
         ===== END =====
@@ -1147,8 +1116,7 @@ extension BlobFieldTuning {
                 if after(rest, "offset=(") != nil { r.unknown.append("\(tag).offset (retired)") }
                 drainUnknown(kv, tag)
             case ("in-orb spike", .shared):
-                boolean(&kv, "on", "\(tag).on") { self.inOrbOn = $0 }
-                boolean(&kv, "cheap", "\(tag).cheap") { self.inOrbCheap = $0 }
+                // RETIRED at the bake (2026-09-14) — the in-orb spike is deleted; skip + list.
                 drainUnknown(kv, tag)
             case ("region", .shared):   // familyIndex=<int>  params{ k=v … }
                 if let fi = after(rest, "familyIndex=")?.split(separator: " ").first.map(String.init) {

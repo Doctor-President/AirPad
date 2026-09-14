@@ -453,7 +453,6 @@ final class CorpusPhysicsScene: SKScene {
         for (nodeID, sprite) in nodeSprites {
             let resting = nodeRestingScales[nodeID] ?? 1.0
             var scale = resting * ramp
-            var bandCentrality: Float = 0   // in-orb spike (commit 3): annulus centrality, 0 outside the band
             if annulusOn {
                 // Amplify off the node's HOME distance (not its displaced sprite
                 // position) so scale and the relaxation don't feed back on each other.
@@ -465,13 +464,8 @@ final class CorpusPhysicsScene: SKScene {
                 var env = envelope
                 if nodeID == activeCardID { env *= 1 - smoothstepClamp(0.3, 0.6, cardProgress) }
                 scale *= annulusAmplify(hypot(dx, dy), cameraScale: cameraScale, envelope: env)
-                bandCentrality = Float(annulusFalloff(hypot(dx, dy), cameraScale: cameraScale) * env)
             }
             sprite.setScale(scale)
-            #if DEBUG
-            // Feed the in-orb spike its band membership (only read when u_inorb > 0; free otherwise).
-            (sprite as? SKSpriteNode)?.setValue(SKAttributeValue(float: bandCentrality), forAttribute: "a_band")
-            #endif
             guard let intrinsic = nodeIntrinsicRadii[nodeID] else { continue }
             // On-screen diameter (pt) = worldDiameter · spriteScale / cameraScale.
             let worldToScreen = scale / max(cameraScale, 0.0001)
@@ -2739,17 +2733,13 @@ final class CorpusPhysicsScene: SKScene {
         // Region palette (commit 2) is an INDEPENDENT trigger — a family change must re-tint the orbs
         // even when the orb override is off. `regionSig` folds in the family + every dialled param.
         let regionOn = t.regionFamily != 0
-        // In-orb spike (commit 3) is a third independent trigger — a per-family intensity uniform.
-        let inOrbIntensity = t.inOrbOn ? Float(t.regionParam(t.regionFamily, currentIsLight, "inorb", default: 0.5)) : 0
-        let sig = (on || regionOn || t.inOrbOn)
-            ? "\(currentIsLight)|\(on ? "\(t.orbFillOpacity)|\(t.orbStrokeOpacity)|\(t.orbDarkSat)|\(t.orbDarkVal)|\(t.orbDarkRim)|\(t.orbTitleScale)|\(t.orbTitleFont)|\(t.orbTitleColorHex)|\(t.orbTitleOpacity)|\(t.orbBlendLight)|\(t.orbBlendDark)" : "orbOff")|region:\(t.regionSig)|inorb:\(inOrbIntensity)|cheap:\(t.inOrbCheap)"
+        let sig = (on || regionOn)
+            ? "\(currentIsLight)|\(on ? "\(t.orbFillOpacity)|\(t.orbStrokeOpacity)|\(t.orbDarkSat)|\(t.orbDarkVal)|\(t.orbDarkRim)|\(t.orbTitleScale)|\(t.orbTitleFont)|\(t.orbTitleColorHex)|\(t.orbTitleOpacity)|\(t.orbBlendLight)|\(t.orbBlendDark)" : "orbOff")|region:\(t.regionSig)"
             : "off"
         guard sig != lastOrbTuningSig else { return }
         let wasApplying = !lastOrbTuningSig.isEmpty && lastOrbTuningSig != "off"
         lastOrbTuningSig = sig
-        guard on || regionOn || t.inOrbOn || wasApplying else { return }   // never dialed → leave the baked look untouched
-        orbSpriteShader.uniforms.first(where: { $0.name == "u_inorb" })?.floatValue = inOrbIntensity
-        orbSpriteShader.uniforms.first(where: { $0.name == "u_inorb_cheap" })?.floatValue = t.inOrbCheap ? 1 : 0
+        guard on || regionOn || wasApplying else { return }   // never dialed → leave the baked look untouched
 
         func setU(_ name: String, _ v: Float) { orbSpriteShader.uniforms.first(where: { $0.name == name })?.floatValue = v }
         setU("u_dark_sat", on ? Float(t.orbDarkSat) : Float(DarkOrbTuning.sat))
@@ -3339,27 +3329,6 @@ final class CorpusPhysicsScene: SKScene {
                 fillRGB = clamp(col, 0.0, 1.0);
             }
 
-            // ── IN-ORB gradient (COMMIT 3 SPIKE — throwaway, off by default). In-band orbs get an
-            // evolving gradient INSIDE their own circle, in their OWN (family) colour, as focal
-            // awareness — NOT the ground glow. Gated by a_band (annulus centrality; 0 outside the
-            // band) × u_inorb (per-family intensity; 0 = OFF = byte-identical). Cheap: 2 sin lobes,
-            // no fbm; runs in the shared batch (+0 draws). Modulates brightness only → hue preserved.
-            if (u_inorb > 0.001 && a_band > 0.001) {
-                float field;
-                if (u_inorb_cheap > 0.5) {
-                    // CHEAP alternative: a STATIC diagonal gradient inside the orb — no u_time
-                    // (no per-frame redraw pressure), one add. Answers whether motion is needed.
-                    field = 0.5 + 0.5 * (p.x + p.y);
-                } else {
-                    // PRIMARY: evolving field (2 sin lobes on u_time).
-                    float w  = sin(p.x * 7.0 + u_time * 0.9) * cos(p.y * 7.0 - u_time * 0.7);
-                    float w2 = sin((p.x + p.y) * 4.5 + u_time * 0.5);
-                    field = 0.5 + 0.28 * w + 0.22 * w2;
-                }
-                float amt = a_band * u_inorb;
-                fillRGB = clamp(fillRGB * (1.0 + amt * (field - 0.5) * 1.6), 0.0, 1.0);
-            }
-
             float fa = disc * fillC.a;
             float sa = ring * strokeC.a;
             float outA = sa + fa * (1.0 - sa);
@@ -3372,8 +3341,7 @@ final class CorpusPhysicsScene: SKScene {
             SKAttribute(name: "a_node_color", type: .vectorFloat4),
             SKAttribute(name: "a_stroke_color", type: .vectorFloat4),
             SKAttribute(name: "a_geom", type: .vectorFloat2),
-            SKAttribute(name: "a_wash", type: .vectorFloat4),   // rgb = wash pigment, a = peak strength
-            SKAttribute(name: "a_band", type: .float)           // annulus centrality (in-orb spike, commit 3)
+            SKAttribute(name: "a_wash", type: .vectorFloat4)    // rgb = wash pigment, a = peak strength
         ]
         // u_corner_radius: 0.5 = circle. Held at 0.5 — the morph to rounded square
         // (cornerMin) is retired to dormant; the uniform + sdRoundBox stay inert for
@@ -3392,9 +3360,7 @@ final class CorpusPhysicsScene: SKScene {
             SKUniform(name: "u_light_dir", vectorFloat2: vector_float2(Float(DarkOrbTuning.lightDirX), Float(DarkOrbTuning.lightDirY))),
             SKUniform(name: "u_dark_spec", float: Float(DarkOrbTuning.spec)),
             SKUniform(name: "u_spec_size", float: Float(DarkOrbTuning.specSize)),
-            SKUniform(name: "u_dark_glow", float: Float(DarkOrbTuning.glow)),
-            SKUniform(name: "u_inorb", float: 0),      // in-orb gradient intensity (spike, commit 3) — 0 = OFF
-            SKUniform(name: "u_inorb_cheap", float: 0) // 1 = STATIC cheap alternative, 0 = evolving
+            SKUniform(name: "u_dark_glow", float: Float(DarkOrbTuning.glow))
         ]
         return shader
     }()
@@ -3418,7 +3384,6 @@ final class CorpusPhysicsScene: SKScene {
         let w = Self.rgbaVec(wash)   // straight rgb; alpha overridden by the wash peak strength
         sprite.setValue(SKAttributeValue(vectorFloat4: vector_float4(w.x, w.y, w.z, Float(washStrength))),
                         forAttribute: "a_wash")
-        sprite.setValue(SKAttributeValue(float: 0), forAttribute: "a_band")   // in-orb spike baseline (commit 3)
     }
 
     // MARK: - SPR measurement harness (DEBUG — synthetic corpus, Simulator-runnable)

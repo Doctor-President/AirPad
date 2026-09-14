@@ -141,15 +141,8 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var liveWarpDepthPx: Double = 0      // global displacement depth, px
     var liveWarpTitlesVisible: Int = 0   // orbs currently showing a title (fade > 0)
     var liveWarpOrbCount: Int = 0
-    var shadowOn: Bool { didSet { UserDefaults.standard.set(shadowOn, forKey: "blobTuner.shadowOn") } }
-    var shadowZoomThreshold: Double { didSet { UserDefaults.standard.set(shadowZoomThreshold, forKey: "blobTuner.shadowZoomThreshold") } }  // cameraScale below which shadows appear
-    var shadowZoomEase: Double { didSet { UserDefaults.standard.set(shadowZoomEase, forKey: "blobTuner.shadowZoomEase") } }
-    var shadowOffsetX: Double { didSet { UserDefaults.standard.set(shadowOffsetX, forKey: "blobTuner.shadowOffsetX") } }
-    var shadowOffsetY: Double { didSet { UserDefaults.standard.set(shadowOffsetY, forKey: "blobTuner.shadowOffsetY") } }
-    var shadowSpread: Double { get { apD("shadowSpread", 1.6) } set { setD("shadowSpread", newValue) } }
-    var shadowOpacity: Double { get { apD("shadowOpacity", 0.35) } set { setD("shadowOpacity", newValue) } }
-    var shadowColor: String { get { apHexAt("shadowColor", "", light: mapIsLight) } set { apHex[apk("shadowColor")] = newValue } }
-    var shadowBlend: Int { get { apScalar[apk("shadowBlend")].map { Int($0.rounded()) } ?? 0 } set { apScalar[apk("shadowBlend")] = Double(newValue) } }
+    // (DROP SHADOW dials DELETED at the bake, 2026-09-14 — T ruled the shadow out; the dot shrink
+    // does the figure-ground job. Old exports carry `shadow:` lines; the importer skips them.)
 
     /// Orb separation gap (item 2) — the band-relaxation `breathingGap`, dialable so amplified orbs
     /// push further apart (they overlap because bodies are STATIC — no physics collision — and the PBD
@@ -267,11 +260,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         inOrbOn         = UserDefaults.standard.bool(forKey: "blobTuner.inOrbOn")           // default off (spike)
         inOrbCheap      = UserDefaults.standard.bool(forKey: "blobTuner.inOrbCheap")        // default evolving
         warpMode        = UserDefaults.standard.integer(forKey: "blobTuner.warpMode")       // 0 off
-        shadowOn        = UserDefaults.standard.bool(forKey: "blobTuner.shadowOn")          // default off
-        shadowZoomThreshold = dbl("blobTuner.shadowZoomThreshold", 1.8)   // appear as cameraScale drops below this (zoom IN)
-        shadowZoomEase  = dbl("blobTuner.shadowZoomEase", 0.6)
-        shadowOffsetX   = dbl("blobTuner.shadowOffsetX", 0)
-        shadowOffsetY   = dbl("blobTuner.shadowOffsetY", -8)
 
         // Retired warp dials (2026-09-14 orb-unit re-base) — drop their dead per-appearance keys so they
         // don't linger in the persisted store. reach/depth now live under warpReachU / warpDepth. Placed
@@ -489,7 +477,6 @@ struct BlobTunerPanel: View {
                     regionSection
                     inOrbSection
                     warpSection
-                    shadowSection
                     separationSection
                     regionLabelsSection
                     backgroundSection
@@ -729,28 +716,6 @@ struct BlobTunerPanel: View {
         }
     }
 
-    private var shadowSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                sectionLabel("DROP SHADOW — per orb, zoom-gated (spike)")
-                Spacer()
-                Toggle("", isOn: $tuning.shadowOn).labelsHidden().scaleEffect(0.85)
-            }
-            if tuning.shadowOn {
-                slider("Zoom threshold", $tuning.shadowZoomThreshold, 0.5...4)   // cameraScale below which shadows show
-                slider("Zoom ease", $tuning.shadowZoomEase, 0.05...2)
-                slider("Spread", $tuning.shadowSpread, 0.5...3)
-                slider("Opacity", $tuning.shadowOpacity, 0...1)
-                slider("Offset X", $tuning.shadowOffsetX, -40...40)
-                slider("Offset Y", $tuning.shadowOffsetY, -40...40)
-                hexRow("Colour", $tuning.shadowColor)
-                menuPick("Blend", $tuning.shadowBlend, BlobFieldTuning.orbBlendNames)
-                Text("Soft dark disc behind each orb (one shared texture → batches). ZOOM-GATED: eases in as you zoom IN past the threshold, absent zoomed out — no per-orb ranking, no centrality, no boundary to pop across. Spread/opacity/colour/blend per appearance; threshold/ease/offset shared.")
-                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-            }
-        }
-    }
-
     private var backgroundSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionLabel("BACKGROUND per view — shared token, preview a split")
@@ -930,7 +895,6 @@ extension BlobFieldTuning {
               orb: fill=\(d("orbFillOpacity", 1)) stroke=\(d("orbStrokeOpacity", 1)) titleScale=\(d("orbTitleScale", 1)) titleOpacity=\(d("orbTitleOpacity", 1)) titleColour=\(tc.isEmpty ? "(auto)" : tc) blend=\(orbN(L ? orbBlendLight : orbBlendDark))
               glow: radius=\(d("glowRadius", 3)) baseline=\(d("glowBaseline", 0)) inBand=\(d("glowInBand", 1)) falloff=\(d("glowFalloff", 0.6)) slots=\(apIAt("glowSlotCount", 40, light: L)) opGamma=\(d("glowOpGamma", 1)) radGrow=\(d("glowRadGrow", 0)) radGamma=\(d("glowRadGamma", 1)) mask=\(d("glowMaskInner", 0)) colour=\(apBAt("glowColorFollow", true, light: L) ? "follow-orb" : "manual:\(gcol.isEmpty ? "-" : gcol)") pool=\(blendN(L ? glowBlendLight : glowBlendDark)) ground=\(orbN(L ? glowGroundLight : glowGroundDark))
               warp: reach=\(d("warpReachU", 3)) depth=\(d("warpDepth", 0.6)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 1)) shrink=\(d("warpShrink", 0.4)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge")
-              shadow: spread=\(d("shadowSpread", 1.6)) opacity=\(d("shadowOpacity", 0.35)) colour=\(apHexAt("shadowColor", "", light: L).isEmpty ? "(auto)" : apHexAt("shadowColor", "", light: L)) blend=\(orbN(apIAt("shadowBlend", 0, light: L)))
               ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
               region: family=\(rfam.displayName) distinct=\(rdc.normal)/12 cvd=D\(rdc.deutan)/P\(rdc.protan) resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
             """
@@ -949,7 +913,6 @@ extension BlobFieldTuning {
           separation: orbGap=\(f(orbGap))
           region-labels: fadeDur=\(f(regionFadeDuration)) edgeMargin=\(f(regionEdgeMargin)) hysteresisGap=\(f(regionHysteresisGap))
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
-          shadow: on=\(shadowOn) zoomThreshold=\(f(shadowZoomThreshold)) zoomEase=\(f(shadowZoomEase)) offset=(\(f(shadowOffsetX)), \(f(shadowOffsetY)))
           per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):
         \(exprRow(0))
         \(exprRow(1))
@@ -1135,10 +1098,8 @@ extension BlobFieldTuning {
                 }
                 drainUnknown(kv, tag)
             case ("shadow", .dark), ("shadow", .light):
-                dbl(&kv, "spread", "\(tag).spread") { self.shadowSpread = $0 }
-                dbl(&kv, "opacity", "\(tag).opacity") { self.shadowOpacity = $0 }
-                hex(&kv, "colour", "\(tag).colour") { self.shadowColor = $0 }
-                named(&kv, "blend", Self.orbBlendNames, "\(tag).blend") { self.shadowBlend = $0 }
+                // RETIRED at the bake (2026-09-14) — the drop shadow is deleted. Old exports carry
+                // these; they drain as unknown (listed, never applied) rather than failing the import.
                 drainUnknown(kv, tag)
             case ("ground", .dark), ("ground", .light):
                 hex(&kv, "map", "\(tag).map") { self.mapGroundHex = $0 }
@@ -1180,17 +1141,10 @@ extension BlobFieldTuning {
                     else { r.malformed.append("\(tag).mode") }
                 }
             case ("shadow", .shared):
-                boolean(&kv, "on", "\(tag).on") { self.shadowOn = $0 }
-                dbl(&kv, "zoomThreshold", "\(tag).zoomThreshold") { self.shadowZoomThreshold = $0 }
-                dbl(&kv, "zoomEase", "\(tag).zoomEase") { self.shadowZoomEase = $0 }
-                kv.removeValue(forKey: "offset")   // "(x, y)" has a space → parse from `rest`
-                if let raw = after(rest, "offset=(") {
-                    let nums = raw.replacingOccurrences(of: ")", with: "").split(separator: ",")
-                    if nums.count == 2, let x = Double(nums[0].trimmingCharacters(in: .whitespaces)),
-                       let y = Double(nums[1].trimmingCharacters(in: .whitespaces)) {
-                        self.shadowOffsetX = x; self.shadowOffsetY = y; r.applied += 2
-                    } else { r.malformed.append("\(tag).offset") }
-                }
+                // RETIRED at the bake (2026-09-14). `offset=(x, y)` contains a space, so it never
+                // reaches kv as one token — drop it explicitly, then list what's left as skipped.
+                kv.removeValue(forKey: "offset")
+                if after(rest, "offset=(") != nil { r.unknown.append("\(tag).offset (retired)") }
                 drainUnknown(kv, tag)
             case ("in-orb spike", .shared):
                 boolean(&kv, "on", "\(tag).on") { self.inOrbOn = $0 }

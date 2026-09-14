@@ -1346,7 +1346,6 @@ final class CorpusPhysicsScene: SKScene {
         #if DEBUG
         refreshOrbTuning()    // pull live orb-tuner dials (dark dimensionality / opacity / title / blend)
         updateGridWarp()      // grid-deformation spike (pooling glow retired 2026-09-11)
-        updateDropShadows()   // cheap per-orb drop shadow, zoom-gated
         #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
@@ -2812,9 +2811,6 @@ final class CorpusPhysicsScene: SKScene {
     /// ONE place on-screen size is derived). Never recomputed in updateGridWarp — two copies drift.
     private var nodeOnScreenDiameter: [String: CGFloat] = [:]   // pt, per node (applyOrbScales)
     private var nodeTitleLodFade: [String: CGFloat] = [:]       // per node, = title.alpha (LOD fade)
-    private var dropShadowLayer: SKNode?          // one batched layer of soft shadow sprites (z below orbs)
-    private var shadowSprites: [String: SKSpriteNode] = [:]
-    private lazy var dropShadowTexture: SKTexture = Self.makeRadialShadowTexture()
 
     func updateOrbGlow() {
         let t = BlobFieldTuning.shared
@@ -3234,70 +3230,8 @@ final class CorpusPhysicsScene: SKScene {
         let t = min(1, max(0, (x - e0) / max(e1 - e0, 1e-6))); return t * t * (3 - 2 * t)
     }
 
-    // MARK: - Drop shadow spike (cheap per-orb radial sprite, zoom-gated, batched layer)
-
-    /// Soft radial-gradient disc, pre-rendered ONCE. Shared by every shadow sprite → they batch.
-    private static func makeRadialShadowTexture() -> SKTexture {
-        let px = 128
-        let size = CGSize(width: px, height: px)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let img = renderer.image { ctx in
-            let c = ctx.cgContext
-            let center = CGPoint(x: CGFloat(px) / 2, y: CGFloat(px) / 2)
-            let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
-            let grad = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: [0, 1])!
-            c.drawRadialGradient(grad, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(px) / 2, options: [])
-        }
-        let tex = SKTexture(image: img)
-        tex.filteringMode = .linear
-        return tex
-    }
-
-    /// Per frame: a soft dark disc behind each orb. ZOOM-GATED (eases in as you zoom in past a
-    /// threshold, absent below) — no per-orb ranking, no centrality, no boundary to pop across.
-    func updateDropShadows() {
-        let t = BlobFieldTuning.shared
-        let cameraScale = cameraNode.xScale
-        // gate: 1 when zoomed IN past the threshold (cameraScale ≤ thr−ease), 0 when out (≥ thr).
-        let thr = CGFloat(t.shadowZoomThreshold), ease = max(0.01, CGFloat(t.shadowZoomEase))
-        let gate = t.shadowOn ? Float(1 - smoothstepClamp(thr - ease, thr, cameraScale)) : 0
-        if gate <= 0.001 {
-            if dropShadowLayer != nil { dropShadowLayer?.isHidden = true }
-            return
-        }
-        let layer: SKNode
-        if let l = dropShadowLayer { layer = l; l.isHidden = false }
-        else { let l = SKNode(); l.zPosition = 0.4; addChild(l); dropShadowLayer = l; layer = l }
-
-        let opacity = CGFloat(t.shadowOpacity)     // per appearance (store, at mapIsLight == currentIsLight)
-        let spread = CGFloat(t.shadowSpread)
-        let off = CGPoint(x: CGFloat(t.shadowOffsetX), y: CGFloat(t.shadowOffsetY))
-        let colHex = t.shadowColor
-        let color = UIColor(hex: colHex.isEmpty ? "000000" : colHex) ?? .black
-        let blend = BlobFieldTuning.skBlend(t.shadowBlend)
-
-        var live = Set<String>()
-        for (id, sprite) in nodeSprites {
-            guard sprite.parent != nil else { continue }
-            live.insert(id)
-            let sh: SKSpriteNode
-            if let s = shadowSprites[id] { sh = s }
-            else {
-                let s = SKSpriteNode(texture: dropShadowTexture)
-                s.colorBlendFactor = 1
-                layer.addChild(s); shadowSprites[id] = s; sh = s
-            }
-            let r = (nodeIntrinsicRadii[id] ?? 30) * (nodeRestingScales[id] ?? 1) * sprite.xScale
-            let diam = r * 2 * spread
-            sh.size = CGSize(width: diam, height: diam)
-            sh.position = CGPoint(x: sprite.position.x + off.x, y: sprite.position.y + off.y)
-            sh.color = color
-            sh.blendMode = blend
-            sh.alpha = CGFloat(gate) * opacity
-        }
-        // Reap shadows for orbs that left.
-        for (id, s) in shadowSprites where !live.contains(id) { s.removeFromParent(); shadowSprites.removeValue(forKey: id) }
-    }
+    // (The per-orb DROP SHADOW spike was DELETED at the bake, 2026-09-14 — T ruled it out: the
+    // grid warp's dot shrink does the figure-ground job the shadow existed for.)
     #endif
 
     /// Recolor every resting (non-focal) glyph label on APPEARANCE FLIP — the DARK ink

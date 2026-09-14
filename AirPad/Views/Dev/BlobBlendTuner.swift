@@ -112,34 +112,35 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var glowColorHexLight: String { didSet { UserDefaults.standard.set(glowColorHexLight, forKey: "blobTuner.glowColorHexLight") } }
     var glowColorHexDark: String { didSet { UserDefaults.standard.set(glowColorHexDark, forKey: "blobTuner.glowColorHexDark") } }
 
-    // ── GRID-WARP + DROP-SHADOW SPIKE (2026-09-11) — pooling glow retired. Warp dials per appearance;
-    // mode (approach A/B/off) is shared. Shadow: master + zoom-gate + geometry shared, look per appearance.
-    var warpMode: Int { didSet { UserDefaults.standard.set(warpMode, forKey: "blobTuner.warpMode") } }   // 0 off · 1 in-shader · 2 field
-    var warpStrength: Double { get { apD("warpStrength", 22) } set { setD("warpStrength", newValue) } }    // displacement px
-    var warpReach: Double { get { apD("warpReach", 220) } set { setD("warpReach", newValue) } }            // influence radius px
-    var warpFalloff: Double { get { apD("warpFalloff", 0.5) } set { setD("warpFalloff", newValue) } }
-    var warpReact: Double { get { apD("warpReact", 0.0) } set { setD("warpReact", newValue) } }             // colour reaction (0 = off)
-    var warpSign: Double { get { apD("warpSign", 1) } set { setD("warpSign", newValue) } }                  // +1 converge (mass dimple) · −1 diverge
-    var warpZoomFade: Double { get { apD("warpZoomFade", 1) } set { setD("warpZoomFade", newValue) } }       // fade the warp out when zoomed out (anti-alias)
-    var warpZoomThreshold: Double { get { apD("warpZoomThreshold", 1.5) } set { setD("warpZoomThreshold", newValue) } }  // cameraScale beyond which the fade starts
-    var warpZoomWiden: Double { get { apD("warpZoomWiden", 0) } set { setD("warpZoomWiden", newValue) } }    // widen reach with zoom (smoother field)
-    /// ZOOM-IN side of reach (zoomWiden only acts zoomed OUT). 0 = reach is a constant pixel value
-    /// (previous behaviour); 1 = reach tracks the orb's screen size, which grows as 1/cs. Anchored at
-    /// cs = 1, so the dialed medium-zoom look is unchanged at any value.
-    var warpZoomTighten: Double { get { apD("warpZoomTighten", 0) } set { setD("warpZoomTighten", newValue) } }
-    var warpShrink: Double { get { apD("warpShrink", 0.4) } set { setD("warpShrink", newValue) } }           // mode C: dots shrink near mass (depression recedes)
-    // MASS — how strongly an orb's own SIZE drives how deep/wide it dents the lattice. 0 = uniform
-    // (every orb displaces equally: the pre-mass behaviour, kept as the honest A/B baseline).
-    var warpMass: Double { get { apD("warpMass", 1) } set { setD("warpMass", newValue) } }                   // 0 uniform · 1 fully size-proportional
-    // Mass law. Defaults to 1 (LINEAR in radius), NOT 2 (area). Area is physically truer, but mode C
-    // is a dot-RELOCATION model: a dot can't move more than ~1 lattice cell without dropping out of
-    // the shader's 3×3 search, which caps the expressible pull at ~3.4 at T's dialled strength. The
-    // annulus alone multiplies radius by 2.2 — squared that's 4.84, i.e. area spends MORE than the
-    // whole usable range on growth and every orb in the band clamps flat. That is the same "all orbs
-    // pinch identically" failure being fixed here, just at the saturated end. Slider goes to 2.5 so
-    // the saturation is inspectable rather than asserted.
-    var warpMassExp: Double { get { apD("warpMassExp", 1) } set { setD("warpMassExp", newValue) } }          // 1 = linear in radius · 2 = AREA (a disc's real mass)
-    var warpMassReach: Double { get { apD("warpMassReach", 1) } set { setD("warpMassReach", newValue) } }    // big mass deforms a WIDER region, not only a deeper one
+    // ── GRID-WARP + DROP-SHADOW SPIKE — pooling glow retired. Mode (approach) is shared; the warp dials
+    // are per appearance. ORB-UNIT RE-BASE (2026-09-14): reach + depth are dialled in ORB UNITS and
+    // converted to px per frame from each orb's on-screen size, so the look holds at EVERY zoom. This
+    // retired warpReach/warpStrength (px, anchored at cs = 1) and the three compensators that only
+    // existed to patch that basis (warpZoomFade/Threshold/Widen/Tighten + warpMassReach); falloff is
+    // baked 1.0 and colour-react baked 0. Ease-in is now PER ORB (tied to title visibility) — no dial.
+    var warpMode: Int { didSet { UserDefaults.standard.set(warpMode, forKey: "blobTuner.warpMode") } }   // 0 off · 1 in-shader A · 2 field B · 3 relocate C
+    var warpReachUnits: Double { get { apD("warpReachU", 3) } set { setD("warpReachU", newValue) } }     // ORB RADII (0.5…6): reach = N × the orb's on-screen radius
+    var warpDepth: Double { get { apD("warpDepth", 0.6) } set { setD("warpDepth", newValue) } }          // fraction of an orb radius (0…1): displacement depth
+    var warpSign: Double { get { apD("warpSign", 1) } set { setD("warpSign", newValue) } }                // +1 converge (mass dimple) · −1 diverge
+    var warpShrink: Double { get { apD("warpShrink", 0.4) } set { setD("warpShrink", newValue) } }        // mode C: dots shrink near mass (depression recedes)
+    // MASS — how strongly an orb's own SIZE drives how deep it dents the lattice. 0 = uniform (every orb
+    // displaces equally: the pre-mass behaviour, the honest A/B baseline).
+    var warpMass: Double { get { apD("warpMass", 1) } set { setD("warpMass", newValue) } }                // 0 uniform · 1 fully size-proportional
+    // Mass law. Defaults to 1 (LINEAR in radius), NOT 2 (area). Mode C is a dot-RELOCATION model: a dot
+    // can't move more than ~1 lattice cell without dropping out of the shader's 3×3 search, so area (r²)
+    // spends more than the whole usable range on annulus growth alone and every band orb clamps flat.
+    // Slider reaches 2.5 so the saturation is inspectable rather than asserted.
+    var warpMassExp: Double { get { apD("warpMassExp", 1) } set { setD("warpMassExp", newValue) } }       // 1 = linear in radius · 2 = AREA (a disc's real mass)
+
+    // LIVE READOUT — the scene writes these every frame from updateGridWarp so the tuner header shows
+    // what the current dials produce at the CURRENT zoom (the numbers that make orb-unit dials sighted).
+    // NOT persisted (session-live). @Observable → only the header re-renders as T pans/zooms.
+    var liveWarpCS: Double = 0
+    var liveWarpRefScreen: Double = 0    // corpus-average orb on-screen RADIUS, px
+    var liveWarpReachPx: Double = 0      // that orb's reach, px
+    var liveWarpDepthPx: Double = 0      // global displacement depth, px
+    var liveWarpTitlesVisible: Int = 0   // orbs currently showing a title (fade > 0)
+    var liveWarpOrbCount: Int = 0
     var shadowOn: Bool { didSet { UserDefaults.standard.set(shadowOn, forKey: "blobTuner.shadowOn") } }
     var shadowZoomThreshold: Double { didSet { UserDefaults.standard.set(shadowZoomThreshold, forKey: "blobTuner.shadowZoomThreshold") } }  // cameraScale below which shadows appear
     var shadowZoomEase: Double { didSet { UserDefaults.standard.set(shadowZoomEase, forKey: "blobTuner.shadowZoomEase") } }
@@ -271,6 +272,17 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         shadowZoomEase  = dbl("blobTuner.shadowZoomEase", 0.6)
         shadowOffsetX   = dbl("blobTuner.shadowOffsetX", 0)
         shadowOffsetY   = dbl("blobTuner.shadowOffsetY", -8)
+
+        // Retired warp dials (2026-09-14 orb-unit re-base) — drop their dead per-appearance keys so they
+        // don't linger in the persisted store. reach/depth now live under warpReachU / warpDepth. Placed
+        // at the END of init (self is fully initialised); didSet still won't fire mid-init, so persist the
+        // cleaned dict explicitly, and only if something actually moved.
+        var purgedRetired = false
+        for base in ["warpStrength", "warpReach", "warpFalloff", "warpReact", "warpZoomFade",
+                     "warpZoomThreshold", "warpZoomWiden", "warpZoomTighten", "warpMassReach"] {
+            for ap in [".L", ".D"] where apScalar.removeValue(forKey: base + ap) != nil { purgedRetired = true }
+        }
+        if purgedRetired { UserDefaults.standard.set(apScalar, forKey: "blobTuner.apScalar") }
     }
 
     /// Orb-title CURATED FONT SET — baked MSDF atlases (Resources/MSDF/*.{png,json}). Index → name +
@@ -698,28 +710,20 @@ struct BlobTunerPanel: View {
             sectionLabel("GRID WARP — deform the dot grid around orbs (spike)")
             menuPick("Approach", $tuning.warpMode, ["Off", "In-shader A", "Field B", "Relocate C"])
             if tuning.warpMode > 0 {
+                WarpLiveReadout(tuning: tuning)
                 Button(tuning.warpSign >= 0 ? "Direction: CONVERGE (mass dimple)" : "Direction: DIVERGE (bulge)") {
                     tuning.warpSign = tuning.warpSign >= 0 ? -1 : 1
                 }
                 .buttonStyle(.borderedProminent).tint(tuning.warpSign >= 0 ? .green : .orange)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                slider("Strength", $tuning.warpStrength, 0...80)
-                slider("Reach px", $tuning.warpReach, 40...500)
-                slider("Falloff", $tuning.warpFalloff, 0...1)
-                if tuning.warpMode == 3 { slider("Dot shrink", $tuning.warpShrink, 0...1) }   // C: dots shrink near mass
-                slider("Mass influence", $tuning.warpMass, 0...1)               // 0 = uniform (pre-mass baseline)
+                slider("Reach", $tuning.warpReachUnits, 0.5...6)      // ORB RADII
+                slider("Depth", $tuning.warpDepth, 0...1)             // fraction of an orb radius
+                slider("Mass influence", $tuning.warpMass, 0...1)     // 0 = uniform (pre-mass baseline)
                 slider("Mass law  1=r · 2=r² area", $tuning.warpMassExp, 0.5...2.5)
-                slider("Mass → reach", $tuning.warpMassReach, 0...1)            // big mass = WIDER dent too
-                slider("Colour react", $tuning.warpReact, 0...0.2)
-                slider("Zoom fade", $tuning.warpZoomFade, 0...1)          // anti-alias: fade warp when zoomed out
-                slider("Zoom fade start", $tuning.warpZoomThreshold, 0.8...4)
-                slider("Zoom widen", $tuning.warpZoomWiden, 0...1)         // widen reach with zoom → smoother field
-                slider("Zoom tighten", $tuning.warpZoomTighten, 0...1)     // zoom-IN side of reach
-                Text("zoom-in side of reach; 0 = px-constant, 1 = tracks orb size")
-                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-                Text("CONVERGE = dots densify toward the orb (mass on a sheet). A = per-fragment pull (truest, cost scales); B = low-res field (constant grid cost, may swim). ★ C = DOT RELOCATION: moves each dot's CENTRE + draws a ROUND dot (uses B's field) so dots don't SMEAR — and they SHRINK near mass (depression recedes). Zoom-fade/widen kill the zoom-out aliasing. ★ Judge WHILE PANNING on device.")
+                if tuning.warpMode == 3 { slider("Dot shrink", $tuning.warpShrink, 0...1) }   // C: dots shrink near mass
+                Text("Reach + Depth are in ORB UNITS (reach = N orb-radii, depth = fraction of an orb radius), converted to px per frame from each orb's on-screen size — so the look holds at EVERY zoom. Ease-in is PER ORB: an orb's pinch fades in exactly as its TITLE does (no ease dial). CONVERGE = dots densify toward the orb. A = per-fragment pull; B = low-res field; ★ C = DOT RELOCATION (moves dot CENTRES, no smear, dots shrink near mass). ★ Judge WHILE PANNING on device.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
-                Text("★ MASS: each orb now dents the lattice in proportion to its AMPLIFIED radius (the size the annulus makes, ÷ the corpus mean) — so a dimple DEEPENS as its orb grows through the band, instead of every orb pinching equally. ★ Influence 0 = the old uniform behaviour, the honest A/B baseline (it gates Mass→reach too, so one dial gets you back). Law defaults to 1 (LINEAR in radius): mode C can only move a dot ~1 cell, so pull above ~3.4 does nothing, and area (r²) spends 4.8× of that on annulus growth alone → every orb in the band clamps flat, which is the same failure at the other end. Push it to 2 to SEE that saturate. The law only redistributes weight — mean mass stays 1 — so Strength keeps its meaning either way. Mass→reach widens the dent with the LINEAR radius (4× area = 2× radius = ~2× wider). Zoom-INVARIANT on purpose — Zoom fade/widen stay the only zoom authority.")
+                Text("★ MASS: each orb dents the lattice in proportion to its AMPLIFIED radius (÷ the corpus mean), so a dimple DEEPENS as its orb grows through the band. Influence 0 = the uniform A/B baseline. Law defaults to 1 (LINEAR): mode C can only move a dot ~1 cell, so area (r²) saturates the usable range on annulus growth alone — push to 2 to SEE that. The law only redistributes weight (mean mass stays 1) so Depth keeps its meaning either way.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.cyan.opacity(0.85))
             }
         }
@@ -925,7 +929,7 @@ extension BlobFieldTuning {
               blob: blend=\(blendN(apIAt("blend", 0, light: L))) family=\(apBAt("family", true, light: L)) spread=\(d("spread", 0.5))
               orb: fill=\(d("orbFillOpacity", 1)) stroke=\(d("orbStrokeOpacity", 1)) titleScale=\(d("orbTitleScale", 1)) titleOpacity=\(d("orbTitleOpacity", 1)) titleColour=\(tc.isEmpty ? "(auto)" : tc) blend=\(orbN(L ? orbBlendLight : orbBlendDark))
               glow: radius=\(d("glowRadius", 3)) baseline=\(d("glowBaseline", 0)) inBand=\(d("glowInBand", 1)) falloff=\(d("glowFalloff", 0.6)) slots=\(apIAt("glowSlotCount", 40, light: L)) opGamma=\(d("glowOpGamma", 1)) radGrow=\(d("glowRadGrow", 0)) radGamma=\(d("glowRadGamma", 1)) mask=\(d("glowMaskInner", 0)) colour=\(apBAt("glowColorFollow", true, light: L) ? "follow-orb" : "manual:\(gcol.isEmpty ? "-" : gcol)") pool=\(blendN(L ? glowBlendLight : glowBlendDark)) ground=\(orbN(L ? glowGroundLight : glowGroundDark))
-              warp: strength=\(d("warpStrength", 22)) reach=\(d("warpReach", 220)) falloff=\(d("warpFalloff", 0.5)) shrink=\(d("warpShrink", 0.4)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 2)) massReach=\(d("warpMassReach", 1)) react=\(d("warpReact", 0)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge") zoomFade=\(d("warpZoomFade", 1)) zoomStart=\(d("warpZoomThreshold", 1.5)) zoomWiden=\(d("warpZoomWiden", 0)) zoomTighten=\(d("warpZoomTighten", 0))
+              warp: reach=\(d("warpReachU", 3)) depth=\(d("warpDepth", 0.6)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 1)) shrink=\(d("warpShrink", 0.4)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge")
               shadow: spread=\(d("shadowSpread", 1.6)) opacity=\(d("shadowOpacity", 0.35)) colour=\(apHexAt("shadowColor", "", light: L).isEmpty ? "(auto)" : apHexAt("shadowColor", "", light: L)) blend=\(orbN(apIAt("shadowBlend", 0, light: L)))
               ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
               region: family=\(rfam.displayName) distinct=\(rdc.normal)/12 cvd=D\(rdc.deutan)/P\(rdc.protan) resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
@@ -1106,24 +1110,29 @@ extension BlobFieldTuning {
                 named(&kv, "ground", Self.orbBlendNames, "\(tag).ground") { if isLight { self.glowGroundLight = $0 } else { self.glowGroundDark = $0 } }
                 drainUnknown(kv, tag)
             case ("warp", .dark), ("warp", .light):
-                dbl(&kv, "strength", "\(tag).strength") { self.warpStrength = $0 }
-                dbl(&kv, "reach", "\(tag).reach") { self.warpReach = $0 }
-                dbl(&kv, "falloff", "\(tag).falloff") { self.warpFalloff = $0 }
+                // Dials whose UNITS survive the orb-unit re-base — apply from an export of any era.
                 dbl(&kv, "shrink", "\(tag).shrink") { self.warpShrink = $0 }
                 dbl(&kv, "mass", "\(tag).mass") { self.warpMass = $0 }
                 dbl(&kv, "massLaw", "\(tag).massLaw") { self.warpMassExp = $0 }
-                dbl(&kv, "massReach", "\(tag).massReach") { self.warpMassReach = $0 }
-                dbl(&kv, "react", "\(tag).react") { self.warpReact = $0 }
                 if let s = kv.removeValue(forKey: "sign") {
                     if s == "converge" { self.warpSign = 1; r.applied += 1 }
                     else if s == "diverge" { self.warpSign = -1; r.applied += 1 }
                     else { r.malformed.append("\(tag).sign") }
                 }
-                dbl(&kv, "zoomFade", "\(tag).zoomFade") { self.warpZoomFade = $0 }
-                dbl(&kv, "zoomStart", "\(tag).zoomStart") { self.warpZoomThreshold = $0 }
-                dbl(&kv, "zoomWiden", "\(tag).zoomWiden") { self.warpZoomWiden = $0 }
-                // Absent in pre-2026-09-14 exports → key missing → value left untouched (defaults to 0).
-                dbl(&kv, "zoomTighten", "\(tag).zoomTighten") { self.warpZoomTighten = $0 }
+                // ORB-UNIT RE-BASE (2026-09-14): a LEGACY (px-basis) warp line is identified by ANY
+                // retired compensator key. Its `reach` is in PIXELS and it carries dials that no longer
+                // exist, so it is SKIPPED and listed by name — NEVER mapped onto the orb-unit dials (the
+                // units differ). A new line has none of these → reach/depth are read in the new units.
+                let legacyWarpKeys = ["strength", "falloff", "react", "zoomFade", "zoomStart",
+                                      "zoomWiden", "zoomTighten", "massReach"]
+                if legacyWarpKeys.contains(where: { kv[$0] != nil }) {
+                    for k in legacyWarpKeys + ["reach"] where kv.removeValue(forKey: k) != nil {
+                        r.unknown.append("\(tag).\(k) (retired px basis)")
+                    }
+                } else {
+                    dbl(&kv, "reach", "\(tag).reach") { self.warpReachUnits = $0 }   // orb radii
+                    dbl(&kv, "depth", "\(tag).depth") { self.warpDepth = $0 }        // fraction of an orb radius
+                }
                 drainUnknown(kv, tag)
             case ("shadow", .dark), ("shadow", .light):
                 dbl(&kv, "spread", "\(tag).spread") { self.shadowSpread = $0 }
@@ -1231,6 +1240,24 @@ extension BlobFieldTuning {
             }
         }
         return r
+    }
+}
+
+/// Grid-warp live readout — what the current dials produce at the current zoom. Its OWN View so the
+/// scene's every-frame writes to `liveWarp*` invalidate only this small box, not the whole panel.
+private struct WarpLiveReadout: View {
+    let tuning: BlobFieldTuning
+    var body: some View {
+        let cs = tuning.liveWarpCS
+        return VStack(alignment: .leading, spacing: 1) {
+            Text("cs \(String(format: "%.2f", cs)) · \(cs < 1 ? "zoomed in" : "zoomed out") · titles \(tuning.liveWarpTitlesVisible)/\(tuning.liveWarpOrbCount)")
+            Text("reference orb \(Int(tuning.liveWarpRefScreen.rounded())) px · reach \(Int(tuning.liveWarpReachPx.rounded())) px · depth \(Int(tuning.liveWarpDepthPx.rounded())) px")
+        }
+        .font(.system(size: 9, design: .monospaced))
+        .foregroundStyle(.cyan.opacity(0.9))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(6)
+        .background(.cyan.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
     }
 }
 

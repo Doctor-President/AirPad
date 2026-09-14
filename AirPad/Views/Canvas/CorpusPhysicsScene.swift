@@ -317,10 +317,8 @@ final class CorpusPhysicsScene: SKScene {
             nodeIntrinsicRadii.removeValue(forKey: id)
             nodeRestingPositions.removeValue(forKey: id)
             nodeRestingScales.removeValue(forKey: id)
-            #if DEBUG
-            nodeOnScreenDiameter.removeValue(forKey: id)   // grid-warp caches (DEBUG-only)
+            nodeOnScreenDiameter.removeValue(forKey: id)   // grid-warp caches
             nodeTitleLodFade.removeValue(forKey: id)
-            #endif
         }
 
         // Add or update regular nodes
@@ -376,9 +374,7 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         computeCharacteristicSpacing()
-        #if DEBUG
         cachedMeanRestingRadius = nil   // grid-warp mass reference re-derives from the new layout
-        #endif
     }
 
     // MARK: - Lens (a): global zoom-ramp on idle orb scale + label LOD
@@ -478,13 +474,10 @@ final class CorpusPhysicsScene: SKScene {
             // starve the grid-warp cache) and HOISTED above the title guard. Same value drives the
             // title alpha; the grid warp reads it so an orb's pinch fades in with its title (below).
             let lodFade = smoothstepClamp(lod, fadeHi, onScreen)
-            #if DEBUG
-            // ONE derivation of on-screen size + title fade, cached here for the grid-warp spike, which
-            // MUST NOT recompute them (two copies of `intrinsic × xScale / cs` would drift). Read in
-            // updateGridWarp; DEBUG-only, like the whole warp path.
+            // ONE derivation of on-screen size + title fade, cached here for the grid warp, which
+            // MUST NOT recompute them (two copies of `intrinsic × xScale / cs` would drift).
             nodeOnScreenDiameter[nodeID] = onScreen   // pt
             nodeTitleLodFade[nodeID] = lodFade
-            #endif
 
             guard let title = sprite.children.first(where: { $0.name == "titleLabel" }) else { continue }
             title.alpha = lodFade   // culls the container cleanly at 0
@@ -1337,9 +1330,9 @@ final class CorpusPhysicsScene: SKScene {
         #endif
 
         refreshGrazeTuning()  // pull live Graze dials into cached properties
+        updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
         #if DEBUG
         refreshOrbTuning()    // pull live orb-tuner dials (dark dimensionality / opacity / title / blend)
-        updateGridWarp()      // grid-deformation spike (pooling glow retired 2026-09-11)
         #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
@@ -2770,7 +2763,28 @@ final class CorpusPhysicsScene: SKScene {
     }
 
 
-    // ── GRID-WARP + DROP-SHADOW SPIKE (2026-09-11, replaces the retired pooling glow) ──────────────
+    #endif
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+    // GRID WARP — SHIPS (baked 2026-09-14). Everything below is Release code: the orbs pinch the dot
+    // grid like balls on a taut fabric, eased in per orb with its title. The tuner that dialled it is
+    // gone; these are T's device-final values.
+    // ─────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// Grid-warp values — **T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md**.
+    /// Reach is in ORB RADII and depth is a FRACTION OF AN ORB RADIUS (both converted to px per frame
+    /// from each orb's actual on-screen size), so the look holds at every zoom by construction.
+    /// Per-appearance where T dialled them apart; `reach`/`depth`/`massLaw` converged on one value.
+    enum GridWarpTuning {
+        static let reachOrbRadii: Double = 6.000     // both appearances (top of the dialled range; T called it final)
+        static let depthOrbRadii: Double = 0.600     // both appearances
+        static let massLaw: Double = 2.177           // both appearances (exponent: displacement ∝ r^law)
+        static let sign: Double = 1                  // +1 = converge (mass dimple)
+        /// Mass influence — how strongly an orb's own size drives its dent. 0 = every orb equal.
+        static func massInfluence(isLight: Bool) -> Double { isLight ? 0.647 : 0.636 }
+        /// Mode-C dot shrink near mass (a depression recedes from the viewer).
+        static func dotShrink(isLight: Bool) -> Double { isLight ? 0.540 : 1.000 }
+    }
+
     private var lastWarpMode = 0
 
     /// Cached corpus-wide resting-radius references (the grid-warp mass normalisers). Invalidated by
@@ -2782,41 +2796,15 @@ final class CorpusPhysicsScene: SKScene {
     private var nodeTitleLodFade: [String: CGFloat] = [:]       // per node, = title.alpha (LOD fade)
 
 
-    // MARK: - Grid-warp spike (feeds BackgroundGridNode; pooling glow retired)
+    // MARK: - Grid warp (feeds BackgroundGridNode)
 
-    /// Per frame: push the warp state into the grid shader. Mode 1 (in-shader) packs the nearest
-    /// orbs' screen positions into a 48×1 texture; mode 2 (field) also CPU-builds a low-res
-    /// displacement field. Mode 0 leaves the resting grid byte-identical.
+    /// Per frame: push the warp state into the grid shader. Mode is hardwired to RELOCATE C (T's
+    /// ruling): the field moves each dot's CENTRE and draws a round dot around it, so dots can't
+    /// smear, and they shrink near mass. The CPU builds a low-res displacement field once per frame.
     func updateGridWarp() {
-        let t = BlobFieldTuning.shared
         guard let grid = gridNode, let view = view else { return }
-        // `-GridWarpTest YES` — ONE orb dead-centre, strong. The distortion must be RADIALLY SYMMETRIC
-        // and CENTRED on the orb (still-frame verifiable). If it isn't, registration is still wrong.
-        if UserDefaults.standard.bool(forKey: "GridWarpTest") {
-            // Registration probe ONLY — mass stays uniform (range 1, reach ×1) so this keeps testing
-            // the one thing it exists to test: is the distortion radially symmetric and centred?
-            let n = BackgroundGridNode.maxWarpOrbs
-            var b = [UInt8](repeating: 0, count: n * 4)
-            b[0] = 128; b[1] = 128; b[2] = 255   // orb at screen (0.5, 0.5), weight 1
-            b[3] = encodeReachMul(1)             // reach ×1
-            let tex = SKTexture(data: Data(b), size: CGSize(width: n, height: 1)); tex.filteringMode = .nearest
-            let m = Float(max(1, t.warpMode))
-            var f: SKTexture? = nil
-            if m > 1.5 { f = buildWarpField(orbs: [(0.5, 0.5, 1.0, 240)], falloff: 0.4, massRange: 1, viewW: Double(view.bounds.width), viewH: Double(view.bounds.height)) }
-            BackgroundGridNode.setWarp(grid, mode: m, strength: 70, reach: 240, falloff: 0.4, react: 0, sign: 1,
-                                       shrink: Float(t.warpShrink), massRange: 1, orbData: tex, field: f)
-            lastWarpMode = Int(m)
-            return
-        }
-        let mode = Float(t.warpMode)
-        guard mode > 0.5 else {
-            if lastWarpMode != 0 {
-                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 0.5, react: 0, sign: 1,
-                                           shrink: 0, massRange: 1, orbData: nil, field: nil)
-                lastWarpMode = 0
-            }
-            return
-        }
+        let isLight = currentIsLight
+        let mode: Float = 3                                   // Relocate C — the only mode that ships
         let cameraScale = cameraNode.xScale, camPos = cameraNode.position
         let viewW = Double(view.bounds.width), viewH = Double(view.bounds.height)
         let cs = Double(cameraScale)
@@ -2830,18 +2818,17 @@ final class CorpusPhysicsScene: SKScene {
         // and the screenDist rank key live in the same point space applyOrbScales measures in, so there
         // is NO unit conversion — reach (orb-radii × on-screen radius) is already px.
         let ramp = max(Double(zoomRampScale(cameraScale)), 0.0001)
-        let influence = min(1, max(0, t.warpMass))
-        let exponent = max(0.1, t.warpMassExp)
+        let influence = min(1, max(0, GridWarpTuning.massInfluence(isLight: isLight)))
+        let exponent = max(0.1, GridWarpTuning.massLaw)
         let massCeil = Double(BackgroundGridNode.warpMassCeiling)
         let massRange = BackgroundGridNode.warpMassRange(influence: influence)
         let refs = massReferenceRadii(exponent: exponent)
         // Corpus-average orb's on-screen RADIUS (px). refs.linear is a resting world radius (it already
         // folds in restingScale), so a resting orb draws at refs.linear × ramp / cs — the same formula
-        // applyOrbScales uses per orb (onScreen ÷ 2), for the mean. This is the encode/readout base.
+        // applyOrbScales uses per orb (onScreen ÷ 2), for the mean. This is the encode base.
         let refScreen = refs.linear * ramp / cs
-        let reachUnits = t.warpReachUnits                        // ORB RADII
-        let depth = t.warpDepth                                  // fraction of an orb radius
-        let reachEff = reachUnits * refScreen                    // px — average orb's reach (encode base)
+        let reachUnits = GridWarpTuning.reachOrbRadii             // ORB RADII
+        let depth = GridWarpTuning.depthOrbRadii                  // fraction of an orb radius
         let strengthEff = depth * refScreen                      // px — global displacement depth; per-orb
                                                                  //      depth-dependence rides mass, as before
 
@@ -2883,68 +2870,46 @@ final class CorpusPhysicsScene: SKScene {
         func membership(_ i: Int) -> Double { 1 - smoothstepD(0.75, 1.0, Double(i) / Double(n)) }
         var packed: [(sx: Double, sy: Double, w: Double, reach: Double)] = []
         packed.reserveCapacity(n)
-        var orbBytes = [UInt8](repeating: 0, count: n * 4)
         var maxW = 0.0
         for (i, e) in scored.prefix(n).enumerated() {
             // PER-ORB EASE folds into the weight: w = membership × mass × title-fade.
             let w = membership(i) * e.mass * e.fade
             maxW = max(maxW, w)
             packed.append((e.sx, e.sy, w, e.reach))
-            guard e.sx > -0.5, e.sx < 1.5, e.sy > -0.5, e.sy < 1.5 else { continue }
-            let b = i * 4
-            orbBytes[b] = UInt8(min(1, max(0, e.sx)) * 255)
-            orbBytes[b + 1] = UInt8(min(1, max(0, e.sy)) * 255)
-            // b = membership × mass × fade, ÷ the SAME massRange the shader multiplies back in.
-            orbBytes[b + 2] = UInt8(min(255, max(0, w / massRange * 255)))
-            // a = this orb's reach multiplier (= its on-screen radius ÷ the corpus mean).
-            orbBytes[b + 3] = encodeReachMul(e.reach / max(reachEff, 0.001))
         }
 
-        // LIVE READOUT — what the current dials produce at the current zoom, so the orb-unit dials are
-        // SIGHTED (the scene writes; the tuner header re-renders). Published even when the effect is off
-        // below, so the header stays live as T zooms out through the title-visibility crossing.
+        #if DEBUG
+        // LIVE READOUT for the dev tuner's warp header (deleted with the tuner at the palette bake).
+        let t = BlobFieldTuning.shared
         t.liveWarpCS = cs
         t.liveWarpRefScreen = refScreen
-        t.liveWarpReachPx = reachEff
+        t.liveWarpReachPx = reachUnits * refScreen   // the corpus-average orb's reach, px
         t.liveWarpDepthPx = strengthEff
         t.liveWarpTitlesVisible = titlesVisible
         t.liveWarpOrbCount = nodeSprites.count
+        #endif
 
         // OFF when the warp would contribute nothing — depth 0, OR fully zoomed out (no title visible →
-        // every weight 0). Push the exact mode-0 path → byte-identical to Approach Off. This is what
-        // delivers BOTH "fully zoomed out = undistorted" and "depth 0 = byte-identical".
+        // every weight 0). Push the exact mode-0 path → byte-identical to an unwarped grid. This is what
+        // delivers "fully zoomed out = undistorted" by construction.
         guard depth > 0.0001, maxW > 0.002 else {
             if lastWarpMode != 0 {
-                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 1, react: 0, sign: 1,
-                                           shrink: 0, massRange: 1, orbData: nil, field: nil)
+                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, sign: 1,
+                                           shrink: 0, massRange: 1, field: nil)
                 lastWarpMode = 0
             }
             return
         }
         lastWarpMode = Int(mode)
 
-        let orbTex = SKTexture(data: Data(orbBytes), size: CGSize(width: n, height: 1))
-        orbTex.filteringMode = .nearest
-        var field: SKTexture? = nil
-        if mode > 1.5 {
-            // Falloff baked 1.0 (was a dial). The field carries the per-orb fade via w, so mode C's
-            // shrink (∝ field magnitude) eases in per orb too — no separate ease needed.
-            field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
-        }
-        // Colour-react hardwired 0 — the shader's react path is now a no-op (×1). Left in the shader
-        // source untouched (editing an SKShader risks a silent runtime compile failure); the dial is gone.
-        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff), reach: Float(reachEff),
-                                   falloff: 1.0, react: 0, sign: Float(t.warpSign),
-                                   shrink: Float(t.warpShrink), massRange: Float(massRange),
-                                   orbData: orbTex, field: field)
-    }
-
-    /// Pack a per-orb reach multiplier into the orb-data ALPHA channel (full-scale
-    /// `BackgroundGridNode.warpReachEncodeMax`). 8-bit → ~0.4% error at ×1; invisible on a reach of
-    /// 220px, and only mode A reads it at all (B/C get exact Doubles through `buildWarpField`).
-    private func encodeReachMul(_ mul: Double) -> UInt8 {
-        let full = Double(BackgroundGridNode.warpReachEncodeMax)
-        return UInt8(min(255, max(0, (mul / full * 255).rounded())))
+        // Mode C consumes the field exclusively (the per-orb orb-data texture went with mode A).
+        // Falloff baked 1.0; the field carries the per-orb title fade via w, so the dot shrink
+        // (∝ field magnitude) eases in per orb too.
+        let field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
+        BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff),
+                                   sign: Float(GridWarpTuning.sign),
+                                   shrink: Float(GridWarpTuning.dotShrink(isLight: isLight)),
+                                   massRange: Float(massRange), field: field)
     }
 
     /// The two corpus-wide reference radii the grid-warp mass normalises against (world units).
@@ -3022,7 +2987,6 @@ final class CorpusPhysicsScene: SKScene {
 
     // (The per-orb DROP SHADOW spike was DELETED at the bake, 2026-09-14 — T ruled it out: the
     // grid warp's dot shrink does the figure-ground job the shadow existed for.)
-    #endif
 
     /// Recolor every resting (non-focal) glyph label on APPEARANCE FLIP — the DARK ink
     /// depends on the sat/val boost, so light↔dark must re-flip. Glyph labels recolor in

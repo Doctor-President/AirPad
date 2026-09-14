@@ -3020,7 +3020,19 @@ final class CorpusPhysicsScene: SKScene {
         // the orb loop because the per-orb reach (and therefore the ranking) is derived from it.
         let cs = Double(cameraScale)
         let zf = 1 - t.warpZoomFade * min(1, max(0, (cs - t.warpZoomThreshold) / max(t.warpZoomThreshold, 0.1)))
-        let reachEff = t.warpReach * (1 + t.warpZoomWiden * max(0, cs - 1))
+        // Zoom-OUT: widen reach in px as the orb shrinks (existing dial).
+        // Zoom-IN:  tighten reach to the orb as it grows. k = 0 → today's
+        //           pixel-constant reach; k = 1 → reach tracks the orb's
+        //           screen size exactly. Anchored at cs = 1 so the dialed
+        //           medium-zoom look is untouched by construction.
+        // Zoomed IN the orb grows on screen as 1/cs while reach stayed a CONSTANT pixel value, so the
+        // deformation ring thinned against the orb until it sat underneath it (T: illegible zoomed in).
+        // The two factors are mutually exclusive by their clamps — widen ≡ 1 for cs ≤ 1, tighten ≡ 1
+        // for cs ≥ 1 — so each side of the zoom range keeps a SINGLE authority, the same rule that
+        // keeps the mass path from re-deriving a zoom response of its own.
+        let widen   = 1 + t.warpZoomWiden * max(0, cs - 1)
+        let tighten = pow(1 / min(1, cs), t.warpZoomTighten)
+        let reachEff = t.warpReach * widen * tighten
         let strengthEff = t.warpStrength * zf
 
         // ── MASS ────────────────────────────────────────────────────────────────────────────────

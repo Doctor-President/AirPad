@@ -127,30 +127,49 @@ struct NodeGradientLayer: View {
         return blobExpr
     }
     #endif
-    /// Effective per-format knobs — the tuner's per-expression value when overriding, else the
-    /// call-site value (so Release + un-dialed DEBUG are byte-identical).
+
+    /// PER-EXPRESSION blob geometry — **T device-final 2026-09-14** (the `per-expression blobs`
+    /// block, `override=true`; see Ops/reference/tuner-state-accepted.md). Indexed by `blobExpr`:
+    /// 0 V-scroll · 1 Carousel · 2 Grid · 3 Hero. These take precedence over the call-site values
+    /// exactly as T's override did on the build he approved — that is what he signed off on.
+    enum BlobExprBake {
+        //                                    spread   anim  distort   blur
+        static let spread:  [CGFloat] = [1.811, 0.669, 0.231, 1.177]
+        static let anim:    [CGFloat] = [1.000, 1.219, 1.000, 1.075]
+        static let distort: [CGFloat] = [0.504, 1.160, 1.390, 1.500]
+        static let blur:    [CGFloat] = [1.833, 1.592, 1.465, 1.204]
+    }
+    /// The baked index for this surface, or nil when the call site opted out (`blobExpr` -1).
+    private var bakedExprIdx: Int? { (blobExpr >= 0 && blobExpr < 4) ? blobExpr : nil }
+
+    /// Effective per-format knobs — the DEBUG tuner while it lives, else the BAKED per-expression
+    /// value, else (for a surface with no expression tag) the call-site value.
     private var effOffsetScale: CGFloat {
         #if DEBUG
         if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobSpread[i]) }
         #endif
+        if let i = bakedExprIdx { return BlobExprBake.spread[i] }
         return offsetScale
     }
     private var effBlurScale: CGFloat {
         #if DEBUG
         if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobBlur[i]) }
         #endif
+        if let i = bakedExprIdx { return BlobExprBake.blur[i] }
         return blurScale
     }
     private var effDriftScale: CGFloat {
         #if DEBUG
         if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobAnim[i]) }
         #endif
+        if let i = bakedExprIdx { return BlobExprBake.anim[i] }
         return driftSpeedScale
     }
     private var effUndulation: CGFloat {
         #if DEBUG
         if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobDistort[i]) }
         #endif
+        if let i = bakedExprIdx { return BlobExprBake.distort[i] }
         return undulation
     }
 
@@ -228,14 +247,23 @@ struct NodeGradientLayer: View {
     /// unrelated pigments (ws-ios-polish item 5, applied to the blob surfaces).
     private var effectiveColors: (String, String, String) {
         #if DEBUG
-        if BlobFieldTuning.shared.family {
-            return Self.familyColors(for: node, spread: CGFloat(BlobFieldTuning.shared.spread))
+        // While the tuner lives it can still A/B family-vs-tag-palette.
+        if !BlobFieldTuning.shared.family {
+            return Self.circleColors[paletteIndex % Self.circleColors.count]
         }
+        return Self.familyColors(for: node, spread: CGFloat(BlobFieldTuning.shared.spread))
+        #else
+        // ★ T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md: `family=true`, `spread=0.500` (both appearances) —
+        // three variants of ONE node-seeded hue, so a surface reads as a single colour FAMILY.
+        return Self.familyColors(for: node, spread: Self.bakedFamilySpread)
         #endif
-        return Self.circleColors[paletteIndex % Self.circleColors.count]
     }
 
-    #if DEBUG
+    /// Family hue spread — T device-final 2026-09-14 (`blob: spread=0.500`, both appearances).
+    /// 0 → near-monochrome · 1 → wide (the old unrelated-pigment look).
+    static let bakedFamilySpread: CGFloat = 0.500
+
+    // (FAMILY colours SHIP — `blob: family=true`, T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md.)
     /// Three hex colours from ONE family: a node-STABLE base hue (consistent across launches —
     /// leans on the paletteSlot stable-hash fix), fanned by `spread` in hue with paired
     /// saturation/lightness variation. spread 0 → near-monochrome; 1 → wide (toward today's
@@ -275,7 +303,7 @@ struct NodeGradientLayer: View {
         }
         return (variant(0), variant(1), variant(2))
     }
-    #endif
+
 
     // MARK: - Luminance-aware ink
 

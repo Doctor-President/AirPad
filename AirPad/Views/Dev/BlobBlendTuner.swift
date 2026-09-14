@@ -128,9 +128,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     /// in/out while panning. The fade + hysteresis themselves run in Release; only THESE dials are
     /// DEBUG-only (BlobFieldTuning is compiled out of Release, so CorpusPhysicsScene bakes provisional
     /// Release defaults). Defaults are LOUD on purpose so the effect is obvious — T dials down, CC bakes.
-    var regionFadeDuration: Double { didSet { UserDefaults.standard.set(regionFadeDuration, forKey: "blobTuner.regionFadeDuration") } }   // seconds, full 0→1 fade
-    var regionEdgeMargin: Double { didSet { UserDefaults.standard.set(regionEdgeMargin, forKey: "blobTuner.regionEdgeMargin") } }         // points past the real edge over which a leaving label fades
-    var regionHysteresisGap: Double { didSet { UserDefaults.standard.set(regionHysteresisGap, forKey: "blobTuner.regionHysteresisGap") } } // EXTRA inset a newcomer needs beyond an incumbent: haloPlace = 6 + this (0 = none)
 
     // (The native-SK label spike — `regionLabelMode` / `regionLabelTreatment` — was REJECTED and
     // REMOVED 2026-09-13: the lag it existed to eliminate came from the separation solver, not the
@@ -200,9 +197,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         orbGap          = dbl("blobTuner.orbGap", 30.0)
         // LOUD spike defaults (see the scene for the matching Release bakes): 0.45s fade, 120pt edge
         // band, 6pt newcomer-extra (a newcomer must clear 12 vs an incumbent's 6). NOT final.
-        regionFadeDuration  = dbl("blobTuner.regionFadeDuration", 0.45)
-        regionEdgeMargin    = dbl("blobTuner.regionEdgeMargin", 120.0)
-        regionHysteresisGap = dbl("blobTuner.regionHysteresisGap", 6.0)
         blobExprOverride = UserDefaults.standard.bool(forKey: "blobTuner.blobExprOverride")
         blobExprSel     = UserDefaults.standard.integer(forKey: "blobTuner.blobExprSel")
         blobSpread      = (UserDefaults.standard.array(forKey: "blobTuner.blobSpread") as? [Double]) ?? [1, 1, 1, 1]
@@ -430,7 +424,6 @@ struct BlobTunerPanel: View {
                     regionSection
                     warpSection
                     separationSection
-                    regionLabelsSection
                     backgroundSection
                 }
                 .padding(.bottom, 6)
@@ -665,16 +658,6 @@ struct BlobTunerPanel: View {
         }
     }
 
-    private var regionLabelsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("REGION LABELS — fade + declutter hysteresis")
-            slider("Fade sec", $tuning.regionFadeDuration, 0.05...1.0)
-            slider("Edge margin", $tuning.regionEdgeMargin, 0...500)   // was 0...200 — T railed it for 3 exports
-            slider("Newcomer extra", $tuning.regionHysteresisGap, 0...40)
-            Text("Fixes pills POPPING while panning. Edge margin = the fade-out band (pt) past the real screen edge (0 = hard cull, today's bug). Declutter runs IN-SCENE now (live positions): two passes — an incumbent KEEPS its slot at the fixed \(Int(RegionLabelPillMetrics.halo))pt inset, a NEWCOMER must clear that PLUS 'Newcomer extra' — so a threshold-straddling pair stops fluttering. ★ Newcomer extra = the EXTRA inset beyond an incumbent (0 = no hysteresis, the old behaviour); the whole 0–40 is live now — it used to saturate at \(Int(RegionLabelPillMetrics.halo)), so any value dialed before is INVALID and needs re-dialing. Defaults LOUD — dial down, then CC bakes.")
-                .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-        }
-    }
 
     private var exprSection: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -793,7 +776,6 @@ extension BlobFieldTuning {
         [SHARED — not appearance-split]
           orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
           separation: orbGap=\(f(orbGap))
-          region-labels: fadeDur=\(f(regionFadeDuration)) edgeMargin=\(f(regionEdgeMargin)) hysteresisGap=\(f(regionHysteresisGap))
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
           per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):
         \(exprRow(0))
@@ -992,9 +974,8 @@ extension BlobFieldTuning {
                 // them; a retired key must never fail the whole import.
                 drainUnknown(kv, tag)
             case ("region-labels", .shared):
-                dbl(&kv, "fadeDur", "\(tag).fadeDur") { self.regionFadeDuration = $0 }
-                dbl(&kv, "edgeMargin", "\(tag).edgeMargin") { self.regionEdgeMargin = $0 }
-                dbl(&kv, "hysteresisGap", "\(tag).hysteresisGap") { self.regionHysteresisGap = $0 }
+                // BAKED 2026-09-14 (0.720 / 200 / 26.462 are literals in CorpusPhysicsScene now) —
+                // the dials are gone, so these skip + list rather than pretending to apply.
                 drainUnknown(kv, tag)
             case ("warp", .shared):   // mode=<name with a space>
                 if let m = after(rest, "mode=")?.trimmingCharacters(in: .whitespaces) {

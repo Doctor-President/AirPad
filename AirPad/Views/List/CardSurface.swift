@@ -166,7 +166,7 @@ enum CardSurfaceDefaults {
     static func value(_ d: CardSurfaceDial) -> Double {
         switch d {
         case .baseLightness:    return 1.100   // T (was 0.98) → card resolves #FFFFFA
-        case .shadowAlpha:      return 0.07    // T (was 0.22) — near-zero occlusion
+        case .shadowAlpha:      return 0.262   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md (was 0.07)
         case .shadowRadius:     return 12.50   // T (was 12.0)
         case .shadowY:          return 11.00   // T (was 4.0) — falls further/softer
         case .rimOpacity:       return 0.95    // T (was 0.24) — strong edge
@@ -180,8 +180,8 @@ enum CardSurfaceDefaults {
 
     static func hex(_ h: CardSurfaceHex) -> String {
         switch h {
-        case .shadowHex:      return "43372A"  // T kept the warm brown-gray
-        case .groundHex:      return "F4EFE3"  // T kept the parchment ground
+        case .shadowHex:      return "434343"  // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md (was 43372A)
+        case .groundHex:      return "DDDDDD"  // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md (was F4EFE3) — map + card ground
         case .rimHex:         return "FFFFFF"  // T kept white
         case .embossLightHex: return "FFFFFF"  // T kept white
         case .embossDarkHex:  return "43372A"  // T kept the warm brown-gray
@@ -257,7 +257,7 @@ enum CardSurfaceResolved {
         #if DEBUG
         let lHex = PaletteTuner.shared.hex("cardShadow", dark: false) ?? bakedHex
         let lA = PaletteTuner.shared.overrides["cardShadow.alpha.light"].flatMap { Double($0) } ?? bakedAlpha
-        let dA = PaletteTuner.shared.overrides["cardShadow.alpha.dark"].flatMap { Double($0) } ?? 0.32
+        let dA = PaletteTuner.shared.overrides["cardShadow.alpha.dark"].flatMap { Double($0) } ?? 0.742
         return Color(UIColor { trait in
             if trait.userInterfaceStyle == .dark { return UIColor(red: 0, green: 0, blue: 0, alpha: CGFloat(dA)) }
             let (r, g, b) = rgb(lHex)
@@ -266,7 +266,7 @@ enum CardSurfaceResolved {
         #else
         return Color(UIColor { trait in
             if trait.userInterfaceStyle == .dark {
-                return UIColor(red: 0, green: 0, blue: 0, alpha: 0.32)
+                return UIColor(red: 0, green: 0, blue: 0, alpha: 0.742)   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
             }
             let (r, g, b) = rgb(bakedHex)
             return UIColor(red: r, green: g, blue: b, alpha: CGFloat(bakedAlpha))
@@ -297,7 +297,7 @@ enum CardSurfaceResolved {
         let cardO = BlobFieldTuning.shared.apHexAt("cardGroundHex", "", light: !dark)   // per-appearance override
         if !cardO.isEmpty { return Color(hexString: cardO) }
         #endif
-        let baked = dark ? "111115" : CardSurfaceStore.read(.groundHex)
+        let baked = dark ? "161616" : CardSurfaceStore.read(.groundHex)   // dark: T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
         #if DEBUG
         let hex = PaletteTuner.shared.hex("mapBackground", dark: dark) ?? baked
         #else

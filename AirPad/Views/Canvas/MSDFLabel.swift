@@ -39,6 +39,15 @@ private struct MSDFAtlasJSON: Decodable {
 
 final class MSDFFont {
     static let shared = MSDFFont(atlas: "fraunces_msdf")
+    /// The SHIPPING orb-title face — **T device-final 2026-09-14** (`titleFont=Space Grotesk Bold`,
+    /// see Ops/reference/tuner-state-accepted.md). Falls back to `shared` if the atlas ever fails to
+    /// load, so titles can never silently vanish. ★ Orb-title METRICS must come from this same face:
+    /// `applyLOD` derives screenPxRange from `distanceRange`/`atlasSize`, so reading them off another
+    /// atlas would mis-scale the glyph AA (a latent bug while the font was a dial).
+    static let orbTitle: MSDFFont = {
+        let f = MSDFFont(atlas: "spacegroteskbold_msdf")
+        return f.loaded ? f : shared
+    }()
     /// Curated MSDF atlases loaded by NAME, cached (one texture each; sub-rects still batch).
     /// Used by the orb-title font picker. A missing/unloadable atlas → `.loaded == false` (visible,
     /// not a silent fallback) so the tuner can flag it.
@@ -248,7 +257,7 @@ enum MSDFLabel {
     /// loop only runs on zoom-change / annulus, so this stays cheap.
     static func applyLOD(container: SKNode, lodAlpha: CGFloat,
                          worldToScreenPt: CGFloat, contentScale: CGFloat) {
-        let font = MSDFFont.shared
+        let font = MSDFFont.orbTitle   // MUST match the face the glyphs were built from
         guard let pt = container.userData?[pointSizeKey] as? CGFloat, pt > 0 else { return }
         // screenPxRange = pxrange · (screen px per atlas texel).
         // screen px per atlas texel = (pt · worldToScreenPt · contentScale) / atlasSize  (em cancels).

@@ -2602,11 +2602,8 @@ final class CorpusPhysicsScene: SKScene {
 
     // MARK: - Unfocused-orb appearance (Solar Flare dark / Cucumber Water light)
 
-    /// Light-mode ink for the orb stroke — the shipped light `AppearancePalette.ink`
-    /// (`#232A2E`) resolved to a concrete UIColor (the scene is not SwiftUI, so it
-    /// can't read the trait-dynamic Color directly).
-    private static let lightInk: UIColor =
-        UIColor(AppearancePalette.ink).resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
+    // (`lightInk` — the light-mode orb STROKE ink — was deleted at the 2026-09-14 bake: T dialled
+    // `stroke=0.000` in light, so light-mode orbs carry no stroke at all.)
 
     /// Authoritative light/dark — PUSHED from SwiftUI's `@Environment(\.colorScheme)`
     /// by CanvasView (the same signal that drives AppearancePalette; never nil).
@@ -2627,9 +2624,9 @@ final class CorpusPhysicsScene: SKScene {
     // Baked Cucumber Water (light) unfocused-orb wash — Tom's device-locked
     // values (the DEBUG tuner is retired). Single source in both configs; dark
     // reads none of these, so Solar Flare stays byte-identical.
-    private static let cwPigment: CGFloat = 0.60          // fill dilution (parchment through)
+    // (`cwPigment` 0.60 and `cwStrokeInk` 0.35 were deleted at the 2026-09-14 bake — T's
+    // `fill=1.000` makes the light fill SOLID and `stroke=0.000` removes the light stroke.)
     private static let cwWashStrength: CGFloat = 0.10     // diagonal hue-wash peak (light, screen)
-    private static let cwStrokeInk: CGFloat = 0.35        // ink stroke alpha
     private static let cwWashDark: CGFloat = 0.38         // diagonal black-wash peak (dark, darken)
 
     /// A deeper, slightly richer shade of the node's OWN hue — the pigment the
@@ -2649,33 +2646,28 @@ final class CorpusPhysicsScene: SKScene {
     /// term now, not a child sprite).
     /// - DARK (Solar Flare): opaque fill (meta `0.55`) + black diagonal darken
     ///   (peak 0.38) + white@0.12 stroke — byte-identical to the shipped look.
-    /// - LIGHT (Cucumber Water): fill diluted to `cwPigment` so the parchment map
-    ///   ground shows through; the wash screen-deepens the node's OWN hue
-    ///   (`washHueShade`, peak `cwWashStrength`); near-invisible white stroke →
-    ///   low-alpha ink. Never touches `shape.alpha`, so focal/dimmed state
+    /// - LIGHT (Cucumber Water): SOLID fill (T's `fill=1.000`, 2026-09-14 — the old
+    ///   `cwPigment` dilution let the dot grid show through); the wash screen-deepens
+    ///   the node's OWN hue (`washHueShade`, peak `cwWashStrength`); NO stroke
+    ///   (`stroke=0.000`). Never touches `shape.alpha`, so focal/dimmed state
     ///   (set by `setFocalShader`) is preserved.
     private func styleUnfocusedOrb(_ node: SKNode,
                                    baseFill: UIColor,
                                    isMeta: Bool,
                                    isLight: Bool) {
         // Fill/stroke → per-node attributes on the shared-shader sprite orb.
+        // ★ T device-final 2026-09-14 (Ops/reference/tuner-state-accepted.md): `orb: fill=1.000`
+        // BOTH appearances, `stroke=1.000` dark / `0.000` light.
+        //   • fill 1.000 is SET, not multiplied — a SOLID fill even in light. It retires the
+        //     `cwPigment` (0.60) dilution, which let the dot grid show through the orb.
+        //   • stroke 0.000 in light removes EVERY light-mode stroke (the near-invisible ink rim and
+        //     the meta purple rim alike — the dial multiplied whatever stroke was computed).
         let metaAlpha: CGFloat = isMeta ? 0.55 : 1.0
-        var fillAlpha = isLight ? metaAlpha * Self.cwPigment : metaAlpha
-        // Meta keeps its soft-purple rim in both rooms (reads on cream); only the
-        // near-invisible white@0.12 non-meta stroke flips to ink.
+        let fillAlpha = metaAlpha
         var stroke: UIColor = isMeta
-            ? UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple
-            : (isLight ? Self.lightInk.withAlphaComponent(Self.cwStrokeInk)
-                       : UIColor.white.withAlphaComponent(0.12))
-        #if DEBUG
-        // Orb tuner (item 1) — fill + stroke opacity dials, off unless orbOverride is on.
-        if BlobFieldTuning.shared.orbOverride {
-            // SET (not multiply) so 1.0 = a SOLID fill even in light — bypasses the cwPigment (0.60)
-            // dilution that otherwise lets the dot grid show through and defeats the orb blend modes.
-            fillAlpha = metaAlpha * CGFloat(BlobFieldTuning.shared.orbFillOpacity)
-            stroke = stroke.withAlphaComponent(stroke.cgColor.alpha * CGFloat(BlobFieldTuning.shared.orbStrokeOpacity))
-        }
-        #endif
+            ? UIColor(red: 0.7, green: 0.5, blue: 1.0, alpha: 0.7)  // soft purple (dark only now)
+            : UIColor.white.withAlphaComponent(0.12)
+        if isLight { stroke = stroke.withAlphaComponent(0) }
         let fill = baseFill.withAlphaComponent(fillAlpha)
         let lineWidth: CGFloat = isMeta ? 1.5 : 1.0
 
@@ -3733,9 +3725,11 @@ final class CorpusPhysicsScene: SKScene {
     /// (the DEBUG dark-orb tuner panel + `dark.*` keys were baked-and-deleted). Pushed
     /// once into the shader's `uniforms` at `orbSpriteShader` init.
     enum DarkOrbTuning {
-        static let sat: CGFloat = 2.00        // saturation ×
-        static let val: CGFloat = 1.25        // brightness ×
-        static let rim: CGFloat = 0.20        // rim-light strength
+        // ★ T device-final 2026-09-14 (`orb: darkSat/darkVal/darkRim`, DARK-ONLY) —
+        // see Ops/reference/tuner-state-accepted.md. Was 2.00 / 1.25 / 0.20 pre-bake.
+        static let sat: CGFloat = 3.000       // saturation ×
+        static let val: CGFloat = 1.952       // brightness ×
+        static let rim: CGFloat = 0.000       // rim-light strength (dialled off)
         static let rimWidth: CGFloat = 0.17   // rim band width (uv)
         static let sphere: CGFloat = 0.00     // sphere-shade intensity (off)
         static let lightDirX: CGFloat = -1.0  // light direction x
@@ -3943,10 +3937,10 @@ final class CorpusPhysicsScene: SKScene {
         // named "titleLabel", z 2 — resolution-independent (crisp at any zoom) + batched.
         let side = radius * LensTuning.labelBoxFactor
         #if DEBUG
-        // Orb-title FONT (addendum A) — the selected MSDF atlas (curated set). MSDF renders + measures
-        // from the SAME atlas, so a font change reshapes the glyphs (rebuilt via restyleTitles on change,
-        // CorpusPhysicsScene). Load failure → visible: keep Fraunces + set a tuner warning (not silent).
-        var font = MSDFFont.shared
+        // Orb-title FONT — baked to Space Grotesk Bold (T device-final 2026-09-14); the DEBUG picker
+        // can still override it while the tuner lives. MSDF renders + measures from the SAME atlas, so
+        // a font change reshapes the glyphs (rebuilt via restyleTitles on change).
+        var font = MSDFFont.orbTitle
         if BlobFieldTuning.shared.orbOverride {
             let i = BlobFieldTuning.shared.orbTitleFont
             if i >= 0, i < BlobFieldTuning.orbFontAtlases.count {
@@ -3956,7 +3950,7 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         #else
-        let font = MSDFFont.shared
+        let font = MSDFFont.orbTitle
         #endif
         let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
             MSDFLabel.textWidth(s, pointSize: f.pointSize, font: font)

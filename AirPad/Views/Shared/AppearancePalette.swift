@@ -76,9 +76,9 @@ enum AppearancePalette {
     /// Tomoe River register — NOT stark white (`.systemBackground` would glare).
     static var bgBase: Color {
         #if DEBUG
-        PaletteTuner.color("bgBase", dark: "1A1A1A", light: "F4EFE3")
+        PaletteTuner.color("bgBase", dark: "000000", light: "F4EFE3")
         #else
-        dynamic(dark: "1A1A1A", light: "F4EFE3")
+        dynamic(dark: "000000", light: "F4EFE3")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
         #endif
     }
 
@@ -88,9 +88,9 @@ enum AppearancePalette {
     /// luminance (transmissive — light falls ONTO the paper).
     static var bgElevated: Color {
         #if DEBUG
-        PaletteTuner.color("bgElevated", dark: "1A1A1A", light: "FAF6EC")
+        PaletteTuner.color("bgElevated", dark: "0D0D0D", light: "FAF6EC")
         #else
-        dynamic(dark: "1A1A1A", light: "FAF6EC")
+        dynamic(dark: "0D0D0D", light: "FAF6EC")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
         #endif
     }
 
@@ -229,9 +229,9 @@ enum AppearancePalette {
     /// alongside `mapGridDotRGB`.
     static func mapGridDotOpacity(dark: Bool) -> Float {
         #if DEBUG
-        PaletteTuner.floatVal("mapGridDotOpacity", dark: dark, bakedDark: 0.18, bakedLight: 0.47)
+        PaletteTuner.floatVal("mapGridDotOpacity", dark: dark, bakedDark: 0.809, bakedLight: 0.805)
         #else
-        dark ? 0.18 : 0.47
+        dark ? 0.809 : 0.805   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
         #endif
     }
 

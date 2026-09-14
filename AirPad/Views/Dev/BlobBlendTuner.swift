@@ -123,6 +123,10 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var warpZoomFade: Double { get { apD("warpZoomFade", 1) } set { setD("warpZoomFade", newValue) } }       // fade the warp out when zoomed out (anti-alias)
     var warpZoomThreshold: Double { get { apD("warpZoomThreshold", 1.5) } set { setD("warpZoomThreshold", newValue) } }  // cameraScale beyond which the fade starts
     var warpZoomWiden: Double { get { apD("warpZoomWiden", 0) } set { setD("warpZoomWiden", newValue) } }    // widen reach with zoom (smoother field)
+    /// ZOOM-IN side of reach (zoomWiden only acts zoomed OUT). 0 = reach is a constant pixel value
+    /// (previous behaviour); 1 = reach tracks the orb's screen size, which grows as 1/cs. Anchored at
+    /// cs = 1, so the dialed medium-zoom look is unchanged at any value.
+    var warpZoomTighten: Double { get { apD("warpZoomTighten", 0) } set { setD("warpZoomTighten", newValue) } }
     var warpShrink: Double { get { apD("warpShrink", 0.4) } set { setD("warpShrink", newValue) } }           // mode C: dots shrink near mass (depression recedes)
     // MASS — how strongly an orb's own SIZE drives how deep/wide it dents the lattice. 0 = uniform
     // (every orb displaces equally: the pre-mass behaviour, kept as the honest A/B baseline).
@@ -710,6 +714,9 @@ struct BlobTunerPanel: View {
                 slider("Zoom fade", $tuning.warpZoomFade, 0...1)          // anti-alias: fade warp when zoomed out
                 slider("Zoom fade start", $tuning.warpZoomThreshold, 0.8...4)
                 slider("Zoom widen", $tuning.warpZoomWiden, 0...1)         // widen reach with zoom → smoother field
+                slider("Zoom tighten", $tuning.warpZoomTighten, 0...1)     // zoom-IN side of reach
+                Text("zoom-in side of reach; 0 = px-constant, 1 = tracks orb size")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
                 Text("CONVERGE = dots densify toward the orb (mass on a sheet). A = per-fragment pull (truest, cost scales); B = low-res field (constant grid cost, may swim). ★ C = DOT RELOCATION: moves each dot's CENTRE + draws a ROUND dot (uses B's field) so dots don't SMEAR — and they SHRINK near mass (depression recedes). Zoom-fade/widen kill the zoom-out aliasing. ★ Judge WHILE PANNING on device.")
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(.orange.opacity(0.8))
                 Text("★ MASS: each orb now dents the lattice in proportion to its AMPLIFIED radius (the size the annulus makes, ÷ the corpus mean) — so a dimple DEEPENS as its orb grows through the band, instead of every orb pinching equally. ★ Influence 0 = the old uniform behaviour, the honest A/B baseline (it gates Mass→reach too, so one dial gets you back). Law defaults to 1 (LINEAR in radius): mode C can only move a dot ~1 cell, so pull above ~3.4 does nothing, and area (r²) spends 4.8× of that on annulus growth alone → every orb in the band clamps flat, which is the same failure at the other end. Push it to 2 to SEE that saturate. The law only redistributes weight — mean mass stays 1 — so Strength keeps its meaning either way. Mass→reach widens the dent with the LINEAR radius (4× area = 2× radius = ~2× wider). Zoom-INVARIANT on purpose — Zoom fade/widen stay the only zoom authority.")
@@ -918,7 +925,7 @@ extension BlobFieldTuning {
               blob: blend=\(blendN(apIAt("blend", 0, light: L))) family=\(apBAt("family", true, light: L)) spread=\(d("spread", 0.5))
               orb: fill=\(d("orbFillOpacity", 1)) stroke=\(d("orbStrokeOpacity", 1)) titleScale=\(d("orbTitleScale", 1)) titleOpacity=\(d("orbTitleOpacity", 1)) titleColour=\(tc.isEmpty ? "(auto)" : tc) blend=\(orbN(L ? orbBlendLight : orbBlendDark))
               glow: radius=\(d("glowRadius", 3)) baseline=\(d("glowBaseline", 0)) inBand=\(d("glowInBand", 1)) falloff=\(d("glowFalloff", 0.6)) slots=\(apIAt("glowSlotCount", 40, light: L)) opGamma=\(d("glowOpGamma", 1)) radGrow=\(d("glowRadGrow", 0)) radGamma=\(d("glowRadGamma", 1)) mask=\(d("glowMaskInner", 0)) colour=\(apBAt("glowColorFollow", true, light: L) ? "follow-orb" : "manual:\(gcol.isEmpty ? "-" : gcol)") pool=\(blendN(L ? glowBlendLight : glowBlendDark)) ground=\(orbN(L ? glowGroundLight : glowGroundDark))
-              warp: strength=\(d("warpStrength", 22)) reach=\(d("warpReach", 220)) falloff=\(d("warpFalloff", 0.5)) shrink=\(d("warpShrink", 0.4)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 2)) massReach=\(d("warpMassReach", 1)) react=\(d("warpReact", 0)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge") zoomFade=\(d("warpZoomFade", 1)) zoomStart=\(d("warpZoomThreshold", 1.5)) zoomWiden=\(d("warpZoomWiden", 0))
+              warp: strength=\(d("warpStrength", 22)) reach=\(d("warpReach", 220)) falloff=\(d("warpFalloff", 0.5)) shrink=\(d("warpShrink", 0.4)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 2)) massReach=\(d("warpMassReach", 1)) react=\(d("warpReact", 0)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge") zoomFade=\(d("warpZoomFade", 1)) zoomStart=\(d("warpZoomThreshold", 1.5)) zoomWiden=\(d("warpZoomWiden", 0)) zoomTighten=\(d("warpZoomTighten", 0))
               shadow: spread=\(d("shadowSpread", 1.6)) opacity=\(d("shadowOpacity", 0.35)) colour=\(apHexAt("shadowColor", "", light: L).isEmpty ? "(auto)" : apHexAt("shadowColor", "", light: L)) blend=\(orbN(apIAt("shadowBlend", 0, light: L)))
               ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
               region: family=\(rfam.displayName) distinct=\(rdc.normal)/12 cvd=D\(rdc.deutan)/P\(rdc.protan) resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
@@ -1115,6 +1122,8 @@ extension BlobFieldTuning {
                 dbl(&kv, "zoomFade", "\(tag).zoomFade") { self.warpZoomFade = $0 }
                 dbl(&kv, "zoomStart", "\(tag).zoomStart") { self.warpZoomThreshold = $0 }
                 dbl(&kv, "zoomWiden", "\(tag).zoomWiden") { self.warpZoomWiden = $0 }
+                // Absent in pre-2026-09-14 exports → key missing → value left untouched (defaults to 0).
+                dbl(&kv, "zoomTighten", "\(tag).zoomTighten") { self.warpZoomTighten = $0 }
                 drainUnknown(kv, tag)
             case ("shadow", .dark), ("shadow", .light):
                 dbl(&kv, "spread", "\(tag).spread") { self.shadowSpread = $0 }

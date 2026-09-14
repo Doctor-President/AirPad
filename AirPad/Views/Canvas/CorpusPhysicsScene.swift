@@ -317,6 +317,10 @@ final class CorpusPhysicsScene: SKScene {
             nodeIntrinsicRadii.removeValue(forKey: id)
             nodeRestingPositions.removeValue(forKey: id)
             nodeRestingScales.removeValue(forKey: id)
+            #if DEBUG
+            nodeOnScreenDiameter.removeValue(forKey: id)   // grid-warp caches (DEBUG-only)
+            nodeTitleLodFade.removeValue(forKey: id)
+            #endif
         }
 
         // Add or update regular nodes
@@ -476,8 +480,19 @@ final class CorpusPhysicsScene: SKScene {
             // zooming in doesn't blow the 1px edge into a soft blur (see updateOrbEdgeAA).
             updateOrbEdgeAA(sprite, onScreen: onScreen)
 
-            guard let title = sprite.children.first(where: { $0.name == "titleLabel" }) else { continue }
+            // Title LOD fade — computed for EVERY orb (title-bearing or not, so the guard below can't
+            // starve the grid-warp cache) and HOISTED above the title guard. Same value drives the
+            // title alpha; the grid warp reads it so an orb's pinch fades in with its title (below).
             let lodFade = smoothstepClamp(lod, fadeHi, onScreen)
+            #if DEBUG
+            // ONE derivation of on-screen size + title fade, cached here for the grid-warp spike, which
+            // MUST NOT recompute them (two copies of `intrinsic × xScale / cs` would drift). Read in
+            // updateGridWarp; DEBUG-only, like the whole warp path.
+            nodeOnScreenDiameter[nodeID] = onScreen   // pt
+            nodeTitleLodFade[nodeID] = lodFade
+            #endif
+
+            guard let title = sprite.children.first(where: { $0.name == "titleLabel" }) else { continue }
             title.alpha = lodFade   // culls the container cleanly at 0
             // MSDF glyph labels: the custom shader ignores SKNode.alpha, so push the LOD
             // fade to the glyphs as a_lod_alpha (with scale-aware smoothing, one pass).
@@ -2793,6 +2808,10 @@ final class CorpusPhysicsScene: SKScene {
     /// Cached corpus-wide resting-radius references (the grid-warp mass normalisers). Invalidated by
     /// `captureRestingState`; the count/exponent checks are a second line of defence.
     private var cachedMeanRestingRadius: (count: Int, exponent: Double, linear: Double, mass: Double)?
+    /// Grid-warp reads on-screen size + title-LOD fade from these, populated by applyOrbScales (the
+    /// ONE place on-screen size is derived). Never recomputed in updateGridWarp — two copies drift.
+    private var nodeOnScreenDiameter: [String: CGFloat] = [:]   // pt, per node (applyOrbScales)
+    private var nodeTitleLodFade: [String: CGFloat] = [:]       // per node, = title.alpha (LOD fade)
     private var dropShadowLayer: SKNode?          // one batched layer of soft shadow sprites (z below orbs)
     private var shadowSprites: [String: SKSpriteNode] = [:]
     private lazy var dropShadowTexture: SKTexture = Self.makeRadialShadowTexture()
@@ -3012,108 +3031,124 @@ final class CorpusPhysicsScene: SKScene {
             }
             return
         }
-        lastWarpMode = Int(mode)
         let cameraScale = cameraNode.xScale, camPos = cameraNode.position
         let viewW = Double(view.bounds.width), viewH = Double(view.bounds.height)
-        // ZOOM-OUT ALIASING (fix 2): (a) fade the warp as you zoom out; (b) widen the reach with zoom
-        // so the field stays smooth relative to pixel size. Both dials, per appearance. Hoisted above
-        // the orb loop because the per-orb reach (and therefore the ranking) is derived from it.
         let cs = Double(cameraScale)
-        let zf = 1 - t.warpZoomFade * min(1, max(0, (cs - t.warpZoomThreshold) / max(t.warpZoomThreshold, 0.1)))
-        // Zoom-OUT: widen reach in px as the orb shrinks (existing dial).
-        // Zoom-IN:  tighten reach to the orb as it grows. k = 0 → today's
-        //           pixel-constant reach; k = 1 → reach tracks the orb's
-        //           screen size exactly. Anchored at cs = 1 so the dialed
-        //           medium-zoom look is untouched by construction.
-        // Zoomed IN the orb grows on screen as 1/cs while reach stayed a CONSTANT pixel value, so the
-        // deformation ring thinned against the orb until it sat underneath it (T: illegible zoomed in).
-        // The two factors are mutually exclusive by their clamps — widen ≡ 1 for cs ≤ 1, tighten ≡ 1
-        // for cs ≥ 1 — so each side of the zoom range keeps a SINGLE authority, the same rule that
-        // keeps the mass path from re-deriving a zoom response of its own.
-        let widen   = 1 + t.warpZoomWiden * max(0, cs - 1)
-        let tighten = pow(1 / min(1, cs), t.warpZoomTighten)
-        let reachEff = t.warpReach * widen * tighten
-        let strengthEff = t.warpStrength * zf
 
-        // ── MASS ────────────────────────────────────────────────────────────────────────────────
-        // Pre-mass, u_orb_data carried NO radius term, so every orb displaced the lattice equally:
-        // a tiny node pinched as hard as the biggest one and the pinch bore no relation to what was
-        // visibly on screen. Weight each orb by its AMPLIFIED radius — the one the annulus produces
-        // and T actually sees — so an orb entering the annulus DEEPENS its dimple as it grows.
-        //
-        // ZOOM-INVARIANT by construction: sprite.xScale = resting × zoomRamp × annulusAmplify, so
-        // dividing by the ramp cancels the zoom term and leaves size + live annulus growth. That
-        // keeps warpZoomFade/warpZoomWiden the SOLE authority on zoom response — two independent
-        // derivations of "how should zoom change the warp" is how the recess bug got three guards.
-        //
-        // The references are corpus-wide and deliberately FRAME-INVARIANT: normalising against a
-        // per-frame max would make an orb's mass change because some OTHER orb moved — precisely the
-        // invisible driver this change exists to remove.
+        // ── ORB-UNIT BASIS (2026-09-14) ───────────────────────────────────────────────────────────
+        // Reach and depth are dialled in ORB UNITS, converted to px per frame from each orb's ACTUAL
+        // on-screen size. The old pixel values were anchored at cs = 1, so the look held at exactly one
+        // zoom; three compensator dials (zoomWiden/zoomTighten/massReach) tried to patch that and each
+        // was inert on one side of cs = 1. In orb units "distortion scales with the orb" is true BY
+        // CONSTRUCTION at every zoom. Everything the shader consumes is still PIXELS: u_viewport_size
+        // and the screenDist rank key live in the same point space applyOrbScales measures in, so there
+        // is NO unit conversion — reach (orb-radii × on-screen radius) is already px.
         let ramp = max(Double(zoomRampScale(cameraScale)), 0.0001)
         let influence = min(1, max(0, t.warpMass))
         let exponent = max(0.1, t.warpMassExp)
-        // Reach influence is a SHARE of the mass influence, not a rival dial — otherwise "mass 0"
-        // wouldn't actually be the uniform baseline T is A/B-ing against.
-        let reachInfluence = min(1, max(0, t.warpMassReach)) * influence
         let massCeil = Double(BackgroundGridNode.warpMassCeiling)
         let massRange = BackgroundGridNode.warpMassRange(influence: influence)
         let refs = massReferenceRadii(exponent: exponent)
+        // Corpus-average orb's on-screen RADIUS (px). refs.linear is a resting world radius (it already
+        // folds in restingScale), so a resting orb draws at refs.linear × ramp / cs — the same formula
+        // applyOrbScales uses per orb (onScreen ÷ 2), for the mean. This is the encode/readout base.
+        let refScreen = refs.linear * ramp / cs
+        let reachUnits = t.warpReachUnits                        // ORB RADII
+        let depth = t.warpDepth                                  // fraction of an orb radius
+        let reachEff = reachUnits * refScreen                    // px — average orb's reach (encode base)
+        let strengthEff = depth * refScreen                      // px — global displacement depth; per-orb
+                                                                 //      depth-dependence rides mass, as before
 
-        var scored: [(key: Double, sx: Double, sy: Double, mass: Double, reach: Double)] = []
+        // ── MASS (unchanged) — an orb dents in proportion to its AMPLIFIED radius. Zoom-invariant via
+        // ÷ ramp; frame-invariant references so an orb's mass can't change because another orb moved.
+        var scored: [(key: Double, sx: Double, sy: Double, mass: Double, reach: Double, fade: Double)] = []
         scored.reserveCapacity(nodeSprites.count)
+        var titlesVisible = 0
         for (id, sprite) in nodeSprites {
+            // ONE derivation of on-screen size: read what applyOrbScales already measured (DIAMETER,
+            // pt) from the cache — never recompute intrinsic × xScale / cs here (the two would drift).
+            // A node not yet measured this launch is simply skipped for this frame.
+            guard let onScreen = nodeOnScreenDiameter[id] else { continue }
+            let orbScreen = Double(onScreen) / 2                 // on-screen RADIUS, px
+            // EASE-IN is PER ORB, tied to TITLE VISIBILITY: fade = the exact lodFade applyOrbScales
+            // assigned to this orb's title (LensTuning.labelLOD … labelLOD×1.5 band — referenced, not
+            // copied). An orb's pinch and its title appear together by construction. Fully zoomed out
+            // every fade is 0 → every packed weight is 0 → the grid is exactly undistorted.
+            let fade = Double(nodeTitleLodFade[id] ?? 0)
+            if fade > 0 { titlesVisible += 1 }
             let p = sprite.position
             let sx = 0.5 + Double((p.x - camPos.x) / cameraScale) / viewW
             let sy = 0.5 + Double((p.y - camPos.y) / cameraScale) / viewH
             let rWorld = Double((nodeIntrinsicRadii[id] ?? 30) * sprite.xScale) / ramp
-            // MASS LAW: displacement ∝ r^exponent. 1 = linear in radius; 2 = AREA, i.e. the actual
-            // mass of a disc — physically truer, and it makes big orbs dominate much harder.
-            // Mixed against 1.0 by the influence dial → influence 0 reproduces the uniform behaviour
-            // EXACTLY (and with massRange 1 the encodings below stay byte-identical to pre-mass).
+            // MASS LAW: displacement ∝ r^exponent, mixed against 1.0 by the influence dial (0 = uniform).
             let mass = min(massCeil, (1 - influence) + influence * pow(rWorld / refs.mass, exponent))
-            // REACH widens with the LINEAR radius ratio, never with the exponent — a disc of 4× the
-            // area is 2× the radius, so it deforms a ~2× wider region, not a 4× wider one. It also
-            // uses its OWN reference, so changing the mass law can't quietly move the reach too.
-            let rRatio = max(0.05, rWorld / refs.linear)            // 1 = a corpus-average orb
-            let reach = reachEff * min(3, max(0.25, 1 + reachInfluence * (rRatio - 1)))
-            // RANK by how far the orb's INFLUENCE CIRCLE is from the camera centre, not the orb
-            // itself: a heavy orb reaches further, so it must not be evicted from the 48-set by a
-            // nearer small one — the membership ramp below is now multiplied by mass, so it is a
-            // far louder artifact on a big orb than it ever was. At reachInfluence 0 this subtracts
-            // a constant from every key, so the ordering is identical to the pre-mass build.
+            // REACH in orb radii → px off THIS orb's live on-screen radius (annulus included). Wider for
+            // a bigger orb by construction — this is what the retired warpMassReach dial approximated.
+            let reach = reachUnits * orbScreen
+            // RANK by the influence circle's distance from centre so a far-reaching big orb isn't
+            // evicted from the 48-set by a nearer small one.
             let screenDist = Double(hypot(p.x - camPos.x, p.y - camPos.y)) / cs
-            scored.append((screenDist - reach, sx, sy, mass, reach))
+            scored.append((screenDist - reach, sx, sy, mass, reach, fade))
         }
         scored.sort { $0.key < $1.key }
         let n = BackgroundGridNode.maxWarpOrbs
-        // MEMBERSHIP WEIGHT (fix 3): fade each orb's contribution to 0 over the last ~25% of the
-        // nearest-48 set, so an orb entering/leaving (rank crossing 48) does so at ~0 weight → no pop.
-        // Same shape as the retired glow's distance gate; kills the set-swap discontinuity.
+        // MEMBERSHIP WEIGHT: fade each orb's contribution to 0 over the last ~25% of the nearest-48 set
+        // so an orb crossing the set boundary does so at ~0 weight → no pop.
         func membership(_ i: Int) -> Double { 1 - smoothstepD(0.75, 1.0, Double(i) / Double(n)) }
         var packed: [(sx: Double, sy: Double, w: Double, reach: Double)] = []
         packed.reserveCapacity(n)
         var orbBytes = [UInt8](repeating: 0, count: n * 4)
+        var maxW = 0.0
         for (i, e) in scored.prefix(n).enumerated() {
-            let w = membership(i) * e.mass
+            // PER-ORB EASE folds into the weight: w = membership × mass × title-fade.
+            let w = membership(i) * e.mass * e.fade
+            maxW = max(maxW, w)
             packed.append((e.sx, e.sy, w, e.reach))
             guard e.sx > -0.5, e.sx < 1.5, e.sy > -0.5, e.sy < 1.5 else { continue }
             let b = i * 4
             orbBytes[b] = UInt8(min(1, max(0, e.sx)) * 255)
             orbBytes[b + 1] = UInt8(min(1, max(0, e.sy)) * 255)
-            // b = membership × mass, divided by the SAME massRange the shader multiplies back in.
+            // b = membership × mass × fade, ÷ the SAME massRange the shader multiplies back in.
             orbBytes[b + 2] = UInt8(min(255, max(0, w / massRange * 255)))
-            // a = this orb's reach multiplier (was the unused channel).
+            // a = this orb's reach multiplier (= its on-screen radius ÷ the corpus mean).
             orbBytes[b + 3] = encodeReachMul(e.reach / max(reachEff, 0.001))
         }
+
+        // LIVE READOUT — what the current dials produce at the current zoom, so the orb-unit dials are
+        // SIGHTED (the scene writes; the tuner header re-renders). Published even when the effect is off
+        // below, so the header stays live as T zooms out through the title-visibility crossing.
+        t.liveWarpCS = cs
+        t.liveWarpRefScreen = refScreen
+        t.liveWarpReachPx = reachEff
+        t.liveWarpDepthPx = strengthEff
+        t.liveWarpTitlesVisible = titlesVisible
+        t.liveWarpOrbCount = nodeSprites.count
+
+        // OFF when the warp would contribute nothing — depth 0, OR fully zoomed out (no title visible →
+        // every weight 0). Push the exact mode-0 path → byte-identical to Approach Off. This is what
+        // delivers BOTH "fully zoomed out = undistorted" and "depth 0 = byte-identical".
+        guard depth > 0.0001, maxW > 0.002 else {
+            if lastWarpMode != 0 {
+                BackgroundGridNode.setWarp(grid, mode: 0, strength: 0, reach: 220, falloff: 1, react: 0, sign: 1,
+                                           shrink: 0, massRange: 1, orbData: nil, field: nil)
+                lastWarpMode = 0
+            }
+            return
+        }
+        lastWarpMode = Int(mode)
+
         let orbTex = SKTexture(data: Data(orbBytes), size: CGSize(width: n, height: 1))
         orbTex.filteringMode = .nearest
         var field: SKTexture? = nil
         if mode > 1.5 {
-            field = buildWarpField(orbs: packed, falloff: Double(t.warpFalloff), massRange: massRange,
-                                   viewW: viewW, viewH: viewH)
+            // Falloff baked 1.0 (was a dial). The field carries the per-orb fade via w, so mode C's
+            // shrink (∝ field magnitude) eases in per orb too — no separate ease needed.
+            field = buildWarpField(orbs: packed, falloff: 1.0, massRange: massRange, viewW: viewW, viewH: viewH)
         }
+        // Colour-react hardwired 0 — the shader's react path is now a no-op (×1). Left in the shader
+        // source untouched (editing an SKShader risks a silent runtime compile failure); the dial is gone.
         BackgroundGridNode.setWarp(grid, mode: mode, strength: Float(strengthEff), reach: Float(reachEff),
-                                   falloff: Float(t.warpFalloff), react: Float(t.warpReact), sign: Float(t.warpSign),
+                                   falloff: 1.0, react: 0, sign: Float(t.warpSign),
                                    shrink: Float(t.warpShrink), massRange: Float(massRange),
                                    orbData: orbTex, field: field)
     }

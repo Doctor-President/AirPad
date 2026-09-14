@@ -324,8 +324,13 @@ enum BackgroundGridNode {
     /// value precision, so this is the point where headroom stops buying anything.
     static let warpMassCeiling: Float = 4
 
-    /// Full-scale of the per-orb REACH multiplier packed into orb-data `a`.
-    static let warpReachEncodeMax: Float = 4
+    /// Full-scale of the per-orb REACH multiplier packed into orb-data `a`. Raised 4 → 8 with the
+    /// ORB-UNIT re-base (2026-09-14): per-orb reach is now `REACH × the orb's actual on-screen radius`,
+    /// so a big amplified orb's reach ÷ the corpus-mean reach = (size ratio × annulus ≈ up to ~2.2·3)
+    /// can exceed the old cap of 4; 8 covers the largest plausible orb with headroom (`encodeReachMul`
+    /// still clamps beyond it). Only mode A decodes this; modes B/C carry exact per-orb reach in px
+    /// through `buildWarpField`, so this cap never touches T's ruled Relocate-C path.
+    static let warpReachEncodeMax: Float = 8
 
     /// The single source of truth for the mass encoding scale: the CPU divides by it, the shader
     /// multiplies by it (`u_warp_mass_range`). At influence 0 it is exactly 1, so both encodings

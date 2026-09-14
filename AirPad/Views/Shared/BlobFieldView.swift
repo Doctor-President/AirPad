@@ -16,6 +16,10 @@ import UIKit
 ///   `NodeGradientLayer` path.
 struct BlobFieldView: View {
 
+    /// Drives the per-appearance blob COMPOSITING mode (below). The blob surfaces are SwiftUI, so
+    /// the scheme comes from the environment rather than the scene's pushed appearance flag.
+    @Environment(\.colorScheme) private var blobColorScheme
+
     private enum Style {
         case lava, card, hero
         /// Uniform value passed to the shader's `style` argument.
@@ -217,13 +221,16 @@ struct BlobFieldView: View {
     }
 
     /// Blob-compositing blend index (order matches `BlobField.metal`'s `blendColor`).
-    /// Release is ALWAYS 0 (NORMAL / source-over) → the shader's fast path → byte-identical.
-    /// In DEBUG the persisted tuner can override it live on the real card + hero surfaces.
+    /// ★ **T device-final 2026-09-14** (`blob: blend=`, see Ops/reference/tuner-state-accepted.md):
+    /// **Screen (2) in DARK · Normal (0) in LIGHT.** Screen asymptotes rather than clipping, so
+    /// overlapping blobs keep their hue on the dark ground; on cream, source-over is the ruled look.
+    /// (Light therefore still takes the shader's `blend < 0.5` fast path.)
+    /// In DEBUG the persisted tuner can still override it live while the tuner exists.
     private var blendValue: Float {
         #if DEBUG
         return Float(BlobFieldTuning.shared.blend)
         #else
-        return 0
+        return blobColorScheme == .dark ? 2 : 0
         #endif
     }
 

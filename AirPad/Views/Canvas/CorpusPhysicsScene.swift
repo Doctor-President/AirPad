@@ -574,11 +574,7 @@ final class CorpusPhysicsScene: SKScene {
         // ★ item 2: orbs OVERLAP because the physics bodies are STATIC (isDynamic=false → no collision
         // resolution at all); separation is ONLY this PBD, and its gap was fixed. Dialing it wider
         // pushes amplified orbs apart (the real lever — a body-radius sync would do nothing here).
-        #if DEBUG
-        let gap = CGFloat(BlobFieldTuning.shared.orbGap)
-        #else
         let gap = AnnulusTuning.breathingGap
-        #endif
         for _ in 0..<max(0, AnnulusTuning.relaxPasses) {
             for i in 0..<ids.count {
                 for j in (i + 1)..<ids.count {
@@ -3752,7 +3748,8 @@ final class CorpusPhysicsScene: SKScene {
         static let onset: CGFloat = 3.00
         static let rampWidth: CGFloat = 1.50
         static let radius: CGFloat = 300
-        static let breathingGap: CGFloat = 30
+        static let breathingGap: CGFloat = 8.923   // T device-final 2026-09-14 (`separation: orbGap`),
+                                                  // see Ops/reference/tuner-state-accepted.md (was 30)
         static let relaxPasses: Int = 8
         static let relaxLerp: CGFloat = 0.22       // damped approach to the relaxed target
         static let hapticOn: Bool = true

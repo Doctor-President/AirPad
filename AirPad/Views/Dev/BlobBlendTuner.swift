@@ -81,36 +81,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     var orbBlendLight: Int { didSet { UserDefaults.standard.set(orbBlendLight, forKey: "blobTuner.orbBlendLight") } }
     var orbBlendDark: Int { didSet { UserDefaults.standard.set(orbBlendDark, forKey: "blobTuner.orbBlendDark") } }
 
-    // ── GLOW beneath the orbs (addendum C) — a soft radial glow per orb, pooling onto the map
-    // ground BELOW the orbs + titles (z-guaranteed). Off by default → no overlay → byte-identical.
-    var glowOn: Bool { didSet { UserDefaults.standard.set(glowOn, forKey: "blobTuner.glowOn") } }   // SHARED master (zero the per-mode values to disable per appearance)
-    // ★ ALL of these are now PER APPEARANCE (2026-09-10 audit — T: "the glow doesn't obey the split").
-    var glowRadius: Double { get { apD("glowRadius", 3.0) } set { setD("glowRadius", newValue) } }
-    var glowBaseline: Double { get { apD("glowBaseline", 0.0) } set { setD("glowBaseline", newValue) } }
-    var glowInBand: Double { get { apD("glowInBand", 1.0) } set { setD("glowInBand", newValue) } }
-    var glowFalloff: Double { get { apD("glowFalloff", 0.6) } set { setD("glowFalloff", newValue) } }
-    /// Glow POOL blend per appearance (full 13-set — how overlapping glows combine WITH EACH OTHER;
-    /// single-pass shader so it can do all 13).
-    var glowBlendLight: Int { didSet { UserDefaults.standard.set(glowBlendLight, forKey: "blobTuner.glowBlendLight") } }
-    var glowBlendDark: Int { didSet { UserDefaults.standard.set(glowBlendDark, forKey: "blobTuner.glowBlendDark") } }
-    /// Glow GROUND blend per appearance — how the glow LAYER composites onto the map ground (the
-    /// SKBlendMode 7-set). ★ THIS is the "muddy on light" lever: over cream, source-over washes out;
-    /// multiply/darken deepen the paper toward the glow colour. (An orb-overlay→ground composite can
-    /// only be an SKBlendMode — SpriteKit can't read the framebuffer for the full 13 there.)
-    var glowGroundLight: Int { didSet { UserDefaults.standard.set(glowGroundLight, forKey: "blobTuner.glowGroundLight") } }
-    var glowGroundDark: Int { didSet { UserDefaults.standard.set(glowGroundDark, forKey: "blobTuner.glowGroundDark") } }
-    // ── Rank-gate retirement (2026-09-10): slot count is now a DIAL (data-texture, no 12-cap), plus
-    // own opacity/radius curves (arrive earlier than the size bump), an annular mask (bleed fix), and
-    // colour control (follow the orb, or a manual hex per appearance).
-    var glowSlotCount: Int { get { apScalar[apk("glowSlotCount")].map { Int($0.rounded()) } ?? 40 } set { apScalar[apk("glowSlotCount")] = Double(newValue) } }
-    var glowOpGamma: Double { get { apD("glowOpGamma", 1.0) } set { setD("glowOpGamma", newValue) } }   // <1 = shadow arrives earlier
-    var glowRadGrow: Double { get { apD("glowRadGrow", 0.0) } set { setD("glowRadGrow", newValue) } }    // 0 = radius fixed (today)
-    var glowRadGamma: Double { get { apD("glowRadGamma", 1.0) } set { setD("glowRadGamma", newValue) } }
-    var glowMaskInner: Double { get { apD("glowMaskInner", 0.0) } set { setD("glowMaskInner", newValue) } } // 0 = under orb; 1 = ring at edge
-    var glowColorFollow: Bool { get { apScalar[apk("glowColorFollow")].map { $0 > 0.5 } ?? true } set { apScalar[apk("glowColorFollow")] = newValue ? 1 : 0 } }
-    // glowColorHexLight/Dark stay EXPLICIT L/D (already per-appearance) — the scene picks by currentIsLight.
-    var glowColorHexLight: String { didSet { UserDefaults.standard.set(glowColorHexLight, forKey: "blobTuner.glowColorHexLight") } }
-    var glowColorHexDark: String { didSet { UserDefaults.standard.set(glowColorHexDark, forKey: "blobTuner.glowColorHexDark") } }
 
     // ── GRID-WARP + DROP-SHADOW SPIKE — pooling glow retired. Mode (approach) is shared; the warp dials
     // are per appearance. ORB-UNIT RE-BASE (2026-09-14): reach + depth are dialled in ORB UNITS and
@@ -227,17 +197,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         orbTitleFont    = UserDefaults.standard.integer(forKey: "blobTuner.orbTitleFont")   // 0 = baked
         orbBlendLight   = UserDefaults.standard.integer(forKey: "blobTuner.orbBlendLight")   // 0 = alpha
         orbBlendDark    = UserDefaults.standard.integer(forKey: "blobTuner.orbBlendDark")
-        glowOn          = UserDefaults.standard.bool(forKey: "blobTuner.glowOn")          // default off
-        glowBlendLight  = UserDefaults.standard.object(forKey: "blobTuner.glowBlendLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowBlendLight") : 2  // Screen
-        glowBlendDark   = UserDefaults.standard.object(forKey: "blobTuner.glowBlendDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowBlendDark") : 2
-        // ★ DEFAULT ALPHA (0), not Multiply — proven 2026-09-10: SKBlendMode.multiply on a FULL-SCREEN
-        // overlay multiplies its TRANSPARENT (premultiplied-black) pixels onto the ground → the whole
-        // map goes black where there's no glow. Alpha (source-over) with a DARK colour is the correct
-        // drop shadow (darkens only where the glow is). Multiply/Mult×2/Replace are overlay-UNSAFE.
-        glowGroundLight = UserDefaults.standard.object(forKey: "blobTuner.glowGroundLight") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundLight") : 0
-        glowGroundDark  = UserDefaults.standard.object(forKey: "blobTuner.glowGroundDark") != nil ? UserDefaults.standard.integer(forKey: "blobTuner.glowGroundDark") : 0
-        glowColorHexLight = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexLight") ?? ""
-        glowColorHexDark  = UserDefaults.standard.string(forKey: "blobTuner.glowColorHexDark") ?? ""
         orbGap          = dbl("blobTuner.orbGap", 30.0)
         // LOUD spike defaults (see the scene for the matching Release bakes): 0.45s fade, 120pt edge
         // band, 6pt newcomer-extra (a newcomer must clear 12 vs an incumbent's 6). NOT final.
@@ -696,50 +655,6 @@ struct BlobTunerPanel: View {
         }
     }
 
-    private var glowSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                sectionLabel("GLOW — beneath orbs, pools on ground (addendum C)")
-                Spacer()
-                Toggle("", isOn: $tuning.glowOn).labelsHidden().scaleEffect(0.85)
-            }
-            if tuning.glowOn {
-                slider("Slots", Binding(get: { Double(tuning.glowSlotCount) }, set: { tuning.glowSlotCount = Int($0.rounded()) }), 4...128)
-                slider("Radius", $tuning.glowRadius, 0.5...8)
-                slider("In-band ×", $tuning.glowInBand, 0...2)         // annulus drives this by centrality
-                slider("Baseline", $tuning.glowBaseline, 0...1.5)      // default 0 → ramps from nothing (no snap)
-                slider("Opacity curve γ", $tuning.glowOpGamma, 0.2...3) // <1 = shadow arrives EARLIER than the size bump
-                slider("Radius grow", $tuning.glowRadGrow, 0...2)      // 0 = fixed radius (today)
-                slider("Radius curve γ", $tuning.glowRadGamma, 0.2...3)
-                slider("Falloff", $tuning.glowFalloff, 0...1)
-                slider("Inner mask (ring)", $tuning.glowMaskInner, 0...1.2)   // 0 = under orb; 1 = ring at the edge (bleed fix)
-                // Colour: FOLLOW the orb, or MANUAL (HSL picker + live hex, per appearance)
-                Button(tuning.glowColorFollow ? "Colour: FOLLOW orb" : "Colour: MANUAL") {
-                    tuning.glowColorFollow.toggle()
-                    if !tuning.glowColorFollow {
-                        if tuning.glowColorHexDark.isEmpty { tuning.glowColorHexDark = "000000" }
-                        if tuning.glowColorHexLight.isEmpty { tuning.glowColorHexLight = "3A2E22" }
-                    }
-                }
-                .buttonStyle(.borderedProminent).tint(tuning.glowColorFollow ? .green : .gray)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                if !tuning.glowColorFollow {
-                    // Edits the CURRENT appearance's manual colour (the global header names it).
-                    HSLColorPicker(hex: Binding(
-                        get: { tuning.mapIsLight ? tuning.glowColorHexLight : tuning.glowColorHexDark },
-                        set: { if tuning.mapIsLight { tuning.glowColorHexLight = $0 } else { tuning.glowColorHexDark = $0 } }))
-                }
-                menuPick("Pool · light", $tuning.glowBlendLight, BlobFieldTuning.blendNames)     // 13-set (glow↔glow)
-                menuPick("Pool · dark", $tuning.glowBlendDark, BlobFieldTuning.blendNames)
-                menuPick("Ground · light", $tuning.glowGroundLight, BlobFieldTuning.orbBlendNames)  // SKBlendMode
-                menuPick("Ground · dark", $tuning.glowGroundDark, BlobFieldTuning.orbBlendNames)
-                Text("RANK GATE RETIRED — Slots is a real dial (data-texture, no 12-cap); cost is ~linear in slots (read fps at 30 vs 60). Baseline 0 + the distance gate make the boundary unobservable. Opacity/Radius γ<1 = depth arrives before size. Inner mask >0 → ring (kills any bleed through the orb's soft edge). ★ GROUND blend: use ALPHA with a DARK manual colour for a drop shadow (darkens only where the glow is). ⚠️ Multiply/Mult×2/Replace BLACKEN the whole ground (a full-screen overlay's transparent pixels × ground = black) — do not use them here.")
-                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-            } else {
-                Text("off → no glow/shadow layer").font(.system(size: 9, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-            }
-        }
-    }
 
     private var separationSection: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -856,14 +771,12 @@ extension BlobFieldTuning {
             let tc = apHexAt("orbTitleColorHex", "", light: L)
             let mg = apHexAt("mapGroundHex", "", light: L)
             let cg = apHexAt("cardGroundHex", "", light: L)
-            let gcol = L ? glowColorHexLight : glowColorHexDark
             let rfam = RegionPaletteFamily(rawValue: regionFamily) ?? .current
             let rdc = RegionPalette.distinctCounts(rfam, isLight: L)   // one pass; 3 readings
             return """
             [\(L ? "LIGHT" : "DARK")]
               blob: blend=\(blendN(apIAt("blend", 0, light: L))) family=\(apBAt("family", true, light: L)) spread=\(d("spread", 0.5))
               orb: fill=\(d("orbFillOpacity", 1)) stroke=\(d("orbStrokeOpacity", 1)) titleScale=\(d("orbTitleScale", 1)) titleOpacity=\(d("orbTitleOpacity", 1)) titleColour=\(tc.isEmpty ? "(auto)" : tc) blend=\(orbN(L ? orbBlendLight : orbBlendDark))
-              glow: radius=\(d("glowRadius", 3)) baseline=\(d("glowBaseline", 0)) inBand=\(d("glowInBand", 1)) falloff=\(d("glowFalloff", 0.6)) slots=\(apIAt("glowSlotCount", 40, light: L)) opGamma=\(d("glowOpGamma", 1)) radGrow=\(d("glowRadGrow", 0)) radGamma=\(d("glowRadGamma", 1)) mask=\(d("glowMaskInner", 0)) colour=\(apBAt("glowColorFollow", true, light: L) ? "follow-orb" : "manual:\(gcol.isEmpty ? "-" : gcol)") pool=\(blendN(L ? glowBlendLight : glowBlendDark)) ground=\(orbN(L ? glowGroundLight : glowGroundDark))
               warp: reach=\(d("warpReachU", 3)) depth=\(d("warpDepth", 0.6)) mass=\(d("warpMass", 1)) massLaw=\(d("warpMassExp", 1)) shrink=\(d("warpShrink", 0.4)) sign=\(apDAt("warpSign", 1, light: L) >= 0 ? "converge" : "diverge")
               ground: map=\(mg.isEmpty ? "(token)" : mg) card=\(cg.isEmpty ? "(token)" : cg)
               region: family=\(rfam.displayName) distinct=\(rdc.normal)/12 cvd=D\(rdc.deutan)/P\(rdc.protan) resolvedHex=\(RegionPalette.resolvedHex(isLight: L).joined(separator: " "))
@@ -879,7 +792,6 @@ extension BlobFieldTuning {
         \(appBlock(true))
         [SHARED — not appearance-split]
           orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
-          glow: on=\(glowOn)
           separation: orbGap=\(f(orbGap))
           region-labels: fadeDur=\(f(regionFadeDuration)) edgeMargin=\(f(regionEdgeMargin)) hysteresisGap=\(f(regionHysteresisGap))
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
@@ -1019,27 +931,7 @@ extension BlobFieldTuning {
                 named(&kv, "blend", Self.orbBlendNames, "\(tag).blend") { if isLight { self.orbBlendLight = $0 } else { self.orbBlendDark = $0 } }
                 drainUnknown(kv, tag)
             case ("glow", .dark), ("glow", .light):
-                dbl(&kv, "radius", "\(tag).radius") { self.glowRadius = $0 }
-                dbl(&kv, "baseline", "\(tag).baseline") { self.glowBaseline = $0 }
-                dbl(&kv, "inBand", "\(tag).inBand") { self.glowInBand = $0 }
-                dbl(&kv, "falloff", "\(tag).falloff") { self.glowFalloff = $0 }
-                intg(&kv, "slots", "\(tag).slots") { self.glowSlotCount = $0 }
-                dbl(&kv, "opGamma", "\(tag).opGamma") { self.glowOpGamma = $0 }
-                dbl(&kv, "radGrow", "\(tag).radGrow") { self.glowRadGrow = $0 }
-                dbl(&kv, "radGamma", "\(tag).radGamma") { self.glowRadGamma = $0 }
-                dbl(&kv, "mask", "\(tag).mask") { self.glowMaskInner = $0 }
-                if let c = kv.removeValue(forKey: "colour") {
-                    if c == "follow-orb" { self.glowColorFollow = true; r.applied += 1 }
-                    else if c.hasPrefix("manual:") {
-                        self.glowColorFollow = false
-                        let h = String(c.dropFirst("manual:".count))
-                        let hexVal = (h == "-") ? "" : h
-                        if isLight { self.glowColorHexLight = hexVal } else { self.glowColorHexDark = hexVal }
-                        r.applied += 1
-                    } else { r.malformed.append("\(tag).colour") }
-                }
-                named(&kv, "pool", Self.blendNames, "\(tag).pool") { if isLight { self.glowBlendLight = $0 } else { self.glowBlendDark = $0 } }
-                named(&kv, "ground", Self.orbBlendNames, "\(tag).ground") { if isLight { self.glowGroundLight = $0 } else { self.glowGroundDark = $0 } }
+                // RETIRED at the bake (2026-09-14) — the pooling glow was dead code and is deleted.
                 drainUnknown(kv, tag)
             case ("warp", .dark), ("warp", .light):
                 // Dials whose UNITS survive the orb-unit re-base — apply from an export of any era.
@@ -1091,7 +983,7 @@ extension BlobFieldTuning {
                 }
                 drainUnknown(kv, tag)
             case ("glow", .shared):
-                boolean(&kv, "on", "\(tag).on") { self.glowOn = $0 }
+                // RETIRED at the bake (2026-09-14) — skip + list.
                 drainUnknown(kv, tag)
             case ("separation", .shared):
                 dbl(&kv, "orbGap", "\(tag).orbGap") { self.orbGap = $0 }

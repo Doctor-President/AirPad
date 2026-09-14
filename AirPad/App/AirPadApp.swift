@@ -101,24 +101,24 @@ private struct BlobExportTestView: View {
     }
     private func runRoundTrip() -> String {
         let t = BlobFieldTuning.shared
-        // 1. dial DISTINCT values in each appearance (edit dark, then light)
+        // 1. dial DISTINCT values in each appearance (edit dark, then light). The probes were glow
+        // dials until the 2026-09-14 bake deleted them; they are now surviving per-appearance dials
+        // (warp depth / orb fill / map ground) — the property under test is SEVERABILITY, not which
+        // dial carries it.
         t.mapIsLight = false
-        t.glowRadius = 2.0; t.glowBaseline = 0.11; t.orbFillOpacity = 0.30
-        t.glowSlotCount = 24; t.family = false; t.mapGroundHex = "101014"
+        t.warpDepth = 0.20; t.orbFillOpacity = 0.30; t.family = false; t.mapGroundHex = "101014"
         t.mapIsLight = true
-        t.glowRadius = 7.0; t.glowBaseline = 0.88; t.orbFillOpacity = 0.95
-        t.glowSlotCount = 60; t.family = true; t.mapGroundHex = "F4EFE3"
+        t.warpDepth = 0.80; t.orbFillOpacity = 0.95; t.family = true; t.mapGroundHex = "F4EFE3"
         // 2. export the complete state
         let export = t.exportAll()
         // 3. read BOTH appearances back independently
-        let dR = t.apDAt("glowRadius", 3, light: false), lR = t.apDAt("glowRadius", 3, light: true)
+        let dR = t.apDAt("warpDepth", 0.6, light: false), lR = t.apDAt("warpDepth", 0.6, light: true)
         let dF = t.apDAt("orbFillOpacity", 1, light: false), lF = t.apDAt("orbFillOpacity", 1, light: true)
-        let dS = t.apIAt("glowSlotCount", 40, light: false), lS = t.apIAt("glowSlotCount", 40, light: true)
         let dG = t.apHexAt("mapGroundHex", "", light: false), lG = t.apHexAt("mapGroundHex", "", light: true)
-        let ok = dR == 2.0 && lR == 7.0 && dF == 0.30 && lF == 0.95 && dS == 24 && lS == 60 && dG == "101014" && lG == "F4EFE3"
+        let ok = dR == 0.20 && lR == 0.80 && dF == 0.30 && lF == 0.95 && dG == "101014" && lG == "F4EFE3"
         let verdict = ok ? "PASS — light & dark fully severable" : "FAIL"
-        print("[BlobExportTest] \(verdict)  dR=\(dR) lR=\(lR) dS=\(dS) lS=\(lS)")
-        return "ROUND-TRIP: \(verdict)\n glowRadius D=\(dR) L=\(lR)\n fill D=\(dF) L=\(lF)\n slots D=\(dS) L=\(lS)\n mapGround D=\(dG) L=\(lG)\n\n\(export)"
+        print("[BlobExportTest] \(verdict)  dDepth=\(dR) lDepth=\(lR)")
+        return "ROUND-TRIP: \(verdict)\n warpDepth D=\(dR) L=\(lR)\n fill D=\(dF) L=\(lF)\n mapGround D=\(dG) L=\(lG)\n\n\(export)"
     }
 }
 

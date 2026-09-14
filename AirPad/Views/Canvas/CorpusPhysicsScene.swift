@@ -806,36 +806,20 @@ final class CorpusPhysicsScene: SKScene {
     private var didLogRegionLabelBounds = false
     #endif
 
-    /// Fade duration (s) for the region-label declutter ease. DEBUG reads the live tuner (T dials on
-    /// TestFlight); Release uses a provisional baked default (BlobFieldTuning is compiled out of
-    /// Release) — replace with T's dialed value when the arc bakes.
-    private var regionLabelFadeDuration: TimeInterval {
-        #if DEBUG
-        return max(0.05, BlobFieldTuning.shared.regionFadeDuration)
-        #else
-        return 0.45
-        #endif
-    }
+    // ── REGION-LABEL declutter — **T device-final 2026-09-14**, see
+    // Ops/reference/tuner-state-accepted.md (`region-labels: fadeDur / edgeMargin / hysteresisGap`).
+    // These replace the provisional 0.45 / 120 / 6 the arc shipped while the dials were live.
+
+    /// Fade duration (s) for the region-label declutter ease.
+    private var regionLabelFadeDuration: TimeInterval { 0.720 }
     /// Edge-fade margin M (points past the real bounds over which a leaving label fades out).
-    private var regionLabelEdgeMargin: CGFloat {
-        #if DEBUG
-        return CGFloat(BlobFieldTuning.shared.regionEdgeMargin)
-        #else
-        return 120
-        #endif
-    }
+    private var regionLabelEdgeMargin: CGFloat { 200.000 }
     /// Hysteresis gap (points) = the EXTRA inset a newcomer must clear beyond an incumbent:
     /// `haloKeep` is fixed at the shared metric halo and `haloPlace = haloKeep + gap`.
     /// (Originally the gap shrank `haloKeep` toward 0 with `haloPlace` fixed at 6, so the 0–40 dial
     /// SATURATED at 6 — every value above it behaved identically and recorded nothing. Widening
     /// outward instead keeps gap=0 exactly equal to no-hysteresis and makes the full range live.)
-    private var regionLabelHysteresisGap: CGFloat {
-        #if DEBUG
-        return CGFloat(BlobFieldTuning.shared.regionHysteresisGap)
-        #else
-        return 6   // provisional bake; matches the DEBUG default (newcomer needs 6pt more than an incumbent)
-        #endif
-    }
+    private var regionLabelHysteresisGap: CGFloat { 26.462 }
 
     /// Distance from `box` to `rect`: 0 while they intersect, growing as `box` moves outside.
     private func rectGap(from box: CGRect, to rect: CGRect) -> CGFloat {

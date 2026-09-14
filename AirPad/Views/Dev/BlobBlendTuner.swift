@@ -114,10 +114,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     // (DROP SHADOW dials DELETED at the bake, 2026-09-14 — T ruled the shadow out; the dot shrink
     // does the figure-ground job. Old exports carry `shadow:` lines; the importer skips them.)
 
-    /// Orb separation gap (item 2) — the band-relaxation `breathingGap`, dialable so amplified orbs
-    /// push further apart (they overlap because bodies are STATIC — no physics collision — and the PBD
-    /// gap was fixed). Default 30 = baked. (Body-radius sync is a non-fix: the bodies don't collide.)
-    var orbGap: Double { didSet { UserDefaults.standard.set(orbGap, forKey: "blobTuner.orbGap") } }
 
     // (The region-label separation solver — `labelSepOn` / `labelTether` — was REMOVED 2026-09-13.
     // Its persistent screen-space damped step was the label "swim"; T ruled the SwiftUI pill's
@@ -194,7 +190,6 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
         orbTitleFont    = UserDefaults.standard.integer(forKey: "blobTuner.orbTitleFont")   // 0 = baked
         orbBlendLight   = UserDefaults.standard.integer(forKey: "blobTuner.orbBlendLight")   // 0 = alpha
         orbBlendDark    = UserDefaults.standard.integer(forKey: "blobTuner.orbBlendDark")
-        orbGap          = dbl("blobTuner.orbGap", 30.0)
         // LOUD spike defaults (see the scene for the matching Release bakes): 0.45s fade, 120pt edge
         // band, 6pt newcomer-extra (a newcomer must clear 12 vs an incumbent's 6). NOT final.
         blobExprOverride = UserDefaults.standard.bool(forKey: "blobTuner.blobExprOverride")
@@ -423,7 +418,6 @@ struct BlobTunerPanel: View {
                     orbSection
                     regionSection
                     warpSection
-                    separationSection
                     backgroundSection
                 }
                 .padding(.bottom, 6)
@@ -649,15 +643,6 @@ struct BlobTunerPanel: View {
     }
 
 
-    private var separationSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            sectionLabel("SEPARATION — orb gap")
-            slider("Orb gap", $tuning.orbGap, 0...120)   // item 2: amplified orbs overlap; push apart
-            Text("Orb gap: bodies are STATIC (no collision) → this PBD gap is the only separation. (The region-label repel/tether solver was REMOVED 2026-09-13 — its damped screen-space step was the label 'swim'; the zoom fade now does its on-orb-avoidance job.)")
-                .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.4))
-        }
-    }
-
 
     private var exprSection: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -775,7 +760,6 @@ extension BlobFieldTuning {
         \(appBlock(true))
         [SHARED — not appearance-split]
           orb: override=\(orbOverride) darkSat=\(f(orbDarkSat)) darkVal=\(f(orbDarkVal)) darkRim=\(f(orbDarkRim)) titleFont=\(Self.orbFontNames[safe: orbTitleFont] ?? "?")  (darkSat/Val/Rim are DARK-ONLY)
-          separation: orbGap=\(f(orbGap))
           warp: mode=\(["Off", "In-shader A", "Field B", "Relocate C"][safe: warpMode] ?? "?")
           per-expression blobs (GEOMETRY, override=\(blobExprOverride) editing=\(Self.exprNames[safe: blobExprSel] ?? "?")):
         \(exprRow(0))
@@ -968,7 +952,7 @@ extension BlobFieldTuning {
                 // RETIRED at the bake (2026-09-14) — skip + list.
                 drainUnknown(kv, tag)
             case ("separation", .shared):
-                dbl(&kv, "orbGap", "\(tag).orbGap") { self.orbGap = $0 }
+                // BAKED 2026-09-14 (AnnulusTuning.breathingGap = 8.923) — skip + list.
                 // `labelSep` / `tether` (retired 2026-09-13) are left in `kv` deliberately → they
                 // fall through to drainUnknown and are REPORTED as skipped. T's filed exports carry
                 // them; a retired key must never fail the whole import.

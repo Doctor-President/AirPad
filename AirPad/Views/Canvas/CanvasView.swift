@@ -994,7 +994,8 @@ struct CanvasView: View {
     /// order. Single source so tint + labels + migration agree.
     private func territoryColorMap(_ territories: [TagTerritoryLayout.Territory]) -> [String: UIColor] {
         var m: [String: UIColor] = [:]
-        let palette = CorpusPhysicsScene.territoryPalette
+        // Per appearance since the 2026-09-15 palette bake (same hue, different lightness).
+        let palette = CorpusPhysicsScene.territoryPalette(isLight: mapColorScheme != .dark)
         for (i, t) in territories.enumerated() {
             m[t.key] = palette[i % palette.count]
         }
@@ -1032,7 +1033,8 @@ struct CanvasView: View {
     /// overlay, per the colorblind house rule.
     private func territoryHexMap(_ territories: [TagTerritoryLayout.Territory]) -> [String: String] {
         var m: [String: String] = [:]
-        let hex = CorpusPhysicsScene.territoryPaletteHex
+        // Per appearance since the 2026-09-15 palette bake — the pill stroke must pair with the tint.
+        let hex = CorpusPhysicsScene.territoryPaletteHex(isLight: mapColorScheme != .dark)
         for (i, t) in territories.enumerated() {
             m[t.key] = hex[i % hex.count]
         }

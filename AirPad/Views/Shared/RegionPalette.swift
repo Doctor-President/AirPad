@@ -37,9 +37,24 @@ enum RegionPaletteFamily: Int, CaseIterable {
 enum RegionPalette {
     static let slotCount = 12
 
-    /// The shipping baseline — CURRENT family returns these verbatim (single source: the scene's
-    /// existing `territoryPaletteHex`, so there's no second copy to drift).
-    static var currentHex: [String] { CorpusPhysicsScene.territoryPaletteHex }
+    // T device-final 2026-09-15 — Neon, OKLCH-generated, gamut-mapped,
+    // hue-locked (hueStart 0.550 / spread 1.000 shared). Do not hand-edit;
+    // regenerate via the generator. See Ops/reference/tuner-state-accepted.md
+    //
+    // The SHIPPING territory palette. Slot i is the SAME HUE in both arrays (verified: worst pair
+    // differs by 0.31°, hues evenly spaced 30° from 198°); only lightness differs — OKLCH L ≈ 0.757
+    // dark, ≈ 0.603 light. Distinct 12/12 both; CVD D6/P8 dark, D7/P9 light.
+    static let currentHexDark: [String] = [
+        "#07C8CD", "#07C1F9", "#7DB2FF", "#ACA2FF", "#E283FF", "#FF7CC4",
+        "#FF878D", "#FE8E4F", "#E6A100", "#BBB705", "#57D006", "#02CE9D"
+    ]
+    static let currentHexLight: [String] = [
+        "#079397", "#038EB8", "#107AFE", "#815CFF", "#C401EE", "#E1019B",
+        "#EF0447", "#CC5B01", "#AA7603", "#898602", "#3E9901", "#029873"
+    ]
+    /// The CURRENT family's 12 hexes for an appearance — the single source every consumer routes
+    /// through (orb tint via `color(isLight:slot:)`, label-pill stroke + node tint via CanvasView).
+    static func currentHex(isLight: Bool) -> [String] { isLight ? currentHexLight : currentHexDark }
 
     /// Family character as OKLCH params (2026-09-13 — was HSL).
     ///
@@ -123,7 +138,7 @@ enum RegionPalette {
     static func color(isLight: Bool, slot: Int) -> UIColor {
         let fam = activeFamily
         if fam == .current {
-            let hex = currentHex
+            let hex = currentHex(isLight: isLight)
             return UIColor(hex: hex[slot % max(hex.count, 1)]) ?? .gray
         }
         let p = params(fam, isLight: isLight)

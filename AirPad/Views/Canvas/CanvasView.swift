@@ -282,6 +282,27 @@ struct CanvasView: View {
         }
     }
 
+    /// ★ PLACE ON MEANING, NOT ON CREATION. A node is added to the corpus the moment capture opens —
+    /// deliberately, for autosave / crash-recovery / sync — so the drift at creation runs against an
+    /// EMPTY node and reports `no-vector`. `addedID` is non-nil exactly once, so nothing ever placed
+    /// it again and the content-free position was permanent.
+    ///
+    /// The substrate vector arrives later (enrichment's FM pass, which finishes AFTER Done), so
+    /// "place at Done" would not have fixed this either — the trigger has to be the VECTOR'S ARRIVAL.
+    ///
+    /// Re-placement is safe: `reblendMap` and the card-vector warm-reform already move every node
+    /// this way, and `captureRestingState` re-runs at the end of every `syncNodes`, so resting
+    /// positions, the annulus band and the pan-boundary disc all refresh off the new layout.
+    private func placeNodeOnVectorArrival(_ landed: String?) {
+        guard let landed, territory != nil else { return }
+        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
+        // The frozen layout never contained this node (drift writes into a LOCAL copy), so
+        // `syncScene`'s `positions[newNodeID] == nil` guard is already true — passing the ID is
+        // enough to re-run drift, now with a vector to argmax on.
+        syncScene(nodes: store.visibleNodes(in: scope), newNodeID: landed)
+        store.substrateVectorLanded = nil
+    }
+
     /// Re-derive Map positions + tint live (weight or tint-toggle change — a
     /// DELIBERATE map action, so it re-forms the frozen cache).
     private func reblendMap() {
@@ -392,6 +413,9 @@ struct CanvasView: View {
             print("[Canvas] onChange(nodes): \(old.count)→\(newNodes.count), addedID=\(addedID ?? "nil"), visibleNodes=\(store.visibleNodes(in: scope).count), layoutPositions=\(store.canvasLayout.positions.count)")
             syncScene(nodes: store.visibleNodes(in: scope), newNodeID: addedID)
             kickOffSubstrateAutoFitIfNeeded()
+        }
+        .onChange(of: store.substrateVectorLanded) { _, landed in
+            placeNodeOnVectorArrival(landed)
         }
         .onChange(of: spriteDisplaySignature) { _, _ in
             // Commit 3 — a sprite's rendered fields (title/summary/color) changed
@@ -1121,6 +1145,14 @@ struct CanvasView: View {
                         collections: store.collections, weights: mapWeights, in: layout
                     )
                     positions[newNodeID] = placement.position
+                    // If the sprite is already on screen (re-placement once its vector landed), ease
+                    // it to the new home rather than leaving it where it was created — `syncNodes`
+                    // only positions sprites it CREATES. Same 0.55s move `reblendMap` uses: the
+                    // settling vocabulary the map already has, not a new animation. No-op when the
+                    // sprite doesn't exist yet (`rearrangeToPositions` guards on that).
+                    scene.rearrangeToPositions([
+                        newNodeID: CGPoint(x: placement.position.x, y: -placement.position.y)
+                    ])
                     if let key = placement.key {
                         membersByKey[key, default: []].append(newNodeID)
                         if let base = territoryColorMap(layout.territories)[key] {

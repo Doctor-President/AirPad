@@ -247,25 +247,33 @@ struct CanvasView: View {
     private func warmCardVectorsThenReform() {
         guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
         let nodes = store.visibleNodes(in: scope)
-        // MAP-RELAYOUT FIX: if the current territory is already a CARD-basis layout
-        // matching the live inputs — i.e. `syncScene` restored the persisted
-        // snapshot, or a deliberate reform already ran this session — the map is
-        // correct. Skip the async warm+reform+animate that otherwise re-lays-out
-        // the map on EVERY relaunch (the regression 94e5a48 introduced here).
-        if let t = territory, t.basis == .card,
-           t.signature == territorySignature(nodes: nodes, basis: .card) {
-            print("[Territory] card-basis layout already current — skipping warm-reform (no relayout)")
-            return
-        }
+        // MAP-RELAYOUT FIX: if the current territory is already a CARD-basis layout matching the
+        // live inputs — `syncScene` restored the persisted snapshot, or a deliberate reform already
+        // ran — the map is correct and must NOT be re-laid-out (the 94e5a48 regression).
+        let alreadyCurrent = territory.map {
+            $0.basis == .card && $0.signature == territorySignature(nodes: nodes, basis: .card)
+        } ?? false
         Task { @MainActor in
-            await SubstrateLayoutService.shared.preloadCardVectors(
-                allNodes: store.nodes, store: store
-            )
-            let warmed = SubstrateLayoutService.shared.cardVectors?.count ?? 0
-            print("[Territory] card-vector preload warmed \(warmed) vectors — re-forming")
-            // Re-form on the now-warm basis. The consumer-side
-            // `[Territory/language]` line printed by this run is the proof
-            // the map is actually on card vectors.
+            // ★ THE BASIS IS WARMED UNCONDITIONALLY — the early return above governs whether to
+            // RE-FORM, and it used to gate this too. That left `cardVectors` nil for the entire
+            // session on the common relaunch path (`preloadCardVectors` has exactly one caller), so
+            // every `driftPlacement` that session resolved `.legacyNLContextual` and scored a
+            // legacy vector against 384-d card centroids — silently zero language gravity. Skipping
+            // the RELAYOUT is correct; skipping the BASIS never was.
+            // Idempotent and once-per-session: the cache is only cold before the first warm.
+            if SubstrateLayoutService.shared.cardVectors == nil {
+                await SubstrateLayoutService.shared.preloadCardVectors(
+                    allNodes: store.nodes, store: store
+                )
+                let warmed = SubstrateLayoutService.shared.cardVectors?.count ?? 0
+                print("[Territory] card-vector preload warmed \(warmed) vectors")
+            }
+            guard !alreadyCurrent else {
+                print("[Territory] card-basis layout already current — skipping reform (basis warmed, no relayout)")
+                return
+            }
+            // Re-form on the now-warm basis. The consumer-side `[Territory/language]` line printed
+            // by this run is the proof the map is actually on card vectors.
             formTerritories(nodes: nodes, trigger: "card-vectors-warm")
             guard let frozen = territory else { return }
             // SwiftUI-space → SpriteKit (y-up), same as `reblendMap`.

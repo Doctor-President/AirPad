@@ -35,11 +35,6 @@ struct CanvasChrome: View {
     @State private var showQuarantineReview = false
     @State private var showSlideOutMenu = false
     @State private var showEditMap = false
-    #if DEBUG
-    /// Throwaway glyph comparison for the bottom view switcher (T rules on device, then delete).
-    @State private var viewSwitchGlyphProbe = 0
-    @State private var viewSwitchGlyphName: String?
-    #endif
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
 
@@ -107,53 +102,15 @@ struct CanvasChrome: View {
         }
         .accessibilityLabel("View: \(ViewSwitchMenuContent.destination(for: filterState.viewMode).label)")
         .accessibilityHint("Switches between Card, List and Map")
-        #if DEBUG
-        // GLYPH COMPARISON (throwaway, T rules on device): long-press cycles
-        // current-mode icon → square.stack.3d.up → eye, naming each briefly.
-        // `simultaneousGesture` so the Menu's own press handling is untouched.
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.6).onEnded { _ in
-                viewSwitchGlyphProbe = (viewSwitchGlyphProbe + 1) % 3
-                viewSwitchGlyphName = Self.glyphProbeNames[viewSwitchGlyphProbe]
-                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-                Task {
-                    try? await Task.sleep(for: .seconds(1.4))
-                    await MainActor.run { viewSwitchGlyphName = nil }
-                }
-            }
-        )
-        .overlay(alignment: .leading) {
-            if let name = viewSwitchGlyphName {
-                Text(name)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(AppearancePalette.onInk)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(AppearancePalette.ink.opacity(0.9), in: Capsule())
-                    .fixedSize()
-                    .offset(x: -8)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-            }
-        }
-        #endif
     }
 
-    #if DEBUG
-    private static let glyphProbeNames = ["current-mode icon", "square.stack.3d.up", "eye"]
-    #endif
-
-    /// The switcher's glyph — the CURRENT view's icon (the exact mapping the pill uses).
+    /// The switcher's glyph — the CURRENT view's icon. **T's ruling, 2026-09-15**, taken against
+    /// `square.stack.3d.up` and `eye` on device: the active mode's own symbol announces where you
+    /// are and invites the change at once; a generic "switcher" glyph only does the second. One
+    /// mapping (`ViewSwitchMenuContent.destinations`) drives this and the pill, so they can't
+    /// disagree about what Card / List / Map look like.
     private var viewSwitchGlyph: String {
-        let modeIcon = ViewSwitchMenuContent.destination(for: filterState.viewMode).icon
-        #if DEBUG
-        switch viewSwitchGlyphProbe {
-        case 1: return "square.stack.3d.up"
-        case 2: return "eye"
-        default: return modeIcon
-        }
-        #else
-        return modeIcon
-        #endif
+        ViewSwitchMenuContent.destination(for: filterState.viewMode).icon
     }
 
     var body: some View {

@@ -654,15 +654,20 @@ final class CorpusPhysicsScene: SKScene {
         restyleUnfocusedOrbs()
     }
 
-    /// Designed, distinct territory palette (colorblind-considered qualitative
-    /// set; hex literals so it's verifiable per house rule). Assigned to
-    /// territories by anchor order; the label pill stroke and member tint share
-    /// the same entry so colour + name always pair.
-    static let territoryPaletteHex: [String] = [
-        "#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377",
-        "#EE7733", "#0099BB", "#DDCC77", "#882255", "#44AA99", "#BBBBBB"
-    ]
-    static let territoryPalette: [UIColor] = territoryPaletteHex.map { UIColor(hex: $0) ?? .gray }
+    /// Designed, distinct territory palette (colorblind-considered qualitative set; hex literals so
+    /// it's verifiable per house rule). Assigned to territories by anchor order; the label pill
+    /// stroke and member tint share the same entry so colour + name always pair.
+    ///
+    /// ★ PER APPEARANCE since the 2026-09-15 palette bake — slot i is the same HUE in both, at a
+    /// different lightness. `RegionPalette` owns the literals; this is the scene-side accessor.
+    static func territoryPaletteHex(isLight: Bool) -> [String] { RegionPalette.currentHex(isLight: isLight) }
+    static func territoryPalette(isLight: Bool) -> [UIColor] {
+        (isLight ? cachedTerritoryPaletteLight : cachedTerritoryPaletteDark)
+    }
+    private static let cachedTerritoryPaletteDark: [UIColor] =
+        RegionPalette.currentHexDark.map { UIColor(hex: $0) ?? .gray }
+    private static let cachedTerritoryPaletteLight: [UIColor] =
+        RegionPalette.currentHexLight.map { UIColor(hex: $0) ?? .gray }
 
     /// A territory name label. Position is NOT stored — it's re-derived each
     /// frame from members' live sprite positions and bridged to the SwiftUI

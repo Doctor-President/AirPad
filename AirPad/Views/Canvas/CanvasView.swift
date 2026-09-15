@@ -314,6 +314,14 @@ struct CanvasView: View {
             // observer chains stay within the type-checker's budget.
             .onChange(of: mapColorScheme) { _, newScheme in
                 scene.appearanceIsLight = (newScheme == .light)
+                // ★ RE-SYNC on flip (2026-09-15 palette bake). The territory tints and the label-pill
+                // stroke hexes are PER APPEARANCE now, and both are frozen into the scene at sync time
+                // (`territoryColors` via the frozen formation, `colorHex` on each TerritoryLabel).
+                // `appearanceIsLight` alone only restyles through the ALREADY-PUSHED colours, so
+                // without this they would keep the previous appearance's palette until some unrelated
+                // change happened to re-sync. The tag-anchored path reuses the frozen formation, so
+                // this re-pushes colour without recomputing the layout.
+                syncScene(nodes: store.visibleNodes(in: scope))
             }
     }
 

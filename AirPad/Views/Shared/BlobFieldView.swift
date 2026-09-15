@@ -225,14 +225,7 @@ struct BlobFieldView: View {
     /// **Screen (2) in DARK · Normal (0) in LIGHT.** Screen asymptotes rather than clipping, so
     /// overlapping blobs keep their hue on the dark ground; on cream, source-over is the ruled look.
     /// (Light therefore still takes the shader's `blend < 0.5` fast path.)
-    /// In DEBUG the persisted tuner can still override it live while the tuner exists.
-    private var blendValue: Float {
-        #if DEBUG
-        return Float(BlobFieldTuning.shared.blend)
-        #else
-        return blobColorScheme == .dark ? 2 : 0
-        #endif
-    }
+    private var blendValue: Float { blobColorScheme == .dark ? 2 : 0 }
 
     private func canvas(size: CGSize, origin: CGPoint, time: Float) -> some View {
         Rectangle()

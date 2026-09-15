@@ -801,11 +801,6 @@ final class CorpusPhysicsScene: SKScene {
     /// Keys that WON a slot last frame — incumbents. They get first refusal this frame with the
     /// smaller `haloKeep`, so a pair straddling the overlap threshold stops oscillating.
     private var regionLabelPlacedLastFrame: Set<String> = []
-    #if DEBUG
-    /// One-shot: log `view.bounds.size` once so it can be eyeballed against the overlay's
-    /// `geo.size` (logged in TerritoryLabelLayer) — the brief's coordinate-space check.
-    private var didLogRegionLabelBounds = false
-    #endif
 
     // ── REGION-LABEL declutter — **T device-final 2026-09-14**, see
     // Ops/reference/tuner-state-accepted.md (`region-labels: fadeDur / edgeMargin / hysteresisGap`).
@@ -1306,9 +1301,6 @@ final class CorpusPhysicsScene: SKScene {
 
         refreshGrazeTuning()  // pull live Graze dials into cached properties
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
-        #if DEBUG
-        refreshOrbTuning()    // pull live orb-tuner dials (dark dimensionality / opacity / title / blend)
-        #endif
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).
         if coastVelocity != .zero {
@@ -1655,16 +1647,6 @@ final class CorpusPhysicsScene: SKScene {
                 return
             }
             lastTerritoryLabelsEmpty = false
-
-            #if DEBUG
-            if !didLogRegionLabelBounds {
-                didLogRegionLabelBounds = true
-                // Verify (brief §C): the overlay's geo.size (logged in TerritoryLabelLayer) should
-                // equal this — both are the same full-bleed frame. If they diverge, the pill
-                // positions (view coords) and the edge-fade bounds are in different spaces.
-                print("[region-labels] view.bounds.size=\(view.bounds.size)")
-            }
-            #endif
 
             // Region-label zoom fade — macro complement of the per-orb title LOD, at
             // T's device-dialed + accepted literals (ws-map-labels 2026-07-29; baked in
@@ -2672,61 +2654,6 @@ final class CorpusPhysicsScene: SKScene {
         }
     }
 
-    #if DEBUG
-    private var lastOrbTuningSig = ""
-    /// Poll the in-app ORB tuner each frame; apply only on change. Pushes dark-dimensionality uniforms
-    /// live, restyles fills/strokes (opacity dials), rebuilds titles (font / colour / opacity / size —
-    /// addendum A), and sets each orb SPRITE's SKBlendMode PER APPEARANCE (addendum B). orbOverride OFF
-    /// restores the baked look; and if it was NEVER on, the whole method no-ops (zero startup cost, so
-    /// the shipped look is byte-identical until T dials). `currentIsLight` is in the signature so a
-    /// light↔dark flip re-applies the per-appearance blend.
-    func refreshOrbTuning() {
-        let t = BlobFieldTuning.shared
-        // Keep the tuner's editing-appearance in SYNC with the map's actual appearance, so every
-        // per-appearance value the panel shows/edits is the one the scene renders (audit 2026-09-10).
-        if t.mapIsLight != currentIsLight { t.mapIsLight = currentIsLight }
-        let on = t.orbOverride
-        // Region palette (commit 2) is an INDEPENDENT trigger — a family change must re-tint the orbs
-        // even when the orb override is off. `regionSig` folds in the family + every dialled param.
-        let regionOn = t.regionFamily != 0
-        let sig = (on || regionOn)
-            ? "\(currentIsLight)|\(on ? "\(t.orbFillOpacity)|\(t.orbStrokeOpacity)|\(t.orbDarkSat)|\(t.orbDarkVal)|\(t.orbDarkRim)|\(t.orbTitleScale)|\(t.orbTitleFont)|\(t.orbTitleColorHex)|\(t.orbTitleOpacity)|\(t.orbBlendLight)|\(t.orbBlendDark)" : "orbOff")|region:\(t.regionSig)"
-            : "off"
-        guard sig != lastOrbTuningSig else { return }
-        let wasApplying = !lastOrbTuningSig.isEmpty && lastOrbTuningSig != "off"
-        lastOrbTuningSig = sig
-        guard on || regionOn || wasApplying else { return }   // never dialed → leave the baked look untouched
-
-        func setU(_ name: String, _ v: Float) { orbSpriteShader.uniforms.first(where: { $0.name == name })?.floatValue = v }
-        setU("u_dark_sat", on ? Float(t.orbDarkSat) : Float(DarkOrbTuning.sat))
-        setU("u_dark_val", on ? Float(t.orbDarkVal) : Float(DarkOrbTuning.val))
-        setU("u_dark_rim", on ? Float(t.orbDarkRim) : Float(DarkOrbTuning.rim))
-        restyleUnfocusedOrbs()   // fill / stroke opacity
-        restyleTitles()          // font / colour / opacity / size
-        let bl = on ? BlobFieldTuning.skBlend(currentIsLight ? t.orbBlendLight : t.orbBlendDark) : .alpha
-        for (_, shape) in nodeSprites { (shape as? SKSpriteNode)?.blendMode = bl }
-    }
-
-    /// Rebuild every resting orb's title (needed for a live font / colour / opacity change — those are
-    /// baked into the MSDF glyph container at build time). `makeTitleSprite` reads the tuner overrides;
-    /// we recompute the same displayText/radius `addNodeSprite` used, then re-apply the title-size scale.
-    func restyleTitles() {
-        let byID = Dictionary(currentNodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        let on = BlobFieldTuning.shared.orbOverride
-        let s = on ? CGFloat(BlobFieldTuning.shared.orbTitleScale) : 1.0
-        for (id, shape) in nodeSprites {
-            guard let node = byID[id] else { continue }   // synthetic corpus has no currentNodes → skip
-            shape.children.first(where: { $0.name == "titleLabel" })?.removeFromParent()
-            let radius = (shape.userData?["radius"] as? CGFloat) ?? (((shape as? SKSpriteNode)?.size.width ?? 60) / 2)
-            let displayText = node.title.isEmpty ? (node.items.first?.content ?? "") : node.title
-            let title = makeTitleSprite(text: displayText, radius: radius, fillColor: bubbleColor(for: node))
-            title.setScale(s)
-            shape.addChild(title)
-        }
-    }
-
-
-    #endif
     // ─────────────────────────────────────────────────────────────────────────────────────────────
     // GRID WARP — SHIPS (baked 2026-09-14). Everything below is Release code: the orbs pinch the dot
     // grid like balls on a taut fabric, eased in per orb with its title. The tuner that dialled it is
@@ -2847,17 +2774,6 @@ final class CorpusPhysicsScene: SKScene {
             maxW = max(maxW, w)
             packed.append((e.sx, e.sy, w, e.reach))
         }
-
-        #if DEBUG
-        // LIVE READOUT for the dev tuner's warp header (deleted with the tuner at the palette bake).
-        let t = BlobFieldTuning.shared
-        t.liveWarpCS = cs
-        t.liveWarpRefScreen = refScreen
-        t.liveWarpReachPx = reachUnits * refScreen   // the corpus-average orb's reach, px
-        t.liveWarpDepthPx = strengthEff
-        t.liveWarpTitlesVisible = titlesVisible
-        t.liveWarpOrbCount = nodeSprites.count
-        #endif
 
         // OFF when the warp would contribute nothing — depth 0, OR fully zoomed out (no title visible →
         // every weight 0). Push the exact mode-0 path → byte-identical to an unwarped grid. This is what
@@ -3464,35 +3380,16 @@ final class CorpusPhysicsScene: SKScene {
         // (legibleInk over the dark-boosted fill). Returns a container child of the orb
         // named "titleLabel", z 2 — resolution-independent (crisp at any zoom) + batched.
         let side = radius * LensTuning.labelBoxFactor
-        #if DEBUG
-        // Orb-title FONT — baked to Space Grotesk Bold (T device-final 2026-09-14); the DEBUG picker
-        // can still override it while the tuner lives. MSDF renders + measures from the SAME atlas, so
-        // a font change reshapes the glyphs (rebuilt via restyleTitles on change).
-        var font = MSDFFont.orbTitle
-        if BlobFieldTuning.shared.orbOverride {
-            let i = BlobFieldTuning.shared.orbTitleFont
-            if i >= 0, i < BlobFieldTuning.orbFontAtlases.count {
-                let sel = MSDFFont.named(BlobFieldTuning.orbFontAtlases[i])
-                if sel.loaded { font = sel }
-                else { BlobFieldTuning.shared.fontLoadWarning = "⚠ \(BlobFieldTuning.orbFontAtlases[i]) failed to load" }
-            }
-        }
-        #else
+        // Orb-title FONT — Space Grotesk Bold (T device-final 2026-09-14). MSDF renders + measures
+        // from the SAME atlas, so the face and its metrics must not diverge (see MSDFFont.orbTitle).
         let font = MSDFFont.orbTitle
-        #endif
         let (glyphFont, lines) = resolveTitleLines(text, box: side) { s, f in
             MSDFLabel.textWidth(s, pointSize: f.pointSize, font: font)
         }
         let inkFill = currentIsLight ? fillColor : applyDarkOrbBoost(fillColor)
-        var titleColor = legibleInk(over: inkFill).ink
-        #if DEBUG
-        // Orb-title colour / opacity override (addendum A).
-        if BlobFieldTuning.shared.orbOverride {
-            let t = BlobFieldTuning.shared
-            if !t.orbTitleColorHex.isEmpty, let c = UIColor(hex: t.orbTitleColorHex) { titleColor = c }
-            if t.orbTitleOpacity < 0.999 { titleColor = titleColor.withAlphaComponent(CGFloat(t.orbTitleOpacity)) }
-        }
-        #endif
+        // Title ink: T device-final 2026-09-14 is `titleColour=(auto)` + `titleOpacity=1.000`,
+        // i.e. the legible-ink rule with no override — so the auto value IS the shipped value.
+        let titleColor = legibleInk(over: inkFill).ink
         return MSDFLabel.makeContainer(lines: lines, pointSize: glyphFont.pointSize,
                                        color: titleColor, fullTitle: text, font: font)
     }
@@ -3596,15 +3493,6 @@ final class CorpusPhysicsScene: SKScene {
     /// Über-nodes are not routed here — they have their own path via
     /// `makeUberNodeShape` + `sampleChildColors`, which still reads `tagColors`.
     private func bubbleColor(for node: Node) -> UIColor {
-        #if DEBUG
-        // REGION PALETTE FAMILY (commit 2): when a non-Current family is active, re-resolve the
-        // territory tint LIVE from the family + THIS scene's appearance, keyed on the node's frozen
-        // territory index. Current family (default) falls straight through to the snapshot below →
-        // byte-identical. Only the tag-anchored path has slots, so other modes are untouched.
-        if RegionPalette.activeFamily != .current, let slot = territorySlots[node.id] {
-            return RegionPalette.color(isLight: currentIsLight, slot: slot)
-        }
-        #endif
         // Tag-anchored Map — territory tint takes precedence when the node sits
         // in a designated-anchor territory (paired with the on-canvas label for
         // colorblind-safe reading).

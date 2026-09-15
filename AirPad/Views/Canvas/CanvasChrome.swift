@@ -35,6 +35,11 @@ struct CanvasChrome: View {
     @State private var showQuarantineReview = false
     @State private var showSlideOutMenu = false
     @State private var showEditMap = false
+    #if DEBUG
+    /// Throwaway glyph comparison for the bottom view switcher (T rules on device, then delete).
+    @State private var viewSwitchGlyphProbe = 0
+    @State private var viewSwitchGlyphName: String?
+    #endif
     @State private var showBatchDeleteConfirmation = false
     @State private var showBatchAddTagSheet = false
 
@@ -86,6 +91,69 @@ struct CanvasChrome: View {
             CaptureButtonLabel() // shared visual — see CaptureButtonLabel.swift
         }
         .buttonStyle(.plain)
+    }
+
+    /// The bottom-right VIEW SWITCHER — a second anchor for the same picker the top pill presents
+    /// (T, 2026-09-14). It WEARS THE CURRENT VIEW'S ICON, so it announces the mode and invites the
+    /// change at once; the glyph follows `viewMode` via the shared `destinations` mapping. Same
+    /// circle/material/shadow as the capture "+" (see `CanvasCircleButtonLabel`) and stacked
+    /// directly above it, at the SAME 10pt gap "+" keeps to the search pill, so the two read as one
+    /// stack. A SwiftUI `Menu` gives press-drag-release natively — that IS the gestural path.
+    private var viewSwitchButton: some View {
+        Menu {
+            ViewSwitchMenuContent(scope: scope, onEditMap: { showEditMap = true })
+        } label: {
+            CanvasCircleButtonLabel(systemName: viewSwitchGlyph, glyphSize: 22)
+        }
+        .accessibilityLabel("View: \(ViewSwitchMenuContent.destination(for: filterState.viewMode).label)")
+        .accessibilityHint("Switches between Card, List and Map")
+        #if DEBUG
+        // GLYPH COMPARISON (throwaway, T rules on device): long-press cycles
+        // current-mode icon → square.stack.3d.up → eye, naming each briefly.
+        // `simultaneousGesture` so the Menu's own press handling is untouched.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                viewSwitchGlyphProbe = (viewSwitchGlyphProbe + 1) % 3
+                viewSwitchGlyphName = Self.glyphProbeNames[viewSwitchGlyphProbe]
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                Task {
+                    try? await Task.sleep(for: .seconds(1.4))
+                    await MainActor.run { viewSwitchGlyphName = nil }
+                }
+            }
+        )
+        .overlay(alignment: .leading) {
+            if let name = viewSwitchGlyphName {
+                Text(name)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AppearancePalette.onInk)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(AppearancePalette.ink.opacity(0.9), in: Capsule())
+                    .fixedSize()
+                    .offset(x: -8)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        #endif
+    }
+
+    #if DEBUG
+    private static let glyphProbeNames = ["current-mode icon", "square.stack.3d.up", "eye"]
+    #endif
+
+    /// The switcher's glyph — the CURRENT view's icon (the exact mapping the pill uses).
+    private var viewSwitchGlyph: String {
+        let modeIcon = ViewSwitchMenuContent.destination(for: filterState.viewMode).icon
+        #if DEBUG
+        switch viewSwitchGlyphProbe {
+        case 1: return "square.stack.3d.up"
+        case 2: return "eye"
+        default: return modeIcon
+        }
+        #else
+        return modeIcon
+        #endif
     }
 
     var body: some View {
@@ -236,7 +304,12 @@ struct CanvasChrome: View {
                         Spacer()
                         HStack {
                             Spacer()
-                            captureTriggerButton
+                            // The view switcher rides directly above "+", at the SAME 10pt gap "+"
+                            // keeps to the search pill (`peekOverlayClearance` = peek height + 10).
+                            VStack(spacing: 10) {
+                                viewSwitchButton
+                                captureTriggerButton
+                            }
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, LibrarianPanelLayout.peekOverlayClearance)
@@ -517,27 +590,29 @@ private struct ChromeBar: View {
 /// `.systemGraph` (the graph canvas). The two "coming soon" stubs
 /// (`.userGraph`, `.timeline`) are intentionally absent — the pill offers
 /// only the live primaries; the slide-out menu still lists the stubs.
-private struct ViewPill: View {
+/// The view-mode picker itself — **ONE implementation, TWO anchors**: the top-center `ViewPill`
+/// and the bottom-right switcher stacked above the capture "+". Both wrap this in a SwiftUI `Menu`,
+/// so press-drag-release is the native menu gesture rather than something hand-rolled. Extracted
+/// 2026-09-15 when the second anchor arrived: a duplicated picker is how the two would drift.
+struct ViewSwitchMenuContent: View {
     @Environment(CorpusStore.self) private var store
     let scope: CanvasScope
-    /// Tag-anchored Map — opens the anchor-designation settings. Shown in the
-    /// flyout only when Map is the active view.
+    /// Tag-anchored Map — opens the anchor-designation settings. Shown only when Map is active.
     var onEditMap: () -> Void = {}
 
-    private static let destinations: [(mode: ViewMode, label: String, icon: String)] = [
+    static let destinations: [(mode: ViewMode, label: String, icon: String)] = [
         (.grid,        "Card", "square.grid.2x2"),
         (.list,        "List", "list.bullet"),
         (.systemGraph, "Map",  "circle.hexagongrid.fill"),
     ]
 
-    private var current: ViewMode { store.filterState(for: scope).viewMode }
-
-    /// Card View spans several `viewMode`s that all route to the `.grid`
-    /// destination, so fall back to the first entry (Card) when the live
-    /// mode isn't one of the three pill primaries.
-    private var currentDest: (mode: ViewMode, label: String, icon: String) {
-        Self.destinations.first { $0.mode == current } ?? Self.destinations[0]
+    /// Card View spans several `viewMode`s that all route to the `.grid` destination, so fall back
+    /// to the first entry (Card) when the live mode isn't one of the three primaries.
+    static func destination(for mode: ViewMode) -> (mode: ViewMode, label: String, icon: String) {
+        destinations.first { $0.mode == mode } ?? destinations[0]
     }
+
+    private var current: ViewMode { store.filterState(for: scope).viewMode }
 
     private var modeBinding: Binding<ViewMode> {
         Binding(
@@ -553,17 +628,34 @@ private struct ViewPill: View {
     }
 
     var body: some View {
+        Picker("View", selection: modeBinding) {
+            ForEach(Self.destinations, id: \.mode) { dest in
+                Label(dest.label, systemImage: dest.icon).tag(dest.mode)
+            }
+        }
+        // Map settings — anchor designation. Only meaningful on the Map.
+        if current == .systemGraph {
+            Divider()
+            Button("Edit Map…", systemImage: "slider.horizontal.3", action: onEditMap)
+        }
+    }
+}
+
+private struct ViewPill: View {
+    @Environment(CorpusStore.self) private var store
+    let scope: CanvasScope
+    /// Tag-anchored Map — opens the anchor-designation settings. Shown in the
+    /// flyout only when Map is the active view.
+    var onEditMap: () -> Void = {}
+
+    private var current: ViewMode { store.filterState(for: scope).viewMode }
+    private var currentDest: (mode: ViewMode, label: String, icon: String) {
+        ViewSwitchMenuContent.destination(for: current)
+    }
+
+    var body: some View {
         Menu {
-            Picker("View", selection: modeBinding) {
-                ForEach(Self.destinations, id: \.mode) { dest in
-                    Label(dest.label, systemImage: dest.icon).tag(dest.mode)
-                }
-            }
-            // Map settings — anchor designation. Only meaningful on the Map.
-            if current == .systemGraph {
-                Divider()
-                Button("Edit Map…", systemImage: "slider.horizontal.3", action: onEditMap)
-            }
+            ViewSwitchMenuContent(scope: scope, onEditMap: onEditMap)
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: currentDest.icon)

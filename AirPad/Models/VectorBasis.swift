@@ -91,3 +91,12 @@ enum VectorBasisGuard {
         return false
     }
 }
+
+/// `flatMap` for an async transform — lets the substrate writer keep its optional-chaining shape
+/// now that `embed` is `async` (Optional.flatMap cannot take an async closure).
+extension Optional {
+    func asyncFlatMap<T>(_ transform: (Wrapped) async -> T?) async -> T? {
+        guard let self else { return nil }
+        return await transform(self)
+    }
+}

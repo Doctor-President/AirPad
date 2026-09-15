@@ -1815,6 +1815,7 @@ final class CorpusStore {
               fresh.embeddingVersion < CardEmbeddingService.currentEmbeddingVersion,
               fresh.gist == current.gist else { return }
         fresh.embedding = vector
+        fresh.embeddingBasis = .cardGist
         fresh.embeddingVersion = CardEmbeddingService.currentEmbeddingVersion
         fresh.updatedAt = Date()
         await saveCard(fresh)
@@ -5104,6 +5105,9 @@ final class CorpusStore {
                 n.summaryEmbedding = working.summaryEmbedding
                 n.folksonomyEmbedding = working.folksonomyEmbedding
                 n.contextualContentEmbedding = working.contextualContentEmbedding
+                n.summaryEmbeddingBasis = working.summaryEmbeddingBasis
+                n.folksonomyEmbeddingBasis = working.folksonomyEmbeddingBasis
+                n.contextualContentEmbeddingBasis = working.contextualContentEmbeddingBasis
                 n.embeddingVersion = working.embeddingVersion
                 n.embeddingFailureReason = working.embeddingFailureReason
                 n.fmErrorDetail = working.fmErrorDetail
@@ -5427,10 +5431,12 @@ final class CorpusStore {
             node.folksonomy = nil
             node.summaryEmbedding = nil
             node.folksonomyEmbedding = nil
-            if loaded, !trimmed.isEmpty, let v = substrate.embed(trimmed) {
+            if loaded, !trimmed.isEmpty, let v = await substrate.embed(trimmed) {
                 node.contextualContentEmbedding = v
+                node.contextualContentEmbeddingBasis = .content
             } else {
                 node.contextualContentEmbedding = nil
+                node.contextualContentEmbeddingBasis = nil
             }
             return
         }
@@ -5464,6 +5470,9 @@ final class CorpusStore {
             node.summaryEmbedding = nil
             node.folksonomyEmbedding = nil
             node.contextualContentEmbedding = nil
+            node.summaryEmbeddingBasis = nil
+            node.folksonomyEmbeddingBasis = nil
+            node.contextualContentEmbeddingBasis = nil
             return
         }
 
@@ -5473,16 +5482,24 @@ final class CorpusStore {
         // geography. Content embedding is intentionally not populated here
         // — the prior raw-content path is what we're replacing.
         if failureReason == "guardrail_refused" {
-            let fallback = substrate.legacyFallbackEmbeddings(for: node)
+            let fallback = await substrate.legacyFallbackEmbeddings(for: node)
             node.summaryEmbedding = fallback.summary
             node.folksonomyEmbedding = fallback.folksonomy
             node.contextualContentEmbedding = nil
+            node.summaryEmbeddingBasis = fallback.summary != nil ? .summary : nil
+            node.folksonomyEmbeddingBasis = fallback.folksonomy != nil ? .folksonomy : nil
+            node.contextualContentEmbeddingBasis = nil
         } else {
-            node.summaryEmbedding = producedSummary.flatMap { substrate.embed($0) }
-            node.folksonomyEmbedding = producedFolksonomy
-                .map { $0.joined(separator: ", ") }
-                .flatMap { $0.isEmpty ? nil : substrate.embed($0) }
-            node.contextualContentEmbedding = trimmed.isEmpty ? nil : substrate.embed(trimmed)
+            node.summaryEmbedding = await producedSummary.asyncFlatMap { await substrate.embed($0) }
+            let folksonomyText = producedFolksonomy?.joined(separator: ", ")
+            node.folksonomyEmbedding = await (folksonomyText?.isEmpty == false ? folksonomyText : nil)
+                .asyncFlatMap { await substrate.embed($0) }
+            node.contextualContentEmbedding = trimmed.isEmpty ? nil : await substrate.embed(trimmed)
+            // ★ Tag each channel with the space it was written in. Same embedder now, but DIFFERENT
+            // channels — which is the distinction dimension can no longer make.
+            node.summaryEmbeddingBasis = node.summaryEmbedding != nil ? .summary : nil
+            node.folksonomyEmbeddingBasis = node.folksonomyEmbedding != nil ? .folksonomy : nil
+            node.contextualContentEmbeddingBasis = node.contextualContentEmbedding != nil ? .content : nil
         }
         node.embeddingFailureReason = failureReason
         node.fmErrorDetail = fmErrorDetail
@@ -5558,10 +5575,13 @@ final class CorpusStore {
         var processed = 0
         for (idx, node) in pending.enumerated() {
             guard var working = nodes.first(where: { $0.id == node.id }) else { continue }
-            let fallback = substrate.legacyFallbackEmbeddings(for: working)
+            let fallback = await substrate.legacyFallbackEmbeddings(for: working)
             working.summaryEmbedding = fallback.summary
             working.folksonomyEmbedding = fallback.folksonomy
             working.contextualContentEmbedding = nil
+            working.summaryEmbeddingBasis = fallback.summary != nil ? .summary : nil
+            working.folksonomyEmbeddingBasis = fallback.folksonomy != nil ? .folksonomy : nil
+            working.contextualContentEmbeddingBasis = nil
             // Preserve `embedding_failure_reason = "guardrail_refused"` as
             // historical provenance — the diagnostic export needs it to
             // group the population for hypothesis-3 validation.

@@ -19,6 +19,22 @@ struct AirPadApp: App {
         let appRouter = AppRouter()
         self.router = appRouter
         AppDependencyManager.shared.add(dependency: appRouter)
+        Self.purgeRetiredDevTunerDefaults()
+    }
+
+    /// One-shot cleanup of the dev tuners' persisted state (bake, 2026-09-15). Every value they
+    /// carried is a literal in source now and nothing reads these keys, but a device that upgrades
+    /// in place (rather than reinstalling) would keep the dictionaries forever. Runs once, then
+    /// records a marker. ★ Safe to delete this method any time after V1 has shipped.
+    private static func purgeRetiredDevTunerDefaults() {
+        let marker = "devTunerDefaultsPurged.2026-09-15"
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: marker) else { return }
+        for key in d.dictionaryRepresentation().keys
+        where key.hasPrefix("blobTuner.") || key.hasPrefix("PaletteTuner.") {
+            d.removeObject(forKey: key)
+        }
+        d.set(true, forKey: marker)
     }
 
     var body: some Scene {
@@ -29,12 +45,6 @@ struct AirPadApp: App {
             if UserDefaults.standard.bool(forKey: "SPRCaretMeasure") {
                 // MD14 note-caret tap-trace fixture (driven by XCUITest).
                 CaretMeasureView()
-            } else if UserDefaults.standard.bool(forKey: "BLOBBLEND") {
-                // ws-ios-polish item 5 — blob-blend tuner on the REAL card + detail-hero blobs.
-                BlobBlendCompareView()
-            } else if UserDefaults.standard.bool(forKey: "BlobExportTest") {
-                // Audit 2026-09-10: prove per-appearance severability + export round-trip.
-                BlobExportTestView()
             } else if let shot = UserDefaults.standard.string(forKey: "PARITYShot"), !shot.isEmpty {
                 // Quick-parity-sweep screenshot fixture (#13/#15/#17/#18).
                 ParityShotsView(shot: shot)
@@ -74,48 +84,13 @@ struct AirPadApp: App {
                 // there's no flash on entry.
                 router.entryMode = .quikCapture
             }
-        #if DEBUG
-        // Both dev tuners overlay the live app (DEBUG only; compiled out of Release). The blob tuner
-        // drives blend/hue-spread/family across EVERY BlobField surface so T judges cohesion in-app.
-        return content.paletteTunerHost().blobTunerHost()
-        #else
+        // (Both dev tuners were DELETED at the 2026-09-15 bake — every value they carried is now a
+        // literal in source; Ops/reference/tuner-state-accepted.md is the permanent record.)
         return content
-        #endif
     }
 }
 
 #if DEBUG
-/// Audit 2026-09-10 self-test — sets DISTINCT light/dark values, exports, reads BOTH back → proves
-/// per-appearance severability (no bleed) + export completeness. Reached via `-BlobExportTest YES`.
-private struct BlobExportTestView: View {
-    @State private var report = "running…"
-    var body: some View {
-        ScrollView { Text(report).font(.system(size: 10, design: .monospaced)).padding() }
-            .preferredColorScheme(.dark).foregroundStyle(.white)
-            .onAppear { report = runRoundTrip() }
-    }
-    private func runRoundTrip() -> String {
-        let t = BlobFieldTuning.shared
-        // 1. dial DISTINCT values in each appearance (edit dark, then light). The probes were glow
-        // dials until the 2026-09-14 bake deleted them; they are now surviving per-appearance dials
-        // (warp depth / orb fill / map ground) — the property under test is SEVERABILITY, not which
-        // dial carries it.
-        t.mapIsLight = false
-        t.warpDepth = 0.20; t.orbFillOpacity = 0.30; t.family = false; t.mapGroundHex = "101014"
-        t.mapIsLight = true
-        t.warpDepth = 0.80; t.orbFillOpacity = 0.95; t.family = true; t.mapGroundHex = "F4EFE3"
-        // 2. export the complete state
-        let export = t.exportAll()
-        // 3. read BOTH appearances back independently
-        let dR = t.apDAt("warpDepth", 0.6, light: false), lR = t.apDAt("warpDepth", 0.6, light: true)
-        let dF = t.apDAt("orbFillOpacity", 1, light: false), lF = t.apDAt("orbFillOpacity", 1, light: true)
-        let dG = t.apHexAt("mapGroundHex", "", light: false), lG = t.apHexAt("mapGroundHex", "", light: true)
-        let ok = dR == 0.20 && lR == 0.80 && dF == 0.30 && lF == 0.95 && dG == "101014" && lG == "F4EFE3"
-        let verdict = ok ? "PASS — light & dark fully severable" : "FAIL"
-        print("[BlobExportTest] \(verdict)  dDepth=\(dR) lDepth=\(lR)")
-        return "ROUND-TRIP: \(verdict)\n warpDepth D=\(dR) L=\(lR)\n fill D=\(dF) L=\(lF)\n mapGround D=\(dG) L=\(lG)\n\n\(export)"
-    }
-}
 
 
 

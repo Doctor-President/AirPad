@@ -101,13 +101,9 @@ enum RegionPalette {
 
     // MARK: - Active family + dialled params (DEBUG tuner) — .current everywhere in Release.
 
-    static var activeFamily: RegionPaletteFamily {
-        #if DEBUG
-        return RegionPaletteFamily(rawValue: BlobFieldTuning.shared.regionFamily) ?? .current
-        #else
-        return .current
-        #endif
-    }
+    /// Release ships `.current` only. The other families + the OKLCH generator are kept in code
+    /// (customisation is a later feature) but nothing can select them — the tuner that did is gone.
+    static var activeFamily: RegionPaletteFamily { .current }
 
     /// Family params, defaults overlaid by the live tuner dials (DEBUG only).
     ///
@@ -122,15 +118,6 @@ enum RegionPalette {
         let hueDefaults = defaults(f, isLight: false)          // hue identity comes from DARK
         p.hueStart = hueDefaults.hueStart
         p.hueSpread = hueDefaults.hueSpread
-        #if DEBUG
-        let t = BlobFieldTuning.shared
-        p.hueStart  = t.regionHueParam(f.rawValue, "hueStart",  default: p.hueStart)
-        p.hueSpread = t.regionHueParam(f.rawValue, "hueSpread", default: p.hueSpread)
-        // NB the keys are "chroma"/"lightness" — an old export's "sat"/"light" keys are NOT read
-        // here and are reported as skipped by the importer, so a stale HSL number can never leak in.
-        p.chroma    = t.regionParam(f.rawValue, isLight, "chroma",    default: p.chroma)
-        p.lightness = t.regionParam(f.rawValue, isLight, "lightness", default: p.lightness)
-        #endif
         return p
     }
 
@@ -144,9 +131,6 @@ enum RegionPalette {
         let p = params(fam, isLight: isLight)
         let n = max(slotCount, 1)
         var hue = p.hueStart + p.hueSpread * (Double(slot % n) / Double(n))
-        #if DEBUG
-        hue += BlobFieldTuning.shared.regionSlotHueOffset(fam.rawValue, isLight, slot % n)
-        #endif
         hue -= floor(hue)
         // OKLCH → gamut-mapped sRGB. L and h are held EXACTLY; only C moves if the colour is
         // outside sRGB (see gamutMappedRGB) — so the set keeps one perceived lightness across hue.

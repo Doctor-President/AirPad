@@ -75,11 +75,7 @@ enum AppearancePalette {
     /// dark value — a NEUTRAL gray, R=G=B, not "warm"). Light: warm parchment,
     /// Tomoe River register — NOT stark white (`.systemBackground` would glare).
     static var bgBase: Color {
-        #if DEBUG
-        PaletteTuner.color("bgBase", dark: "000000", light: "F4EFE3")
-        #else
         dynamic(dark: "000000", light: "F4EFE3")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
-        #endif
     }
 
     /// `--bg-elevated` — the raised note panel.
@@ -87,11 +83,7 @@ enum AppearancePalette {
     /// color). Light: a hair brighter/warmer than the ground so it lifts by
     /// luminance (transmissive — light falls ONTO the paper).
     static var bgElevated: Color {
-        #if DEBUG
-        PaletteTuner.color("bgElevated", dark: "0D0D0D", light: "FAF6EC")
-        #else
         dynamic(dark: "0D0D0D", light: "FAF6EC")   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
-        #endif
     }
 
     /// Primary foreground — text and icons. Used directly and at the same
@@ -100,11 +92,7 @@ enum AppearancePalette {
     /// fountain-pen blue-black (the Tomoe-River pairing, and the "cool presence"
     /// the theme calls for) — dark enough to read on parchment.
     static var ink: Color {
-        #if DEBUG
-        PaletteTuner.color("ink", dark: "FFFFFF", light: "232A2E")
-        #else
         dynamic(dark: "FFFFFF", light: "232A2E")
-        #endif
     }
 
     /// Ink for text placed on a card FACE (over the warm-cream card art), at a
@@ -138,11 +126,7 @@ enum AppearancePalette {
     /// identical). Light: soft, low, diffused — no hard shadow ("cloud cover is
     /// a reprieve").
     static var panelShadow: Color {
-        #if DEBUG
-        PaletteTuner.colorAlpha("panelShadow", dark: "000000", darkAlpha: 0.35, light: "000000", lightAlpha: 0.10)
-        #else
         dynamic(dark: "000000", darkAlpha: 0.35, light: "000000", lightAlpha: 0.10)
-        #endif
     }
 
     /// The card lift shadow that separates a card FACE (carousel + grid tiles)
@@ -172,8 +156,8 @@ enum AppearancePalette {
     /// `radius 26 · y 11` at the NodeListView call site).
     static var listRowLift: Color {
         #if DEBUG
-        let lHex = PaletteTuner.shared.hex("listRowLift", dark: false) ?? "43372A"
-        let lA = PaletteTuner.shared.overrides["listRowLift.alpha.light"].flatMap { Float($0) }.map { CGFloat($0) } ?? 0.75
+        let lHex = "43372A"
+        let lA: CGFloat = 0.75
         return Color(UIColor { trait in
             if trait.userInterfaceStyle == .dark { return .clear }
             let (r, g, b) = rgb(lHex)
@@ -196,11 +180,7 @@ enum AppearancePalette {
     /// designed treatment yet (Solar Flare's white-on-dark was a default, not a
     /// decision) — this is a plausible, high-contrast first pass; T art-directs.
     static var onInk: Color {
-        #if DEBUG
-        PaletteTuner.color("onInk", dark: "000000", light: "F4EFE3")
-        #else
         dynamic(dark: "000000", light: "F4EFE3")
-        #endif
     }
 
     /// Map dot-matrix dot color for the `BackgroundGridNode` shader
@@ -212,11 +192,7 @@ enum AppearancePalette {
     /// visible but not assertive" on parchment. This is only the hue/luma floor
     /// — the exact PRESENCE is T's to dial via the tuner's dot-opacity slider.
     static func mapGridDotRGB(dark: Bool) -> (r: Float, g: Float, b: Float) {
-        #if DEBUG
-        let hex = PaletteTuner.shared.hex("mapGridDotRGB", dark: dark) ?? (dark ? "FFFFFF" : "2E3A40")
-        #else
         let hex = dark ? "FFFFFF" : "2E3A40"
-        #endif
         let (r, g, b) = rgb(hex)
         return (Float(r), Float(g), Float(b))
     }
@@ -228,11 +204,7 @@ enum AppearancePalette {
     /// on cream). Pushed live from the Map's per-frame trait resolution
     /// alongside `mapGridDotRGB`.
     static func mapGridDotOpacity(dark: Bool) -> Float {
-        #if DEBUG
-        PaletteTuner.floatVal("mapGridDotOpacity", dark: dark, bakedDark: 0.809, bakedLight: 0.805)
-        #else
         dark ? 0.809 : 0.805   // T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md
-        #endif
     }
 
     /// The Map canvas background. Dark: `#111115` (T's dialed near-black — a
@@ -242,13 +214,6 @@ enum AppearancePalette {
     /// ★ Light hex via `CardSurfaceResolved.ground`; DARK is the literal `#111115`.
     /// T kept the ground at `#F4EFE3`, so light is unchanged in this build too.
     static func mapBackground(dark: Bool) -> Color {
-        #if DEBUG
-        // Blob tuner item 2 — preview the MAP ground diverging from the card ground BEFORE splitting
-        // the shared token. Empty → falls through to the shared ground (so setting only the card also
-        // moves the map = the coupling, shown not enforced); non-empty → map overrides independently.
-        let o = BlobFieldTuning.shared.apHexAt("mapGroundHex", "", light: !dark)   // per-appearance override
-        if !o.isEmpty { return Color(hexString: o) }
-        #endif
         return CardSurfaceResolved.ground(dark: dark)
     }
 

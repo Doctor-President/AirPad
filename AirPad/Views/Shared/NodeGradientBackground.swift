@@ -120,14 +120,6 @@ struct NodeGradientLayer: View {
     /// spread/anim/distort/blur from the tuner instead of the values passed at the call site.
     var blobExpr: Int = -1
 
-    #if DEBUG
-    private var blobExprIdx: Int? {
-        let t = BlobFieldTuning.shared
-        guard t.blobExprOverride, blobExpr >= 0, blobExpr < 4 else { return nil }
-        return blobExpr
-    }
-    #endif
-
     /// PER-EXPRESSION blob geometry — **T device-final 2026-09-14** (the `per-expression blobs`
     /// block, `override=true`; see Ops/reference/tuner-state-accepted.md). Indexed by `blobExpr`:
     /// 0 V-scroll · 1 Carousel · 2 Grid · 3 Hero. These take precedence over the call-site values
@@ -145,30 +137,18 @@ struct NodeGradientLayer: View {
     /// Effective per-format knobs — the DEBUG tuner while it lives, else the BAKED per-expression
     /// value, else (for a surface with no expression tag) the call-site value.
     private var effOffsetScale: CGFloat {
-        #if DEBUG
-        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobSpread[i]) }
-        #endif
         if let i = bakedExprIdx { return BlobExprBake.spread[i] }
         return offsetScale
     }
     private var effBlurScale: CGFloat {
-        #if DEBUG
-        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobBlur[i]) }
-        #endif
         if let i = bakedExprIdx { return BlobExprBake.blur[i] }
         return blurScale
     }
     private var effDriftScale: CGFloat {
-        #if DEBUG
-        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobAnim[i]) }
-        #endif
         if let i = bakedExprIdx { return BlobExprBake.anim[i] }
         return driftSpeedScale
     }
     private var effUndulation: CGFloat {
-        #if DEBUG
-        if let i = blobExprIdx { return CGFloat(BlobFieldTuning.shared.blobDistort[i]) }
-        #endif
         if let i = bakedExprIdx { return BlobExprBake.distort[i] }
         return undulation
     }
@@ -246,17 +226,10 @@ struct NodeGradientLayer: View {
     /// (spread-dialable) so the whole surface reads as a single colour FAMILY, not three
     /// unrelated pigments (ws-ios-polish item 5, applied to the blob surfaces).
     private var effectiveColors: (String, String, String) {
-        #if DEBUG
-        // While the tuner lives it can still A/B family-vs-tag-palette.
-        if !BlobFieldTuning.shared.family {
-            return Self.circleColors[paletteIndex % Self.circleColors.count]
-        }
-        return Self.familyColors(for: node, spread: CGFloat(BlobFieldTuning.shared.spread))
-        #else
-        // ★ T device-final 2026-09-14, see Ops/reference/tuner-state-accepted.md: `family=true`, `spread=0.500` (both appearances) —
+        // ★ T device-final 2026-09-14 (`blob: family=true`, `spread=0.500`, both appearances):
         // three variants of ONE node-seeded hue, so a surface reads as a single colour FAMILY.
-        return Self.familyColors(for: node, spread: Self.bakedFamilySpread)
-        #endif
+        // (`circleColors` — the older 3-pigment tag palette — is kept as the seed source below.)
+        Self.familyColors(for: node, spread: Self.bakedFamilySpread)
     }
 
     /// Family hue spread — T device-final 2026-09-14 (`blob: spread=0.500`, both appearances).

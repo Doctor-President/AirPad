@@ -83,31 +83,14 @@ xcodebuild \
   -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
   archive || die "Archive failed — see xcodebuild output above."
 
-# The flag is not the evidence: a silently dropped build setting looks exactly like a clean build,
-# so confirm the tuner is really in the shipped Mach-O before uploading.
-#
-# Two traps this has already hit, hence the shape below:
-#   • Swift stores string literals of <=15 UTF-8 bytes INLINE in the String struct, so they never
-#     appear in the binary. A short probe reports 0 and reads as "absent". Probes must be LONG.
-#   • `grep -r` over a Mach-O does not find them either; `strings` does. And under `set -o pipefail`
-#     a no-match grep in a $( ) assignment kills the script with NO message at all.
-# So: use strings, tolerate no-match, and require a POSITIVE CONTROL — a string known to ship in
-# Release — to pass first. Without the control, "0 hits" proves nothing about the build.
-if [[ "${AIRPAD_TF_DEV_TUNERS:-0}" == "1" ]]; then
-  APP_DIR="$ARCHIVE_PATH/Products/Applications/AirPad.app"
-  BINS=("$APP_DIR/AirPad")
-  [[ -f "$APP_DIR/AirPad.debug.dylib" ]] && BINS+=("$APP_DIR/AirPad.debug.dylib")   # Xcode 16+ split
-  count_in() { local pat="$1" n=0 b hits; for b in "${BINS[@]}"; do
-      hits=$(strings -a "$b" | grep -cF "$pat" || true); n=$(( n + hits )); done; printf '%s' "$n"; }
-
-  control=$(count_in "u_camera_position")                        # a Release-shipping literal
-  (( control > 0 )) || die "Verification is broken: the control string is absent too, so a 0 for the
-  tuner would mean nothing. Not uploading."
-  tuner=$(count_in "COMPLETE STATE (both appearances)")           # tuner export header, DEBUG-only
-  (( tuner > 0 )) || die "Dev tuners requested but absent from the archive — the flag did not take
-  (control probe found $control, so the check itself is sound). Not uploading."
-  say "dev tuners verified in the archive (tuner $tuner hit(s), control $control)"
-fi
+# ── DEV-TUNER VERIFICATION PROBE — REMOVED 2026-09-15 ────────────────────────────────────────────
+# The probe confirmed a known DEBUG-only tuner string was really in the archived Mach-O before
+# uploading (with a positive control, because "0 hits" proves nothing on its own). The tuners were
+# DELETED at the palette bake, so its target no longer exists and the check could only ever fail.
+# AIRPAD_TF_DEV_TUNERS still compiles DEBUG code into a Release archive if you ever need it again —
+# it is just no longer self-verifying. If you add a new DEBUG-only surface worth shipping to TF,
+# restore this block with a LONG probe string (>15 UTF-8 bytes — short literals are stored inline in
+# the String struct and never reach the binary) plus a control, and use `strings`, not `grep -r`.
 
 # ---- 2. Export for the App Store (produces the .ipa) ----
 say "Exporting (App Store)…"

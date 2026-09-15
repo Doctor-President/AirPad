@@ -2791,6 +2791,13 @@ final class CorpusPhysicsScene: SKScene {
         // applyOrbScales uses per orb (onScreen ÷ 2), for the mean. This is the encode base.
         let refScreen = refs.linear * ramp / cs
         let reachUnits = GridWarpTuning.reachOrbRadii             // ORB RADII
+        // DEFENSIVE CEILING on a single orb's reach. `buildWarpField` early-exits per texel with
+        // `dist > o.reach`, which is what keeps its cost bounded; reach in ORB UNITS grows with the
+        // orb's on-screen size, so zoomed close enough one orb's ring can cover the whole viewport
+        // and that early-exit stops firing — every texel then sums every orb. A ring wider than half
+        // the screen diagonal adds nothing visible, so capping there restores the exit without
+        // touching the look. INERT at normal zooms (see the byte-identical check in the report).
+        let reachCeiling = 0.5 * (viewW * viewW + viewH * viewH).squareRoot()
         let depth = GridWarpTuning.depthOrbRadii                  // fraction of an orb radius
         let strengthEff = depth * refScreen                      // px — global displacement depth; per-orb
                                                                  //      depth-dependence rides mass, as before
@@ -2820,7 +2827,7 @@ final class CorpusPhysicsScene: SKScene {
             let mass = min(massCeil, (1 - influence) + influence * pow(rWorld / refs.mass, exponent))
             // REACH in orb radii → px off THIS orb's live on-screen radius (annulus included). Wider for
             // a bigger orb by construction — this is what the retired warpMassReach dial approximated.
-            let reach = reachUnits * orbScreen
+            let reach = min(reachUnits * orbScreen, reachCeiling)
             // RANK by the influence circle's distance from centre so a far-reaching big orb isn't
             // evicted from the 48-set by a nearer small one.
             let screenDist = Double(hypot(p.x - camPos.x, p.y - camPos.y)) / cs

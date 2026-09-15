@@ -99,12 +99,12 @@ struct CanvasSlideOutMenu: View {
         .scrollIndicators(.hidden)
     }
 
+    /// Just the close affordance. The "CANVAS" title was dropped 2026-09-15 — "TOOLS" already says
+    /// what the drawer is, so the title was a label for a label. Bottom padding goes to 0 because
+    /// the section header below carries its own 18pt top inset; keeping 12 here would leave the gap
+    /// the title used to fill.
     private var header: some View {
         HStack {
-            Text("Canvas")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                .textCase(.uppercase)
             Spacer()
             Button(action: { dismiss() }) {
                 Image(systemName: "xmark")
@@ -118,7 +118,6 @@ struct CanvasSlideOutMenu: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
-        .padding(.bottom, 12)
     }
 
     @ViewBuilder

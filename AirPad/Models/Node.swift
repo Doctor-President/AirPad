@@ -271,6 +271,13 @@ struct Node: Codable, Identifiable, Hashable {
     /// Embedding of the node's extracted content. Used as the fallback channel
     /// when summary or folksonomy are missing (guardrail refusal). Stored raw.
     var contextualContentEmbedding: [Float]?
+    /// ★ WHICH SPACE each substrate vector lives in (embedder + channel). Absent on corpora written
+    /// before 2026-09-16, where the basis is inferred from the dimension instead — see
+    /// `VectorBasis.inferred`. Tagged explicitly on every write from the migration onward, because
+    /// once every channel is BGE-384 the dimension can no longer tell two spaces apart.
+    var summaryEmbeddingBasis: VectorBasis?
+    var folksonomyEmbeddingBasis: VectorBasis?
+    var contextualContentEmbeddingBasis: VectorBasis?
     /// Substrate embedder/call-shape version. 0 = substrate never processed
     /// this node. 1 = `NLContextualEmbedding(.english)` mean-pooled, summary +
     /// folksonomy via `processSubstrate`. Bump when the embedder or call
@@ -436,6 +443,9 @@ struct Node: Codable, Identifiable, Hashable {
         case summaryEmbedding = "summary_embedding"
         case folksonomyEmbedding = "folksonomy_embedding"
         case contextualContentEmbedding = "contextual_content_embedding"
+        case summaryEmbeddingBasis = "summary_embedding_basis"
+        case folksonomyEmbeddingBasis = "folksonomy_embedding_basis"
+        case contextualContentEmbeddingBasis = "contextual_content_embedding_basis"
         case embeddingVersion = "embedding_version"
         case embeddingFailureReason = "embedding_failure_reason"
         case fmErrorDetail = "fm_error_detail"
@@ -488,6 +498,9 @@ struct Node: Codable, Identifiable, Hashable {
         summaryEmbedding: [Float]? = nil,
         folksonomyEmbedding: [Float]? = nil,
         contextualContentEmbedding: [Float]? = nil,
+        summaryEmbeddingBasis: VectorBasis? = nil,
+        folksonomyEmbeddingBasis: VectorBasis? = nil,
+        contextualContentEmbeddingBasis: VectorBasis? = nil,
         embeddingVersion: Int = 0,
         embeddingFailureReason: String? = nil,
         fmErrorDetail: FMErrorDetail? = nil,
@@ -533,6 +546,9 @@ struct Node: Codable, Identifiable, Hashable {
         self.summaryEmbedding            = summaryEmbedding
         self.folksonomyEmbedding         = folksonomyEmbedding
         self.contextualContentEmbedding  = contextualContentEmbedding
+        self.summaryEmbeddingBasis           = summaryEmbeddingBasis
+        self.folksonomyEmbeddingBasis        = folksonomyEmbeddingBasis
+        self.contextualContentEmbeddingBasis = contextualContentEmbeddingBasis
         self.embeddingVersion            = embeddingVersion
         self.embeddingFailureReason      = embeddingFailureReason
         self.fmErrorDetail               = fmErrorDetail
@@ -585,6 +601,9 @@ extension Node {
         summaryEmbedding           = try c.decodeIfPresent([Float].self,  forKey: .summaryEmbedding)
         folksonomyEmbedding        = try c.decodeIfPresent([Float].self,  forKey: .folksonomyEmbedding)
         contextualContentEmbedding = try c.decodeIfPresent([Float].self,  forKey: .contextualContentEmbedding)
+        summaryEmbeddingBasis           = try c.decodeIfPresent(VectorBasis.self, forKey: .summaryEmbeddingBasis)
+        folksonomyEmbeddingBasis        = try c.decodeIfPresent(VectorBasis.self, forKey: .folksonomyEmbeddingBasis)
+        contextualContentEmbeddingBasis = try c.decodeIfPresent(VectorBasis.self, forKey: .contextualContentEmbeddingBasis)
         embeddingVersion           = try c.decodeIfPresent(Int.self,      forKey: .embeddingVersion) ?? 0
         embeddingFailureReason     = try c.decodeIfPresent(String.self,   forKey: .embeddingFailureReason)
         fmErrorDetail              = try c.decodeIfPresent(FMErrorDetail.self, forKey: .fmErrorDetail)

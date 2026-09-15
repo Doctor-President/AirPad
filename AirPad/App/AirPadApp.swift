@@ -22,16 +22,18 @@ struct AirPadApp: App {
         Self.purgeRetiredDevTunerDefaults()
     }
 
-    /// One-shot cleanup of the dev tuners' persisted state (bake, 2026-09-15). Every value they
-    /// carried is a literal in source now and nothing reads these keys, but a device that upgrades
-    /// in place (rather than reinstalling) would keep the dictionaries forever. Runs once, then
-    /// records a marker. ★ Safe to delete this method any time after V1 has shipped.
+    /// One-shot cleanup of retired persisted state (bake, 2026-09-15). Every value these keys
+    /// carried is a literal in source now — or, for `graze.*`, was never read by anything at all —
+    /// but a device that upgrades in place (rather than reinstalling) would keep them forever.
+    /// Runs once, then records a marker. ★ Safe to delete this method any time after V1 has shipped.
     private static func purgeRetiredDevTunerDefaults() {
         let marker = "devTunerDefaultsPurged.2026-09-15"
         let d = UserDefaults.standard
         guard !d.bool(forKey: marker) else { return }
         for key in d.dictionaryRepresentation().keys
-        where key.hasPrefix("blobTuner.") || key.hasPrefix("PaletteTuner.") {
+        where key.hasPrefix("blobTuner.") || key.hasPrefix("PaletteTuner.")
+            // `graze.*` — the five dials whose sliders wrote values nothing ever read.
+            || key.hasPrefix("graze.") {
             d.removeObject(forKey: key)
         }
         d.set(true, forKey: marker)

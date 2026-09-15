@@ -1165,15 +1165,11 @@ final class CorpusPhysicsScene: SKScene {
     // euclidean distance from focal normalized by `characteristicSpacing`)
     private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
     private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
-    // Graze tuning dials — baked defaults, live-overridable from the Tuning
-    // group (UserDefaults keys below). Cached here and refreshed once per frame
-    // (`refreshGrazeTuning`) so the per-node lens reads a stored value, not
-    // UserDefaults, on the hot path.
-    private var scaleSigmoidSteepness: CGFloat = 3.0      // SB85 baseline
-    private var scaleSigmoidMidpoint: CGFloat = 0.7       // SB85 baseline
-
-    // Radial position compression
-    private var positionCompressionStrength: CGFloat = 0.55  // 0 = no compression, 1 = all nodes at focal
+    // (The five GRAZE tuning dials — sigmoid steepness/midpoint, compression strength, hysteresis
+    // threshold, focal-switch lerp — were DELETED 2026-09-15. Each had exactly two references: its
+    // own declaration and the assignment in `refreshGrazeTuning`. NOTHING read them, so the sliders
+    // that wrote their UserDefaults keys moved nothing on screen. Focus + parting are the ANNULUS
+    // now — `applyOrbScales` / `annulusAmplify` / `applyBandRelaxation` over `AnnulusTuning`.)
     private let positionCompressionFalloff: CGFloat = 3.0    // normalized distance at which compression effect halves
     private let neighborBreathingGap: CGFloat = 8.0          // world-space gap between focal edge and neighbor edge
 
@@ -1189,37 +1185,6 @@ final class CorpusPhysicsScene: SKScene {
     // Convergence tolerances (preserved)
     private let positionMatchTolerance: CGFloat = 2.0
     private let scaleMatchTolerance: CGFloat = 0.05
-
-    private var hysteresisThreshold: CGFloat = 20.0
-
-    // SB92: Track per-focal-switch lerp ramp window
-    private var focalSwitchSlowLerpDuration: TimeInterval = 0.15
-
-    /// UserDefaults keys for the Graze tuning dials (shared with the SwiftUI
-    /// Tuning group's `@AppStorage`). Baked defaults live on the properties
-    /// above; a key is only read when the user has set it.
-    private enum GrazeTuningKey {
-        static let hysteresis = "graze.hysteresis"
-        static let sigmoidSteepness = "graze.sigmoidSteepness"
-        static let sigmoidMidpoint = "graze.sigmoidMidpoint"
-        static let compression = "graze.compression"
-        static let switchLerpDuration = "graze.switchLerpDuration"
-    }
-
-    /// Pull the live dial values into the cached properties. Called once per
-    /// frame from `update` — cheap (5 UserDefaults reads), and keeps the
-    /// per-node lens off UserDefaults. Absent key → keep the baked default.
-    private func refreshGrazeTuning() {
-        let d = UserDefaults.standard
-        func tuned(_ key: String, _ fallback: CGFloat) -> CGFloat {
-            d.object(forKey: key) == nil ? fallback : CGFloat(d.double(forKey: key))
-        }
-        hysteresisThreshold = tuned(GrazeTuningKey.hysteresis, 20.0)
-        scaleSigmoidSteepness = tuned(GrazeTuningKey.sigmoidSteepness, 3.0)
-        scaleSigmoidMidpoint = tuned(GrazeTuningKey.sigmoidMidpoint, 0.7)
-        positionCompressionStrength = tuned(GrazeTuningKey.compression, 0.55)
-        focalSwitchSlowLerpDuration = TimeInterval(tuned(GrazeTuningKey.switchLerpDuration, 0.15))
-    }
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -1299,7 +1264,6 @@ final class CorpusPhysicsScene: SKScene {
             onFirstRender?()
         }
 
-        refreshGrazeTuning()  // pull live Graze dials into cached properties
         updateGridWarp()      // grid warp — SHIPS (baked 2026-09-14)
 
         // SB83c: Coast camera with friction. Same pan math as SB83a (`* cameraNode.xScale`).

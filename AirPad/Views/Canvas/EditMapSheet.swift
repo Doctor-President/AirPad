@@ -17,13 +17,6 @@ struct EditMapSheet: View {
     @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
     @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
 
-    // Graze — engagement tuning dials (baked defaults mirror CorpusPhysicsScene).
-    // T dials on device; we bake the winners back into the scene constants.
-    @AppStorage("graze.hysteresis") private var grazeHysteresis: Double = 20.0
-    @AppStorage("graze.sigmoidSteepness") private var grazeSteepness: Double = 3.0
-    @AppStorage("graze.sigmoidMidpoint") private var grazeMidpoint: Double = 0.7
-    @AppStorage("graze.compression") private var grazeCompression: Double = 0.55
-    @AppStorage("graze.switchLerpDuration") private var grazeSwitchLerp: Double = 0.15
 
     private var sortedTags: [Tag] {
         store.tags.sorted { store.nodeCount(forTag: $0.name) > store.nodeCount(forTag: $1.name) }
@@ -49,19 +42,6 @@ struct EditMapSheet: View {
                     Text("Gravity — signal weights")
                 } footer: {
                     Text("Collection / Anchor / Language decide a node's territory (argmax) and border lean. Backlink then pulls it toward its linked nodes — capped, so territory law still wins. Each node's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-node shade otherwise.")
-                        .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
-                }
-
-                Section {
-                    grazeRow("Hysteresis", $grazeHysteresis, 0...60, "%.0f")
-                    grazeRow("Sigmoid steepness", $grazeSteepness, 0.5...8, "%.2f")
-                    grazeRow("Sigmoid midpoint", $grazeMidpoint, 0.2...1.5, "%.2f")
-                    grazeRow("Compression", $grazeCompression, 0...1, "%.2f")
-                    grazeRow("Switch-lerp (s)", $grazeSwitchLerp, 0...0.5, "%.2f")
-                } header: {
-                    Text("Graze — engagement tuning")
-                } footer: {
-                    Text("Focus decision + parting-crowd feel. Hysteresis resists focal flicker; steepness/midpoint shape the growth lens; compression is how far neighbors part; switch-lerp is the settle time after a focal switch. Live on device; baked later.")
                         .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
@@ -109,25 +89,6 @@ struct EditMapSheet: View {
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
             }
             Slider(value: value, in: 0...2)
-        }
-        .listRowBackground(AppearancePalette.ink.opacity(0.04))
-    }
-
-    /// Slider row with an explicit range + value format (Graze dials span
-    /// different scales than the 0…2 gravity weights).
-    private func grazeRow(_ label: String, _ value: Binding<Double>,
-                          _ range: ClosedRange<Double>, _ format: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(label)
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundStyle(AppearancePalette.ink)
-                Spacer()
-                Text(String(format: format, value.wrappedValue))
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-            }
-            Slider(value: value, in: range)
         }
         .listRowBackground(AppearancePalette.ink.opacity(0.04))
     }

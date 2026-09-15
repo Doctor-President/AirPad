@@ -224,6 +224,18 @@ final class SubstrateLayoutService {
         case card
         case blockPooled
         case legacyNLContextual
+
+        /// The SPACE this source resolves into. What `VectorBasisGuard` compares.
+        /// ★ `.legacyNLContextual` maps to a BLEND channel on purpose: `substrateVector`'s tail
+        /// averages the summary and folksonomy vectors, so the result belongs to neither channel
+        /// alone and must not be compared against either.
+        var basis: VectorBasis {
+            switch self {
+            case .card:               return .cardGist
+            case .blockPooled:        return .block
+            case .legacyNLContextual: return .substrateBlend
+            }
+        }
     }
 
     /// B7 — the vector the map's `language` gravity reads. Distinct from

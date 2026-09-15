@@ -44,6 +44,8 @@ struct VectorBasis: RawRepresentable, Codable, Hashable, CustomStringConvertible
     static let folksonomy = VectorBasis(embedder: bgeMicro384, channel: folksonomyChannel)
     static let content = VectorBasis(embedder: bgeMicro384, channel: contentChannel)
     static let block = VectorBasis(embedder: bgeMicro384, channel: blockChannel)
+    /// `substrateVector`'s tail averages summary + folksonomy — a vector in neither channel alone.
+    static let substrateBlend = VectorBasis(embedder: bgeMicro384, channel: "substrate-blend")
 
     /// Infer the basis of a vector stored BEFORE the tag existed. Dimension is the only signal an
     /// untagged vector carries — sufficient only while the two embedders differ in dimension, which
@@ -75,6 +77,23 @@ enum BasisCheck {
 /// once per distinct pair, and the caller EXCLUDES the item rather than scoring it.
 enum VectorBasisGuard {
     private static var reported: Set<String> = []
+
+    /// ★ Same EMBEDDER only — the correct check for RETRIEVAL, where a query vector is deliberately
+    /// compared against document vectors. Cross-channel is the point there (that is what search IS),
+    /// so demanding an identical channel would break it; mixing two EMBEDDERS still never makes
+    /// sense and is what this catches.
+    @discardableResult
+    static func requireSameEmbedder(_ a: VectorBasis, _ b: VectorBasis, site: String) -> Bool {
+        guard a.embedder != b.embedder else { return true }
+        let key = "embedder|\(site)|\(a.embedder)|\(b.embedder)"
+        if !reported.contains(key) {
+            reported.insert(key)
+            print("🚨 [VectorBasis] EMBEDDER MISMATCH at \(site): \(a.embedder) vs \(b.embedder) — "
+                  + "refusing to compare; the item is EXCLUDED, not scored 0.")
+        }
+        assertionFailure("[VectorBasis] embedder mismatch at \(site): \(a) vs \(b)")
+        return false
+    }
 
     /// Returns true when the two bases match. Logs/asserts and returns false when they do not.
     @discardableResult

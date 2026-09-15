@@ -45,6 +45,10 @@ enum TagTerritoryLayout {
         /// be argmax-placed against the FROZEN formation (drift-in) without
         /// re-running the whole pass. Empty for territories with no vectors.
         var centroids: [String: [Float]] = [:]
+        /// ★ WHICH SPACE `centroids` live in. Persisted with the layout, because `driftPlacement`
+        /// scores a FRESHLY-resolved node vector against these frozen centroids — it is the one
+        /// site that can meet two bases, and before this it silently coerced the mismatch to 0.
+        var centroidBasis: VectorBasis?
     }
 
     /// Tunable signal weights (the "gravity" strengths). T calibrates on device;
@@ -109,9 +113,14 @@ enum TagTerritoryLayout {
         }
 
         var centroid: [String: [Float]] = [:]
+        /// Every centroid is a mean of vectors from ONE resolution path, so one basis covers them.
+        var centroidBasisResolved: VectorBasis?
         for (key, ms) in directMembers {
             let vecs = ms.compactMap { languageVector($0) }
             if let c = mean(vecs) { centroid[key] = c }
+            for m in ms where centroidBasisResolved == nil {
+                centroidBasisResolved = SubstrateLayoutService.shared.languageVector(for: m)?.source.basis
+            }
         }
 
         // 3. WINNER (argmax) + RUNNER-UP. Each node's weighted pull toward every
@@ -142,6 +151,11 @@ enum TagTerritoryLayout {
                 tally.dims.insert(r.vector.count)
                 if weights.language > 0 {
                     for (key, cen) in centroid {
+                        guard VectorBasisGuard.require(r.source.basis, centroidBasisResolved ?? r.source.basis,
+                                                       site: "TagTerritoryLayout.layout") else {
+                            tally.cosineMismatch += 1
+                            continue
+                        }
                         // Dimension mismatch can no longer silently zero a pull:
                         // the basis is homogeneous by construction, and any
                         // residual mismatch is counted rather than swallowed.
@@ -241,7 +255,8 @@ enum TagTerritoryLayout {
         let winnerCentroids = centroid.filter { members[$0.key] != nil }
         return Layout(positions: out, nodeTerritory: nodeTerritory,
                       territories: territories, centers: center,
-                      centroids: winnerCentroids)
+                      centroids: winnerCentroids,
+                      centroidBasis: centroidBasisResolved)
     }
 
     /// Drift a single NEW node into a FROZEN formation without re-deriving it.
@@ -272,12 +287,32 @@ enum TagTerritoryLayout {
         // 384-d card centroids ⇒ `cosine` returns nil ⇒ silently no language
         // pull at all). `languageVector` guarantees the same basis; a node
         // with no card gets no language pull, deliberately.
+        // ★ THE SITE THAT COULD MIX BASES. A freshly-resolved vector meets centroids frozen in a
+        // previous run — possibly a different space. It used to swallow that with `?? 0`: no error,
+        // no log, no tally, just silently zero language gravity. Now it refuses and SAYS SO.
+        var driftTally = DriftLanguageTally()
         if weights.language > 0, let r = SubstrateLayoutService.shared.languageVector(for: node) {
-            for (key, cen) in layout.centroids {
-                let s = max(0, cosine(r.vector, cen) ?? 0)
-                if s > 0 { pull[key, default: 0] += weights.language * s }
+            let nodeBasis = r.source.basis
+            let centroidBasis = layout.centroidBasis ?? nodeBasis
+            driftTally.source = r.source
+            driftTally.nodeBasis = nodeBasis
+            driftTally.centroidBasis = centroidBasis
+            if VectorBasisGuard.require(nodeBasis, centroidBasis, site: "TagTerritoryLayout.driftPlacement") {
+                for (key, cen) in layout.centroids {
+                    guard let c = cosine(r.vector, cen) else {
+                        driftTally.cosineMismatch += 1
+                        continue
+                    }
+                    let s = max(0, c)
+                    if s > 0 { pull[key, default: 0] += weights.language * s }
+                }
+            } else {
+                driftTally.basisRefused = true
             }
+        } else {
+            driftTally.noVector = true
         }
+        driftTally.report(nodeID: node.id, languageWeight: weights.language)
         // Only territories that exist in the frozen formation are candidates.
         // Same deterministic argmax as `layout` (value desc, key asc tiebreak).
         let winner = pull.filter { layout.centers[$0.key] != nil }
@@ -419,6 +454,9 @@ enum TagTerritoryLayout {
         return order
     }
 
+    /// Both centroids come from the SAME `centroid` dictionary, hence the same basis by
+    /// construction — there is no second space for them to mix with. `-1` stays a genuine
+    /// "no adjacency signal" sentinel (missing key / empty vector), not a swallowed mismatch.
     private static func sim(_ a: String, _ b: String, _ centroid: [String: [Float]]) -> Double {
         guard let ca = centroid[a], let cb = centroid[b], let s = cosine(ca, cb) else { return -1 }
         return s
@@ -463,6 +501,31 @@ enum TagTerritoryLayout {
     /// `TagTerritoryLayout.layout` is synchronous while the card preload is
     /// async — the failure mode is silent fallthrough, which looks exactly
     /// like "the change didn't work." Counts nodes, each visited once.
+    /// `driftPlacement` had NO instrument at all — a newly captured node could get zero language
+    /// gravity and nothing would say so. Mirrors `[Territory/language]` so one grep covers both.
+    private struct DriftLanguageTally {
+        var source: SubstrateLayoutService.LanguageVectorSource?
+        var nodeBasis: VectorBasis?
+        var centroidBasis: VectorBasis?
+        var cosineMismatch = 0
+        var basisRefused = false
+        var noVector = false
+
+        func report(nodeID: String, languageWeight: Double) {
+            let state: String
+            if noVector { state = "no-vector (excluded from language)" }
+            else if basisRefused { state = "⚠️ BASIS REFUSED — zero language pull" }
+            else if cosineMismatch > 0 { state = "⚠️ \(cosineMismatch) centroid mismatch(es)" }
+            else { state = "ok" }
+            print("""
+            [Territory/drift] node=\(nodeID.prefix(8)) \
+            source=\(source?.rawValue ?? "-") nodeBasis=\(nodeBasis?.rawValue ?? "-") \
+            centroidBasis=\(centroidBasis?.rawValue ?? "-") \
+            state=\(state) weight=\(languageWeight)
+            """)
+        }
+    }
+
     private struct LanguageVectorTally {
         var card = 0
         var blockPooled = 0

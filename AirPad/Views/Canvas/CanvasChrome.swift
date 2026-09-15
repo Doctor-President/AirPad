@@ -379,14 +379,8 @@ struct CanvasChrome: View {
             // Slide-out menu sits outside any blur scope so it stays sharp.
             CanvasSlideOutMenu(
                 isPresented: $showSlideOutMenu,
-                currentMode: filterState.viewMode,
                 filterActiveCount: filterState.activeFilterCount,
                 quarantineCount: quarantineStore.entries.count,
-                onSelectMode: { mode in
-                    var s = filterState
-                    s.viewMode = mode
-                    store.setFilterState(s, for: scope)
-                },
                 onAnalyze: { Task { store.runCorpusAnalysis(trigger: .manual) } },
                 onFilter: { showFilterPanel = true },
                 onSettings: { showSettings = true },

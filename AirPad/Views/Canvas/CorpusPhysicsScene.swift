@@ -374,6 +374,113 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
         cachedMeanRestingRadius = nil   // grid-warp mass reference re-derives from the new layout
+        computePanBounds()              // the pan disc grows/shrinks with the corpus
+    }
+
+    // MARK: - Pan boundary (rubber-banded circular clamp)
+
+    /// A CIRCLE, not a rect, deliberately: a disc has no corner, so resistance is identical in every
+    /// direction and a diagonal flick feels exactly like a sideways one.
+    private enum PanBounds {
+        /// Slack past the outermost node. ★ This is what guarantees a rim node or territory label can
+        /// be brought to the CENTRE of the screen: the camera position IS what sits at screen centre,
+        /// so reaching the outermost node needs `limit ≥ radius`, and 1.18 leaves 18% beyond that.
+        /// Multiplicative, so the guarantee is scale-free — it holds at any corpus size.
+        static let slack: CGFloat = 1.18
+        /// Floor for an empty / one-node corpus, where the measured radius is 0 or tiny and the camera
+        /// would otherwise be pinned. ≈ the world-space half-diagonal of the viewport at max zoom-out
+        /// (hypot(440, 956)/2 × 4.0 ≈ 2105 on a 440×956 screen), i.e. a new user with two nodes can
+        /// always pan a full screen away from them.
+        static let emptyCorpusFloor: CGFloat = 2000
+        /// The standard iOS rubber-band coefficient.
+        static let rubberBandCoefficient: CGFloat = 0.55
+        /// Action key for the spring-back, so it can be cancelled without touching the programmatic
+        /// camera glides (which use their own keys).
+        static let springKey = "panSpring"
+    }
+
+    private var panBoundsCentre: CGPoint = .zero
+    private var panBoundsLimit: CGFloat = PanBounds.emptyCorpusFloor
+
+    /// Recompute the pannable disc from RESTING positions — never live ones. Orbs near screen centre
+    /// are amplified by the annulus every frame, and `applyBandRelaxation` displaces them, so bounds
+    /// taken from live positions would PULSE as the camera moves. Same discipline as the relaxation
+    /// (which also recomputes from resting each frame) and the grid warp's frame-invariant mass refs.
+    ///
+    /// O(n), one pass — it replaces the O(n²) median-spacing pass that used to run here for a value
+    /// nothing read.
+    private func computePanBounds() {
+        let positions = Array(nodeRestingPositions.values)
+        guard !positions.isEmpty else {
+            panBoundsCentre = .zero
+            panBoundsLimit = PanBounds.emptyCorpusFloor
+            return
+        }
+        var minX = CGFloat.greatestFiniteMagnitude, maxX = -CGFloat.greatestFiniteMagnitude
+        var minY = CGFloat.greatestFiniteMagnitude, maxY = -CGFloat.greatestFiniteMagnitude
+        for p in positions {
+            minX = min(minX, p.x); maxX = max(maxX, p.x)
+            minY = min(minY, p.y); maxY = max(maxY, p.y)
+        }
+        let centre = CGPoint(x: (minX + maxX) / 2, y: (minY + maxY) / 2)
+        var radius: CGFloat = 0
+        for p in positions { radius = max(radius, hypot(p.x - centre.x, p.y - centre.y)) }
+        // Territory label anchors. ★ Today this cannot raise the radius — a label sits on the MEAN of
+        // its members' positions, and a mean lies inside their convex hull, so its distance from the
+        // centre is bounded by the farthest member, which the loop above already counted. It is kept
+        // because it is free, states the intent, and stays correct if labels ever gain an offset from
+        // their centroid. What actually buys the room to centre a rim label is `slack`, above.
+        for label in territoryLabelData {
+            var sum = CGPoint.zero
+            var n: CGFloat = 0
+            for id in label.memberIDs {
+                guard let rest = nodeRestingPositions[id] else { continue }
+                sum.x += rest.x; sum.y += rest.y; n += 1
+            }
+            guard n > 0 else { continue }
+            let anchor = CGPoint(x: sum.x / n, y: sum.y / n)
+            radius = max(radius, hypot(anchor.x - centre.x, anchor.y - centre.y))
+        }
+        panBoundsCentre = centre
+        panBoundsLimit = max(radius * PanBounds.slack, PanBounds.emptyCorpusFloor)
+        // The corpus may have SHRUNK (nodes deleted) leaving the camera outside the new disc. Ease it
+        // in here, at the moment the bounds change, rather than letting the next pan snap it — the
+        // rubber-band formula maps a far-outside position straight to just-past-the-limit, which would
+        // read as a teleport. One spring, shared with release + coast.
+        springCameraInsideBounds()
+    }
+
+    /// Compress a desired camera position radially once it passes the boundary — the standard iOS
+    /// curve, so resistance grows with distance and ASYMPTOTES rather than stopping dead. Applied
+    /// along the centre→position direction, which is what makes the feel rotationally uniform.
+    /// Inside the disc this returns `desired` untouched, so normal panning is bit-for-bit as before.
+    private func rubberBanded(_ desired: CGPoint) -> CGPoint {
+        let dx = desired.x - panBoundsCentre.x
+        let dy = desired.y - panBoundsCentre.y
+        let d = hypot(dx, dy)
+        guard d > panBoundsLimit, d > 0.0001, panBoundsLimit > 0 else { return desired }
+        let excess = d - panBoundsLimit
+        let compressed = (1 - 1 / (excess * PanBounds.rubberBandCoefficient / panBoundsLimit + 1)) * panBoundsLimit
+        let scale = (panBoundsLimit + compressed) / d
+        return CGPoint(x: panBoundsCentre.x + dx * scale, y: panBoundsCentre.y + dy * scale)
+    }
+
+    /// THE spring — one implementation, three entry points (pan release, coast crossing, corpus
+    /// shrink). Eases the camera to the nearest point ON the boundary and kills any coast so the two
+    /// can't fight. No-op while the camera is inside.
+    private func springCameraInsideBounds() {
+        let dx = cameraNode.position.x - panBoundsCentre.x
+        let dy = cameraNode.position.y - panBoundsCentre.y
+        let d = hypot(dx, dy)
+        guard d > panBoundsLimit, d > 0.0001 else { return }
+        coastVelocity = .zero
+        cameraNode.removeAction(forKey: PanBounds.springKey)   // the finger takes over from the spring
+        let target = CGPoint(x: panBoundsCentre.x + dx / d * panBoundsLimit,
+                             y: panBoundsCentre.y + dy / d * panBoundsLimit)
+        cameraNode.removeAction(forKey: PanBounds.springKey)
+        let move = SKAction.move(to: target, duration: 0.35)
+        move.timingMode = .easeOut   // matches the scene's other camera glides
+        cameraNode.run(move, withKey: PanBounds.springKey)
     }
 
     // MARK: - Lens (a): global zoom-ramp on idle orb scale + label LOD
@@ -1251,12 +1358,20 @@ final class CorpusPhysicsScene: SKScene {
         if coastVelocity != .zero {
             let panDx = coastVelocity.x * panMultiplier
             let panDy = coastVelocity.y * panMultiplier
-            cameraNode.position.x -= panDx * cameraNode.xScale
-            cameraNode.position.y += panDy * cameraNode.xScale
-            coastVelocity.x *= coastFriction
-            coastVelocity.y *= coastFriction
-            if hypot(coastVelocity.x, coastVelocity.y) < coastStopThreshold {
-                coastVelocity = .zero
+            let desired = CGPoint(x: cameraNode.position.x - panDx * cameraNode.xScale,
+                                  y: cameraNode.position.y + panDy * cameraNode.xScale)
+            // ★ A hard SWIPE escapes during the COAST, not under the finger — clamping only the drag
+            // would leave the reported bug unfixed. Compress the same way here, then hand the crossing
+            // to the one spring (which zeroes the velocity, so the two never fight).
+            cameraNode.position = rubberBanded(desired)
+            if hypot(desired.x - panBoundsCentre.x, desired.y - panBoundsCentre.y) > panBoundsLimit {
+                springCameraInsideBounds()
+            } else {
+                coastVelocity.x *= coastFriction
+                coastVelocity.y *= coastFriction
+                if hypot(coastVelocity.x, coastVelocity.y) < coastStopThreshold {
+                    coastVelocity = .zero
+                }
             }
         }
 
@@ -3513,9 +3628,11 @@ final class CorpusPhysicsScene: SKScene {
                 let panDx = (current.x - lastPanPosition.x) * panMultiplier
                 let panDy = (current.y - lastPanPosition.y) * panMultiplier
 
-                // Update camera position (inverted: drag right = pan left in scene)
-                cameraNode.position.x -= panDx * cameraNode.xScale
-                cameraNode.position.y += panDy * cameraNode.xScale  // y-inverted in SpriteKit
+                // Update camera position (inverted: drag right = pan left in scene), rubber-banded
+                // past the corpus disc so a pan resists like scrolling past the end of a page.
+                let desired = CGPoint(x: cameraNode.position.x - panDx * cameraNode.xScale,
+                                      y: cameraNode.position.y + panDy * cameraNode.xScale)  // y-inverted in SpriteKit
+                cameraNode.position = rubberBanded(desired)
 
                 // SB83c: Sample touch position into the 100ms ring buffer for velocity calc on release.
                 let sampleTime = CACurrentMediaTime()
@@ -3580,6 +3697,10 @@ final class CorpusPhysicsScene: SKScene {
             panSamples.removeAll()
             momentumEligible = false
             gestureState = .idle
+            // Released past the boundary → spring to it. Runs AFTER the coast launch above, and
+            // `springCameraInsideBounds` zeroes `coastVelocity`, so a flick that ends outside springs
+            // rather than coasting further out. Inside the disc this is a no-op.
+            springCameraInsideBounds()
             return
         }
 
@@ -3656,6 +3777,7 @@ final class CorpusPhysicsScene: SKScene {
         lastPinchDistance = nil
         tapStartInfo = nil
         gestureState = .idle   // nothing to disengage — the annulus is per-frame
+        springCameraInsideBounds()   // same spring as a normal release
     }
 }
 

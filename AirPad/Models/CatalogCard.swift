@@ -27,6 +27,9 @@ struct CatalogCard: Codable {
     var embeddingVersion: Int
     /// 384-dim BGE-micro-v2 mean-pooled, L2-normalized vector. Nil until embedded.
     var embedding: [Float]?
+    /// ★ WHICH SPACE `embedding` lives in (embedder + channel). Absent on cards written before
+    /// 2026-09-16 → inferred from dimension. See `VectorBasis`.
+    var embeddingBasis: VectorBasis?
     var createdAt: Date
     var updatedAt: Date
 

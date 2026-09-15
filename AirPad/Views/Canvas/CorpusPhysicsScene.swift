@@ -373,7 +373,6 @@ final class CorpusPhysicsScene: SKScene {
                 nodeRestingScales[nodeID] = target / intrinsic
             }
         }
-        computeCharacteristicSpacing()
         cachedMeanRestingRadius = nil   // grid-warp mass reference re-derives from the new layout
     }
 
@@ -1156,35 +1155,17 @@ final class CorpusPhysicsScene: SKScene {
     /// Intrinsic (unscaled) sprite radius, captured once at creation. Pure value, never frame-derived.
     private var nodeIntrinsicRadii: [String: CGFloat] = [:]
 
-    /// Median nearest-neighbor distance among fingerprint resting positions.
-    /// Used to normalize euclidean distance for the sigmoid lens and radial compression
-    /// so the lens behaves consistently across layouts of different densities.
-    private var characteristicSpacing: CGFloat = 60.0
+    /// Focal diameter as a fraction of screen width — LIVE, but for the tap→card morph
+    /// (`focalNodeFinalDiameter` / the card-commit glide), not the retired browse lens.
+    private let focalScreenFraction: CGFloat = 0.60
 
-    // Screen-space scale lens (SB80b-fix2 — sigmoid math preserved; input is now
-    // euclidean distance from focal normalized by `characteristicSpacing`)
-    private let focalScreenFraction: CGFloat = 0.60       // focal diameter = 60% of screen width
-    private let baselineScreenFraction: CGFloat = 0.09    // baseline diameter = 9% of screen width
-    // (The five GRAZE tuning dials — sigmoid steepness/midpoint, compression strength, hysteresis
-    // threshold, focal-switch lerp — were DELETED 2026-09-15. Each had exactly two references: its
-    // own declaration and the assignment in `refreshGrazeTuning`. NOTHING read them, so the sliders
-    // that wrote their UserDefaults keys moved nothing on screen. Focus + parting are the ANNULUS
-    // now — `applyOrbScales` / `annulusAmplify` / `applyBandRelaxation` over `AnnulusTuning`.)
-    private let positionCompressionFalloff: CGFloat = 3.0    // normalized distance at which compression effect halves
-    private let neighborBreathingGap: CGFloat = 8.0          // world-space gap between focal edge and neighbor edge
-
-    // Lerp factors (preserved from SB80b)
-    private let engagementLerp: CGFloat = 0.12
-    private let steadyStateLerp: CGFloat = 0.20
-
-    // SB92: Bounded-band relaxation for dense-region overlap cleanup
-    private let relaxationBandWorldRadius: CGFloat = 480.0     // SB94: wider band at zoom-out — was 320
-    private let relaxationPasses: Int = 8                       // SB94: more headroom for convergence — was 5
-    private let relaxationBreathingGap: CGFloat = 6.0           // World-space baseline (made scale-aware below)
-
-    // Convergence tolerances (preserved)
-    private let positionMatchTolerance: CGFloat = 2.0
-    private let scaleMatchTolerance: CGFloat = 0.05
+    // (The GRAZE-ERA constants that lived here — baselineScreenFraction, positionCompressionFalloff,
+    // neighborBreathingGap, engagementLerp, steadyStateLerp, relaxationBand/Passes/BreathingGap,
+    // position/scaleMatchTolerance, and characteristicSpacing with its O(n²) median pass — were
+    // DELETED 2026-09-15. Each had a declaration and NO reader: they belonged to the focal-lens
+    // model that the viewport-centred ANNULUS replaced (`applyOrbScales` / `annulusAmplify` /
+    // `applyBandRelaxation` over `AnnulusTuning`). Unused `private let`s draw no compiler warning,
+    // which is why a dozen of them sat here looking like tuning.)
 
     // Shader animation state
     private var shaderStartTime: TimeInterval = 0
@@ -1883,45 +1864,6 @@ final class CorpusPhysicsScene: SKScene {
             sprite.run(SKAction.fadeAlpha(to: 1.0, duration: duration), withKey: key)
         }
         dimmedSpriteIDs.removeAll()
-    }
-
-    /// Compute median nearest-neighbor distance across all fingerprint resting positions.
-    /// Sets `characteristicSpacing` so the sigmoid lens and radial compression are
-    /// scale-invariant across layouts. Falls back to 60.0 if too few nodes exist.
-    private func computeCharacteristicSpacing() {
-        let positions = Array(nodeRestingPositions.values)
-        guard positions.count > 1 else {
-            characteristicSpacing = 60.0
-            return
-        }
-
-        var nearestDistances: [CGFloat] = []
-        nearestDistances.reserveCapacity(positions.count)
-        for i in 0..<positions.count {
-            var nearest: CGFloat = .infinity
-            for j in 0..<positions.count where j != i {
-                let dx = positions[i].x - positions[j].x
-                let dy = positions[i].y - positions[j].y
-                let d = hypot(dx, dy)
-                if d < nearest { nearest = d }
-            }
-            if nearest.isFinite { nearestDistances.append(nearest) }
-        }
-
-        guard !nearestDistances.isEmpty else {
-            characteristicSpacing = 60.0
-            return
-        }
-
-        nearestDistances.sort()
-        let mid = nearestDistances.count / 2
-        let median: CGFloat
-        if nearestDistances.count % 2 == 0 {
-            median = (nearestDistances[mid - 1] + nearestDistances[mid]) / 2
-        } else {
-            median = nearestDistances[mid]
-        }
-        characteristicSpacing = max(median, 1.0)
     }
 
     // MARK: - Debug controls (called from external UI)

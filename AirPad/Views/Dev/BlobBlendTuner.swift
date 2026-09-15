@@ -165,11 +165,27 @@ import SpriteKit   // SKBlendMode for the orb blend control (addendum B)
     private func regionKey(_ fam: Int, _ isLight: Bool, _ k: String) -> String { "\(fam).\(isLight ? "L" : "D").\(k)" }
     func regionParam(_ fam: Int, _ isLight: Bool, _ k: String, default d: Double) -> Double { regionParams[regionKey(fam, isLight, k)] ?? d }
     func setRegionParam(_ fam: Int, _ isLight: Bool, _ k: String, _ v: Double) { regionParams[regionKey(fam, isLight, k)] = v }
+
+    // ── HUE IDENTITY IS SHARED (T ruling, 2026-09-14) ─────────────────────────────────────────────
+    // A region must be the SAME HUE in both appearances; only lightness/chroma may differ per ground.
+    // `hueStart`/`hueSpread` are therefore keyed by FAMILY only, under a ".S" (shared) key.
+    private func regionSharedKey(_ fam: Int, _ k: String) -> String { "\(fam).S.\(k)" }
+    /// Shared hue param. MIGRATION: if no shared value is stored yet, adopt the DARK one — dark is
+    /// the appearance T has been approving, so the lock must not move dark's hues.
+    func regionHueParam(_ fam: Int, _ k: String, default d: Double) -> Double {
+        if let v = regionParams[regionSharedKey(fam, k)] { return v }
+        if let dark = regionParams[regionKey(fam, false, k)] { return dark }
+        return d
+    }
+    func setRegionHueParam(_ fam: Int, _ k: String, _ v: Double) { regionParams[regionSharedKey(fam, k)] = v }
+
     func regionSlotHueOffset(_ fam: Int, _ isLight: Bool, _ slot: Int) -> Double { regionParams[regionKey(fam, isLight, "s\(slot)h")] ?? 0 }
     func setRegionSlotHue(_ fam: Int, _ isLight: Bool, _ slot: Int, _ v: Double) { regionParams[regionKey(fam, isLight, "s\(slot)h")] = v }
     func resetRegion(_ fam: Int, _ isLight: Bool) {
-        let keys = ["hueStart", "hueSpread", "chroma", "lightness"] + (0..<12).map { "s\($0)h" }
+        let keys = ["chroma", "lightness"] + (0..<12).map { "s\($0)h" }
         for k in keys { regionParams[regionKey(fam, isLight, k)] = nil }
+        // Hue is shared → resetting either appearance clears the one shared pair.
+        for k in ["hueStart", "hueSpread"] { regionParams[regionSharedKey(fam, k)] = nil }
     }
     /// Poll signature — any family/param change re-tints the orbs (via the scene's refreshOrbTuning).
     var regionSig: String { "\(regionFamily)|" + regionParams.keys.sorted().map { "\($0):\(regionParams[$0]!)" }.joined(separator: ",") }
@@ -546,6 +562,11 @@ struct BlobTunerPanel: View {
         Binding(get: { tuning.regionParam(tuning.regionFamily, tuning.mapIsLight, key, default: def) },
                 set: { tuning.setRegionParam(tuning.regionFamily, tuning.mapIsLight, key, $0) })
     }
+    /// Hue dials are SHARED across appearances (T ruling 2026-09-14) — one value per family.
+    private func regionHueBind(_ key: String, _ def: Double) -> Binding<Double> {
+        Binding(get: { tuning.regionHueParam(tuning.regionFamily, key, default: def) },
+                set: { tuning.setRegionHueParam(tuning.regionFamily, key, $0) })
+    }
     private func regionSlotBind(_ slot: Int) -> Binding<Double> {
         Binding(get: { tuning.regionSlotHueOffset(tuning.regionFamily, tuning.mapIsLight, slot) },
                 set: { tuning.setRegionSlotHue(tuning.regionFamily, tuning.mapIsLight, slot, $0) })
@@ -555,6 +576,7 @@ struct BlobTunerPanel: View {
         let fam = RegionPaletteFamily(rawValue: tuning.regionFamily) ?? .current
         let isLight = tuning.mapIsLight
         let def = RegionPalette.defaults(fam, isLight: isLight)
+        let hueDef = RegionPalette.defaults(fam, isLight: false)   // hue identity comes from DARK
         return VStack(alignment: .leading, spacing: 6) {
             sectionLabel("REGION PALETTE — map territory tints (families)")
             menuPick("Family", $tuning.regionFamily, RegionPaletteFamily.allCases.map { $0.displayName })
@@ -564,8 +586,11 @@ struct BlobTunerPanel: View {
             } else {
                 slider("Chroma", regionBind("chroma", def.chroma), 0...1)
                 slider("Lightness", regionBind("lightness", def.lightness), 0...1)
-                slider("Hue rotate", regionBind("hueStart", def.hueStart), 0...1)
-                slider("Hue spread", regionBind("hueSpread", def.hueSpread), 0.1...1)
+                // ★ SHARED across appearances — a region keeps its hue when the ground flips.
+                slider("Hue rotate ⇄", regionHueBind("hueStart", hueDef.hueStart), 0...1)
+                slider("Hue spread ⇄", regionHueBind("hueSpread", hueDef.hueSpread), 0.1...1)
+                Text("⇄ = SHARED by light + dark: the same region must be the same HUE in both grounds. Chroma + Lightness stay per appearance.")
+                    .font(.system(size: 8, design: .monospaced)).foregroundStyle(.cyan.opacity(0.8))
                 let dc = RegionPalette.distinctCounts(fam, isLight: isLight)
                 // Three readings side by side: a family that only separates for normal vision is
                 // not good enough — ~8% of users (and T) see the D/P columns.
@@ -994,9 +1019,19 @@ extension BlobFieldTuning {
                             // DIFFERENT in OKLCH, so they are SKIPPED and listed — never stored,
                             // because a silently-carried stale value is the failure this rename exists
                             // to prevent. T re-dials chroma/lightness on the new build.
-                            let leaf = k.split(separator: ".").last.map(String.init) ?? k
+                            let parts = k.split(separator: ".").map(String.init)
+                            let leaf = parts.last ?? k
                             if leaf == "sat" || leaf == "light" {
                                 r.unknown.append("\(tag).params.\(k) (retired HSL key)")
+                                continue
+                            }
+                            // ★ RETIRED PER-APPEARANCE HUE KEYS (hue lock, 2026-09-14). Hue identity is
+                            // now SHARED (".S."), so a "<fam>.<L|D>.hueStart/hueSpread" would re-split
+                            // what the lock exists to join — skipped and listed, never stored. Shared
+                            // "<fam>.S.*" keys import normally.
+                            let appearanceScoped = parts.count >= 2 && (parts[1] == "L" || parts[1] == "D")
+                            if appearanceScoped && (leaf == "hueStart" || leaf == "hueSpread") {
+                                r.unknown.append("\(tag).params.\(k) (retired: hue is shared)")
                                 continue
                             }
                             if let dv = Double(v) { params[k] = dv; r.applied += 1 } else { r.malformed.append("\(tag).params.\(k)") }

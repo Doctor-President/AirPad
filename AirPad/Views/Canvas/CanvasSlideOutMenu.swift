@@ -1,11 +1,13 @@
 import SwiftUI
 
-/// Right-edge slide-out menu mounted by `CanvasChrome` in C3. Owns the
-/// view-mode picker (5 modes — `.systemGraph`, `.userGraph`, `.list`,
-/// `.grid`, `.timeline`) plus the secondary chrome actions (Filter,
-/// Settings, Quarantine review). Built in C2 with no chrome wire-up yet
-/// — C3 swaps the existing top-row cluster for a single ellipsis trigger
-/// that toggles this menu.
+/// Right-edge slide-out menu mounted by `CanvasChrome`. Holds the secondary chrome actions —
+/// Analyze, Filter, Settings, and (when non-empty) Quarantine review.
+///
+/// ★ 2026-09-15: the VIEW-MODE PICKER was REMOVED from here. The bottom view switcher (and the
+/// top pill) own mode switching now, via one shared `ViewSwitchMenuContent`. Removing it also
+/// retired the two "Coming soon" rows (User Graph, Timeline) — V1 does not announce unbuilt
+/// features to users. What is left is real, working chrome, which is why the drawer survives
+/// rather than collapsing into a direct Settings button.
 ///
 /// Mechanics: custom overlay (NOT `.sheet`) so the panel slides in from
 /// the trailing edge. 280pt wide. Backdrop tap dismisses. Pan the panel
@@ -19,11 +21,9 @@ struct CanvasSlideOutMenu: View {
 
     @Binding var isPresented: Bool
 
-    let currentMode: ViewMode
     let filterActiveCount: Int
     let quarantineCount: Int
 
-    let onSelectMode: (ViewMode) -> Void
     let onAnalyze: () -> Void
     let onFilter: () -> Void
     let onSettings: () -> Void
@@ -64,12 +64,6 @@ struct CanvasSlideOutMenu: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-
-                section("View") {
-                    ForEach(ViewMode.menuOrder, id: \.self) { mode in
-                        modeRow(mode)
-                    }
-                }
 
                 section("Tools") {
                     actionRow(
@@ -142,47 +136,6 @@ struct CanvasSlideOutMenu: View {
     }
 
     // MARK: - Rows
-
-    private func modeRow(_ mode: ViewMode) -> some View {
-        let isActive = (mode == currentMode)
-        // Not-yet-built modes (`.userGraph`, `.timeline`) render dimmed with
-        // a "Coming soon" subtitle and a no-op tap. Live modes (System Graph,
-        // List, Card View) select normally. Will become an active select +
-        // canvas overlay for the stubs in a later commit.
-        let tappable = mode.isAvailable
-        return Button(action: {
-            guard tappable else { return }
-            dismiss(then: { onSelectMode(mode) })
-        }) {
-            HStack(spacing: 12) {
-                Image(systemName: mode.icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(AppearancePalette.ink.opacity(mode.isAvailable ? 0.95 : 0.45))
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(mode.displayName)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(AppearancePalette.ink.opacity(mode.isAvailable ? 0.95 : 0.45))
-                    if !mode.isAvailable {
-                        Text("Coming soon")
-                            .font(.system(size: 11, weight: .regular))
-                            .foregroundStyle(AppearancePalette.ink.opacity(0.35))
-                    }
-                }
-                Spacer()
-                if isActive {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(AppearancePalette.ink)
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-            .background(isActive ? AppearancePalette.ink.opacity(0.06) : Color.clear)
-        }
-        .buttonStyle(.plain)
-    }
 
     private func actionRow(
         icon: String,

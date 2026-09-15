@@ -192,6 +192,7 @@ struct CanvasView: View {
         layout.territories = snap.territories.map { .init(key: $0.key, name: $0.name) }
         layout.centers = snap.centers.mapValues { CGPoint(x: $0.x, y: $0.y) }
         layout.centroids = snap.centroids
+        layout.centroidBasis = snap.centroidBasis.map(VectorBasis.init(rawValue:))
         var colors: [String: UIColor] = [:]
         colors.reserveCapacity(snap.colorsHex.count)
         for (id, hex) in snap.colorsHex { if let c = UIColor(hex: hex) { colors[id] = c } }
@@ -211,6 +212,7 @@ struct CanvasView: View {
             territories: layout.territories.map { .init(key: $0.key, name: $0.name) },
             centers: layout.centers.mapValues { .init(x: Double($0.x), y: Double($0.y)) },
             centroids: layout.centroids,
+            centroidBasis: layout.centroidBasis?.rawValue,
             colorsHex: colors.mapValues { Self.territoryHexString($0) }
         )
         store.persistTerritoryLayout(snapshot)

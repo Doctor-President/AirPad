@@ -564,7 +564,14 @@ final class CorpusStore {
     static let cardCandidateM: Int = 40
 
     /// Raw cosine for 384-dim BGE (unit-normalized) card/query vectors.
+    /// ★ The name asserts 384 but the code only compares counts — so a 512-d survivor silently
+    /// scored 0 here. Now it refuses loudly. Retrieval, so embedder must match; channel need not.
     nonisolated private static func cosine384(_ a: [Float], _ b: [Float]) -> Float {
+        if a.count != b.count, !a.isEmpty, !b.isEmpty {
+            VectorBasisGuard.requireSameEmbedder(.inferred(dimension: a.count, channel: "query"),
+                                                 .inferred(dimension: b.count, channel: VectorBasis.cardGistChannel),
+                                                 site: "CorpusStore.cosine384")
+        }
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0, na: Float = 0, nb: Float = 0
         for i in 0..<a.count { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
@@ -7180,7 +7187,14 @@ final class CorpusStore {
     /// Cosine similarity for two equal-length [Float] vectors. Returns 0 for
     /// degenerate inputs (mismatched length or zero magnitude) — the caller
     /// treats those as "no signal" and falls back to the lexical path.
+    /// ★ Was a silent 0 on mismatch. Retrieval-shaped (node vector vs collection description), so
+    /// the embedder must match; the channel deliberately need not.
     private func cosine(_ a: [Float], _ b: [Float]) -> Double {
+        if a.count != b.count, !a.isEmpty, !b.isEmpty {
+            VectorBasisGuard.requireSameEmbedder(.inferred(dimension: a.count, channel: "node"),
+                                                 .inferred(dimension: b.count, channel: "description"),
+                                                 site: "CorpusStore.cosine")
+        }
         guard !a.isEmpty, a.count == b.count else { return 0 }
         var dot: Double = 0
         var na: Double = 0

@@ -297,7 +297,16 @@ final class BlockEmbeddingService {
     /// NLContextualEmbedding-anisotropy crutch and does not apply to BGE
     /// (ws-card-catalog step 3a). `nonisolated` so the scoring pass runs off the
     /// main actor.
+    /// ★ A dimension mismatch here means a query and a block sidecar are in different embedder
+    /// spaces. Returning 0 would read as "unrelated" and silently drop the block from retrieval;
+    /// this says so instead. (Query-vs-block is a legitimate CROSS-CHANNEL comparison — that is what
+    /// retrieval is — so only the embedder must match, not the channel.)
     nonisolated private static func cosine(_ a: [Float], _ b: [Float]) -> Float {
+        if a.count != b.count, !a.isEmpty, !b.isEmpty {
+            VectorBasisGuard.requireSameEmbedder(.inferred(dimension: a.count, channel: "query"),
+                                                 .inferred(dimension: b.count, channel: VectorBasis.blockChannel),
+                                                 site: "BlockEmbeddingService.cosine")
+        }
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0, na: Float = 0, nb: Float = 0
         for i in 0..<a.count {

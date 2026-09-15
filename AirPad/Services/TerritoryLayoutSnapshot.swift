@@ -39,6 +39,10 @@ struct TerritoryLayoutSnapshot: Codable {
     var territories: [TerritoryDTO]
     var centers: [String: PointDTO]
     var centroids: [String: [Float]]
+    /// ★ WHICH SPACE `centroids` live in, as a raw `VectorBasis` string. Persisted so a RESTORED
+    /// layout can still tell `driftPlacement` what space it is in — without it, a node captured in
+    /// a restored session is scored against centroids of unknown provenance.
+    var centroidBasis: String?
     /// nodeID → tint hex (`#RRGGBB`).
     var colorsHex: [String: String]
 
@@ -54,6 +58,7 @@ struct TerritoryLayoutSnapshot: Codable {
     enum CodingKeys: String, CodingKey {
         case version, basis, signature, positions, nodeTerritory
         case territories, centers, centroids, colorsHex
+        case centroidBasis = "centroid_basis"
         case updatedAt = "updated_at"
     }
 }

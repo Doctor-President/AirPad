@@ -2,7 +2,7 @@ import SwiftUI
 import AppIntents
 #if DEBUG
 import SpriteKit
-import UIKit   // UIPasteboard for the -SPRBand Copy-values button
+import UIKit
 #endif
 
 @main
@@ -29,11 +29,6 @@ struct AirPadApp: App {
             if UserDefaults.standard.bool(forKey: "SPRCaretMeasure") {
                 // MD14 note-caret tap-trace fixture (driven by XCUITest).
                 CaretMeasureView()
-            } else if UserDefaults.standard.bool(forKey: "SPRMeasure") {
-                SPRMeasureView()
-            } else if UserDefaults.standard.bool(forKey: "SPRBand") {
-                // ws-ios-polish item 5 SPIKE — band-orb treatment + live blend comparison.
-                SPRBandView()
             } else if UserDefaults.standard.bool(forKey: "BLOBBLEND") {
                 // ws-ios-polish item 5 — blob-blend tuner on the REAL card + detail-hero blobs.
                 BlobBlendCompareView()
@@ -122,151 +117,7 @@ private struct BlobExportTestView: View {
     }
 }
 
-/// Node-perf measurement host — a bare `CorpusPhysicsScene` + SKView HUD. The
-/// scene self-injects a synthetic corpus on `didMove` when launched with
-/// `-SPRMeasure YES` (`-SPRLight ON|OFF` forces the render appearance). Reusable
-/// for future node-perf / EFFECT spikes; reached only via that launch arg.
-private struct SPRMeasureView: View {
-    @State private var scene: CorpusPhysicsScene = {
-        let s = CorpusPhysicsScene(size: CGSize(width: 393, height: 852))
-        s.scaleMode = .resizeFill
-        return s
-    }()
 
-    var body: some View {
-        SpriteView(
-            scene: scene,
-            preferredFramesPerSecond: 60,
-            options: [.allowsTransparency, .ignoresSiblingOrder],
-            debugOptions: [.showsFPS, .showsDrawCount, .showsNodeCount]
-        )
-        .ignoresSafeArea()
-        .background(.black)
-    }
-}
-
-/// ws-ios-polish item 5 SPIKE host — the `-SPRBand` harness (THROWAWAY, ROUND 2). A bare
-/// `CorpusPhysicsScene` on a CLUSTERED synthetic corpus (spatial regions), forced dark, with
-/// the band-RADIANCE overlay (the ported blob look, NOT round-1's fbm churn). LIVE controls,
-/// no recompile: the FULL 13-mode Photoshop/AE blend set (tap any; † = dies on a dark ground,
-/// included as the test), FALLOFF RADIUS + GAIN dials (the pooling art-direction), FAMILY
-/// palette on/off + SPREAD (region identity vs the current unrelated palette), fps readout +
-/// Copy. Drag pans (holds-during-drag). Reached only via `-SPRBand YES`; deletes cleanly.
-private struct SPRBandView: View {
-    @State private var scene: CorpusPhysicsScene = {
-        let s = CorpusPhysicsScene(size: CGSize(width: 393, height: 852))
-        s.scaleMode = .resizeFill
-        return s
-    }()
-    // Initial state matches the shader defaults (both read -SPRBandBlend / -SPRBandFamily).
-    @State private var blend = UserDefaults.standard.string(forKey: "SPRBandBlend").flatMap(Int.init) ?? 2
-    @State private var family = (UserDefaults.standard.string(forKey: "SPRBandFamily").flatMap(Int.init) ?? 1) == 1
-    @State private var falloff: Double = 3.0
-    @State private var gain: Double = 1.0
-    @State private var spread: Double = 0.5
-    @State private var overlayOn = true
-    @State private var fps: Double = 0
-    @State private var table: [String: Double] = [:]
-
-    // Order MUST match the shader's u_blend indices (0…12). † = tends to go BLACK on a dark
-    // ground (assumes compositing onto something) — included on purpose; T discards in a glance.
-    private let blendNames = ["Normal", "Add", "Screen", "Lighten", "Darken†", "Multiply†",
-                              "Overlay", "SoftLt", "HardLt", "Dodge", "Burn†", "Diff", "Exclus"]
-    private let ticker = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
-    private var modeKey: String { "\(family ? "Fam" : "Cur")/\(blendNames[blend])" }
-
-    var body: some View {
-        ZStack(alignment: .bottom) {
-            SpriteView(scene: scene,
-                       preferredFramesPerSecond: 120,
-                       options: [.allowsTransparency, .ignoresSiblingOrder],
-                       debugOptions: [.showsFPS, .showsDrawCount, .showsNodeCount])
-                .ignoresSafeArea()
-                .background(.black)
-            controls
-        }
-        .onReceive(ticker) { _ in
-            fps = scene.currentBandFPS
-            // key by mode + falloff so the Copy table is an fps-vs-radius curve (fill-rate).
-            if fps > 1 { table[modeKey + String(format: " r%.1f", falloff)] = fps }
-        }
-    }
-
-    private var controls: some View {
-        VStack(spacing: 7) {
-            HStack {
-                Text(String(format: "%.0f fps", fps))
-                    .font(.system(size: 20, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(fps >= 110 ? .green : (fps >= 55 ? .yellow : .red))
-                Spacer()
-                Text("band \(scene.bandActiveCount) · drag to pan")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-            // 13-mode blend grid (segmented can't hold 13) — tap any; † = dark-ground-dead.
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: 4), spacing: 4) {
-                ForEach(0..<blendNames.count, id: \.self) { i in
-                    Button {
-                        blend = i; scene.bandSpikeSetBlend(i)
-                    } label: {
-                        Text(blendNames[i])
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                            .frame(maxWidth: .infinity, minHeight: 26)
-                            .background(blend == i ? Color.white : Color.white.opacity(0.12),
-                                        in: RoundedRectangle(cornerRadius: 6))
-                            .foregroundStyle(blend == i ? .black
-                                             : .white.opacity(blendNames[i].hasSuffix("†") ? 0.45 : 0.9))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            dial("Falloff", $falloff, 1.0...9.0) { scene.bandSpikeSetFalloff($0) }
-            dial("Gain", $gain, 0.2...2.5) { scene.bandSpikeSetGain($0) }
-            dial("Spread", $spread, 0.0...1.0) { scene.bandSpikeSetSpread($0) }
-            HStack(spacing: 8) {
-                Button(family ? "Family" : "Unrelated") { family.toggle(); scene.bandSpikeSetFamily(family) }
-                    .buttonStyle(.borderedProminent).tint(family ? .green : .gray)
-                Button(overlayOn ? "Overlay ✓" : "Overlay ✗") { overlayOn.toggle(); scene.bandSpikeSetOverlay(overlayOn) }
-                    .buttonStyle(.bordered)
-                Spacer()
-                Button("Copy") { copyTable() }.buttonStyle(.borderedProminent)
-            }
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-        }
-        .padding(11)
-        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 14))
-        .padding(.horizontal, 8)
-        .padding(.bottom, 6)
-    }
-
-    /// One live slider row that applies to the scene on every change (no recompile).
-    private func dial(_ label: String, _ value: Binding<Double>, _ range: ClosedRange<Double>,
-                      _ apply: @escaping (CGFloat) -> Void) -> some View {
-        let bound = Binding(get: { value.wrappedValue },
-                            set: { value.wrappedValue = $0; apply(CGFloat($0)) })
-        return HStack(spacing: 8) {
-            Text(label).font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white).frame(width: 56, alignment: .leading)
-            Slider(value: bound, in: range)
-            Text(String(format: "%.1f", value.wrappedValue))
-                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.8))
-                .frame(width: 30, alignment: .trailing)
-        }
-    }
-
-    private func copyTable() {
-        var lines = ["ws-ios-polish item 5 R2 — band radiance (iPhone 17 Pro Max, 120Hz)",
-                     "now: \(modeKey) falloff=\(String(format: "%.1f", falloff)) gain=\(String(format: "%.1f", gain)) spread=\(String(format: "%.1f", spread)) · \(String(format: "%.0f", fps)) fps · band \(scene.bandActiveCount)",
-                     "(draws = read from SK HUD; fps is FILL-RATE bound → falls as falloff grows)",
-                     ""]
-        for key in table.keys.sorted() {
-            let padded = key.padding(toLength: 22, withPad: " ", startingAt: 0)
-            lines.append("\(padded)\(String(format: "%.0f", table[key] ?? 0)) fps")
-        }
-        UIPasteboard.general.string = lines.joined(separator: "\n")
-    }
-}
 
 /// SPIKE v3 (`spike-entry-spine`) — THROWAWAY render gate. `-SPINEGATE <section>`
 /// (notes | edge | gallery) renders fixed entry states through the REAL

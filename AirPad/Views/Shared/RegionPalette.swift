@@ -95,12 +95,22 @@ enum RegionPalette {
     }
 
     /// Family params, defaults overlaid by the live tuner dials (DEBUG only).
+    ///
+    /// ★ **HUE IDENTITY IS SHARED ACROSS APPEARANCES** (T ruling, 2026-09-14): the same region must
+    /// be the same HUE in both grounds — only lightness and chroma may differ per ground. Dark and
+    /// light Neon had been dialled independently (dark started at 0.550 turns, light at 1.000), so a
+    /// region CHANGED COLOUR on an appearance flip. `hueStart`/`hueSpread` are therefore stored per
+    /// FAMILY only (shared), while `chroma`/`lightness` stay per appearance. The hue DEFAULT is read
+    /// from the DARK params because dark is the appearance T has been approving.
     static func params(_ f: RegionPaletteFamily, isLight: Bool) -> Params {
         var p = defaults(f, isLight: isLight)
+        let hueDefaults = defaults(f, isLight: false)          // hue identity comes from DARK
+        p.hueStart = hueDefaults.hueStart
+        p.hueSpread = hueDefaults.hueSpread
         #if DEBUG
         let t = BlobFieldTuning.shared
-        p.hueStart  = t.regionParam(f.rawValue, isLight, "hueStart",  default: p.hueStart)
-        p.hueSpread = t.regionParam(f.rawValue, isLight, "hueSpread", default: p.hueSpread)
+        p.hueStart  = t.regionHueParam(f.rawValue, "hueStart",  default: p.hueStart)
+        p.hueSpread = t.regionHueParam(f.rawValue, "hueSpread", default: p.hueSpread)
         // NB the keys are "chroma"/"lightness" — an old export's "sat"/"light" keys are NOT read
         // here and are reported as skipped by the importer, so a stale HSL number can never leak in.
         p.chroma    = t.regionParam(f.rawValue, isLight, "chroma",    default: p.chroma)

@@ -4999,74 +4999,106 @@ final class CorpusStore {
         } else {
             useCorpusAware = false
         }
-        let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
-        let aiOutcome: NodeAIOutcome
-        bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
-        if useCorpusAware {
-            if #available(iOS 26.0, *) {
-                let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
-                let tagDigests = topTagsForProcessNode(N: 12)
-                let vocabulary = currentTags.map { $0.name }
-                print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
-                aiOutcome = await aiSvc.processNodeCorpusAware(
-                    node: node,
-                    neighborhoodDigests: neighborhoodDigests,
-                    tagDigests: tagDigests,
-                    fullVocabulary: vocabulary,
-                    authoredOnly: authoredOnly
-                )
+        // ★★ WHICH GATE GOVERNS WHAT — read this before adding a third.
+        // There are TWO overlapping controls here, and the fact that one of them sat
+        // unread for a whole arc is how the eager pass came to re-run both FM calls at
+        // every typing pause (2026-09-16). Stated plainly so the next reader doesn't
+        // have to reconstruct it:
+        //
+        //   `needsAuthorship` / `needsSubstrate`  — SHOULD this work happen at all?
+        //       Answered by `EnrichmentGate` from the node's own state (has an offer
+        //       already been made for this content; is the substrate still current).
+        //       Both default TRUE, so every caller that doesn't ask the gate keeps
+        //       exactly its old behaviour.
+        //
+        //   `aspects`  — WHICH authored fields may this pass touch?
+        //       The tray's per-row "Suggest another" passes a SINGLE aspect so
+        //       regenerating a title can't overwrite the summary (T, 2026-08-14), and
+        //       a single aspect also withholds the substrate so the tag tiers hold
+        //       still. It is a SCOPE, never a should-we.
+        //
+        // They compose; they do not substitute for each other. `needsAuthorship` says
+        // whether to call the model, `aspects` says what the answer is allowed to
+        // touch. A pass with `needsAuthorship: false` makes no authorship FM call and
+        // records no proposal, whatever `aspects` says.
+        let nodeEmbedding: [Float]? = (needsAuthorship && useCorpusAware) ? computeNodeEmbedding(for: node) : nil
+        let result: NodeAIOutput?
+        if needsAuthorship {
+            let aiOutcome: NodeAIOutcome
+            bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
+            if useCorpusAware {
+                if #available(iOS 26.0, *) {
+                    let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
+                    let tagDigests = topTagsForProcessNode(N: 12)
+                    let vocabulary = currentTags.map { $0.name }
+                    print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
+                    aiOutcome = await aiSvc.processNodeCorpusAware(
+                        node: node,
+                        neighborhoodDigests: neighborhoodDigests,
+                        tagDigests: tagDigests,
+                        fullVocabulary: vocabulary,
+                        authoredOnly: authoredOnly
+                    )
+                } else {
+                    // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
+                    // the compiler sees a definite assignment without the FM-only call on the floor.
+                    aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
+                }
             } else {
-                // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
-                // the compiler sees a definite assignment without the FM-only call on the floor.
                 aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
             }
-        } else {
-            aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
-        }
-        // F3 — a failed authorship call no longer collapses into a bare nil: the
-        // reason travels back so the tray can say which one it was.
-        let result: NodeAIOutput
-        switch aiOutcome {
-        case .success(let r):
-            result = r
-            bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
-        case .failure(let reason):
-            bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
-            // Fallback title from raw content so the node isn't blank on FM
-            // failure. Race-safe read-modify-write; never touches `.items`.
-            //
-            // THE LEVER — B1 (2026-08-05, T's ruling): the blank-title fill is
-            // POSTURE-GATED. Under `.automatic` the SYSTEM is the author, so a rough
-            // first-40-chars title beats a nameless node — today's behaviour,
-            // unchanged. Under `.propose` / `.off` the promise is that a field the
-            // user hasn't authored stays BLANK until they pull the lever, so a
-            // refusal must NOT stamp an unrequested mid-content fragment (it merely
-            // copies the note's own text up into its title — it duplicates, it does
-            // not degrade gracefully). A blank title reads as a deliberate
-            // "Untitled" at every list / grid / recents / search surface and as a
-            // content-preview label on the canvas — the SAME resting state a
-            // *successful* `.propose` capture already has (success proposes, never
-            // writes), so failure now matches success instead of contradicting the
-            // posture.
-            // ★ `"Photo"` / `"Voice note"` are STRUCTURAL media placeholders, not an
-            // enrichment fill of a blank field — they upgrade regardless of posture,
-            // exactly as before.
-            await mutateNode(id: nodeID) { n in
-                let fallback = n.items.compactMap { item -> String? in
-                    switch item.type {
-                    case .text:          return item.content
-                    case .audio, .video: return item.transcript
-                    case .link:          return item.title ?? item.url
-                    case .image, .document, .imageVideo, .rating, .field, .chats: return nil
+            // F3 — a failed authorship call no longer collapses into a bare nil: the
+            // reason travels back so the tray can say which one it was.
+            switch aiOutcome {
+            case .success(let r):
+                result = r
+                bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
+            case .failure(let reason):
+                bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
+                // Fallback title from raw content so the node isn't blank on FM
+                // failure. Race-safe read-modify-write; never touches `.items`.
+                //
+                // THE LEVER — B1 (2026-08-05, T's ruling): the blank-title fill is
+                // POSTURE-GATED. Under `.automatic` the SYSTEM is the author, so a rough
+                // first-40-chars title beats a nameless node — today's behaviour,
+                // unchanged. Under `.propose` / `.off` the promise is that a field the
+                // user hasn't authored stays BLANK until they pull the lever, so a
+                // refusal must NOT stamp an unrequested mid-content fragment (it merely
+                // copies the note's own text up into its title — it duplicates, it does
+                // not degrade gracefully). A blank title reads as a deliberate
+                // "Untitled" at every list / grid / recents / search surface and as a
+                // content-preview label on the canvas — the SAME resting state a
+                // *successful* `.propose` capture already has (success proposes, never
+                // writes), so failure now matches success instead of contradicting the
+                // posture.
+                // ★ `"Photo"` / `"Voice note"` are STRUCTURAL media placeholders, not an
+                // enrichment fill of a blank field — they upgrade regardless of posture,
+                // exactly as before.
+                await mutateNode(id: nodeID) { n in
+                    let fallback = n.items.compactMap { item -> String? in
+                        switch item.type {
+                        case .text:          return item.content
+                        case .audio, .video: return item.transcript
+                        case .link:          return item.title ?? item.url
+                        case .image, .document, .imageVideo, .rating, .field, .chats: return nil
+                        }
+                    }.first(where: { !$0.isEmpty })
+                    let mayFillBlank = n.title.isEmpty && AuthorshipPosture.current == .automatic
+                    if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
+                        n.title = String(fallback.prefix(40))
                     }
-                }.first(where: { !$0.isEmpty })
-                let mayFillBlank = n.title.isEmpty && AuthorshipPosture.current == .automatic
-                if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
-                    n.title = String(fallback.prefix(40))
+                    n.needsAIProcessing = false
                 }
-                n.needsAIProcessing = false
+                return reason
             }
-            return reason
+        } else {
+            // The gate found a proposal already recorded against this exact content
+            // (or the field is user-authored / accepted), so there is nothing to ask
+            // the model for. No FM call, no proposal recorded — the existing one is
+            // still the current answer.
+            result = nil
+            bug17Log.notice("FM-SKIPPED node=\(nodeID, privacy: .public) half=authorship reason=already-offered-for-this-content")
+            print("[AI] skip authorship FM for \(nodeID) — already offered for this content")
         }
 
         // ws-card-catalog Change A — the FM/substrate write is the worst clobber
@@ -5084,10 +5116,20 @@ final class CorpusStore {
         // another") must NOT disturb the tags, so skip it when only one aspect was asked
         // for. Capture/enrichment callers use the default full set → unchanged.
         let regeneratesAllAuthorship = aspects.contains(.title) && aspects.contains(.summary)
-        if FeatureFlags.substrateOnCapture, regeneratesAllAuthorship {
+        // Three conditions, three different jobs — see WHICH GATE GOVERNS WHAT above:
+        //   substrateOnCapture      — is the feature on at all?
+        //   needsSubstrate          — is the existing substrate missing or stale?
+        //   regeneratesAllAuthorship— is this a full pass, or a focused per-aspect
+        //                             regenerate that must leave the tag tiers alone?
+        var substrateDidRun = false
+        if FeatureFlags.substrateOnCapture, needsSubstrate, regeneratesAllAuthorship {
             // SB139 Stage 1 — one FM call → summary + folksonomy, then three
-            // NLContextualEmbedding vectors. Mutates only substrate fields.
+            // BGE vectors. Mutates only substrate fields.
             await runSubstratePipeline(on: &working, aiSvc: aiSvc)
+            substrateDidRun = true
+        } else if FeatureFlags.substrateOnCapture, !needsSubstrate {
+            bug17Log.notice("FM-SKIPPED node=\(nodeID, privacy: .public) half=substrate reason=current-for-this-content")
+            print("[AI] skip substrate FM for \(nodeID) — current for this content")
         }
 
         await mutateNode(id: nodeID) { n in
@@ -5111,30 +5153,34 @@ final class CorpusStore {
             // Only the requested aspect(s) are recorded/written — so a per-row
             // regenerate can't overwrite the sibling field (T's 2026-08-14 ruling). The
             // model produced both; the non-requested one is discarded.
-            if aspects.contains(.title),
-               n.recordProposal(kind: .title, text: result.title,
-                                currentSource: n.titleSource,
-                                sourceEmbedding: sourceEmbedding,
-                                sourceContentHash: promptContentHash,
-                                posture: posture, generatedAt: generatedAt,
-                                solicited: solicited) {
-                n.title = result.title
-                n.titleSource = .model
-            }
-            if aspects.contains(.summary),
-               n.recordProposal(kind: .summary, text: result.summary,
-                                currentSource: n.summarySource,
-                                sourceEmbedding: sourceEmbedding,
-                                sourceContentHash: promptContentHash,
-                                posture: posture, generatedAt: generatedAt,
-                                solicited: solicited) {
-                n.summary = result.summary
-                n.summarySource = .model
+            // `result` is nil when the gate skipped the authorship call: no new answer,
+            // so nothing to record and the proposal already on the node stands.
+            if let result {
+                if aspects.contains(.title),
+                   n.recordProposal(kind: .title, text: result.title,
+                                    currentSource: n.titleSource,
+                                    sourceEmbedding: sourceEmbedding,
+                                    sourceContentHash: promptContentHash,
+                                    posture: posture, generatedAt: generatedAt,
+                                    solicited: solicited) {
+                    n.title = result.title
+                    n.titleSource = .model
+                }
+                if aspects.contains(.summary),
+                   n.recordProposal(kind: .summary, text: result.summary,
+                                    currentSource: n.summarySource,
+                                    sourceEmbedding: sourceEmbedding,
+                                    sourceContentHash: promptContentHash,
+                                    posture: posture, generatedAt: generatedAt,
+                                    solicited: solicited) {
+                    n.summary = result.summary
+                    n.summarySource = .model
+                }
             }
             // SB126 Stage 2 — deterministic-prefilter embedding + FM neighborhood
             // guess. No-ops on the legacy path. (mood/domain/tags no longer
             // applied — step 1.)
-            if useCorpusAware {
+            if useCorpusAware, let result {
                 if let nodeEmbedding {
                     n.contentEmbedding = nodeEmbedding
                 }
@@ -5145,7 +5191,11 @@ final class CorpusStore {
             }
             // SB139 Stage 1 — copy the substrate outputs computed on `working`
             // onto the fresh node (the only fields runSubstratePipeline authors).
-            if FeatureFlags.substrateOnCapture {
+            // ★ Gated on `substrateDidRun`, not just the feature flag: when the pipeline
+            // was skipped, `working` is a plain re-read and copying its substrate back
+            // is at best a no-op and at worst clobbers a substrate another task wrote
+            // during this call — the ws-card-catalog Change A hazard, one level down.
+            if substrateDidRun {
                 n.substrateSummary = working.substrateSummary
                 n.folksonomy = working.folksonomy
                 n.summaryEmbedding = working.summaryEmbedding

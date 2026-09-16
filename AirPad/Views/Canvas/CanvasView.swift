@@ -339,11 +339,16 @@ struct CanvasView: View {
             // the RELAYOUT is correct; skipping the BASIS never was.
             // Idempotent and once-per-session: the cache is only cold before the first warm.
             if SubstrateLayoutService.shared.cardVectors == nil {
+                // Time the preload: it is N sequential card-sidecar disk reads + JSON decodes, and
+                // the cold-start map now WAITS for it before forming (§2a), so its cost is on the
+                // launch path. This line is the device measurement (the Simulator corpus is empty).
+                let t0 = Date()
                 await SubstrateLayoutService.shared.preloadCardVectors(
                     allNodes: store.nodes, store: store
                 )
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
                 let warmed = SubstrateLayoutService.shared.cardVectors?.count ?? 0
-                print("[Territory] card-vector preload warmed \(warmed) vectors")
+                print("[Territory] card-vector preload warmed \(warmed) vectors in \(ms)ms")
             }
             guard !alreadyCurrent else {
                 print("[Territory] card-basis layout already current — skipping reform (basis warmed, no relayout)")
@@ -1188,14 +1193,23 @@ struct CanvasView: View {
             if territory == nil {
                 // MAP-RELAYOUT FIX: restore the persisted card-basis geography
                 // verbatim when it still matches the inputs (placed instantly
-                // below, no reform, no animation). Otherwise form fresh — a
-                // legacy cold-start form that the warm-reform will settle onto
-                // the card basis + persist.
+                // below, no reform, no animation). The common launch path.
                 if let restored = restoredTerritory(nodes: nodes) {
                     territory = restored
-                } else {
+                } else if SubstrateLayoutService.shared.cardVectors != nil {
+                    // Cache ALREADY warm (mid-session canvas re-entry where the persisted snapshot
+                    // no longer matches): form once, synchronously, on the card basis — instant, no
+                    // flash, no throwaway legacy pass.
                     formTerritories(nodes: nodes, trigger: "cold-start")
                 }
+                // ★ ELSE — cache COLD (a genuine cold launch with no restorable snapshot): do NOT
+                // form here. A legacy cold-start form produced a second, throwaway layout on the
+                // WRONG basis that `warmCardVectorsThenReform` then reorganised on top of — two
+                // formations, a visible reshuffle, and a misleading `basis=legacy` / `NOT CARD` line.
+                // Leaving `territory` nil renders the provisional canonical layout (the `else` below)
+                // until `warmCardVectorsThenReform` (onAppear) AWAITS the preload and forms ONCE, on
+                // the card basis. That is why the cold-start path now "waits for the preload before
+                // forming": the wait lives in the async warm, and the sync path simply doesn't form.
             }
             if let frozen = territory {
                 let layout = frozen.layout

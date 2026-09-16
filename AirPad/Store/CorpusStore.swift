@@ -1471,6 +1471,49 @@ final class CorpusStore {
                                     at: moment)
     }
 
+    /// COMMIT-TIME enrichment — what Done calls instead of `processNodeWithAI`.
+    ///
+    /// ★ Done used to call `processNodeWithAI` directly, with every default and no
+    /// gate at all: two FM calls, unconditionally, however much of the work the eager
+    /// pass had already finished 500 ms earlier. This is that call site asking the
+    /// same question every other path asks, at `.committed` — where the substrate half
+    /// becomes "are you STALE?" rather than "are you MISSING?", because this is the
+    /// text that will be persisted, embedded and placed.
+    ///
+    /// ★ It supersedes any debounced eager pass rather than racing it. Both read the
+    /// node fresh and both would see pre-enrichment state if they overlapped, so both
+    /// would do the same work — the exact duplication being removed. Done always has
+    /// the newer content, so it wins.
+    func enrichIfNeeded(nodeID: String, at moment: EnrichmentGate.Moment = .committed) async {
+        enrichmentTasks[nodeID]?.cancel()
+        enrichmentTasks[nodeID] = nil
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let needs = enrichmentNeeds(for: node, at: moment)
+        guard needs.any else {
+            print("[Enrich] commit skip node=\(nodeID) — already current for this content")
+            await markAIWorkSettled(nodeID: nodeID)
+            return
+        }
+        print("[Enrich] commit firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate)")
+        await processNodeWithAI(nodeID: nodeID,
+                                needsAuthorship: needs.authorship,
+                                needsSubstrate: needs.substrate)
+    }
+
+    /// `needsAIProcessing` means "no AI pass has ever run on this node" and is read
+    /// in exactly one place: `scanForUnprocessedNodes`, at launch, to pick up nodes
+    /// captured via the share extension. It used to be cleared as a side effect of
+    /// `processNodeWithAI` completing.
+    ///
+    /// ★ Now that the gate can decide NO pass is needed, "the work completed" and
+    /// "the work is settled" have come apart: a node whose gate says there is nothing
+    /// to do would keep the flag set and be reprocessed on every cold launch. Deciding
+    /// no work is needed is a conclusion, not an omission — record it.
+    private func markAIWorkSettled(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }), node.needsAIProcessing else { return }
+        await mutateNode(id: nodeID) { $0.needsAIProcessing = false }
+    }
+
     /// Debounced automatic enrichment for a single node. Coalesces rapid text
     /// commits (cancel + re-arm), then re-reads the node FRESH at fire time and
     /// only enriches when the gate says there is still work to do — so it never
@@ -1516,6 +1559,10 @@ final class CorpusStore {
             let needs = self.enrichmentNeeds(for: node, at: .composing)
             bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
             guard needs.any, !content.isEmpty else {
+                // A gate that says "nothing needed" is a CONCLUSION about this node,
+                // so settle the launch-sweep flag. (Empty content is not a conclusion
+                // — there is simply nothing to look at yet — so it keeps the flag.)
+                if !needs.any { await self.markAIWorkSettled(nodeID: nodeID) }
                 print("[Enrich] skip node=\(nodeID) needs=\(needs.any) contentLen=\(content.count)")
                 return
             }

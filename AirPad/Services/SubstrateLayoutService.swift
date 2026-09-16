@@ -293,6 +293,38 @@ final class SubstrateLayoutService {
         cardVectors = cache
     }
 
+    /// ADMIT a freshly-written card-gist vector into the warm cache.
+    ///
+    /// ★ THE HOLE THIS CLOSES. `preloadCardVectors` runs ONCE per session. A node captured after
+    /// that warm was never added to the cache, and the warm-cache branch of `languageVector`
+    /// returns nil for an absent node with NO fallback — so the re-drift fired by
+    /// `substrateVectorLanded` reported `no-vector` and placed nothing. The vector was on disk the
+    /// whole time; the map simply never looked. Admitting on write keeps the cache COMPLETE rather
+    /// than papering over the gap with a disk read on the lookup path.
+    ///
+    /// ★★ A COLD CACHE IS LEFT COLD, deliberately. `cardVectors == nil` means "nothing preloaded",
+    /// and every accessor — plus `CanvasView`'s `.card` vs `.legacy` basis decision — reads nil
+    /// that way. Seeding a nil cache with a single entry would flip the whole map to the card basis
+    /// while holding exactly one vector, so every OTHER node would resolve to nil and silently stop
+    /// voting on language. The warm pass is what makes the cache authoritative; this only keeps an
+    /// already-authoritative cache current.
+    ///
+    /// Applies the SAME membership filter as the warm (`isRankable`, non-meta), so a node that the
+    /// preload would have excluded cannot enter by this door instead.
+    func admitCardVector(_ vector: [Float], for node: Node) {
+        guard cardVectors != nil, !vector.isEmpty else { return }
+        guard SubstrateService.shared.isRankable(node), !node.isMeta else { return }
+        cardVectors?[node.id] = vector
+    }
+
+    /// Drop a deleted node's card vector. Absence is meaningful here (it reads as "excluded from
+    /// language gravity"), so a stale entry for a node that no longer exists is not merely wasted
+    /// memory — it would keep voting on centroids.
+    func evictCardVectors(forNodeIDs ids: Set<String>) {
+        guard cardVectors != nil, !ids.isEmpty else { return }
+        for id in ids { cardVectors?.removeValue(forKey: id) }
+    }
+
     /// Pre-resolve block-pooled vectors for the given nodes and cache them
     /// for subsequent `substrateVector(for:)` calls. Sequential awaits
     /// across the storage actor — ~50–200 ms at corpus scale (n=123),

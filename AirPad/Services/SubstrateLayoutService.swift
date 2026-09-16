@@ -218,22 +218,19 @@ final class SubstrateLayoutService {
 
     // MARK: - Language vector (map gravity)
 
-    /// Where a language vector came from. Reported by `TagTerritoryLayout` so
-    /// the consumer side can PROVE which basis the map actually used.
+    /// Where a language vector came from. Reported by `TagTerritoryLayout` so the consumer side can
+    /// PROVE which basis the map actually used. Only `.card` survives — the `.legacyNLContextual`
+    /// and `.blockPooled` fallbacks were deleted with the cold-cache path (`languageVector` above),
+    /// so the map is card-basis BY CONSTRUCTION now: there is no other space to fall through to.
+    /// Kept as a named type (rather than collapsed to a bare `[Float]?`) so the consumer log stays
+    /// structured and a second basis could be reintroduced without re-threading every call site.
     enum LanguageVectorSource: String {
         case card
-        case blockPooled
-        case legacyNLContextual
 
         /// The SPACE this source resolves into. What `VectorBasisGuard` compares.
-        /// ★ `.legacyNLContextual` maps to a BLEND channel on purpose: `substrateVector`'s tail
-        /// averages the summary and folksonomy vectors, so the result belongs to neither channel
-        /// alone and must not be compared against either.
         var basis: VectorBasis {
             switch self {
-            case .card:               return .cardGist
-            case .blockPooled:        return .block
-            case .legacyNLContextual: return .substrateBlend
+            case .card: return .cardGist
             }
         }
     }
@@ -257,20 +254,18 @@ final class SubstrateLayoutService {
     /// backlink); they simply do not vote on language. Deterministic by
     /// construction, and the count is reported every run.
     ///
-    /// When `cardVectors` is nil (nothing preloaded) this falls back to
-    /// `substrateVector` — pre-B7 behavior, unchanged.
+    /// ★ CARD-OR-NOTHING. There is no longer a cold-cache fallback. The legacy `substrateVector`
+    /// stand-in (NLContextual / block-pooled) was DELETED once the corpus became single-embedder
+    /// (all BGE 384d, 2026-09-15 re-embed): a 512-d stand-in could only be mixed into 384-d card
+    /// centroids meaninglessly, and the cold-start map now WAITS for the warm before forming, so
+    /// there is nothing left for a stand-in to bridge. When the cache is warm, a node without a card
+    /// is excluded from language gravity (above). When the cache is cold (nil), EVERY node is
+    /// excluded — the impossible-timing edge (a re-form in the first launch frames) degrades to "no
+    /// language pull", never to a mismatched basis.
     func languageVector(for node: Node) -> (vector: [Float], source: LanguageVectorSource)? {
-        if let cache = cardVectors {
-            guard let card = cache[node.id], !card.isEmpty else { return nil }
-            return (card, .card)
-        }
-        guard let v = substrateVector(for: node) else { return nil }
-        // Cache cold ⇒ whatever substrateVector resolved. Label it by which
-        // path actually produced it so the consumer log stays honest.
-        if let bp = blockPooledVectors?[node.id], !bp.isEmpty, bp == v {
-            return (v, .blockPooled)
-        }
-        return (v, .legacyNLContextual)
+        guard let cache = cardVectors else { return nil }
+        guard let card = cache[node.id], !card.isEmpty else { return nil }
+        return (card, .card)
     }
 
     /// B7 — pre-resolve CARD-GIST vectors for the given nodes and cache them.

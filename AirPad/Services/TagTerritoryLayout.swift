@@ -143,11 +143,8 @@ enum TagTerritoryLayout {
             // DELIBERATELY excluded from the language signal (no card while the
             // card basis is authoritative), not that it silently mismatched.
             if let r = SubstrateLayoutService.shared.languageVector(for: node) {
-                switch r.source {
-                case .card:               tally.card += 1
-                case .blockPooled:        tally.blockPooled += 1
-                case .legacyNLContextual: tally.legacy += 1
-                }
+                // Card-basis by construction now — `languageVector` returns card-or-nil.
+                tally.card += 1
                 tally.dims.insert(r.vector.count)
                 if weights.language > 0 {
                     for (key, cen) in centroid {
@@ -528,9 +525,7 @@ enum TagTerritoryLayout {
 
     private struct LanguageVectorTally {
         var card = 0
-        var blockPooled = 0
-        var legacy = 0
-        /// Nodes deliberately excluded: card basis authoritative, no card.
+        /// Nodes deliberately excluded: card basis authoritative, no card (or the cache is cold).
         var none = 0
         /// Residual dimension mismatches against a centroid (should be 0).
         var cosineMismatch = 0
@@ -538,20 +533,15 @@ enum TagTerritoryLayout {
 
         func report(nodeCount: Int, languageWeight: Double) {
             let dimList = dims.sorted().map(String.init).joined(separator: ",")
-            let basis: String
-            if card > 0 && blockPooled == 0 && legacy == 0 {
-                basis = "CARD (B7 — card gist, BGE 384d)"
-            } else if card == 0 && (legacy > 0 || blockPooled > 0) {
-                basis = "⚠️ NOT CARD — preload lost the race or cache is cold"
-            } else if card > 0 {
-                basis = "⚠️ MIXED — card + fallback in one run"
-            } else {
-                basis = "no language vectors resolved"
-            }
+            // Card-basis BY CONSTRUCTION — the NLContextual / block-pooled fallbacks were deleted,
+            // so there is no "NOT CARD" or "MIXED" outcome to report. Either some node resolved a
+            // card vector, or none did (a cold-cache re-form — every node excluded from language).
+            let basis = card > 0
+                ? "CARD (card gist, BGE 384d)"
+                : "no language vectors resolved (cache cold or no cards)"
             print("""
             [Territory/language] basis=\(basis) \
-            nodes=\(nodeCount) card=\(card) blockPooled=\(blockPooled) \
-            legacyNLContextual=\(legacy) excluded_noCard=\(none) \
+            nodes=\(nodeCount) card=\(card) excluded_noCard=\(none) \
             dims=[\(dimList.isEmpty ? "-" : dimList)] \
             cosineMismatch=\(cosineMismatch) weight=\(languageWeight)
             """)

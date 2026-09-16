@@ -297,24 +297,31 @@ final class SubstrateLayoutService {
     ///
     /// ★ THE HOLE THIS CLOSES. `preloadCardVectors` runs ONCE per session. A node captured after
     /// that warm was never added to the cache, and the warm-cache branch of `languageVector`
-    /// returns nil for an absent node with NO fallback — so the re-drift fired by
-    /// `substrateVectorLanded` reported `no-vector` and placed nothing. The vector was on disk the
-    /// whole time; the map simply never looked. Admitting on write keeps the cache COMPLETE rather
-    /// than papering over the gap with a disk read on the lookup path.
+    /// returns nil for an absent node with NO fallback — so the re-drift reported `no-vector` and
+    /// placed nothing. The vector was on disk the whole time; the map simply never looked. Admitting
+    /// on write keeps the cache COMPLETE rather than papering over the gap with a disk read on the
+    /// lookup path.
+    ///
+    /// Returns TRUE iff the vector actually entered the cache — which is the exact moment "the map
+    /// can now see this node." The caller (`embedCardIfNeeded`) uses that to fire the re-drift, so
+    /// the re-drift fires ONCE, at admission, never against a cache that doesn't yet hold the node.
     ///
     /// ★★ A COLD CACHE IS LEFT COLD, deliberately. `cardVectors == nil` means "nothing preloaded",
-    /// and every accessor — plus `CanvasView`'s `.card` vs `.legacy` basis decision — reads nil
-    /// that way. Seeding a nil cache with a single entry would flip the whole map to the card basis
-    /// while holding exactly one vector, so every OTHER node would resolve to nil and silently stop
-    /// voting on language. The warm pass is what makes the cache authoritative; this only keeps an
-    /// already-authoritative cache current.
+    /// and every accessor reads nil that way. Seeding a nil cache with a single entry would flip the
+    /// whole map to the card basis while holding exactly one vector, so every OTHER node would
+    /// resolve to nil and silently stop voting on language. The warm pass is what makes the cache
+    /// authoritative; this only keeps an already-authoritative cache current. A cold-cache admission
+    /// returns false, so no re-drift fires — correct, because the cold-start warm re-form will place
+    /// the node when it runs.
     ///
     /// Applies the SAME membership filter as the warm (`isRankable`, non-meta), so a node that the
     /// preload would have excluded cannot enter by this door instead.
-    func admitCardVector(_ vector: [Float], for node: Node) {
-        guard cardVectors != nil, !vector.isEmpty else { return }
-        guard SubstrateService.shared.isRankable(node), !node.isMeta else { return }
+    @discardableResult
+    func admitCardVector(_ vector: [Float], for node: Node) -> Bool {
+        guard cardVectors != nil, !vector.isEmpty else { return false }
+        guard SubstrateService.shared.isRankable(node), !node.isMeta else { return false }
         cardVectors?[node.id] = vector
+        return true
     }
 
     /// Drop a deleted node's card vector. Absence is meaningful here (it reads as "excluded from

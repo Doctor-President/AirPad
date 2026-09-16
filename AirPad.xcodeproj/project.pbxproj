@@ -237,6 +237,7 @@
 		B50270CC57FE455419F41E86 /* HoldDragRepro.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */; };
 		B51FD4FE477136A3E6E73838 /* SubstrateClusterRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1E4579C38329B81D4436DD /* SubstrateClusterRegistry.swift */; };
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
+		B6E91361A5615460B83EB3B6 /* EnrichmentGateSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
 		B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC513418FD53025E45C9B6 /* BlockChunker.swift */; };
@@ -555,6 +556,7 @@
 		B8D87927EAE11D669A11A825 /* CardSwipeRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CardSwipeRepro.swift; sourceTree = "<group>"; };
 		B9C5245A09127ABECCBFEDC4 /* SubstrateWhitening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateWhitening.swift; sourceTree = "<group>"; };
 		BBA68756B325BB81B3EDBA12 /* OGPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OGPreviewView.swift; sourceTree = "<group>"; };
+		BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentGateSelfTest.swift; sourceTree = "<group>"; };
 		BD02B64092A916BBD65260B0 /* AppearancePalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearancePalette.swift; sourceTree = "<group>"; };
 		BD12D156A4CBC12E872BDEC7 /* BlobField.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = BlobField.metal; sourceTree = "<group>"; };
 		BE499E529F1B439D3EDD8816 /* UMAPGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPGraph.swift; sourceTree = "<group>"; };
@@ -774,6 +776,7 @@
 				FA68215D2065B3D02251352C /* CardEmbeddingService.swift */,
 				39A4F2C5815649CFC465EF1F /* ClipboardContentRouter.swift */,
 				04C9DF59B5CB0AF40373A81B /* DocumentExtractionService.swift */,
+				BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */,
 				6CEB84A4A23D03CBE6C82507 /* FolksonomyDiagnostic.swift */,
 				B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */,
 				01439497F74FDC8285B4AB62 /* HostE2E.swift */,
@@ -1495,6 +1498,7 @@
 				918876676560C61205991A10 /* EditMapSheet.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
 				506C1FA0D399B321F030A8E9 /* EnrichmentGate.swift in Sources */,
+				B6E91361A5615460B83EB3B6 /* EnrichmentGateSelfTest.swift in Sources */,
 				920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */,
 				ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */,
 				92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */,

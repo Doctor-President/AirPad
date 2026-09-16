@@ -823,6 +823,12 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
                     NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
                 }
+                // THE ENRICHMENT GATE — replays the four capture scenarios against
+                // the real predicate and reports FM calls per note, before vs after.
+                // Pure in-memory; no FM, no corpus access.
+                if ProcessInfo.processInfo.arguments.contains("-EnrichmentGateSelfTest") {
+                    NSLog("[EnrichmentGateSelfTest] %@", EnrichmentGateSelfTest.run())
+                }
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here
                 // instead of shipping quietly (the third resurrection).

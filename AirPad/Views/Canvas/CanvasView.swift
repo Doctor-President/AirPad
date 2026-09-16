@@ -385,6 +385,44 @@ struct CanvasView: View {
         store.cardVectorAdmitted = nil
     }
 
+    /// Appearance flip → re-push COLOUR only, never re-sync geometry.
+    ///
+    /// ORDER MATTERS. Set `appearanceIsLight` FIRST so the restyle resolves the new light/dark wash
+    /// direction, THEN push the recomputed territory tints via `applyTerritoryColors`, which sets the
+    /// `territoryColors` dict and re-styles fill + wash + stroke together against the NEW palette in
+    /// one pass. Routing the flip through `syncScene` (the old path) instead set the tint dict AFTER
+    /// the didSet restyle, so the wash (`washHueShade(baseFill)`) was computed from the OLD hue — the
+    /// "beat late" colour — and ran `animateSpriteIfNeeded` on every sprite, easing annulus-held orbs
+    /// back toward rest for 1.5s (the "pucker"). No `syncNodes` here, so neither happens.
+    ///
+    /// The per-frame `u_wash_is_light` uniform (set in `update` from `appearanceIsLight`) flips the
+    /// wash COMPOSITE immediately; non-territory orbs are re-tinted by the didSet's own
+    /// `restyleUnfocusedOrbs`; the grid-warp uniforms are appearance-independent. So colour is the
+    /// only thing that needs an explicit push.
+    private func flipMapColorsForAppearance() {
+        scene.appearanceIsLight = (mapColorScheme == .light)
+        // Non-Map / cold (no frozen formation): the didSet restyle above already re-tinted every orb
+        // through `bubbleColor`'s substrate/neighborhood fallback — nothing territory-specific to push.
+        guard let frozen = territory else { return }
+        // Tints: sets the dict THEN restyles against the new palette (the ordering that fixes the
+        // late wash). Same tints `syncScene` would compute for this frozen formation.
+        scene.applyTerritoryColors(nodeTints(frozen))
+        // Label pill hexes are PER APPEARANCE and live in the SwiftUI overlay via `setTerritoryLabels`,
+        // which only `syncScene` used to rebuild — so the colour-only path must re-push them. Built
+        // identically to `syncScene`'s tag-anchored branch with no drifted node (a flip adds none).
+        var membersByKey: [String: [String]] = [:]
+        for (nodeID, key) in frozen.layout.nodeTerritory { membersByKey[key, default: []].append(nodeID) }
+        let keyHex = territoryHexMap(frozen.slots)
+        let labels = frozen.layout.territories.compactMap { t -> CorpusPhysicsScene.TerritoryLabel? in
+            guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
+            return CorpusPhysicsScene.TerritoryLabel(
+                key: t.key, name: t.name,
+                colorHex: keyHex[t.key] ?? "#BBBBBB", memberIDs: members
+            )
+        }
+        scene.setTerritoryLabels(labels)
+    }
+
     /// Re-derive Map positions + tint live (weight or tint-toggle change — a
     /// DELIBERATE map action, so it re-forms the frozen cache).
     private func reblendMap() {
@@ -425,16 +463,16 @@ struct CanvasView: View {
             // Live theme flip → push the authoritative colorScheme into the scene
             // (the orb-desync fix). Placed on `body` — a light chunk — so the
             // observer chains stay within the type-checker's budget.
-            .onChange(of: mapColorScheme) { _, newScheme in
-                scene.appearanceIsLight = (newScheme == .light)
-                // ★ RE-SYNC on flip (2026-09-15 palette bake). The territory tints and the label-pill
-                // stroke hexes are PER APPEARANCE now, and both are frozen into the scene at sync time
-                // (`territoryColors` via the frozen formation, `colorHex` on each TerritoryLabel).
-                // `appearanceIsLight` alone only restyles through the ALREADY-PUSHED colours, so
-                // without this they would keep the previous appearance's palette until some unrelated
-                // change happened to re-sync. The tag-anchored path reuses the frozen formation, so
-                // this re-pushes colour without recomputing the layout.
-                syncScene(nodes: store.visibleNodes(in: scope))
+            .onChange(of: mapColorScheme) { _, _ in
+                // ★ A flip is a COLOUR-ONLY event — tints, label-pill hexes, and the wash — nothing
+                // geometric. It used to route through `syncScene`, which ran `animateSpriteIfNeeded`
+                // on every sprite: any orb the viewport annulus was holding off-rest got eased back
+                // toward rest over 1.5s while the band loop pulled it out again (the ~1s "pucker"),
+                // and the wash landed a beat late (the didSet restyle ran before the tint dict
+                // updated, so `washHueShade` used the OLD hue). `flipMapColorsForAppearance` re-pushes
+                // colour without `syncNodes`, so no geometry animation fires and the wash is computed
+                // against the new palette in one pass.
+                flipMapColorsForAppearance()
             }
     }
 

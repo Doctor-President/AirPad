@@ -159,10 +159,10 @@ struct CanvasView: View {
         let slots: [String: Int]
         /// nodeID → within-family shade (0…1, dimmer → brighter).
         let shades: [String: Double]
-        /// Which basis this layout was formed on (or restored as). Only a `.card`
-        /// layout suppresses the on-launch warm+reform; a `.legacy` cold-start
-        /// layout is provisional and gets re-formed once card vectors warm.
-        var basis: LayoutBasis = .legacy
+        /// Which basis this layout was formed on (or restored as). Always `.card` now — the map has
+        /// no other formation basis (§2b). Retained so the launch-time warm+reform's `alreadyCurrent`
+        /// early-out reads a card layout explicitly rather than implicitly.
+        var basis: LayoutBasis = .card
         /// Signature of the inputs this layout was formed for. Lets the launch-time
         /// warm+reform early-out when a restored card layout already matches.
         var signature: String = ""
@@ -189,23 +189,20 @@ struct CanvasView: View {
         // looked up. Held claims come along, so a returning territory is recognised.
         let slots = claimSlots(for: layout.territories, existing: persistedSlotClaims())
         let shades = mapTerritoryShades(layout, nodes: nodes)
-        // The card basis is authoritative once `cardVectors` is warm — the same
-        // gate `SubstrateLayoutService.languageVector` uses. A cold-start form
-        // (cache cold) is `.legacy` and provisional; a form after the warm is
-        // `.card` and worth persisting.
-        let basis: LayoutBasis = SubstrateLayoutService.shared.cardVectors != nil ? .card : .legacy
+        // ★ The map forms on the CARD basis, always. There is no longer a legacy formation path: the
+        // cold-start syncScene defers to the warm re-form (§2a) rather than forming on legacy, and
+        // `languageVector` has no legacy fallback (§2b). So a formation is card-basis by construction.
+        let basis: LayoutBasis = .card
         let signature = territorySignature(nodes: nodes, basis: basis)
         territory = FrozenTerritory(layout: layout, slots: slots, shades: shades,
                                     basis: basis, signature: signature)
         print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger), basis: \(basis.rawValue)")
-        // Persist ONLY a card-basis geography. Persisting a legacy cold-start
-        // layout would let the next launch RESTORE a legacy layout that then never
-        // reforms — re-breaking the regression from the other side.
-        // A legacy cold-start geography is provisional and must not be persisted. The claims it
-        // computed are not lost by that: they are a pure function of the prior map and the key set,
-        // so the warm card re-form that follows on every launch recomputes them identically and
-        // persists them then.
-        if basis == .card {
+        // Persist only when the CARD CACHE IS WARM. A form on a cold cache (the impossible-timing
+        // edge — Analyze/reblend in the first launch frames before the preload lands) is language-
+        // blind and provisional; persisting it would let the next launch restore a language-blind
+        // geography whose signature matches, so the warm re-form would skip it and it would stick.
+        // Gating on the cache (not on a `.legacy` basis label) is what makes that unrepresentable.
+        if SubstrateLayoutService.shared.cardVectors != nil {
             persistTerritory(layout: layout, slots: slots, signature: signature)
         }
     }
@@ -333,10 +330,11 @@ struct CanvasView: View {
         Task { @MainActor in
             // ★ THE BASIS IS WARMED UNCONDITIONALLY — the early return above governs whether to
             // RE-FORM, and it used to gate this too. That left `cardVectors` nil for the entire
-            // session on the common relaunch path (`preloadCardVectors` has exactly one caller), so
-            // every `driftPlacement` that session resolved `.legacyNLContextual` and scored a
-            // legacy vector against 384-d card centroids — silently zero language gravity. Skipping
-            // the RELAYOUT is correct; skipping the BASIS never was.
+            // session on the common relaunch path (`preloadCardVectors` has exactly one caller). With
+            // the legacy fallback deleted (§2b) that now means every `languageVector` returns nil for
+            // the whole session — zero language gravity, silently — so warming the basis is what
+            // makes the map card-aware at all. Skipping the RELAYOUT is correct; skipping the BASIS
+            // never was.
             // Idempotent and once-per-session: the cache is only cold before the first warm.
             if SubstrateLayoutService.shared.cardVectors == nil {
                 // Time the preload: it is N sequential card-sidecar disk reads + JSON decodes, and

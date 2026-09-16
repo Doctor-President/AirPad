@@ -2148,11 +2148,21 @@ final class CorpusPhysicsScene: SKScene {
         guard let sprite = nodeSprites[nodeID] else { return }
         let targetPosition = storedPosition(for: nodeID)
 
-        // Check if position has changed (within tolerance)
-        let dx = sprite.position.x - targetPosition.x
-        let dy = sprite.position.y - targetPosition.y
-        let distance = sqrt(dx * dx + dy * dy)
-        let positionChanged = distance > 5  // 5pt tolerance
+        // ★ Animate a move ONLY when the LAYOUT actually moved this node — its RESTING TARGET changed
+        // since the last sync — NOT when the sprite merely sits away from rest. The viewport annulus
+        // deliberately holds band orbs off their resting home (`applyBandRelaxation`), so measuring
+        // the LIVE sprite position against the target reported "out of place" for every band orb on
+        // every `syncNodes`, easing it back to rest over 1.5s while the band loop pulled it out again
+        // — the "pucker" T saw on Analyze (and, before it became colour-only, on an appearance flip).
+        // A held sprite is exactly where the annulus wants it; it is not out of place. `syncNodes`
+        // sets `positionMap` (the new target) BEFORE this loop and calls `captureRestingState` (which
+        // overwrites `nodeRestingPositions`) AFTER it, so here `nodeRestingPositions[nodeID]` still
+        // holds the PREVIOUS target — compare the two. Unchanged ⇒ the band loop already governs this
+        // sprite; leave it alone. This protects every `syncScene` caller, not just Analyze.
+        let previousResting = nodeRestingPositions[nodeID]
+        let rdx = (previousResting?.x ?? targetPosition.x) - targetPosition.x
+        let rdy = (previousResting?.y ?? targetPosition.y) - targetPosition.y
+        let restingMoved = previousResting == nil || sqrt(rdx * rdx + rdy * rdy) > 5  // 5pt tolerance
 
         // Check if radius has changed
         var radiusChanged = false
@@ -2166,10 +2176,10 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        guard positionChanged || radiusChanged else { return }
+        guard restingMoved || radiusChanged else { return }
 
-        // Animate position if changed
-        if positionChanged {
+        // Animate position if the resting target moved.
+        if restingMoved {
             let move = SKAction.move(to: targetPosition, duration: 1.5)
             move.timingMode = .easeOut
             sprite.run(move, withKey: "algorithmicLayout")

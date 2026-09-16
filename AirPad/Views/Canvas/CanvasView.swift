@@ -83,33 +83,61 @@ struct CanvasView: View {
     /// Per-node territory tint — a within-family gradient anchored on the
     /// territory's palette hex, varied by recency (or a stable hash when off).
     /// Label pills keep the flat family anchor.
-    private func mapTerritoryColors(_ layout: TagTerritoryLayout.Layout, nodes: [Node]) -> [String: UIColor] {
-        let keyColor = territoryColorMap(layout.territories)
+    /// nodeID → within-family SHADE (0…1). Colour-free on purpose: the base hue comes from the
+    /// territory's persisted slot at push time, so this survives an appearance flip unchanged.
+    private func mapTerritoryShades(_ layout: TagTerritoryLayout.Layout, nodes: [Node]) -> [String: Double] {
         let dates = nodes.map { $0.updatedAt.timeIntervalSince1970 }
         let minD = dates.min() ?? 0
         let span = max(1, (dates.max() ?? 1) - minD)
         let byID = Dictionary(nodes.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var out: [String: Double] = [:]
+        out.reserveCapacity(layout.nodeTerritory.count)
+        for (nodeID, _) in layout.nodeTerritory {
+            out[nodeID] = nodeShade(nodeID, node: byID[nodeID], minD: minD, span: span)
+        }
+        return out
+    }
+
+    /// The ONE shade rule. Both the formation path and the drift-in path call this, so a
+    /// newly-placed node is shaded by the same rule as the neighbours it lands among.
+    private func nodeShade(_ nodeID: String, node: Node?, minD: Double, span: Double) -> Double {
+        if tintByRecency, let node {
+            return (node.updatedAt.timeIntervalSince1970 - minD) / span
+        }
+        return Double(abs(nodeID.hashValue) % 100) / 100
+    }
+
+    /// Resolve a formation's per-node tints for the CURRENT appearance: slot → base colour, then
+    /// the frozen shade. Called at every push rather than stored, which is what an appearance flip
+    /// needs (`FrozenTerritory`).
+    private func nodeTints(_ frozen: FrozenTerritory) -> [String: UIColor] {
+        let isLight = mapColorScheme != .dark
         var out: [String: UIColor] = [:]
-        for (nodeID, key) in layout.nodeTerritory {
-            guard let base = keyColor[key] else { continue }
-            let t: Double
-            if tintByRecency, let node = byID[nodeID] {
-                t = (node.updatedAt.timeIntervalSince1970 - minD) / span
-            } else {
-                t = Double(abs(nodeID.hashValue) % 100) / 100
-            }
-            out[nodeID] = familyTint(base, t)
+        out.reserveCapacity(frozen.shades.count)
+        for (nodeID, key) in frozen.layout.nodeTerritory {
+            guard let slot = frozen.slots[key] else { continue }
+            out[nodeID] = familyTint(RegionPalette.color(isLight: isLight, slot: slot),
+                                     frozen.shades[nodeID] ?? 0.5)
         }
         return out
     }
 
     /// A frozen territory formation — the deliberate-clock output that reactive
-    /// syncs reuse. `colors` is captured at formation time so existing nodes'
-    /// tints are byte-identical across a capture/cancel (recency span can't shift
-    /// them). `layout` carries frozen positions, membership, centers, centroids.
+    /// syncs reuse. `layout` carries frozen positions, membership, centers, centroids.
+    ///
+    /// ★ WHAT IS FROZEN, AND WHAT DELIBERATELY IS NOT. The SHADE is frozen: it is derived from the
+    /// recency span across the visible set, so leaving it live would let a capture/cancel shift
+    /// every existing node's tint. The BASE COLOUR is NOT frozen — it is re-resolved from `slots`
+    /// for whichever appearance is current, every time it is pushed. That split is what makes an
+    /// appearance flip correct. Freezing the resolved colour (the old `colors: [String: UIColor]`,
+    /// persisted as `colorsHex`) meant a formation made in dark kept dark tints in light, while the
+    /// label-pill strokes re-resolved correctly — so the two disagreed.
     private struct FrozenTerritory {
         let layout: TagTerritoryLayout.Layout
-        let colors: [String: UIColor]
+        /// Territory key → palette slot. The claim map (see `TerritoryLayoutSnapshot.territorySlot`).
+        let slots: [String: Int]
+        /// nodeID → within-family shade (0…1, dimmer → brighter).
+        let shades: [String: Double]
         /// Which basis this layout was formed on (or restored as). Only a `.card`
         /// layout suppresses the on-launch warm+reform; a `.legacy` cold-start
         /// layout is provisional and gets re-formed once card vectors warm.
@@ -135,21 +163,48 @@ struct CanvasView: View {
             nodes: nodes, anchors: store.canvasAnchorTags,
             collections: store.collections, weights: mapWeights, radii: mapLayoutRadii(for: nodes)
         )
-        let colors = mapTerritoryColors(layout, nodes: nodes)
+        // Claim slots against the persisted map on EVERY re-form — Analyze, the idle fallback,
+        // anchor change, batch resync — so a territory's colour is decided once and then only
+        // looked up. Held claims come along, so a returning territory is recognised.
+        let slots = claimSlots(for: layout.territories, existing: persistedSlotClaims())
+        let shades = mapTerritoryShades(layout, nodes: nodes)
         // The card basis is authoritative once `cardVectors` is warm — the same
         // gate `SubstrateLayoutService.languageVector` uses. A cold-start form
         // (cache cold) is `.legacy` and provisional; a form after the warm is
         // `.card` and worth persisting.
         let basis: LayoutBasis = SubstrateLayoutService.shared.cardVectors != nil ? .card : .legacy
         let signature = territorySignature(nodes: nodes, basis: basis)
-        territory = FrozenTerritory(layout: layout, colors: colors, basis: basis, signature: signature)
+        territory = FrozenTerritory(layout: layout, slots: slots, shades: shades,
+                                    basis: basis, signature: signature)
         print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger), basis: \(basis.rawValue)")
         // Persist ONLY a card-basis geography. Persisting a legacy cold-start
         // layout would let the next launch RESTORE a legacy layout that then never
         // reforms — re-breaking the regression from the other side.
+        // A legacy cold-start geography is provisional and must not be persisted. The claims it
+        // computed are not lost by that: they are a pure function of the prior map and the key set,
+        // so the warm card re-form that follows on every launch recomputes them identically and
+        // persists them then.
         if basis == .card {
-            persistTerritory(layout: layout, colors: colors, signature: signature)
+            persistTerritory(layout: layout, slots: slots, signature: signature)
         }
+    }
+
+    /// The persisted slot claims, read UNCONDITIONALLY.
+    ///
+    /// ★★ DELIBERATELY NOT BEHIND `TerritoryLayoutRestore.canRestore`. That gate answers "is this
+    /// GEOGRAPHY still valid?", and adding a node correctly makes it false. Colour must survive
+    /// exactly the changes that invalidate geography — one gate for both is what recoloured the map
+    /// every time a node was captured. Two questions, two gates.
+    private func persistedSlotClaims() -> [String: Int] {
+        store.territoryLayout?.territorySlot ?? [:]
+    }
+
+    /// Claim slots for this formation's territories. The rule itself lives in
+    /// `TerritorySlotClaims` — pure, so it can be exercised by the self-test without a view,
+    /// a store or a corpus (the same reason `EnrichmentGate` was pulled out).
+    private func claimSlots(for territories: [TagTerritoryLayout.Territory],
+                            existing: [String: Int]) -> [String: Int] {
+        TerritorySlotClaims.claim(currentKeys: territories.map(\.key), existing: existing)
     }
 
     /// STABLE fingerprint of the current territory-determining inputs, for the
@@ -193,15 +248,16 @@ struct CanvasView: View {
         layout.centers = snap.centers.mapValues { CGPoint(x: $0.x, y: $0.y) }
         layout.centroids = snap.centroids
         layout.centroidBasis = snap.centroidBasis.map(VectorBasis.init(rawValue:))
-        var colors: [String: UIColor] = [:]
-        colors.reserveCapacity(snap.colorsHex.count)
-        for (id, hex) in snap.colorsHex { if let c = UIColor(hex: hex) { colors[id] = c } }
+        // Colour is NOT restored — it is RE-RESOLVED. The snapshot carries slot claims, not hexes,
+        // so a formation persisted in one appearance comes back correct in the other.
+        let slots = claimSlots(for: layout.territories, existing: snap.territorySlot)
+        let shades = mapTerritoryShades(layout, nodes: nodes)
         print("[Territory] Restored persisted card-basis geography (\(layout.positions.count) positions) — no reform")
-        return FrozenTerritory(layout: layout, colors: colors, basis: .card, signature: sig)
+        return FrozenTerritory(layout: layout, slots: slots, shades: shades, basis: .card, signature: sig)
     }
 
     /// Encode the derived geography for persistence (card-basis only).
-    private func persistTerritory(layout: TagTerritoryLayout.Layout, colors: [String: UIColor], signature: String) {
+    private func persistTerritory(layout: TagTerritoryLayout.Layout, slots: [String: Int], signature: String) {
         let snapshot = TerritoryLayoutSnapshot(
             version: TerritoryLayoutSnapshot.currentVersion,
             updatedAt: Date(),
@@ -213,7 +269,7 @@ struct CanvasView: View {
             centers: layout.centers.mapValues { .init(x: Double($0.x), y: Double($0.y)) },
             centroids: layout.centroids,
             centroidBasis: layout.centroidBasis?.rawValue,
-            colorsHex: colors.mapValues { Self.territoryHexString($0) }
+            territorySlot: slots
         )
         store.persistTerritoryLayout(snapshot)
     }
@@ -278,7 +334,7 @@ struct CanvasView: View {
             guard let frozen = territory else { return }
             // SwiftUI-space → SpriteKit (y-up), same as `reblendMap`.
             scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-            scene.applyTerritoryColors(frozen.colors)
+            scene.applyTerritoryColors(nodeTints(frozen))
         }
     }
 
@@ -311,7 +367,7 @@ struct CanvasView: View {
         formTerritories(nodes: nodes, trigger: "reblend")
         guard let frozen = territory else { return }
         scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-        scene.applyTerritoryColors(frozen.colors)
+        scene.applyTerritoryColors(nodeTints(frozen))
     }
 
     /// Shift a base color within its hue family — brightness (+ a touch of
@@ -469,7 +525,7 @@ struct CanvasView: View {
                 if let frozen = territory {
                     // SwiftUI-space → SpriteKit (y-up).
                     scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-                    scene.applyTerritoryColors(frozen.colors)
+                    scene.applyTerritoryColors(nodeTints(frozen))
                 }
             }
         }
@@ -1032,16 +1088,15 @@ struct CanvasView: View {
         }
     }
 
-    /// Territory key → designed palette color, assigned by the engine's territory
-    /// order. Single source so tint + labels + migration agree.
-    private func territoryColorMap(_ territories: [TagTerritoryLayout.Territory]) -> [String: UIColor] {
-        var m: [String: UIColor] = [:]
-        // Per appearance since the 2026-09-15 palette bake (same hue, different lightness).
-        let palette = CorpusPhysicsScene.territoryPalette(isLight: mapColorScheme != .dark)
-        for (i, t) in territories.enumerated() {
-            m[t.key] = palette[i % palette.count]
-        }
-        return m
+    /// Territory key → designed palette colour, resolved from the territory's persisted SLOT.
+    ///
+    /// ★ Was `palette[i % count]` over the territories array — i.e. colour by ARRAY POSITION. That
+    /// array is sorted alphabetically by key (`TagTerritoryLayout.swift:191`), so a territory
+    /// blinking in or out shifted every index after it and recoloured the map. Slot claims are held
+    /// for life, so position no longer has anything to do with colour.
+    private func territoryColorMap(_ slots: [String: Int]) -> [String: UIColor] {
+        let isLight = mapColorScheme != .dark
+        return slots.mapValues { RegionPalette.color(isLight: isLight, slot: $0) }
     }
 
     /// Map layout radii — mirror the substrate path's documented fallback chain
@@ -1070,17 +1125,12 @@ struct CanvasView: View {
         return out
     }
 
-    /// Territory key → palette HEX (same index assignment as `territoryColorMap`,
-    /// so the pill stroke and node tint always pair). Hex literal for the label
-    /// overlay, per the colorblind house rule.
-    private func territoryHexMap(_ territories: [TagTerritoryLayout.Territory]) -> [String: String] {
-        var m: [String: String] = [:]
-        // Per appearance since the 2026-09-15 palette bake — the pill stroke must pair with the tint.
-        let hex = CorpusPhysicsScene.territoryPaletteHex(isLight: mapColorScheme != .dark)
-        for (i, t) in territories.enumerated() {
-            m[t.key] = hex[i % hex.count]
-        }
-        return m
+    /// Territory key → palette HEX, resolved from the SAME slot the tint uses, so the pill stroke
+    /// and the node tint cannot drift apart. Hex literal for the label overlay, per the colourblind
+    /// house rule.
+    private func territoryHexMap(_ slots: [String: Int]) -> [String: String] {
+        let isLight = mapColorScheme != .dark
+        return slots.mapValues { RegionPalette.hex(isLight: isLight, slot: $0) }
     }
 
     private func syncScene(nodes: [Node], newNodeID: String? = nil, expandingFrom: CGPoint? = nil) {
@@ -1127,16 +1177,14 @@ struct CanvasView: View {
             if let frozen = territory {
                 let layout = frozen.layout
                 var positions = layout.positions
-                var colors = frozen.colors
+                var colors = nodeTints(frozen)
                 var membersByKey: [String: [String]] = [:]
                 for (nodeID, key) in layout.nodeTerritory {
                     membersByKey[key, default: []].append(nodeID)
                 }
-                // Territory index per node (same order territoryColorMap assigns the palette) so the
-                // scene can re-resolve a RegionPalette FAMILY tint live (commit 2).
-                var slotByKey: [String: Int] = [:]
-                for (i, terr) in layout.territories.enumerated() { slotByKey[terr.key] = i }
-                for (nodeID, key) in layout.nodeTerritory { if let s = slotByKey[key] { territorySlots[nodeID] = s } }
+                // Territory slot per node — the SAME claim map the tint and the pill stroke resolve
+                // through, so the scene can never be handed a slot that disagrees with what is drawn.
+                for (nodeID, key) in layout.nodeTerritory { if let s = frozen.slots[key] { territorySlots[nodeID] = s } }
                 // Drift the newly captured node into the frozen formation.
                 if let newNodeID, positions[newNodeID] == nil,
                    let newNode = nodes.first(where: { $0.id == newNodeID }) {
@@ -1155,14 +1203,19 @@ struct CanvasView: View {
                     ])
                     if let key = placement.key {
                         membersByKey[key, default: []].append(newNodeID)
-                        if let base = territoryColorMap(layout.territories)[key] {
-                            colors[newNodeID] = familyTint(base, Double(abs(newNodeID.hashValue) % 100) / 100)
+                        if let slot = frozen.slots[key] {
+                            let dates = nodes.map { $0.updatedAt.timeIntervalSince1970 }
+                            let minD = dates.min() ?? 0
+                            let span = max(1, (dates.max() ?? 1) - minD)
+                            let base = RegionPalette.color(isLight: mapColorScheme != .dark, slot: slot)
+                            colors[newNodeID] = familyTint(base, nodeShade(newNodeID, node: newNode,
+                                                                          minD: minD, span: span))
                         }
                     }
                 }
                 layoutPositions = positions
                 territoryColors = colors
-                let keyHex = territoryHexMap(layout.territories)   // flat family anchor — label pill stroke
+                let keyHex = territoryHexMap(frozen.slots)   // flat family anchor — label pill stroke
                 territoryLabels = layout.territories.compactMap { t in
                     guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
                     return CorpusPhysicsScene.TerritoryLabel(

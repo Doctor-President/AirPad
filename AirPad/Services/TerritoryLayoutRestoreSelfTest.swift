@@ -99,6 +99,44 @@ enum TerritoryLayoutRestoreSelfTest {
             failures.append("5: round-trip threw \(error)")
         }
 
+        // 6 — THE CLAIM RULE. The reshuffle defect was colour-by-array-index; these pin the
+        //     replacement. A claim map survives the churn that invalidates geography, which is the
+        //     whole reason the two are on separate gates.
+        ran += 1
+        do {
+            // 6a — first sight: lowest free slots, in sorted key order.
+            let first = TerritorySlotClaims.claim(currentKeys: ["tag:zebra", "col:a", "tag:m"], existing: [:])
+            if first != ["col:a": 0, "tag:m": 1, "tag:zebra": 2] {
+                failures.append("6a: first claim not lowest-free in key order — got \(first)")
+            }
+            // 6b — THE REGRESSION ITSELF. A new territory sorting FIRST alphabetically must not
+            //      move anyone: under the old index rule "col:aaa" shifted every colour after it.
+            let afterInsert = TerritorySlotClaims.claim(currentKeys: ["col:aaa", "tag:zebra", "col:a", "tag:m"],
+                                                        existing: first)
+            if afterInsert["col:a"] != 0 || afterInsert["tag:m"] != 1 || afterInsert["tag:zebra"] != 2 {
+                failures.append("6b: an inserted territory moved existing claims — got \(afterInsert)")
+            }
+            if afterInsert["col:aaa"] != 3 {
+                failures.append("6b: new territory did not take the lowest free slot — got \(afterInsert)")
+            }
+            // 6c — a territory that DISAPPEARS holds its slot, and gets it back on return.
+            let whileAbsent = TerritorySlotClaims.claim(currentKeys: ["col:a", "tag:m"], existing: afterInsert)
+            if whileAbsent["tag:zebra"] != 2 { failures.append("6c: absent territory lost its claim") }
+            let onReturn = TerritorySlotClaims.claim(currentKeys: ["col:a", "tag:m", "tag:zebra"], existing: whileAbsent)
+            if onReturn["tag:zebra"] != 2 { failures.append("6c: returning territory did not get its colour back") }
+            // 6d — exhaustion past slotCount: reuse the least-carried slot, never crash, never
+            //      disturb an existing claim.
+            let full = TerritorySlotClaims.claim(currentKeys: (0..<14).map { "tag:t\($0)" }, existing: [:], slotCount: 12)
+            if full.count != 14 { failures.append("6d: not every territory got a slot — \(full.count)/14") }
+            if Set(full.values).count != 12 { failures.append("6d: expected all 12 slots in use") }
+            if full["tag:t0"] != 0 { failures.append("6d: exhaustion disturbed an existing claim") }
+            if full.values.contains(where: { $0 < 0 || $0 >= 12 }) { failures.append("6d: slot out of range") }
+            // 6e — determinism: the same inputs in a different order give the same map.
+            let a = TerritorySlotClaims.claim(currentKeys: ["tag:b", "col:z", "tag:a"], existing: [:])
+            let b = TerritorySlotClaims.claim(currentKeys: ["col:z", "tag:a", "tag:b"], existing: [:])
+            if a != b { failures.append("6e: claim depends on key order — \(a) vs \(b)") }
+        }
+
         if failures.isEmpty {
             return "TerritoryRestore PASS: \(ran)/\(ran) checks"
         } else {
@@ -119,7 +157,8 @@ enum TerritoryLayoutRestoreSelfTest {
             territories: [.init(key: "col:c1", name: "Cee"), .init(key: "tag:blue", name: "blue")],
             centers: ["col:c1": .init(x: 100, y: 0), "tag:blue": .init(x: -100, y: 0)],
             centroids: ["col:c1": [0.1, 0.2], "tag:blue": [0.3, 0.4]],
-            colorsHex: ["n1": "#1B59C2", "n2": "#E8820A"]
+            centroidBasis: nil,
+            territorySlot: ["col:c1": 0, "tag:blue": 1]
         )
     }
 }

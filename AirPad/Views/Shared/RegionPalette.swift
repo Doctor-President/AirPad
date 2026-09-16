@@ -140,6 +140,18 @@ enum RegionPalette {
         return UIColor(red: r, green: g, blue: b, alpha: 1)
     }
 
+    /// The resolved HEX for a territory SLOT — the label-pill stroke's form of
+    /// `color(isLight:slot:)`. Same slot in, paired colour out, so the pill stroke and the node
+    /// tint cannot disagree. `.current` returns the baked literal rather than round-tripping
+    /// through `UIColor`, so the shipped hex is reproduced exactly.
+    static func hex(isLight: Bool, slot: Int) -> String {
+        if activeFamily == .current {
+            let hexes = currentHex(isLight: isLight)
+            return hexes[slot % max(hexes.count, 1)]
+        }
+        return hexString(color(isLight: isLight, slot: slot))
+    }
+
     /// The active family + appearance as 12 hex strings — for the tuner's Copy export.
     static func resolvedHex(isLight: Bool) -> [String] {
         (0..<slotCount).map { hexString(color(isLight: isLight, slot: $0)) }

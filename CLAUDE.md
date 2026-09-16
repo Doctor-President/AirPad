@@ -7,7 +7,8 @@ Authoritative operating conventions for any Claude Code session in this repo. Re
 - Companion (the planning Claude) writes briefs; you implement them. T verifies on device.
 
 ## Build & run
-- **You can build.** Toolchain is stable Xcode 26.6 (GA) at `/Applications/Xcode.app`. Use a
+- **You can build.** Toolchain is stable **Xcode 27.0 (GA)** at `/Applications/Xcode.app` (iOS 27.0
+  runtime `24A434`; T moved to macOS 27 on 2026-09-16 — was Xcode 26.6). Use a
   per-command `DEVELOPER_DIR` prefix — never a global `xcode-select` flip:
   `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project AirPad.xcodeproj -scheme AirPad -destination 'generic/platform=iOS' -configuration Release build 2>&1 | grep -E "error:|BUILD"`
 - TestFlight: `scripts/testflight_upload.sh` (archives Release, exports, uploads via altool;

@@ -364,20 +364,22 @@ struct CanvasView: View {
     /// EMPTY node and reports `no-vector`. `addedID` is non-nil exactly once, so nothing ever placed
     /// it again and the content-free position was permanent.
     ///
-    /// The substrate vector arrives later (enrichment's FM pass, which finishes AFTER Done), so
-    /// "place at Done" would not have fixed this either — the trigger has to be the VECTOR'S ARRIVAL.
+    /// The card-gist vector — what `languageVector` reads — is built ~500ms after the substrate
+    /// lands (the card debounce), so "place when the substrate lands" re-drifted against a cache that
+    /// did not yet hold the node and logged `no-vector` a second time. The trigger has to be CARD
+    /// ADMISSION (`cardVectorAdmitted`), the one moment the warm cache actually holds this node.
     ///
     /// Re-placement is safe: `reblendMap` and the card-vector warm-reform already move every node
     /// this way, and `captureRestingState` re-runs at the end of every `syncNodes`, so resting
     /// positions, the annulus band and the pan-boundary disc all refresh off the new layout.
-    private func placeNodeOnVectorArrival(_ landed: String?) {
-        guard let landed, territory != nil else { return }
+    private func placeNodeOnCardVectorAdmission(_ admitted: String?) {
+        guard let admitted, territory != nil else { return }
         guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return }
         // The frozen layout never contained this node (drift writes into a LOCAL copy), so
         // `syncScene`'s `positions[newNodeID] == nil` guard is already true — passing the ID is
-        // enough to re-run drift, now with a vector to argmax on.
-        syncScene(nodes: store.visibleNodes(in: scope), newNodeID: landed)
-        store.substrateVectorLanded = nil
+        // enough to re-run drift, now with a card vector in the warm cache to argmax on.
+        syncScene(nodes: store.visibleNodes(in: scope), newNodeID: admitted)
+        store.cardVectorAdmitted = nil
     }
 
     /// Re-derive Map positions + tint live (weight or tint-toggle change — a
@@ -491,8 +493,8 @@ struct CanvasView: View {
             syncScene(nodes: store.visibleNodes(in: scope), newNodeID: addedID)
             kickOffSubstrateAutoFitIfNeeded()
         }
-        .onChange(of: store.substrateVectorLanded) { _, landed in
-            placeNodeOnVectorArrival(landed)
+        .onChange(of: store.cardVectorAdmitted) { _, admitted in
+            placeNodeOnCardVectorAdmission(admitted)
         }
         .onChange(of: spriteDisplaySignature) { _, _ in
             // Commit 3 — a sprite's rendered fields (title/summary/color) changed

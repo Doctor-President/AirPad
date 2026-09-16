@@ -299,13 +299,18 @@ final class CorpusStore {
     /// reuse the frozen formation; territory identity is a corpus-clock event.
     var territoryFormationRequest = UUID()
 
-    /// ★ A node's SUBSTRATE VECTOR just landed. The map places a new node the instant it is created
-    /// — which is BEFORE any content exists, let alone an embedding — so `driftPlacement` runs with
-    /// `no-vector` and the node keeps a content-free position permanently (there is no second drift:
-    /// `addedID` is non-nil exactly once). This carries the node ID so the canvas can place it
-    /// AGAIN, now that it has meaning. Node creation stays early on purpose (autosave, crash
-    /// recovery, sync); only the PLACEMENT moves.
-    var substrateVectorLanded: String?
+    /// ★ A node's CARD-GIST VECTOR was just ADMITTED to the map's warm cache. The map places a new
+    /// node the instant it is created — which is BEFORE any content exists, let alone an embedding —
+    /// so `driftPlacement` runs with `no-vector` and the node keeps a content-free position
+    /// permanently (there is no second drift: `addedID` is non-nil exactly once). This carries the
+    /// node ID so the canvas can place it AGAIN, now that it has meaning.
+    ///
+    /// ★★ It fires at CARD ADMISSION (`embedCardIfNeeded`), not at the substrate write. The card
+    /// vector — what the map's `languageVector` reads — is built ~500ms AFTER the substrate lands, so
+    /// a re-drift wired to the substrate write asked the cache before the card existed and always
+    /// logged `no-vector`. Node creation stays early on purpose (autosave, crash recovery, sync);
+    /// only the PLACEMENT moves.
+    var cardVectorAdmitted: String?
 
     /// Blocks that failed the quality gate during batch import.
     /// Never silently discarded — user reviews from Settings.
@@ -1910,8 +1915,17 @@ final class CorpusStore {
         // a node captured after launch was invisible to it and its re-drift reported `no-vector`.
         // Admit on write, at the one point the vector comes into existence. No-ops while the cache
         // is cold (see `admitCardVector`).
-        if let node = nodes.first(where: { $0.id == nodeID }) {
-            SubstrateLayoutService.shared.admitCardVector(vector, for: node)
+        //
+        // ★★ THE RE-DRIFT FIRES HERE, not on the substrate write. The substrate vector lands at t3
+        // (the FM pass); the CARD vector — what the map actually reads — is built at t4, after the
+        // 500ms card debounce. A re-drift wired to the substrate write asked the cache before the
+        // card existed and always logged `no-vector`. Admission is the one event that means "the map
+        // can now see this node," so it is what re-drifts. Only when the vector truly entered the
+        // warm cache (admit == true) — a cold-cache admission places nothing and the cold-start warm
+        // re-form will handle it.
+        if let node = nodes.first(where: { $0.id == nodeID }),
+           SubstrateLayoutService.shared.admitCardVector(vector, for: node) {
+            cardVectorAdmitted = nodeID
         }
     }
 
@@ -5170,7 +5184,6 @@ final class CorpusStore {
         // the FM-authored fields, with the source gates re-checked against the
         // fresh node. `.items` and every user-owned field come from the fresh read.
         guard var working = nodes.first(where: { $0.id == nodeID }) else { return nil }
-        var vectorLanded = false
         // Substrate (summary + folksonomy → the tag tiers) runs only for a FULL
         // authorship pass. A FOCUSED per-aspect regenerate (the tray's per-row "Suggest
         // another") must NOT disturb the tags, so skip it when only one aspect was asked
@@ -5268,11 +5281,6 @@ final class CorpusStore {
                 n.embeddingFailureReason = working.embeddingFailureReason
                 n.fmErrorDetail = working.fmErrorDetail
                 n.substrateContentHash = working.substrateContentHash
-                // Did this pass actually produce a vector the map can use? (Any channel will do —
-                // `languageVector` blends/falls through.) Only then is re-placement worth it.
-                vectorLanded = n.summaryEmbedding != nil
-                    || n.folksonomyEmbedding != nil
-                    || n.contextualContentEmbedding != nil
             }
             n.needsAIProcessing = false
         }
@@ -5281,9 +5289,10 @@ final class CorpusStore {
         // (summarySource `.user`, even empty, blocks the FM summary — 3876.)
         // tagsEmitted is always NO: the pendingTagSuggestions emission was
         // removed in ws-card-catalog step 1 (see the comment just below).
-        // ★ The node now has meaning — let the canvas re-place it. Published AFTER `mutateNode`, so
-        // an observer that re-reads the node sees the vector already committed.
-        if vectorLanded { substrateVectorLanded = nodeID }
+        // ★ Re-placement is NOT fired here. The map reads the CARD-gist vector, which is built ~500ms
+        // later by `embedCardIfNeeded`; the substrate vector this pass writes is a different space
+        // the map no longer reads. Re-drift fires at card admission (`cardVectorAdmitted`), the one
+        // moment the cache actually holds the node — see `embedCardIfNeeded`.
 
         if let after = nodes.first(where: { $0.id == nodeID }) {
             bug17Log.notice("WRITE node=\(nodeID, privacy: .public) summaryLen=\(after.summary.count) summarySource=\(String(describing: after.summarySource), privacy: .public) titleLen=\(after.title.count) titleSource=\(String(describing: after.titleSource), privacy: .public) tagsEmitted=NO proposals=\(after.proposals?.count ?? 0)")

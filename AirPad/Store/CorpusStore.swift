@@ -1449,12 +1449,34 @@ final class CorpusStore {
         }
     }
 
+    /// THE ENRICHMENT GATE, bound to this store's freshness key.
+    ///
+    /// ★ ONE QUESTION, TWO ASKERS. The eager pass (`scheduleEnrichment`) and Done
+    /// (`enrichIfNeeded`, called from the capture sheet) both come through here. They
+    /// used to disagree by construction — the eager pass had an inline predicate and
+    /// Done had none at all, calling `processNodeWithAI` unconditionally — which is
+    /// how Done came to redo two FM calls the eager pass had already made.
+    ///
+    /// The `moment` is the ONLY thing that differs between them, and it changes only
+    /// the substrate half. See `EnrichmentGate.Moment`.
+    func enrichmentNeeds(for node: Node, at moment: EnrichmentGate.Moment) -> EnrichmentGate.Needs {
+        let substratePresent = !((node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            || (node.folksonomy?.isEmpty ?? true))
+        return EnrichmentGate.needs(proposals: node.proposals,
+                                    titleSource: node.titleSource,
+                                    summarySource: node.summarySource,
+                                    substrateIsPresent: substratePresent,
+                                    substrateContentHash: node.substrateContentHash,
+                                    contentHash: cardContentHash(for: node),
+                                    at: moment)
+    }
+
     /// Debounced automatic enrichment for a single node. Coalesces rapid text
     /// commits (cancel + re-arm), then re-reads the node FRESH at fire time and
-    /// only enriches when it's still un-enriched (empty title = fill-empty rule)
-    /// and actually has content — so it never races the commit or overwrites an
-    /// authored/edited note. Per-node only; never corpus-wide analysis (stays
-    /// decoupled from the Analyze/idle territory pass). Quiet: no tag sheet.
+    /// only enriches when the gate says there is still work to do — so it never
+    /// races the commit or overwrites an authored/edited note. Per-node only; never
+    /// corpus-wide analysis (stays decoupled from the Analyze/idle territory pass).
+    /// Quiet: no tag sheet.
     func scheduleEnrichment(nodeID: String) {
         bug17Log.notice("SCHEDULED node=\(nodeID, privacy: .public)")
         enrichmentTasks[nodeID]?.cancel()
@@ -1471,40 +1493,37 @@ final class CorpusStore {
             // THE LEVER — Stage 1 (ws-lever.md § C4). The old single `needs`
             // boolean did TWO unrelated jobs — "this node needs authored fields"
             // and "this node needs substrate computed" — governed by different
-            // rules. Severed here so THE SENTENCE governs only the authorship half.
+            // rules. Severed so THE SENTENCE governs only the authorship half.
             //
             // ★ THE SENTENCE (the rule a user could predict, stated in code so the
             // gate can't drift from it — if the gate and the sentence ever
             // disagree, the gate is wrong):
             //   "AirPad proposes titles, summaries, and tags for anything you've
             //    left blank, and never changes what you've written."
-            // `needsAuthorship` is the "left blank" half. (The tags clause has no
-            // producer on the default path yet — ws-lever.md § THE TAG PRODUCER,
-            // its own arc — so Stage 1 proposes title + summary only; the sentence
-            // names tags because the rule, not this stage, is what it states.)
-            let needsAuthorship = title.isEmpty || summary.isEmpty
-            // Substrate computation is unconditional and NEVER user-governed
-            // (hybrid-authorship.md § SCOPING CORRECTION) — this half stays exactly
-            // the ws-card-catalog gate, only renamed. The per-field
-            // titleSource/summarySource gates inside processNodeWithAI still
-            // protect user-authored text; a fully filled node makes both false, so
-            // steady state doesn't re-fire.
-            let needsSubstrate = (node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                || (node.folksonomy?.isEmpty ?? true)
-            // Firing condition UNCHANGED — same set of nodes fire as before the
-            // split (the old `needs` was `title.isEmpty || summary.isEmpty ||
-            // substrateMissing`, exactly `needsAuthorship || needsSubstrate`).
-            let needs = needsAuthorship || needsSubstrate
-            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs && !content.isEmpty)")
-            guard needs, !content.isEmpty else {
-                print("[Enrich] skip node=\(nodeID) needs=\(needs) contentLen=\(content.count)")
+            //
+            // ★★ 2026-09-16 — the predicate MOVED to `EnrichmentGate`, and the
+            // authorship half changed meaning. It used to be `title.isEmpty ||
+            // summary.isEmpty`, which under posture `.propose` is stuck TRUE forever
+            // (the FM never writes those fields — it records an offer), so this task
+            // re-fired two FM calls at every 500 ms pause for the whole time a note
+            // was being written. "Left blank" is now read as "not yet OFFERED or
+            // ACCEPTED, for this content" — see `EnrichmentGate` for the full note.
+            // Same sentence; the gate finally asks it correctly.
+            //
+            // `.composing`: the substrate half asks only "are you MISSING?", so a
+            // note being written doesn't re-derive its substrate at every pause.
+            // Done asks the staleness question instead (`.committed`).
+            let needs = self.enrichmentNeeds(for: node, at: .composing)
+            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
+            guard needs.any, !content.isEmpty else {
+                print("[Enrich] skip node=\(nodeID) needs=\(needs.any) contentLen=\(content.count)")
                 return
             }
-            print("[Enrich] firing node=\(nodeID) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) contentLen=\(content.count)")
+            print("[Enrich] firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) contentLen=\(content.count)")
             await self.processNodeWithAI(nodeID: nodeID,
                                          suppressTagSheet: true,
-                                         needsAuthorship: needsAuthorship,
-                                         needsSubstrate: needsSubstrate)
+                                         needsAuthorship: needs.authorship,
+                                         needsSubstrate: needs.substrate)
         }
     }
 
@@ -4954,6 +4973,15 @@ final class CorpusStore {
 
         let currentTags = tags
         let aiSvc = AIService()
+        // ★ The freshness key for anything this pass produces: a hash of the content
+        // the model is actually GIVEN on this call. Captured from `node` (the entry
+        // read) BEFORE any FM work — deliberately not from the fresh re-read taken
+        // afterwards. If the user types during the multi-second FM window, the
+        // proposal that comes back genuinely describes the OLDER text, so it must be
+        // stamped with the older hash and read as stale on the next pass. Stamping
+        // the current hash would freeze a proposal that no longer matches the note.
+        // (Same key the card catalog uses — one notion of "the content moved".)
+        let promptContentHash = cardContentHash(for: node)
 
         // SB126 Stage 2 — corpus-aware tagging path. Behind a feature flag so
         // legacy processNode stays bit-identical until validation phases A–G
@@ -5087,6 +5115,7 @@ final class CorpusStore {
                n.recordProposal(kind: .title, text: result.title,
                                 currentSource: n.titleSource,
                                 sourceEmbedding: sourceEmbedding,
+                                sourceContentHash: promptContentHash,
                                 posture: posture, generatedAt: generatedAt,
                                 solicited: solicited) {
                 n.title = result.title
@@ -5096,6 +5125,7 @@ final class CorpusStore {
                n.recordProposal(kind: .summary, text: result.summary,
                                 currentSource: n.summarySource,
                                 sourceEmbedding: sourceEmbedding,
+                                sourceContentHash: promptContentHash,
                                 posture: posture, generatedAt: generatedAt,
                                 solicited: solicited) {
                 n.summary = result.summary
@@ -5127,6 +5157,7 @@ final class CorpusStore {
                 n.embeddingVersion = working.embeddingVersion
                 n.embeddingFailureReason = working.embeddingFailureReason
                 n.fmErrorDetail = working.fmErrorDetail
+                n.substrateContentHash = working.substrateContentHash
                 // Did this pass actually produce a vector the map can use? (Any channel will do —
                 // `languageVector` blends/falls through.) Only then is re-placement worth it.
                 vectorLanded = n.summaryEmbedding != nil
@@ -5446,6 +5477,11 @@ final class CorpusStore {
         let raw = extractNodeContent(node)
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         node.embeddingVersion = SubstrateService.currentEmbeddingVersion
+        // ★ Stamp the freshness key ONCE, here, before either exit — both the thin
+        // path and the full path describe exactly this content. Presence of a
+        // substrate says "there is one"; this says "it is still about THIS text",
+        // which is the question Done asks (`EnrichmentGate.Moment.committed`).
+        node.substrateContentHash = cardContentHash(for: node)
 
         // Thin content path — skip FM, but still try to embed whatever text
         // exists so similarity has at least the content channel to fall back on.

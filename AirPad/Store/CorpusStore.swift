@@ -1906,6 +1906,13 @@ final class CorpusStore {
         fresh.embeddingVersion = CardEmbeddingService.currentEmbeddingVersion
         fresh.updatedAt = Date()
         await saveCard(fresh)
+        // ★ The map's language basis is the CARD-GIST cache, and it is warmed once per session — so
+        // a node captured after launch was invisible to it and its re-drift reported `no-vector`.
+        // Admit on write, at the one point the vector comes into existence. No-ops while the cache
+        // is cold (see `admitCardVector`).
+        if let node = nodes.first(where: { $0.id == nodeID }) {
+            SubstrateLayoutService.shared.admitCardVector(vector, for: node)
+        }
     }
 
     /// Debounced per-node card write-through: refresh derivation then embed.
@@ -6351,6 +6358,9 @@ final class CorpusStore {
             }
         }
         nodes.removeAll { ids.contains($0.id) }
+        // Absence from the card cache means "excluded from language gravity", so a deleted node's
+        // vector left behind would keep voting on territory centroids.
+        SubstrateLayoutService.shared.evictCardVectors(forNodeIDs: ids)
 
         // Filter dangling NodeID references on remaining nodes. Source-node
         // `threads[]` carries meta-node IDs (set bidirectionally in pullThread);

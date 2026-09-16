@@ -99,12 +99,33 @@ struct CanvasView: View {
     }
 
     /// The ONE shade rule. Both the formation path and the drift-in path call this, so a
-    /// newly-placed node is shaded by the same rule as the neighbours it lands among.
+    /// newly-placed node is shaded by the same rule as the neighbours it lands among. The drift-in
+    /// path used to ignore `tintByRecency` and always hash, so a just-placed node's shade disagreed
+    /// with every recency-tinted node around it until the next re-form.
     private func nodeShade(_ nodeID: String, node: Node?, minD: Double, span: Double) -> Double {
         if tintByRecency, let node {
             return (node.updatedAt.timeIntervalSince1970 - minD) / span
         }
-        return Double(abs(nodeID.hashValue) % 100) / 100
+        return Self.stableFraction(nodeID)
+    }
+
+    /// A stable 0…1 from a node ID — FNV-1a over the UTF-8 bytes.
+    ///
+    /// ★ NOT `String.hashValue`. Swift seeds SipHash per PROCESS, so `abs(nodeID.hashValue) % 100`
+    /// gave a node a different shade on every launch — the same trap `TerritoryLayoutRestore
+    /// .signature` calls out for the restore key. (It was also a latent crash: `abs()` traps on
+    /// `Int.min`, which a hashValue may legitimately be.)
+    ///
+    /// FNV-1a rather than SHA-256 — `cardContentHash`'s pattern — because this runs per node per
+    /// formation and needs only to be stable and well-spread, not collision-resistant. Nothing
+    /// security- or identity-bearing depends on it; a collision costs two nodes the same shade.
+    private static func stableFraction(_ s: String) -> Double {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325          // FNV-1a offset basis
+        for byte in s.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100_0000_01b3                // FNV prime
+        }
+        return Double(hash % 1000) / 1000.0
     }
 
     /// Resolve a formation's per-node tints for the CURRENT appearance: slot → base colour, then

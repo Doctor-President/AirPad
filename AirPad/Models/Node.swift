@@ -293,6 +293,18 @@ struct Node: Codable, Identifiable, Hashable {
     /// can tune the guardrail-vs-other classifier against observed strings.
     /// Cleared on every other outcome (success, guardrail, thin, embedder).
     var fmErrorDetail: FMErrorDetail?
+    /// ★ THE SUBSTRATE FRESHNESS KEY — the content hash (`CorpusStore
+    /// .cardContentHash`, the card catalog's own key) the substrate above was last
+    /// computed against.
+    ///
+    /// Presence answers "is there a substrate?"; this answers "does it still
+    /// describe THIS text?" — a different question, and the one Done needs. Without
+    /// it a summary derived three paragraphs ago silently becomes the node's
+    /// persisted meaning, because `substrateSummary != nil` reads as "current".
+    ///
+    /// Nil for a substrate computed before this field existed: read as stale once,
+    /// re-derived, stamped. Self-healing, no migration.
+    var substrateContentHash: String?
 
     // MARK: - SB139 Stage 4 substrate layout
     //
@@ -449,6 +461,7 @@ struct Node: Codable, Identifiable, Hashable {
         case embeddingVersion = "embedding_version"
         case embeddingFailureReason = "embedding_failure_reason"
         case fmErrorDetail = "fm_error_detail"
+        case substrateContentHash = "substrate_content_hash"
         case substrateCoord2D = "substrate_coord_2d"
         case substrateLayoutVersion = "substrate_layout_version"
         case entrySchemaVersion = "entry_schema_version"
@@ -504,6 +517,7 @@ struct Node: Codable, Identifiable, Hashable {
         embeddingVersion: Int = 0,
         embeddingFailureReason: String? = nil,
         fmErrorDetail: FMErrorDetail? = nil,
+        substrateContentHash: String? = nil,
         substrateCoord2D: SubstrateCoord2D? = nil,
         substrateLayoutVersion: Int = 0,
         entrySchemaVersion: Int = 0,
@@ -552,6 +566,7 @@ struct Node: Codable, Identifiable, Hashable {
         self.embeddingVersion            = embeddingVersion
         self.embeddingFailureReason      = embeddingFailureReason
         self.fmErrorDetail               = fmErrorDetail
+        self.substrateContentHash        = substrateContentHash
         self.substrateCoord2D            = substrateCoord2D
         self.substrateLayoutVersion      = substrateLayoutVersion
         self.entrySchemaVersion          = entrySchemaVersion
@@ -607,6 +622,7 @@ extension Node {
         embeddingVersion           = try c.decodeIfPresent(Int.self,      forKey: .embeddingVersion) ?? 0
         embeddingFailureReason     = try c.decodeIfPresent(String.self,   forKey: .embeddingFailureReason)
         fmErrorDetail              = try c.decodeIfPresent(FMErrorDetail.self, forKey: .fmErrorDetail)
+        substrateContentHash       = try c.decodeIfPresent(String.self,   forKey: .substrateContentHash)
         substrateCoord2D           = try c.decodeIfPresent(SubstrateCoord2D.self, forKey: .substrateCoord2D)
         substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
         entrySchemaVersion         = try c.decodeIfPresent(Int.self,      forKey: .entrySchemaVersion) ?? 0

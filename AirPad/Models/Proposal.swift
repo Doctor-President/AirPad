@@ -56,6 +56,20 @@ struct Proposal: Codable, Equatable, Identifiable {
     /// unsolicited path (capture enrichment, scheduleEnrichment, substrate
     /// refires) leaves it false. Additive + decode-tolerant (see init(from:)).
     var solicited: Bool = false
+    /// ★ THE FRESHNESS KEY — the node's content hash (`CorpusStore.cardContentHash`,
+    /// the same key the card catalog uses) as it stood when this proposal was
+    /// generated. Without it the enrichment gate cannot tell "the model has already
+    /// offered something for this text" from "the model offered something for text
+    /// the user has since rewritten", and the only available substitute is
+    /// `title.isEmpty` — which under `.propose` is stuck true forever and cost two FM
+    /// calls per typing pause (2026-09-16).
+    ///
+    /// Deliberately the SAME key as the card's, not a second notion of fresh: two
+    /// derivations of "has the content moved" would be free to disagree.
+    ///
+    /// Optional only for decode tolerance — a proposal persisted before this field
+    /// decodes as nil, reads as stale, and is regenerated once. Self-healing.
+    var sourceContentHash: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -65,13 +79,15 @@ struct Proposal: Codable, Equatable, Identifiable {
         case sourceEmbedding = "source_embedding"
         case state
         case solicited
+        case sourceContentHash = "source_content_hash"
     }
 }
 
 extension Proposal {
-    /// Decode-tolerant (codebase norm): `solicited` is additive, so a proposal
-    /// persisted before Stage 2 F2 (no key) decodes as `false` rather than
-    /// throwing. The memberwise init and synthesized `encode(to:)` are unchanged.
+    /// Decode-tolerant (codebase norm): `solicited` and `sourceContentHash` are
+    /// additive, so a proposal persisted before Stage 2 F2 / the enrichment-gate fix
+    /// (no key) decodes as `false` / `nil` rather than throwing. The memberwise init
+    /// and synthesized `encode(to:)` are unchanged.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id              = try c.decode(UUID.self,   forKey: .id)
@@ -81,6 +97,7 @@ extension Proposal {
         sourceEmbedding = try c.decodeIfPresent([Float].self, forKey: .sourceEmbedding)
         state           = try c.decode(State.self,  forKey: .state)
         solicited       = try c.decodeIfPresent(Bool.self, forKey: .solicited) ?? false
+        sourceContentHash = try c.decodeIfPresent(String.self, forKey: .sourceContentHash)
     }
 }
 
@@ -148,10 +165,16 @@ extension Node {
     /// keeps the gate at full strength.
     ///
     /// - Returns: `true` when the caller should write the field + stamp `.model`.
+    ///
+    /// ★ `sourceContentHash` has NO DEFAULT, deliberately. A caller that forgets it
+    /// would record a proposal that `EnrichmentGate` reads as permanently stale —
+    /// re-firing the model on every pass, which is the exact defect the gate was
+    /// written to end. Making the compiler ask is cheaper than remembering.
     mutating func recordProposal(kind: Proposal.Kind,
                                  text: String,
                                  currentSource: TagSource?,
                                  sourceEmbedding: [Float]?,
+                                 sourceContentHash: String?,
                                  posture: AuthorshipPosture,
                                  generatedAt: Date,
                                  solicited: Bool = false) -> Bool {
@@ -169,7 +192,8 @@ extension Node {
                                  generatedAt: generatedAt,
                                  sourceEmbedding: sourceEmbedding,
                                  state: .fresh,
-                                 solicited: solicited))
+                                 solicited: solicited,
+                                 sourceContentHash: sourceContentHash))
             proposals = list
         }
         // ★ The WRITE is never bypassed by `solicited`: user-authored fields still

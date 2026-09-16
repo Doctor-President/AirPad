@@ -105,6 +105,7 @@
 		4F5641FAA2E71DD840D37C09 /* Proposal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFC577B59F540670E2A5588 /* Proposal.swift */; };
 		5048F5164E5E3770C115FDD7 /* HostCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8409C10F1DE36558E8D9BF5 /* HostCatalog.swift */; };
 		505E0F8BA9D6E93F476B35C0 /* LinkViewModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 770199F6D56D0EDB0BCA874A /* LinkViewModeToggle.swift */; };
+		506C1FA0D399B321F030A8E9 /* EnrichmentGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D89366B36342DF2DE6AFB965 /* EnrichmentGate.swift */; };
 		50C127660FA44B5A72487C59 /* BlobField.metal in Sources */ = {isa = PBXBuildFile; fileRef = BD12D156A4CBC12E872BDEC7 /* BlobField.metal */; };
 		50D317CEDE9F97C21ED80ECF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 194292F01A21193B880F16FA /* ContentView.swift */; };
 		50DC50BEDB156FA63FDCB05A /* CorpusIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */; };
@@ -225,6 +226,7 @@
 		AE55568CB72E75409228A893 /* HostPairingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB23955C4460CA1D6E2710E9 /* HostPairingStore.swift */; };
 		AE6FCD7A72D7A70822662310 /* OGMetadataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3366166820015E0F584466E9 /* OGMetadataService.swift */; };
 		AE9C0E76D1F909B7C3197976 /* SubstrateColoringPass.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25D6B0FB2872A820D969CD5E /* SubstrateColoringPass.swift */; };
+		AF605010C152AA3FF11486DA /* EnrichmentGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D89366B36342DF2DE6AFB965 /* EnrichmentGate.swift */; };
 		AF9E85D36F84D0F7EBD5AE5D /* TagEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D489F98FF9C10AE0D5F9A8 /* TagEditorSheet.swift */; };
 		B0413B9A6B947367B02E462E /* CardTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37F96F01949F13EC35528775 /* CardTuning.swift */; };
 		B0C29E98DF6C6DBE11E29DF1 /* SingleMediaBody.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B37326A27826C7715C130B6 /* SingleMediaBody.swift */; };
@@ -580,6 +582,7 @@
 		D78B727835739390B86DF397 /* UMAPModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPModel.swift; sourceTree = "<group>"; };
 		D80918E8E0CCC9ECFE36A664 /* UMAPSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UMAPSelfTest.swift; sourceTree = "<group>"; };
 		D86D98BB8BD1E493F884909C /* AirPad.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AirPad.icon; sourceTree = "<group>"; };
+		D89366B36342DF2DE6AFB965 /* EnrichmentGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnrichmentGate.swift; sourceTree = "<group>"; };
 		D92B43ACAA1EFEADD262281A /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		D953A7AAAC24875D5B6157C4 /* ChatTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatTypography.swift; sourceTree = "<group>"; };
 		D9792DA964AD5BC6DF0B2F6C /* EditMapSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditMapSheet.swift; sourceTree = "<group>"; };
@@ -979,6 +982,7 @@
 				ED83A2DE515939345223CDCB /* ClipboardContentRouterDiagnostic.swift */,
 				909B3DB690784E89652659ED /* Collection.swift */,
 				38A3FAF363374C7CF5B97E3B /* CorpusIndex.swift */,
+				D89366B36342DF2DE6AFB965 /* EnrichmentGate.swift */,
 				7E163AC58FD3A0154CA67BD2 /* EntryDeletionDiagnostic.swift */,
 				496C87CE26D129958AA115EF /* EntryMigration.swift */,
 				21B0049BD58E9FC905E20D61 /* EntryMigrationSelfTest.swift */,
@@ -1490,6 +1494,7 @@
 				60B79436916BF6C740B9DBCF /* DocumentViewModeToggle.swift in Sources */,
 				918876676560C61205991A10 /* EditMapSheet.swift in Sources */,
 				AD075AAA15B8DF36B4830D0D /* EmptyStateOverlay.swift in Sources */,
+				506C1FA0D399B321F030A8E9 /* EnrichmentGate.swift in Sources */,
 				920726B4D8FC354FA85D6FED /* EntryCard.swift in Sources */,
 				ABE6D49FBC9F9E8EC4D77DAB /* EntryDeletionDiagnostic.swift in Sources */,
 				92EB26DCD27BEE257F94BDB1 /* EntryMigration.swift in Sources */,
@@ -1659,6 +1664,7 @@
 				681C98F35607F79887210FD5 /* CatalogCard.swift in Sources */,
 				9427669EFA4ECACBF0439D06 /* Collection.swift in Sources */,
 				50DC50BEDB156FA63FDCB05A /* CorpusIndex.swift in Sources */,
+				AF605010C152AA3FF11486DA /* EnrichmentGate.swift in Sources */,
 				1A4B4683A0B01732DEC94DBF /* FieldDefinition.swift in Sources */,
 				C778ACC9CC63354AC17A3744 /* FieldKind.swift in Sources */,
 				E0FFC1D3012E19FD234F3751 /* FieldPreset.swift in Sources */,

@@ -86,13 +86,6 @@ final class CorpusPhysicsScene: SKScene {
     }
     private var hasRenderedFirstFrame = false
 
-    /// Fired from `update` the frame the SKView's OWN `traitCollection` flips light↔dark — a beat
-    /// before SwiftUI's `onChange(of: mapColorScheme)`, because the environment propagation lags the
-    /// UIKit trait change. CanvasView wires this to re-resolve the territory tints + label hexes for
-    /// the new appearance immediately (the "colour arrives late" fix). The argument is the NEW
-    /// `isLight`, read straight off the trait so the handler need not wait on the SwiftUI env.
-    var onAppearanceFlip: ((Bool) -> Void)?
-
     /// Apply or remove the white outline child for a single node sprite.
     /// Mirrors the `addNewcomerHalo` pattern — the outline lives as a named
     /// child node so it tracks sprite motion automatically.
@@ -1410,26 +1403,13 @@ final class CorpusPhysicsScene: SKScene {
                                                 opacity: AppearancePalette.mapGridDotOpacity(dark: dotDark))
         }
 
-        // Re-theme on appearance flip (light ↔ dark). Fires only on an actual trait change (guarded
-        // by lastAppearanceIsLight), not per frame. This reads the SKView's OWN `traitCollection` —
-        // the SAME early signal the grid dots above use — so it lands a beat BEFORE SwiftUI's
-        // `onChange(of: mapColorScheme)`. That is the "colour arrives late" fix: drive the whole
-        // colour swap from here, not from the late environment handler.
+        // Re-theme unfocused orbs when the appearance flips (light ↔ dark). Fires
+        // only on an actual trait change (guarded by lastAppearanceIsLight), not
+        // per frame — the DEBUG dial path re-themes separately via CanvasView.
         let orbIsLight = view?.traitCollection.userInterfaceStyle == .light
         if orbIsLight != lastAppearanceIsLight {
             lastAppearanceIsLight = orbIsLight
-            // Update the pushed appearance so the wash uniform (above) + `restyleUnfocusedOrbs` use
-            // the new value THIS frame; its didSet restyles the orbs' wash immediately.
-            appearanceIsLight = orbIsLight
-            // Then let CanvasView re-resolve the territory FILLS + label pill hexes for the new
-            // appearance (it owns the palette + per-node shade). Passing the trait's `orbIsLight`
-            // means it resolves the new palette without waiting on the SwiftUI env. Falls back to a
-            // bare restyle if no observer is wired (transient mount).
-            if let flip = onAppearanceFlip {
-                flip(orbIsLight)
-            } else {
-                restyleUnfocusedOrbs()
-            }
+            restyleUnfocusedOrbs()
         }
 
 

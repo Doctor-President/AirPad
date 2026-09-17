@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "definitions": [
+    { "id": "sample-def-roast", "display_name": "Roast", "kind": "text",
+      "config": { "range_enabled": false, "date_has_time": false } },
+    { "id": "sample-def-serves", "display_name": "Serves", "kind": "number",
+      "config": { "range_enabled": false, "date_has_time": false } }
+  ]
+}

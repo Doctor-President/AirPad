@@ -512,6 +512,11 @@ final class CorpusStore {
         return source.filter { childIDs.contains($0.id) }
     }
 
+    /// Brief N §2 — true when the bundled sample library is currently seeded (the
+    /// `sample_library.json` marker exists). Drives the Settings "Remove sample
+    /// library" row, which is shown only while this is true. Observable UI state.
+    var sampleLibraryPresent = false
+
     private let service = iCloudDriveService()
     private let layoutService = LayoutService()
 
@@ -806,6 +811,12 @@ final class CorpusStore {
             } else {
                 fieldDefinitions = []
             }
+            // Brief N §2 — seed the bundled sample library on a genuinely fresh,
+            // empty install (guarded inside). Runs AFTER the default collections/
+            // tags above so it MERGES into them, then refreshes the in-memory
+            // corpus — so the substrate-mean recompute + unprocessed scan below
+            // see the seeded nodes.
+            await seedSampleLibraryIfNeeded()
             #if DEBUG
             // Stage 5.1 — headless objective verification hooks (DEBUG only,
             // launch-arg gated → zero cost in normal runs). `-FieldSelfTest`
@@ -839,6 +850,13 @@ final class CorpusStore {
                 // instead of shipping quietly (the third resurrection).
                 if ProcessInfo.processInfo.arguments.contains("-TerritoryRestoreSelfTest") {
                     NSLog("[TerritoryRestoreSelfTest] %@", TerritoryLayoutRestoreSelfTest.run())
+                }
+                // SAMPLE LIBRARY (Brief N §2). Isolated end-to-end: seeds the bundle
+                // into a THROWAWAY temp dir, injects a fake user node, runs removal,
+                // and asserts the user node (and a tag it shares) survive while every
+                // seeded node/collection is gone. Never touches the real container.
+                if ProcessInfo.processInfo.arguments.contains("-SampleSeedSelfTest") {
+                    NSLog("[SampleSeedSelfTest] %@", SampleLibrarySeederSelfTest.run())
                 }
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
@@ -931,6 +949,69 @@ final class CorpusStore {
         }
         // Process any nodes that were captured by the share extension (no AI ran at capture time)
         await scanForUnprocessedNodes()
+    }
+
+    // MARK: - Sample library (Brief N §2)
+
+    /// Seed the bundled sample library on a genuinely fresh, empty install. No-op
+    /// otherwise (marker already present, or the corpus already has nodes — so an
+    /// existing user, including T's dev corpus, is never seeded over). The file
+    /// copy runs OFF the main actor (detached); afterward the in-memory corpus is
+    /// refreshed so the rest of `load()` sees the seeded nodes.
+    func seedSampleLibraryIfNeeded() async {
+        guard let root = await service.containerRootURL() else { return }
+        guard nodes.isEmpty,
+              let bundle = SampleLibrarySeeder.bundledLibraryURL(),
+              SampleLibrarySeeder.shouldSeed(containerRoot: root) else {
+            sampleLibraryPresent = SampleLibrarySeeder.markerExists(containerRoot: root)
+            return
+        }
+        let start = Date()
+        do {
+            let manifest = try await Task.detached(priority: .userInitiated) {
+                try SampleLibrarySeeder.seed(containerRoot: root, bundleRoot: bundle)
+            }.value
+            await refreshCorpusFromDisk()
+            sampleLibraryPresent = true
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            print("[SampleSeed] seeded \(manifest.nodeIDs.count) node(s), \(manifest.collectionIDs.count) collection(s) in \(ms)ms")
+        } catch {
+            print("[SampleSeed] seed error: \(error)")
+        }
+    }
+
+    /// Remove the seeded sample library — every seeded node + its collection, plus
+    /// any seeded tag/field-def/chat no SURVIVING node references. Nodes are deleted
+    /// only by recorded id, so a user's own nodes are never touched; safe after the
+    /// user has added their own notes.
+    func removeSampleLibrary() async {
+        guard let root = await service.containerRootURL() else { return }
+        do {
+            let removed = try await Task.detached(priority: .userInitiated) {
+                try SampleLibrarySeeder.remove(containerRoot: root)
+            }.value
+            await refreshCorpusFromDisk()
+            sampleLibraryPresent = SampleLibrarySeeder.markerExists(containerRoot: root)
+            if let removed { print("[SampleSeed] removed \(removed.nodeIDs.count) seeded node(s)") }
+        } catch {
+            print("[SampleSeed] remove error: \(error)")
+        }
+    }
+
+    /// Re-read nodes / tags / collections / field definitions from disk into the
+    /// live store (after a seed or removal). Chats reload lazily via ChatStore.
+    private func refreshCorpusFromDisk() async {
+        do {
+            let loaded = try await service.loadAllNodes()
+            var normalized = loaded
+            for i in normalized.indices { Self.normalizeAtomicsToFront(&normalized[i]) }
+            nodes = normalized.sorted { $0.createdAt > $1.createdAt }
+            tags = try await service.loadTags()
+            if let c = try await service.loadCollections() { collections = c }
+            fieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
+        } catch {
+            print("[SampleSeed] corpus refresh error: \(error)")
+        }
     }
 
     // MARK: - Add new nodes

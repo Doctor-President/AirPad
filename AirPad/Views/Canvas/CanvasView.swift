@@ -62,17 +62,6 @@ struct CanvasView: View {
     // #111115 dark / #F4EFE3 light (the detail-view ground). Baked (Map tuner
     // gone); colorScheme drives the live SwiftUI recompute on appearance flip.
     @Environment(\.colorScheme) private var mapColorScheme
-
-    /// ws-flip-crossfade (Brief F §2) — when on, an appearance flip CROSSFADES the orb + dot tints
-    /// over `flipCrossfadeDuration` (matching the SwiftUI ground's own Color cross-dissolve) instead
-    /// of snapping the SKView content. Toggle lives in Settings ▸ Developer (DEBUG) so T can A/B on
-    /// device — from Control Centre (the uncovered case), not `simctl` (the covered/snapshotted one).
-    /// Default on; ships as a live value (the toggle UI is DEBUG-only, like the other dev dials).
-    @AppStorage("map.flipCrossfade") private var flipCrossfadeEnabled = true
-    /// Matches the system appearance transition the SwiftUI ground rides (~0.33 s ease). Not baked as
-    /// a tunable — one constant; the toggle is on/off only, per the brief.
-    static let flipCrossfadeDuration: TimeInterval = 0.33
-
     private var mapWeights: TagTerritoryLayout.SignalWeights {
         .init(collection: wCollection, anchor: wAnchor, language: wLanguage, backlink: wBacklink)
     }
@@ -411,27 +400,13 @@ struct CanvasView: View {
     /// `restyleUnfocusedOrbs`; the grid-warp uniforms are appearance-independent. So colour is the
     /// only thing that needs an explicit push.
     private func flipMapColorsForAppearance() {
-        // Non-Map / cold (no frozen formation): just flip the treatment; the didSet restyle re-tints
-        // every orb through `bubbleColor`'s substrate/neighborhood fallback — nothing to push.
-        guard let frozen = territory else {
-            scene.appearanceIsLight = (mapColorScheme == .light)
-            return
-        }
-        let newColors = nodeTints(frozen)   // resolved for the NEW appearance (mapColorScheme already flipped)
-        // ws-flip-crossfade (Brief F §2) — the SwiftUI ground cross-dissolves its Color fill on the
-        // colorScheme change; the SKView content used to snap. When the toggle is on, hand the new
-        // tints to the scene as a CROSSFADE (it captures the current colours, flips the treatment, and
-        // lerps fills + dots home over `flipCrossfadeDuration`) instead of snapping. `beginAppearance-
-        // Crossfade` sets `appearanceIsLight` itself, AFTER capturing the "from" — so do NOT pre-set it
-        // here (that would snap the fills and poison the capture).
-        if flipCrossfadeEnabled {
-            scene.beginAppearanceCrossfade(newOrbColors: newColors,
-                                           toLight: mapColorScheme == .light,
-                                           duration: Self.flipCrossfadeDuration)
-        } else {
-            scene.appearanceIsLight = (mapColorScheme == .light)
-            scene.applyTerritoryColors(newColors)
-        }
+        scene.appearanceIsLight = (mapColorScheme == .light)
+        // Non-Map / cold (no frozen formation): the didSet restyle above already re-tinted every orb
+        // through `bubbleColor`'s substrate/neighborhood fallback — nothing territory-specific to push.
+        guard let frozen = territory else { return }
+        // Tints: sets the dict THEN restyles against the new palette (the ordering that fixes the
+        // late wash). Same tints `syncScene` would compute for this frozen formation.
+        scene.applyTerritoryColors(nodeTints(frozen))
         // Label pill hexes are PER APPEARANCE and live in the SwiftUI overlay via `setTerritoryLabels`,
         // which only `syncScene` used to rebuild — so the colour-only path must re-push them. Built
         // identically to `syncScene`'s tag-anchored branch with no drifted node (a flip adds none).

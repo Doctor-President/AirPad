@@ -680,12 +680,16 @@ final class CorpusPhysicsScene: SKScene {
         // ★ item 2: orbs OVERLAP because the physics bodies are STATIC (isDynamic=false → no collision
         // resolution at all); separation is ONLY this PBD, and its gap was fixed. Dialing it wider
         // pushes amplified orbs apart (the real lever — a body-radius sync would do nothing here).
-        // ★ Brief J §1 — gap scales with the orbs (see AnnulusTuning.orbGapK). `rad` already carries
-        // zoom + amplification, so a bigger amplified orb now claims a proportionally bigger gap
-        // instead of the fixed `breathingGap` that vanished when orbs grew.
+        // ★ Brief K §1 — k is now 0 (see AnnulusTuning), so `gap` collapses to the flat `gapFloor` and
+        // minDist = radA + radB + floor. The `max(…,radA/radB × gapK)` form is left intact so a non-zero
+        // k still works if re-enabled. `dev.orbRelaxOff` (DEBUG) drops passes to 0 for an A/B look.
         let gapK = AnnulusTuning.orbGapK
         let gapFloor = AnnulusTuning.orbGapFloor
-        for _ in 0..<max(0, AnnulusTuning.relaxPasses) {
+        var relaxPasses = max(0, AnnulusTuning.relaxPasses)
+        #if DEBUG
+        if UserDefaults.standard.bool(forKey: "dev.orbRelaxOff") { relaxPasses = 0 }
+        #endif
+        for _ in 0..<relaxPasses {
             for i in 0..<ids.count {
                 for j in (i + 1)..<ids.count {
                     let a = ids[i], b = ids[j]
@@ -3249,30 +3253,31 @@ final class CorpusPhysicsScene: SKScene {
         static let radius: CGFloat = 300
         static let breathingGap: CGFloat = 8.923   // T device-final 2026-09-14 (`separation: orbGap`),
                                                   // see Ops/reference/tuner-state-accepted.md (was 30)
-        // ★ Brief J §1 — the separation gap now scales with the ORBS it separates, not a fixed
-        // absolute. `breathingGap` (above) was a constant ADDED to `radA+radB`, so it was a big
-        // fraction of small (zoomed-out) orbs and negligible for big (amplified, zoomed-in) ones —
-        // it effectively vanished at exactly the zoom where orbs are largest and overlap worst.
-        // Now: gap = max(orbGapFloor, max(radA, radB) × orbGapK), so a big amplified orb gets a
-        // proportionally bigger gap. `max(radA,radB)` (not `radA+radB`) because the overlap is driven
-        // by the LARGEST orb in the pair (the amplified one); summing would double-count two big orbs.
-        // FEEL VALUE — T dials `orbGapK` on device (DEBUG override key `dev.orbGapK`); this default is
-        // deliberately generous (visible) so he dials DOWN. The floor keeps a minimum gap for the
-        // smallest band pair so nothing touches. NEITHER is baked-final yet.
-        // Measured (Brief J, 209-node corpus, camPos origin): today's fixed 8.923 gap = 0.19× the
-        // MEDIAN mid-zoom orb (~46pt) but only 0.096× the biggest amplified orb (~92pt) — that
-        // halving IS why the big orb overlaps. So k≈0.19 reproduces today for the median; the default
-        // sits a touch above so separation is visibly restored and T dials to taste (range 0…0.5).
-        static let orbGapKDefault: CGFloat = 0.30
-        static let orbGapFloor: CGFloat = 6.0       // absolute min gap (pt), for the smallest band pair
-        static var orbGapK: CGFloat {
+        // ★ Brief K §1 — Brief J's premise was WRONG (Companion's, not the impl's): I argued the fixed
+        // gap VANISHED at high zoom and that caused overlap. The opposite held on device — T dialled
+        // `orbGapK` to 0 and it looked MUCH better: LESS push, not more. The PBD shoves orbs off the
+        // RESTING positions the territory layout deliberately computed, and displacement cascades over
+        // 8 passes across up to 56 orbs, so a bigger gap = more churn away from the arrangement. The
+        // annulus amplification alone already gives the visual separation; the push was fighting the
+        // layout. So the multiplicative `max(radA,radB) × orbGapK` term is now switched OFF (k = 0) and
+        // the only live gap is the flat FLOOR. gap = max(orbGapFloor, max(radA,radB) × 0) = orbGapFloor,
+        // so minDist = radA + radB + floor.
+        // `orbGapK` is KEPT in the code (as a 0 term, dial removed) so §2's bake can delete both cleanly
+        // once T lands a floor, and so a non-zero k can be compared once more without churn if he asks.
+        // FEEL VALUE — T now dials the FLOOR on device (DEBUG override key `dev.orbGapFloor`, range 0…12).
+        // 0 is a valid answer (PBD then resolves only genuine intersection, adds nothing on top). NOT
+        // baked-final yet. `dev.orbRelaxOff` (DEBUG) turns the whole PBD off for an A/B against floor=0.
+        static let orbGapKDefault: CGFloat = 0.0    // Brief K: was 0.30; T's answer was k = 0 (dial removed)
+        static var orbGapK: CGFloat { orbGapKDefault }   // dial removed — kept as a 0 term for a clean bake
+        static let orbGapFloorDefault: CGFloat = 6.0     // T dials DOWN from here (range 0…12); 0 is valid
+        static var orbGapFloor: CGFloat {
             #if DEBUG
-            // Live dial: Settings ▸ Developer ▸ "Orb separation gap ×radius" writes `dev.orbGapK`.
-            if UserDefaults.standard.object(forKey: "dev.orbGapK") != nil {
-                return CGFloat(UserDefaults.standard.double(forKey: "dev.orbGapK"))
+            // Live dial: Settings ▸ Developer ▸ "Orb separation floor (pt)" writes `dev.orbGapFloor`.
+            if UserDefaults.standard.object(forKey: "dev.orbGapFloor") != nil {
+                return CGFloat(UserDefaults.standard.double(forKey: "dev.orbGapFloor"))
             }
             #endif
-            return orbGapKDefault
+            return orbGapFloorDefault
         }
         static let relaxPasses: Int = 8
         static let relaxLerp: CGFloat = 0.22       // damped approach to the relaxed target

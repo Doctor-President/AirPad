@@ -45,6 +45,7 @@ struct SettingsView: View {
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
+    @State private var showRemoveSampleConfirmation = false
 
     // Local on-device model (ws-local-model Stage 1). Settings surface + plumbing only —
     // this does NOT change any generation path yet (AIService / ModelRouter untouched).
@@ -811,6 +812,38 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("This will permanently delete all nodes and cannot be undone.")
+            }
+
+            // Brief N §2 — shown ONLY while the bundled sample library is seeded.
+            // Removes every seeded node + its collection; leaves the user's own
+            // notes untouched (removal is keyed to the recorded seed manifest).
+            if store.sampleLibraryPresent {
+                Button {
+                    showRemoveSampleConfirmation = true
+                } label: {
+                    HStack {
+                        Image(systemName: "sparkles.rectangle.stack")
+                        Text("Remove sample library")
+                    }
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(AppearancePalette.ink.opacity(0.07))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .confirmationDialog(
+                    "Remove sample library?",
+                    isPresented: $showRemoveSampleConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Remove", role: .destructive) {
+                        Task { await store.removeSampleLibrary() }
+                    }
+                } message: {
+                    Text("Removes the bundled sample notes and their collection. Your own notes are not affected.")
+                }
             }
         }
     }

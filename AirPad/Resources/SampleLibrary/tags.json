@@ -1,0 +1,5 @@
+[
+  { "id": "AA000000-0000-4000-8000-000000000001", "name": "coffee", "colorHex": "#E8820A", "createdAt": "2026-06-01T09:00:00Z", "useCount": 2, "isCanvasAnchor": true },
+  { "id": "AA000000-0000-4000-8000-000000000002", "name": "recipe", "colorHex": "#1B59C2", "createdAt": "2026-06-01T09:00:00Z", "useCount": 2, "isCanvasAnchor": false },
+  { "id": "AA000000-0000-4000-8000-000000000003", "name": "idea", "colorHex": "#00BFFF", "createdAt": "2026-06-01T09:00:00Z", "useCount": 1, "isCanvasAnchor": false }
+]

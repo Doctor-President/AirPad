@@ -29,6 +29,15 @@ actor iCloudDriveService {
            trySetupFieldFixtureScratch() {
             return
         }
+        // Brief N §2 — demo the sample-library seed against a THROWAWAY scratch
+        // container that NEVER touches the real iCloud corpus. The scratch starts
+        // empty, so the normal seed path in `CorpusStore.load()` fires and the app
+        // runs against the seeded sample. It PERSISTS across relaunch (so the
+        // marker / Remove / no-re-seed cycle is real); delete the app to reset.
+        if ProcessInfo.processInfo.arguments.contains("-SampleSeedDemo"),
+           trySetupSampleDemoScratch() {
+            return
+        }
         #endif
         if await trySetupICloud() { return }
         trySetupLocalFallback()
@@ -44,6 +53,27 @@ actor iCloudDriveService {
             if FileManager.default.fileExists(atPath: root.path) {
                 try FileManager.default.removeItem(at: root)
             }
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("nodes"),
+                withIntermediateDirectories: true
+            )
+            rootURL = root
+            isAvailable = true
+            usingLocalFallback = true
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Brief N §2 — throwaway scratch container for `-SampleSeedDemo`. Unlike the
+    /// field-fixture scratch, it is NOT wiped each launch: the sample seeds once
+    /// (empty first run), then the marker gates re-seeding on relaunch, so the full
+    /// seed → Remove → no-re-seed cycle is demonstrable. Never touches iCloud.
+    private func trySetupSampleDemoScratch() -> Bool {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
+        let root = caches.appendingPathComponent("AirPadSampleDemoScratch")
+        do {
             try FileManager.default.createDirectory(
                 at: root.appendingPathComponent("nodes"),
                 withIntermediateDirectories: true
@@ -98,6 +128,10 @@ actor iCloudDriveService {
             isAvailable = false
         }
     }
+
+    /// The resolved container root (nil before `setup()`). Exposed for
+    /// `SampleLibrarySeeder`, which operates on explicit URLs so it stays testable.
+    func containerRootURL() -> URL? { rootURL }
 
     // MARK: - Nodes
 

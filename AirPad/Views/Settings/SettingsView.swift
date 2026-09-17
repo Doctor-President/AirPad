@@ -21,6 +21,12 @@ struct SettingsView: View {
 
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
+    // ★ Brief J §1 — DIAL: orb separation gap as a fraction of the larger orb's radius. Same key
+    // AnnulusTuning.orbGapK reads under DEBUG. Default = AnnulusTuning.orbGapKDefault (0.30).
+    // TEMP dial surface — removable in one commit once T lands a value.
+    @AppStorage("dev.orbGapK") private var devOrbGapK: Double = 0.30
+    // ★ Brief J §2 — one-shot "Copy all tuner state" result (keys copied), TEMP.
+    @State private var tunerExportStatus = ""
 
     // Librarian c7 — standing system-prompt prefix injected on every Librarian
     // query. Same key LibrarianState reads, so edits here take effect on the
@@ -630,6 +636,27 @@ struct SettingsView: View {
             .tint(.orange)
             .padding(.horizontal, 16)
 
+            // ★ Brief J §1 — DIAL: orb separation gap ×radius. Higher = more space between amplified
+            // orbs when zoomed in. Default 0.30 (deliberately generous — dial DOWN to taste).
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(format: "Orb separation gap ×radius: %.3f", devOrbGapK))
+                    .font(.caption2).foregroundStyle(.orange.opacity(0.6))
+                Slider(value: $devOrbGapK, in: 0...0.5).tint(.orange)
+                Button("Reset gap to default (0.30)") { devOrbGapK = 0.30 }
+                    .font(.caption2).foregroundStyle(.orange.opacity(0.5))
+            }
+            .padding(.horizontal, 16)
+
+            // ★ Brief J §2 — one-shot export of every DIALED tuner key (present in UserDefaults) to the
+            // pasteboard, so T can paste his device-dialed values back for the bake. Values only.
+            Button {
+                tunerExportStatus = SettingsView.copyAllTunerState()
+            } label: {
+                Text(tunerExportStatus.isEmpty ? "Copy all tuner state → clipboard" : tunerExportStatus)
+                    .font(.caption2).foregroundStyle(.orange.opacity(0.6))
+            }
+            .padding(.horizontal, 16)
+
             // SB139 Stage 1 — hidden long-press opens the substrate dev
             // inspect view. Label is faint on purpose; this surface is for
             // Thomas debugging the substrate, not for end users.
@@ -655,6 +682,24 @@ struct SettingsView: View {
             }
         }
         #endif
+    }
+
+    /// ★ Brief J §2 — export every DIALED tuner key (present in UserDefaults) to the pasteboard.
+    /// Values only — no node content. Keys NOT present are still at their code seed default. This is
+    /// the Phase-1 export for the bake; nothing is baked here. TEMP — removable in one commit.
+    static func copyAllTunerState() -> String {
+        let prefixes = ["sf.", "lever.shimmer.", "coverflow.", "card.", "tile."]
+        let all = UserDefaults.standard.dictionaryRepresentation()
+        let keys = all.keys
+            .filter { key in prefixes.contains(where: { key.hasPrefix($0) }) || key == "dev.orbGapK" }
+            .sorted()
+        var lines = ["===== AirPad TUNER — DIALED STATE (device UserDefaults) =====",
+                     "(keys NOT listed are still at their code seed default)"]
+        for k in keys { lines.append("\(k) = \(String(describing: all[k] ?? ""))") }
+        lines.append("count=\(keys.count)")
+        lines.append("===== END =====")
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        return "Copied \(keys.count) dialed keys to clipboard"
     }
     #endif
 

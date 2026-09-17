@@ -739,6 +739,14 @@ struct CanvasView: View {
         ZStack(alignment: .bottomTrailing) {
             AppearancePalette.mapBackground(dark: mapColorScheme == .dark)
                 .ignoresSafeArea()
+                // ★ SYNCHRONISED SNAP (Brief H). The SpriteKit content (orbs, dots, labels' ink)
+                // snaps its appearance imperatively; SwiftUI would otherwise cross-dissolve THIS
+                // Color fill under the system appearance transition, giving the "dissolving ground
+                // vs snapping content" mismatch T saw. Suppress the ground's implicit fade so ground
+                // and content land on one appearance together. Scoped to `mapColorScheme` — this is
+                // the ONLY appearance-driven animation we disable, and ONLY on the Map ground; Card
+                // and List (pure SwiftUI) keep fading correctly. See ws-ios-polish (2026-09-16).
+                .animation(nil, value: mapColorScheme)
 
             SpriteView(
                 scene: scene,

@@ -21,11 +21,6 @@ struct SettingsView: View {
 
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
-    // ★ Brief K §1 — the orbGapK ×radius dial is retired (T's answer was k=0). The FLOOR (pt) is now
-    // the only live gap value (`AnnulusTuning.orbGapFloor` reads this key under DEBUG); `dev.orbRelaxOff`
-    // A/Bs the whole PBD off against floor=0. TEMP dial surfaces — removable in one commit once baked.
-    @AppStorage("dev.orbGapFloor") private var devOrbGapFloor: Double = 6.0
-    @AppStorage("dev.orbRelaxOff") private var devOrbRelaxOff: Bool = false
     // ★ Brief J §2 — one-shot "Copy all tuner state" result (keys copied), TEMP.
     @State private var tunerExportStatus = ""
 
@@ -637,26 +632,9 @@ struct SettingsView: View {
             .tint(.orange)
             .padding(.horizontal, 16)
 
-            // ★ Brief K §1 — DIAL the FLOOR (pt). T dialled the old ×radius gap to 0 (less push looked
-            // better), so the multiplicative term is off and this flat floor is the only live gap. 0 is
-            // a valid answer (PBD then resolves only genuine intersection). Default 6 — dial DOWN; 0…12.
-            VStack(alignment: .leading, spacing: 4) {
-                Text(String(format: "Orb separation floor: %.1f pt", devOrbGapFloor))
-                    .font(.caption2).foregroundStyle(.orange.opacity(0.6))
-                Slider(value: $devOrbGapFloor, in: 0...12).tint(.orange)
-                Button("Reset floor to default (6)") { devOrbGapFloor = 6.0 }
-                    .font(.caption2).foregroundStyle(.orange.opacity(0.5))
-            }
-            .padding(.horizontal, 16)
-
-            // ★ Brief K §1 — A/B: turn the PBD relaxation entirely OFF (relaxPasses = 0) and compare
-            // against floor = 0. If indistinguishable, the relaxation may be doing nothing T wants.
-            Toggle(isOn: $devOrbRelaxOff) {
-                Text("Orb relaxation OFF (A/B — no push at all)")
-                    .font(.caption2).foregroundStyle(.orange.opacity(0.6))
-            }
-            .tint(.orange)
-            .padding(.horizontal, 16)
+            // ★ Brief L §1 — orb-separation dials retired: T ruled floor = 6. The value is baked into
+            // `AnnulusTuning.breathingGap` and the ×radius term is deleted; the sliders/toggle are gone
+            // and their persisted keys are purged in AirPadApp.
 
             // ★ Brief K §2 — one-shot export of EVERY app-domain UserDefaults key (not a prefix
             // allow-list — that can't find a key we didn't anticipate). Values only. T pastes it back.

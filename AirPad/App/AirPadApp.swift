@@ -22,18 +22,26 @@ struct AirPadApp: App {
         Self.purgeRetiredDevTunerDefaults()
     }
 
-    /// One-shot cleanup of retired persisted state (bake, 2026-09-15). Every value these keys
-    /// carried is a literal in source now — or, for `graze.*`, was never read by anything at all —
-    /// but a device that upgrades in place (rather than reinstalling) would keep them forever.
-    /// Runs once, then records a marker. ★ Safe to delete this method any time after V1 has shipped.
+    /// One-shot cleanup of retired persisted state (bake). Every value these keys carried is a literal
+    /// in source now — or, for `graze.*`, was never read by anything at all — but a device that upgrades
+    /// in place (rather than reinstalling) would keep them forever. Runs once per dated marker, so a new
+    /// date re-sweeps once more. ★ Safe to delete this method any time after V1 has shipped.
     private static func purgeRetiredDevTunerDefaults() {
-        let marker = "devTunerDefaultsPurged.2026-09-15"
+        // Bumped 2026-09-17 (Brief L): re-sweep to drop the orb-gap dials + `map.flipCrossfade`, which
+        // persist on devices that ran the earlier builds (the 2026-09-15 marker was already set there).
+        let marker = "devTunerDefaultsPurged.2026-09-17"
         let d = UserDefaults.standard
         guard !d.bool(forKey: marker) else { return }
+        // Exact keys from reverted/deleted work (Brief H crossfade + Brief L orb-gap dials).
+        let exactKeys: Set<String> = [
+            "map.flipCrossfade",
+            "dev.orbGapFloor", "dev.orbGapK", "dev.orbRelaxOff",
+        ]
         for key in d.dictionaryRepresentation().keys
         where key.hasPrefix("blobTuner.") || key.hasPrefix("PaletteTuner.")
             // `graze.*` — the five dials whose sliders wrote values nothing ever read.
-            || key.hasPrefix("graze.") {
+            || key.hasPrefix("graze.")
+            || exactKeys.contains(key) {
             d.removeObject(forKey: key)
         }
         d.set(true, forKey: marker)

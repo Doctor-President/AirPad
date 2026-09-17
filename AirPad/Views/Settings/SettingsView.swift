@@ -658,8 +658,8 @@ struct SettingsView: View {
             .tint(.orange)
             .padding(.horizontal, 16)
 
-            // ★ Brief J §2 — one-shot export of every DIALED tuner key (present in UserDefaults) to the
-            // pasteboard, so T can paste his device-dialed values back for the bake. Values only.
+            // ★ Brief K §2 — one-shot export of EVERY app-domain UserDefaults key (not a prefix
+            // allow-list — that can't find a key we didn't anticipate). Values only. T pastes it back.
             Button {
                 tunerExportStatus = SettingsView.copyAllTunerState()
             } label: {
@@ -695,22 +695,22 @@ struct SettingsView: View {
         #endif
     }
 
-    /// ★ Brief J §2 — export every DIALED tuner key (present in UserDefaults) to the pasteboard.
-    /// Values only — no node content. Keys NOT present are still at their code seed default. This is
-    /// the Phase-1 export for the bake; nothing is baked here. TEMP — removable in one commit.
+    /// ★ Brief K §2 — export EVERY app-domain UserDefaults key (excluding Apple's NS*/Apple*/com.apple.*
+    /// system keys) to the pasteboard. A prefix allow-list can't surface a key we didn't anticipate —
+    /// which is exactly the `count=1` result we're chasing — so dump the whole domain. Values only, no
+    /// node content (UserDefaults holds config/dials, not corpus prose). TEMP — removable in one commit.
     static func copyAllTunerState() -> String {
-        let prefixes = ["sf.", "lever.shimmer.", "coverflow.", "card.", "tile."]
         let all = UserDefaults.standard.dictionaryRepresentation()
         let keys = all.keys
-            .filter { key in prefixes.contains(where: { key.hasPrefix($0) }) || key == "dev.orbGapK" }
+            .filter { k in !(k.hasPrefix("NS") || k.hasPrefix("Apple") || k.hasPrefix("com.apple.")) }
             .sorted()
-        var lines = ["===== AirPad TUNER — DIALED STATE (device UserDefaults) =====",
+        var lines = ["===== AirPad TUNER — DIALED STATE (all app UserDefaults keys) =====",
                      "(keys NOT listed are still at their code seed default)"]
         for k in keys { lines.append("\(k) = \(String(describing: all[k] ?? ""))") }
         lines.append("count=\(keys.count)")
         lines.append("===== END =====")
         UIPasteboard.general.string = lines.joined(separator: "\n")
-        return "Copied \(keys.count) dialed keys to clipboard"
+        return "Copied \(keys.count) keys to clipboard"
     }
     #endif
 

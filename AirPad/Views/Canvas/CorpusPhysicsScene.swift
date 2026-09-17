@@ -760,6 +760,48 @@ final class CorpusPhysicsScene: SKScene {
         restyleUnfocusedOrbs()
     }
 
+    /// ws-flip-crossfade (Brief F §2) — begin a colour crossfade to `newOrbColors` (the new-appearance
+    /// territory tints) + the new grid-dot colour, over `duration`, instead of snapping. Captures the
+    /// CURRENT colours as the "from" BEFORE flipping the treatment (so the fade starts at the old
+    /// look), commits the new colours as the resting state, and lets `update` lerp fills + dots home.
+    /// `duration <= 0` falls back to a snap. See `AppearanceCrossfade`.
+    func beginAppearanceCrossfade(newOrbColors: [String: UIColor], toLight: Bool, duration: TimeInterval) {
+        guard duration > 0, !nodeSprites.isEmpty else {
+            territoryColors = newOrbColors
+            appearanceIsLight = toLight
+            applyTerritoryColors(newOrbColors)
+            return
+        }
+        // FROM = current fills, captured before any restyle sets them to the new appearance.
+        let metaByID = Dictionary(currentNodes.map { ($0.id, $0.isMeta) }, uniquingKeysWith: { a, _ in a })
+        var fromOrb: [String: vector_float4] = [:]
+        var toOrb: [String: vector_float4] = [:]
+        for (id, sprite) in nodeSprites {
+            let from = sprite.value(forAttributeNamed: "a_node_color")?.vectorFloat4Value ?? vector_float4(1, 1, 1, 1)
+            fromOrb[id] = from
+            if let target = newOrbColors[id] {
+                let alpha: CGFloat = (metaByID[id] ?? false) ? 0.55 : 1.0
+                var to = Self.rgbaVec(target.withAlphaComponent(alpha))
+                to.w = from.w   // alpha does not change on an appearance flip — keep the orb's own
+                toOrb[id] = to
+            } else {
+                toOrb[id] = from   // no new target → hold the current fill
+            }
+        }
+        // Dots: from = current appearance, to = the new one.
+        let fromDark = !currentIsLight
+        let fRGB = AppearancePalette.mapGridDotRGB(dark: fromDark)
+        let tRGB = AppearancePalette.mapGridDotRGB(dark: !toLight)
+        // Commit the new colours as the resting state + flip the treatment (stroke/wash snap here).
+        territoryColors = newOrbColors
+        appearanceIsLight = toLight
+        appearanceCrossfade = AppearanceCrossfade(
+            start: nil, duration: duration,
+            fromOrb: fromOrb, toOrb: toOrb,
+            fromDot: vector_float4(fRGB.r, fRGB.g, fRGB.b, AppearancePalette.mapGridDotOpacity(dark: fromDark)),
+            toDot: vector_float4(tRGB.r, tRGB.g, tRGB.b, AppearancePalette.mapGridDotOpacity(dark: !toLight)))
+    }
+
     /// Designed, distinct territory palette (colorblind-considered qualitative set; hex literals so
     /// it's verifiable per house rule). Assigned to territories by anchor order; the label pill
     /// stroke and member tint share the same entry so colour + name always pair.
@@ -1211,6 +1253,25 @@ final class CorpusPhysicsScene: SKScene {
     /// until the first tick (which forces an initial apply once the SKView trait
     /// is available; a no-op if no sprites exist yet — `makeShape` themes those).
     private var lastAppearanceIsLight: Bool? = nil
+
+    /// ws-flip-crossfade (Brief F §2) — an in-flight appearance-flip colour crossfade, or nil.
+    /// Interpolates each orb's `a_node_color` and the grid-dot colour from the PRE-flip appearance
+    /// to the new one over `duration`, driven per-frame in `update`, so the SKView content changes
+    /// on the same clock as the SwiftUI ground (which cross-dissolves its `Color` fill under the
+    /// system appearance transition) instead of snapping. Gated by CanvasView's `map.flipCrossfade`
+    /// toggle. NOTE: stroke/wash/treatment snap (they flip at begin), and the dark value boost
+    /// (`u_dark_val`) mutes the orb-fill fade going TO dark — see the ws-ios-polish post-V1 shade
+    /// note — so the DOTS carry the crossfade in both directions and the orb FILL mainly going-to-light.
+    private struct AppearanceCrossfade {
+        var start: TimeInterval?          // nil until the first update tick (full duration from first rendered frame)
+        var duration: TimeInterval
+        var fromOrb: [String: vector_float4]
+        var toOrb: [String: vector_float4]
+        var fromDot: vector_float4        // (r, g, b, opacity)
+        var toDot: vector_float4
+    }
+    private var appearanceCrossfade: AppearanceCrossfade?
+
     /// The most recent graze focal node, kept around through
     /// disengaging so syncFocalToCanvasState can continue bridging its
     /// shrinking position and diameter to the SwiftUI gradient overlay while
@@ -1410,6 +1471,29 @@ final class CorpusPhysicsScene: SKScene {
         if orbIsLight != lastAppearanceIsLight {
             lastAppearanceIsLight = orbIsLight
             restyleUnfocusedOrbs()
+        }
+
+        // ws-flip-crossfade (Brief F §2) — lerp orb fills + dot colour from the pre-flip appearance
+        // to the new one, so the SKView content cross-dissolves on the ground's clock. Overrides the
+        // per-frame dot set above (runs after it) and the fill set by the retheme/restyle above.
+        if var cf = appearanceCrossfade {
+            if cf.start == nil { cf.start = currentTime }          // full duration from the first rendered frame
+            let p = min(1.0, max(0.0, (currentTime - (cf.start ?? currentTime)) / cf.duration))
+            let t = Float(smoothstepD(0.0, 1.0, Double(p)))         // easeInOut, matching the ground's curve
+            for (id, sprite) in nodeSprites {
+                guard let f = cf.fromOrb[id], let to = cf.toOrb[id] else { continue }
+                sprite.setValue(SKAttributeValue(vectorFloat4: f + (to - f) * t), forAttribute: "a_node_color")
+            }
+            if let grid = gridNode {
+                let d = cf.fromDot + (cf.toDot - cf.fromDot) * t
+                BackgroundGridNode.setDotAppearance(grid, r: d.x, g: d.y, b: d.z, opacity: d.w)
+            }
+            if p >= 1.0 {
+                appearanceCrossfade = nil
+                restyleUnfocusedOrbs()      // land exactly on the resolved colours (also fixes stroke/wash)
+            } else {
+                appearanceCrossfade = cf    // persist the lazily-initialised start
+            }
         }
 
 

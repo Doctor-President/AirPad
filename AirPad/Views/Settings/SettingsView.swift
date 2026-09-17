@@ -21,6 +21,8 @@ struct SettingsView: View {
 
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
+    // ws-flip-crossfade (Brief F §2) — same key CanvasView reads. A/B the appearance-flip crossfade.
+    @AppStorage("map.flipCrossfade") private var mapFlipCrossfade = true
 
     // Librarian c7 — standing system-prompt prefix injected on every Librarian
     // query. Same key LibrarianState reads, so edits here take effect on the
@@ -624,6 +626,14 @@ struct SettingsView: View {
 
             Toggle(isOn: $useCorpusAwareTagging) {
                 Text("SB126 Stage 2 — corpus-aware tagging")
+                    .font(.caption2)
+                    .foregroundStyle(.orange.opacity(0.5))
+            }
+            .tint(.orange)
+            .padding(.horizontal, 16)
+
+            Toggle(isOn: $mapFlipCrossfade) {
+                Text("Map — crossfade tints on appearance flip")
                     .font(.caption2)
                     .foregroundStyle(.orange.opacity(0.5))
             }

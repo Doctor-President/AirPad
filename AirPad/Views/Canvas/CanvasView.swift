@@ -131,8 +131,11 @@ struct CanvasView: View {
     /// Resolve a formation's per-node tints for the CURRENT appearance: slot → base colour, then
     /// the frozen shade. Called at every push rather than stored, which is what an appearance flip
     /// needs (`FrozenTerritory`).
-    private func nodeTints(_ frozen: FrozenTerritory) -> [String: UIColor] {
-        let isLight = mapColorScheme != .dark
+    /// `isLight` is passed EXPLICITLY (not read from `mapColorScheme`) so the appearance-flip path
+    /// can resolve the NEW palette from the SKView's own trait a beat before SwiftUI's environment
+    /// catches up — the fix for the "colour arrives late" beat. SwiftUI-driven callers pass the
+    /// current `mapColorScheme != .dark`.
+    private func nodeTints(_ frozen: FrozenTerritory, isLight: Bool) -> [String: UIColor] {
         var out: [String: UIColor] = [:]
         out.reserveCapacity(frozen.shades.count)
         for (nodeID, key) in frozen.layout.nodeTerritory {
@@ -358,7 +361,7 @@ struct CanvasView: View {
             guard let frozen = territory else { return }
             // SwiftUI-space → SpriteKit (y-up), same as `reblendMap`.
             scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-            scene.applyTerritoryColors(nodeTints(frozen))
+            scene.applyTerritoryColors(nodeTints(frozen, isLight: mapColorScheme != .dark))
         }
     }
 
@@ -399,20 +402,26 @@ struct CanvasView: View {
     /// wash COMPOSITE immediately; non-territory orbs are re-tinted by the didSet's own
     /// `restyleUnfocusedOrbs`; the grid-warp uniforms are appearance-independent. So colour is the
     /// only thing that needs an explicit push.
-    private func flipMapColorsForAppearance() {
-        scene.appearanceIsLight = (mapColorScheme == .light)
+    /// `isLight` is passed in (not read from `mapColorScheme`) so this can be driven from the
+    /// SCENE's own trait detection — a beat before SwiftUI's `colorScheme` environment updates. That
+    /// is the "colour arrives late" fix: the SwiftUI `onChange(of: mapColorScheme)` handler fires
+    /// AFTER the SKView already sees the new trait (the grid dots, which read `view.traitCollection`
+    /// directly, flip immediately; the orbs used to wait on the SwiftUI-pushed value). See
+    /// `CorpusPhysicsScene.onAppearanceFlip`.
+    private func flipMapColorsForAppearance(isLight: Bool) {
+        scene.appearanceIsLight = isLight
         // Non-Map / cold (no frozen formation): the didSet restyle above already re-tinted every orb
         // through `bubbleColor`'s substrate/neighborhood fallback — nothing territory-specific to push.
         guard let frozen = territory else { return }
         // Tints: sets the dict THEN restyles against the new palette (the ordering that fixes the
         // late wash). Same tints `syncScene` would compute for this frozen formation.
-        scene.applyTerritoryColors(nodeTints(frozen))
+        scene.applyTerritoryColors(nodeTints(frozen, isLight: isLight))
         // Label pill hexes are PER APPEARANCE and live in the SwiftUI overlay via `setTerritoryLabels`,
         // which only `syncScene` used to rebuild — so the colour-only path must re-push them. Built
         // identically to `syncScene`'s tag-anchored branch with no drifted node (a flip adds none).
         var membersByKey: [String: [String]] = [:]
         for (nodeID, key) in frozen.layout.nodeTerritory { membersByKey[key, default: []].append(nodeID) }
-        let keyHex = territoryHexMap(frozen.slots)
+        let keyHex = territoryHexMap(frozen.slots, isLight: isLight)
         let labels = frozen.layout.territories.compactMap { t -> CorpusPhysicsScene.TerritoryLabel? in
             guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
             return CorpusPhysicsScene.TerritoryLabel(
@@ -431,7 +440,7 @@ struct CanvasView: View {
         formTerritories(nodes: nodes, trigger: "reblend")
         guard let frozen = territory else { return }
         scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-        scene.applyTerritoryColors(nodeTints(frozen))
+        scene.applyTerritoryColors(nodeTints(frozen, isLight: mapColorScheme != .dark))
     }
 
     /// Shift a base color within its hue family — brightness (+ a touch of
@@ -463,16 +472,19 @@ struct CanvasView: View {
             // Live theme flip → push the authoritative colorScheme into the scene
             // (the orb-desync fix). Placed on `body` — a light chunk — so the
             // observer chains stay within the type-checker's budget.
-            .onChange(of: mapColorScheme) { _, _ in
+            .onChange(of: mapColorScheme) { _, newScheme in
                 // ★ A flip is a COLOUR-ONLY event — tints, label-pill hexes, and the wash — nothing
-                // geometric. It used to route through `syncScene`, which ran `animateSpriteIfNeeded`
-                // on every sprite: any orb the viewport annulus was holding off-rest got eased back
-                // toward rest over 1.5s while the band loop pulled it out again (the ~1s "pucker"),
-                // and the wash landed a beat late (the didSet restyle ran before the tint dict
-                // updated, so `washHueShade` used the OLD hue). `flipMapColorsForAppearance` re-pushes
-                // colour without `syncNodes`, so no geometry animation fires and the wash is computed
-                // against the new palette in one pass.
-                flipMapColorsForAppearance()
+                // geometric. `flipMapColorsForAppearance` re-pushes colour without `syncNodes`, so no
+                // geometry animation fires and the wash is computed against the new palette in one pass.
+                //
+                // This SwiftUI handler is now the FALLBACK, not the primary trigger: the scene drives
+                // the swap earlier from its own trait detection (`scene.onAppearanceFlip`, wired in
+                // `onAppear`), because `onChange(of: mapColorScheme)` fires only AFTER SwiftUI
+                // propagates the environment — a beat behind the SKView's `traitCollection`, which was
+                // the "colour arrives late" report. When the scene already handled the flip this
+                // re-pushes the identical palette (a no-op); it still covers the first appearance set
+                // and any case where the scene path hasn't fired.
+                flipMapColorsForAppearance(isLight: newScheme == .light)
             }
     }
 
@@ -497,6 +509,12 @@ struct CanvasView: View {
             scene.onFirstRender = {
                 withAnimation(.easeOut(duration: 0.2)) { mapContentRevealed = true }
             }
+            // ★ EARLY appearance flip — the scene detects the trait change on its own SKView (the
+            // grid dots already flip there, immediately) and calls this a beat BEFORE SwiftUI's
+            // `onChange(of: mapColorScheme)`. Resolving the tints/labels off the passed `isLight`
+            // (not the still-stale environment) is what makes the colour swap land WITH the trait
+            // rather than after it — the "colour arrives late" fix. `onChange` remains as a fallback.
+            scene.onAppearanceFlip = { isLight in flipMapColorsForAppearance(isLight: isLight) }
             scene.canvasState = canvasState
             scene.selection = selection
             store.canvasState = canvasState
@@ -589,7 +607,7 @@ struct CanvasView: View {
                 if let frozen = territory {
                     // SwiftUI-space → SpriteKit (y-up).
                     scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-                    scene.applyTerritoryColors(nodeTints(frozen))
+                    scene.applyTerritoryColors(nodeTints(frozen, isLight: mapColorScheme != .dark))
                 }
             }
         }
@@ -1192,8 +1210,9 @@ struct CanvasView: View {
     /// Territory key → palette HEX, resolved from the SAME slot the tint uses, so the pill stroke
     /// and the node tint cannot drift apart. Hex literal for the label overlay, per the colourblind
     /// house rule.
-    private func territoryHexMap(_ slots: [String: Int]) -> [String: String] {
-        let isLight = mapColorScheme != .dark
+    /// `isLight` explicit for the same reason as `nodeTints` — the flip path resolves the new-palette
+    /// pill hexes off the early trait, not the late `mapColorScheme`.
+    private func territoryHexMap(_ slots: [String: Int], isLight: Bool) -> [String: String] {
         return slots.mapValues { RegionPalette.hex(isLight: isLight, slot: $0) }
     }
 
@@ -1250,7 +1269,7 @@ struct CanvasView: View {
             if let frozen = territory {
                 let layout = frozen.layout
                 var positions = layout.positions
-                var colors = nodeTints(frozen)
+                var colors = nodeTints(frozen, isLight: mapColorScheme != .dark)
                 var membersByKey: [String: [String]] = [:]
                 for (nodeID, key) in layout.nodeTerritory {
                     membersByKey[key, default: []].append(nodeID)
@@ -1288,7 +1307,7 @@ struct CanvasView: View {
                 }
                 layoutPositions = positions
                 territoryColors = colors
-                let keyHex = territoryHexMap(frozen.slots)   // flat family anchor — label pill stroke
+                let keyHex = territoryHexMap(frozen.slots, isLight: mapColorScheme != .dark)   // flat family anchor — label pill stroke
                 territoryLabels = layout.territories.compactMap { t in
                     guard let members = membersByKey[t.key], !members.isEmpty else { return nil }
                     return CorpusPhysicsScene.TerritoryLabel(

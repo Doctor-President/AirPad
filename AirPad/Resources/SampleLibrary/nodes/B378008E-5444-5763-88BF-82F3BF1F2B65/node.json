@@ -19,8 +19,18 @@
   "journal_date": "2026-07-12T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "The Bolex camera arrives and sits unused so far",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "film"
+  ],
   "threads": [],
   "title": "bought it",
   "updated_at": "2026-07-12T21:41:00Z"

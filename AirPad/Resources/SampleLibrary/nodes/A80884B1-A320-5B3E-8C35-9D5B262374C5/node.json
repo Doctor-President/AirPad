@@ -17,8 +17,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "Chemex strips oil for a cleaner cup; V60 keeps body, and body wins",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
   "threads": [],
   "title": "V60 vs Chemex, finally settled (for me)",
   "updated_at": "2025-12-14T10:15:00Z"

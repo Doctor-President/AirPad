@@ -19,8 +19,14 @@
   "journal_date": "2025-11-18T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Sister confirms their father is coming to Thanksgiving",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
   "threads": [],
   "title": "Mara called about Thanksgiving",
   "updated_at": "2025-11-18T22:14:00Z"

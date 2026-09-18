@@ -79,8 +79,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "The city's default espresso blend, fine but coasting on 2008",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "chicago"
+  ],
   "threads": [],
   "title": "Intelligentsia — Black Cat",
   "updated_at": "2026-01-22T13:20:00Z"

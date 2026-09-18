@@ -19,8 +19,14 @@
   "journal_date": "2026-01-26T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Records the retort she wishes she had given her sister",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
   "threads": [],
   "title": "what I should have said",
   "updated_at": "2026-01-26T21:33:00Z"

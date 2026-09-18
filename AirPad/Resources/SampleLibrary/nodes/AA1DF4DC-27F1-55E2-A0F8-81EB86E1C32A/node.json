@@ -19,8 +19,14 @@
   "journal_date": "2025-11-27T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Skipped Thanksgiving by claiming to be sick",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
   "threads": [],
   "title": "The Thursday problem",
   "updated_at": "2025-11-27T21:47:00Z"

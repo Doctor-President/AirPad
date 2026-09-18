@@ -19,8 +19,14 @@
   "journal_date": "2026-01-03T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "A list of New Year intentions for work, French, and film",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
   "threads": [],
   "title": "things I want to be true this year",
   "updated_at": "2026-01-03T22:52:00Z"

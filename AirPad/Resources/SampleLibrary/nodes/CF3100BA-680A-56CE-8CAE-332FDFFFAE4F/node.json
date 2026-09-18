@@ -17,8 +17,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "The word travelled Arabic to English, once meaning wine",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "language"
+  ],
   "threads": [],
   "title": "qahwa",
   "updated_at": "2026-05-18T16:34:00Z"

@@ -19,8 +19,14 @@
   "journal_date": "2026-06-20T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Marks fourteen years of estrangement and names the feeling as grief",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
   "threads": [],
   "title": "Fourteen years",
   "updated_at": "2026-06-20T22:49:00Z"

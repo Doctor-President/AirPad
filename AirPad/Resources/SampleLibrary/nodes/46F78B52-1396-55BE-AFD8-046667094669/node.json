@@ -31,8 +31,22 @@
   ],
   "needs_ai_processing": false,
   "summary": "Yemen to Cairo and Istanbul, the coffeehouse travelling with the drink",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    },
+    "origin": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "origin",
+    "archives"
+  ],
   "threads": [],
   "title": "How coffee got out of Ethiopia",
   "updated_at": "2026-02-03T15:48:00Z"

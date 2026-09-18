@@ -166,6 +166,11 @@ struct CanvasView: View {
         /// Signature of the inputs this layout was formed for. Lets the launch-time
         /// warm+reform early-out when a restored card layout already matches.
         var signature: String = ""
+        /// True for a cold-start PROVISIONAL form: an anchor-basis layout placed synchronously (before
+        /// the card-vector cache is warm) so the FIRST FRAME is a real territory map instead of the ±60
+        /// fallback blob. Deliberately kept OUT of `alreadyCurrent` so `warmCardVectorsThenReform` still
+        /// re-forms on the card basis and persists over it. Never persisted (a cold form isn't).
+        var provisional: Bool = false
     }
 
     /// Deliberately (re)form territories and cache the result. The ONLY place
@@ -174,7 +179,7 @@ struct CanvasView: View {
     /// on-screen behavior can be reconciled (the old `[Layout]` line was blind
     /// to this path). A CARD-basis result is persisted so the next launch restores
     /// it instead of re-forming + animating (the map-relayout fix).
-    private func formTerritories(nodes: [Node], trigger: String) {
+    private func formTerritories(nodes: [Node], trigger: String, provisional: Bool = false) {
         guard !store.canvasAnchorTags.isEmpty || hasUserCollections else {
             territory = nil
             print("[Territory] No territories (no anchors / user collections) — trigger: \(trigger)")
@@ -195,7 +200,7 @@ struct CanvasView: View {
         let basis: LayoutBasis = .card
         let signature = territorySignature(nodes: nodes, basis: basis)
         territory = FrozenTerritory(layout: layout, slots: slots, shades: shades,
-                                    basis: basis, signature: signature)
+                                    basis: basis, signature: signature, provisional: provisional)
         print("[Territory] Forming \(layout.territories.count) territories — trigger: \(trigger), basis: \(basis.rawValue)")
         // Persist only when the CARD CACHE IS WARM. A form on a cold cache (the impossible-timing
         // edge — Analyze/reblend in the first launch frames before the preload lands) is language-
@@ -325,7 +330,10 @@ struct CanvasView: View {
         // live inputs — `syncScene` restored the persisted snapshot, or a deliberate reform already
         // ran — the map is correct and must NOT be re-laid-out (the 94e5a48 regression).
         let alreadyCurrent = territory.map {
-            $0.basis == .card && $0.signature == territorySignature(nodes: nodes, basis: .card)
+            // A PROVISIONAL cold-start form (anchor basis, card cache cold) is never "current" —
+            // it exists only to avoid the first-frame blob, and MUST be replaced by the card-basis
+            // re-form below so the map gains language gravity and gets persisted.
+            !$0.provisional && $0.basis == .card && $0.signature == territorySignature(nodes: nodes, basis: .card)
         } ?? false
         Task { @MainActor in
             // ★ THE BASIS IS WARMED UNCONDITIONALLY — the early return above governs whether to
@@ -586,11 +594,15 @@ struct CanvasView: View {
                 scene.applyTerritoryColors([:])
             } else {
                 formTerritories(nodes: nodes, trigger: "anchor-change")
-                if let frozen = territory {
-                    // SwiftUI-space → SpriteKit (y-up).
-                    scene.rearrangeToPositions(frozen.layout.positions.mapValues { CGPoint(x: $0.x, y: -$0.y) })
-                    scene.applyTerritoryColors(nodeTints(frozen))
-                }
+                // ★ Route through syncScene (not just rearrangeToPositions) so the freshly-formed
+                // territory becomes the DURABLE `positionMap` + resting positions. This is the anchors-
+                // load-after-mount path (a cold launch: anchors arrive from disk/iCloud a beat after the
+                // canvas appears, firing this onChange). rearrangeToPositions only runs a transient
+                // SKAction move — it leaves each node's RESTING home at the ±60 fallback, so the map
+                // eased back into the overlapping blob until Analyze forced a full resync. syncScene
+                // reads the now-non-nil `territory`, writes real positions into `positionMap`, and
+                // refreshes resting positions — the layout sticks with no user action.
+                syncScene(nodes: nodes)
             }
         }
         // Tag-anchored Map — re-blend live as the gravity weights (and tint
@@ -1245,15 +1257,19 @@ struct CanvasView: View {
                     // no longer matches): form once, synchronously, on the card basis — instant, no
                     // flash, no throwaway legacy pass.
                     formTerritories(nodes: nodes, trigger: "cold-start")
+                } else {
+                    // ★ LAUNCH-BLOCKER FIX (2026-09-17): cache COLD, genuine cold launch, no restorable
+                    // snapshot AND no `canvas_layout.json` (fresh install / seeded sample). The old code
+                    // formed NOTHING here and fell through to `store.canvasLayout.positions` — which is
+                    // EMPTY on a fresh install, so every node took the ±60 random fallback in
+                    // `storedPosition` and the whole Map came up as one overlapping blob until the user
+                    // pressed Analyze. Instead, form a PROVISIONAL anchor-basis layout NOW (synchronous,
+                    // card vectors not required — TagTerritoryLayout places by anchor/collection), so the
+                    // first frame is a real territory map. Marked `provisional` so the async
+                    // `warmCardVectorsThenReform` still re-forms on the card basis and persists over it;
+                    // formTerritories does NOT persist a cold-cache form, so this placeholder never sticks.
+                    formTerritories(nodes: nodes, trigger: "cold-start-provisional", provisional: true)
                 }
-                // ★ ELSE — cache COLD (a genuine cold launch with no restorable snapshot): do NOT
-                // form here. A legacy cold-start form produced a second, throwaway layout on the
-                // WRONG basis that `warmCardVectorsThenReform` then reorganised on top of — two
-                // formations, a visible reshuffle, and a misleading `basis=legacy` / `NOT CARD` line.
-                // Leaving `territory` nil renders the provisional canonical layout (the `else` below)
-                // until `warmCardVectorsThenReform` (onAppear) AWAITS the preload and forms ONCE, on
-                // the card basis. That is why the cold-start path now "waits for the preload before
-                // forming": the wait lives in the async warm, and the sync path simply doesn't form.
             }
             if let frozen = territory {
                 let layout = frozen.layout

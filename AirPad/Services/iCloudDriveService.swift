@@ -80,7 +80,12 @@ actor iCloudDriveService {
             )
             rootURL = root
             isAvailable = true
-            usingLocalFallback = true
+            // Report NOT-fallback so `-SampleSeedDemo` is a faithful first-run PREVIEW: the
+            // "iCloud unavailable — saving locally" banner is driven by `usingLocalFallback`, and a
+            // real first-run user WITH iCloud never sees it (trySetupICloud sets it false). The scratch
+            // is local, but flagging it would show a banner a real iCloud user won't. Cosmetic only —
+            // `usingLocalFallback`/`iCloudUnavailable` gate nothing but that banner + a debug print.
+            usingLocalFallback = false
             return true
         } catch {
             return false

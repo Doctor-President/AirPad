@@ -16,7 +16,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Naming a common experience is what lets you pick it up on purpose.",
+  "summary": "Naming a common experience is what lets one pick it up on purpose.",
   "tag_sources": {
     "french": {
       "source": "user"

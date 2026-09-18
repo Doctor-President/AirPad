@@ -16,7 +16,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Fourth viewing, now camera-literate, sees only where to put it",
+  "summary": "Fourth viewing, now camera-literate: only where to put it",
   "tag_sources": {
     "film": {
       "source": "user"

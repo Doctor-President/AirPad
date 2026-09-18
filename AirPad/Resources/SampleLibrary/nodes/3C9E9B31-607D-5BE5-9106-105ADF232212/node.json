@@ -39,7 +39,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Whitman read a few lines at a time on a slow desk afternoon",
+  "summary": "Whitman, a few lines at a time, on a slow desk afternoon",
   "tag_sources": {
     "poetry": {
       "source": "user"

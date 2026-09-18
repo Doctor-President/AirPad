@@ -69,7 +69,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Colleague who trained her and quietly covers her shifts",
+  "summary": "Colleague who did the training and quietly covers the desk",
   "tag_sources": {
     "library": {
       "source": "user"

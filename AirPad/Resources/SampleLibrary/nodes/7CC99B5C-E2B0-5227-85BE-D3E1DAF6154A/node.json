@@ -16,7 +16,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Makes the soup from memory now; the link kept out of loyalty",
+  "summary": "The soup made from memory now; the link kept out of loyalty",
   "tag_sources": {
     "cooking": {
       "source": "user"

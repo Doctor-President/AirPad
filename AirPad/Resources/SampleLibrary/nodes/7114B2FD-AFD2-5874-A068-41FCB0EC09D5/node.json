@@ -16,7 +16,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Compares negative area, cost and grain; stock is the real constraint",
+  "summary": "Negative area, cost and grain compared; stock is the real constraint",
   "tag_sources": {
     "film": {
       "source": "user"

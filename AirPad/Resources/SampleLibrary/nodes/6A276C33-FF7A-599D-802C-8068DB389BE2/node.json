@@ -16,7 +16,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Watching many tiny things do their job well, unsupervised",
+  "summary": "Many tiny things doing their jobs well, unsupervised",
   "tag_sources": {
     "games": {
       "source": "user"

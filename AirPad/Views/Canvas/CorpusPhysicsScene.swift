@@ -3561,10 +3561,23 @@ final class CorpusPhysicsScene: SKScene {
             // SpriteKit uses y-up from center. Flip Y.
             return CGPoint(x: pos.x, y: -pos.y)
         }
-        return CGPoint(
-            x: CGFloat.random(in: -60...60),
-            y: CGFloat.random(in: -60...60)
-        )
+        // No layout yet (cold start, before territories have formed). Return a DETERMINISTIC,
+        // spread-out position — NOT the old ±60 random, which piled every node within 60pt of the
+        // origin as a single overlapping blob (the 2026-09-17 launch-blocker first-run experience).
+        // FNV-1a over the id, then a splitmix64 finalizer so the bits fully avalanche (raw FNV left
+        // sequential ids — e.g. the sample library's — clustered on an arc); high bits → angle, mid
+        // bits → sqrt-radius over a 40…300pt disc. Even, non-overlapping scatter (min pairwise
+        // spacing ~120pt for adjacent ids) that the real territory form then gently eases off.
+        // Deterministic (not per-process-random) so a node never jitters between syncScene passes.
+        var h: UInt64 = 14695981039346656037   // FNV-1a offset basis
+        for byte in nodeID.utf8 { h = (h ^ UInt64(byte)) &* 1099511628211 }
+        var z = h
+        z = (z ^ (z >> 30)) &* 0xbf58476d1ce4e5b9
+        z = (z ^ (z >> 27)) &* 0x94d049bb133111eb
+        z = z ^ (z >> 31)
+        let angle = Double((z >> 40) & 0xFFFFFF) / 16777215.0 * 2 * .pi
+        let radius = 40 + sqrt(Double((z >> 16) & 0xFFFFFF) / 16777215.0) * 260
+        return CGPoint(x: CGFloat(cos(angle) * radius), y: CGFloat(sin(angle) * radius))
     }
 
     // MARK: - Touch handling

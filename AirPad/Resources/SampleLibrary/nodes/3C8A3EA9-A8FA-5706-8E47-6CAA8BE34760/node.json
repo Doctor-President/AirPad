@@ -19,8 +19,18 @@
   "journal_date": "2026-09-14T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Rereading the year, she contrasts the camera choice with the father one",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "family"
+  ],
   "threads": [],
   "title": "A year of this",
   "updated_at": "2026-09-14T23:29:00Z"

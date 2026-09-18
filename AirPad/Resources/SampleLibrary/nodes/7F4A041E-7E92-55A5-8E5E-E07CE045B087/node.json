@@ -19,8 +19,22 @@
   "journal_date": "2026-07-30T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "After months of theory she finally loads film into the camera",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "film",
+    "kuleshov"
+  ],
   "threads": [],
   "title": "On finally making the thing instead of reading about it",
   "updated_at": "2026-07-30T23:08:00Z"

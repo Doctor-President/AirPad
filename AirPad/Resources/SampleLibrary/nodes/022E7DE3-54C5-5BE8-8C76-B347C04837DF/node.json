@@ -17,8 +17,14 @@
   ],
   "needs_ai_processing": false,
   "summary": "Retiring the scale after the scoop became calibrated by hand",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee"
+  ],
   "threads": [],
   "title": "I stopped weighing",
   "updated_at": "2026-08-28T21:31:00Z"

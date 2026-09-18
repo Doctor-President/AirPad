@@ -19,8 +19,18 @@
   "journal_date": "2026-05-24T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Examines whether wanting a camera is escape or genuine desire",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "money": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "money"
+  ],
   "threads": [],
   "title": "wanting it",
   "updated_at": "2026-05-24T23:15:00Z"

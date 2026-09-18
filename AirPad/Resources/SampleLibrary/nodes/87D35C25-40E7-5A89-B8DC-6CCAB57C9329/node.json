@@ -19,8 +19,14 @@
   "journal_date": "2026-02-14T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "A friend's remark reframes cooking badly as still transformative",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
   "threads": [],
   "title": "Joaquin on cooking as commonplace alchemy",
   "updated_at": "2026-02-14T23:24:00Z"

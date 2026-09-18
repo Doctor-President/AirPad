@@ -79,8 +79,14 @@
   ],
   "needs_ai_processing": false,
   "summary": "Natural Guji from Metric that finally lands the blueberry note",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee"
+  ],
   "threads": [],
   "title": "Metric — Ethiopia Guji",
   "updated_at": "2025-11-30T08:42:00Z"

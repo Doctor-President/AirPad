@@ -17,8 +17,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "Grind uniformity dominates every other brewing variable",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
   "threads": [],
   "title": "grind is the whole thing",
   "updated_at": "2026-02-19T09:26:00Z"

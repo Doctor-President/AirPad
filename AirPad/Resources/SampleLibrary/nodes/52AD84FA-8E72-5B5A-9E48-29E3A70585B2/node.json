@@ -19,8 +19,22 @@
   "journal_date": "2026-08-19T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Photographable projects get funded while reading quietly loses budget",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "budget",
+    "access"
+  ],
   "threads": [],
   "title": "What the MakerSpace means",
   "updated_at": "2026-08-19T23:27:00Z"

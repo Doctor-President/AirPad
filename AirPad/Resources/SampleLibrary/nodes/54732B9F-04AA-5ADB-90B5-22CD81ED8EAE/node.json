@@ -27,21 +27,35 @@
       "type": "text"
     },
     {
+      "created_at": "2026-07-13T19:47:00Z",
+      "id": "4994BFC7-CB39-5D57-B733-CD6C5B506DF2",
+      "link_items": [
+        {
+          "captured_at": "2026-07-13T19:47:00Z",
+          "id": "642002A3-75D1-57EC-8B4F-5E9A211A08F4",
+          "site_name": "YouTube",
+          "title": "Loading the Bolex H16 — Sprocket&Claw — Ep 002",
+          "url": "https://www.youtube.com/watch?v=k500f_DSXJo"
+        }
+      ],
+      "type": "link"
+    },
+    {
       "content": "Loaded it right. Wrote the steps down myself because the\nvideo will not be there forever: open gate, thread under the sprocket\nguard, loop of about eight frames above and below, engage both sprocket\nteeth, close gate, wind two turns, check the counter moves.",
       "created_at": "2026-07-14T15:33:00Z",
-      "id": "4994BFC7-CB39-5D57-B733-CD6C5B506DF2",
+      "id": "7822FF60-F74F-58DC-9D81-CF18F6E49506",
       "type": "text"
     },
     {
       "content": "First roll back from the lab. Twenty-two of twenty-eight\nseconds are usable. The window one works.",
       "created_at": "2026-08-02T12:41:00Z",
-      "id": "7822FF60-F74F-58DC-9D81-CF18F6E49506",
+      "id": "1EC47D1E-7F5F-5AAD-BA70-A6EBBA80AA19",
       "type": "text"
     },
     {
       "content": "Second roll loaded in under a minute without looking at\nanything.",
       "created_at": "2026-09-05T10:09:00Z",
-      "id": "1EC47D1E-7F5F-5AAD-BA70-A6EBBA80AA19",
+      "id": "DC38AD3C-6BC0-533E-9FFF-D009EF5F591F",
       "type": "text"
     }
   ],

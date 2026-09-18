@@ -19,8 +19,18 @@
   "journal_date": "2026-05-09T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Tallies ways to free up four hundred dollars a month to make things",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "money": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "money",
+    "projects"
+  ],
   "threads": [],
   "title": "money, honestly",
   "updated_at": "2026-05-09T22:26:00Z"

@@ -17,8 +17,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "Time-not-heat extraction yields a different, low-acid drink",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
   "threads": [],
   "title": "cold brew isn't cold coffee",
   "updated_at": "2026-06-09T18:47:00Z"

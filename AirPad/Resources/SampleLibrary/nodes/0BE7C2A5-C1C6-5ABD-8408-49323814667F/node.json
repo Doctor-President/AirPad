@@ -19,8 +19,14 @@
   "journal_date": "2025-12-21T00:00:00Z",
   "needs_ai_processing": false,
   "summary": "Imagines calling her father but the vision goes blank",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
   "threads": [],
   "title": "What I keep not doing",
   "updated_at": "2025-12-21T23:05:00Z"

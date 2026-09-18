@@ -17,8 +17,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "Solvent-free decaf using a saturated green-coffee extract",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
   "threads": [],
   "title": "swiss water",
   "updated_at": "2026-01-08T11:37:00Z"

@@ -17,8 +17,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "Minerals drive extraction; Chicago's moderately hard tap helps",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
   "threads": [],
   "title": "Water is ~98% of it",
   "updated_at": "2026-03-21T14:12:00Z"

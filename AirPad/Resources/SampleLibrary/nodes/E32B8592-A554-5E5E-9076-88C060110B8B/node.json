@@ -79,8 +79,18 @@
   ],
   "needs_ai_processing": false,
   "summary": "The forgiving everyday re-order, chocolatey and grind-agnostic",
-  "tag_sources": {},
-  "tags": [],
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "chicago"
+  ],
   "threads": [],
   "title": "Passion House — Blue Collar",
   "updated_at": "2026-04-30T09:53:00Z"

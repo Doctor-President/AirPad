@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-09-01T14:44:00Z",
+  "entry_schema_version": 4,
+  "id": "2A0CB290-B8EF-5ACF-A084-D47809BBD103",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Six weeks, six films, a short reading each. Pitch it as film literacy so\nit survives a budget conversation.\n\nThe actual argument — that horror is the genre that looks at what people\navoid, and that a public library is exactly where that should be free —\ndoes not go in the proposal.",
+      "created_at": "2026-09-01T14:44:00Z",
+      "id": "3F453231-510A-5874-B44E-B63A3B1DB838",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Six weeks of six horror films, pitched as film literacy to survive the budget",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "horror",
+    "access",
+    "projects"
+  ],
+  "threads": [],
+  "title": "A proposal for a horror reading group at the branch",
+  "updated_at": "2026-09-01T14:44:00Z"
+}

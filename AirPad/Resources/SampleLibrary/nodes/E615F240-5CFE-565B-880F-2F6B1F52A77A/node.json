@@ -1,0 +1,87 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-03-02T17:05:00Z",
+  "entry_schema_version": 4,
+  "id": "E615F240-5CFE-565B-880F-2F6B1F52A77A",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-03-02T17:05:00Z",
+      "id": "4132FDE7-31FC-5016-A0E5-CE1BDD916CFC",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "created_at": "2026-03-02T17:05:00Z",
+      "field": {
+        "definition_id": "fd_roaster",
+        "value": {
+          "text": {
+            "_0": "Dark Matter"
+          }
+        }
+      },
+      "id": "E564544F-FD4C-5162-AD93-3A82ADE6545F",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-02T17:05:00Z",
+      "field": {
+        "definition_id": "fd_origin",
+        "value": {
+          "text": {
+            "_0": "Blend"
+          }
+        }
+      },
+      "id": "E544F86E-CBC5-57E3-BF89-60748CB04F7F",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-02T17:05:00Z",
+      "field": {
+        "definition_id": "fd_process",
+        "value": {
+          "text": {
+            "_0": "Washed"
+          }
+        }
+      },
+      "id": "2CB691A0-F634-536C-BF8A-E975EB101839",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-02T17:05:00Z",
+      "field": {
+        "definition_id": "fd_roast_date",
+        "value": {
+          "date": {
+            "_0": "2026-02-25T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "E8504128-27F9-5E40-9C45-D513FD37C7EF",
+      "type": "field"
+    },
+    {
+      "content": "Yes it's a silly name. Yes I bought it partly for the name. It's a good\ndark roast that doesn't taste like an apology for being a dark roast.",
+      "created_at": "2026-03-02T17:05:00Z",
+      "id": "74217310-57A3-59B8-AC5A-22CBC6C0A285",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A dark roast that isn't apologetic, bought partly for the name",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Dark Matter — Unicorn Blood",
+  "updated_at": "2026-03-02T17:05:00Z"
+}

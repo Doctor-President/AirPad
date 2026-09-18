@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-08-10T22:05:00Z",
+  "entry_schema_version": 4,
+  "id": "DCF84241-AFD7-560E-A19A-81FF7DCB54B8",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Every good change I've made in two years is some version of \"later than you\nthink.\" Salt at the end. Lemon at the end. Heat off before the cheese. The\nkitchen keeps teaching me the same lesson in different clothes.",
+      "created_at": "2026-08-10T22:05:00Z",
+      "id": "923F0610-518E-53D7-ABC5-F57764AA540B",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Every good kitchen change is a version of later than you think",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "salt at the end, always",
+  "updated_at": "2026-08-10T22:05:00Z"
+}

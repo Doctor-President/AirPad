@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2025-11-27T10:42:00Z",
+  "entry_schema_version": 4,
+  "id": "70569E07-D666-5449-9CC8-F5F88212FCD1",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Started reading about how the biblical canon got fixed and immediately\nhit the actual question: somebody chose. There was a period where it was\ngenuinely open and then there wasn't.\n\nI want to know what the meeting was like.",
+      "created_at": "2025-11-27T10:42:00Z",
+      "id": "E041F9CA-4F57-5A9C-ADFD-8D3B0AF31C34",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Realising the biblical canon was chosen by someone, at some point",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives"
+  ],
+  "threads": [],
+  "title": "how did they decide?",
+  "updated_at": "2025-11-27T10:42:00Z"
+}

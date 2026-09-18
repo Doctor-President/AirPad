@@ -1,0 +1,54 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2025-12-12T20:15:00Z",
+  "entry_schema_version": 4,
+  "id": "7732375C-EA09-5319-8E02-4B72917DC278",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2025-12-12T20:15:00Z",
+      "id": "7CDA731F-1894-5A34-970A-2A300F288FFE",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "content": "The governess might be inventing all of it, and the book never lets you\nsettle which — that's the whole machine, and it still works at 120 years.",
+      "created_at": "2025-12-12T20:15:00Z",
+      "id": "63C93328-E825-57FE-B68B-AC0C49703145",
+      "type": "text"
+    },
+    {
+      "created_at": "2025-12-12T20:15:00Z",
+      "id": "E20FE9C6-C7D0-5426-B59E-204744A44957",
+      "link_items": [
+        {
+          "captured_at": "2025-12-12T20:15:00Z",
+          "id": "9F04AC77-A801-5F39-9DCA-119346AF37F0",
+          "site_name": "Project Gutenberg",
+          "title": "The Turn of the Screw (Henry James)",
+          "url": "https://www.gutenberg.org/ebooks/209"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Henry James ghost story whose unresolvable ambiguity still holds at 120 years",
+  "tag_sources": {
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "horror"
+  ],
+  "threads": [],
+  "title": "The Turn of the Screw",
+  "updated_at": "2025-12-12T20:15:00Z"
+}

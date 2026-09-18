@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-02-24T16:41:00Z",
+  "entry_schema_version": 4,
+  "id": "9DEBF18D-A63B-54D4-B601-C87FA6976A9E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Hidden. Not false — *hidden*. The word for \"not in the canon\" started as\na word about access.",
+      "created_at": "2026-02-24T16:41:00Z",
+      "id": "309523AF-ED3A-583F-A62F-2E3D0CC59234",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The word for non-canonical originally meant hidden, not false",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "language"
+  ],
+  "threads": [],
+  "title": "what \"apocryphal\" actually means",
+  "updated_at": "2026-02-24T16:41:00Z"
+}

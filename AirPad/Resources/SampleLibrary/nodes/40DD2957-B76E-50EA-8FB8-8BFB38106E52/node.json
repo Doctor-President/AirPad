@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2025-12-16T21:42:00Z",
+  "entry_schema_version": 4,
+  "id": "40DD2957-B76E-50EA-8FB8-8BFB38106E52",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Eighteen quintillion planets is not a feature, it's a claim that you will\nnever exhaust it. Which is true and also means nothing is authored, and I\ncan't decide if that's freedom or a very large empty building.",
+      "created_at": "2025-12-16T21:42:00Z",
+      "id": "3425E576-B53C-5ECE-A068-2397BAC41F60",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Eighteen quintillion planets claims scale but authors nothing",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "procedural generation is a promise about scale",
+  "updated_at": "2025-12-16T21:42:00Z"
+}

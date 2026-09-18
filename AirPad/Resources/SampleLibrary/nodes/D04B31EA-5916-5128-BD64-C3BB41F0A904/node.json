@@ -1,0 +1,84 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-03-28T17:48:00Z",
+  "entry_schema_version": 4,
+  "id": "D04B31EA-5916-5128-BD64-C3BB41F0A904",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-03-28T17:48:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "he married Mom"
+          }
+        }
+      },
+      "id": "FD14049D-8434-5BCA-B921-6115A6E3E7BA",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-28T17:48:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-06-01T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "12C066C3-D053-58EB-8A34-A3AA778789ED",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-28T17:48:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "golf, telling you the square footage of things"
+          }
+        }
+      },
+      "id": "0EFB41A4-9D53-5FD6-81B2-9F77F5582C29",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-28T17:48:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "fundamentally fine, which annoys me"
+          }
+        }
+      },
+      "id": "FFF4B151-D450-535A-93FF-FF84C7A50811",
+      "type": "field"
+    },
+    {
+      "content": "Perfectly kind, deeply boring, and Mom is happy, so I've filed my opinion\nwhere it belongs. Remembers my coffee order, which I resent having noted.",
+      "created_at": "2026-03-28T17:48:00Z",
+      "id": "034E9D36-A6CB-5F56-AA86-4CF0A54FA34D",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Stepfather; kind, dull, and makes Mom happy",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "Gary",
+  "updated_at": "2026-03-28T17:48:00Z"
+}

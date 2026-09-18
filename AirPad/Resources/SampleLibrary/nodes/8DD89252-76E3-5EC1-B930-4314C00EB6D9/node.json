@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-04-02T09:29:00Z",
+  "entry_schema_version": 4,
+  "id": "8DD89252-76E3-5EC1-B930-4314C00EB6D9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The union got patrons to write in. Actual letters, actual people, about\nactual branches. Canvassing, phone calls, chanting outside City Hall in\nFebruary.\n\nIt's the first time in two years the job has felt like it has a direction\nrather than a slope.",
+      "created_at": "2026-04-02T09:29:00Z",
+      "id": "0D6C57CD-A848-5E79-B2C1-60901AA72733",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Union canvassing and City Hall action give the job a direction",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    },
+    "union": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "union"
+  ],
+  "threads": [],
+  "title": "thousands of letters",
+  "updated_at": "2026-04-02T09:29:00Z"
+}

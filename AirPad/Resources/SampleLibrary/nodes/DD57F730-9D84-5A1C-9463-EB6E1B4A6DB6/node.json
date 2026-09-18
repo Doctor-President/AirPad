@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2026-03-11T18:36:00Z",
+  "entry_schema_version": 4,
+  "id": "DD57F730-9D84-5A1C-9463-EB6E1B4A6DB6",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "dogs recognise other dogs on a screen but not people. we are less legible\nthan we think",
+      "created_at": "2026-03-11T18:36:00Z",
+      "id": "B0F0F255-EDEC-5495-8E67-679665C05980",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "dogs read other dogs on-screen but not humans",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "screens",
+  "updated_at": "2026-03-11T18:36:00Z"
+}

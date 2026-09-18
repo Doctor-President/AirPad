@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-05-20T20:45:00Z",
+  "entry_schema_version": 4,
+  "id": "879D7F38-F339-5EE0-91C8-52D11C03653C",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The things she said I \"have to\" see, transcribed from a napkin before I\nlost it. Reporting back is apparently expected.\n\n- [ ] *Come and See*\n- [ ] the Jodorowsky one\n- [ ] *Possession* (1981)\n- [ ] a punk documentary whose name I didn't write down and now regret",
+      "created_at": "2026-05-20T20:45:00Z",
+      "id": "473DB582-3A0F-595A-9FBA-1D618BBE0876",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Films Sid insists on, transcribed from a napkin before it was lost",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Sid's list",
+  "updated_at": "2026-05-20T20:45:00Z"
+}

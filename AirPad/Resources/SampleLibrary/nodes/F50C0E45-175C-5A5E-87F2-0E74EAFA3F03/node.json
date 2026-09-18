@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-06-26T13:38:00Z",
+  "entry_schema_version": 4,
+  "id": "F50C0E45-175C-5A5E-87F2-0E74EAFA3F03",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Exploration means you might not find anything. Most games calling\nthemselves exploration have put something at the end of every path, which\nmakes it tourism with extra walking.",
+      "created_at": "2026-06-26T13:38:00Z",
+      "id": "EB1665B4-64A4-5F1E-9CA0-F7A46907DAAA",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Guaranteed payoffs at every path make exploration into tourism",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "exploration vs tourism",
+  "updated_at": "2026-06-26T13:38:00Z"
+}

@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-06-03T16:47:00Z",
+  "entry_schema_version": 4,
+  "id": "3CC77BA6-F19A-5DE7-9553-239DF7D831BA",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Somebody told me once that doing a thing badly for years still counts —\nthat it changes how you think even if you never get good. I make four\nthings and I make them the same way every time and I used to be a little\nashamed of that. I've stopped. Four things you actually make beats a\nshelf of cookbooks you read like novels, which is a sentence I should\nprobably take elsewhere too.",
+      "created_at": "2026-06-03T16:47:00Z",
+      "id": "CF7EE213-5120-554E-A7E1-08D143D118A1",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Doing four things badly for years still changed how she thinks",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "The four things",
+  "updated_at": "2026-06-03T16:47:00Z"
+}

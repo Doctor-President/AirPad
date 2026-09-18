@@ -1,0 +1,37 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-05-30T03:24:00Z",
+  "entry_schema_version": 4,
+  "id": "7A79CAE4-9640-5595-9815-DE167031521C",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "a patron I've never seen asks for a book by its catalogue number and I know the number is wrong and I go to find it anyway. corridor keeps going",
+      "created_at": "2026-05-30T03:24:00Z",
+      "id": "531A9CCA-68CF-5E77-A2D2-128142074FA3",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-05-30T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A patron's wrong catalogue number down an endless corridor",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    },
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep",
+    "library"
+  ],
+  "threads": [],
+  "title": "the man at the desk",
+  "updated_at": "2026-05-30T03:24:00Z"
+}

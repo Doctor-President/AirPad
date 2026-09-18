@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-01-06T04:29:00Z",
+  "entry_schema_version": 4,
+  "id": "BBEEA0E5-22EF-5006-9904-F41896DAB27C",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "running late for something, get to the door, it's my grandmother's house but the inside is the library. the reference desk is where her kitchen was. I'm relieved? then not",
+      "created_at": "2026-01-06T04:29:00Z",
+      "id": "3412CE5B-0230-5639-9D5E-372243580B8F",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-01-06T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Grandmother's house with the library's interior behind the door",
+  "tag_sources": {
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep"
+  ],
+  "threads": [],
+  "title": "the wrong house",
+  "updated_at": "2026-01-06T04:29:00Z"
+}

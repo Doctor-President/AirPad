@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2025-11-25T20:14:00Z",
+  "entry_schema_version": 4,
+  "id": "3AD4F2F2-C601-5635-9DCC-2811BDF7A07D",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Twelve tableaux, each announced before it happens, so you always know\nwhat is coming and it lands anyway. Knowing the shape of a thing does not\nprotect you from it.",
+      "created_at": "2025-11-25T20:14:00Z",
+      "id": "42FB6569-EC6C-537A-8C95-1D1D8369C9B3",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Third rewatch of Godard's twelve announced tableaux that still land",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "newwave": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "newwave"
+  ],
+  "threads": [],
+  "title": "Vivre Sa Vie, 3rd time",
+  "updated_at": "2025-11-25T20:14:00Z"
+}

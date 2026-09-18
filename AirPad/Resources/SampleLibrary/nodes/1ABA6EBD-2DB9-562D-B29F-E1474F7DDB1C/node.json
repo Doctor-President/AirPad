@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-05-02T16:44:00Z",
+  "entry_schema_version": 4,
+  "id": "1ABA6EBD-2DB9-562D-B29F-E1474F7DDB1C",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "It has taken me two months to see that these are the same idea.\n\nIf meaning lives in the gap between shots and not in the shots\nthemselves, then horror does not need a monster. It needs two innocuous\nimages and the right interval. **The audience builds the monster.** They\nalways did — every effect I have ever admired was a collaboration I\nmistook for craftsmanship.\n\nWhich means you could make something frightening out of entirely ordinary\nfootage. A door. A hand. A road. In the right order.\n\nI want to try this.",
+      "created_at": "2026-05-02T16:44:00Z",
+      "id": "05F5BB8E-C34F-5F86-ADC0-305C805D253E",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Two months on, sees the audience builds the monster from the gap",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "kuleshov",
+    "projects"
+  ],
+  "threads": [],
+  "title": "Kuleshov, again, and what it implies about horror",
+  "updated_at": "2026-05-02T16:44:00Z"
+}

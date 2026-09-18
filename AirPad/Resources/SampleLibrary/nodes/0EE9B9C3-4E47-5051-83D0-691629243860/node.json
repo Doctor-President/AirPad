@@ -1,0 +1,71 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-03-05T21:37:00Z",
+  "entry_schema_version": 4,
+  "id": "0EE9B9C3-4E47-5051-83D0-691629243860",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-03-05T21:37:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "the Cobra Lounge show, arguing about the opener"
+          }
+        }
+      },
+      "id": "A42C1392-24EB-584A-B8BC-B2B2D12F43FA",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-05T21:37:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-08-30T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "5A211D0B-5B94-5B2F-A707-EBF224CCB8B5",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-05T21:37:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "everything, loudly"
+          }
+        }
+      },
+      "id": "7E09E1D9-91F0-5C57-A75D-D75E501E5102",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-03-05T21:37:00Z",
+      "field": {
+        "definition_id": "fd_note"
+      },
+      "id": "0C67A4C0-2EDD-56AB-A785-370AD9E0B1F8",
+      "type": "field"
+    },
+    {
+      "content": "Answers the question you meant instead of the one you asked. I don't shrink\naround her, which is new, and I still don't know what that is.",
+      "created_at": "2026-03-05T21:37:00Z",
+      "id": "1C1E416D-ADEE-5AF5-BF74-67EF7624A9AE",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Met arguing about a Cobra Lounge opener; still unresolved",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Sid",
+  "updated_at": "2026-03-05T21:37:00Z"
+}

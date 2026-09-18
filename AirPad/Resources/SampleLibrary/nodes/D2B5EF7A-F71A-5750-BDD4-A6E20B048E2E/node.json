@@ -1,0 +1,58 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-01-09T21:40:00Z",
+  "entry_schema_version": 4,
+  "id": "D2B5EF7A-F71A-5750-BDD4-A6E20B048E2E",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-01-09T21:40:00Z",
+      "id": "BF68CA1B-78C1-529D-B542-99271FC3915D",
+      "rating": {
+        "scale": 5,
+        "value": 5
+      },
+      "type": "rating"
+    },
+    {
+      "content": "The jump cuts read as mistakes for about ten minutes and then you realise\nhe means it and the floor drops out.",
+      "created_at": "2026-01-09T21:40:00Z",
+      "id": "C75C3F9A-26C0-5F18-B6CA-2E978EC5779D",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-01-09T21:40:00Z",
+      "id": "7D875357-8FDC-53B7-8A30-BBDAE2825A07",
+      "link_items": [
+        {
+          "captured_at": "2026-01-09T21:40:00Z",
+          "id": "1F499CA8-351F-55DF-8CD6-626CEC30D105",
+          "site_name": "Wikipedia",
+          "title": "Breathless (1960 film)",
+          "url": "https://en.wikipedia.org/wiki/Breathless_(1960_film)"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Godard's jump cuts stop reading as errors once you see he means them",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "newwave": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "newwave"
+  ],
+  "threads": [],
+  "title": "À bout de souffle",
+  "updated_at": "2026-01-09T21:40:00Z"
+}

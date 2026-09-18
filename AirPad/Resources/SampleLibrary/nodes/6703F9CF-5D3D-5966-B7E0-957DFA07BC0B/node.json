@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-02-18T16:52:00Z",
+  "entry_schema_version": 4,
+  "id": "6703F9CF-5D3D-5966-B7E0-957DFA07BC0B",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The counter at the end of the day tells you how many died. It doesn't\nscold you. It just says the number.\n\nMost games would make this a fail state. This one makes it a fact.",
+      "created_at": "2026-02-18T16:52:00Z",
+      "id": "BF561661-C9CD-5597-AE2F-012A5D27938B",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The end-of-day death counter states a fact, not a scolding",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "losing pikmin",
+  "updated_at": "2026-02-18T16:52:00Z"
+}

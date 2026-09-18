@@ -1,0 +1,44 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-06-15T22:05:00Z",
+  "entry_schema_version": 4,
+  "id": "BC962155-CA04-58DF-B94C-B3A20514BA40",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-06-15T22:05:00Z",
+      "id": "4E2195B2-BD24-5545-B616-EB6CA2D09D74",
+      "rating": {
+        "scale": 5,
+        "value": 5
+      },
+      "type": "rating"
+    },
+    {
+      "content": "Held up, which the scary ones usually don't — the second watch it's a\ngrief film that happens to be terrifying, not the other way around.",
+      "created_at": "2026-06-15T22:05:00Z",
+      "id": "95CE213D-0314-5742-83CF-495D992B1081",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Rewatch reveals a grief film that happens to be terrifying",
+  "tag_sources": {
+    "aster": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "horror",
+    "aster"
+  ],
+  "threads": [],
+  "title": "Hereditary, second time",
+  "updated_at": "2026-06-15T22:05:00Z"
+}

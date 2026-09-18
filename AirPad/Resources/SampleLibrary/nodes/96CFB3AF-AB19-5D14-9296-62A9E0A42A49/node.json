@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-03-27T20:52:00Z",
+  "entry_schema_version": 4,
+  "id": "96CFB3AF-AB19-5D14-9296-62A9E0A42A49",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Drama asks you to empathise. Horror makes your body participate. You are\nnot observing the fear, you are having a version of it. No other genre\ndoes that to an audience on purpose.",
+      "created_at": "2026-03-27T20:52:00Z",
+      "id": "51AC79C3-D9FF-5B4A-A5F6-283324C62323",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Horror makes the body participate rather than merely empathise",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror"
+  ],
+  "threads": [],
+  "title": "what horror does that drama can't",
+  "updated_at": "2026-03-27T20:52:00Z"
+}

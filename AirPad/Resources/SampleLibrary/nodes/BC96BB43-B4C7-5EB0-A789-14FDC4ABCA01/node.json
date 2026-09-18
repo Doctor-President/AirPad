@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-03-05T12:41:00Z",
+  "entry_schema_version": 4,
+  "id": "BC96BB43-B4C7-5EB0-A789-14FDC4ABCA01",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Everyone else on that desk is kind. Genuinely kind — Rosalind remembers\nwhich patrons take sugar. They'd also all vote differently to me and we\nhave a truce about it that mostly works.\n\nKindness and politics come apart more often than either side admits.",
+      "created_at": "2026-03-05T12:41:00Z",
+      "id": "B54500C6-0809-578B-8B9A-B64D3B078A9C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The rest of the desk is kind, votes differently, and holds a working truce",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library"
+  ],
+  "threads": [],
+  "title": "the others, though",
+  "updated_at": "2026-03-05T12:41:00Z"
+}

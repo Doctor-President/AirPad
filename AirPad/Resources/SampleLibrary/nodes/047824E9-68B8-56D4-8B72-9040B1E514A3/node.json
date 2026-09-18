@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-08-16T15:11:00Z",
+  "entry_schema_version": 4,
+  "id": "047824E9-68B8-56D4-8B72-9040B1E514A3",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Splicing tape and a viewer, physically, the way it was done. Slower and I\nthink that's correct — the interval is the whole idea, so I should have\nto feel each one.",
+      "created_at": "2026-08-16T15:11:00Z",
+      "id": "2CE9985C-9A42-50EC-BBF1-D7D716DD84E0",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Splice by hand with tape and a viewer so each interval is felt",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "cutting without an editor",
+  "updated_at": "2026-08-16T15:11:00Z"
+}

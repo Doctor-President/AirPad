@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-03-18T16:27:00Z",
+  "entry_schema_version": 4,
+  "id": "0B880C32-57B3-5727-B644-F645AD94CB26",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Everything is vertical. You could mute it and still follow the argument\nexactly. That is either a masterpiece or a very expensive diagram and I\ngo back and forth.",
+      "created_at": "2026-03-18T16:27:00Z",
+      "id": "8D31AFD0-8050-5408-B1FB-96203BDCBC79",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Vertical staging carries the class argument even on mute",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "korean": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "korean"
+  ],
+  "threads": [],
+  "title": "Parasite's staircases",
+  "updated_at": "2026-03-18T16:27:00Z"
+}

@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-09-03T21:11:00Z",
+  "entry_schema_version": 4,
+  "id": "1AD0A008-CAC3-58B1-92C8-92800E47730E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "One ending. Didn't look at the others. Sat with it for about a day and\nit was worse and better than reloading would have been.",
+      "created_at": "2026-09-03T21:11:00Z",
+      "id": "FD4D87C3-98B9-5FC5-9421-34BF37E0F46C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "One ending, unseen alternatives; sat with it for a day",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "I finished BG3",
+  "updated_at": "2026-09-03T21:11:00Z"
+}

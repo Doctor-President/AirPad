@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-01-26T21:33:00Z",
+  "entry_schema_version": 4,
+  "id": "E115DE10-4356-52F9-B6D1-B5995F63BC41",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "\"You don't get to decide who I'm in a room with.\"\nSeven days late. Writing it down anyway so it exists somewhere.",
+      "created_at": "2026-01-26T21:33:00Z",
+      "id": "5E5B6B15-DADF-5482-90BF-5AD413AA0C97",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-01-26T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Records the retort she wishes she had given her sister",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "what I should have said",
+  "updated_at": "2026-01-26T21:33:00Z"
+}

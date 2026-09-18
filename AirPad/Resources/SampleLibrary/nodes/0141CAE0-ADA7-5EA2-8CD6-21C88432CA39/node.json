@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-03-04T14:41:00Z",
+  "entry_schema_version": 4,
+  "id": "0141CAE0-ADA7-5EA2-8CD6-21C88432CA39",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Kuleshov cut the same neutral shot of an actor's face against three\ndifferent images — soup, a coffin, a woman — and audiences praised his\nrange. Hunger, grief, desire. Same frame every time.\n\nThe meaning was not in the face. It was in the gap between the shots, and\nthe audience put it there themselves. **Nothing on screen contains the\nfeeling.**\n\nI have been reading about this for a week and I cannot let go of it.",
+      "created_at": "2026-03-04T14:41:00Z",
+      "id": "C5F2E2F7-781F-5120-A56A-C6E3BD6FBB30",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "One neutral face plus three images, meaning built by the audience",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "kuleshov"
+  ],
+  "threads": [],
+  "title": "The Kuleshov Effect",
+  "updated_at": "2026-03-04T14:41:00Z"
+}

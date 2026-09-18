@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-04-18T19:22:00Z",
+  "entry_schema_version": 4,
+  "id": "6A037408-39E7-5239-A1F0-B2CF15FE7292",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Sid does the thing where she answers the question you meant",
+      "created_at": "2026-04-18T19:22:00Z",
+      "id": "0E5656C7-9D7B-58AB-A4A7-B5BCE22CFF7C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Sid answers the question you actually meant to ask",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Sid",
+  "updated_at": "2026-04-18T19:22:00Z"
+}

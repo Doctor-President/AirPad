@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2025-11-21T20:15:00Z",
+  "entry_schema_version": 4,
+  "id": "B6DB4C0C-5D71-5EB2-B420-343B8B2FF0B1",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Because I got tired of reading about Godard and watching Godard through\na pane of glass. That's the whole reason. It's not a noble one.",
+      "created_at": "2025-11-21T20:15:00Z",
+      "id": "2B40A760-46E6-5F1B-96EF-FE4C1C146F1D",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The honest, non-noble reason: to stop watching Godard through glass.",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "film"
+  ],
+  "threads": [],
+  "title": "why French, actually",
+  "updated_at": "2025-11-21T20:15:00Z"
+}

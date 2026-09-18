@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-07-28T19:51:00Z",
+  "entry_schema_version": 4,
+  "id": "3D903FBC-4E35-560F-9A33-C1F20ECD5E2D",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Grain moves. Digital noise sits still and grain is different every frame\nbecause it is literally different silver. That is why film looks alive and\nevery filter that imitates it looks dead.",
+      "created_at": "2026-07-28T19:51:00Z",
+      "id": "8F236941-E859-52DE-AB41-229D99B50EEA",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Grain moves frame to frame as real silver; digital noise sits dead",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film"
+  ],
+  "threads": [],
+  "title": "grain",
+  "updated_at": "2026-07-28T19:51:00Z"
+}

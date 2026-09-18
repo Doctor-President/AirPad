@@ -1,0 +1,25 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2025-12-05T15:42:00Z",
+  "entry_schema_version": 4,
+  "id": "D0C9F3CB-31D9-532E-A150-8F79FA0513BF",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Twenty pages, letterpress if the rates are sane, one page per film on the\nshelf nobody borrows. Print 50.\n\nParked. I don't have a press and I don't have 50 friends.",
+      "created_at": "2025-12-05T15:42:00Z",
+      "id": "E2068A01-35DD-57E0-85A1-5A265C1F90F7",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Parked plan for a 50-copy letterpress zine on the unborrowed horror shelf",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "zine of the horror shelf",
+  "updated_at": "2025-12-05T15:42:00Z"
+}

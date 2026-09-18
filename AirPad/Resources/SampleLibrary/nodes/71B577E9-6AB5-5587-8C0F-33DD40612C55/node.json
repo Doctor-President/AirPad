@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-05-26T21:03:00Z",
+  "entry_schema_version": 4,
+  "id": "71B577E9-6AB5-5587-8C0F-33DD40612C55",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Got maybe a third. But a third with the actual sounds is a different\nthird than all of it in text.",
+      "created_at": "2026-05-26T21:03:00Z",
+      "id": "EE5E88E4-1CD4-5437-8F6D-B702E798D7E9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Catching a third of Godard by ear beats all of it in text.",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    },
+    "newwave": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "film",
+    "newwave"
+  ],
+  "threads": [],
+  "title": "À bout de souffle, without subtitles",
+  "updated_at": "2026-05-26T21:03:00Z"
+}

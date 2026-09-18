@@ -1,0 +1,79 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-08-15T15:33:00Z",
+  "entry_schema_version": 4,
+  "id": "B6AE1311-FEEA-5B40-954A-11F397344575",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-08-15T15:33:00Z",
+      "field": {
+        "definition_id": "fd_how_met"
+      },
+      "id": "4E8AD973-E639-561D-AA94-217A28C8B7C8",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-08-15T15:33:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-09-10T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "96F23A05-7E7D-5544-8F1C-637CF5A706D1",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-08-15T15:33:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "WWII naval history, the good chair"
+          }
+        }
+      },
+      "id": "5162E2CB-8956-57B9-BCE1-73DD106AB777",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-08-15T15:33:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "brings his own bookmark, hates when the chair's taken"
+          }
+        }
+      },
+      "id": "28E059C6-C1C2-5BA2-BF07-786730654774",
+      "type": "field"
+    },
+    {
+      "content": "Every Wednesday for I-genuinely-don't-know-how-long — which is exactly why\nI'm writing him down. Nods now. Once told me a fact about the Battle of\nLeyte Gulf entirely unprompted and I think about it more than I'd admit.",
+      "created_at": "2026-08-15T15:33:00Z",
+      "id": "6AB0BFE9-C47C-508E-A597-CEBB13571A27",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Wednesday patron she's finally writing down before forgetting",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library"
+  ],
+  "threads": [],
+  "title": "The reading-room regular",
+  "updated_at": "2026-08-15T15:33:00Z"
+}

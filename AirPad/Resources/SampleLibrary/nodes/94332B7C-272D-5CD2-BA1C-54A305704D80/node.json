@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-09-06T02:57:00Z",
+  "entry_schema_version": 4,
+  "id": "94332B7C-272D-5CD2-BA1C-54A305704D80",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "can't get any of it. just the residue. something about a staircase and being forgiven for something I didn't do",
+      "created_at": "2026-09-06T02:57:00Z",
+      "id": "A14E0220-0487-59F9-99EA-959D3EDCC038",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-09-06T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Only the residue remains, a staircase and being forgiven",
+  "tag_sources": {
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep"
+  ],
+  "threads": [],
+  "title": "nothing, just the feeling",
+  "updated_at": "2026-09-06T02:57:00Z"
+}

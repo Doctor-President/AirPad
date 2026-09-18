@@ -1,0 +1,40 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-04-08T19:30:00Z",
+  "entry_schema_version": 4,
+  "id": "6F13C689-039E-5ECD-84DC-EF0E8F39E48A",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-04-08T19:30:00Z",
+      "id": "7E52D429-E0B1-5E0B-B0BC-ED6538AC65F9",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "content": "Put it on to practise listening in French and kept it on because it's\nsad in the exact register I like. The comprehension was incidental.",
+      "created_at": "2026-04-08T19:30:00Z",
+      "id": "8600079D-FF57-52A6-9367-68C8B90FA186",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "French-listening practice that stayed on for its exact register of sad",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "Françoise Hardy, all spring",
+  "updated_at": "2026-04-08T19:30:00Z"
+}

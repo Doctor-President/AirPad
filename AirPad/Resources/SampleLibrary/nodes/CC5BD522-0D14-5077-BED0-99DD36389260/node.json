@@ -1,0 +1,37 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-01-27T02:38:00Z",
+  "entry_schema_version": 4,
+  "id": "CC5BD522-0D14-5077-BED0-99DD36389260",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "holding a book I can't read. it's not that it's in another language, the letters are fine, I just",
+      "created_at": "2026-01-27T02:38:00Z",
+      "id": "40E3296C-3133-50E2-86D7-E43AA6F60BE1",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-01-27T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A readable book she still somehow cannot read",
+  "tag_sources": {
+    "language": {
+      "source": "user"
+    },
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep",
+    "language"
+  ],
+  "threads": [],
+  "title": "untranslated book",
+  "updated_at": "2026-01-27T02:38:00Z"
+}

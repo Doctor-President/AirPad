@@ -16,7 +16,7 @@
     }
   ],
   "needs_ai_processing": false,
-  "summary": "Cutscene flight breaks immersion once you notice it",
+  "summary": "Cutscene flight breaks immersion once it's noticed",
   "tag_sources": {
     "games": {
       "source": "user"

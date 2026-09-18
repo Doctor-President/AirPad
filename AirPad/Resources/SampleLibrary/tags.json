@@ -1,5 +1,202 @@
 [
-  { "id": "AA000000-0000-4000-8000-000000000001", "name": "coffee", "colorHex": "#E8820A", "createdAt": "2026-06-01T09:00:00Z", "useCount": 2, "isCanvasAnchor": true },
-  { "id": "AA000000-0000-4000-8000-000000000002", "name": "recipe", "colorHex": "#1B59C2", "createdAt": "2026-06-01T09:00:00Z", "useCount": 2, "isCanvasAnchor": false },
-  { "id": "AA000000-0000-4000-8000-000000000003", "name": "idea", "colorHex": "#00BFFF", "createdAt": "2026-06-01T09:00:00Z", "useCount": 1, "isCanvasAnchor": false }
+  {
+    "id": "EBE9B1FA-EFBB-57B4-AA6F-731DAC0F12C8",
+    "name": "film",
+    "colorHex": "#C0392B",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 42,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "0A95730A-3FF9-5150-8CB2-850C20887A6B",
+    "name": "horror",
+    "colorHex": "#6C3483",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 20,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "B30B9729-6E52-56C1-B92C-5AD0D4EBA0B9",
+    "name": "french",
+    "colorHex": "#2874A6",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 23,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "6A9E804F-C8E0-5B27-B583-A032D138A219",
+    "name": "language",
+    "colorHex": "#148F77",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 26,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "564129BF-1F4B-5558-8691-18AFF9E736A4",
+    "name": "library",
+    "colorHex": "#B9770E",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 37,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "7DEF12FA-0825-5416-AF83-F513C35FC630",
+    "name": "games",
+    "colorHex": "#1F618D",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 20,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "41D92754-A250-5E39-85C7-C2EAC4ABD319",
+    "name": "coffee",
+    "colorHex": "#935116",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 2,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "474C3E7C-F99A-5DD9-9DC1-46F064E5C890",
+    "name": "cooking",
+    "colorHex": "#7D6608",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 13,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "D0BC1CA7-2C67-5259-9A35-D9D0DD313196",
+    "name": "projects",
+    "colorHex": "#A04000",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 16,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "150FBCD7-0B86-58CD-ADB9-6D09BB3679A4",
+    "name": "family",
+    "colorHex": "#196F3D",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 5,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "1B971011-D54A-5C62-B4B3-CD37117CBABB",
+    "name": "chicago",
+    "colorHex": "#5B2C6F",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 5,
+    "isCanvasAnchor": true
+  },
+  {
+    "id": "E9828A0C-32E7-56AF-A934-B4CDD6BBC54D",
+    "name": "poetry",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 2,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "FDCD8502-F77A-5E29-8BB9-1780F33A94CD",
+    "name": "translation",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 0,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "D6072629-D8C4-56AE-AEF4-C464D959270E",
+    "name": "archives",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 23,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "4EC22135-527A-53D0-B73D-0956D70F1441",
+    "name": "union",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 4,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "951D8CB5-EC12-552C-BC32-BE00367046C7",
+    "name": "budget",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 8,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "B91F7BE4-7A1F-506B-AD49-8820FFA31827",
+    "name": "access",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 18,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "62D861A1-6D69-56E2-9DE2-509B9C87D852",
+    "name": "kuleshov",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 6,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "3344AAFF-8972-5E41-BE92-DCB084DA5015",
+    "name": "newwave",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 7,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "4137B4D2-0BD5-5FB5-BEC6-1C8224A250CB",
+    "name": "aster",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 5,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "F3DB70C5-7458-5D4E-8912-1A2E7410248B",
+    "name": "korean",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 4,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "29E71D47-7D16-5247-8737-416D6FFF9521",
+    "name": "brewing",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 0,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "73819F7D-E2CD-5A08-BAFB-B3EC6D0ABFEC",
+    "name": "origin",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 0,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "06E487F5-C867-56E8-975F-800A705C6B50",
+    "name": "sleep",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 11,
+    "isCanvasAnchor": false
+  },
+  {
+    "id": "B92B9CED-596D-5512-A576-8CADCAF76F2E",
+    "name": "money",
+    "colorHex": "#8E8E93",
+    "createdAt": "2025-10-15T12:00:00Z",
+    "useCount": 5,
+    "isCanvasAnchor": false
+  }
 ]

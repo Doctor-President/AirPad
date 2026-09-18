@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-05-11T12:17:00Z",
+  "entry_schema_version": 4,
+  "id": "AA0911B6-28E9-5AF8-9720-64FF2A0FCBB2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Nobody calls it that. It is the actual gameplay of about a third of\neverything I've played.",
+      "created_at": "2026-05-11T12:17:00Z",
+      "id": "DB274A31-E569-5543-9676-6EE208145848",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Inventory management is the real gameplay of many games",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "inventory management is a genre",
+  "updated_at": "2026-05-11T12:17:00Z"
+}

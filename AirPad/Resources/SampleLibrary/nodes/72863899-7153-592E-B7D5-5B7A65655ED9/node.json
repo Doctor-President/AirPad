@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-09-08T13:04:00Z",
+  "entry_schema_version": 4,
+  "id": "72863899-7153-592E-B7D5-5B7A65655ED9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Which means the interesting question isn't what we have. It's what the\nshape of the hole is.\n\nYou can sometimes tell. Citations to books nobody has, indexes to\nvolumes that are gone, a list that starts mid-sentence.",
+      "created_at": "2026-09-08T13:04:00Z",
+      "id": "95BF0C65-EB25-5BF9-B8BA-FE26DBB67D3B",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Turning the question over: what the shape of the missing is",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives"
+  ],
+  "threads": [],
+  "title": "and the other half",
+  "updated_at": "2026-09-08T13:04:00Z"
+}

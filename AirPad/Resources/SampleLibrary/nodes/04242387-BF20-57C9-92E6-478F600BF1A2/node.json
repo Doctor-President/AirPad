@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-03-19T14:07:00Z",
+  "entry_schema_version": 4,
+  "id": "04242387-BF20-57C9-92E6-478F600BF1A2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The MakerSpace is good. I want to be clear with myself about that,\nbecause the thing I'm about to think sits next to something ugly.\n\nIt got funded. The printers, the vinyl cutter, the staff hours. Meanwhile\nthe materials budget halved. Nobody stood up and decided to defund the\nhumanities — but money moves toward whatever can be photographed for a\npress release, and a kid reading in a chair cannot be photographed.",
+      "created_at": "2026-03-19T14:07:00Z",
+      "id": "DA6FCE04-726F-570C-999E-13153BDE66D2",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The MakerSpace deserved funding, but money follows what photographs well",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "budget",
+    "access"
+  ],
+  "threads": [],
+  "title": "On the MakerSpace, fairly",
+  "updated_at": "2026-03-19T14:07:00Z"
+}

@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-05-07T11:52:00Z",
+  "entry_schema_version": 4,
+  "id": "8CD89751-CB02-5B72-A8BA-9A9645E35D21",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Nobody asks for what they want. They ask for what they think you can\ngive them. So the job is to find the real question underneath the asked\none without making the person feel stupid for not having asked it\nproperly.\n\nIt is the most skilled thing I do and it is completely invisible, which\nis why it is first against the wall when someone's counting positions.",
+      "created_at": "2026-05-07T11:52:00Z",
+      "id": "74EAC5B9-062D-59D7-87A1-CD1E06EC4DD9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Finding the real question under the asked one — skilled and invisible work",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library"
+  ],
+  "threads": [],
+  "title": "A defence of the reference interview",
+  "updated_at": "2026-05-07T11:52:00Z"
+}

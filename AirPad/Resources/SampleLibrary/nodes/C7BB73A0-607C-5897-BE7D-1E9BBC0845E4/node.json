@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-05-09T22:26:00Z",
+  "entry_schema_version": 4,
+  "id": "C7BB73A0-607C-5897-BE7D-1E9BBC0845E4",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "If I want to actually make things I need about four hundred dollars a\nmonth that isn't spoken for. Options, none good: tutoring, cataloguing\nfor the estate-sale people, selling the records I don't listen to.\n\nWrote this down so I'd stop having it as a loop.",
+      "created_at": "2026-05-09T22:26:00Z",
+      "id": "F64DD1A8-130A-5DB0-8B07-2963FF918069",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-05-09T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Tallies ways to free up four hundred dollars a month to make things",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "money, honestly",
+  "updated_at": "2026-05-09T22:26:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-01-14T15:22:00Z",
+  "entry_schema_version": 4,
+  "id": "3C96AEC6-B0E0-5290-9BDE-43FE79E39C69",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Ninety minutes of real time, a woman waiting for a test result, and Varda\nsomehow makes the waiting the plot. Nobody lets women be bored on screen\nanymore.",
+      "created_at": "2026-01-14T15:22:00Z",
+      "id": "AFEAB3B3-5AEF-50A2-A100-8BD93C87A5EE",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Varda makes ninety real-time minutes of anxious waiting the plot",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "newwave": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "newwave"
+  ],
+  "threads": [],
+  "title": "Cléo de 5 à 7",
+  "updated_at": "2026-01-14T15:22:00Z"
+}

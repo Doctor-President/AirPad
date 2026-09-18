@@ -1,0 +1,79 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-04-22T19:12:00Z",
+  "entry_schema_version": 4,
+  "id": "D4DF44A1-3399-5455-AEB2-B39859E78DE3",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-04-22T19:12:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "shares the back stairwell"
+          }
+        }
+      },
+      "id": "3A5AAFDF-F3F0-5DE0-A32A-82CC17474B0F",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-04-22T19:12:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-08-28T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "1E83A424-A5A8-5ED6-B42E-79D877AA53CC",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-04-22T19:12:00Z",
+      "field": {
+        "definition_id": "fd_into"
+      },
+      "id": "B99031F1-CD7A-5B09-A1C6-4CAA3158B189",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-04-22T19:12:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "took the package, name still unknown"
+          }
+        }
+      },
+      "id": "A9769706-A86F-5C6F-9B40-0158BAD2B805",
+      "type": "field"
+    },
+    {
+      "content": "Held a delivery for me for a week and I've now said hi enough times that\nasking his name has become impossible. This is entirely my fault.",
+      "created_at": "2026-04-22T19:12:00Z",
+      "id": "AEF6C9B4-1B36-5FFD-B993-8AD2589F0CB6",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Stairwell neighbour whose name she never learned",
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "chicago"
+  ],
+  "threads": [],
+  "title": "the guy on three",
+  "updated_at": "2026-04-22T19:12:00Z"
+}

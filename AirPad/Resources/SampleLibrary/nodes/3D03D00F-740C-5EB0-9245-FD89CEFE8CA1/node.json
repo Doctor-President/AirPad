@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-02-04T10:33:00Z",
+  "entry_schema_version": 4,
+  "id": "3D03D00F-740C-5EB0-9245-FD89CEFE8CA1",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The cuts land hardest on the grade you get promoted *into*. Which means\nthere's no rung. Which means people my age leave, and then in ten years\nthey'll write a report about why nobody stays.",
+      "created_at": "2026-02-04T10:33:00Z",
+      "id": "4A7CA085-EA63-53C4-BC1E-F9D37D514267",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Cuts hit the promotion grade, so there's no rung and people leave",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    },
+    "money": {
+      "source": "user"
+    },
+    "union": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "union",
+    "money"
+  ],
+  "threads": [],
+  "title": "Librarian II",
+  "updated_at": "2026-02-04T10:33:00Z"
+}

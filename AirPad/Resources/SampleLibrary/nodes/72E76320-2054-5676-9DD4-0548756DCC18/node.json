@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-04-24T16:38:00Z",
+  "entry_schema_version": 4,
+  "id": "72E76320-2054-5676-9DD4-0548756DCC18",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "We went fine-free in 2019 and circulation went *up*, because the people\nwho stopped coming had stopped over $4.\n\nTwo years of collections letters to recover less than the cost of sending\nthem. Everyone knew. It took a decade.",
+      "created_at": "2026-04-24T16:38:00Z",
+      "id": "50528140-EB1A-513E-AFC0-9151E952D5D3",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Going fine-free in 2019 raised circulation; the collections math never worked",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "what a fine actually does",
+  "updated_at": "2026-04-24T16:38:00Z"
+}

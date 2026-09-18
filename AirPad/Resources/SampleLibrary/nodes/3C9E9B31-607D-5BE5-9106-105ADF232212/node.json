@@ -1,0 +1,54 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-02-06T15:05:00Z",
+  "entry_schema_version": 4,
+  "id": "3C9E9B31-607D-5BE5-9106-105ADF232212",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-02-06T15:05:00Z",
+      "id": "FFA7D33A-C721-54D6-A4B9-E0137B600CD4",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "content": "Read it the way it wants to be read — a few lines, put it down, come back.\nCover to cover it's exhausting; in pieces at a desk on a slow afternoon\nit's the most alive thing I own.",
+      "created_at": "2026-02-06T15:05:00Z",
+      "id": "EDB3827D-F6CB-571D-AE23-142719974BB5",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-02-06T15:05:00Z",
+      "id": "D3121DD0-7283-5536-88AF-C96759612FEC",
+      "link_items": [
+        {
+          "captured_at": "2026-02-06T15:05:00Z",
+          "id": "28DE9212-C2B6-5174-A3F5-B5C8CF2650D3",
+          "site_name": "Project Gutenberg",
+          "title": "Leaves of Grass (Walt Whitman)",
+          "url": "https://www.gutenberg.org/ebooks/1322"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Whitman read a few lines at a time on a slow desk afternoon",
+  "tag_sources": {
+    "poetry": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "poetry"
+  ],
+  "threads": [],
+  "title": "Leaves of Grass, in pieces",
+  "updated_at": "2026-02-06T15:05:00Z"
+}

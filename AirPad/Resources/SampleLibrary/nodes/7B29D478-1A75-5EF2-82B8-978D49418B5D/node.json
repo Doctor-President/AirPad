@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-08-18T11:26:00Z",
+  "entry_schema_version": 4,
+  "id": "7B29D478-1A75-5EF2-82B8-978D49418B5D",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Later hours in winter at three branches. Costs staff time we don't have.\n\nWrote it anyway and sent it up. It will die at the second desk. Writing\nit is the record that someone asked, and in four years when a consultant\nrecommends exactly this, the memo will have a date on it.",
+      "created_at": "2026-08-18T11:26:00Z",
+      "id": "87730698-CF72-5E97-BF34-1172C1AAF98C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Winter later-hours memo sent up to die, filed as a dated record",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access",
+    "budget"
+  ],
+  "threads": [],
+  "title": "A proposal that will not survive",
+  "updated_at": "2026-08-18T11:26:00Z"
+}

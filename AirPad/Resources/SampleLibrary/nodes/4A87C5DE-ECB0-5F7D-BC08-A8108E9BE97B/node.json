@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-02-08T10:53:00Z",
+  "entry_schema_version": 4,
+  "id": "4A87C5DE-ECB0-5F7D-BC08-A8108E9BE97B",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "every map is an argument someone won",
+      "created_at": "2026-02-08T10:53:00Z",
+      "id": "AB9A68EA-27E6-5B9D-8C11-F6B0869363AC",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "every map encodes a dispute that someone won",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "maps",
+  "updated_at": "2026-02-08T10:53:00Z"
+}

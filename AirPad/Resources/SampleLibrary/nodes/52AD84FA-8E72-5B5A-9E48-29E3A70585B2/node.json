@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-08-19T23:27:00Z",
+  "entry_schema_version": 4,
+  "id": "52AD84FA-8E72-5B5A-9E48-29E3A70585B2",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The MakerSpace is good. I want to be clear with myself about that, because\nthe thing I'm about to think is adjacent to something ugly.\n\nIt got funded. The 3D printers got funded. Meanwhile the materials budget\nhalved. Nobody decided to defund the humanities — but money moves toward\nwhatever can be photographed, and a kid reading in a chair can't be\nphotographed.",
+      "created_at": "2026-08-19T23:27:00Z",
+      "id": "F4A33136-8E55-5BDA-8A7A-1829294385EE",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-08-19T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Photographable projects get funded while reading quietly loses budget",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "What the MakerSpace means",
+  "updated_at": "2026-08-19T23:27:00Z"
+}

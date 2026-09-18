@@ -1,0 +1,25 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-02-19T09:26:00Z",
+  "entry_schema_version": 4,
+  "id": "9ABACA99-D8C3-5D2A-8905-0F253CCCC57E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Every variable I fussed over for a year is downstream of grind size. Water\ntemp, bloom time, pour pattern — all of it is rounding error next to\nwhether the particles are the same size as each other.\n\nWhich means the burr is the instrument and everything else is posture.",
+      "created_at": "2026-02-19T09:26:00Z",
+      "id": "DDBD2903-7CE4-517F-9752-D3BA90DC7C83",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Grind uniformity dominates every other brewing variable",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "grind is the whole thing",
+  "updated_at": "2026-02-19T09:26:00Z"
+}

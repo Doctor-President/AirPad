@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2025-12-10T19:42:00Z",
+  "entry_schema_version": 4,
+  "id": "D3AED9E5-0B75-5B22-B269-44410529AD06",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "There are two yous and choosing is a statement about the relationship\nevery single time you open your mouth. English collapsed this in the\n1600s and we've been guessing ever since.",
+      "created_at": "2025-12-10T19:42:00Z",
+      "id": "0D4B0FC9-F1A7-58D6-B75E-B502EB1671B7",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Two forms of \"you\" make address a constant statement about relationship.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "tutoyer / vouvoyer",
+  "updated_at": "2025-12-10T19:42:00Z"
+}

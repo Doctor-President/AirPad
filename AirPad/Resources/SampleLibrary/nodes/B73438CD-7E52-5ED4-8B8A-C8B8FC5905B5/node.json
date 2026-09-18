@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-01-16T10:18:00Z",
+  "entry_schema_version": 4,
+  "id": "B73438CD-7E52-5ED4-8B8A-C8B8FC5905B5",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Index cards on the shelf ends, handwritten, staff picks but for a specific\nmood rather than a genre — \"for when you can't concentrate\", \"for a long\nbath\", \"if you liked the one about the house\".\n\nWould cost roughly nothing. Would require permission from three people.",
+      "created_at": "2026-01-16T10:18:00Z",
+      "id": "E9CFCF57-0E5F-5E15-BA5B-09405EDBED29",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Handwritten mood-based staff-pick cards on the shelf ends, needing three sign-offs",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "A reading-room recommendation card system",
+  "updated_at": "2026-01-16T10:18:00Z"
+}

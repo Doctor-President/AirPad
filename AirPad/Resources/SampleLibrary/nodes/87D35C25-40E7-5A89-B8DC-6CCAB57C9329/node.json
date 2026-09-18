@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-02-14T23:24:00Z",
+  "entry_schema_version": 4,
+  "id": "87D35C25-40E7-5A89-B8DC-6CCAB57C9329",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Joaquin said cooking is commonplace alchemy — that it's the last thing\nmost people do that actually transforms one substance into another, and\nthat doing it badly for years still changes how you think about\neverything else. He was three drinks in and I still can't stop turning it\nover.\n\nI am not a cook. I make the same four things. But I liked being told that\nthe four things count.",
+      "created_at": "2026-02-14T23:24:00Z",
+      "id": "2A20CDBA-445F-5F35-9C78-6A31581841F5",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-02-14T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A friend's remark reframes cooking badly as still transformative",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Joaquin on cooking as commonplace alchemy",
+  "updated_at": "2026-02-14T23:24:00Z"
+}

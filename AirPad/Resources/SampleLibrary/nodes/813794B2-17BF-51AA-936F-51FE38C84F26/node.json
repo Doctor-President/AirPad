@@ -1,0 +1,84 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-07-03T18:05:00Z",
+  "entry_schema_version": 4,
+  "id": "813794B2-17BF-51AA-936F-51FE38C84F26",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-07-03T18:05:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "French conversation group, both too shy for the first month"
+          }
+        }
+      },
+      "id": "15612834-E596-585A-98F5-51FADD9B2B0B",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-07-03T18:05:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-08-12T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "DCBD1FD1-376C-501C-AACF-AD4700BB6763",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-07-03T18:05:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "Quebec, apparently the same trip I took"
+          }
+        }
+      },
+      "id": "6027DDC2-9095-597B-AE03-B4BC98607BA9",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-07-03T18:05:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "swap novels, she reads faster"
+          }
+        }
+      },
+      "id": "B78D7526-D576-5DE8-A9B7-66BA9E8297A8",
+      "type": "field"
+    },
+    {
+      "content": "The only other person in the group who wants to actually talk instead of\nconjugate. We met twice for coffee and spoke French for exactly the first\nfour minutes each time.",
+      "created_at": "2026-07-03T18:05:00Z",
+      "id": "5EF9C061-0D47-5F0D-A99B-F14B06C66AC2",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "French-group friend planning the same Quebec trip",
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "chicago"
+  ],
+  "threads": [],
+  "title": "Amélie from Tuesday class",
+  "updated_at": "2026-07-03T18:05:00Z"
+}

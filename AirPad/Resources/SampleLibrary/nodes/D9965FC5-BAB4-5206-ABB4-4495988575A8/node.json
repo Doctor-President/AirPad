@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-07-17T15:22:00Z",
+  "entry_schema_version": 4,
+  "id": "D9965FC5-BAB4-5206-ABB4-4495988575A8",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "French puts an article on almost everything — *j'aime le café*, \"I love\nthe coffee,\" meaning coffee as a category. The abstraction is grammatical.\nEnglish just drops it and hopes.",
+      "created_at": "2026-07-17T15:22:00Z",
+      "id": "8C64FBE1-B7F4-53B5-8A62-760FFADF0DD5",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "French articles make abstraction grammatical; English drops and hopes.",
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language",
+    "coffee"
+  ],
+  "threads": [],
+  "title": "how the article works",
+  "updated_at": "2026-07-17T15:22:00Z"
+}

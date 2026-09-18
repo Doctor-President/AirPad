@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-06-01T21:07:00Z",
+  "entry_schema_version": 4,
+  "id": "E0D2C170-7DEC-5167-9D8C-9C8394D9CBAB",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The apartment gets bigger as she gets worse. Nobody mentions it. The set\nis doing the acting.",
+      "created_at": "2026-06-01T21:07:00Z",
+      "id": "EE034D2C-9BF6-5EF2-85B1-CAF22969C345",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The apartment swells as she declines; the set does the acting",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror"
+  ],
+  "threads": [],
+  "title": "Repulsion",
+  "updated_at": "2026-06-01T21:07:00Z"
+}

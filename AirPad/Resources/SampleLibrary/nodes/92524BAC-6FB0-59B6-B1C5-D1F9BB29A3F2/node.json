@@ -1,0 +1,49 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-05-22T13:38:00Z",
+  "entry_schema_version": 4,
+  "id": "92524BAC-6FB0-59B6-B1C5-D1F9BB29A3F2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "It isn't that I think it's decipherable. It's that it's the only object I\nknow where every single person who has looked at it has projected\nsomething different — herbal, astrological, hoax, cipher, glossolalia,\na woman's medical text.\n\nThe manuscript is a mirror. Six hundred years of people telling us about\nthemselves and calling it research.",
+      "created_at": "2026-05-22T13:38:00Z",
+      "id": "7EB845F8-C401-56BA-AB4B-44D96C35FD35",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-05-22T13:38:00Z",
+      "id": "F1637380-828C-5AC7-94EB-291F637E192D",
+      "link_items": [
+        {
+          "captured_at": "2026-05-22T13:38:00Z",
+          "id": "64D22762-1A71-5253-BB49-4BFA1E75110F",
+          "site_name": "Wikipedia",
+          "title": "Voynich manuscript",
+          "url": "https://en.wikipedia.org/wiki/Voynich_manuscript"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The undeciphered manuscript as a mirror for every reader's projection",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "language"
+  ],
+  "threads": [],
+  "title": "On the Voynich manuscript, and why I keep coming back",
+  "updated_at": "2026-05-22T13:38:00Z"
+}

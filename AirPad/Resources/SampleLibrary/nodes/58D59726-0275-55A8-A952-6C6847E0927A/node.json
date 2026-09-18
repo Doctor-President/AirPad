@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-09-10T16:19:00Z",
+  "entry_schema_version": 4,
+  "id": "58D59726-0275-55A8-A952-6C6847E0927A",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Thinking about where this goes. Not leaving — I like the actual work more\nthan I like complaining about the conditions, which I recognise is\nexactly what the conditions rely on.\n\nBut I want to have made something by the time I'm forty, and it is not\ngoing to be a policy memo.",
+      "created_at": "2026-09-10T16:19:00Z",
+      "id": "D6BFE98B-7E55-5883-B643-E43C3388967A",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Staying for the work, wanting to have made something before forty",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    },
+    "money": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "projects",
+    "money"
+  ],
+  "threads": [],
+  "title": "ten years",
+  "updated_at": "2026-09-10T16:19:00Z"
+}

@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-08-27T17:14:00Z",
+  "entry_schema_version": 4,
+  "id": "E69B8024-CF74-575E-9C41-A8DAEA643188",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Still no English word for it. Still using it.",
+      "created_at": "2026-08-27T17:14:00Z",
+      "id": "52B416E1-383D-5710-BC93-243F80E302B4",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A borrowed word with no English equivalent, now permanent vocabulary.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "games": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language",
+    "games"
+  ],
+  "threads": [],
+  "title": "dandori, again",
+  "updated_at": "2026-08-27T17:14:00Z"
+}

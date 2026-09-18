@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-03-06T04:03:00Z",
+  "entry_schema_version": 4,
+  "id": "38053DB9-3670-5176-BE88-F6A21710BDEE",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "can't get off. not scary in the dream. scary now",
+      "created_at": "2026-03-06T04:03:00Z",
+      "id": "D49CE711-8D7B-56F4-BEE3-FCC293B443F3",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-03-06T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A train she can't get off, calm then, frightening after",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "train",
+  "updated_at": "2026-03-06T04:03:00Z"
+}

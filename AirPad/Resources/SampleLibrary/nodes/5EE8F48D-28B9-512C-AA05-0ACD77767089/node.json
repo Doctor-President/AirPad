@@ -1,0 +1,79 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-01-20T11:05:00Z",
+  "entry_schema_version": 4,
+  "id": "5EE8F48D-28B9-512C-AA05-0ACD77767089",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-01-20T11:05:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "started at the branch the same year"
+          }
+        }
+      },
+      "id": "471A7B61-3902-5E17-81D4-8143B73913B0",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-01-20T11:05:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-08-05T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "3DEBDD00-5907-540F-A2F9-838148AEFAC5",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-01-20T11:05:00Z",
+      "field": {
+        "definition_id": "fd_into"
+      },
+      "id": "B0E5F767-6AB2-5979-840C-5EDC613862D8",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-01-20T11:05:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "do not take the bait"
+          }
+        }
+      },
+      "id": "B42A5C9E-A4F6-51BC-BC1F-D2B387E538F7",
+      "type": "field"
+    },
+    {
+      "content": "Said \"well, everybody's tightening\" about the budget and I have not fully\nrecovered. The only colleague I actively route around.",
+      "created_at": "2026-01-20T11:05:00Z",
+      "id": "EE06BF9F-5B5E-572F-BDA2-F3E3739F1757",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Branch colleague she deliberately routes around at work",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library"
+  ],
+  "threads": [],
+  "title": "Linda",
+  "updated_at": "2026-01-20T11:05:00Z"
+}

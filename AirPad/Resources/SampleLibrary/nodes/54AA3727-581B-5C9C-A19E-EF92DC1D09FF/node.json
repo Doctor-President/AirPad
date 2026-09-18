@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-03-14T17:25:00Z",
+  "entry_schema_version": 4,
+  "id": "54AA3727-581B-5C9C-A19E-EF92DC1D09FF",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "A roast chicken from the Lincoln Square butcher, salted the night before,\nnothing else in the pan but the bird and its own fat. It looks like more\neffort than it is, which is the entire reason I make it for company.",
+      "created_at": "2026-03-14T17:25:00Z",
+      "id": "5F42D20E-89B8-51BC-A037-D369BDA18F30",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Salted-overnight Lincoln Square roast chicken, looks harder than it is",
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    },
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking",
+    "chicago"
+  ],
+  "threads": [],
+  "title": "The one dish I make when someone comes over",
+  "updated_at": "2026-03-14T17:25:00Z"
+}

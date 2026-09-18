@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-04-20T14:18:00Z",
+  "entry_schema_version": 4,
+  "id": "73BC35B9-93EA-5D3F-AD36-2E8912432AA0",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Watching with French subtitles rather than English: comprehension drops\nabout forty per cent and something else goes up. You stop processing the\ndialogue as information and start hearing it as sound and rhythm again,\nwhich is how you heard your own language before you understood it.",
+      "created_at": "2026-04-20T14:18:00Z",
+      "id": "87349926-C04B-5F07-AD8B-46A1CA208DDF",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "French subtitles drop comprehension but restore dialogue as sound",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "On watching films in a language you are learning",
+  "updated_at": "2026-04-20T14:18:00Z"
+}

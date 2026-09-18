@@ -1,3 +1,54 @@
 [
-  { "id": "sample-library", "name": "Sample Library" }
+  {
+    "id": "diary",
+    "name": "Diary"
+  },
+  {
+    "id": "dream-log",
+    "name": "Dream Log"
+  },
+  {
+    "id": "quick-thoughts",
+    "name": "Quick Thoughts"
+  },
+  {
+    "id": "film",
+    "name": "Film"
+  },
+  {
+    "id": "workshop",
+    "name": "Workshop"
+  },
+  {
+    "id": "games",
+    "name": "Games"
+  },
+  {
+    "id": "french",
+    "name": "French"
+  },
+  {
+    "id": "library",
+    "name": "Library"
+  },
+  {
+    "id": "learning",
+    "name": "Learning"
+  },
+  {
+    "id": "coffee",
+    "name": "Coffee"
+  },
+  {
+    "id": "recipes",
+    "name": "Recipes"
+  },
+  {
+    "id": "media",
+    "name": "Media"
+  },
+  {
+    "id": "people",
+    "name": "People"
+  }
 ]

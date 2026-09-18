@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-01-05T11:07:00Z",
+  "entry_schema_version": 4,
+  "id": "75D6CA50-B015-5734-AFF8-11A7F0F84276",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The first list that matches the modern 27 shows up in an Easter letter —\na bishop writing to his churches about which books to read aloud. Not a\ncouncil. A letter.\n\nThree hundred years of it being unsettled and then a piece of\ncorrespondence.",
+      "created_at": "2026-01-05T11:07:00Z",
+      "id": "A6A73E3C-E8FD-5DF9-9F2E-BD22E0BD7521",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The modern 27-book list first appears in a bishop's Easter letter",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives"
+  ],
+  "threads": [],
+  "title": "Athanasius, 367",
+  "updated_at": "2026-01-05T11:07:00Z"
+}

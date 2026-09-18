@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-01-15T11:27:00Z",
+  "entry_schema_version": 4,
+  "id": "E81A423F-C0A6-5A70-BE1F-BBA783F1C56F",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "*Je me suis trompé* — literally \"I deceived myself.\" *Le verre s'est\ncassé* — \"the glass broke itself.\"\n\nFrench routes an enormous amount of ordinary experience through the\nreflexive, so things happen *to themselves* rather than being done by\nyou. English insists on an agent. I keep wondering whether that does\nanything to a person over a lifetime, or whether it's just grammar and I\nam being romantic about it.",
+      "created_at": "2026-01-15T11:27:00Z",
+      "id": "7D855D5A-B47A-57A9-A8A3-BA413B161DD5",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Reflexive verbs route ordinary experience so events happen to themselves.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "On reflexive verbs and where the blame goes",
+  "updated_at": "2026-01-15T11:27:00Z"
+}

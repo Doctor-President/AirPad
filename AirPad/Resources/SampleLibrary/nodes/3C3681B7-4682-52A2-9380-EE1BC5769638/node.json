@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-02-11T21:38:00Z",
+  "entry_schema_version": 4,
+  "id": "3C3681B7-4682-52A2-9380-EE1BC5769638",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Two and a half hours and it refuses to tell you who to believe until the\nlast twenty minutes, and then the answer makes the previous two hours\nworse in retrospect. I sat in the dark for a while after.",
+      "created_at": "2026-02-11T21:38:00Z",
+      "id": "D2C7F1E3-B602-518B-88B8-C247EA2BDE32",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Withholds who to believe until the ending reframes everything worse",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    },
+    "korean": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "korean"
+  ],
+  "threads": [],
+  "title": "The Wailing",
+  "updated_at": "2026-02-11T21:38:00Z"
+}

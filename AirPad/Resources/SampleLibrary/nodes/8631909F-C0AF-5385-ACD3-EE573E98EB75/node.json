@@ -1,0 +1,87 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-07-20T11:08:00Z",
+  "entry_schema_version": 4,
+  "id": "8631909F-C0AF-5385-ACD3-EE573E98EB75",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-07-20T11:08:00Z",
+      "id": "1E2B82DF-87E9-59EF-9BD2-8E907617408D",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "created_at": "2026-07-20T11:08:00Z",
+      "field": {
+        "definition_id": "fd_roaster",
+        "value": {
+          "text": {
+            "_0": "Sparrow"
+          }
+        }
+      },
+      "id": "377BD261-C74B-5A76-B64F-07241940CAEF",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-07-20T11:08:00Z",
+      "field": {
+        "definition_id": "fd_origin",
+        "value": {
+          "text": {
+            "_0": "Huehuetenango, Guatemala"
+          }
+        }
+      },
+      "id": "A4F7A519-F1A9-59B3-9798-05B1E7FB652C",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-07-20T11:08:00Z",
+      "field": {
+        "definition_id": "fd_process",
+        "value": {
+          "text": {
+            "_0": "Washed"
+          }
+        }
+      },
+      "id": "9915A3CA-23A8-50A5-98CF-0708AEBA0D81",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-07-20T11:08:00Z",
+      "field": {
+        "definition_id": "fd_roast_date",
+        "value": {
+          "date": {
+            "_0": "2026-07-14T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "A3AD9EA9-3E32-504A-ADE8-E54ADC89A047",
+      "type": "field"
+    },
+    {
+      "content": "Bought the week the camera came. Associated forever now with unpacking\nsomething heavier than I expected.",
+      "created_at": "2026-07-20T11:08:00Z",
+      "id": "F8D9B778-1DFB-5979-9459-369F3716404E",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A Guatemalan washed coffee tied to the week the camera arrived",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Sparrow — Huehuetenango",
+  "updated_at": "2026-07-20T11:08:00Z"
+}

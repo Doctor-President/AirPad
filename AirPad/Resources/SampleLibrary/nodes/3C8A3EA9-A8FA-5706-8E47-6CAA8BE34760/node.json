@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-09-14T23:29:00Z",
+  "entry_schema_version": 4,
+  "id": "3C8A3EA9-A8FA-5706-8E47-6CAA8BE34760",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Read back through this whole thing tonight, which I don't recommend.\n\nWhat I notice: I made the camera decision in about six weeks and I have\nbeen not-making the other one for fourteen years. Same person. I don't\nthink that's hypocrisy exactly. I think some decisions have a shape you\ncan hold and some don't.\n\nAlso I mention Sid more than I realised.",
+      "created_at": "2026-09-14T23:29:00Z",
+      "id": "BEB3D9CA-7D6A-5E5C-BDAD-457AADBDDFFA",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-09-14T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Rereading the year, she contrasts the camera choice with the father one",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "A year of this",
+  "updated_at": "2026-09-14T23:29:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-09-02T10:44:00Z",
+  "entry_schema_version": 4,
+  "id": "C42D0B44-0C9B-5F7E-9A7F-B3C8AB40E571",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Spent the morning in the local history room. Somebody in 1961 saved a\nchurch newsletter, and it is now the only surviving account of a block\nthat isn't there.\n\nNobody knew which thing would matter. They just kept it.",
+      "created_at": "2026-09-02T10:44:00Z",
+      "id": "D0EAF1D3-AAA8-5724-B882-095F0E8BE974",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A 1961 church newsletter is now the only record of a vanished block",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "archives"
+  ],
+  "threads": [],
+  "title": "archives, actually",
+  "updated_at": "2026-09-02T10:44:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2025-12-04T14:37:00Z",
+  "entry_schema_version": 4,
+  "id": "15B52C2D-EDFB-5724-8D72-73A1606B374C",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "A man asleep in the periodicals. Security called before anyone woke him\nto ask if he was all right. He wasn't doing anything — he was asleep at\n2pm in a building whose stated purpose is sitting quietly.\n\nThe policy says \"disruptive.\" Sleeping is disruptive now.",
+      "created_at": "2025-12-04T14:37:00Z",
+      "id": "DD11A46A-08BB-52F5-B6A8-FDB9C72A7EC3",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Security removes a man for sleeping in the periodicals at 2pm",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "Escorted out again",
+  "updated_at": "2025-12-04T14:37:00Z"
+}

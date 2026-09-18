@@ -1,0 +1,87 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-04-30T09:53:00Z",
+  "entry_schema_version": 4,
+  "id": "E32B8592-A554-5E5E-9076-88C060110B8B",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-04-30T09:53:00Z",
+      "id": "F7BBDF3F-F472-5118-9CC5-0C7B0EE2025C",
+      "rating": {
+        "scale": 5,
+        "value": 5
+      },
+      "type": "rating"
+    },
+    {
+      "created_at": "2026-04-30T09:53:00Z",
+      "field": {
+        "definition_id": "fd_roaster",
+        "value": {
+          "text": {
+            "_0": "Passion House"
+          }
+        }
+      },
+      "id": "A75654F6-B1A3-53B0-84B9-FB409655B255",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-04-30T09:53:00Z",
+      "field": {
+        "definition_id": "fd_origin",
+        "value": {
+          "text": {
+            "_0": "Blend"
+          }
+        }
+      },
+      "id": "353977F9-79BB-5AAA-BC2D-BFBC9BC1946F",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-04-30T09:53:00Z",
+      "field": {
+        "definition_id": "fd_process",
+        "value": {
+          "text": {
+            "_0": "Washed"
+          }
+        }
+      },
+      "id": "C37A294A-3473-5104-ACAF-B02F69E7A2C7",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-04-30T09:53:00Z",
+      "field": {
+        "definition_id": "fd_roast_date",
+        "value": {
+          "date": {
+            "_0": "2026-04-24T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "A5DF828F-3888-5070-9C40-6D0CFBE9C210",
+      "type": "field"
+    },
+    {
+      "content": "The one I keep re-ordering. Unfashionable. Chocolate, low acid, works at\nany grind I've thrown at it, forgives me on bad mornings.",
+      "created_at": "2026-04-30T09:53:00Z",
+      "id": "97EB57A7-E073-58E3-A3B4-895996AE7431",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The forgiving everyday re-order, chocolatey and grind-agnostic",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Passion House — Blue Collar",
+  "updated_at": "2026-04-30T09:53:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-04-12T14:48:00Z",
+  "entry_schema_version": 4,
+  "id": "AA3C56A9-6F8E-5BD8-BFF7-6F841BB5AFA1",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "It is a different branch. Vocabulary that stayed while metropolitan\nFrench moved on, plus loanwords going the other direction — *chum*,\n*blonde*, *char* for car. The vowels are older, not wrong.\n\nA woman at the market told me my French was \"très français,\" and I\ngenuinely could not tell if it was a compliment.",
+      "created_at": "2026-04-12T14:48:00Z",
+      "id": "68125AAC-315F-5AC1-AC78-947BA31EF39E",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A separate branch with older vowels and its own loanwords, not wrong.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "Québécois isn't an accent",
+  "updated_at": "2026-04-12T14:48:00Z"
+}

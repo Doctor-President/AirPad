@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2026-01-11T16:05:00Z",
+  "entry_schema_version": 4,
+  "id": "2804ADBD-3FB2-5984-8BD2-690947EE067E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "nobody has ever described a smell without comparing it to a different\nthing. we have no first-order words for it at all — every one is a\nloan.",
+      "created_at": "2026-01-11T16:05:00Z",
+      "id": "62280832-89F0-5117-B2B7-B68BC3105994",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "every smell word is borrowed from another sense",
+  "tag_sources": {
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "language"
+  ],
+  "threads": [],
+  "title": "no primary vocabulary for smell",
+  "updated_at": "2026-01-11T16:05:00Z"
+}

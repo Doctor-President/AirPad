@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-03-10T22:26:00Z",
+  "entry_schema_version": 4,
+  "id": "1CEBD4B3-8008-58D4-858A-585E54121931",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Forty hours in and I've started reloading saves to see what the other\noption said. I can feel it ruining something and I keep doing it.",
+      "created_at": "2026-03-10T22:26:00Z",
+      "id": "7E4073B6-2D23-5D93-82C8-0BE4C2170AD5",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Reloading saves to see alternatives ruins the first playthrough",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "BG3 — the first playthrough problem",
+  "updated_at": "2026-03-10T22:26:00Z"
+}

@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-08-24T13:22:00Z",
+  "entry_schema_version": 4,
+  "id": "E7393A7E-F553-50C6-9618-378E74FC72AF",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "One heavy enamelled pot does four-fifths of what I cook and I resent every\ngadget I bought before I understood that. The tool was never the problem. I\nwas.",
+      "created_at": "2026-08-24T13:22:00Z",
+      "id": "3E584E8A-520D-50DF-8E92-B25103EBF745",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "One heavy enamelled pot does four-fifths of the cooking",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "the good pot",
+  "updated_at": "2026-08-24T13:22:00Z"
+}

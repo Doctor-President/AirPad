@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2025-12-27T22:31:00Z",
+  "entry_schema_version": 4,
+  "id": "530AE0D8-3299-5371-9EDB-AA223FBB094A",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "It is not about a cult. The cult is the mechanism. It is about a family\nwhere everyone is grieving separately and using the grief as a reason not\nto be in the room with each other.\n\nThe dinner-table scene is the most frightening thing in it and nothing\nsupernatural happens.",
+      "created_at": "2025-12-27T22:31:00Z",
+      "id": "6D9F1C5E-0679-53D3-8E8F-BE9E47D8EB03",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Reads Aster's film as separated grief, the cult only a mechanism",
+  "tag_sources": {
+    "aster": {
+      "source": "user"
+    },
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "aster"
+  ],
+  "threads": [],
+  "title": "Hereditary is a grief film",
+  "updated_at": "2025-12-27T22:31:00Z"
+}

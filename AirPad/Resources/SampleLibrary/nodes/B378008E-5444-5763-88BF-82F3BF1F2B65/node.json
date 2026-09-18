@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-07-12T21:41:00Z",
+  "entry_schema_version": 4,
+  "id": "B378008E-5444-5763-88BF-82F3BF1F2B65",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The Bolex came Thursday. Heavier than I expected. Smells like oil and\nsomething older than oil.\n\nI have not shot a frame. I keep picking it up and putting it down. That's\nallowed for one week and then it isn't.",
+      "created_at": "2026-07-12T21:41:00Z",
+      "id": "E459E89F-8BFB-5A54-AAC2-5020E8C97DF7",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-07-12T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "The Bolex camera arrives and sits unused so far",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "bought it",
+  "updated_at": "2026-07-12T21:41:00Z"
+}

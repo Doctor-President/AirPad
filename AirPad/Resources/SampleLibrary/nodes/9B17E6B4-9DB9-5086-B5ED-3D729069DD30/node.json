@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-01-07T09:48:00Z",
+  "entry_schema_version": 4,
+  "id": "9B17E6B4-9DB9-5086-B5ED-3D729069DD30",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Ten million to five. They halved what we spend on *books*, in a library\nsystem, and CPD's line went up in the same document.\n\nI am not being rhetorical. It is two numbers in the same PDF.",
+      "created_at": "2026-01-07T09:48:00Z",
+      "id": "461D7CFD-2FDC-558A-BE0D-81369C9C9998",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Materials cut $10M to $5M while CPD's line rose in the same PDF",
+  "tag_sources": {
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    },
+    "union": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "budget",
+    "union"
+  ],
+  "threads": [],
+  "title": "Half the materials budget",
+  "updated_at": "2026-01-07T09:48:00Z"
+}

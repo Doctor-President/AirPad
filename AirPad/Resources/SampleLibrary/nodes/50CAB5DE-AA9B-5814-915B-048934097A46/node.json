@@ -1,0 +1,53 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-07-11T14:29:00Z",
+  "entry_schema_version": 4,
+  "id": "50CAB5DE-AA9B-5814-915B-048934097A46",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Film stock decays. Nitrate burns, acetate goes to vinegar, colour dyes\nshift. Roughly half of everything shot before 1950 is simply gone, and\nwhat survived survived because a studio thought it had commercial value\nor a collector was obsessive.\n\nSame mechanism as the scriptoria. Same mechanism as the acquisitions\nbudget. I keep finding this shape in different centuries.",
+      "created_at": "2026-07-11T14:29:00Z",
+      "id": "6F951037-B142-5D20-A8ED-481CB48AFDEA",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-07-11T14:29:00Z",
+      "id": "07ABC9DF-4DEE-5077-A9F5-5B061AC50A05",
+      "link_items": [
+        {
+          "captured_at": "2026-07-11T14:29:00Z",
+          "id": "AFB70727-800C-514F-889C-D815E39A274A",
+          "site_name": "Smithsonian Institution",
+          "title": "Smithsonian Open Access",
+          "url": "https://www.si.edu/openaccess"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Half of pre-1950 film is gone; only commercial or obsessive care saved the rest",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "A silver photographic emulsion is also an archive problem",
+  "updated_at": "2026-07-11T14:29:00Z"
+}

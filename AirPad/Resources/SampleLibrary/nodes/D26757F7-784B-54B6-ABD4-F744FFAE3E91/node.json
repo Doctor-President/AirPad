@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-08-31T20:26:00Z",
+  "entry_schema_version": 4,
+  "id": "D26757F7-784B-54B6-ABD4-F744FFAE3E91",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The grass is the whole film. Wind, and it never stops moving, and you\ncannot see anyone coming.",
+      "created_at": "2026-08-31T20:26:00Z",
+      "id": "36C9A6EA-73E2-54F5-AC94-28854184B3A0",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The endlessly moving grass is the whole film, hiding what approaches",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror"
+  ],
+  "threads": [],
+  "title": "Onibaba",
+  "updated_at": "2026-08-31T20:26:00Z"
+}

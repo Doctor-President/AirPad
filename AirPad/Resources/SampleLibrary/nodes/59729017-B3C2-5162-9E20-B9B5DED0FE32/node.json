@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-04-10T17:05:00Z",
+  "entry_schema_version": 4,
+  "id": "59729017-B3C2-5162-9E20-B9B5DED0FE32",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Twice today someone heard my accent and switched to English to be kind\nand it landed as a small failure both times.",
+      "created_at": "2026-04-10T17:05:00Z",
+      "id": "136F1259-D537-565D-8D4E-D69DCF5F3E1A",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Twice locals switched to English out of kindness; it stung.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "ils ont switché",
+  "updated_at": "2026-04-10T17:05:00Z"
+}

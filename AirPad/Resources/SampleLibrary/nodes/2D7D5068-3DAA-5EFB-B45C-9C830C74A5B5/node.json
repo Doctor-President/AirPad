@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-02-20T19:33:00Z",
+  "entry_schema_version": 4,
+  "id": "2D7D5068-3DAA-5EFB-B45C-9C830C74A5B5",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Three ingredients and I have broken the sauce more ways than seems\nmathematically possible. The trick nobody says out loud: the pan has to be\noff the heat before the cheese goes in, or you get a pot of expensive\ngrit.",
+      "created_at": "2026-02-20T19:33:00Z",
+      "id": "FEC61DC6-4884-5ED7-B923-7B8ADE308550",
+      "type": "text"
+    },
+    {
+      "content": "**Mar 4** — took the pan off the heat first. Emulsion held. Two years of\ngrit and it was a temperature the whole time.",
+      "created_at": "2026-03-04T20:12:00Z",
+      "id": "E5D2C793-CC82-5D04-BF1F-583D94BB1F21",
+      "type": "text"
+    },
+    {
+      "content": "**Apr 1** — did it for Sid. Held again. I am choosing to believe I have\nlearned this and not that I got lucky twice.",
+      "created_at": "2026-04-01T21:40:00Z",
+      "id": "AE841521-1D1C-5EFB-86B4-D14112E75C32",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Pan off the heat before the cheese is the whole trick",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "cacio e pepe, attempt whatever",
+  "updated_at": "2026-04-01T21:40:00Z"
+}

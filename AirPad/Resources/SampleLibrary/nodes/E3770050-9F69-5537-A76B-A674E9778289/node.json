@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2025-12-03T21:47:00Z",
+  "entry_schema_version": 4,
+  "id": "E3770050-9F69-5537-A76B-A674E9778289",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Everyone treats horror as the disreputable genre and I have stopped\narguing politely about it.\n\nIt is the only genre whose entire job is to look directly at the thing\npeople organise their lives around not looking at. Death, the body,\nwhat's under the floor, what a family does to each other. Drama gestures\nat it. Horror puts it on screen and makes you watch.\n\nThat it also contains a lot of garbage is true of every genre and nobody\nholds it against comedy.",
+      "created_at": "2025-12-03T21:47:00Z",
+      "id": "8C652D86-CF29-5E8A-BAD4-3178B03E47D7",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Argues horror is the only genre that stares at what we avoid",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror"
+  ],
+  "threads": [],
+  "title": "Horror does the looking",
+  "updated_at": "2025-12-03T21:47:00Z"
+}

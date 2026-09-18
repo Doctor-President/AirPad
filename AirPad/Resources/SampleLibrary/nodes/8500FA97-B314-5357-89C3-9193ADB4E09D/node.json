@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-02-12T18:51:00Z",
+  "entry_schema_version": 4,
+  "id": "8500FA97-B314-5357-89C3-9193ADB4E09D",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "It isn't a flourish, it's what you use when the thing isn't a fact — a\nwish, a doubt, a maybe. Marked grammatically. English used to have it and\nlet it rot down to \"if I were.\"",
+      "created_at": "2026-02-12T18:51:00Z",
+      "id": "7AA3FBA5-FA93-5B4C-86E9-2D302095E15C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A grammatical mood marking wishes, doubts, and things that aren't fact.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "the subjunctive is not optional",
+  "updated_at": "2026-02-12T18:51:00Z"
+}

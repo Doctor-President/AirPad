@@ -66,14 +66,23 @@ actor iCloudDriveService {
         }
     }
 
-    /// Brief N §2 — throwaway scratch container for `-SampleSeedDemo`. Unlike the
-    /// field-fixture scratch, it is NOT wiped each launch: the sample seeds once
-    /// (empty first run), then the marker gates re-seeding on relaunch, so the full
-    /// seed → Remove → no-re-seed cycle is demonstrable. Never touches iCloud.
+    /// Brief N §2 — throwaway scratch container for `-SampleSeedDemo`. ★ WIPED CLEAN on EVERY
+    /// launch (2026-09-18 fix), like the field-fixture scratch: it is a preview of the CURRENT
+    /// bundle, so it must always start empty and re-seed. The earlier persist-across-launch design
+    /// let a stale marker + old placeholder seed survive a bundle update, so the seeder correctly
+    /// refused to re-seed and the demo showed old content. Wiping every launch removes the trap —
+    /// each `-SampleSeedDemo` run seeds the bundle as shipped. (Trade-off: the marker → Remove →
+    /// no-re-seed cycle is no longer demoable HERE; test that on a real fresh Simulator install.)
+    /// Never touches iCloud.
     private func trySetupSampleDemoScratch() -> Bool {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
         let root = caches.appendingPathComponent("AirPadSampleDemoScratch")
         do {
+            // Start clean each launch so the demo always reflects the current bundle — never a
+            // stale prior seed whose marker would block re-seeding.
+            if FileManager.default.fileExists(atPath: root.path) {
+                try FileManager.default.removeItem(at: root)
+            }
             try FileManager.default.createDirectory(
                 at: root.appendingPathComponent("nodes"),
                 withIntermediateDirectories: true

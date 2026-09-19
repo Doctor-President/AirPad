@@ -361,6 +361,12 @@ final class CorpusStore {
     /// cancelled/relaunched pass just re-runs the presence/hash/version checks.
     private var catalogBackfillTask: Task<Void, Never>?
 
+    /// Brief R — block-index reconciler (mirror of `catalogBackfillTask`). Ensures
+    /// `blocks.json` exists for every text node on a corpus the store never saved
+    /// through — the seeded sample being the case that exposed it (corpus-Ask
+    /// retrieval was empty because no block index existed). Off the launch path.
+    private var blockBackfillTask: Task<Void, Never>?
+
     /// Wall-clock duration of the last catalog backfill, for the dev readout.
     private(set) var lastCatalogBackfillDuration: TimeInterval? = nil
 
@@ -741,6 +747,10 @@ final class CorpusStore {
         // ws-card-catalog step 2c — kick the catalog backfill after corpus load,
         // off the launch path (foreground-idle, low priority). Not awaited.
         armCatalogBackfill()
+        // Brief R — block-index reconciler, same shape/timing as the catalog
+        // backfill: ensures corpus-Ask has a block index to retrieve from even on
+        // a corpus that was never saved through the store (the seeded sample).
+        armBlockBackfill()
         // Substrate reconciler — enrich any images still lacking current analysis
         // (interrupted runs, un-downloaded iCloud photos, extractorVersion bumps).
         // After load, off the launch path, non-blocking. Not a backfill.
@@ -857,6 +867,22 @@ final class CorpusStore {
                 // seeded node/collection is gone. Never touches the real container.
                 if ProcessInfo.processInfo.arguments.contains("-SampleSeedSelfTest") {
                     NSLog("[SampleSeedSelfTest] %@", SampleLibrarySeederSelfTest.run())
+                }
+                // Brief R Step 4 — READ-ONLY block-retrieval probe. Runs
+                // findRelevantBlocks for a fixed query over ALL node ids (corpus
+                // scope) and logs the top-3 (score, node id, title). Writes
+                // nothing. Needs blocks.json present + the BGE query embed (which
+                // needs .cpuOnly on the Simulator, same as the card bake).
+                if ProcessInfo.processInfo.arguments.contains("-AskMatchDiag") {
+                    let q = "How much did I pay for the Bolex?"
+                    let ids = nodes.map { $0.id }
+                    let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 3)
+                    NSLog("[AskMatchDiag] query=%@ candidates=%d matches=%d", q, ids.count, matches.count)
+                    for m in matches {
+                        let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
+                        NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@", m.score, m.nodeID, title)
+                    }
+                    if matches.isEmpty { NSLog("[AskMatchDiag] NO MATCHES") }
                 }
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
@@ -2117,6 +2143,97 @@ final class CorpusStore {
         lastCatalogBackfillDuration = duration
         bug16Log.notice("CatalogBackfill END built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration), privacy: .public)s")
         print("[CatalogBackfill] built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration))s")
+    }
+
+    // MARK: - Brief R — block-index reconciler (mirror of the catalog backfill)
+
+    private static let udBlockFingerprintKey = "com.airpad.blockindex.fingerprint"
+
+    /// Arm the one-shot block-index reconciler off the launch path — the exact
+    /// shape as `armCatalogBackfill`: ~5s delay, detached/off-main, fingerprint-
+    /// gated so an unchanged corpus does zero work. Builds `blocks.json` for text
+    /// nodes on a corpus the store never wrote through (the seeded sample, whose
+    /// missing block index left corpus-Ask retrieval empty).
+    private func armBlockBackfill() {
+        blockBackfillTask?.cancel()
+        blockBackfillTask = Task.detached(priority: .background) { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, !Task.isCancelled else { return }
+            guard #available(iOS 17.0, *) else { return }
+            let pairs = await self.backfillFingerprintPairs()
+            let fingerprint = CorpusStore.blockFingerprint(pairs)
+            if fingerprint == CorpusStore.loadBlockFingerprint() {
+                bug16Log.notice("BlockBackfill SKIP — fingerprint unchanged (\(pairs.count, privacy: .public) nodes)")
+                return
+            }
+            await self.backfillBlockIndex()
+        }
+    }
+
+    /// Block-index fingerprint: same (id, updatedAt) body as the catalog
+    /// fingerprint, but salted with the BLOCK embedder version and stored under
+    /// its OWN key — so a block-version bump forces one re-scan without touching
+    /// the catalog signature, and vice versa.
+    @available(iOS 17.0, *)
+    nonisolated static func blockFingerprint(_ pairs: [(id: String, updatedAt: Date)]) -> String {
+        let body = pairs
+            .sorted { $0.id < $1.id }
+            .map { "\($0.id)|\($0.updatedAt.timeIntervalSince1970)" }
+            .joined(separator: ";")
+        let salted = "bv\(BlockEmbeddingService.currentEmbedderVersion);\(body)"
+        let digest = SHA256.hash(data: Data(salted.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+    nonisolated static func loadBlockFingerprint() -> String? {
+        UserDefaults.standard.string(forKey: udBlockFingerprintKey)
+    }
+    nonisolated static func storeBlockFingerprint(_ fingerprint: String) {
+        UserDefaults.standard.set(fingerprint, forKey: udBlockFingerprintKey)
+    }
+
+    /// One-shot reconciler: rebuild `blocks.json` for every node whose index is
+    /// MISSING or STALE (chunk sourceHashes drifted or embedder-version behind);
+    /// skip nodes with no text; yield between nodes as the catalog backfill does;
+    /// record the fingerprint only on a complete pass. `rebuild` is idempotent
+    /// (reuses fresh blocks by (itemID, sourceHash) at the current version), so
+    /// it re-embeds only the blocks that actually changed. Never touches
+    /// `saveAndEnqueue`/`enqueueRebuild` or the Librarian.
+    @available(iOS 17.0, *)
+    func backfillBlockIndex() async {
+        let start = Date()
+        let snapshot = nodes
+        var rebuilt = 0, skippedNoText = 0, fresh = 0
+        bug16Log.notice("BlockBackfill START total=\(snapshot.count)")
+        for node in snapshot {
+            if Task.isCancelled { break }
+            let specs = BlockChunker.chunk(node)
+            if specs.isEmpty { skippedNoText += 1; continue }
+            if await blockIndexIsFresh(node, specs: specs) { fresh += 1; continue }
+            await blockEmbedding.rebuild(node: node)
+            rebuilt += 1
+            try? await Task.sleep(nanoseconds: 40_000_000)
+        }
+        if !Task.isCancelled {
+            CorpusStore.storeBlockFingerprint(
+                CorpusStore.blockFingerprint(nodes.map { (id: $0.id, updatedAt: $0.updatedAt) })
+            )
+        }
+        let dur = Date().timeIntervalSince(start)
+        bug16Log.notice("BlockBackfill END rebuilt=\(rebuilt) skippedNoText=\(skippedNoText) fresh=\(fresh) total=\(snapshot.count) dur=\(String(format: "%.1f", dur), privacy: .public)s")
+        print("[BlockBackfill] rebuilt=\(rebuilt) skippedNoText=\(skippedNoText) fresh=\(fresh) total=\(snapshot.count) dur=\(String(format: "%.1f", dur))s")
+    }
+
+    /// True when the on-disk index already covers exactly the current chunk specs
+    /// at the current embedder version — nothing to rebuild. Missing index or any
+    /// drift ⇒ false (rebuild).
+    @available(iOS 17.0, *)
+    private func blockIndexIsFresh(_ node: Node, specs: [BlockChunkSpec]) async -> Bool {
+        guard let index = try? await service.loadBlockIndex(forNodeID: node.id) else { return false }
+        let want = Set(specs.map { "\($0.itemID)|\($0.sourceHash)" })
+        let have = Set(index.blocks
+            .filter { $0.embedderVersion == BlockEmbeddingService.currentEmbedderVersion }
+            .map { "\($0.itemID)|\($0.sourceHash)" })
+        return !want.isEmpty && want == have
     }
 
     /// Dev readout: catalog coverage across the live corpus. Loads each sidecar,

@@ -15,6 +15,11 @@ import Foundation
 enum CanvasScope: Hashable, Sendable {
     case corpus
     case collection(String)
+    /// Brief U — an arbitrary set of node ids (the seeded sample library's nodes).
+    /// Renders through the same canvas pipeline as a collection but has no
+    /// collection identity: it never marks a collection "used" (so a capture can't
+    /// default into it) and carries no rename/delete chrome.
+    case nodeIDs(Set<String>)
 }
 
 extension CanvasScope {
@@ -26,6 +31,7 @@ extension CanvasScope {
         switch self {
         case .corpus:                 return NodeCollection.corpusID
         case .collection(let id):     return id
+        case .nodeIDs:                return NodeCollection.sampleScopeID
         }
     }
 }

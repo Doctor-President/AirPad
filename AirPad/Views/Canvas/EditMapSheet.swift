@@ -13,6 +13,8 @@ struct EditMapSheet: View {
     // Gravity signal weights — tunable dials (calibrate on device, bake later).
     @AppStorage("map.weight.collection") private var wCollection: Double = 1.0
     @AppStorage("map.weight.anchor") private var wAnchor: Double = 0.6
+    /// ★ Key stays `map.weight.language` — the LABEL changed to "Meaning", not the storage. Renaming
+    /// the key would silently reset T's dialed value to the default.
     @AppStorage("map.weight.language") private var wLanguage: Double = 0.3
     @AppStorage("map.weight.backlink") private var wBacklink: Double = 0.4
     @AppStorage("map.tintByRecency") private var tintByRecency: Bool = true
@@ -30,7 +32,10 @@ struct EditMapSheet: View {
                 Section {
                     weightRow("Collection", $wCollection)
                     weightRow("Anchor tag", $wAnchor)
-                    weightRow("Language", $wLanguage)
+                    // "Meaning", not "Language": this weight is embedding COSINE — semantic
+                    // similarity — and has nothing to do with human language. Every reader so far,
+                    // including CC, has misread it as the latter.
+                    weightRow("Meaning", $wLanguage)
                     weightRow("Backlink", $wBacklink)
                     Toggle(isOn: $tintByRecency) {
                         Text("Vary tint by recency")
@@ -41,7 +46,7 @@ struct EditMapSheet: View {
                 } header: {
                     Text("Gravity — signal weights")
                 } footer: {
-                    Text("Collection / Anchor / Language decide a node's territory (argmax) and border lean. Backlink then pulls it toward its linked nodes — capped, so territory law still wins. Each node's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-node shade otherwise.")
+                    Text("Collection / Anchor / Meaning decide a node's territory (argmax) and border lean. Backlink then pulls it toward its linked nodes — capped, so territory law still wins. Each node's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-node shade otherwise.")
                         .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-06-22T15:31:00Z",
+  "entry_schema_version": 4,
+  "id": "FF75ED07-2D7D-5114-880F-F6BE98703415",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Signups down a third. Programming thinned because the hours aren't there\nto run it, so fewer people come, so next year it looks like demand fell.\n\nThis is the mechanism. It isn't subtle and it still works.",
+      "created_at": "2026-06-22T15:31:00Z",
+      "id": "3CFF99F0-C72B-5834-B94B-C4FD9D5B6905",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Signups down a third as thinned hours manufacture the look of falling demand",
+  "tag_sources": {
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "budget"
+  ],
+  "threads": [],
+  "title": "summer reading",
+  "updated_at": "2026-06-22T15:31:00Z"
+}

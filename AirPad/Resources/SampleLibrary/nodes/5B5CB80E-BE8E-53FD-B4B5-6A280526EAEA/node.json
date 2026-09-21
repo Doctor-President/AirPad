@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-01-09T15:08:00Z",
+  "entry_schema_version": 4,
+  "id": "5B5CB80E-BE8E-53FD-B4B5-6A280526EAEA",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "You cannot fly to the planet. You watch a cutscene of flying to the\nplanet. Once you see it you can't unsee it, and the game is still good,\nand I am still annoyed.",
+      "created_at": "2026-01-09T15:08:00Z",
+      "id": "FFDC3673-3F7A-57C6-9966-615CB7D70BDC",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Cutscene flight breaks immersion once it's noticed",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "Starfield's loading screens",
+  "updated_at": "2026-01-09T15:08:00Z"
+}

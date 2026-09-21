@@ -1,0 +1,40 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-02-24T22:20:00Z",
+  "entry_schema_version": 4,
+  "id": "A141029E-76F6-5836-83F6-60C9B357268F",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-02-24T22:20:00Z",
+      "id": "5AD44C1E-59AF-5F14-A443-0E58594E639E",
+      "rating": {
+        "scale": 5,
+        "value": 5
+      },
+      "type": "rating"
+    },
+    {
+      "content": "Not putting this in Games because I can't write about it without spoiling\nthe one thing it has, which is the whole thing. Just: play it knowing\nnothing.",
+      "created_at": "2026-02-24T22:20:00Z",
+      "id": "11A85858-CE60-5423-AE5C-EDE8A3AE6451",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Kept out of Games because its one secret is the whole thing",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "Outer Wilds",
+  "updated_at": "2026-02-24T22:20:00Z"
+}

@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-06-05T10:16:00Z",
+  "entry_schema_version": 4,
+  "id": "D6F48493-D4A0-5A29-B2B2-19CB27CB32B3",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Every subject heading is someone's decision about what a thing is. LCSH\ncalled it \"Illegal aliens\" until 2016 and people fought for years over\nthree words.\n\nThe catalogue is not neutral. It is just old enough that its opinions\nlook like facts.",
+      "created_at": "2026-06-05T10:16:00Z",
+      "id": "7030408D-7A5F-5EE2-865C-D8855832E490",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Subject headings carry old opinions — LCSH's \"Illegal aliens\" until 2016",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "archives",
+    "language"
+  ],
+  "threads": [],
+  "title": "cataloguing is a moral act",
+  "updated_at": "2026-06-05T10:16:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-08-12T15:22:00Z",
+  "entry_schema_version": 4,
+  "id": "EC2F2905-E0CA-5AA2-9467-2DBAC45937F0",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Textual criticism rule: when two manuscripts differ, the *harder* reading\nis likelier original, because scribes smooth things out. Nobody\naccidentally makes a text more confusing.\n\nThe errors run in a known direction. You can work backwards.",
+      "created_at": "2026-08-12T15:22:00Z",
+      "id": "45005C0C-E8F2-5AD0-933F-079239F5DA4E",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The textual-criticism rule that the harder reading is likelier original",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "language"
+  ],
+  "threads": [],
+  "title": "lectio difficilior",
+  "updated_at": "2026-08-12T15:22:00Z"
+}

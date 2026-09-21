@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-07-31T16:38:00Z",
+  "entry_schema_version": 4,
+  "id": "D2300AA8-5014-54D7-AE48-1444C4295EFC",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Fewer every year. Two that take mail, one that does black and white\nreversal, none of them fast.\n\nThe whole hobby is downstream of about six businesses staying open.",
+      "created_at": "2026-07-31T16:38:00Z",
+      "id": "E75516CE-E900-571E-91CC-E283C20D7C1C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Only about six mail-in labs remain, and the hobby depends on them staying open",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "film": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "archives"
+  ],
+  "threads": [],
+  "title": "labs that still process 16mm",
+  "updated_at": "2026-07-31T16:38:00Z"
+}

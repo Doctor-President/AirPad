@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2025-11-27T21:47:00Z",
+  "entry_schema_version": 4,
+  "id": "AA1DF4DC-27F1-55E2-A0F8-81EB86E1C32A",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Said I was sick. Ate a sandwich standing up. Not proud of it but not\nsorry either.",
+      "created_at": "2025-11-27T21:47:00Z",
+      "id": "AC9BA73B-F1AA-5BF3-8486-1934D3D8B4AA",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2025-11-27T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Skipping Thanksgiving under a faked illness",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "The Thursday problem",
+  "updated_at": "2025-11-27T21:47:00Z"
+}

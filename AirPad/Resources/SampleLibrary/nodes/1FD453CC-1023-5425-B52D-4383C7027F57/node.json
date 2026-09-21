@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-02-25T20:14:00Z",
+  "entry_schema_version": 4,
+  "id": "1FD453CC-1023-5425-B52D-4383C7027F57",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The constellations are Greek by way of Babylon and maybe three thousand\nyears old, which is nothing. Other people looked at the same sky and drew\na different animal. And the stars *move* — slowly, but they do. So the\nshapes have a start date and an end date.\n\nSomething about that is enormous and I can't say why yet.",
+      "created_at": "2026-02-25T20:14:00Z",
+      "id": "AC4DF520-5D30-5F8F-BCE7-40D00B386CBB",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Greek star-shapes are recent, arbitrary, and slowly dissolving",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Constellations aren't fixed",
+  "updated_at": "2026-02-25T20:14:00Z"
+}

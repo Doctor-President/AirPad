@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-08-13T14:07:00Z",
+  "entry_schema_version": 4,
+  "id": "127D1E55-F5D8-513B-BC90-22DC4DCEBD59",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "It was a draw-distance limitation and they built the entire atmosphere on\nit. Constraint first, meaning after.",
+      "created_at": "2026-08-13T14:07:00Z",
+      "id": "0EFB43C4-26A3-59E6-A77C-9E5ABAC8269B",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A draw-distance limit became the entire atmosphere; constraint first",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games",
+    "horror"
+  ],
+  "threads": [],
+  "title": "Silent Hill 2's fog",
+  "updated_at": "2026-08-13T14:07:00Z"
+}

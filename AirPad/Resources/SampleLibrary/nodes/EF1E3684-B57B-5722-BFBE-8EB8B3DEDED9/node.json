@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-03-26T14:56:00Z",
+  "entry_schema_version": 4,
+  "id": "EF1E3684-B57B-5722-BFBE-8EB8B3DEDED9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "A text survives if someone thought it worth the labour of copying, every\nfew generations, for two thousand years. Not once — continuously.\n\nSo what we have is not the best of antiquity. It is the most consistently\nuseful to institutions with scriptoria. Those overlap, but they are not\nthe same set, and we built a civilisation's idea of its own past on the\ndifference.",
+      "created_at": "2026-03-26T14:56:00Z",
+      "id": "697B6A80-CCDF-5858-BA84-1A2A8550C63D",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "What lasts is what institutions kept copying, not the best of antiquity",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives"
+  ],
+  "threads": [],
+  "title": "A note on what \"survives\" means",
+  "updated_at": "2026-03-26T14:56:00Z"
+}

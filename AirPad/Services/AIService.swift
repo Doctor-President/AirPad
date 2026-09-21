@@ -41,7 +41,7 @@ struct NodeAIResult {
     @Guide(description: "Concise idea title, under 60 characters. Functional, not poetic.")
     var title: String
 
-    @Guide(description: "One to two sentence summary capturing the idea's core essence.")
+    @Guide(description: "One or two sentences stating what the note is ABOUT — an impersonal catalogue fragment. Never refer to the note's own author (no 'she', 'he', 'they', 'you', 'the author', 'the writer') and never narrate the author's actions; people the note is about may be named, but the writer is never the subject.")
     var summary: String
 }
 
@@ -56,7 +56,7 @@ struct ProcessNodeResult {
     @Guide(description: "Concise idea title, under 60 characters. Functional, not poetic.")
     var title: String
 
-    @Guide(description: "One to two sentence summary capturing the idea's core essence.")
+    @Guide(description: "One or two sentences stating what the note is ABOUT — an impersonal catalogue fragment. Never refer to the note's own author (no 'she', 'he', 'they', 'you', 'the author', 'the writer') and never narrate the author's actions; people the note is about may be named, but the writer is never the subject.")
     var summary: String
 
     @Guide(description: "Up to 5 tags from the supplied vocabulary. Prefer compound or specific tags over single broad ones when both are valid; e.g., a recipe-app idea should be tagged with both 'Recipe' and 'Technology' rather than 'Technology' alone. Return an empty array if the content is too thin to support confident tagging.")
@@ -80,7 +80,7 @@ struct ProcessNodeResult {
 @available(iOS 26.0, *)
 @Generable
 struct SubstrateInterpretation {
-    @Guide(description: "One to two sentence summary of the idea, capturing what it's about. Specific to the actual content; avoid generic filler.")
+    @Guide(description: "One or two sentences stating what the note is ABOUT, specific to the actual content (this seeds the embedding, so accuracy matters). An impersonal fragment: never refer to the note's own author (no 'she'/'he'/'they'/'you'/'the author') and never narrate their actions; name people the note is about, but never the writer.")
     var summary: String
 
     @Guide(description: "Free-form tags describing this idea. Pick whatever words best capture the content — no fixed vocabulary, no schema list. Aim for 3 to 8 short tags. Concrete nouns and topical phrases work better than abstract single words.")
@@ -217,6 +217,8 @@ actor AIService {
 
         let prompt = """
         Analyze this captured idea and produce a concise title and summary. Base them on what the user wrote; any text found in images or documents is supporting context — rely on it only when the user's own writing is thin or absent.
+
+        You are the Librarian in AirPad, cataloguing this person's OWN note for them — not narrating it from outside. The summary states what the note is ABOUT, as an impersonal fragment, e.g. "Ten months of French buys a menu and half a Wikipedia article, not speech." Never refer to the note's author (no "she", "he", "they", "you", "the author", "the writer") and never narrate their actions ("rereading the year, she contrasts…"). People the note is about may be named; the writer is never the subject.
 
         Idea:
         \(content)
@@ -635,7 +637,7 @@ actor AIService {
         let prompt = """
         Interpret this captured idea. Two outputs:
 
-        1. summary — 1 to 2 sentences capturing what this idea is actually about. Be concrete and specific to the content; no generic filler. This is the seed for downstream embedding, so accuracy matters more than style.
+        1. summary — 1 to 2 sentences capturing what this idea is actually about. Be concrete and specific to the content; no generic filler. This is the seed for downstream embedding, so accuracy matters more than style. Write it as an impersonal fragment stating what the note is about — never refer to the note's own author (no "she"/"he"/"they"/"you"/"the author") and never narrate their actions; name people the note is about, but never the writer.
         2. tags — free-form folksonomy. Pick whatever short tags best describe this idea. No fixed vocabulary; use the words that actually fit. Concrete topical phrases beat abstract single words. 3 to 8 tags.
 
         Idea:

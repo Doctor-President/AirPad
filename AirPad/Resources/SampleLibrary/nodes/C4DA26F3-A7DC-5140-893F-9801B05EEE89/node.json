@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2025-12-19T11:18:00Z",
+  "entry_schema_version": 4,
+  "id": "C4DA26F3-A7DC-5140-893F-9801B05EEE89",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "the word \"loitering\" has never once been applied to someone with money",
+      "created_at": "2025-12-19T11:18:00Z",
+      "id": "AA29C206-B755-5311-8748-77C1C2888425",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "\"loitering\" is never a charge aimed at the wealthy",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "access",
+    "library"
+  ],
+  "threads": [],
+  "title": "loitering",
+  "updated_at": "2025-12-19T11:18:00Z"
+}

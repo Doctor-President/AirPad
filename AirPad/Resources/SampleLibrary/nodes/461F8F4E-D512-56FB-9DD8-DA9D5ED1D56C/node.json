@@ -1,0 +1,41 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-07-06T05:08:00Z",
+  "entry_schema_version": 4,
+  "id": "461F8F4E-D512-56FB-9DD8-DA9D5ED1D56C",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "loading the camera over and over, it keeps slipping, the room gets darker. woke up and did it right on the second try",
+      "created_at": "2026-07-06T05:08:00Z",
+      "id": "E5280332-5AC1-55B3-A675-9961F23FCBD2",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-07-06T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "The Bolex won't load as the room goes dark",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    },
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep",
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "film that won't thread",
+  "updated_at": "2026-07-06T05:08:00Z"
+}

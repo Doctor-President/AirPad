@@ -218,12 +218,21 @@ final class SubstrateLayoutService {
 
     // MARK: - Language vector (map gravity)
 
-    /// Where a language vector came from. Reported by `TagTerritoryLayout` so
-    /// the consumer side can PROVE which basis the map actually used.
+    /// Where a language vector came from. Reported by `TagTerritoryLayout` so the consumer side can
+    /// PROVE which basis the map actually used. Only `.card` survives — the `.legacyNLContextual`
+    /// and `.blockPooled` fallbacks were deleted with the cold-cache path (`languageVector` above),
+    /// so the map is card-basis BY CONSTRUCTION now: there is no other space to fall through to.
+    /// Kept as a named type (rather than collapsed to a bare `[Float]?`) so the consumer log stays
+    /// structured and a second basis could be reintroduced without re-threading every call site.
     enum LanguageVectorSource: String {
         case card
-        case blockPooled
-        case legacyNLContextual
+
+        /// The SPACE this source resolves into. What `VectorBasisGuard` compares.
+        var basis: VectorBasis {
+            switch self {
+            case .card: return .cardGist
+            }
+        }
     }
 
     /// B7 — the vector the map's `language` gravity reads. Distinct from
@@ -245,20 +254,18 @@ final class SubstrateLayoutService {
     /// backlink); they simply do not vote on language. Deterministic by
     /// construction, and the count is reported every run.
     ///
-    /// When `cardVectors` is nil (nothing preloaded) this falls back to
-    /// `substrateVector` — pre-B7 behavior, unchanged.
+    /// ★ CARD-OR-NOTHING. There is no longer a cold-cache fallback. The legacy `substrateVector`
+    /// stand-in (NLContextual / block-pooled) was DELETED once the corpus became single-embedder
+    /// (all BGE 384d, 2026-09-15 re-embed): a 512-d stand-in could only be mixed into 384-d card
+    /// centroids meaninglessly, and the cold-start map now WAITS for the warm before forming, so
+    /// there is nothing left for a stand-in to bridge. When the cache is warm, a node without a card
+    /// is excluded from language gravity (above). When the cache is cold (nil), EVERY node is
+    /// excluded — the impossible-timing edge (a re-form in the first launch frames) degrades to "no
+    /// language pull", never to a mismatched basis.
     func languageVector(for node: Node) -> (vector: [Float], source: LanguageVectorSource)? {
-        if let cache = cardVectors {
-            guard let card = cache[node.id], !card.isEmpty else { return nil }
-            return (card, .card)
-        }
-        guard let v = substrateVector(for: node) else { return nil }
-        // Cache cold ⇒ whatever substrateVector resolved. Label it by which
-        // path actually produced it so the consumer log stays honest.
-        if let bp = blockPooledVectors?[node.id], !bp.isEmpty, bp == v {
-            return (v, .blockPooled)
-        }
-        return (v, .legacyNLContextual)
+        guard let cache = cardVectors else { return nil }
+        guard let card = cache[node.id], !card.isEmpty else { return nil }
+        return (card, .card)
     }
 
     /// B7 — pre-resolve CARD-GIST vectors for the given nodes and cache them.
@@ -279,6 +286,45 @@ final class SubstrateLayoutService {
             cache[node.id] = emb
         }
         cardVectors = cache
+    }
+
+    /// ADMIT a freshly-written card-gist vector into the warm cache.
+    ///
+    /// ★ THE HOLE THIS CLOSES. `preloadCardVectors` runs ONCE per session. A node captured after
+    /// that warm was never added to the cache, and the warm-cache branch of `languageVector`
+    /// returns nil for an absent node with NO fallback — so the re-drift reported `no-vector` and
+    /// placed nothing. The vector was on disk the whole time; the map simply never looked. Admitting
+    /// on write keeps the cache COMPLETE rather than papering over the gap with a disk read on the
+    /// lookup path.
+    ///
+    /// Returns TRUE iff the vector actually entered the cache — which is the exact moment "the map
+    /// can now see this node." The caller (`embedCardIfNeeded`) uses that to fire the re-drift, so
+    /// the re-drift fires ONCE, at admission, never against a cache that doesn't yet hold the node.
+    ///
+    /// ★★ A COLD CACHE IS LEFT COLD, deliberately. `cardVectors == nil` means "nothing preloaded",
+    /// and every accessor reads nil that way. Seeding a nil cache with a single entry would flip the
+    /// whole map to the card basis while holding exactly one vector, so every OTHER node would
+    /// resolve to nil and silently stop voting on language. The warm pass is what makes the cache
+    /// authoritative; this only keeps an already-authoritative cache current. A cold-cache admission
+    /// returns false, so no re-drift fires — correct, because the cold-start warm re-form will place
+    /// the node when it runs.
+    ///
+    /// Applies the SAME membership filter as the warm (`isRankable`, non-meta), so a node that the
+    /// preload would have excluded cannot enter by this door instead.
+    @discardableResult
+    func admitCardVector(_ vector: [Float], for node: Node) -> Bool {
+        guard cardVectors != nil, !vector.isEmpty else { return false }
+        guard SubstrateService.shared.isRankable(node), !node.isMeta else { return false }
+        cardVectors?[node.id] = vector
+        return true
+    }
+
+    /// Drop a deleted node's card vector. Absence is meaningful here (it reads as "excluded from
+    /// language gravity"), so a stale entry for a node that no longer exists is not merely wasted
+    /// memory — it would keep voting on centroids.
+    func evictCardVectors(forNodeIDs ids: Set<String>) {
+        guard cardVectors != nil, !ids.isEmpty else { return }
+        for id in ids { cardVectors?.removeValue(forKey: id) }
     }
 
     /// Pre-resolve block-pooled vectors for the given nodes and cache them

@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-03-12T10:19:00Z",
+  "entry_schema_version": 4,
+  "id": "E558B14A-CA10-5931-A674-149C11B8FF9F",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "No single fire. It declined over centuries — funding, neglect, scholars\nleaving, a couple of bad decades, and a papyrus scroll's practical\nlifespan being about two hundred years unless somebody copies it.\n\nLibraries mostly don't burn. They get defunded and then nobody recopies\nthe scrolls.",
+      "created_at": "2026-03-12T10:19:00Z",
+      "id": "1ED10E1B-BD2A-58DD-AF30-A8A86108A72E",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The great library declined through defunding, not a single fire",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "library",
+    "budget"
+  ],
+  "threads": [],
+  "title": "the Alexandria thing is a myth",
+  "updated_at": "2026-03-12T10:19:00Z"
+}

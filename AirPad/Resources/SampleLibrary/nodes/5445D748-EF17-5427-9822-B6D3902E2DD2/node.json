@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-09-07T16:19:00Z",
+  "entry_schema_version": 4,
+  "id": "5445D748-EF17-5427-9822-B6D3902E2DD2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Working title: nothing yet. Roughly nine shots, none of them frightening\non their own.\n\nA door left open. A hand setting down a cup. A road at the wrong time of\nday. A person seen from behind, not turning. The dread is entirely in the\ncutting — no score, no reveal, nothing to point at afterwards and say\n*that* was the scary part.\n\nIf the Kuleshov thing is true, it will work. If it does not work, I will\nhave learned that it is not true, which is also worth twenty-eight\nseconds.",
+      "created_at": "2026-09-07T16:19:00Z",
+      "id": "F99F3BC6-8AED-5D6A-A4CC-283489953CA0",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Nine ordinary shots whose dread lives entirely in the cutting",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "kuleshov",
+    "projects"
+  ],
+  "threads": [],
+  "title": "What the short film is actually about",
+  "updated_at": "2026-09-07T16:19:00Z"
+}

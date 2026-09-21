@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-01-21T13:22:00Z",
+  "entry_schema_version": 4,
+  "id": "DD056A7D-87BA-5976-9138-AD01350B6928",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The union's phrase and it's exact. Nobody is fired. Positions just aren't\nfilled — 78 gone last year, 89 proposed this year — and the work\nredistributes onto whoever's left until the service degrades on its own\nand someone can call it demand.",
+      "created_at": "2026-01-21T13:22:00Z",
+      "id": "A811C464-2C2C-5614-A1FA-3744BA852DED",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Vacancies left unfilled — 78 then 89 — until service degrades on its own",
+  "tag_sources": {
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    },
+    "union": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "union",
+    "budget"
+  ],
+  "threads": [],
+  "title": "quiet layoffs",
+  "updated_at": "2026-01-21T13:22:00Z"
+}

@@ -1,0 +1,84 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-02-12T14:20:00Z",
+  "entry_schema_version": 4,
+  "id": "2C2FD761-9B3B-5F61-8D04-45668DA0C405",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-02-12T14:20:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "she trained me on the desk"
+          }
+        }
+      },
+      "id": "04839C82-1293-56B3-AF90-542276FD133F",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-02-12T14:20:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-09-02T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "8FDC67F1-E1C3-5B17-A1DF-3CBA4A02142F",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-02-12T14:20:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "her grandkids, murder podcasts"
+          }
+        }
+      },
+      "id": "13D9541C-CFAA-5E34-96B6-542D8648C659",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-02-12T14:20:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "covers for me without being asked"
+          }
+        }
+      },
+      "id": "F6545EFF-162B-5167-9AE4-403EE38DEB3F",
+      "type": "field"
+    },
+    {
+      "content": "Brings me tea on the bad afternoons and pretends it's because she was\nmaking some anyway. Thirty years in and still the first one in.",
+      "created_at": "2026-02-12T14:20:00Z",
+      "id": "D7AB3D90-65A2-5A7C-892F-184B55BC10C2",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Colleague who did the training and quietly covers the desk",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library"
+  ],
+  "threads": [],
+  "title": "Dolores",
+  "updated_at": "2026-02-12T14:20:00Z"
+}

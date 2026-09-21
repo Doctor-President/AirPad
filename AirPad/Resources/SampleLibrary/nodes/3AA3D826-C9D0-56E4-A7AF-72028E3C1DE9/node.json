@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-04-08T15:33:00Z",
+  "entry_schema_version": 4,
+  "id": "3AA3D826-C9D0-56E4-A7AF-72028E3C1DE9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The whole trick is that nothing is hidden. Everything happens in full\nsun, explained in advance, consented to. It is the only horror film I\nknow where the dread comes from clarity.",
+      "created_at": "2026-04-08T15:33:00Z",
+      "id": "4694C865-6B92-5AA3-AC9A-18C74768DAAA",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Dread built from full-sun clarity, everything shown and consented to",
+  "tag_sources": {
+    "aster": {
+      "source": "user"
+    },
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "aster"
+  ],
+  "threads": [],
+  "title": "Midsommar in daylight",
+  "updated_at": "2026-04-08T15:33:00Z"
+}

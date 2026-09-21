@@ -1,0 +1,45 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-04-25T15:08:00Z",
+  "entry_schema_version": 4,
+  "id": "A925E5B6-0A73-5E8C-8EF8-EF30A479AC9F",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Found a public-domain one from 1919 and I'm reading it like a novel, which\nis telling — I like reading about cooking more than cooking. The measures\nare all \"a sufficient quantity\" and \"cook until done,\" and it assumes you\nalready know, which is a nicer way to be talked to than most recipes manage.",
+      "created_at": "2026-04-25T15:08:00Z",
+      "id": "525AE483-24B8-5ED0-ADC1-D6D59C421CD5",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-04-25T15:08:00Z",
+      "id": "4ED60A2D-242B-5A93-A1B6-DB82256D2613",
+      "link_items": [
+        {
+          "captured_at": "2026-04-25T15:08:00Z",
+          "id": "C3826597-2703-5CD7-94DF-885C3810BA70",
+          "site_name": "Project Gutenberg",
+          "title": "The Italian Cook Book (Maria Gentile, 1919)",
+          "url": "https://www.gutenberg.org/ebooks/24407"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Public-domain 1919 book read like a novel, all vague measures",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "An Italian cookbook from 1919",
+  "updated_at": "2026-04-25T15:08:00Z"
+}

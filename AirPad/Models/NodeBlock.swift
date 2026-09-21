@@ -35,6 +35,9 @@ struct NodeBlock: Codable, Equatable {
     /// 512 — those are stale at `embedderVersion == 1` and re-embed on rebuild.
     /// Mutable so rebuild can replace in place without struct re-creation.
     var embedding: [Float]
+    /// ★ WHICH SPACE `embedding` lives in (embedder + channel). Absent on sidecars written before
+    /// 2026-09-16 → inferred from dimension. See `VectorBasis`.
+    var embeddingBasis: VectorBasis?
 
     /// SHA-256 of `text`. Invalidation signal: rebuild compares this against
     /// freshly chunked text to decide whether to re-embed or reuse.

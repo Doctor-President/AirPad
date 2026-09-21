@@ -47,3 +47,6 @@ testflight.env
 scripts/testflight.env
 # (scripts/testflight.env.example IS committed — it's a no-secret template)
 !scripts/testflight.env.example
+
+# Brief Y — read-only real-corpus clones for the -CorpusFixture arg (never committed)
+fixtures/

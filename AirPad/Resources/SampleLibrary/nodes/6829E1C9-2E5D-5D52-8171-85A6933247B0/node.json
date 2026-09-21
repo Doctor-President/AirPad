@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-03-30T23:19:00Z",
+  "entry_schema_version": 4,
+  "id": "6829E1C9-2E5D-5D52-8171-85A6933247B0",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Met someone at the Cobra Lounge show. Sid. Bleached hair growing out,\ntalked with her whole hands, told me my opinion about the opener was\nwrong and then asked me to explain it again.\n\nI have been thinking about it for four days, which is information.",
+      "created_at": "2026-03-30T23:19:00Z",
+      "id": "290CF6D0-D734-56D0-AB54-BF0CD86EA6EE",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-03-30T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "An intriguing, argumentative woman met at a show",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Sid",
+  "updated_at": "2026-03-30T23:19:00Z"
+}

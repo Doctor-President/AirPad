@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-05-19T11:52:00Z",
+  "entry_schema_version": 4,
+  "id": "E4F5F17E-1EC1-58B3-A4C1-D6FABCD9C6D6",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "- [ ] Body, H16 non-reflex, working spring — **$400–700** used\n- [ ] Lens (25mm Switar if I'm lucky) — **$150+**\n- [ ] Check the spring motor before buying. 28 sec at 24fps is the test\n- [ ] Changing bag — $25\n- [ ] Stock. This is the real ongoing cost\n- [ ] A lab that still processes 16mm\n\nRoughly **$900** to be able to shoot anything at all, plus about $50 a\nroll forever.\n\nThat is four months of not buying things.",
+      "created_at": "2026-05-19T11:52:00Z",
+      "id": "C64E661E-1615-5859-8E45-14B745C79458",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Roughly $900 up front plus $50 a roll to shoot 16mm at all",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "money": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "projects",
+    "money"
+  ],
+  "threads": [],
+  "title": "Bolex — what it would actually take",
+  "updated_at": "2026-05-19T11:52:00Z"
+}

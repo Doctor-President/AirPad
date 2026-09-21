@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-08-28T21:31:00Z",
+  "entry_schema_version": 4,
+  "id": "022E7DE3-54C5-5BE8-8C76-B347C04837DF",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Two years of a scale on the counter and last month I just stopped.\n\nIt's not that precision doesn't matter. It's that I'd learned it — the\nscoop is calibrated now, in my hand. Measuring was how I got here and\ncarrying it forever would be a different kind of not-trusting-myself.",
+      "created_at": "2026-08-28T21:31:00Z",
+      "id": "3092389D-8064-5EB5-BB79-DB5D5D2C6F5A",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Retiring the scale after the scoop became calibrated by hand",
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee"
+  ],
+  "threads": [],
+  "title": "I stopped weighing",
+  "updated_at": "2026-08-28T21:31:00Z"
+}

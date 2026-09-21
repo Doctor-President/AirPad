@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2026-08-11T17:19:00Z",
+  "entry_schema_version": 4,
+  "id": "A8D116DF-DF4D-555A-BF86-59412BDC166E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "the phrase \"mother tongue\" has no opposite. there's no word for the\nlanguage you chose.",
+      "created_at": "2026-08-11T17:19:00Z",
+      "id": "0A134659-C3FF-580E-AB88-0081BA04AF03",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "\"mother tongue\" has no term for a chosen language",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "language",
+    "french"
+  ],
+  "threads": [],
+  "title": "nobody's second language",
+  "updated_at": "2026-08-11T17:19:00Z"
+}

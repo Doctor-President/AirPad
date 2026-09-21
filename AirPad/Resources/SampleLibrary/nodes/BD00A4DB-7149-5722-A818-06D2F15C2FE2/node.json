@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-01-24T11:37:00Z",
+  "entry_schema_version": 4,
+  "id": "BD00A4DB-7149-5722-A818-06D2F15C2FE2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Japanese — the art of sequencing a task well. Planning the order of\noperations so nothing waits on anything else. Pikmin is built entirely\naround it and there's no English word, so the localisation just uses it.\n\nWe have \"logistics\", which is about moving things, and \"efficiency\",\nwhich is about waste. Neither is about the *arranging*.",
+      "created_at": "2026-01-24T11:37:00Z",
+      "id": "0B6A971D-80A3-5F4F-A3C0-6796987C1747",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Japanese word for well-sequenced tasks, untranslatable in English",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games",
+    "language"
+  ],
+  "threads": [],
+  "title": "dandori",
+  "updated_at": "2026-01-24T11:37:00Z"
+}

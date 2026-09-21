@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2025-12-08T03:47:00Z",
+  "entry_schema_version": 4,
+  "id": "4F0CA4D1-ADFC-5596-B92F-047A77246EAA",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "the classic. one in my palm, warm",
+      "created_at": "2025-12-08T03:47:00Z",
+      "id": "818FCAE8-DC6F-5AA8-8B8A-89133A9DFEAE",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2025-12-08T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "The recurring teeth dream, one tooth warm in the palm",
+  "tag_sources": {
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep"
+  ],
+  "threads": [],
+  "title": "teeth again",
+  "updated_at": "2025-12-08T03:47:00Z"
+}

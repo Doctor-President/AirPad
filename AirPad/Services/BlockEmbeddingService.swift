@@ -23,7 +23,10 @@ final class BlockEmbeddingService {
     /// version bump is sufficient to force re-embed on the next pass.
     /// v1 = NLContextualEmbedding (512-dim). v2 = BGE-micro-v2 (384-dim,
     /// unit-normalized) via `CardEmbeddingService` — ws-card-catalog step 3a.
-    static let currentEmbedderVersion: Int = 2
+    /// v3 = Brief S1: the node TITLE prefixes each block's embed text
+    /// ("<title>\n<block>"), so accretion entries (title = subject, items =
+    /// details) embed the subject into every passage. STORED text is unchanged.
+    static let currentEmbedderVersion: Int = 3
 
     /// Window the debounced enqueue waits before firing. Coalesces rapid
     /// edits (e.g., per-keystroke autosave bursts) into a single rebuild.
@@ -113,6 +116,7 @@ final class BlockEmbeddingService {
                     chunkIndex: spec.chunkIndex,
                     text: spec.text,
                     embedding: prior.embedding,
+                    embeddingBasis: prior.embeddingBasis ?? .block,
                     sourceHash: spec.sourceHash,
                     embedderVersion: prior.embedderVersion,
                     charLocation: spec.charLocation,
@@ -121,7 +125,15 @@ final class BlockEmbeddingService {
                 reused += 1
                 continue
             }
-            guard let vec = await embedder.embed(spec.text), !vec.isEmpty else {
+            // Brief S1 — prefix the embed text with the node TITLE when it's
+            // non-empty. Accretion entries carry the subject in the title (e.g.
+            // "Bolex H16 — mine") and the price/detail in the item body, so the
+            // block "Bought. eBay, Ohio, $520…" would otherwise embed as a note
+            // about a lens. STORED `text` stays the raw item text (below) and the
+            // chunker's `sourceHash` is untouched — only the embedder INPUT gains
+            // the title, and the version bump (bv3) is what forces the re-embed.
+            let embedText = Self.titlePrefixed(spec.text, title: node.title)
+            guard let vec = await embedder.embed(embedText), !vec.isEmpty else {
                 skipped += 1
                 continue
             }
@@ -131,6 +143,7 @@ final class BlockEmbeddingService {
                 chunkIndex: spec.chunkIndex,
                 text: spec.text,
                 embedding: vec,
+                embeddingBasis: .block,
                 sourceHash: spec.sourceHash,
                 embedderVersion: Self.currentEmbedderVersion,
                 charLocation: spec.charLocation,
@@ -290,12 +303,29 @@ final class BlockEmbeddingService {
         "\(itemID)|\(sourceHash)"
     }
 
+    /// Brief S1 — the text handed to the embedder: "<title>\n<block>" when the
+    /// title carries signal, else the bare block. `nonisolated` so it's callable
+    /// from any context; pure string work.
+    nonisolated static func titlePrefixed(_ blockText: String, title: String) -> String {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? blockText : "\(t)\n\(blockText)"
+    }
+
     /// Raw cosine similarity. Correct for BGE vectors (unit-normalized, so this
     /// is effectively their dot product); no mean-centering — that was an
     /// NLContextualEmbedding-anisotropy crutch and does not apply to BGE
     /// (ws-card-catalog step 3a). `nonisolated` so the scoring pass runs off the
     /// main actor.
+    /// ★ A dimension mismatch here means a query and a block sidecar are in different embedder
+    /// spaces. Returning 0 would read as "unrelated" and silently drop the block from retrieval;
+    /// this says so instead. (Query-vs-block is a legitimate CROSS-CHANNEL comparison — that is what
+    /// retrieval is — so only the embedder must match, not the channel.)
     nonisolated private static func cosine(_ a: [Float], _ b: [Float]) -> Float {
+        if a.count != b.count, !a.isEmpty, !b.isEmpty {
+            VectorBasisGuard.requireSameEmbedder(.inferred(dimension: a.count, channel: "query"),
+                                                 .inferred(dimension: b.count, channel: VectorBasis.blockChannel),
+                                                 site: "BlockEmbeddingService.cosine")
+        }
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0, na: Float = 0, nb: Float = 0
         for i in 0..<a.count {

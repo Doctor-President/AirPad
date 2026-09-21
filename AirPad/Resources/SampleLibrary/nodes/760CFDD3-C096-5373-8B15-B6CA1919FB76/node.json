@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-08-25T11:29:00Z",
+  "entry_schema_version": 4,
+  "id": "760CFDD3-C096-5373-8B15-B6CA1919FB76",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "1. Cataloguing for the estate-sale people — $25/hr, irregular, and I am\n   genuinely good at it\n2. French tutoring — needs a level I don't have yet\n3. Selling the records — one-time, and I'd regret two of them\n\nOption 1. It is also the only one that isn't me monetising a thing I do\nfor love, which I have decided matters.",
+      "created_at": "2026-08-25T11:29:00Z",
+      "id": "BF985851-76E5-5B6C-B706-FA43E93AE5FC",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Estate-sale cataloguing wins as the one hustle that isn't monetising a love",
+  "tag_sources": {
+    "money": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "money"
+  ],
+  "threads": [],
+  "title": "side hustle options, ranked",
+  "updated_at": "2026-08-25T11:29:00Z"
+}

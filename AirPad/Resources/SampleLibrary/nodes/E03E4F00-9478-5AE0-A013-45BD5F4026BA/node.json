@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-01-28T08:20:00Z",
+  "entry_schema_version": 4,
+  "id": "E03E4F00-9478-5AE0-A013-45BD5F4026BA",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Low heat and patience, which are the two things I don't have in a kitchen.\nWhen it works it's the best thing I make. It works maybe one time in four.",
+      "created_at": "2026-01-28T08:20:00Z",
+      "id": "5B313523-04C9-561C-9072-7DD66A4240A3",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Needs low heat and patience; works one time in four",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "omelette, or the war with it",
+  "updated_at": "2026-01-28T08:20:00Z"
+}

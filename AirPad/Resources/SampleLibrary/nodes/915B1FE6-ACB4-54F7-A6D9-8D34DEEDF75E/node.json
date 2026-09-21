@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-07-26T10:53:00Z",
+  "entry_schema_version": 4,
+  "id": "915B1FE6-ACB4-54F7-A6D9-8D34DEEDF75E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Codex won because you can find a passage without unrolling everything,\nand you can write on both sides. Random access and half the material.\n\nBoth times the format changed, the reason was mundane and the\nconsequences were not.",
+      "created_at": "2026-07-26T10:53:00Z",
+      "id": "99C7DF96-68D6-5ABB-BF6F-E8045D6BD043",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The codex won on random access and using both sides of the page",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "library"
+  ],
+  "threads": [],
+  "title": "codex over scroll",
+  "updated_at": "2026-07-26T10:53:00Z"
+}

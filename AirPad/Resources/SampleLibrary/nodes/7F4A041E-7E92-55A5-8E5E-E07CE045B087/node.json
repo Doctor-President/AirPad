@@ -1,0 +1,41 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-07-30T23:08:00Z",
+  "entry_schema_version": 4,
+  "id": "7F4A041E-7E92-55A5-8E5E-E07CE045B087",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Eight months of notes about the Kuleshov effect and this week I actually\nloaded film. Badly, twice, then correctly.\n\nThere's a difference between understanding something and having it in\nyour hands, and I've spent most of my life on the first side of that.",
+      "created_at": "2026-07-30T23:08:00Z",
+      "id": "99C88AAD-C73E-5B74-A316-40F43DBDA029",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-07-30T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "After months of theory, finally loading film into the camera",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "film",
+    "kuleshov"
+  ],
+  "threads": [],
+  "title": "On finally making the thing instead of reading about it",
+  "updated_at": "2026-07-30T23:08:00Z"
+}

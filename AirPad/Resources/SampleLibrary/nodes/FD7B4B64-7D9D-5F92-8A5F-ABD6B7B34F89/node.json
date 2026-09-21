@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-07-22T17:24:00Z",
+  "entry_schema_version": 4,
+  "id": "FD7B4B64-7D9D-5F92-8A5F-ABD6B7B34F89",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Shooting on the Bolex is dandori. You get one wind, you plan the order,\nnothing waits on anything else.\n\nDid not expect the Pikmin word to be the useful one.",
+      "created_at": "2026-07-22T17:24:00Z",
+      "id": "674DD6AA-DA06-56E9-951F-877CF8900DDD",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Shooting on the Bolex is dandori — one wind, planned order",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "games": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games",
+    "film",
+    "projects",
+    "language"
+  ],
+  "threads": [],
+  "title": "28 seconds",
+  "updated_at": "2026-07-22T17:24:00Z"
+}

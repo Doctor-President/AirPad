@@ -37,6 +37,16 @@ actor CardEmbeddingService {
         }
         let config = MLModelConfiguration()
         config.computeUnits = .all
+        #if DEBUG
+        // The Simulator's ANE/GPU path returns ZERO vectors for this BGE model
+        // (bge-embedding-sim-zeros); `.cpuOnly` is exact and matches device within
+        // parity noise. `-EmbedCPUOnly` forces CPU so headless retrieval diags
+        // (-CardFloorDiag / -IndexDiag / -LibrarianRetrievalDiag / -AskMatchDiag)
+        // produce REAL numbers on the Simulator. Never set in Release; device is `.all`.
+        if ProcessInfo.processInfo.arguments.contains("-EmbedCPUOnly") {
+            config.computeUnits = .cpuOnly
+        }
+        #endif
         guard let loaded = try? MLModel(contentsOf: modelURL, configuration: config) else {
             loadFailed = true
             return false

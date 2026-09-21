@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-03-29T05:56:00Z",
+  "entry_schema_version": 4,
+  "id": "17242C27-9A23-563E-8539-4F7114725DD6",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "someone with Sid's voice and not her face. talking about a band. I keep trying to say \"you're not\" and it comes out as agreeing",
+      "created_at": "2026-03-29T05:56:00Z",
+      "id": "5FDE9A8D-4CB4-5616-954C-17D1AC4DE9D5",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-03-29T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Sid's voice on a stranger's face, an unmeant agreement",
+  "tag_sources": {
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep"
+  ],
+  "threads": [],
+  "title": "Sid but not",
+  "updated_at": "2026-03-29T05:56:00Z"
+}

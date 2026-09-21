@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-01-28T16:33:00Z",
+  "entry_schema_version": 4,
+  "id": "99D8E1F6-E7DC-5C72-B98F-8E0A323537AD",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Staircase wit — the perfect reply you think of on the way out. A\nlanguage that gave this a name is a language spoken by people who\nreplay conversations.",
+      "created_at": "2026-01-28T16:33:00Z",
+      "id": "044E6503-1AD5-5DBD-8359-6DAFA106A511",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Staircase wit: the perfect reply that arrives too late.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "l'esprit de l'escalier",
+  "updated_at": "2026-01-28T16:33:00Z"
+}

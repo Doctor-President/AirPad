@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2025-12-14T10:15:00Z",
+  "entry_schema_version": 4,
+  "id": "A80884B1-A320-5B3E-8C35-9D5B262374C5",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The Chemex filter is thicker, so it strips more oil and you get a cleaner,\nflatter cup. The V60's cone and spiral ribs let it drain faster and keep\nmore body.\n\nI thought I wanted clean. I want body. Six months of making the wrong\nthing carefully.",
+      "created_at": "2025-12-14T10:15:00Z",
+      "id": "C1A14792-3D32-5229-A936-97F6CFEF907E",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Chemex strips oil for a cleaner cup; V60 keeps body, and body wins",
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
+  "threads": [],
+  "title": "V60 vs Chemex, finally settled (for me)",
+  "updated_at": "2025-12-14T10:15:00Z"
+}

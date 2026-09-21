@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-08-09T14:36:00Z",
+  "entry_schema_version": 4,
+  "id": "20FC663C-FF57-59A5-AA7F-7C41C39D7D53",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Both films are about a family unit that has already failed and a system\nthat offers to take over the job. The horror is not the cult. The horror\nis that the cult is *better at it* — more attentive, more ritualised,\nmore willing to hold the grief in public.\n\nThat is a genuinely upsetting proposition and it is why people say they\nfind him pretentious. They mean they found it unpleasant, which is the\npoint.",
+      "created_at": "2026-08-09T14:36:00Z",
+      "id": "022F1451-5594-5FD8-829B-790403E6EDD4",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The cult is better at holding a failed family's grief — the real horror",
+  "tag_sources": {
+    "aster": {
+      "source": "user"
+    },
+    "family": {
+      "source": "user"
+    },
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "aster",
+    "family"
+  ],
+  "threads": [],
+  "title": "Ari Aster, actually",
+  "updated_at": "2026-08-09T14:36:00Z"
+}

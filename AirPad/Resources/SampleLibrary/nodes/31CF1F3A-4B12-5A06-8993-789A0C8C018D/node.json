@@ -1,0 +1,84 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2025-11-22T18:42:00Z",
+  "entry_schema_version": 4,
+  "id": "31CF1F3A-4B12-5A06-8993-789A0C8C018D",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2025-11-22T18:42:00Z",
+      "field": {
+        "definition_id": "fd_how_met",
+        "value": {
+          "text": {
+            "_0": "born into it"
+          }
+        }
+      },
+      "id": "568033E1-6F78-5341-8C97-9157F772993B",
+      "type": "field"
+    },
+    {
+      "created_at": "2025-11-22T18:42:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-09-04T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "043E8C2C-216D-535B-8148-1E89E83F50A0",
+      "type": "field"
+    },
+    {
+      "created_at": "2025-11-22T18:42:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "the father thing, lately"
+          }
+        }
+      },
+      "id": "1D5378EC-9443-551E-A234-DEECE336B881",
+      "type": "field"
+    },
+    {
+      "created_at": "2025-11-22T18:42:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "she leads with a joke when it's serious"
+          }
+        }
+      },
+      "id": "E44F9170-DC84-5CEE-92CC-68CEA8846C0B",
+      "type": "field"
+    },
+    {
+      "content": "She alphabetises her spice rack and I've decided to find that endearing\ninstead of a warning sign. When she calls and opens with a joke, brace.",
+      "created_at": "2025-11-22T18:42:00Z",
+      "id": "97190478-2685-5AA6-B6C2-DF0836A2B48A",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Sister; leads with a joke when something's actually serious",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "Mara",
+  "updated_at": "2025-11-22T18:42:00Z"
+}

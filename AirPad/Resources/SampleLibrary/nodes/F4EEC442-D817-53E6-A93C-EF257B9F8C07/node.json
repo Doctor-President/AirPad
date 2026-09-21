@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-01-02T15:08:00Z",
+  "entry_schema_version": 4,
+  "id": "F4EEC442-D817-53E6-A93C-EF257B9F8C07",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The feeling of not being in your own country. Not homesickness — closer\nto the disorientation itself, and it's not necessarily bad.\n\nNo English word. \"Culture shock\" is clinical and wrong.",
+      "created_at": "2026-01-02T15:08:00Z",
+      "id": "0C83B6A8-7F54-5146-A719-DD667A8EDB1B",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A word for the disorientation of not being in one's own country.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "language"
+  ],
+  "threads": [],
+  "title": "dépaysement",
+  "updated_at": "2026-01-02T15:08:00Z"
+}

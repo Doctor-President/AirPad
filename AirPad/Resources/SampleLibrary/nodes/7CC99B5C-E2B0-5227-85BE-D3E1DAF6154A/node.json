@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-09-06T11:48:00Z",
+  "entry_schema_version": 4,
+  "id": "7CC99B5C-E2B0-5227-85BE-D3E1DAF6154A",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Realised last week I haven't opened the lentil-soup link in months. I don't\nmake it from the recipe anymore, I make it from having made it — and the\nrecipe, which taught me, is now just a thing I keep out of loyalty. That's\nthe whole arc of learning anything, compressed into a soup.",
+      "created_at": "2026-09-06T11:48:00Z",
+      "id": "4584F6C9-81F6-53F1-A901-ED03BA9AEA63",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The soup made from memory now; the link kept out of loyalty",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "I stopped following the recipe",
+  "updated_at": "2026-09-06T11:48:00Z"
+}

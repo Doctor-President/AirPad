@@ -27,6 +27,9 @@ struct CatalogCard: Codable {
     var embeddingVersion: Int
     /// 384-dim BGE-micro-v2 mean-pooled, L2-normalized vector. Nil until embedded.
     var embedding: [Float]?
+    /// ★ WHICH SPACE `embedding` lives in (embedder + channel). Absent on cards written before
+    /// 2026-09-16 → inferred from dimension. See `VectorBasis`.
+    var embeddingBasis: VectorBasis?
     var createdAt: Date
     var updatedAt: Date
 
@@ -59,6 +62,18 @@ struct CatalogCard: Codable {
         case threadIDs = "thread_ids"
         case interpretiveEmbedding = "interpretive_embedding"
     }
+}
+
+/// Brief AA1 — one card-tier retrieval hit: the owning node, its gist (the
+/// NOTES-section line + the chip's secondary line), and the cosine score of the
+/// query against the card's gist vector. The node-level analogue of `BlockMatch`
+/// — breadth (which notes touch the topic) to the passages' depth. Title +
+/// provenance are projected from `Node` at render time (as W1 does for passages),
+/// so this carries only card-owned data.
+struct CardMatch: Sendable {
+    let nodeID: String
+    let gist: String
+    let score: Float
 }
 
 /// ws-card-catalog step 2a — reserved V2 interpretive edge between cards. Not

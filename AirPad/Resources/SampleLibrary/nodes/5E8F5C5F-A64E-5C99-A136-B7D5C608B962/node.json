@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-06-21T11:47:00Z",
+  "entry_schema_version": 4,
+  "id": "5E8F5C5F-A64E-5C99-A136-B7D5C608B962",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "81 books. Includes Enoch, which everybody else dropped, and which was\nconsidered lost in Europe for a thousand years until someone went and\nlooked in Ethiopia, where it had simply been in use the entire time.\n\n\"Lost\" meant \"lost to us.\"",
+      "created_at": "2026-06-21T11:47:00Z",
+      "id": "8BB4B00F-CCF0-50EF-8015-B6EF464832F9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "81 books including Enoch, kept in use while Europe thought it lost",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "archives": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "access"
+  ],
+  "threads": [],
+  "title": "the Ethiopian canon is bigger",
+  "updated_at": "2026-06-21T11:47:00Z"
+}

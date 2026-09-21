@@ -1,0 +1,79 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-07-09T14:05:00Z",
+  "entry_schema_version": 4,
+  "id": "54732B9F-04AA-5ADB-90B5-22CD81ED8EAE",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Bought. eBay, Ohio, $520 with a 25mm Switar that the seller\ndescribed as \"cloudy\" and is in fact fine. Spring holds 27 seconds, close\nenough.",
+      "created_at": "2026-07-09T14:05:00Z",
+      "id": "F30C2B24-89DC-524C-9FA9-9B3689E27099",
+      "type": "text"
+    },
+    {
+      "content": "Arrived. Heavier than I expected. Smells like oil and\nsomething older than oil. Serial puts it at 1956.",
+      "created_at": "2026-07-11T16:20:00Z",
+      "id": "4A2C12C2-6BBE-5ADA-B7BD-A9253ED2B454",
+      "type": "text"
+    },
+    {
+      "content": "Loaded it wrong twice. The film has to go under the second\nroller, not over, and no diagram makes this obvious.",
+      "created_at": "2026-07-13T19:47:00Z",
+      "id": "C5876391-7165-5200-93B7-55A030019AF7",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-07-13T19:47:00Z",
+      "id": "4994BFC7-CB39-5D57-B733-CD6C5B506DF2",
+      "link_items": [
+        {
+          "captured_at": "2026-07-13T19:47:00Z",
+          "id": "642002A3-75D1-57EC-8B4F-5E9A211A08F4",
+          "site_name": "YouTube",
+          "title": "Loading the Bolex H16 — Sprocket&Claw — Ep 002",
+          "url": "https://www.youtube.com/watch?v=k500f_DSXJo"
+        }
+      ],
+      "type": "link"
+    },
+    {
+      "content": "Loaded it right. Wrote the steps down myself because the\nvideo will not be there forever: open gate, thread under the sprocket\nguard, loop of about eight frames above and below, engage both sprocket\nteeth, close gate, wind two turns, check the counter moves.",
+      "created_at": "2026-07-14T15:33:00Z",
+      "id": "7822FF60-F74F-58DC-9D81-CF18F6E49506",
+      "type": "text"
+    },
+    {
+      "content": "First roll back from the lab. Twenty-two of twenty-eight\nseconds are usable. The window one works.",
+      "created_at": "2026-08-02T12:41:00Z",
+      "id": "1EC47D1E-7F5F-5AAD-BA70-A6EBBA80AA19",
+      "type": "text"
+    },
+    {
+      "content": "Second roll loaded in under a minute without looking at\nanything.",
+      "created_at": "2026-09-05T10:09:00Z",
+      "id": "DC38AD3C-6BC0-533E-9FFF-D009EF5F591F",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Buying, loading, and learning a 1956 Bolex H16 over three months",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "Bolex H16 — mine",
+  "updated_at": "2026-09-05T10:09:00Z"
+}

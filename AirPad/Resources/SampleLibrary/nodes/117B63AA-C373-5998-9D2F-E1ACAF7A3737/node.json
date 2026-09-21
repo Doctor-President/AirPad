@@ -1,0 +1,49 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-04-02T13:50:00Z",
+  "entry_schema_version": 4,
+  "id": "117B63AA-C373-5998-9D2F-E1ACAF7A3737",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Tried it because I'm learning the language and it felt like cheating not to\ntry the food. It's a long slow caramelisation and then it's basically the\nlentil soup wearing a hat — the onions are the whole event. Mine was fine.\nThe French for it is better than mine was.",
+      "created_at": "2026-04-02T13:50:00Z",
+      "id": "1F2C04A2-89B0-5462-AB67-13D7E56982C4",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-04-02T13:50:00Z",
+      "id": "10A6EC73-2605-5C8A-A6AD-F4C7DC1818D2",
+      "link_items": [
+        {
+          "captured_at": "2026-04-02T13:50:00Z",
+          "id": "DB7C37F0-0F8F-5C7B-B4E8-69407DD9232A",
+          "site_name": "Wikibooks",
+          "title": "Cookbook: French Onion Soup",
+          "url": "https://en.wikibooks.org/wiki/Cookbook:French_Onion_Soup"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A French-study attempt where the onions are the whole event",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking",
+    "french"
+  ],
+  "threads": [],
+  "title": "soupe à l'oignon",
+  "updated_at": "2026-04-02T13:50:00Z"
+}

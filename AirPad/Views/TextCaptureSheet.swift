@@ -104,15 +104,20 @@ struct TextCaptureSheet: View {
         )
 
         Task {
+            // ★ `enrichIfNeeded`, not `processNodeWithAI`: Done asks the SAME gate the
+            // eager pass asks, so it no longer redoes FM work that already landed while
+            // the user was writing. It still runs whatever is genuinely stale — if the
+            // user kept typing after a proposal fired, the substrate describes older
+            // text, and this is where it gets reconciled with what is being saved.
             if let targetID = targetNodeID {
                 await store.appendItemToNode(nodeID: targetID, item: .text(content: trimmed))
-                await store.processNodeWithAI(nodeID: targetID)
+                await store.enrichIfNeeded(nodeID: targetID)
             } else {
                 await store.addNode(node, position: position)
                 if let cid = targetCollectionID {
                     store.markCollectionUsed(cid)
                 }
-                await store.processNodeWithAI(nodeID: node.id)
+                await store.enrichIfNeeded(nodeID: node.id)
             }
         }
         dismiss()

@@ -1,0 +1,45 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-02-07T13:52:00Z",
+  "entry_schema_version": 4,
+  "id": "4F3B8C93-3FBF-5666-BE55-E06F1C40EA94",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Thirteen codices in a jar, buried in the Egyptian desert around 400 CE,\ndug up by a farmer in 1945. Gospels that lost. Nobody preserved them\ndeliberately — somebody hid them, probably because owning them had become\ndangerous, and then died.\n\nThe losing side of a canon argument survives because one person panicked\nand buried it well.",
+      "created_at": "2026-02-07T13:52:00Z",
+      "id": "0CB8E04D-F9A7-5BAC-A9A6-2F459FCA1813",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-02-07T13:52:00Z",
+      "id": "E9149555-39A3-5BA6-94D6-8FA9936B1E2F",
+      "link_items": [
+        {
+          "captured_at": "2026-02-07T13:52:00Z",
+          "id": "0DB40E48-CFE6-563F-A681-8ED4D60B1B17",
+          "site_name": "Wikipedia",
+          "title": "Nag Hammadi library",
+          "url": "https://en.wikipedia.org/wiki/Nag_Hammadi_library"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Lost gospels buried in a jar, dug up by a farmer in 1945",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives"
+  ],
+  "threads": [],
+  "title": "On the Nag Hammadi library",
+  "updated_at": "2026-02-07T13:52:00Z"
+}

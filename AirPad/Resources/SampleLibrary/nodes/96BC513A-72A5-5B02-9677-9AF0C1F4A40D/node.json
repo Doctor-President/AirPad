@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-01-19T23:11:00Z",
+  "entry_schema_version": 4,
+  "id": "96BC513A-72A5-5B02-9677-9AF0C1F4A40D",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Twenty minutes into the call I heard a turn signal. Then a cough that\nwasn't Mara's.\n\nShe never said he was in the car. She let me talk about the budget thing,\nabout Mom, about whether I'm going to Jess's wedding — she *let me* — and\nhe was sitting right there the whole time. When I said \"is someone with\nyou\" she said \"oh, yeah\" like I'd asked about the weather.\n\nI keep trying to find the version where she wasn't doing something to me.\nI get close and then I hear the turn signal again.",
+      "created_at": "2026-01-19T23:11:00Z",
+      "id": "1AA5339F-8717-5591-BF0B-E83574D9B1DE",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-01-19T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "The father, silently listening on the line during a call",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "Speakerphone",
+  "updated_at": "2026-01-19T23:11:00Z"
+}

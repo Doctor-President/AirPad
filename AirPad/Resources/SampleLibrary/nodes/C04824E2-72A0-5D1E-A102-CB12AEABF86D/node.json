@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-04-06T08:19:00Z",
+  "entry_schema_version": 4,
+  "id": "C04824E2-72A0-5D1E-A102-CB12AEABF86D",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The 30 seconds where you wet the grounds and CO₂ escapes. If it doesn't\npuff, the coffee is stale. A staleness test you get for free, every time,\nbuilt into the process.",
+      "created_at": "2026-04-06T08:19:00Z",
+      "id": "C860444C-EA9C-5A79-A415-2D7BA925FD19",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "CO2 puff at wetting doubles as a free staleness test",
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
+  "threads": [],
+  "title": "bloom",
+  "updated_at": "2026-04-06T08:19:00Z"
+}

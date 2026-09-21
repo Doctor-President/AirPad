@@ -80,34 +80,76 @@ struct DashboardView: View {
     @State private var showCreateCollectionSheet = false
     @State private var showCollectionReorder = false
     @State private var showSettings = false
+    /// Brief T — sample-library strip confirm + persisted collapse state
+    /// (default false = expanded on first open). @AppStorage is fine here: the
+    /// dashboard body is not a continuously-relaid-out surface, so the per-eval
+    /// UserDefaults read is negligible (unlike the chat-tuner drag path).
+    @State private var showRemoveSampleConfirmation = false
+    @AppStorage("com.airpad.sampleStrip.collapsed") private var sampleStripCollapsed = false
 
     /// Dashboard Stage 3 — rows are derived at render time from
     /// `CorpusStore`. Virtual Corpus + Journal rows are prepended to the
     /// persisted user collections; counts and `lastEntryAt` are computed
     /// from `Node.collectionIDs` membership (and `Node.journalDate` for the
     /// Journal row) so they stay honest as nodes are added or moved.
+    /// Brief U — the sample is SEPARATE: Corpus/Journal count only the user's
+    /// nodes (`store.userNodes`) and COLLECTIONS omits the sample's collections.
+    /// The sample gets its own region (`samplePane`). When no sample is seeded
+    /// `userNodes == nodes` and `sampleCollectionIDs` is empty, so this is
+    /// byte-for-byte the old behaviour.
     private var displayedCollections: [NodeCollection] {
+        let userNodes = store.userNodes
         let corpus = NodeCollection(
             id: NodeCollection.corpusID,
             name: "Corpus",
-            nodeCount: store.nodes.count,
-            lastEntryAt: store.nodes.map(\.createdAt).max()
+            nodeCount: userNodes.count,
+            lastEntryAt: userNodes.map(\.createdAt).max()
         )
-        let journalNodes = store.nodes.filter { $0.journalDate != nil }
+        let journalNodes = userNodes.filter { $0.journalDate != nil }
         let journal = NodeCollection(
             id: NodeCollection.journalID,
             name: "Journal",
             nodeCount: journalNodes.count,
             lastEntryAt: journalNodes.compactMap(\.journalDate).max()
         )
-        let userRows: [NodeCollection] = store.collections.map { collection in
-            let members = store.nodes.filter { $0.collectionIDs.contains(collection.id) }
-            var row = collection
-            row.nodeCount = members.count
-            row.lastEntryAt = members.map(\.createdAt).max()
-            return row
-        }
+        let userRows: [NodeCollection] = store.collections
+            .filter { !store.sampleCollectionIDs.contains($0.id) }
+            .map { collection in
+                let members = userNodes.filter { $0.collectionIDs.contains(collection.id) }
+                var row = collection
+                row.nodeCount = members.count
+                row.lastEntryAt = members.map(\.createdAt).max()
+                return row
+            }
         return [corpus, journal] + userRows
+    }
+
+    /// Brief U — the sample's OWN collections, in the sample's declared order (the
+    /// seeder appends them to `store.collections` in bundle order, so filtering
+    /// preserves it). Counts come from the sample's nodes. Empty when no sample.
+    private var sampleDisplayedCollections: [NodeCollection] {
+        store.collections
+            .filter { store.sampleCollectionIDs.contains($0.id) }
+            .map { collection in
+                let members = store.nodes.filter { $0.collectionIDs.contains(collection.id) }
+                var row = collection
+                row.nodeCount = members.count
+                row.lastEntryAt = members.map(\.createdAt).max()
+                return row
+            }
+    }
+
+    /// Brief U — the sample's "Corpus" row (all sample nodes), shown at the foot of
+    /// the sample pane's collection list. Routes to `.sampleCanvas` (a node-set
+    /// scope), never a collection, so it can't seed a capture default.
+    private var sampleCorpusRow: NodeCollection {
+        let sampleNodes = store.nodes.filter { store.isSample($0.id) }
+        return NodeCollection(
+            id: NodeCollection.sampleScopeID,
+            name: "Corpus",
+            nodeCount: sampleNodes.count,
+            lastEntryAt: sampleNodes.map(\.createdAt).max()
+        )
     }
 
     var body: some View {
@@ -122,6 +164,7 @@ struct DashboardView: View {
                             .padding(.top, 6)
                         todaySection
                         quickReentrySection
+                        if store.sampleLibraryPresent { samplePane }
                         collectionsSection
                     }
                     .padding(.horizontal, 20)
@@ -281,7 +324,9 @@ struct DashboardView: View {
     }
 
     private var recentNodes: [Node] {
-        store.nodes
+        // Brief U — the Today "Activity" list shows only the user's own nodes; the
+        // sample never appears here (it has its own region).
+        store.userNodes
             .sorted { $0.updatedAt > $1.updatedAt }
             .prefix(3)
             .map { $0 }
@@ -368,6 +413,123 @@ struct DashboardView: View {
             // report); horizontal 18 matches a Collections row's inset so the two
             // panes read as siblings. No subtitle added to fill the space.
             .padding(.vertical, 23)
+            .padding(.horizontal, 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Sample library region (Brief U — supersedes Brief T's pane)
+
+    /// The sample library as its OWN collapsible region, between the quick re-entry
+    /// pane and COLLECTIONS, while the sample is seeded. Same `.dashboardPaneSurface()`
+    /// as its siblings. Expanded, it IS the explanation — a header, the sample's own
+    /// collections (real `CollectionRow`s), a Corpus row over the whole sample, and
+    /// a remove footer. No copy about what a sample is; no character name.
+    /// Collapsed key `com.airpad.sampleStrip.collapsed`.
+    private var samplePane: some View {
+        Group {
+            if sampleStripCollapsed {
+                VStack(spacing: 0) { sampleCollapsedRow }
+                    .dashboardPaneSurface()
+            } else {
+                VStack(spacing: 0) {
+                    sampleHeaderRow
+                    collectionsHairline
+                    // Corpus row FIRST (mirrors the real COLLECTIONS list, which
+                    // pins Corpus at the top), then the sample's own collections.
+                    CollectionRow(collection: sampleCorpusRow,
+                                  onTap: { router.entryMode = .sampleCanvas },
+                                  onRename: nil, onDelete: nil)
+                    collectionsHairline
+                    ForEach(sampleDisplayedCollections) { collection in
+                        CollectionRow(collection: collection,
+                                      onTap: { tap(collection) },
+                                      onRename: nil, onDelete: nil)
+                        collectionsHairline
+                    }
+                    sampleRemoveRow
+                }
+                .dashboardPaneSurface()
+            }
+        }
+        .confirmationDialog(
+            "Remove the sample library?",
+            isPresented: $showRemoveSampleConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                Task { await store.removeSampleLibrary() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Your own notes are kept.")
+        }
+    }
+
+    /// Expanded header — `recentsRow` rhythm (pad .v 23 / .h 18); tap anywhere
+    /// collapses (symmetric with the collapsed row's tap-to-expand).
+    private var sampleHeaderRow: some View {
+        Button {
+            withAnimation { sampleStripCollapsed = true }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .frame(width: 28)
+                Text("Sample library")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                Spacer()
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+            }
+            .padding(.vertical, 23)
+            .padding(.horizontal, 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Collapsed: one line on `recentsRow` rhythm; tap anywhere expands.
+    private var sampleCollapsedRow: some View {
+        Button {
+            withAnimation { sampleStripCollapsed = false }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                    .frame(width: 28)
+                Text("Sample library")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.3))
+            }
+            .padding(.vertical, 23)
+            .padding(.horizontal, 18)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Footer — plain-text remove control (opens the confirmation on `samplePane`).
+    private var sampleRemoveRow: some View {
+        Button {
+            showRemoveSampleConfirmation = true
+        } label: {
+            HStack(spacing: 12) {
+                Text("Remove sample library")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.7))
+                Spacer()
+            }
+            .padding(.vertical, 18)
             .padding(.horizontal, 18)
             .contentShape(Rectangle())
         }

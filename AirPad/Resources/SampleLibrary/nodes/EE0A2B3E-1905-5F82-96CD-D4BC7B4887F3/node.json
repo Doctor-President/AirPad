@@ -1,0 +1,40 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-07-10T14:25:00Z",
+  "entry_schema_version": 4,
+  "id": "EE0A2B3E-1905-5F82-96CD-D4BC7B4887F3",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-07-10T14:25:00Z",
+      "id": "6842815E-32C1-5029-88E9-71CDB30C6BE1",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "content": "A game about not being able to read the manual, which is a feeling I know.\nHalf of it is a language you have to learn to even understand what you're\nholding.",
+      "created_at": "2026-07-10T14:25:00Z",
+      "id": "30A85A2D-5FDE-52AA-B317-F8BD01171942",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A game about not reading the manual, half of it a language to learn",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "Tunic",
+  "updated_at": "2026-07-10T14:25:00Z"
+}

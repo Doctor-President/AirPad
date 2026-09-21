@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-04-14T13:12:00Z",
+  "entry_schema_version": 4,
+  "id": "67D73175-5AB8-5954-9840-D644E28EC1C0",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "My French held for about nine minutes at a time and then collapsed.\n\nThe thing nobody tells you: it isn't the vocabulary. It's that they're\ndoing something different with the sentence than I am. I'm assembling.\nThey're already somewhere.",
+      "created_at": "2026-04-14T13:12:00Z",
+      "id": "A82E4348-8882-589B-A257-B7638BD720DC",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The gap isn't vocabulary; they do something different with the sentence.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "what actually happened in Québec",
+  "updated_at": "2026-04-14T13:12:00Z"
+}

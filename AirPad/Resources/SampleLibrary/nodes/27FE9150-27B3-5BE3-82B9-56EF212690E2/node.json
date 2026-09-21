@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-06-08T15:49:00Z",
+  "entry_schema_version": 4,
+  "id": "27FE9150-27B3-5BE3-82B9-56EF212690E2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "A game where the only thing you gain is understanding. Nothing unlocks.\nYou just eventually know something, and then the whole thing is\ndifferent.\n\nClosest thing to Kuleshov I've found in a game — the meaning was always\nthere and you assembled it.",
+      "created_at": "2026-06-08T15:49:00Z",
+      "id": "6700A2EA-9EFC-5EE9-9988-02EAC69FFAE0",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A game where only understanding accumulates, echoing Kuleshov assembly",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games",
+    "kuleshov"
+  ],
+  "threads": [],
+  "title": "Outer Wilds, without spoiling it",
+  "updated_at": "2026-06-08T15:49:00Z"
+}

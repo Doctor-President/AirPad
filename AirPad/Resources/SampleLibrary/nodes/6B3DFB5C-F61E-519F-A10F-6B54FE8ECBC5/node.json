@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2025-12-02T15:42:00Z",
+  "entry_schema_version": 4,
+  "id": "6B3DFB5C-F61E-519F-A10F-6B54FE8ECBC5",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "old paper smells like that because it's decomposing. you are smelling it die.",
+      "created_at": "2025-12-02T15:42:00Z",
+      "id": "09419748-97F4-59B7-9221-BC9B039354B2",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "old-paper smell is the paper itself decomposing",
+  "tag_sources": {
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library"
+  ],
+  "threads": [],
+  "title": "old paper",
+  "updated_at": "2025-12-02T15:42:00Z"
+}

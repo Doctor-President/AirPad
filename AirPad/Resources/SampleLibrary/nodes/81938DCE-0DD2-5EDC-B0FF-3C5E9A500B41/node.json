@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-07-08T20:30:00Z",
+  "entry_schema_version": 4,
+  "id": "81938DCE-0DD2-5EDC-B0FF-3C5E9A500B41",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Tried the starter thing everyone did. Named it, fed it, killed it, felt\nworse about the death than seemed proportionate. Some skills are a\npersonality and mine isn't this one.",
+      "created_at": "2026-07-08T20:30:00Z",
+      "id": "72089746-A5EF-5C2D-A6FD-B1420C790FBB",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A named, fed, and killed sourdough starter; not the skill for it",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "bread, no",
+  "updated_at": "2026-07-08T20:30:00Z"
+}

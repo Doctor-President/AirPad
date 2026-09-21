@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-01-20T15:33:00Z",
+  "entry_schema_version": 4,
+  "id": "AAD272D5-1B1E-5130-8019-7C43FC6B1209",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Vellum was expensive, so they scraped old texts off and wrote over them.\nUnder multispectral imaging the first text comes back.\n\nEverything we lost, we lost because parchment cost money.",
+      "created_at": "2026-01-20T15:33:00Z",
+      "id": "4A953574-2393-5561-ACCE-2D30812524E0",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Scraped-off vellum texts recovered under multispectral imaging",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "library"
+  ],
+  "threads": [],
+  "title": "palimpsest",
+  "updated_at": "2026-01-20T15:33:00Z"
+}

@@ -1,0 +1,37 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-08-14T04:51:00Z",
+  "entry_schema_version": 4,
+  "id": "D14E2008-51B1-5E9E-AFB8-55EF4B8DA291",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "a dinner. everyone already seated. I'm not late, they're early, and nobody will confirm this",
+      "created_at": "2026-08-14T04:51:00Z",
+      "id": "AE3FF5B0-1F2C-5E75-8DD0-9B90BFE7A598",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-08-14T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A dinner where everyone's early and no one will confirm it",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    },
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep",
+    "family"
+  ],
+  "threads": [],
+  "title": "everyone's early",
+  "updated_at": "2026-08-14T04:51:00Z"
+}

@@ -105,6 +105,19 @@ targets:
           # + re-drop weights (int8 ONLY — see ws-synthesized-voice.md).
           - "Resources/Kokoro"
           - "Resources/Kokoro/**"
+          # Brief N §2 — the bundled sample library is shipped as a FOLDER
+          # REFERENCE (below) so the nested nodes/<id>/node.json structure is
+          # preserved in the .app. Excluded from the code group so the .json
+          # files aren't flattened into individual (colliding) resources.
+          - "Resources/SampleLibrary"
+          - "Resources/SampleLibrary/**"
+      # Brief N §2 — sample library as a folder reference (blue folder): the whole
+      # directory tree (nodes/<id>/node.json + card.json, collections/tags/field
+      # definitions/chats json) is copied into the .app preserving structure.
+      # Located at runtime via Bundle.main.url(forResource: "SampleLibrary", …).
+      - path: AirPad/Resources/SampleLibrary
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: AirPadShare
         embed: true

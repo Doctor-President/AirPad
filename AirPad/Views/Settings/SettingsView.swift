@@ -771,6 +771,37 @@ struct SettingsView: View {
                 statBox(value: "\(store.nodes.filter { $0.isMeta }.count)", label: "Threads")
             }
 
+            // Brief Y Part E — search-index coverage dial. Reads the block-reconciler
+            // tally (nodes with a current index / nodes with text; no-text nodes
+            // excluded) + the embedder version, shows "rebuilding…" while the
+            // reconciler runs, and offers a foreground "Rebuild now" (same pacing).
+            if #available(iOS 17.0, *) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    if store.blockIndexRebuilding {
+                        Text("Search index · rebuilding…")
+                    } else if let cov = store.blockIndexCoverage {
+                        Text("Search index · \(cov.current)/\(cov.total) nodes current · v\(BlockEmbeddingService.currentEmbedderVersion)")
+                    } else {
+                        Text("Search index · checking…")
+                    }
+                    Spacer()
+                    Button("Rebuild now") {
+                        Task { await store.rebuildBlockIndexNow() }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .disabled(store.blockIndexRebuilding)
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(AppearancePalette.ink.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .task { await store.refreshBlockIndexCoverage() }
+            }
+
             Button {
                 // Scaffold — full export in Session 6
             } label: {

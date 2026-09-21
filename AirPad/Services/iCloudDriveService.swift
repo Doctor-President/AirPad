@@ -38,12 +38,52 @@ actor iCloudDriveService {
            trySetupSampleDemoScratch() {
             return
         }
+        // Brief Y Part D — `-CorpusFixture <path>`: root at a COPY of the directory
+        // at <path> (a read-only clone of T's real corpus). Every write lands in a
+        // throwaway scratch, NEVER back to <path> and NEVER to iCloud — so CC can run
+        // retrieval / Map / Dashboard checks against real data on the Mac. The value
+        // is read from the argument domain (`-CorpusFixture /abs/path`).
+        if let fixture = UserDefaults.standard.string(forKey: "CorpusFixture"),
+           !fixture.trimmingCharacters(in: .whitespaces).isEmpty,
+           trySetupCorpusFixture(source: fixture) {
+            return
+        }
         #endif
         if await trySetupICloud() { return }
         trySetupLocalFallback()
     }
 
     #if DEBUG
+    /// Brief Y Part D — root at a COPY of `source` (a real-corpus clone). Copied into
+    /// a scratch ONCE (reused across launches so a large corpus isn't re-copied each
+    /// time); to refresh, delete the scratch. Writes land only in the scratch — the
+    /// source clone and iCloud are never touched. `usingLocalFallback=false` so no
+    /// banner clouds the fixture (it's a faithful stand-in for the real container).
+    private func trySetupCorpusFixture(source: String) -> Bool {
+        let fm = FileManager.default
+        guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
+        let root = caches.appendingPathComponent("AirPadCorpusFixtureScratch")
+        let src = URL(fileURLWithPath: (source as NSString).expandingTildeInPath)
+        guard fm.fileExists(atPath: src.appendingPathComponent("nodes").path) else {
+            print("[CorpusFixture] source has no nodes/ dir: \(src.path)")
+            return false
+        }
+        do {
+            if !fm.fileExists(atPath: root.path) {
+                try fm.copyItem(at: src, to: root)
+            }
+            try fm.createDirectory(at: root.appendingPathComponent("nodes"), withIntermediateDirectories: true)
+            rootURL = root
+            isAvailable = true
+            usingLocalFallback = false
+            print("[CorpusFixture] rooted at scratch copy of \(src.path)")
+            return true
+        } catch {
+            print("[CorpusFixture] setup error: \(error)")
+            return false
+        }
+    }
+
     private func trySetupFieldFixtureScratch() -> Bool {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
         let root = caches.appendingPathComponent("AirPadFieldFixtureScratch")
@@ -157,6 +197,7 @@ actor iCloudDriveService {
         let path = root.path
         let kind: String
         if path.contains("AirPadSampleDemoScratch") { kind = "scratch" }
+        else if path.contains("AirPadCorpusFixtureScratch") { kind = "corpus-fixture" }
         else if path.contains("AirPadFieldFixtureScratch") { kind = "field-scratch" }
         else if path.contains("Mobile Documents") || path.contains("com~apple~CloudDocs") { kind = "icloud" }
         else if usingLocalFallback { kind = "local" }

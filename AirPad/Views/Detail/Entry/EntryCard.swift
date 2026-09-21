@@ -677,6 +677,35 @@ struct EntryCard: View {
 /// fires callbacks. The card owns all state and store interaction so the
 /// title row can stay trivially testable / previewable.
 ///
+/// BUG 39 (was BUG 32) — give a small chevron glyph a ≥ 44×44pt tap target (the
+/// HIG minimum) WITHOUT moving the glyph or reflowing the row. The entry-row
+/// chevrons were 16×28 (`EntrySpineRow`) and 44×34 (`EntryTitleRow`, notes), which
+/// "required multiple taps to activate" (T). The glyph keeps its visual column —
+/// so `EntrySpineRow.textMargin` (26) and the note row height are unchanged — while
+/// the hit area is centered on it and grown to 44×44; the overflow is negated in
+/// layout (negative padding) so the name edge and neighbouring rows don't move.
+private struct ChevronHitTarget: ViewModifier {
+    /// The glyph's visual column size (what layout keeps).
+    let visualWidth: CGFloat
+    let visualHeight: CGFloat
+    private static let minTarget: CGFloat = 44
+    func body(content: Content) -> some View {
+        let hInset = max(0, (Self.minTarget - visualWidth) / 2)
+        let vInset = max(0, (Self.minTarget - visualHeight) / 2)
+        content
+            .frame(width: max(visualWidth, Self.minTarget), height: max(visualHeight, Self.minTarget))
+            .contentShape(Rectangle())
+            .padding(.horizontal, -hInset)
+            .padding(.vertical, -vInset)
+    }
+}
+
+private extension View {
+    func chevronHitTarget(visualWidth: CGFloat, visualHeight: CGFloat) -> some View {
+        modifier(ChevronHitTarget(visualWidth: visualWidth, visualHeight: visualHeight))
+    }
+}
+
 /// Two-line layout: display name (primary) over a muted relative
 /// timestamp (context). The timestamp prefers `item.updatedAt` and falls
 /// back to `createdAt`; the EntryCard does that selection upstream.
@@ -753,8 +782,8 @@ private struct EntryTitleRow: View {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.6))
-                    .frame(width: 44, height: isNote ? Self.noteRowHeight : visualSettings.titleRowHeight)
-                    .contentShape(Rectangle())
+                    // BUG 39 — 44×44 tap target; glyph column stays 44×rowHeight.
+                    .chevronHitTarget(visualWidth: 44, visualHeight: isNote ? Self.noteRowHeight : visualSettings.titleRowHeight)
             }
             .buttonStyle(.plain)
             .disabled(reorderActive)
@@ -874,8 +903,8 @@ struct EntrySpineRow<Trailing: View>: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(reorderActive ? 0.25 : 0.40))
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    .frame(width: Self.chevronWidth, height: Self.rowHeight)
-                    .contentShape(Rectangle())
+                    // BUG 39 — 44×44 tap target; glyph column stays 16×28 (textMargin invariant).
+                    .chevronHitTarget(visualWidth: Self.chevronWidth, visualHeight: Self.rowHeight)
             }
             .buttonStyle(.plain)
             .disabled(reorderActive)

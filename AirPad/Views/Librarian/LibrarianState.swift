@@ -666,10 +666,14 @@ final class LibrarianState {
         let bar: Float = pinning ? 0.70 : CorpusStore.minRelevanceScore
         let generalFiltered = general.filter { !pinnedIDs.contains($0.nodeID) && $0.score >= bar }
 
-        // AA1 — cards (BREADTH) over the same room. Exclude pinned nodes: a pin is an
-        // explicit lookup focus and its passages already represent that node.
-        let allCards = await store.cardMatches(query: retrievalQuery, scope: selectedScope, queryVector: qvec)
-        let cards = allCards.filter { !pinnedIDs.contains($0.nodeID) }
+        // AA1 — cards (BREADTH) over the same room. ★ A PIN SUPPRESSES CARDS entirely
+        // (T, 2026-09-21, AA accepted): a named-entry question is an explicit single-
+        // entry focus, so the answer stays on that entry + its passages, not a
+        // tangential survey. No pin → the whole room's cards (pinnedIDs is empty here,
+        // so no filter needed).
+        let cards: [CardMatch] = pinning
+            ? []
+            : await store.cardMatches(query: retrievalQuery, scope: selectedScope, queryVector: qvec)
 
         // AA2 — shape from the passage list (pinning forces lookup). Sets the split.
         let verdict = Self.retrievalShape(passages: general, pinning: pinning, store: store)
@@ -682,8 +686,11 @@ final class LibrarianState {
             : []
 
         // Assemble carry + pin + new (passages + cards) into one numbered list
-        // (stable [n] across turns; S2 carry unions both kinds).
-        let carried = (carriedChatID == chat.id) ? carriedCandidates : []
+        // (stable [n] across turns; S2 carry unions both kinds). ★ On a pin turn the
+        // carried CARDS are dropped too, so a pin after a survey turn still shows zero
+        // cards (the suppression is about the turn, not just its fresh retrieval).
+        let carriedAll = (carriedChatID == chat.id) ? carriedCandidates : []
+        let carried = pinning ? carriedAll.filter { !$0.isCard } : carriedAll
         let candidates = Self.assembleCandidates(
             carried: carried, pinned: pinnedMatches,
             newPassages: newPassages, newCards: newCards, budget: Self.askPassageCharBudget)

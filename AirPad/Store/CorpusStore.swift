@@ -1023,6 +1023,24 @@ final class CorpusStore {
                     NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
                           idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
                 }
+                // Brief Y Part E verify — search-index coverage + the technology
+                // question over the USER's corpus (Corpus scope). The candidate list
+                // settles whether Brief W's single-source answer was a PARTIAL INDEX
+                // (coverage < total) or RANKING (coverage full, list still lopsided).
+                // Needs cpuOnly for the BGE query embed on the Simulator.
+                if #available(iOS 17.0, *),
+                   ProcessInfo.processInfo.arguments.contains("-IndexDiag") {
+                    await refreshBlockIndexCoverage()
+                    let cov = blockIndexCoverage
+                    NSLog("[IndexDiag] coverage current=%d total=%d v%d | userNodes=%d sampleNodes=%d",
+                          cov?.current ?? -1, cov?.total ?? -1, BlockEmbeddingService.currentEmbedderVersion,
+                          userNodes.count, sampleNodeIDs.count)
+                    let lib = LibrarianState()
+                    let chat = ChatSession()
+                    NSLog("[IndexDiag] --- 'What are my thoughts on technology?' (Corpus scope) ---")
+                    await lib.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat)
+                    NSLog("[IndexDiag] done")
+                }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
@@ -2365,7 +2383,44 @@ final class CorpusStore {
     /// it re-embeds only the blocks that actually changed. Never touches
     /// `saveAndEnqueue`/`enqueueRebuild` or the Librarian.
     @available(iOS 17.0, *)
+    // MARK: - Brief Y Part E — search-index coverage dial (Settings)
+
+    /// True while the block reconciler is running (launch pass OR a foreground
+    /// "Rebuild now"). Drives the Settings row's "rebuilding…" state. Observable.
+    private(set) var blockIndexRebuilding = false
+    /// (nodes with a current index, nodes with text). nil until first computed.
+    /// "no text" nodes are excluded from `total` (they carry no searchable blocks).
+    private(set) var blockIndexCoverage: (current: Int, total: Int)? = nil
+
+    /// Coverage tally for the Settings dial: for every node WITH text, is its block
+    /// index present + current at the live embedder version? I/O-heavy (loads each
+    /// sidecar), so it runs off the render path — the Settings row calls it on appear
+    /// and after a rebuild, never per-frame.
+    @available(iOS 17.0, *)
+    func refreshBlockIndexCoverage() async {
+        let snapshot = nodes
+        var total = 0, current = 0
+        for node in snapshot {
+            let specs = BlockChunker.chunk(node)
+            if specs.isEmpty { continue }          // no text → not indexable, excluded
+            total += 1
+            if await blockIndexIsFresh(node, specs: specs) { current += 1 }
+        }
+        blockIndexCoverage = (current, total)
+    }
+
+    /// Foreground "Rebuild now" — the same reconciler, same 40ms pacing, run to
+    /// completion with the coverage refreshed after. Safe to tap repeatedly (a
+    /// fresh index rebuilds nothing).
+    @available(iOS 17.0, *)
+    func rebuildBlockIndexNow() async {
+        await backfillBlockIndex()
+        await refreshBlockIndexCoverage()
+    }
+
     func backfillBlockIndex() async {
+        blockIndexRebuilding = true
+        defer { blockIndexRebuilding = false }
         let start = Date()
         let snapshot = nodes
         var rebuilt = 0, skippedNoText = 0, fresh = 0

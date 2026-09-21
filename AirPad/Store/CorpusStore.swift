@@ -1107,6 +1107,18 @@ final class CorpusStore {
                         }
                     }
                     NSLog("[ProvDiag] histogram=%@", "\(hist.sorted { $0.key < $1.key })")
+                    // Brief AA3 — CARD-level (whole-node) provenance, no blocks needed.
+                    // Verifies `cardProvenance` labels saved-article nodes as collected
+                    // (incl. the sample's `link_items[].url` shape, not just `item.url`).
+                    var cardHist: [String: Int] = [:]
+                    for node in nodes {
+                        let (kind, domain) = node.cardProvenance()
+                        cardHist[kind.rawValue, default: 0] += 1
+                        if kind != .note {
+                            NSLog("[ProvDiag] CARD %@ — %@ (%@)", node.title, kind.rawValue, domain ?? "-")
+                        }
+                    }
+                    NSLog("[ProvDiag] CARD histogram=%@", "\(cardHist.sorted { $0.key < $1.key })")
                 }
                 // Brief W3 verify — the ONE shared citation pattern `\[(\d{1,2})\]`
                 // (chip parser == inline superscript styler). `[237]`/`[12a]` must

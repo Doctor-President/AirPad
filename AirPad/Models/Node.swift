@@ -713,7 +713,13 @@ extension Node {
     /// downgrade it: the card stays the user's own.
     func cardProvenance() -> (kind: BlockProvenance, domain: String?) {
         for item in items where item.type == .link {
+            // The URL may sit on the item (T's captured links) OR inside its
+            // `linkItems` sub-array (the sample library's saved articles — the item's
+            // own `url` is nil there). Mirror `blockProvenance`, which reads both.
             if let domain = Self.linkDomain(item.url) { return (.savedLink, domain) }
+            if let sub = item.linkItems?.compactMap({ Self.linkDomain($0.url) }).first {
+                return (.savedLink, sub)
+            }
         }
         for item in items {
             switch item.type {

@@ -814,36 +814,42 @@ struct SettingsView: View {
                 Text("This will permanently delete all nodes and cannot be undone.")
             }
 
-            // Brief N §2 — shown ONLY while the bundled sample library is seeded.
-            // Removes every seeded node + its collection; leaves the user's own
-            // notes untouched (removal is keyed to the recorded seed manifest).
-            if store.sampleLibraryPresent {
-                Button {
+            // Brief U Step 3 — add OR remove the bundled sample library on demand.
+            // "Remove" (marker present) deletes exactly what was seeded, keyed to the
+            // manifest, leaving the user's own notes untouched. "Add" (marker absent)
+            // seeds it over the user's existing corpus — so T can have the sample
+            // beside his real corpus without a fresh install. Always shown; the
+            // launch auto-seed gate (empty corpus + no marker) is unchanged.
+            Button {
+                if store.sampleLibraryPresent {
                     showRemoveSampleConfirmation = true
-                } label: {
-                    HStack {
-                        Image(systemName: "sparkles.rectangle.stack")
-                        Text("Remove sample library")
-                    }
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .background(AppearancePalette.ink.opacity(0.07))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                } else {
+                    Task { await store.addSampleLibrary() }
                 }
-                .buttonStyle(.plain)
-                .confirmationDialog(
-                    "Remove sample library?",
-                    isPresented: $showRemoveSampleConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Remove", role: .destructive) {
-                        Task { await store.removeSampleLibrary() }
-                    }
-                } message: {
-                    Text("Removes the bundled sample notes and their collection. Your own notes are not affected.")
+            } label: {
+                HStack {
+                    Image(systemName: store.sampleLibraryPresent
+                          ? "sparkles.rectangle.stack" : "sparkles.rectangle.stack.fill")
+                    Text(store.sampleLibraryPresent ? "Remove sample library" : "Add sample library")
                 }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(AppearancePalette.ink.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .confirmationDialog(
+                "Remove sample library?",
+                isPresented: $showRemoveSampleConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Remove", role: .destructive) {
+                    Task { await store.removeSampleLibrary() }
+                }
+            } message: {
+                Text("Removes the bundled sample notes and their collection. Your own notes are not affected.")
             }
         }
     }

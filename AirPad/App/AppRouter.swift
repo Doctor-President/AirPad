@@ -25,6 +25,11 @@ final class AppRouter {
         /// stack and renders SwiftUI's missing-destination placeholder.
         /// Back chevron returns to dashboard via `.dashboard` route.
         case collectionCanvas(id: String)
+        /// Brief U — the seeded sample library as a whole, scoped to its node set
+        /// (`CanvasScope.nodeIDs(store.sampleNodeIDs)`). Reuses the collection-canvas
+        /// pipeline but carries no collection identity, so entering it never marks a
+        /// collection "used" (a capture can't then default into the sample).
+        case sampleCanvas
     }
 
     static var shared: AppRouter?

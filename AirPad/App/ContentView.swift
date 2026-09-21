@@ -26,6 +26,10 @@ struct ContentView: View {
             Color.clear.frame(width: 0, height: 0).onAppear {
                 if ProcessInfo.processInfo.arguments.contains("-OpenCardView"),
                    router.entryMode != .canvas { router.entryMode = .canvas }
+                // `-OpenDashboard` — land on the Dashboard ROOT (not Recents) so the
+                // sample-library strip (Brief T) is screenshot-reachable headlessly.
+                if ProcessInfo.processInfo.arguments.contains("-OpenDashboard"),
+                   router.entryMode != .dashboard { router.entryMode = .dashboard }
             }
             #endif
             Group {
@@ -40,6 +44,12 @@ struct ContentView: View {
                     CanvasChrome(scope: .corpus)
                 case .collectionCanvas(let id):
                     CollectionView(collectionID: id)
+                case .sampleCanvas:
+                    // Brief U — the sample library scoped to its node set. Rendered
+                    // directly via CanvasChrome (NOT CollectionView) so it never
+                    // calls markCollectionUsed — the sample must not become a
+                    // capture's default collection.
+                    CanvasChrome(scope: .nodeIDs(store.sampleNodeIDs))
                 }
             }
         }
@@ -255,7 +265,7 @@ struct ContentView: View {
     private var librarianSuppressed: Bool {
         if router.isCapturing { return true }
         switch router.entryMode {
-        case .canvas, .collectionCanvas:
+        case .canvas, .collectionCanvas, .sampleCanvas:
             return false
         case .quikCapture:
             return true
@@ -310,6 +320,11 @@ struct ContentView: View {
         switch mode {
         case .collectionCanvas(let id):
             return .collection(id)
+        // Brief W2 — scope follows the room: the Librarian opened FROM the sample
+        // canvas is scoped to the sample's nodes, so Ask answers from the sample and
+        // the scope chip reads "Sample library" (scopeDisplayName arm, Brief U).
+        case .sampleCanvas:
+            return .nodeIDs(store.sampleNodeIDs)
         case .canvas, .dashboard, .quikCapture, .recents:
             return .corpus
         }

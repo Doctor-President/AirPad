@@ -661,3 +661,52 @@ struct NodeLocation: Codable, Equatable {
     let latitude: Double
     let longitude: Double
 }
+
+extension Node {
+    /// Brief W1 — where a retrieval block's text CAME FROM, so the Librarian can
+    /// tell what the user WROTE from what they SAVED (a 4,500-word Wikipedia article
+    /// chunked like a note must not be quoted back as the user's own thoughts).
+    enum BlockProvenance: String, Sendable {
+        case note          // typed / dictated text (.text, .audio, .video)
+        case savedLink     // a link item with captured page/OG text
+        case document      // pasted / imported document
+        case imageText     // OCR / image description
+    }
+
+    /// Resolve a block's provenance from its `itemID` (which may be a `NodeItem.id`
+    /// OR a sub-item id — `LinkItem` / `DocumentItem` / `GalleryItem` — per
+    /// `BlockChunker`'s granularity). Returns the kind + a bare domain for saved
+    /// links. Unknown ids fall back to `.note` (treat as the user's own).
+    func blockProvenance(forItemID itemID: String) -> (kind: BlockProvenance, domain: String?) {
+        for item in items {
+            if item.id == itemID {
+                switch item.type {
+                case .text, .audio, .video:   return (.note, nil)
+                case .link:                   return (.savedLink, Self.linkDomain(item.url))
+                case .document:               return (.document, nil)
+                case .image, .imageVideo:     return (.imageText, nil)
+                case .rating, .field, .chats: return (.note, nil)
+                }
+            }
+            if let link = item.linkItems?.first(where: { $0.id == itemID }) {
+                return (.savedLink, Self.linkDomain(link.url))
+            }
+            if item.documentItems?.contains(where: { $0.id == itemID }) == true {
+                return (.document, nil)
+            }
+            if item.mediaItems?.contains(where: { $0.id == itemID }) == true {
+                return (.imageText, nil)
+            }
+        }
+        return (.note, nil)
+    }
+
+    /// Bare registrable domain (no scheme, no `www.`) for a link's provenance label.
+    static func linkDomain(_ urlString: String?) -> String? {
+        guard let s = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty else { return nil }
+        let withScheme = s.contains("://") ? s : "https://\(s)"
+        guard let host = URL(string: withScheme)?.host else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+}

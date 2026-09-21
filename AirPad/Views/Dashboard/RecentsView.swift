@@ -220,7 +220,9 @@ struct RecentsView: View {
         else { return [] }
         let currentYear = calendar.component(.year, from: now)
 
-        let sorted = store.nodes.sorted { date(for: $0) > date(for: $1) }
+        // Brief U — Recents lists only the user's own nodes; the seeded sample is
+        // separate (its region on the Dashboard). `userNodes == nodes` when none seeded.
+        let sorted = store.userNodes.sorted { date(for: $0) > date(for: $1) }
 
         var today: [Node] = []
         var prev7: [Node] = []

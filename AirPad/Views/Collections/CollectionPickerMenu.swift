@@ -17,6 +17,12 @@ import SwiftUI
 /// show every collection.
 struct CollectionPickerMenuContent: View {
 
+    /// Brief U — every collection picker (capture, canvas move-to, detail add-to)
+    /// hides the seeded sample's collections, so nothing of the user's can ever be
+    /// filed into one (the sample stays a separate region). `store.sampleCollectionIDs`
+    /// is empty when no sample is seeded, so this is inert then.
+    @Environment(CorpusStore.self) private var store
+
     let collections: [NodeCollection]
     let collectionLastUsedAt: [String: Date]
     let excludeIDs: Set<String>
@@ -28,7 +34,9 @@ struct CollectionPickerMenuContent: View {
     var onCreateNew: (() -> Void)? = nil
 
     var body: some View {
-        let available = orderedRail.filter { !excludeIDs.contains($0.id) }
+        let available = orderedRail.filter {
+            !excludeIDs.contains($0.id) && !store.sampleCollectionIDs.contains($0.id)
+        }
         if let onCreateNew {
             Button {
                 onCreateNew()

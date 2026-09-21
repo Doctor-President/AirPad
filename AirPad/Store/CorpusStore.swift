@@ -17,6 +17,12 @@ private let bug17Log = Logger(subsystem: "com.doctorpresident.airpad", category:
 // the stutter can be lined up against the backfill run directly. TEMPORARY.
 private let bug16Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug16")
 
+// Brief V — one line per launch naming the resolved storage root, node count, and
+// sample marker, so "why is the corpus empty" is answerable from the log in one
+// read (it would have shown `root=scratch` immediately). Release + DEBUG. Capture:
+// `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "storage"'`.
+private let storageLog = Logger(subsystem: "com.doctorpresident.airpad", category: "storage")
+
 // MARK: - Seeded RNG (SB126 Stage 1)
 
 /// Deterministic 64-bit RNG used for the random tier of neighborhood member
@@ -399,6 +405,8 @@ final class CorpusStore {
             return nodes.filter { $0.journalDate != nil }
         case .collection(let id):
             return nodes.filter { $0.collectionIDs.contains(id) }
+        case .nodeIDs(let ids):
+            return nodes.filter { ids.contains($0.id) }
         }
     }
 
@@ -407,7 +415,7 @@ final class CorpusStore {
         switch scope {
         case .corpus:
             return filteredNodes
-        case .collection:
+        case .collection, .nodeIDs:
             return applyActiveFilter(to: nodes(in: scope), scope: scope)
         }
     }
@@ -418,7 +426,7 @@ final class CorpusStore {
         switch scope {
         case .corpus:
             return visibleNodes
-        case .collection:
+        case .collection, .nodeIDs:
             return filteredNodes(in: scope)
         }
     }
@@ -522,6 +530,40 @@ final class CorpusStore {
     /// `sample_library.json` marker exists). Drives the Settings "Remove sample
     /// library" row, which is shown only while this is true. Observable UI state.
     var sampleLibraryPresent = false
+
+    /// Brief U — the seeded sample's node + collection ids, read from the manifest
+    /// (empty when no sample is present). The Dashboard uses these to SEPARATE the
+    /// sample from the user's own corpus: the sample gets its own region while
+    /// Activity / Priority / Recents / COLLECTIONS show only the user's material.
+    /// No per-node flag, no schema change — the manifest is the whole separator.
+    private(set) var sampleNodeIDs: Set<String> = []
+    private(set) var sampleCollectionIDs: Set<String> = []
+
+    /// True when `nodeID` belongs to the seeded sample library.
+    func isSample(_ nodeID: String) -> Bool { sampleNodeIDs.contains(nodeID) }
+
+    /// Nodes that are the USER's own — the corpus with the sample excluded. When no
+    /// sample is seeded this is every node (no allocation cost via the empty-set
+    /// fast path). The Dashboard's three lists (Activity / Priority / Recents) and
+    /// the Corpus/Journal row counts derive from this, so the sample never mixes in.
+    var userNodes: [Node] {
+        sampleNodeIDs.isEmpty ? nodes : nodes.filter { !sampleNodeIDs.contains($0.id) }
+    }
+
+    /// Brief U — set `sampleLibraryPresent` + the id sets from a manifest (or clear
+    /// them when nil). Called wherever the marker state changes (seed / remove /
+    /// load). Observable, main-actor.
+    private func applySampleManifest(_ manifest: SampleLibrarySeeder.Manifest?) {
+        if let manifest {
+            sampleLibraryPresent = true
+            sampleNodeIDs = Set(manifest.nodeIDs)
+            sampleCollectionIDs = Set(manifest.collectionIDs)
+        } else {
+            sampleLibraryPresent = false
+            sampleNodeIDs = []
+            sampleCollectionIDs = []
+        }
+    }
 
     private let service = iCloudDriveService()
     private let layoutService = LayoutService()
@@ -660,17 +702,30 @@ final class CorpusStore {
     /// Corpus fallback: a collection-scoped Ask with no above-threshold hit in
     /// scope retries at `.corpus`, so a corpus-answerable question ("what is
     /// AirPad" while scoped to a collection lacking the AirPad notes) still grounds.
+    ///
+    /// Brief W2 — scope follows the room. `.corpus` means the USER's own notes once
+    /// they have any (the sample is excluded); on a fresh install with no user nodes,
+    /// Corpus IS the sample. A `.nodeIDs` scope (the sample canvas) answers from the
+    /// sample and does NOT retry into the user's corpus. A collection miss retries at
+    /// the corpus under the same room rule.
     func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
+        let candidateIDs: [String]
+        switch scope {
+        case .corpus: candidateIDs = corpusAskCandidateIDs
+        default:      candidateIDs = nodes(in: scope).map { $0.id }
+        }
         var matches = await blockEmbedding.findRelevantBlocks(
             queryVector: qvec,
-            candidateNodeIDs: nodes(in: scope).map { $0.id },
+            candidateNodeIDs: candidateIDs,
             topK: topK
         )
-        if scope != .corpus, (matches.first?.score ?? 0) < Self.minRelevanceScore {
+        // Only a COLLECTION miss retries at the corpus (the sample canvas stays in
+        // the sample); the retry uses the same room rule as `.corpus` above.
+        if case .collection = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
             let corpusMatches = await blockEmbedding.findRelevantBlocks(
                 queryVector: qvec,
-                candidateNodeIDs: nodes.map { $0.id },
+                candidateNodeIDs: corpusAskCandidateIDs,
                 topK: topK
             )
             if (corpusMatches.first?.score ?? 0) >= Self.minRelevanceScore {
@@ -678,6 +733,24 @@ final class CorpusStore {
             }
         }
         return matches
+    }
+
+    /// Brief W2 — node ids for a CORPUS-scope Ask: the user's own notes once they
+    /// have any (sample excluded), else everything (fresh install → Corpus is the
+    /// sample). Mirrors `userNodes`'s empty-set fast path.
+    private var corpusAskCandidateIDs: [String] {
+        (sampleLibraryPresent && !userNodes.isEmpty)
+            ? userNodes.map { $0.id }
+            : nodes.map { $0.id }
+    }
+
+    /// Brief S3 — every block of `nodeIDs` scored against `query`, regardless of
+    /// the relevance bar, so a named entry's passages can be PINNED to the front of
+    /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
+    /// of the query); called only when a pin is detected.
+    func blocksForNodes(query: String, nodeIDs: [String], topK: Int = 20) async -> [BlockMatch] {
+        guard !nodeIDs.isEmpty else { return [] }
+        return await blockEmbedding.findRelevantBlocks(query: query, candidateNodeIDs: nodeIDs, topK: topK)
     }
 
     /// SB139 Stage 4c2 — load the block-embedding sidecar for a node so
@@ -827,6 +900,11 @@ final class CorpusStore {
             // corpus — so the substrate-mean recompute + unprocessed scan below
             // see the seeded nodes.
             await seedSampleLibraryIfNeeded()
+            // Brief V — one-line storage diagnostic (Release + DEBUG). `root=scratch`
+            // on a device means the launch carried `-SampleSeedDemo` (a preview of the
+            // throwaway container), NOT that the real corpus is gone.
+            let diag = await service.storageDiagnostic()
+            storageLog.notice("root=\(diag.kind, privacy: .public) path=\(diag.path, privacy: .public) nodes=\(self.nodes.count, privacy: .public) marker=\(self.sampleLibraryPresent ? "y" : "n", privacy: .public) fallback=\(diag.fallback ? "y" : "n", privacy: .public)")
             #if DEBUG
             // Stage 5.1 — headless objective verification hooks (DEBUG only,
             // launch-arg gated → zero cost in normal runs). `-FieldSelfTest`
@@ -874,16 +952,78 @@ final class CorpusStore {
                 // nothing. Needs blocks.json present + the BGE query embed (which
                 // needs .cpuOnly on the Simulator, same as the card bake).
                 if ProcessInfo.processInfo.arguments.contains("-AskMatchDiag") {
-                    let q = "How much did I pay for the Bolex?"
+                    let q = "How much did my Bolex cost?"
                     let ids = nodes.map { $0.id }
-                    let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 3)
+                    let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 5)
                     NSLog("[AskMatchDiag] query=%@ candidates=%d matches=%d", q, ids.count, matches.count)
                     for m in matches {
                         let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
-                        NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@", m.score, m.nodeID, title)
+                        let snip = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+                        NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@ :: %@", m.score, m.nodeID, title, snip)
                     }
                     if matches.isEmpty { NSLog("[AskMatchDiag] NO MATCHES") }
                 }
+                // Brief S verify (S2/S3/S5) — READ-ONLY Librarian retrieval probe.
+                // Drives corpus-Ask retrieval WITHOUT the model: a two-turn Bolex
+                // exchange (S2 carry) then a named-entry pin (S3), so `log stream`
+                // over category "librarian" shows the candidate log. cpuOnly on the
+                // Simulator (same as the bake) for the BGE query embed.
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianRetrievalDiag") {
+                    let lib = LibrarianState()
+                    let chat1 = ChatSession()
+                    NSLog("[LibDiag] --- two-turn Bolex (S2 carry + stable [n]) ---")
+                    await lib.debugCorpusRetrieve(query: "How much did my Bolex cost?", store: self, chat: chat1)
+                    await lib.debugCorpusRetrieve(query: "But is that what I ultimately paid for it?", store: self, chat: chat1)
+                    let chat2 = ChatSession()
+                    NSLog("[LibDiag] --- named-entry pin (S3), stand-in title ---")
+                    await lib.debugCorpusRetrieve(query: "What can you tell me about my entry called \"The Kuleshov Effect\"?", store: self, chat: chat2)
+                    NSLog("[LibDiag] done")
+                }
+                // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
+                // partition, which collections land in COLLECTIONS vs the sample
+                // region, and that the capture picker hides the sample's collections
+                // (a user note can't be filed into one). No mutation.
+                if ProcessInfo.processInfo.arguments.contains("-SampleSplitDiag") {
+                    let userCollections = collections.filter { !sampleCollectionIDs.contains($0.id) }.map { $0.id }
+                    let sampleCollections = collections.filter { sampleCollectionIDs.contains($0.id) }.map { $0.id }
+                    NSLog("[SplitDiag] total=%d userNodes=%d sampleNodes=%d", nodes.count, userNodes.count, sampleNodeIDs.count)
+                    NSLog("[SplitDiag] COLLECTIONS(non-sample)=[%@]", userCollections.joined(separator: ", "))
+                    NSLog("[SplitDiag] SAMPLE region collections=[%@]", sampleCollections.joined(separator: ", "))
+                    let priority = priorityNodes.filter { isSample($0.id) }.count
+                    let recents = userNodes.filter { isSample($0.id) }.count
+                    NSLog("[SplitDiag] sample nodes leaking into Priority=%d Recents/userNodes=%d (expect 0/0)", priority, recents)
+                    NSLog("[SplitDiag] every collection picker hides %d sample collection(s) → a user note can't be filed into one", sampleCollectionIDs.count)
+                }
+                // Brief W1 verify (READ-ONLY, no query embed) — derive provenance for
+                // every seeded block from its real itemID and log the non-`note` ones
+                // (with domain) + a histogram, so the item-kind → provenance mapping is
+                // observable without needing cpuOnly BGE on the Simulator.
+                if ProcessInfo.processInfo.arguments.contains("-ProvenanceDiag") {
+                    var hist: [String: Int] = [:]
+                    for node in nodes {
+                        guard let index = await blockIndex(forNodeID: node.id) else { continue }
+                        for block in index.blocks {
+                            let (kind, domain) = node.blockProvenance(forItemID: block.itemID)
+                            hist[kind.rawValue, default: 0] += 1
+                            if kind != .note {
+                                NSLog("[ProvDiag] %@ — %@ (%@) :: %@", node.title, kind.rawValue,
+                                      domain ?? "-", String(block.text.prefix(48)))
+                            }
+                        }
+                    }
+                    NSLog("[ProvDiag] histogram=%@", "\(hist.sorted { $0.key < $1.key })")
+                }
+                // Brief W3 verify — the ONE shared citation pattern `\[(\d{1,2})\]`
+                // (chip parser == inline superscript styler). `[237]`/`[12a]` must
+                // yield NO indices (→ plain text, no chip, no superscript); `[2] [3]`
+                // and `[12]` are chips.
+                if ProcessInfo.processInfo.arguments.contains("-CitationRegexDiag") {
+                    func idx(_ s: String) -> String { "\(CitationReference.citedIndices(in: s).sorted())" }
+                    NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
+                          idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
+                }
+                #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
                 // overlap + BGE-micro cosine calibration). Writes NOTHING to the corpus.
@@ -989,7 +1129,7 @@ final class CorpusStore {
         guard nodes.isEmpty,
               let bundle = SampleLibrarySeeder.bundledLibraryURL(),
               SampleLibrarySeeder.shouldSeed(containerRoot: root) else {
-            sampleLibraryPresent = SampleLibrarySeeder.markerExists(containerRoot: root)
+            applySampleManifest(SampleLibrarySeeder.loadManifest(containerRoot: root))
             return
         }
         let start = Date()
@@ -998,11 +1138,37 @@ final class CorpusStore {
                 try SampleLibrarySeeder.seed(containerRoot: root, bundleRoot: bundle)
             }.value
             await refreshCorpusFromDisk()
-            sampleLibraryPresent = true
+            applySampleManifest(manifest)
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             print("[SampleSeed] seeded \(manifest.nodeIDs.count) node(s), \(manifest.collectionIDs.count) collection(s) in \(ms)ms")
         } catch {
             print("[SampleSeed] seed error: \(error)")
+        }
+    }
+
+    /// Brief U Step 3 — add the sample library ON DEMAND (Settings), over a corpus
+    /// that already has the user's own nodes. Distinct from `seedSampleLibraryIfNeeded`
+    /// (the launch auto-seed, gated on an EMPTY corpus): this bypasses that gate but
+    /// still refuses to double-seed (marker present). The seeder merges by id, so a
+    /// user's own collections/tags are untouched and the manifest records only what
+    /// was newly written. Reconcilers are re-armed so the added nodes' catalog/block
+    /// indexes update this session — the baked card.json/blocks.json ride along, so
+    /// retrieval works immediately and the reconciler pass is a fast fingerprint refresh.
+    func addSampleLibrary() async {
+        guard let root = await service.containerRootURL() else { return }
+        guard !SampleLibrarySeeder.markerExists(containerRoot: root),
+              let bundle = SampleLibrarySeeder.bundledLibraryURL() else { return }
+        do {
+            let manifest = try await Task.detached(priority: .userInitiated) {
+                try SampleLibrarySeeder.seed(containerRoot: root, bundleRoot: bundle)
+            }.value
+            await refreshCorpusFromDisk()
+            applySampleManifest(manifest)
+            print("[SampleSeed] on-demand seeded \(manifest.nodeIDs.count) node(s), \(manifest.collectionIDs.count) collection(s)")
+            armCatalogBackfill()
+            if #available(iOS 17.0, *) { armBlockBackfill() }
+        } catch {
+            print("[SampleSeed] on-demand seed error: \(error)")
         }
     }
 
@@ -1017,7 +1183,7 @@ final class CorpusStore {
                 try SampleLibrarySeeder.remove(containerRoot: root)
             }.value
             await refreshCorpusFromDisk()
-            sampleLibraryPresent = SampleLibrarySeeder.markerExists(containerRoot: root)
+            applySampleManifest(SampleLibrarySeeder.loadManifest(containerRoot: root))
             if let removed { print("[SampleSeed] removed \(removed.nodeIDs.count) seeded node(s)") }
         } catch {
             print("[SampleSeed] remove error: \(error)")
@@ -4971,8 +5137,10 @@ final class CorpusStore {
 
     /// Nodes in the Priority set, in manual order (`order` asc, `addedAt` asc
     /// tiebreak). Empty when nothing is prioritized → the Dashboard hides the row.
+    /// Brief U — derived from `userNodes`, so a seeded sample's nodes never show in
+    /// the Dashboard Priority row (Priority is a Dashboard-only signal).
     var priorityNodes: [Node] {
-        nodes.filter { $0.priority != nil }
+        userNodes.filter { $0.priority != nil }
             .sorted {
                 let a = $0.priority!, b = $1.priority!
                 return a.order != b.order ? a.order < b.order : a.addedAt < b.addedAt

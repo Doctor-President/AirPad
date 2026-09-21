@@ -765,10 +765,16 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Corpus")
 
+            // Brief Z R3 — counts are the user's ROOM; the sample gets its own line.
             HStack(spacing: 16) {
-                statBox(value: "\(store.nodes.count)", label: "Nodes")
+                statBox(value: "\(store.corpusRoomNodes.count)", label: "Nodes")
                 statBox(value: "\(store.tags.count)", label: "Tags")
-                statBox(value: "\(store.nodes.filter { $0.isMeta }.count)", label: "Threads")
+                statBox(value: "\(store.corpusRoomNodes.filter { $0.isMeta }.count)", label: "Threads")
+            }
+            if store.sampleLibraryPresent {
+                Text("Sample library: \(store.sampleNodeIDs.count) nodes")
+                    .font(.footnote)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
 
             // Brief Y Part E — search-index coverage dial. Reads the block-reconciler

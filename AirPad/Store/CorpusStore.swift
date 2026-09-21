@@ -172,9 +172,29 @@ final class CorpusStore {
     /// Persisted CARD-basis geography for the tag-anchored Map, so a relaunch
     /// RESTORES the last layout verbatim instead of re-deriving + animating it
     /// (the map-relayout regression). Loaded at launch; written by the canvas on
-    /// every deliberate card-basis formation. `nil` ⇒ no snapshot ⇒ the Map forms
-    /// fresh and persists the result. See `TerritoryLayoutSnapshot`.
-    var territoryLayout: TerritoryLayoutSnapshot? = nil
+    /// every deliberate card-basis formation. See `TerritoryLayoutSnapshot`.
+    ///
+    /// Brief Z Z2 — keyed PER SCOPE (`CanvasScope.key`: `_corpus` = the user room,
+    /// `_sample` = the sample canvas, a collection id for a collection canvas), so
+    /// the user map and the sample map restore INDEPENDENTLY: switching rooms
+    /// restores each from its own snapshot (never re-forms), and a capture in the
+    /// user room can't re-form the sample map (different key). The pre-Z2 single
+    /// snapshot migrates in as `_corpus`.
+    var territoryLayouts: [String: TerritoryLayoutSnapshot] = [:]
+
+    /// The snapshot for `scope` (nil ⇒ form fresh). Read by the canvas restore gate.
+    func territoryLayout(for scope: CanvasScope) -> TerritoryLayoutSnapshot? {
+        territoryLayouts[scope.key]
+    }
+
+    /// Brief Z Z2 — slot claims are GLOBAL: a territory keeps its palette slot in
+    /// both rooms. The union across every scope's snapshot (later scopes win on a
+    /// key clash, which is irrelevant since a territory's slot is stable for life).
+    var allTerritorySlotClaims: [String: Int] {
+        territoryLayouts.values.reduce(into: [:]) { acc, snap in
+            for (k, v) in snap.territorySlot { acc[k] = v }
+        }
+    }
 
     /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
     var nodeRadii: [String: CGFloat] = [:]
@@ -381,8 +401,10 @@ final class CorpusStore {
     private(set) var lastBlockBackfillDuration: TimeInterval? = nil
 
     /// Nodes after applying the active corpus-scope filter and sort order.
+    /// Brief Z R1 — over the corpus ROOM (user notes when a sample is seeded), so the
+    /// canvas/list Corpus view never mixes the sample in.
     var filteredNodes: [Node] {
-        applyActiveFilter(to: nodes, scope: .corpus)
+        applyActiveFilter(to: corpusRoomNodes, scope: .corpus)
     }
 
     /// Nodes visible on canvas after applying filters and drill-down state.
@@ -393,14 +415,15 @@ final class CorpusStore {
 
     // MARK: - Scope-aware accessors (Canvas Chrome arc, A1)
 
-    /// Raw nodes within `scope`, no filter or sort applied. `.corpus` returns
-    /// every node; `.collection(id)` resolves membership — journal slice when
-    /// id is `NodeCollection.journalID`, otherwise nodes whose
-    /// `collectionIDs` contains id.
+    /// Raw nodes within `scope`, no filter or sort applied. Brief Z R1 — `.corpus`
+    /// returns the corpus ROOM (user notes when a sample is seeded, else all);
+    /// `.collection(id)` resolves membership — journal slice when id is
+    /// `NodeCollection.journalID`, otherwise nodes whose `collectionIDs` contains id;
+    /// `.nodeIDs` is the sample room. Machinery that needs BOTH rooms reads `allNodes`.
     func nodes(in scope: CanvasScope) -> [Node] {
         switch scope {
         case .corpus:
-            return nodes
+            return corpusRoomNodes
         case .collection(let id) where id == NodeCollection.journalID:
             return nodes.filter { $0.journalDate != nil }
         case .collection(let id):
@@ -549,6 +572,21 @@ final class CorpusStore {
     var userNodes: [Node] {
         sampleNodeIDs.isEmpty ? nodes : nodes.filter { !sampleNodeIDs.contains($0.id) }
     }
+
+    /// Brief Z R1 — the CORPUS ROOM: what `.corpus` scope reads everywhere (Map,
+    /// RELATED, search, threads, Über, the corpus index, Settings counts). The
+    /// user's own notes once they have any; on a fresh install (no user notes) the
+    /// room IS the sample, so Corpus shows the sample. `.corpus` is now room-aware
+    /// AT THE SOURCE (`nodes(in:)` / `filteredNodes` route through this), so a caller
+    /// asking for the corpus can't accidentally mix the sample in.
+    var corpusRoomNodes: [Node] {
+        (sampleLibraryPresent && !userNodes.isEmpty) ? userNodes : nodes
+    }
+
+    /// Brief Z R1 — the RAW full node set (user + sample), for GLOBAL MACHINERY that
+    /// must see both rooms: the card/block reconcilers and share/import de-dup. A
+    /// semantic alias for `nodes` so a read that means "both corpora" says so.
+    var allNodes: [Node] { nodes }
 
     /// Brief U — set `sampleLibraryPresent` + the id sets from a manifest (or clear
     /// them when nil). Called wherever the marker state changes (seed / remove /
@@ -708,6 +746,10 @@ final class CorpusStore {
     /// Corpus IS the sample. A `.nodeIDs` scope (the sample canvas) answers from the
     /// sample and does NOT retry into the user's corpus. A collection miss retries at
     /// the corpus under the same room rule.
+    /// Brief Z R4 — at most this many blocks from any one node in a candidate set,
+    /// so a single long saved article can't monopolise Ask.
+    static let maxBlocksPerNode = 3
+
     func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
         guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
         let candidateIDs: [String]
@@ -715,19 +757,18 @@ final class CorpusStore {
         case .corpus: candidateIDs = corpusAskCandidateIDs
         default:      candidateIDs = nodes(in: scope).map { $0.id }
         }
-        var matches = await blockEmbedding.findRelevantBlocks(
-            queryVector: qvec,
-            candidateNodeIDs: candidateIDs,
-            topK: topK
-        )
+        // Brief Z R4 — fetch a WIDER pool, then cap ≤3 per node down to `topK`, so
+        // the candidate set spans multiple nodes instead of one article's chunks.
+        let pool = max(topK * 5, 60)
+        var matches = Self.diversifyByNode(
+            await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool),
+            perNode: Self.maxBlocksPerNode, limit: topK)
         // Only a COLLECTION miss retries at the corpus (the sample canvas stays in
         // the sample); the retry uses the same room rule as `.corpus` above.
         if case .collection = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
-            let corpusMatches = await blockEmbedding.findRelevantBlocks(
-                queryVector: qvec,
-                candidateNodeIDs: corpusAskCandidateIDs,
-                topK: topK
-            )
+            let corpusMatches = Self.diversifyByNode(
+                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: corpusAskCandidateIDs, topK: pool),
+                perNode: Self.maxBlocksPerNode, limit: topK)
             if (corpusMatches.first?.score ?? 0) >= Self.minRelevanceScore {
                 matches = corpusMatches
             }
@@ -735,14 +776,24 @@ final class CorpusStore {
         return matches
     }
 
-    /// Brief W2 — node ids for a CORPUS-scope Ask: the user's own notes once they
-    /// have any (sample excluded), else everything (fresh install → Corpus is the
-    /// sample). Mirrors `userNodes`'s empty-set fast path.
-    private var corpusAskCandidateIDs: [String] {
-        (sampleLibraryPresent && !userNodes.isEmpty)
-            ? userNodes.map { $0.id }
-            : nodes.map { $0.id }
+    /// Brief Z R4 — keep at most `perNode` blocks from any one node (in score order),
+    /// filling `limit` slots from the next nodes by score. Input must be score-sorted
+    /// (`findRelevantBlocks` is). The 0.60 floor is applied downstream, unchanged.
+    static func diversifyByNode(_ matches: [BlockMatch], perNode: Int, limit: Int) -> [BlockMatch] {
+        var perNodeCount: [String: Int] = [:]
+        var out: [BlockMatch] = []
+        for m in matches {
+            let c = perNodeCount[m.nodeID, default: 0]
+            guard c < perNode else { continue }
+            perNodeCount[m.nodeID] = c + 1
+            out.append(m)
+            if out.count >= limit { break }
+        }
+        return out
     }
+
+    /// Brief W2/Z R1 — node ids for a CORPUS-scope Ask = the corpus room.
+    private var corpusAskCandidateIDs: [String] { corpusRoomNodes.map { $0.id } }
 
     /// Brief S3 — every block of `nodeIDs` scored against `query`, regardless of
     /// the relevance bar, so a named entry's passages can be PINNED to the front of
@@ -865,7 +916,7 @@ final class CorpusStore {
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
             // rather than crashing on a stale artifact (the brief's "loads silently
             // fail" case, handled as a safe fall-through, not a fault).
-            territoryLayout = try? await service.loadTerritoryLayout()
+            territoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
             let minimumViableTagCount = 8
             if loadedTags.count < minimumViableTagCount {
                 let existingNames = Set(loadedTags.map { $0.name.lowercased() })
@@ -1268,9 +1319,10 @@ final class CorpusStore {
     /// the in-memory copy immediately (for same-session restores) and writes the
     /// file off-actor, fire-and-forget: a write failure just means the next launch
     /// re-forms (harmless), so it never blocks the interaction clock.
-    func persistTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot) {
-        territoryLayout = snapshot
-        Task { try? await service.saveTerritoryLayout(snapshot) }
+    func persistTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot, for scope: CanvasScope) {
+        territoryLayouts[scope.key] = snapshot
+        let dict = territoryLayouts
+        Task { try? await service.saveTerritoryLayouts(dict) }
     }
 
     /// Creates a new link node from a URL and kicks off the OG-fetch + AI
@@ -6454,8 +6506,9 @@ final class CorpusStore {
     /// the new meta-node landing in `alreadyConnectedPairs`).
     @available(iOS 17.0, *)
     private func refreshSubstrateThreadCandidates() {
+        // Brief Z R2 — threads over the corpus ROOM (the sample is a guest).
         let suggestions = SubstrateThreadService.candidates(
-            in: nodes,
+            in: corpusRoomNodes,
             dismissedPairKeys: dismissedThreadPairKeys
         )
         // Cap the visible queue. Brief calls for one-at-rest; we keep a
@@ -7049,7 +7102,7 @@ final class CorpusStore {
         // A wipe must not restore stale Map geography on the next launch. The
         // signature would no longer match an empty corpus anyway, but clear it
         // eagerly so the artifact can't outlive the data it described.
-        territoryLayout = nil
+        territoryLayouts.removeAll()
         reviewQueue = []
         canvasNeedsSync = UUID()
     }
@@ -7134,9 +7187,9 @@ final class CorpusStore {
     /// Generate or refresh Über-node clusters if needed.
     /// Called automatically after node additions when invalidation threshold is met.
     func refreshUberNodeClusters() {
-        // Compute current fingerprint
+        // Compute current fingerprint. Brief Z R2 — Über over the corpus ROOM.
         let service = UberNodeService()
-        let currentFingerprint = service.corpusHash(from: nodes)
+        let currentFingerprint = service.corpusHash(from: corpusRoomNodes)
 
         // Check if cache exists and is still valid
         if let cache = uberNodeCache,
@@ -7144,8 +7197,8 @@ final class CorpusStore {
             return  // Cache is still fresh
         }
 
-        // Generate new clusters
-        uberNodeCache = service.generateClusters(from: nodes)
+        // Generate new clusters (over the room).
+        uberNodeCache = service.generateClusters(from: corpusRoomNodes)
 
         if let cache = uberNodeCache {
             print("[UberNode] Generated \(cache.clusters.count) clusters from \(nodes.count) nodes")
@@ -7300,7 +7353,7 @@ final class CorpusStore {
     /// gate inside `refreshNeighborhoods()` still applies, so this never
     /// double-computes.
     private func scheduleInitialNeighborhoodRefresh() {
-        let currentFingerprint = NeighborhoodService().corpusFingerprint(from: nodes)
+        let currentFingerprint = NeighborhoodService().corpusFingerprint(from: corpusRoomNodes)
         if let cache = neighborhoodCache,
            !cache.shouldInvalidate(currentFingerprint: currentFingerprint) {
             refreshNeighborhoods()
@@ -7319,9 +7372,12 @@ final class CorpusStore {
     /// Generate or refresh neighborhoods if needed.
     /// Called automatically after node additions when invalidation threshold is met.
     func refreshNeighborhoods() {
-        // Compute current fingerprint
+        // Compute current fingerprint. Brief Z R2/Z3 — neighborhoods over the corpus
+        // ROOM, so adding/removing the sample can't reshape the user's neighborhoods
+        // (the per-node vector is the ABSOLUTE card-gist embedding, so the same room
+        // set yields the same partition regardless of what else is on disk).
         let service = NeighborhoodService()
-        let currentFingerprint = service.corpusFingerprint(from: nodes)
+        let currentFingerprint = service.corpusFingerprint(from: corpusRoomNodes)
 
         // Check if cache exists and is still valid
         if let cache = neighborhoodCache,
@@ -7345,9 +7401,9 @@ final class CorpusStore {
         // is the same content until the upsert iteration overwrites it.
         let priorNeighborhoodSnapshot = corpusIndex.neighborhoods
 
-        // Generate new neighborhoods
+        // Generate new neighborhoods (over the room).
         neighborhoodCache = service.generateNeighborhoods(
-            from: nodes,
+            from: corpusRoomNodes,
             layoutPositions: canvasLayout.positions,
             previousMembers: previousMembers
         )
@@ -7506,22 +7562,24 @@ final class CorpusStore {
     /// Regenerates the corpus summary via FM if missing or if the node count has drifted by 20+
     /// since the last summary. If the model is unavailable, leaves the existing summary in place.
     private func refreshCorpusSummaryIfNeeded() async {
+        // Brief Z R2 — the corpus summary describes the user's ROOM, not the sample.
+        let room = corpusRoomNodes
         let prevCount = corpusIndex.summary?.nodeCount ?? 0
-        let needsRefresh = corpusIndex.summary == nil || abs(nodes.count - prevCount) >= 20
+        let needsRefresh = corpusIndex.summary == nil || abs(room.count - prevCount) >= 20
         guard needsRefresh else { return }
         guard #available(iOS 26.0, *) else { return }
         let aiSvc = AIService()
         let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date.distantPast
-        let recentCaptureCount = nodes.reduce(into: 0) { acc, node in
+        let recentCaptureCount = room.reduce(into: 0) { acc, node in
             if node.createdAt >= cutoff { acc += 1 }
         }
         guard let result = await aiSvc.generateCorpusSummary(
             index: corpusIndex,
-            nodeCount: nodes.count,
+            nodeCount: room.count,
             recentCaptureCount: recentCaptureCount
         ) else { return }
         let summary = CorpusSummary(
-            nodeCount: nodes.count,
+            nodeCount: room.count,
             tagCount: corpusIndex.tags.count,
             neighborhoodCount: corpusIndex.neighborhoods.count,
             dominantThemes: result.dominantThemes,

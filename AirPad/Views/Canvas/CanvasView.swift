@@ -219,7 +219,7 @@ struct CanvasView: View {
     /// exactly the changes that invalidate geography — one gate for both is what recoloured the map
     /// every time a node was captured. Two questions, two gates.
     private func persistedSlotClaims() -> [String: Int] {
-        store.territoryLayout?.territorySlot ?? [:]
+        store.allTerritorySlotClaims   // Brief Z Z2 — slots are global across scopes
     }
 
     /// Claim slots for this formation's territories. The rule itself lives in
@@ -262,8 +262,9 @@ struct CanvasView: View {
     /// `syncScene`, no reform, no animation). `nil` ⇒ form fresh.
     private func restoredTerritory(nodes: [Node]) -> FrozenTerritory? {
         let sig = territorySignature(nodes: nodes, basis: .card)
-        guard TerritoryLayoutRestore.canRestore(store.territoryLayout, currentCardSignature: sig),
-              let snap = store.territoryLayout else { return nil }
+        let scoped = store.territoryLayout(for: scope)   // Brief Z Z2 — this scope's snapshot
+        guard TerritoryLayoutRestore.canRestore(scoped, currentCardSignature: sig),
+              let snap = scoped else { return nil }
         var layout = TagTerritoryLayout.Layout()
         layout.positions = snap.positions
         layout.nodeTerritory = snap.nodeTerritory
@@ -294,7 +295,7 @@ struct CanvasView: View {
             centroidBasis: layout.centroidBasis?.rawValue,
             territorySlot: slots
         )
-        store.persistTerritoryLayout(snapshot)
+        store.persistTerritoryLayout(snapshot, for: scope)   // Brief Z Z2 — per scope
     }
 
     /// `#RRGGBB` for a tint, for persistence (mirrors the scene's own encoder).

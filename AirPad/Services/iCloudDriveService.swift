@@ -456,18 +456,30 @@ actor iCloudDriveService {
     /// from `canvas_layout.json`: that one is the CANONICAL (non-territory) layout,
     /// written by capture/import/neighborhood/recompute — the territory geography
     /// must never collide with it.
-    func saveTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot) throws {
+    /// Brief Z Z2 — `territory_layout.json` is now a PER-SCOPE dict
+    /// (`CanvasScope.key` → snapshot), so the user map and sample map persist
+    /// independently.
+    func saveTerritoryLayouts(_ layouts: [String: TerritoryLayoutSnapshot]) throws {
         let root = try requireRoot()
-        let data = try JSONEncoder.airPad.encode(snapshot)
+        let data = try JSONEncoder.airPad.encode(layouts)
         try data.write(to: root.appendingPathComponent("territory_layout.json"), options: .atomic)
     }
 
-    func loadTerritoryLayout() throws -> TerritoryLayoutSnapshot? {
+    /// Loads the per-scope dict. **Migration:** a pre-Z2 file holds a SINGLE
+    /// snapshot object — decode that and wrap it under the `_corpus` key (the user
+    /// room), so an existing map restores on the first Z2 launch instead of re-forming.
+    func loadTerritoryLayouts() throws -> [String: TerritoryLayoutSnapshot]? {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("territory_layout.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder.airPad.decode(TerritoryLayoutSnapshot.self, from: data)
+        if let dict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: data) {
+            return dict
+        }
+        if let single = try? JSONDecoder.airPad.decode(TerritoryLayoutSnapshot.self, from: data) {
+            return [NodeCollection.corpusID: single]   // pre-Z2 → the user room
+        }
+        return nil
     }
 
     // MARK: - Corpus index

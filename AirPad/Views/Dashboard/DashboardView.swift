@@ -436,16 +436,18 @@ struct DashboardView: View {
                 VStack(spacing: 0) {
                     sampleHeaderRow
                     collectionsHairline
+                    // Corpus row FIRST (mirrors the real COLLECTIONS list, which
+                    // pins Corpus at the top), then the sample's own collections.
+                    CollectionRow(collection: sampleCorpusRow,
+                                  onTap: { router.entryMode = .sampleCanvas },
+                                  onRename: nil, onDelete: nil)
+                    collectionsHairline
                     ForEach(sampleDisplayedCollections) { collection in
                         CollectionRow(collection: collection,
                                       onTap: { tap(collection) },
                                       onRename: nil, onDelete: nil)
                         collectionsHairline
                     }
-                    CollectionRow(collection: sampleCorpusRow,
-                                  onTap: { router.entryMode = .sampleCanvas },
-                                  onRename: nil, onDelete: nil)
-                    collectionsHairline
                     sampleRemoveRow
                 }
                 .dashboardPaneSurface()

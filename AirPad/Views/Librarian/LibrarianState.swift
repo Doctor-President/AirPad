@@ -952,7 +952,25 @@ final class LibrarianState {
             newList.append(assign(m, origin: .new))
         }
 
-        return trimByBudget(pinnedList + carriedList + newList, budget: budget)
+        // Brief Z R4 — enforce ≤3 blocks per node AFTER the union (a node can reach
+        // the union via both carried and new, or via a pin), in list order so the
+        // front (pinned → carried → new) keeps its best blocks.
+        let capped = capPerNode(pinnedList + carriedList + newList, perNode: CorpusStore.maxBlocksPerNode)
+        return trimByBudget(capped, budget: budget)
+    }
+
+    /// Brief Z R4 — keep at most `perNode` candidates from any one node, in list
+    /// order (front wins). Applied after the carried/pinned/new union.
+    private static func capPerNode(_ list: [NumberedCandidate], perNode: Int) -> [NumberedCandidate] {
+        var count: [String: Int] = [:]
+        var out: [NumberedCandidate] = []
+        for c in list {
+            let k = count[c.match.nodeID, default: 0]
+            guard k < perNode else { continue }
+            count[c.match.nodeID] = k + 1
+            out.append(c)
+        }
+        return out
     }
 
     /// Enforce the passage char budget. Drops the OLDEST carried passage first (the
@@ -1031,13 +1049,16 @@ final class LibrarianState {
     /// the embedder, then each candidate as "n · nodeTitle · score · origin".
     private static func logCandidates(turnIndex: Int, query: String, candidates: [NumberedCandidate], store: CorpusStore) {
         var lines: [String] = []
-        lines.append("turn \(turnIndex) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s)")
+        let distinct = Set(candidates.map { $0.match.nodeID }).count
+        lines.append("turn \(turnIndex) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s) · \(distinct) node(s)")
+        var perNode: [String: Int] = [:]   // Brief Z R4 — the k/3 running count per node
         for c in candidates {
             let score = String(format: "%.3f", c.match.score)
-            // W1 — log the provenance-labelled passage header so a link node reads
-            // "saved article — … (domain)" and the mapping is verifiable from the log.
+            let k = (perNode[c.match.nodeID, default: 0]) + 1
+            perNode[c.match.nodeID] = k
+            // W1 — provenance-labelled header ("saved article — … (domain)"); Z R4 — k/3 cap.
             let header = passageHeader(for: c, store: store)
-            lines.append("  \(header) · \(score) · \(c.origin.rawValue)")
+            lines.append("  \(header) · \(score) · \(c.origin.rawValue) · \(k)/\(CorpusStore.maxBlocksPerNode)")
         }
         candidateLog.log("\(lines.joined(separator: "\n"), privacy: .public)")
     }

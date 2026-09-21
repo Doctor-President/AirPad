@@ -10,7 +10,8 @@ struct HistoryPanel: View {
     @Environment(\.dismiss) private var dismiss
 
     private var nodesByRecency: [Node] {
-        store.nodes.sorted { $0.updatedAt > $1.updatedAt }
+        // Brief Z R1 — the user's corpus room (the sample is a guest, not history).
+        store.corpusRoomNodes.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     var body: some View {

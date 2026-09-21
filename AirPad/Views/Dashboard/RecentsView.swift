@@ -34,7 +34,7 @@ struct RecentsView: View {
                     .padding(.top, 6)
                     .padding(.bottom, 12)
 
-                if store.nodes.isEmpty {
+                if store.userNodes.isEmpty {   // Brief Z — match the userNodes buckets (was store.nodes: never empty while a sample is seeded)
                     emptyState
                 } else {
                     bucketList

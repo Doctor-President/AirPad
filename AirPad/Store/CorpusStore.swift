@@ -663,9 +663,32 @@ final class CorpusStore {
     /// bar — measure before splitting.
     static let minRelevanceScore: Float = 0.60
 
-    /// Breadth for the (future) card re-rank. NOT a hard candidate filter — see
-    /// `cardNarrowedCandidates`.
-    static let cardCandidateM: Int = 40
+    /// Brief AA1 — card floor. A node's card-gist cosine below this is dropped from
+    /// the NOTES survey list (`cardMatches`). The card analogue of the passage
+    /// floor `minRelevanceScore`, and — like it — a budget/inclusion control, NOT a
+    /// correctness switch: AA2's shape + card budget do the real breadth/precision
+    /// work, so this only trims the tail.
+    ///
+    /// MEASURED, not guessed (2026-09-21, `-CardFloorDiag` on T's fixture, EmbedCPUOnly,
+    /// 209 user cards). Card-gist cosines are ANISOTROPIC: they don't share a
+    /// baseline across queries, so no single floor hits AA1's "broad ≥ 20 / narrow
+    /// ≤ 8" for every probe — a broad CONCEPT ("technology") spreads 0.55–0.69
+    /// while a specific-TERM query ("AirPad") tops out ~0.53 because few notes' whole
+    /// gist restates the term. Counts kept per floor:
+    ///     floor  0.50  0.52  0.54     (technology / film / AirPad / Spanish  →
+    ///     broad   87    60    41       these; Bolex / Kuleshov / NYE / father → narrow)
+    ///            47    30    15
+    ///             9     7     5
+    ///            34    14     7
+    ///     narrow  6/63/9/11   2/25/0/4   1/12/0/2
+    /// 0.52 chosen: it protects NARROW precision (3/4 probes ≤ 8; only film-dense
+    /// "Kuleshov" spills, and a real Kuleshov note would route to LOOKUP via a
+    /// concentrated passage anyway) while leaving BROAD surveys full — the 30-card
+    /// survey budget takes the top-30 by score, all ≥ 0.555 for a populated topic, so
+    /// LOWERING the floor cannot enrich a strong survey; it would only pad weak-recall
+    /// and narrow queries with sub-0.52 tail. Rejected: 0.50 (narrow 3/4 > 8 —
+    /// father 11, NYE 9, Kuleshov 63); 0.56 (broad collapses — film 8, Spanish 3).
+    static let cardRelevanceFloor: Float = 0.52
 
     /// Raw cosine for 384-dim BGE (unit-normalized) card/query vectors.
     /// ★ The name asserts 384 but the code only compares counts — so a 512-d survivor silently
@@ -683,35 +706,43 @@ final class CorpusStore {
         return denom > 0 ? dot / denom : 0
     }
 
-    /// Card-tier (BGE gist) ranking of `nodeIDs` for `qvec`. **Kept for a future
-    /// scale-driven re-rank — deliberately NOT wired as a hard candidate filter.**
+    /// Brief AA1 — card-tier retrieval. The query, scored against every card-gist
+    /// vector in the scope's ROOM, kept ≥ `floor`, sorted best-first. The node-level
+    /// BREADTH signal for a survey question ("what are my thoughts on X" wants the
+    /// list of notes on X, not one note's best passage) — the complement to
+    /// `askMatches`' passage DEPTH. One card per node (there is one card per node),
+    /// so no per-node cap is needed here.
     ///
-    /// Why not a filter: at current corpus size the block scan over all nodes is
-    /// already cheap and correct, and hard card-narrowing measurably regresses
-    /// recall — a node whose *gist* doesn't match the query but which holds a
-    /// matching *passage* ranks low by card yet high by block (e.g. "The Book of
-    /// Enoch" is card-rank 168/183 for "color" but has a 0.675 color passage).
-    /// When corpora reach the scale where a full block scan hurts, this can become
-    /// a re-rank/boost signal or a *generous* pre-filter, not a top-M cut.
+    /// Nodes without a usable card vector (the ~no-gist nodes, or cards not yet
+    /// embedded) are simply absent — a card can't rank them, and their passages
+    /// still reach `askMatches`, so nothing is lost. This is NOT the old hard
+    /// pre-filter (which regressed passage recall — see the arc that killed it); it
+    /// is an ADDITIVE second list handed to the model alongside the passages.
     ///
-    /// No-card policy (for whenever it's used): nodes without a usable card vector
-    /// (the ~no-gist nodes, or cards not yet embedded) are ALWAYS kept — a card
-    /// can't rank them, so they must not be silently excluded from block search;
-    /// and when NO node has a card vector at all, it falls back to the full input.
-    private func cardNarrowedCandidates(queryVector qvec: [Float], within nodeIDs: [String]) async -> [String] {
-        var scored: [(id: String, score: Float)] = []
-        var noCard: [String] = []
-        for id in nodeIDs {
-            guard let card = await card(forNodeID: id),
-                  let emb = card.embedding, emb.count == qvec.count else {
-                noCard.append(id)
-                continue
-            }
-            scored.append((id, Self.cosine384(qvec, emb)))
+    /// `queryVector` is threaded in from `LibrarianState.corpusCandidates` so the
+    /// query is embedded ONCE for both this and `askMatches` (AA1). `floor: 0` (or
+    /// any ≤ 0) returns the full scored distribution — used by `-CardFloorDiag` to
+    /// measure where the floor belongs.
+    func cardMatches(query: String,
+                     scope: CanvasScope = .corpus,
+                     floor: Float = CorpusStore.cardRelevanceFloor,
+                     queryVector: [Float]? = nil) async -> [CardMatch] {
+        let qvec: [Float]
+        if let queryVector, !queryVector.isEmpty {
+            qvec = queryVector
+        } else {
+            guard let v = await CardEmbeddingService.shared.embed(query), !v.isEmpty else { return [] }
+            qvec = v
         }
-        guard !scored.isEmpty else { return nodeIDs }
-        let top = scored.sorted { $0.score > $1.score }.prefix(Self.cardCandidateM).map(\.id)
-        return top + noCard
+        var scored: [CardMatch] = []
+        for id in nodes(in: scope).map({ $0.id }) {
+            guard let card = await card(forNodeID: id),
+                  let emb = card.embedding, emb.count == qvec.count else { continue }
+            let s = Self.cosine384(qvec, emb)
+            guard s >= floor else { continue }
+            scored.append(CardMatch(nodeID: id, gist: card.gist, score: s))
+        }
+        return scored.sorted { $0.score > $1.score }
     }
 
     func findRelevantNodes(query: String, scope: CanvasScope = .corpus, topK: Int = 5) async -> [String] {
@@ -750,8 +781,16 @@ final class CorpusStore {
     /// so a single long saved article can't monopolise Ask.
     static let maxBlocksPerNode = 3
 
-    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
-        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
+    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8, queryVector: [Float]? = nil) async -> [BlockMatch] {
+        // AA1 — reuse the caller's query embedding when supplied (embed once for
+        // passages + cards); otherwise embed here as before.
+        let qvec: [Float]
+        if let queryVector, !queryVector.isEmpty {
+            qvec = queryVector
+        } else {
+            guard let v = await CardEmbeddingService.shared.embed(query), !v.isEmpty else { return [] }
+            qvec = v
+        }
         let candidateIDs: [String]
         switch scope {
         case .corpus: candidateIDs = corpusAskCandidateIDs
@@ -799,8 +838,12 @@ final class CorpusStore {
     /// the relevance bar, so a named entry's passages can be PINNED to the front of
     /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
     /// of the query); called only when a pin is detected.
-    func blocksForNodes(query: String, nodeIDs: [String], topK: Int = 20) async -> [BlockMatch] {
+    func blocksForNodes(query: String, nodeIDs: [String], topK: Int = 20, queryVector: [Float]? = nil) async -> [BlockMatch] {
         guard !nodeIDs.isEmpty else { return [] }
+        // AA1 — reuse the shared query embedding when supplied (embed once).
+        if let queryVector, !queryVector.isEmpty {
+            return await blockEmbedding.findRelevantBlocks(queryVector: queryVector, candidateNodeIDs: nodeIDs, topK: topK)
+        }
         return await blockEmbedding.findRelevantBlocks(query: query, candidateNodeIDs: nodeIDs, topK: topK)
     }
 
@@ -1091,6 +1134,76 @@ final class CorpusStore {
                     NSLog("[IndexDiag] --- 'What are my thoughts on technology?' (Corpus scope) ---")
                     await lib.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat)
                     NSLog("[IndexDiag] done")
+                }
+                // Brief AA1 verify — MEASURE the card floor. For 4 broad + 4 narrow
+                // probes over the USER's corpus room (Corpus scope), score every card
+                // (floor: -1 = unfloored) and log the distribution: query-vector norm
+                // (positive control — a ~0 norm means the Sim returned a ZERO embed and
+                // the numbers are meaningless), count, top, and how many cards clear a
+                // ladder of candidate floors. Broad probes also dump their top 25 titles
+                // so "relevant" is eyeball-checkable. Read the log, pick the floor where
+                // broad keep ≥ 20 and narrow keep ≤ 8, then bake `cardRelevanceFloor`.
+                if ProcessInfo.processInfo.arguments.contains("-CardFloorDiag") {
+                    let ladder: [Float] = [0.45, 0.48, 0.50, 0.52, 0.54, 0.56, 0.58, 0.60]
+                    let broad = ["What are my thoughts on technology?",
+                                 "What are my thoughts on film?",
+                                 "What is AirPad?",
+                                 "What have I written about Spanish?"]
+                    let narrow = ["How much did I spend on my Bolex camera?",
+                                  "What is the Kuleshov Effect?",
+                                  "What did I do on New Year's Eve?",
+                                  "What are my notes about my father?"]
+                    func probe(_ q: String, kind: String, dumpTop: Bool) async {
+                        let qvec = await CardEmbeddingService.shared.embed(q) ?? []
+                        var norm: Float = 0; for x in qvec { norm += x * x }; norm = norm.squareRoot()
+                        let all = await cardMatches(query: q, scope: .corpus, floor: -1, queryVector: qvec)
+                        let scores = all.map { $0.score }.sorted(by: >)
+                        func atLeast(_ t: Float) -> Int { scores.filter { $0 >= t }.count }
+                        let counts = ladder.map { "\(String(format: "%.2f", $0)):\(atLeast($0))" }.joined(separator: " ")
+                        let p50 = scores.isEmpty ? 0 : scores[scores.count / 2]
+                        NSLog("[CardFloor] %@ q=\"%@\" qnorm=%.3f scored=%d top=%.3f p50=%.3f | %@",
+                              kind, q, norm, scores.count, scores.first ?? 0, p50, counts)
+                        if dumpTop {
+                            for m in all.prefix(25) {
+                                let title = nodes.first { $0.id == m.nodeID }?.title ?? "?"
+                                NSLog("[CardFloor]   %.3f  %@", m.score, title)
+                            }
+                        }
+                    }
+                    NSLog("[CardFloor] === BROAD (target: keep >= 20 relevant) ===")
+                    for q in broad { await probe(q, kind: "BROAD", dumpTop: true) }
+                    NSLog("[CardFloor] === NARROW (target: keep <= 8) ===")
+                    for q in narrow { await probe(q, kind: "NARROW", dumpTop: false) }
+                    NSLog("[CardFloor] done")
+                }
+                // Brief AA verify — drive the FULL survey pipeline (shape + cards +
+                // assembly + S5 log) for the five verify scenarios, WITHOUT the model.
+                // The per-turn candidate list lands in the `librarian` Logger category
+                // (`turn N · shape=…`); the `[SurveyDiag]` markers below (NSLog) label
+                // each scenario. Read #1–#4 from the -CorpusFixture launch and #5 from a
+                // FRESH-SEED launch (`-SampleSeedDemo`, where Corpus == the sample).
+                // Needs -EmbedCPUOnly on the Simulator.
+                if ProcessInfo.processInfo.arguments.contains("-SurveyRetrievalDiag") {
+                    let sampleScope: CanvasScope = .nodeIDs(sampleNodeIDs)
+                    // #1 technology (Corpus) then #4 turn 2 carry, same lib/chat.
+                    let lib1 = LibrarianState(); let chat1 = ChatSession(); lib1.selectedScope = .corpus
+                    NSLog("[SurveyDiag] --- #1 technology (Corpus) — expect shape=survey, many cards ---")
+                    await lib1.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat1)
+                    NSLog("[SurveyDiag] --- #4 turn2 'which of those are about AI?' (carry — numbers must hold) ---")
+                    await lib1.debugCorpusRetrieve(query: "Which of those are about AI?", store: self, chat: chat1)
+                    // #2 Bolex (Sample canvas).
+                    let lib2 = LibrarianState(); let chat2 = ChatSession(); lib2.selectedScope = sampleScope
+                    NSLog("[SurveyDiag] --- #2 Bolex (Sample) — expect shape=lookup, passages lead ---")
+                    await lib2.debugCorpusRetrieve(query: "How much did I spend on my Bolex camera?", store: self, chat: chat2)
+                    // #3 Post-Workout Relief pin (Sample canvas).
+                    let lib3 = LibrarianState(); let chat3 = ChatSession(); lib3.selectedScope = sampleScope
+                    NSLog("[SurveyDiag] --- #3 'Post-Workout Relief' pin (Sample) — expect pin wins, short card list ---")
+                    await lib3.debugCorpusRetrieve(query: "What can you tell me about my entry called \"Post-Workout Relief\"?", store: self, chat: chat3)
+                    // #5 Valarie/film (Corpus) — meaningful only on a FRESH SEED.
+                    let lib5 = LibrarianState(); let chat5 = ChatSession(); lib5.selectedScope = .corpus
+                    NSLog("[SurveyDiag] --- #5 'what does Valarie write about film?' (Corpus) — read on FRESH SEED ---")
+                    await lib5.debugCorpusRetrieve(query: "What does Valarie write about film?", store: self, chat: chat5)
+                    NSLog("[SurveyDiag] done")
                 }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic

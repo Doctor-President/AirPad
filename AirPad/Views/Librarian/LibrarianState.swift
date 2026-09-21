@@ -478,14 +478,64 @@ final class LibrarianState {
     // MARK: - Brief S — corpus-Ask retrieval (title context, follow-ups, pinning)
 
     /// One numbered retrieval candidate. `number` is the `[n]` the prompt and the
-    /// citation chips use; it is assigned on a passage's FIRST appearance and then
-    /// PRESERVED across turns (S2) so `[n]` means the same passage turn to turn.
-    /// `origin` feeds the S5 candidate log only.
+    /// citation chips use; it is assigned on FIRST appearance and then PRESERVED
+    /// across turns (S2) so `[n]` means the same source turn to turn. `origin` feeds
+    /// the S5 candidate log only.
+    ///
+    /// Brief AA — a candidate is EITHER a passage (block-level DEPTH) or a card
+    /// (node-level BREADTH). ONE numbered list holds both, so `[n]` is continuous
+    /// across the prompt's NOTES and PASSAGES sections and the S2 carry unions the
+    /// two kinds.
     struct NumberedCandidate: Sendable {
         enum Origin: String, Sendable { case carried, new, pinned }
+        enum Payload: Sendable {
+            case passage(BlockMatch)
+            case card(CardMatch)
+        }
         let number: Int
-        let match: BlockMatch
+        var payload: Payload
         var origin: Origin
+
+        var nodeID: String {
+            switch payload {
+            case .passage(let m): return m.nodeID
+            case .card(let c):    return c.nodeID
+            }
+        }
+        var score: Float {
+            switch payload {
+            case .passage(let m): return m.score
+            case .card(let c):    return c.score
+            }
+        }
+        var isCard: Bool { if case .card = payload { return true } else { return false } }
+
+        /// Stable de-dup / carry identity: a passage's blockID, a card's node id
+        /// (`card:`-prefixed so a card and a passage of the same node never collide).
+        var identity: String {
+            switch payload {
+            case .passage(let m): return m.block.blockID
+            case .card(let c):    return "card:\(c.nodeID)"
+            }
+        }
+    }
+
+    /// Brief AA2 — whether this turn's retrieval looks like a LOOKUP (concentrated:
+    /// a strong passage backed by a second passage from the same node) or a SURVEY
+    /// (everything else). Set by result SHAPE, never by classifying the question
+    /// (T's ruling: no question classifier). Drives the passage/card budget split.
+    enum RetrievalShape: String, Sendable {
+        case lookup, survey
+        /// AA2 budgets. Lookup leans on passages (depth); survey leans on cards (breadth).
+        var passageBudget: Int { self == .lookup ? 8 : 4 }
+        var cardBudget: Int { self == .lookup ? 12 : 30 }
+    }
+
+    struct ShapeVerdict: Sendable {
+        let shape: RetrievalShape
+        let topPassage: Float
+        let topNodeDup: Int
+        let dupOwnNote: Bool
     }
 
     /// The full numbered candidate list handed to the model on the PREVIOUS
@@ -570,7 +620,7 @@ final class LibrarianState {
         } else {
             let context = buildAskContext(candidates: candidates, store: store)
             modelText = """
-            Some passages retrieved from your notes by similarity search — they may or may not be relevant to the question:
+            Some of your notes were retrieved by similarity search — they may or may not be relevant to the question:
 
             \(context)
 
@@ -599,28 +649,44 @@ final class LibrarianState {
             return query
         }()
 
+        // AA1 — embed the retrieval query ONCE; the passage scan and the card scan
+        // share it (empty on embed failure → both re-embed and also fail → no
+        // candidates → bare question, same as before).
+        let qvec = await CardEmbeddingService.shared.embed(retrievalQuery) ?? []
+
         // S3 — nodes to pin (quoted title / title verbatim in the question). Detect
         // against the CURRENT question, not the augmented query.
         let pinnedIDs = Set(Self.pinnedNodeIDs(question: query, store: store))
         let pinning = !pinnedIDs.isEmpty
 
-        // General similarity retrieval over the augmented query. When pinning, a
+        // Passages (DEPTH). Diversified ≤3/node inside askMatches. When pinning, a
         // named entry shouldn't drag in loosely-related notes, so non-pinned
         // passages must clear a HIGHER bar (0.70); otherwise the usual budget bar.
-        let general = await store.askMatches(query: retrievalQuery, scope: selectedScope, topK: 12)
+        let general = await store.askMatches(query: retrievalQuery, scope: selectedScope, topK: 12, queryVector: qvec)
         let bar: Float = pinning ? 0.70 : CorpusStore.minRelevanceScore
         let generalFiltered = general.filter { !pinnedIDs.contains($0.nodeID) && $0.score >= bar }
 
+        // AA1 — cards (BREADTH) over the same room. Exclude pinned nodes: a pin is an
+        // explicit lookup focus and its passages already represent that node.
+        let allCards = await store.cardMatches(query: retrievalQuery, scope: selectedScope, queryVector: qvec)
+        let cards = allCards.filter { !pinnedIDs.contains($0.nodeID) }
+
+        // AA2 — shape from the passage list (pinning forces lookup). Sets the split.
+        let verdict = Self.retrievalShape(passages: general, pinning: pinning, store: store)
+        let newPassages = Array(generalFiltered.prefix(verdict.shape.passageBudget))
+        let newCards = Array(cards.prefix(verdict.shape.cardBudget))
+
         // Pinned passages — ALL blocks of the pinned nodes, regardless of score.
         let pinnedMatches = pinning
-            ? await store.blocksForNodes(query: retrievalQuery, nodeIDs: Array(pinnedIDs), topK: 12)
+            ? await store.blocksForNodes(query: retrievalQuery, nodeIDs: Array(pinnedIDs), topK: 12, queryVector: qvec)
             : []
 
-        // Assemble carry + pin + new into one numbered list (stable [n] across turns).
+        // Assemble carry + pin + new (passages + cards) into one numbered list
+        // (stable [n] across turns; S2 carry unions both kinds).
         let carried = (carriedChatID == chat.id) ? carriedCandidates : []
         let candidates = Self.assembleCandidates(
             carried: carried, pinned: pinnedMatches,
-            new: generalFiltered, budget: Self.askPassageCharBudget)
+            newPassages: newPassages, newCards: newCards, budget: Self.askPassageCharBudget)
 
         // Persist for the next turn's carry (keyed to this chat).
         carriedCandidates = candidates
@@ -628,7 +694,7 @@ final class LibrarianState {
 
         // S5 — candidate log (turn index = user turns so far + this one).
         let turnIndex = chat.messages.filter { $0.role == .user }.count + 1
-        Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, store: store)
+        Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, shape: verdict, store: store)
         return candidates
     }
 
@@ -646,10 +712,14 @@ final class LibrarianState {
 
     // MARK: - Brief W1 — passage provenance (note vs collected source)
 
-    /// The block's provenance kind + domain, resolved from its item on its node.
+    /// The candidate's provenance kind + domain. A passage resolves from its block's
+    /// item (W1); a card resolves at the whole-node granularity (AA3 `cardProvenance`).
     private static func provenance(for c: NumberedCandidate, store: CorpusStore) -> (kind: Node.BlockProvenance, domain: String?) {
-        guard let node = store.nodes.first(where: { $0.id == c.match.nodeID }) else { return (.note, nil) }
-        return node.blockProvenance(forItemID: c.match.block.itemID)
+        guard let node = store.nodes.first(where: { $0.id == c.nodeID }) else { return (.note, nil) }
+        switch c.payload {
+        case .passage(let m): return node.blockProvenance(forItemID: m.block.itemID)
+        case .card:           return node.cardProvenance()
+        }
     }
 
     /// Prompt-header label — the user's own words are "your note"; collected sources
@@ -681,11 +751,18 @@ final class LibrarianState {
     /// exact node — the footer dedups by node for display (Piece 2).
     private static func citationChips(from candidates: [NumberedCandidate], store: CorpusStore) -> [ChatSession.Message.Citation] {
         candidates.map { c in
-            let title = store.nodes.first { $0.id == c.match.nodeID }?.title ?? "Untitled"
+            let title = store.nodes.first { $0.id == c.nodeID }?.title ?? "Untitled"
             let kind = provenance(for: c, store: store).kind
-            let body = String(c.match.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+            // AA4 — a card chip carries its gist as the secondary line; a passage
+            // chip carries a 140-char snippet of the block. Both get the W1
+            // provenance prefix only for COLLECTED sources (a plain note is unlabelled).
+            let body: String
+            switch c.payload {
+            case .passage(let m): body = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+            case .card(let card): body = card.gist
+            }
             let snippet = (kind == .note) ? body : "\(provenanceChipPrefix(kind)) · \(body)"
-            return .init(index: c.number, nodeID: c.match.nodeID, title: title, snippet: snippet)
+            return .init(index: c.number, nodeID: c.nodeID, title: title, snippet: snippet)
         }
     }
 
@@ -903,71 +980,118 @@ final class LibrarianState {
         }
     }
 
-    /// Brief S2/S3 — assemble the numbered candidate list for a corpus-Ask turn.
-    /// Order is PINNED (front, S3), then CARRIED-not-pinned (S2, numbers preserved),
-    /// then NEW passages not already present. A passage's number is assigned on its
-    /// FIRST appearance and reused forever after — so `[n]` is stable turn to turn.
-    /// De-dupes by `blockID`. Budget is enforced by `trimByBudget` (oldest carried
-    /// dropped first). Per-block cost overhead (~50 chars) is the numbered label +
-    /// separator `buildAskContext` adds.
+    /// Brief AA2 — classify this turn by result SHAPE (never by the question). A
+    /// CONCENTRATED result — a strong top passage (≥ 0.70) backed by a second
+    /// passage from the SAME node among the top 4 — reads as a LOOKUP; a pin forces
+    /// it. Everything else is a SURVEY. Computed on the diversified passage list
+    /// (`askMatches` already caps ≤ 3/node, so a genuine concentration still shows
+    /// as a dup ≥ 2 in the top 4).
+    ///
+    /// ★ Fixture-adjusted (2026-09-21, from the brief's "first guess"): the dominant
+    /// node must be the user's OWN note. A long SAVED ARTICLE naturally puts several
+    /// of its own passages in the top 4 (Schema (psychology) contributes 3 of the
+    /// top 4 for "What are my thoughts on technology?" — top 0.73, dup 3), but that
+    /// internal density is a document artefact, not a lookup. Gating on own-note
+    /// provenance keeps "technology" a SURVEY (dominant = a saved article) while a
+    /// real lookup — "How much did I spend on my Bolex camera?" — stays a LOOKUP
+    /// (dominant = the user's "Bolex" note, 3 top passages).
+    static func retrievalShape(passages: [BlockMatch], pinning: Bool, store: CorpusStore) -> ShapeVerdict {
+        let top = passages.first?.score ?? 0
+        var counts: [String: Int] = [:]
+        for m in passages.prefix(4) { counts[m.nodeID, default: 0] += 1 }
+        let dominant = counts.max { $0.value < $1.value }
+        let dup = dominant?.value ?? 0
+        let dupOwnNote: Bool = {
+            guard dup >= 2, let id = dominant?.key,
+                  let node = store.nodes.first(where: { $0.id == id }) else { return false }
+            return node.cardProvenance().kind == .note
+        }()
+        let concentrated = pinning || (top >= 0.70 && dupOwnNote)
+        return ShapeVerdict(shape: concentrated ? .lookup : .survey, topPassage: top, topNodeDup: dup, dupOwnNote: dupOwnNote)
+    }
+
+    /// Brief S2/S3/AA — assemble the numbered candidate list for a corpus-Ask turn.
+    /// Order is PINNED passages (front, S3), then CARRIED-not-pinned (S2, numbers
+    /// preserved), then NEW passages, then NEW cards. A source's number is assigned
+    /// on its FIRST appearance and reused forever after — so `[n]` is stable turn to
+    /// turn across BOTH kinds (AA continuous numbering). De-dupes by `identity`
+    /// (blockID for passages, `card:<nodeID>` for cards). Budget is enforced by
+    /// `trimByBudget` (oldest carried dropped first).
     private static func assembleCandidates(
         carried: [NumberedCandidate],
         pinned: [BlockMatch],
-        new: [BlockMatch],
+        newPassages: [BlockMatch],
+        newCards: [CardMatch],
         budget: Int
     ) -> [NumberedCandidate] {
-        var byBlock: [String: NumberedCandidate] = [:]
-        for c in carried { byBlock[c.match.block.blockID] = c }
+        var byID: [String: NumberedCandidate] = [:]
+        for c in carried { byID[c.identity] = c }
         var maxNumber = carried.map(\.number).max() ?? 0
 
-        // Assign (or reuse) a number for a match. A carried block keeps its number;
+        func passageID(_ m: BlockMatch) -> String { m.block.blockID }
+        func cardID(_ c: CardMatch) -> String { "card:\(c.nodeID)" }
+
+        // Assign (or reuse) a number for a passage. A carried block keeps its number;
         // if it's now pinned its origin flips to `.pinned` (front placement).
-        func assign(_ match: BlockMatch, origin: NumberedCandidate.Origin) -> NumberedCandidate {
-            if var existing = byBlock[match.block.blockID] {
+        func assignPassage(_ match: BlockMatch, origin: NumberedCandidate.Origin) -> NumberedCandidate {
+            let id = passageID(match)
+            if var existing = byID[id] {
                 if origin == .pinned { existing.origin = .pinned }
-                byBlock[match.block.blockID] = existing
+                byID[id] = existing
                 return existing
             }
             maxNumber += 1
-            let c = NumberedCandidate(number: maxNumber, match: match, origin: origin)
-            byBlock[match.block.blockID] = c
+            let c = NumberedCandidate(number: maxNumber, payload: .passage(match), origin: origin)
+            byID[id] = c
+            return c
+        }
+        func assignCard(_ card: CardMatch) -> NumberedCandidate {
+            let id = cardID(card)
+            if let existing = byID[id] { return existing }
+            maxNumber += 1
+            let c = NumberedCandidate(number: maxNumber, payload: .card(card), origin: .new)
+            byID[id] = c
             return c
         }
 
         // 1. Pinned first — number them before anything else so a first-turn pin is 1…k.
         var pinnedList: [NumberedCandidate] = []
-        for m in pinned { pinnedList.append(assign(m, origin: .pinned)) }
-        let pinnedBlockIDs = Set(pinnedList.map { $0.match.block.blockID })
+        for m in pinned { pinnedList.append(assignPassage(m, origin: .pinned)) }
+        let pinnedIDs = Set(pinnedList.map { $0.identity })
 
         // 2. Carried that aren't now pinned — keep order + number.
         var carriedList: [NumberedCandidate] = []
-        for c in carried where !pinnedBlockIDs.contains(c.match.block.blockID) {
+        for c in carried where !pinnedIDs.contains(c.identity) {
             var e = c; e.origin = .carried
             carriedList.append(e)
         }
 
-        // 3. New passages not already present (byBlock holds carried + pinned).
+        // 3. New passages, then 4. new cards — each only if not already present.
         var newList: [NumberedCandidate] = []
-        for m in new where byBlock[m.block.blockID] == nil {
-            newList.append(assign(m, origin: .new))
+        for m in newPassages where byID[passageID(m)] == nil {
+            newList.append(assignPassage(m, origin: .new))
+        }
+        for card in newCards where byID[cardID(card)] == nil {
+            newList.append(assignCard(card))
         }
 
-        // Brief Z R4 — enforce ≤3 blocks per node AFTER the union (a node can reach
-        // the union via both carried and new, or via a pin), in list order so the
-        // front (pinned → carried → new) keeps its best blocks.
+        // Brief Z R4 — enforce ≤3 PASSAGES per node AFTER the union (a card is one
+        // per node and is exempt), in list order so the front keeps its best blocks.
         let capped = capPerNode(pinnedList + carriedList + newList, perNode: CorpusStore.maxBlocksPerNode)
         return trimByBudget(capped, budget: budget)
     }
 
-    /// Brief Z R4 — keep at most `perNode` candidates from any one node, in list
-    /// order (front wins). Applied after the carried/pinned/new union.
+    /// Brief Z R4 — keep at most `perNode` PASSAGES from any one node, in list order
+    /// (front wins). Cards are one-per-node and exempt (they carry the node-level
+    /// gist, not a competing chunk). Applied after the carried/pinned/new union.
     private static func capPerNode(_ list: [NumberedCandidate], perNode: Int) -> [NumberedCandidate] {
         var count: [String: Int] = [:]
         var out: [NumberedCandidate] = []
         for c in list {
-            let k = count[c.match.nodeID, default: 0]
+            if c.isCard { out.append(c); continue }
+            let k = count[c.nodeID, default: 0]
             guard k < perNode else { continue }
-            count[c.match.nodeID] = k + 1
+            count[c.nodeID] = k + 1
             out.append(c)
         }
         return out
@@ -979,7 +1103,14 @@ final class LibrarianState {
     /// citation-free prompt that silently drops the corpus). Pinned/new survive the
     /// carried sweep so a named entry and the freshest hits are protected.
     private static func trimByBudget(_ list: [NumberedCandidate], budget: Int) -> [NumberedCandidate] {
-        func cost(_ c: NumberedCandidate) -> Int { c.match.block.text.count + 50 }
+        // A passage costs its block text; a card costs its gist (+ overhead for the
+        // numbered label, title, and separators `buildAskContext` adds).
+        func cost(_ c: NumberedCandidate) -> Int {
+            switch c.payload {
+            case .passage(let m): return m.block.text.count + 50
+            case .card(let card): return card.gist.count + 60
+            }
+        }
         var result = list
         var total = result.reduce(0) { $0 + cost($1) }
         while total > budget,
@@ -1047,18 +1178,25 @@ final class LibrarianState {
 
     /// S5 — one os_log record per corpus-mode turn: turn index, the query sent to
     /// the embedder, then each candidate as "n · nodeTitle · score · origin".
-    private static func logCandidates(turnIndex: Int, query: String, candidates: [NumberedCandidate], store: CorpusStore) {
+    private static func logCandidates(turnIndex: Int, query: String, candidates: [NumberedCandidate], shape: ShapeVerdict, store: CorpusStore) {
         var lines: [String] = []
-        let distinct = Set(candidates.map { $0.match.nodeID }).count
-        lines.append("turn \(turnIndex) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s) · \(distinct) node(s)")
-        var perNode: [String: Int] = [:]   // Brief Z R4 — the k/3 running count per node
+        let distinct = Set(candidates.map { $0.nodeID }).count
+        let cardCount = candidates.filter { $0.isCard }.count
+        let passageCount = candidates.count - cardCount
+        // AA4 — shape verdict per turn + the passage/card split.
+        lines.append("turn \(turnIndex) · shape=\(shape.shape.rawValue) top=\(String(format: "%.2f", shape.topPassage)) dup=\(shape.topNodeDup) own=\(shape.dupOwnNote) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s) (\(passageCount)p/\(cardCount)c) · \(distinct) node(s)")
+        var perNode: [String: Int] = [:]   // Brief Z R4 — the k/3 running count per node (passages only)
         for c in candidates {
-            let score = String(format: "%.3f", c.match.score)
-            let k = (perNode[c.match.nodeID, default: 0]) + 1
-            perNode[c.match.nodeID] = k
-            // W1 — provenance-labelled header ("saved article — … (domain)"); Z R4 — k/3 cap.
-            let header = passageHeader(for: c, store: store)
-            lines.append("  \(header) · \(score) · \(c.origin.rawValue) · \(k)/\(CorpusStore.maxBlocksPerNode)")
+            let score = String(format: "%.3f", c.score)
+            // AA4 — card|passage column.
+            switch c.payload {
+            case .passage:
+                let k = (perNode[c.nodeID, default: 0]) + 1
+                perNode[c.nodeID] = k
+                lines.append("  [passage] \(passageHeader(for: c, store: store)) · \(score) · \(c.origin.rawValue) · \(k)/\(CorpusStore.maxBlocksPerNode)")
+            case .card:
+                lines.append("  [card]    \(cardLogLine(for: c, store: store)) · \(score) · \(c.origin.rawValue)")
+            }
         }
         candidateLog.log("\(lines.joined(separator: "\n"), privacy: .public)")
     }
@@ -1085,7 +1223,7 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN notes. Passages from the user's notes may appear below the question; they were pulled by similarity search and MAY OR MAY NOT be relevant. Treat any that genuinely help as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered passages. Ignore passages that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only passages you actually used. Do not connect notes the question did not ask about. If a note distinguishes an estimate from an actual figure, say which. Passages marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their notes and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their OWN notes. Two labelled sections may appear below the question: NOTES ON THIS TOPIC lists the user's notes related to the topic (one line each), and PASSAGES are excerpts. They were pulled by similarity search and MAY OR MAY NOT be relevant. For broad questions about what the user thinks or has, synthesise across NOTES and cite them; for specific facts, answer from PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered notes and passages. Ignore items that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect notes the question did not ask about. If a note distinguishes an estimate from an actual figure, say which. Notes or passages marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their notes and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
     }
 
@@ -1212,24 +1350,66 @@ final class LibrarianState {
         return !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Brief AA3 — the ask context in TWO labelled sections with continuous
+    /// numbering: `NOTES ON THIS TOPIC` (cards — one line each, breadth) then
+    /// `PASSAGES` (block excerpts — depth). Either section is omitted when empty.
     private func buildAskContext(
         candidates: [NumberedCandidate],
         store: CorpusStore
     ) -> String {
         guard !candidates.isEmpty else { return "" }
-        return candidates.map { c in
-            "\(Self.passageHeader(for: c, store: store))\n\(c.match.block.text)"
-        }.joined(separator: "\n\n---\n\n")
+        let cards = candidates.filter { $0.isCard }
+        let passages = candidates.filter { !$0.isCard }
+        var sections: [String] = []
+        if !cards.isEmpty {
+            let lines = cards.map { Self.cardContextLine(for: $0, store: store) }.joined(separator: "\n")
+            sections.append("NOTES ON THIS TOPIC:\n\(lines)")
+        }
+        if !passages.isEmpty {
+            let blocks = passages.compactMap { c -> String? in
+                guard case .passage(let m) = c.payload else { return nil }
+                return "\(Self.passageHeader(for: c, store: store))\n\(m.block.text)"
+            }.joined(separator: "\n\n---\n\n")
+            sections.append("PASSAGES:\n\(blocks)")
+        }
+        return sections.joined(separator: "\n\n")
     }
 
     /// Brief W1 — the passage's prompt header, provenance-labelled:
     /// `[n] your note — Title` / `[n] saved article — Title (domain)` /
     /// `[n] document — Title` / `[n] image text — Title`.
     private static func passageHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
-        let title = store.nodes.first { $0.id == c.match.nodeID }?.title ?? "Untitled"
+        let title = store.nodes.first { $0.id == c.nodeID }?.title ?? "Untitled"
         let (kind, domain) = provenance(for: c, store: store)
         let suffix = (kind == .savedLink) ? (domain.map { " (\($0))" } ?? "") : ""
         return "[\(c.number)] \(provenanceLabel(kind)) — \(title)\(suffix)"
+    }
+
+    /// Brief AA3 — a card's NOTES-section line: `[n] <title> — <gist>`, with the W1
+    /// provenance label folded in only for a COLLECTED node so the model doesn't
+    /// read a saved article's gist as the user's own words.
+    private static func cardContextLine(for c: NumberedCandidate, store: CorpusStore) -> String {
+        guard case .card(let card) = c.payload else { return "" }
+        let title = store.nodes.first { $0.id == card.nodeID }?.title ?? "Untitled"
+        let (kind, domain) = provenance(for: c, store: store)
+        let prov: String
+        switch kind {
+        case .note:      prov = ""
+        case .savedLink: prov = " (saved article\(domain.map { ", \($0)" } ?? ""))"
+        case .document:  prov = " (document)"
+        case .imageText: prov = " (image text)"
+        }
+        return "[\(c.number)] \(title)\(prov) — \(card.gist)"
+    }
+
+    /// AA4 — compact card line for the S5 log (title only, gist omitted to keep the
+    /// per-turn record short with up to 30 cards).
+    private static func cardLogLine(for c: NumberedCandidate, store: CorpusStore) -> String {
+        guard case .card(let card) = c.payload else { return "" }
+        let title = store.nodes.first { $0.id == card.nodeID }?.title ?? "Untitled"
+        let (kind, _) = provenance(for: c, store: store)
+        let label = (kind == .note) ? "" : "\(provenanceLabel(kind)) — "
+        return "[\(c.number)] \(label)\(title)"
     }
 
     /// Compaction pass — fires before an LLM call when the running

@@ -701,6 +701,30 @@ extension Node {
         return (.note, nil)
     }
 
+    /// Brief AA3 — node-level provenance for the node's CARD (its whole-node gist),
+    /// the W1 analogue of `blockProvenance` one granularity up. The gist summarises
+    /// the entire node, so the NOTES survey list must not quote a saved article's
+    /// gist back as the user's own words. Rule (measured against T's corpus: 40 of
+    /// 224 user notes carry a link with a resolvable domain): a link with a real
+    /// domain marks the card a saved article — this leans COLLECTED for mixed
+    /// note+link nodes, the safe W1 direction — else a document / image node is
+    /// labelled as such, otherwise it is the user's own note. A link whose URL yields
+    /// no domain (a stripped/placeholder link on an otherwise-typed note) does NOT
+    /// downgrade it: the card stays the user's own.
+    func cardProvenance() -> (kind: BlockProvenance, domain: String?) {
+        for item in items where item.type == .link {
+            if let domain = Self.linkDomain(item.url) { return (.savedLink, domain) }
+        }
+        for item in items {
+            switch item.type {
+            case .document:            return (.document, nil)
+            case .image, .imageVideo:  return (.imageText, nil)
+            default:                   continue
+            }
+        }
+        return (.note, nil)
+    }
+
     /// Bare registrable domain (no scheme, no `www.`) for a link's provenance label.
     static func linkDomain(_ urlString: String?) -> String? {
         guard let s = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),

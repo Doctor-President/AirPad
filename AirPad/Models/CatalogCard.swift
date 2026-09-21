@@ -64,6 +64,18 @@ struct CatalogCard: Codable {
     }
 }
 
+/// Brief AA1 — one card-tier retrieval hit: the owning node, its gist (the
+/// NOTES-section line + the chip's secondary line), and the cosine score of the
+/// query against the card's gist vector. The node-level analogue of `BlockMatch`
+/// — breadth (which notes touch the topic) to the passages' depth. Title +
+/// provenance are projected from `Node` at render time (as W1 does for passages),
+/// so this carries only card-owned data.
+struct CardMatch: Sendable {
+    let nodeID: String
+    let gist: String
+    let score: Float
+}
+
 /// ws-card-catalog step 2a — reserved V2 interpretive edge between cards. Not
 /// written today; defined so `CatalogCard.edges` has a concrete element type.
 struct CardEdge: Codable {

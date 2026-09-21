@@ -23,6 +23,11 @@ struct NodeCollection: Codable, Identifiable, Hashable {
 
     static let corpusID = "_corpus"
     static let journalID = "_journal"
+    /// Brief U — the per-scope key for the sample-library node-set scope
+    /// (`CanvasScope.nodeIDs`). Not a real collection; used only to key that
+    /// scope's `FilterState`. Reserved (`_`-prefixed) so it can't collide with a
+    /// user collection's UUID.
+    static let sampleScopeID = "_sample"
     /// Librarian-managed reserved ID. Unlike Corpus/Journal (which are
     /// virtual), this collection is *persisted* in `CorpusStore.collections`
     /// — the dashboard renders it as a real row alongside user collections.

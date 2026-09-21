@@ -2,6 +2,7 @@ import Foundation
 import NaturalLanguage
 import Observation
 import FoundationModels
+import os
 
 /// App-level Librarian session state. Lives on `AppRouter.librarian` and
 /// travels across canvas, list, and (future) detail-view mounts so a
@@ -474,6 +475,30 @@ final class LibrarianState {
         return String(s.prefix(240)) + "…"
     }
 
+    // MARK: - Brief S — corpus-Ask retrieval (title context, follow-ups, pinning)
+
+    /// One numbered retrieval candidate. `number` is the `[n]` the prompt and the
+    /// citation chips use; it is assigned on a passage's FIRST appearance and then
+    /// PRESERVED across turns (S2) so `[n]` means the same passage turn to turn.
+    /// `origin` feeds the S5 candidate log only.
+    struct NumberedCandidate: Sendable {
+        enum Origin: String, Sendable { case carried, new, pinned }
+        let number: Int
+        let match: BlockMatch
+        var origin: Origin
+    }
+
+    /// The full numbered candidate list handed to the model on the PREVIOUS
+    /// corpus-Ask turn, kept so the next turn can carry it forward (S2). Keyed by
+    /// `carriedChatID`: when the live chat's id changes (New / switch / reset) the
+    /// carry is dropped — a fresh conversation starts numbering at 1.
+    @ObservationIgnored private var carriedCandidates: [NumberedCandidate] = []
+    @ObservationIgnored private var carriedChatID: UUID? = nil
+
+    /// S5 — one record per corpus-mode turn (turn index, embedder query, each
+    /// candidate). Subsystem/category per the brief; logs in DEBUG and Release.
+    private static let candidateLog = Logger(subsystem: "com.doctorpresident.airpad", category: "librarian")
+
     /// Live Ask entry — retrieval-INFORMED, NO mode routing (Part 2). ALWAYS
     /// retrieves and hands the top passages to the model under ONE honest-framing
     /// prompt ("these came from your notes by similarity search and may not be
@@ -533,14 +558,9 @@ final class LibrarianState {
             return
         }
 
-        // ★ Corpus mode (corpusAware == true): current behaviour exactly. Retrieve,
-        // include the passages worth the budget (≥ the bar) — a budget filter, NOT a
-        // correctness switch — and hand them to the honest-framing corpus prompt.
-        let matches = await store.askMatches(query: query, scope: selectedScope, topK: 8)
-        let candidates = Self.trimToCharBudget(
-            matches.filter { $0.score >= CorpusStore.minRelevanceScore },
-            budget: Self.askPassageCharBudget
-        )
+        // ★ Corpus mode (corpusAware == true). Build the numbered candidate list
+        // (Brief S: S2 query augmentation + carry, S3 pinning, S5 log), then send.
+        let candidates = await corpusCandidates(query: query, store: store, chat: chat)
 
         let modelText: String
         if candidates.isEmpty {
@@ -548,7 +568,7 @@ final class LibrarianState {
             // honest-framing system prompt still says "answer normally," no refusal.
             modelText = query
         } else {
-            let context = buildAskContext(citations: candidates, store: store)
+            let context = buildAskContext(candidates: candidates, store: store)
             modelText = """
             Some passages retrieved from your notes by similarity search — they may or may not be relevant to the question:
 
@@ -564,14 +584,108 @@ final class LibrarianState {
         await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt, citations: chips)
     }
 
-    /// Per-passage citations, `index` = the `[n]` the prompt/model uses. Stored
-    /// PER-BLOCK (not node-deduped) so an inline `[n]` tap can resolve its exact
-    /// node — the footer dedups by node for display (Piece 2). Ordered by `[n]`.
-    private static func citationChips(from cited: [BlockMatch], store: CorpusStore) -> [ChatSession.Message.Citation] {
-        cited.enumerated().map { i, match in
-            let title = store.nodes.first { $0.id == match.nodeID }?.title ?? "Untitled"
-            let snippet = String(match.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
-            return .init(index: i + 1, nodeID: match.nodeID, title: title, snippet: snippet)
+    /// Brief S — assemble the numbered candidate list for a corpus-Ask turn. S2:
+    /// the retrieval query folds in the previous USER turn, and the prior turn's
+    /// candidates carry forward with stable numbers. S3: a named entry's passages
+    /// pin to the front (non-pinned passages must then clear 0.70). S5: log it.
+    /// Mutates the carry state; the caller builds the prompt + chips and sends.
+    private func corpusCandidates(query: String, store: CorpusStore, chat: ChatSession) async -> [NumberedCandidate] {
+        // S2 — retrieval query = current question + the previous USER turn in this
+        // chat (first turn: bare question), so a follow-up keeps its subject.
+        let previousUserTurn = chat.messages.last { $0.role == .user }?.text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let retrievalQuery: String = {
+            if let prev = previousUserTurn, !prev.isEmpty { return "\(query)\n\(prev)" }
+            return query
+        }()
+
+        // S3 — nodes to pin (quoted title / title verbatim in the question). Detect
+        // against the CURRENT question, not the augmented query.
+        let pinnedIDs = Set(Self.pinnedNodeIDs(question: query, store: store))
+        let pinning = !pinnedIDs.isEmpty
+
+        // General similarity retrieval over the augmented query. When pinning, a
+        // named entry shouldn't drag in loosely-related notes, so non-pinned
+        // passages must clear a HIGHER bar (0.70); otherwise the usual budget bar.
+        let general = await store.askMatches(query: retrievalQuery, scope: selectedScope, topK: 12)
+        let bar: Float = pinning ? 0.70 : CorpusStore.minRelevanceScore
+        let generalFiltered = general.filter { !pinnedIDs.contains($0.nodeID) && $0.score >= bar }
+
+        // Pinned passages — ALL blocks of the pinned nodes, regardless of score.
+        let pinnedMatches = pinning
+            ? await store.blocksForNodes(query: retrievalQuery, nodeIDs: Array(pinnedIDs), topK: 12)
+            : []
+
+        // Assemble carry + pin + new into one numbered list (stable [n] across turns).
+        let carried = (carriedChatID == chat.id) ? carriedCandidates : []
+        let candidates = Self.assembleCandidates(
+            carried: carried, pinned: pinnedMatches,
+            new: generalFiltered, budget: Self.askPassageCharBudget)
+
+        // Persist for the next turn's carry (keyed to this chat).
+        carriedCandidates = candidates
+        carriedChatID = chat.id
+
+        // S5 — candidate log (turn index = user turns so far + this one).
+        let turnIndex = chat.messages.filter { $0.role == .user }.count + 1
+        Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, store: store)
+        return candidates
+    }
+
+    #if DEBUG
+    /// Brief S verify — headless retrieval probe. Runs the corpus retrieval +
+    /// candidate assembly + S5 log for `query` WITHOUT invoking the model, then
+    /// simulates the turn's commit (a user bubble) so a follow-up call exercises
+    /// the S2 carry. Used by `-LibrarianRetrievalDiag`.
+    func debugCorpusRetrieve(query: String, store: CorpusStore, chat: ChatSession) async {
+        corpusAware = true
+        _ = await corpusCandidates(query: query, store: store, chat: chat)
+        chat.debugAppendUser(query)
+    }
+    #endif
+
+    // MARK: - Brief W1 — passage provenance (note vs collected source)
+
+    /// The block's provenance kind + domain, resolved from its item on its node.
+    private static func provenance(for c: NumberedCandidate, store: CorpusStore) -> (kind: Node.BlockProvenance, domain: String?) {
+        guard let node = store.nodes.first(where: { $0.id == c.match.nodeID }) else { return (.note, nil) }
+        return node.blockProvenance(forItemID: c.match.block.itemID)
+    }
+
+    /// Prompt-header label — the user's own words are "your note"; collected sources
+    /// are named so the model won't attribute them to the user.
+    private static func provenanceLabel(_ kind: Node.BlockProvenance) -> String {
+        switch kind {
+        case .note:      return "your note"
+        case .savedLink: return "saved article"
+        case .document:  return "document"
+        case .imageText: return "image text"
+        }
+    }
+
+    /// Chip secondary-line prefix — lowercase, no icon (the source list shows it too).
+    private static func provenanceChipPrefix(_ kind: Node.BlockProvenance) -> String {
+        switch kind {
+        case .note:      return "note"
+        case .savedLink: return "saved article"
+        case .document:  return "document"
+        case .imageText: return "image text"
+        }
+    }
+
+    /// Per-passage citations, `index` = the candidate's assigned `[n]` (S2 — stable
+    /// across turns, NOT positional). W1: only COLLECTED passages (saved article /
+    /// document / image text) get a provenance-labelled snippet prefix (T, 2026-09-20
+    /// — a plain note carries no label; the unlabelled chip IS the user's own).
+    /// Stored PER-BLOCK (not node-deduped) so an inline `[n]` tap can resolve its
+    /// exact node — the footer dedups by node for display (Piece 2).
+    private static func citationChips(from candidates: [NumberedCandidate], store: CorpusStore) -> [ChatSession.Message.Citation] {
+        candidates.map { c in
+            let title = store.nodes.first { $0.id == c.match.nodeID }?.title ?? "Untitled"
+            let kind = provenance(for: c, store: store).kind
+            let body = String(c.match.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(140))
+            let snippet = (kind == .note) ? body : "\(provenanceChipPrefix(kind)) · \(body)"
+            return .init(index: c.number, nodeID: c.match.nodeID, title: title, snippet: snippet)
         }
     }
 
@@ -784,27 +898,148 @@ final class LibrarianState {
         case .collection(let id):
             if id == NodeCollection.journalID { return "Journal" }
             return store.collections.first { $0.id == id }?.name ?? "Collection"
+        case .nodeIDs:
+            return "Sample library"
         }
     }
 
-    /// Greedy first-fit trim by character count. The `!result.isEmpty` guard
-    /// guarantees at least one passage is sent even if the top match alone
-    /// blows the budget — better to overshoot by one block than to send a
-    /// citation-free prompt that quietly drops the user's corpus. Per-block
-    /// overhead (~50 chars) accounts for the numbered label and separator
-    /// in `buildAskContext`.
-    private static func trimToCharBudget(_ matches: [BlockMatch], budget: Int) -> [BlockMatch] {
-        var used = 0
-        var result: [BlockMatch] = []
-        for match in matches {
-            let cost = match.block.text.count + 50
-            if used + cost > budget && !result.isEmpty {
-                break
+    /// Brief S2/S3 — assemble the numbered candidate list for a corpus-Ask turn.
+    /// Order is PINNED (front, S3), then CARRIED-not-pinned (S2, numbers preserved),
+    /// then NEW passages not already present. A passage's number is assigned on its
+    /// FIRST appearance and reused forever after — so `[n]` is stable turn to turn.
+    /// De-dupes by `blockID`. Budget is enforced by `trimByBudget` (oldest carried
+    /// dropped first). Per-block cost overhead (~50 chars) is the numbered label +
+    /// separator `buildAskContext` adds.
+    private static func assembleCandidates(
+        carried: [NumberedCandidate],
+        pinned: [BlockMatch],
+        new: [BlockMatch],
+        budget: Int
+    ) -> [NumberedCandidate] {
+        var byBlock: [String: NumberedCandidate] = [:]
+        for c in carried { byBlock[c.match.block.blockID] = c }
+        var maxNumber = carried.map(\.number).max() ?? 0
+
+        // Assign (or reuse) a number for a match. A carried block keeps its number;
+        // if it's now pinned its origin flips to `.pinned` (front placement).
+        func assign(_ match: BlockMatch, origin: NumberedCandidate.Origin) -> NumberedCandidate {
+            if var existing = byBlock[match.block.blockID] {
+                if origin == .pinned { existing.origin = .pinned }
+                byBlock[match.block.blockID] = existing
+                return existing
             }
-            result.append(match)
-            used += cost
+            maxNumber += 1
+            let c = NumberedCandidate(number: maxNumber, match: match, origin: origin)
+            byBlock[match.block.blockID] = c
+            return c
+        }
+
+        // 1. Pinned first — number them before anything else so a first-turn pin is 1…k.
+        var pinnedList: [NumberedCandidate] = []
+        for m in pinned { pinnedList.append(assign(m, origin: .pinned)) }
+        let pinnedBlockIDs = Set(pinnedList.map { $0.match.block.blockID })
+
+        // 2. Carried that aren't now pinned — keep order + number.
+        var carriedList: [NumberedCandidate] = []
+        for c in carried where !pinnedBlockIDs.contains(c.match.block.blockID) {
+            var e = c; e.origin = .carried
+            carriedList.append(e)
+        }
+
+        // 3. New passages not already present (byBlock holds carried + pinned).
+        var newList: [NumberedCandidate] = []
+        for m in new where byBlock[m.block.blockID] == nil {
+            newList.append(assign(m, origin: .new))
+        }
+
+        return trimByBudget(pinnedList + carriedList + newList, budget: budget)
+    }
+
+    /// Enforce the passage char budget. Drops the OLDEST carried passage first (the
+    /// carried entry with the smallest number, S2), and only if that's exhausted
+    /// trims from the tail — always keeping at least one passage (never send a
+    /// citation-free prompt that silently drops the corpus). Pinned/new survive the
+    /// carried sweep so a named entry and the freshest hits are protected.
+    private static func trimByBudget(_ list: [NumberedCandidate], budget: Int) -> [NumberedCandidate] {
+        func cost(_ c: NumberedCandidate) -> Int { c.match.block.text.count + 50 }
+        var result = list
+        var total = result.reduce(0) { $0 + cost($1) }
+        while total > budget,
+              let idx = result.enumerated()
+                  .filter({ $0.element.origin == .carried })
+                  .min(by: { $0.element.number < $1.element.number })?.offset {
+            total -= cost(result[idx])
+            result.remove(at: idx)
+        }
+        while total > budget, result.count > 1 {
+            total -= cost(result[result.count - 1])
+            result.removeLast()
         }
         return result
+    }
+
+    /// Brief S3 — nodes to PIN for `question`: (1) a node title exactly equal to a
+    /// quoted phrase (case-insensitive), else (2) a node title appearing verbatim
+    /// in the question (the unquoted "my entry called X" case; short titles guarded
+    /// to avoid over-pinning), else (3) a node title beginning with a quoted phrase.
+    /// Empty for the common no-named-entry question. Order follows `store.nodes`.
+    private static func pinnedNodeIDs(question: String, store: CorpusStore) -> [String] {
+        let q = question.lowercased()
+        let quoted = extractQuotedPhrases(question)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        let all: [(id: String, t: String)] = store.nodes.compactMap { n in
+            let t = n.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return t.isEmpty ? nil : (n.id, t)
+        }
+        if !quoted.isEmpty {
+            let exact = all.filter { quoted.contains($0.t) }.map(\.id)
+            if !exact.isEmpty { return exact }
+        }
+        let contained = all.filter { $0.t.count >= 4 && q.contains($0.t) }.map(\.id)
+        if !contained.isEmpty { return contained }
+        if !quoted.isEmpty {
+            let prefixed = all.filter { n in quoted.contains { n.t.hasPrefix($0) } }.map(\.id)
+            if !prefixed.isEmpty { return prefixed }
+        }
+        return []
+    }
+
+    /// Substrings between matching quote marks — straight or curly, single or
+    /// double. A curly closer (’ ” — the smart apostrophe) is never treated as an
+    /// opener, so apostrophes in prose don't create spurious phrases.
+    private static func extractQuotedPhrases(_ s: String) -> [String] {
+        let closers: [Character: Character] = ["\"": "\"", "'": "'", "\u{201C}": "\u{201D}", "\u{2018}": "\u{2019}"]
+        var out: [String] = []
+        var i = s.startIndex
+        while i < s.endIndex {
+            if let closer = closers[s[i]] {
+                let contentStart = s.index(after: i)
+                if contentStart < s.endIndex, let closeIdx = s[contentStart...].firstIndex(of: closer) {
+                    let phrase = String(s[contentStart..<closeIdx])
+                    if !phrase.isEmpty { out.append(phrase) }
+                    i = s.index(after: closeIdx)
+                    continue
+                }
+            }
+            i = s.index(after: i)
+        }
+        return out
+    }
+
+    /// S5 — one os_log record per corpus-mode turn: turn index, the query sent to
+    /// the embedder, then each candidate as "n · nodeTitle · score · origin".
+    private static func logCandidates(turnIndex: Int, query: String, candidates: [NumberedCandidate], store: CorpusStore) {
+        var lines: [String] = []
+        lines.append("turn \(turnIndex) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s)")
+        for c in candidates {
+            let score = String(format: "%.3f", c.match.score)
+            // W1 — log the provenance-labelled passage header so a link node reads
+            // "saved article — … (domain)" and the mapping is verifiable from the log.
+            let header = passageHeader(for: c, store: store)
+            lines.append("  \(header) · \(score) · \(c.origin.rawValue)")
+        }
+        candidateLog.log("\(lines.joined(separator: "\n"), privacy: .public)")
     }
 
     // ws-card-catalog Ask hybrid — the old grounded pipeline (executeQuery →
@@ -829,7 +1064,7 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN notes. Passages from the user's notes may appear below the question; they were pulled by similarity search and MAY OR MAY NOT be relevant. Treat any that genuinely help as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered passages. Ignore passages that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their OWN notes. Passages from the user's notes may appear below the question; they were pulled by similarity search and MAY OR MAY NOT be relevant. Treat any that genuinely help as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered passages. Ignore passages that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only passages you actually used. Do not connect notes the question did not ask about. If a note distinguishes an estimate from an actual figure, say which. Passages marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their notes and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
     }
 
@@ -957,14 +1192,23 @@ final class LibrarianState {
     }
 
     private func buildAskContext(
-        citations: [BlockMatch],
+        candidates: [NumberedCandidate],
         store: CorpusStore
     ) -> String {
-        guard !citations.isEmpty else { return "" }
-        return citations.enumerated().map { idx, match in
-            let title = store.nodes.first { $0.id == match.nodeID }?.title ?? "Untitled"
-            return "[\(idx + 1)] From \"\(title)\":\n\(match.block.text)"
+        guard !candidates.isEmpty else { return "" }
+        return candidates.map { c in
+            "\(Self.passageHeader(for: c, store: store))\n\(c.match.block.text)"
         }.joined(separator: "\n\n---\n\n")
+    }
+
+    /// Brief W1 — the passage's prompt header, provenance-labelled:
+    /// `[n] your note — Title` / `[n] saved article — Title (domain)` /
+    /// `[n] document — Title` / `[n] image text — Title`.
+    private static func passageHeader(for c: NumberedCandidate, store: CorpusStore) -> String {
+        let title = store.nodes.first { $0.id == c.match.nodeID }?.title ?? "Untitled"
+        let (kind, domain) = provenance(for: c, store: store)
+        let suffix = (kind == .savedLink) ? (domain.map { " (\($0))" } ?? "") : ""
+        return "[\(c.number)] \(provenanceLabel(kind)) — \(title)\(suffix)"
     }
 
     /// Compaction pass — fires before an LLM call when the running

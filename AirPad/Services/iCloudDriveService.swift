@@ -147,6 +147,23 @@ actor iCloudDriveService {
     /// `SampleLibrarySeeder`, which operates on explicit URLs so it stays testable.
     func containerRootURL() -> URL? { rootURL }
 
+    /// Brief V — classify the resolved storage root for the one-line launch
+    /// diagnostic. `scratch`/`field-scratch` are the DEBUG throwaway roots (only
+    /// reached via `-SampleSeedDemo` / `-FieldFixtureNode`); `icloud` is the real
+    /// ubiquity container; `local` is the no-iCloud fallback. Reading `scratch`
+    /// here on a device is the fingerprint of a launch that carried the demo arg.
+    func storageDiagnostic() -> (kind: String, path: String, fallback: Bool) {
+        guard let root = rootURL else { return ("none", "-", usingLocalFallback) }
+        let path = root.path
+        let kind: String
+        if path.contains("AirPadSampleDemoScratch") { kind = "scratch" }
+        else if path.contains("AirPadFieldFixtureScratch") { kind = "field-scratch" }
+        else if path.contains("Mobile Documents") || path.contains("com~apple~CloudDocs") { kind = "icloud" }
+        else if usingLocalFallback { kind = "local" }
+        else { kind = "unknown" }
+        return (kind, path, usingLocalFallback)
+    }
+
     // MARK: - Nodes
 
     func saveNode(_ node: Node) throws {

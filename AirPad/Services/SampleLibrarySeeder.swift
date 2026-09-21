@@ -53,6 +53,15 @@ enum SampleLibrarySeeder {
         FileManager.default.fileExists(atPath: containerRoot.appendingPathComponent(markerName).path)
     }
 
+    /// Brief U — the marker file IS the manifest; decode it so the store can read
+    /// the seeded node/collection ids (the separator between the sample and the
+    /// user's own corpus), not only delete by them. nil when absent/corrupt.
+    static func loadManifest(containerRoot: URL) -> Manifest? {
+        let url = containerRoot.appendingPathComponent(markerName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder.airPad.decode(Manifest.self, from: data)
+    }
+
     static func nodesDirIsEmpty(containerRoot: URL) -> Bool {
         let nodesDir = containerRoot.appendingPathComponent("nodes")
         let dirs = (try? FileManager.default.contentsOfDirectory(

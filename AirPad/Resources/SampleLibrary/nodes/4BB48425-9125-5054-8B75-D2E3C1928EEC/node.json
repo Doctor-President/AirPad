@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2025-12-12T16:09:00Z",
+  "entry_schema_version": 4,
+  "id": "4BB48425-9125-5054-8B75-D2E3C1928EEC",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Godard cut it for length, not for effect — the film was too long, so he\nremoved frames from inside continuous shots rather than losing scenes. The\ntechnique everyone cites as an aesthetic statement started as a\ncompromise.\n\nI think about this more than is reasonable.",
+      "created_at": "2025-12-12T16:09:00Z",
+      "id": "CDC73E14-B2E6-5F27-8D50-80002B644A28",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Godard's iconic jump cut began as a length-trimming compromise",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "newwave": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "newwave"
+  ],
+  "threads": [],
+  "title": "Breathless and the jump cut as an accident",
+  "updated_at": "2025-12-12T16:09:00Z"
+}

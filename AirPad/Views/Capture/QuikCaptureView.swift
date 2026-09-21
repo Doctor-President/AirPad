@@ -491,6 +491,8 @@ struct QuikCaptureView: View {
     @ViewBuilder
     private func collectionsRow(node: Node) -> some View {
         let membershipIDs = collectionMembershipIDs(node: node)
+        // Brief U — the sample's collections are hidden from EVERY picker centrally
+        // in `CollectionPickerMenuContent`, so a user's note can't be filed into one.
         let excludeIDs: Set<String> = Set(membershipIDs).union([NodeCollection.corpusID])
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {

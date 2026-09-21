@@ -29,12 +29,61 @@ actor iCloudDriveService {
            trySetupFieldFixtureScratch() {
             return
         }
+        // Brief N §2 — demo the sample-library seed against a THROWAWAY scratch
+        // container that NEVER touches the real iCloud corpus. The scratch starts
+        // empty, so the normal seed path in `CorpusStore.load()` fires and the app
+        // runs against the seeded sample. It PERSISTS across relaunch (so the
+        // marker / Remove / no-re-seed cycle is real); delete the app to reset.
+        if ProcessInfo.processInfo.arguments.contains("-SampleSeedDemo"),
+           trySetupSampleDemoScratch() {
+            return
+        }
+        // Brief Y Part D — `-CorpusFixture <path>`: root at a COPY of the directory
+        // at <path> (a read-only clone of T's real corpus). Every write lands in a
+        // throwaway scratch, NEVER back to <path> and NEVER to iCloud — so CC can run
+        // retrieval / Map / Dashboard checks against real data on the Mac. The value
+        // is read from the argument domain (`-CorpusFixture /abs/path`).
+        if let fixture = UserDefaults.standard.string(forKey: "CorpusFixture"),
+           !fixture.trimmingCharacters(in: .whitespaces).isEmpty,
+           trySetupCorpusFixture(source: fixture) {
+            return
+        }
         #endif
         if await trySetupICloud() { return }
         trySetupLocalFallback()
     }
 
     #if DEBUG
+    /// Brief Y Part D — root at a COPY of `source` (a real-corpus clone). Copied into
+    /// a scratch ONCE (reused across launches so a large corpus isn't re-copied each
+    /// time); to refresh, delete the scratch. Writes land only in the scratch — the
+    /// source clone and iCloud are never touched. `usingLocalFallback=false` so no
+    /// banner clouds the fixture (it's a faithful stand-in for the real container).
+    private func trySetupCorpusFixture(source: String) -> Bool {
+        let fm = FileManager.default
+        guard let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
+        let root = caches.appendingPathComponent("AirPadCorpusFixtureScratch")
+        let src = URL(fileURLWithPath: (source as NSString).expandingTildeInPath)
+        guard fm.fileExists(atPath: src.appendingPathComponent("nodes").path) else {
+            print("[CorpusFixture] source has no nodes/ dir: \(src.path)")
+            return false
+        }
+        do {
+            if !fm.fileExists(atPath: root.path) {
+                try fm.copyItem(at: src, to: root)
+            }
+            try fm.createDirectory(at: root.appendingPathComponent("nodes"), withIntermediateDirectories: true)
+            rootURL = root
+            isAvailable = true
+            usingLocalFallback = false
+            print("[CorpusFixture] rooted at scratch copy of \(src.path)")
+            return true
+        } catch {
+            print("[CorpusFixture] setup error: \(error)")
+            return false
+        }
+    }
+
     private func trySetupFieldFixtureScratch() -> Bool {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
         let root = caches.appendingPathComponent("AirPadFieldFixtureScratch")
@@ -51,6 +100,41 @@ actor iCloudDriveService {
             rootURL = root
             isAvailable = true
             usingLocalFallback = true
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Brief N §2 — throwaway scratch container for `-SampleSeedDemo`. ★ WIPED CLEAN on EVERY
+    /// launch (2026-09-18 fix), like the field-fixture scratch: it is a preview of the CURRENT
+    /// bundle, so it must always start empty and re-seed. The earlier persist-across-launch design
+    /// let a stale marker + old placeholder seed survive a bundle update, so the seeder correctly
+    /// refused to re-seed and the demo showed old content. Wiping every launch removes the trap —
+    /// each `-SampleSeedDemo` run seeds the bundle as shipped. (Trade-off: the marker → Remove →
+    /// no-re-seed cycle is no longer demoable HERE; test that on a real fresh Simulator install.)
+    /// Never touches iCloud.
+    private func trySetupSampleDemoScratch() -> Bool {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return false }
+        let root = caches.appendingPathComponent("AirPadSampleDemoScratch")
+        do {
+            // Start clean each launch so the demo always reflects the current bundle — never a
+            // stale prior seed whose marker would block re-seeding.
+            if FileManager.default.fileExists(atPath: root.path) {
+                try FileManager.default.removeItem(at: root)
+            }
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent("nodes"),
+                withIntermediateDirectories: true
+            )
+            rootURL = root
+            isAvailable = true
+            // Report NOT-fallback so `-SampleSeedDemo` is a faithful first-run PREVIEW: the
+            // "iCloud unavailable — saving locally" banner is driven by `usingLocalFallback`, and a
+            // real first-run user WITH iCloud never sees it (trySetupICloud sets it false). The scratch
+            // is local, but flagging it would show a banner a real iCloud user won't. Cosmetic only —
+            // `usingLocalFallback`/`iCloudUnavailable` gate nothing but that banner + a debug print.
+            usingLocalFallback = false
             return true
         } catch {
             return false
@@ -97,6 +181,28 @@ actor iCloudDriveService {
         } catch {
             isAvailable = false
         }
+    }
+
+    /// The resolved container root (nil before `setup()`). Exposed for
+    /// `SampleLibrarySeeder`, which operates on explicit URLs so it stays testable.
+    func containerRootURL() -> URL? { rootURL }
+
+    /// Brief V — classify the resolved storage root for the one-line launch
+    /// diagnostic. `scratch`/`field-scratch` are the DEBUG throwaway roots (only
+    /// reached via `-SampleSeedDemo` / `-FieldFixtureNode`); `icloud` is the real
+    /// ubiquity container; `local` is the no-iCloud fallback. Reading `scratch`
+    /// here on a device is the fingerprint of a launch that carried the demo arg.
+    func storageDiagnostic() -> (kind: String, path: String, fallback: Bool) {
+        guard let root = rootURL else { return ("none", "-", usingLocalFallback) }
+        let path = root.path
+        let kind: String
+        if path.contains("AirPadSampleDemoScratch") { kind = "scratch" }
+        else if path.contains("AirPadCorpusFixtureScratch") { kind = "corpus-fixture" }
+        else if path.contains("AirPadFieldFixtureScratch") { kind = "field-scratch" }
+        else if path.contains("Mobile Documents") || path.contains("com~apple~CloudDocs") { kind = "icloud" }
+        else if usingLocalFallback { kind = "local" }
+        else { kind = "unknown" }
+        return (kind, path, usingLocalFallback)
     }
 
     // MARK: - Nodes
@@ -350,18 +456,30 @@ actor iCloudDriveService {
     /// from `canvas_layout.json`: that one is the CANONICAL (non-territory) layout,
     /// written by capture/import/neighborhood/recompute — the territory geography
     /// must never collide with it.
-    func saveTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot) throws {
+    /// Brief Z Z2 — `territory_layout.json` is now a PER-SCOPE dict
+    /// (`CanvasScope.key` → snapshot), so the user map and sample map persist
+    /// independently.
+    func saveTerritoryLayouts(_ layouts: [String: TerritoryLayoutSnapshot]) throws {
         let root = try requireRoot()
-        let data = try JSONEncoder.airPad.encode(snapshot)
+        let data = try JSONEncoder.airPad.encode(layouts)
         try data.write(to: root.appendingPathComponent("territory_layout.json"), options: .atomic)
     }
 
-    func loadTerritoryLayout() throws -> TerritoryLayoutSnapshot? {
+    /// Loads the per-scope dict. **Migration:** a pre-Z2 file holds a SINGLE
+    /// snapshot object — decode that and wrap it under the `_corpus` key (the user
+    /// room), so an existing map restores on the first Z2 launch instead of re-forming.
+    func loadTerritoryLayouts() throws -> [String: TerritoryLayoutSnapshot]? {
         let root = try requireRoot()
         let fileURL = root.appendingPathComponent("territory_layout.json")
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         let data = try Data(contentsOf: fileURL)
-        return try JSONDecoder.airPad.decode(TerritoryLayoutSnapshot.self, from: data)
+        if let dict = try? JSONDecoder.airPad.decode([String: TerritoryLayoutSnapshot].self, from: data) {
+            return dict
+        }
+        if let single = try? JSONDecoder.airPad.decode(TerritoryLayoutSnapshot.self, from: data) {
+            return [NodeCollection.corpusID: single]   // pre-Z2 → the user room
+        }
+        return nil
     }
 
     // MARK: - Corpus index

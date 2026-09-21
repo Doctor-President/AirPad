@@ -17,6 +17,12 @@ private let bug17Log = Logger(subsystem: "com.doctorpresident.airpad", category:
 // the stutter can be lined up against the backfill run directly. TEMPORARY.
 private let bug16Log = Logger(subsystem: "com.doctorpresident.airpad", category: "bug16")
 
+// Brief V — one line per launch naming the resolved storage root, node count, and
+// sample marker, so "why is the corpus empty" is answerable from the log in one
+// read (it would have shown `root=scratch` immediately). Release + DEBUG. Capture:
+// `log stream --predicate 'subsystem == "com.doctorpresident.airpad" && category == "storage"'`.
+private let storageLog = Logger(subsystem: "com.doctorpresident.airpad", category: "storage")
+
 // MARK: - Seeded RNG (SB126 Stage 1)
 
 /// Deterministic 64-bit RNG used for the random tier of neighborhood member
@@ -166,9 +172,29 @@ final class CorpusStore {
     /// Persisted CARD-basis geography for the tag-anchored Map, so a relaunch
     /// RESTORES the last layout verbatim instead of re-deriving + animating it
     /// (the map-relayout regression). Loaded at launch; written by the canvas on
-    /// every deliberate card-basis formation. `nil` ⇒ no snapshot ⇒ the Map forms
-    /// fresh and persists the result. See `TerritoryLayoutSnapshot`.
-    var territoryLayout: TerritoryLayoutSnapshot? = nil
+    /// every deliberate card-basis formation. See `TerritoryLayoutSnapshot`.
+    ///
+    /// Brief Z Z2 — keyed PER SCOPE (`CanvasScope.key`: `_corpus` = the user room,
+    /// `_sample` = the sample canvas, a collection id for a collection canvas), so
+    /// the user map and the sample map restore INDEPENDENTLY: switching rooms
+    /// restores each from its own snapshot (never re-forms), and a capture in the
+    /// user room can't re-form the sample map (different key). The pre-Z2 single
+    /// snapshot migrates in as `_corpus`.
+    var territoryLayouts: [String: TerritoryLayoutSnapshot] = [:]
+
+    /// The snapshot for `scope` (nil ⇒ form fresh). Read by the canvas restore gate.
+    func territoryLayout(for scope: CanvasScope) -> TerritoryLayoutSnapshot? {
+        territoryLayouts[scope.key]
+    }
+
+    /// Brief Z Z2 — slot claims are GLOBAL: a territory keeps its palette slot in
+    /// both rooms. The union across every scope's snapshot (later scopes win on a
+    /// key clash, which is irrelevant since a territory's slot is stable for life).
+    var allTerritorySlotClaims: [String: Int] {
+        territoryLayouts.values.reduce(into: [:]) { acc, snap in
+            for (k, v) in snap.territorySlot { acc[k] = v }
+        }
+    }
 
     /// Node radii from latest layout computation (not persisted; recomputed on each layout pass)
     var nodeRadii: [String: CGFloat] = [:]
@@ -299,6 +325,19 @@ final class CorpusStore {
     /// reuse the frozen formation; territory identity is a corpus-clock event.
     var territoryFormationRequest = UUID()
 
+    /// ★ A node's CARD-GIST VECTOR was just ADMITTED to the map's warm cache. The map places a new
+    /// node the instant it is created — which is BEFORE any content exists, let alone an embedding —
+    /// so `driftPlacement` runs with `no-vector` and the node keeps a content-free position
+    /// permanently (there is no second drift: `addedID` is non-nil exactly once). This carries the
+    /// node ID so the canvas can place it AGAIN, now that it has meaning.
+    ///
+    /// ★★ It fires at CARD ADMISSION (`embedCardIfNeeded`), not at the substrate write. The card
+    /// vector — what the map's `languageVector` reads — is built ~500ms AFTER the substrate lands, so
+    /// a re-drift wired to the substrate write asked the cache before the card existed and always
+    /// logged `no-vector`. Node creation stays early on purpose (autosave, crash recovery, sync);
+    /// only the PLACEMENT moves.
+    var cardVectorAdmitted: String?
+
     /// Blocks that failed the quality gate during batch import.
     /// Never silently discarded — user reviews from Settings.
     var reviewQueue: [RejectedBlock] = [] {
@@ -348,6 +387,12 @@ final class CorpusStore {
     /// cancelled/relaunched pass just re-runs the presence/hash/version checks.
     private var catalogBackfillTask: Task<Void, Never>?
 
+    /// Brief R — block-index reconciler (mirror of `catalogBackfillTask`). Ensures
+    /// `blocks.json` exists for every text node on a corpus the store never saved
+    /// through — the seeded sample being the case that exposed it (corpus-Ask
+    /// retrieval was empty because no block index existed). Off the launch path.
+    private var blockBackfillTask: Task<Void, Never>?
+
     /// Wall-clock duration of the last catalog backfill, for the dev readout.
     private(set) var lastCatalogBackfillDuration: TimeInterval? = nil
 
@@ -356,8 +401,10 @@ final class CorpusStore {
     private(set) var lastBlockBackfillDuration: TimeInterval? = nil
 
     /// Nodes after applying the active corpus-scope filter and sort order.
+    /// Brief Z R1 — over the corpus ROOM (user notes when a sample is seeded), so the
+    /// canvas/list Corpus view never mixes the sample in.
     var filteredNodes: [Node] {
-        applyActiveFilter(to: nodes, scope: .corpus)
+        applyActiveFilter(to: corpusRoomNodes, scope: .corpus)
     }
 
     /// Nodes visible on canvas after applying filters and drill-down state.
@@ -368,18 +415,21 @@ final class CorpusStore {
 
     // MARK: - Scope-aware accessors (Canvas Chrome arc, A1)
 
-    /// Raw nodes within `scope`, no filter or sort applied. `.corpus` returns
-    /// every node; `.collection(id)` resolves membership — journal slice when
-    /// id is `NodeCollection.journalID`, otherwise nodes whose
-    /// `collectionIDs` contains id.
+    /// Raw nodes within `scope`, no filter or sort applied. Brief Z R1 — `.corpus`
+    /// returns the corpus ROOM (user notes when a sample is seeded, else all);
+    /// `.collection(id)` resolves membership — journal slice when id is
+    /// `NodeCollection.journalID`, otherwise nodes whose `collectionIDs` contains id;
+    /// `.nodeIDs` is the sample room. Machinery that needs BOTH rooms reads `allNodes`.
     func nodes(in scope: CanvasScope) -> [Node] {
         switch scope {
         case .corpus:
-            return nodes
+            return corpusRoomNodes
         case .collection(let id) where id == NodeCollection.journalID:
             return nodes.filter { $0.journalDate != nil }
         case .collection(let id):
             return nodes.filter { $0.collectionIDs.contains(id) }
+        case .nodeIDs(let ids):
+            return nodes.filter { ids.contains($0.id) }
         }
     }
 
@@ -388,7 +438,7 @@ final class CorpusStore {
         switch scope {
         case .corpus:
             return filteredNodes
-        case .collection:
+        case .collection, .nodeIDs:
             return applyActiveFilter(to: nodes(in: scope), scope: scope)
         }
     }
@@ -399,7 +449,7 @@ final class CorpusStore {
         switch scope {
         case .corpus:
             return visibleNodes
-        case .collection:
+        case .collection, .nodeIDs:
             return filteredNodes(in: scope)
         }
     }
@@ -499,6 +549,60 @@ final class CorpusStore {
         return source.filter { childIDs.contains($0.id) }
     }
 
+    /// Brief N §2 — true when the bundled sample library is currently seeded (the
+    /// `sample_library.json` marker exists). Drives the Settings "Remove sample
+    /// library" row, which is shown only while this is true. Observable UI state.
+    var sampleLibraryPresent = false
+
+    /// Brief U — the seeded sample's node + collection ids, read from the manifest
+    /// (empty when no sample is present). The Dashboard uses these to SEPARATE the
+    /// sample from the user's own corpus: the sample gets its own region while
+    /// Activity / Priority / Recents / COLLECTIONS show only the user's material.
+    /// No per-node flag, no schema change — the manifest is the whole separator.
+    private(set) var sampleNodeIDs: Set<String> = []
+    private(set) var sampleCollectionIDs: Set<String> = []
+
+    /// True when `nodeID` belongs to the seeded sample library.
+    func isSample(_ nodeID: String) -> Bool { sampleNodeIDs.contains(nodeID) }
+
+    /// Nodes that are the USER's own — the corpus with the sample excluded. When no
+    /// sample is seeded this is every node (no allocation cost via the empty-set
+    /// fast path). The Dashboard's three lists (Activity / Priority / Recents) and
+    /// the Corpus/Journal row counts derive from this, so the sample never mixes in.
+    var userNodes: [Node] {
+        sampleNodeIDs.isEmpty ? nodes : nodes.filter { !sampleNodeIDs.contains($0.id) }
+    }
+
+    /// Brief Z R1 — the CORPUS ROOM: what `.corpus` scope reads everywhere (Map,
+    /// RELATED, search, threads, Über, the corpus index, Settings counts). The
+    /// user's own notes once they have any; on a fresh install (no user notes) the
+    /// room IS the sample, so Corpus shows the sample. `.corpus` is now room-aware
+    /// AT THE SOURCE (`nodes(in:)` / `filteredNodes` route through this), so a caller
+    /// asking for the corpus can't accidentally mix the sample in.
+    var corpusRoomNodes: [Node] {
+        (sampleLibraryPresent && !userNodes.isEmpty) ? userNodes : nodes
+    }
+
+    /// Brief Z R1 — the RAW full node set (user + sample), for GLOBAL MACHINERY that
+    /// must see both rooms: the card/block reconcilers and share/import de-dup. A
+    /// semantic alias for `nodes` so a read that means "both corpora" says so.
+    var allNodes: [Node] { nodes }
+
+    /// Brief U — set `sampleLibraryPresent` + the id sets from a manifest (or clear
+    /// them when nil). Called wherever the marker state changes (seed / remove /
+    /// load). Observable, main-actor.
+    private func applySampleManifest(_ manifest: SampleLibrarySeeder.Manifest?) {
+        if let manifest {
+            sampleLibraryPresent = true
+            sampleNodeIDs = Set(manifest.nodeIDs)
+            sampleCollectionIDs = Set(manifest.collectionIDs)
+        } else {
+            sampleLibraryPresent = false
+            sampleNodeIDs = []
+            sampleCollectionIDs = []
+        }
+    }
+
     private let service = iCloudDriveService()
     private let layoutService = LayoutService()
 
@@ -559,12 +663,42 @@ final class CorpusStore {
     /// bar — measure before splitting.
     static let minRelevanceScore: Float = 0.60
 
-    /// Breadth for the (future) card re-rank. NOT a hard candidate filter — see
-    /// `cardNarrowedCandidates`.
-    static let cardCandidateM: Int = 40
+    /// Brief AA1 — card floor. A node's card-gist cosine below this is dropped from
+    /// the NOTES survey list (`cardMatches`). The card analogue of the passage
+    /// floor `minRelevanceScore`, and — like it — a budget/inclusion control, NOT a
+    /// correctness switch: AA2's shape + card budget do the real breadth/precision
+    /// work, so this only trims the tail.
+    ///
+    /// MEASURED, not guessed (2026-09-21, `-CardFloorDiag` on T's fixture, EmbedCPUOnly,
+    /// 209 user cards). Card-gist cosines are ANISOTROPIC: they don't share a
+    /// baseline across queries, so no single floor hits AA1's "broad ≥ 20 / narrow
+    /// ≤ 8" for every probe — a broad CONCEPT ("technology") spreads 0.55–0.69
+    /// while a specific-TERM query ("AirPad") tops out ~0.53 because few notes' whole
+    /// gist restates the term. Counts kept per floor:
+    ///     floor  0.50  0.52  0.54     (technology / film / AirPad / Spanish  →
+    ///     broad   87    60    41       these; Bolex / Kuleshov / NYE / father → narrow)
+    ///            47    30    15
+    ///             9     7     5
+    ///            34    14     7
+    ///     narrow  6/63/9/11   2/25/0/4   1/12/0/2
+    /// 0.52 chosen: it protects NARROW precision (3/4 probes ≤ 8; only film-dense
+    /// "Kuleshov" spills, and a real Kuleshov note would route to LOOKUP via a
+    /// concentrated passage anyway) while leaving BROAD surveys full — the 30-card
+    /// survey budget takes the top-30 by score, all ≥ 0.555 for a populated topic, so
+    /// LOWERING the floor cannot enrich a strong survey; it would only pad weak-recall
+    /// and narrow queries with sub-0.52 tail. Rejected: 0.50 (narrow 3/4 > 8 —
+    /// father 11, NYE 9, Kuleshov 63); 0.56 (broad collapses — film 8, Spanish 3).
+    static let cardRelevanceFloor: Float = 0.52
 
     /// Raw cosine for 384-dim BGE (unit-normalized) card/query vectors.
+    /// ★ The name asserts 384 but the code only compares counts — so a 512-d survivor silently
+    /// scored 0 here. Now it refuses loudly. Retrieval, so embedder must match; channel need not.
     nonisolated private static func cosine384(_ a: [Float], _ b: [Float]) -> Float {
+        if a.count != b.count, !a.isEmpty, !b.isEmpty {
+            VectorBasisGuard.requireSameEmbedder(.inferred(dimension: a.count, channel: "query"),
+                                                 .inferred(dimension: b.count, channel: VectorBasis.cardGistChannel),
+                                                 site: "CorpusStore.cosine384")
+        }
         guard a.count == b.count, !a.isEmpty else { return 0 }
         var dot: Float = 0, na: Float = 0, nb: Float = 0
         for i in 0..<a.count { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i] }
@@ -572,35 +706,43 @@ final class CorpusStore {
         return denom > 0 ? dot / denom : 0
     }
 
-    /// Card-tier (BGE gist) ranking of `nodeIDs` for `qvec`. **Kept for a future
-    /// scale-driven re-rank — deliberately NOT wired as a hard candidate filter.**
+    /// Brief AA1 — card-tier retrieval. The query, scored against every card-gist
+    /// vector in the scope's ROOM, kept ≥ `floor`, sorted best-first. The node-level
+    /// BREADTH signal for a survey question ("what are my thoughts on X" wants the
+    /// list of notes on X, not one note's best passage) — the complement to
+    /// `askMatches`' passage DEPTH. One card per node (there is one card per node),
+    /// so no per-node cap is needed here.
     ///
-    /// Why not a filter: at current corpus size the block scan over all nodes is
-    /// already cheap and correct, and hard card-narrowing measurably regresses
-    /// recall — a node whose *gist* doesn't match the query but which holds a
-    /// matching *passage* ranks low by card yet high by block (e.g. "The Book of
-    /// Enoch" is card-rank 168/183 for "color" but has a 0.675 color passage).
-    /// When corpora reach the scale where a full block scan hurts, this can become
-    /// a re-rank/boost signal or a *generous* pre-filter, not a top-M cut.
+    /// Nodes without a usable card vector (the ~no-gist nodes, or cards not yet
+    /// embedded) are simply absent — a card can't rank them, and their passages
+    /// still reach `askMatches`, so nothing is lost. This is NOT the old hard
+    /// pre-filter (which regressed passage recall — see the arc that killed it); it
+    /// is an ADDITIVE second list handed to the model alongside the passages.
     ///
-    /// No-card policy (for whenever it's used): nodes without a usable card vector
-    /// (the ~no-gist nodes, or cards not yet embedded) are ALWAYS kept — a card
-    /// can't rank them, so they must not be silently excluded from block search;
-    /// and when NO node has a card vector at all, it falls back to the full input.
-    private func cardNarrowedCandidates(queryVector qvec: [Float], within nodeIDs: [String]) async -> [String] {
-        var scored: [(id: String, score: Float)] = []
-        var noCard: [String] = []
-        for id in nodeIDs {
-            guard let card = await card(forNodeID: id),
-                  let emb = card.embedding, emb.count == qvec.count else {
-                noCard.append(id)
-                continue
-            }
-            scored.append((id, Self.cosine384(qvec, emb)))
+    /// `queryVector` is threaded in from `LibrarianState.corpusCandidates` so the
+    /// query is embedded ONCE for both this and `askMatches` (AA1). `floor: 0` (or
+    /// any ≤ 0) returns the full scored distribution — used by `-CardFloorDiag` to
+    /// measure where the floor belongs.
+    func cardMatches(query: String,
+                     scope: CanvasScope = .corpus,
+                     floor: Float = CorpusStore.cardRelevanceFloor,
+                     queryVector: [Float]? = nil) async -> [CardMatch] {
+        let qvec: [Float]
+        if let queryVector, !queryVector.isEmpty {
+            qvec = queryVector
+        } else {
+            guard let v = await CardEmbeddingService.shared.embed(query), !v.isEmpty else { return [] }
+            qvec = v
         }
-        guard !scored.isEmpty else { return nodeIDs }
-        let top = scored.sorted { $0.score > $1.score }.prefix(Self.cardCandidateM).map(\.id)
-        return top + noCard
+        var scored: [CardMatch] = []
+        for id in nodes(in: scope).map({ $0.id }) {
+            guard let card = await card(forNodeID: id),
+                  let emb = card.embedding, emb.count == qvec.count else { continue }
+            let s = Self.cosine384(qvec, emb)
+            guard s >= floor else { continue }
+            scored.append(CardMatch(nodeID: id, gist: card.gist, score: s))
+        }
+        return scored.sorted { $0.score > $1.score }
     }
 
     func findRelevantNodes(query: String, scope: CanvasScope = .corpus, topK: Int = 5) async -> [String] {
@@ -629,24 +771,80 @@ final class CorpusStore {
     /// Corpus fallback: a collection-scoped Ask with no above-threshold hit in
     /// scope retries at `.corpus`, so a corpus-answerable question ("what is
     /// AirPad" while scoped to a collection lacking the AirPad notes) still grounds.
-    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8) async -> [BlockMatch] {
-        guard let qvec = await CardEmbeddingService.shared.embed(query), !qvec.isEmpty else { return [] }
-        var matches = await blockEmbedding.findRelevantBlocks(
-            queryVector: qvec,
-            candidateNodeIDs: nodes(in: scope).map { $0.id },
-            topK: topK
-        )
-        if scope != .corpus, (matches.first?.score ?? 0) < Self.minRelevanceScore {
-            let corpusMatches = await blockEmbedding.findRelevantBlocks(
-                queryVector: qvec,
-                candidateNodeIDs: nodes.map { $0.id },
-                topK: topK
-            )
+    ///
+    /// Brief W2 — scope follows the room. `.corpus` means the USER's own notes once
+    /// they have any (the sample is excluded); on a fresh install with no user nodes,
+    /// Corpus IS the sample. A `.nodeIDs` scope (the sample canvas) answers from the
+    /// sample and does NOT retry into the user's corpus. A collection miss retries at
+    /// the corpus under the same room rule.
+    /// Brief Z R4 — at most this many blocks from any one node in a candidate set,
+    /// so a single long saved article can't monopolise Ask.
+    static let maxBlocksPerNode = 3
+
+    func askMatches(query: String, scope: CanvasScope = .corpus, topK: Int = 8, queryVector: [Float]? = nil) async -> [BlockMatch] {
+        // AA1 — reuse the caller's query embedding when supplied (embed once for
+        // passages + cards); otherwise embed here as before.
+        let qvec: [Float]
+        if let queryVector, !queryVector.isEmpty {
+            qvec = queryVector
+        } else {
+            guard let v = await CardEmbeddingService.shared.embed(query), !v.isEmpty else { return [] }
+            qvec = v
+        }
+        let candidateIDs: [String]
+        switch scope {
+        case .corpus: candidateIDs = corpusAskCandidateIDs
+        default:      candidateIDs = nodes(in: scope).map { $0.id }
+        }
+        // Brief Z R4 — fetch a WIDER pool, then cap ≤3 per node down to `topK`, so
+        // the candidate set spans multiple nodes instead of one article's chunks.
+        let pool = max(topK * 5, 60)
+        var matches = Self.diversifyByNode(
+            await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool),
+            perNode: Self.maxBlocksPerNode, limit: topK)
+        // Only a COLLECTION miss retries at the corpus (the sample canvas stays in
+        // the sample); the retry uses the same room rule as `.corpus` above.
+        if case .collection = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
+            let corpusMatches = Self.diversifyByNode(
+                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: corpusAskCandidateIDs, topK: pool),
+                perNode: Self.maxBlocksPerNode, limit: topK)
             if (corpusMatches.first?.score ?? 0) >= Self.minRelevanceScore {
                 matches = corpusMatches
             }
         }
         return matches
+    }
+
+    /// Brief Z R4 — keep at most `perNode` blocks from any one node (in score order),
+    /// filling `limit` slots from the next nodes by score. Input must be score-sorted
+    /// (`findRelevantBlocks` is). The 0.60 floor is applied downstream, unchanged.
+    static func diversifyByNode(_ matches: [BlockMatch], perNode: Int, limit: Int) -> [BlockMatch] {
+        var perNodeCount: [String: Int] = [:]
+        var out: [BlockMatch] = []
+        for m in matches {
+            let c = perNodeCount[m.nodeID, default: 0]
+            guard c < perNode else { continue }
+            perNodeCount[m.nodeID] = c + 1
+            out.append(m)
+            if out.count >= limit { break }
+        }
+        return out
+    }
+
+    /// Brief W2/Z R1 — node ids for a CORPUS-scope Ask = the corpus room.
+    private var corpusAskCandidateIDs: [String] { corpusRoomNodes.map { $0.id } }
+
+    /// Brief S3 — every block of `nodeIDs` scored against `query`, regardless of
+    /// the relevance bar, so a named entry's passages can be PINNED to the front of
+    /// the Ask candidate list. Thin wrapper over the block retriever (one BGE embed
+    /// of the query); called only when a pin is detected.
+    func blocksForNodes(query: String, nodeIDs: [String], topK: Int = 20, queryVector: [Float]? = nil) async -> [BlockMatch] {
+        guard !nodeIDs.isEmpty else { return [] }
+        // AA1 — reuse the shared query embedding when supplied (embed once).
+        if let queryVector, !queryVector.isEmpty {
+            return await blockEmbedding.findRelevantBlocks(queryVector: queryVector, candidateNodeIDs: nodeIDs, topK: topK)
+        }
+        return await blockEmbedding.findRelevantBlocks(query: query, candidateNodeIDs: nodeIDs, topK: topK)
     }
 
     /// SB139 Stage 4c2 — load the block-embedding sidecar for a node so
@@ -716,6 +914,10 @@ final class CorpusStore {
         // ws-card-catalog step 2c — kick the catalog backfill after corpus load,
         // off the launch path (foreground-idle, low priority). Not awaited.
         armCatalogBackfill()
+        // Brief R — block-index reconciler, same shape/timing as the catalog
+        // backfill: ensures corpus-Ask has a block index to retrieve from even on
+        // a corpus that was never saved through the store (the seeded sample).
+        armBlockBackfill()
         // Substrate reconciler — enrich any images still lacking current analysis
         // (interrupted runs, un-downloaded iCloud photos, extractorVersion bumps).
         // After load, off the launch path, non-blocking. Not a backfill.
@@ -757,7 +959,7 @@ final class CorpusStore {
             // `try?` so a schema drift decodes to nil → the Map re-forms + re-persists
             // rather than crashing on a stale artifact (the brief's "loads silently
             // fail" case, handled as a safe fall-through, not a fault).
-            territoryLayout = try? await service.loadTerritoryLayout()
+            territoryLayouts = (try? await service.loadTerritoryLayouts()) ?? [:]
             let minimumViableTagCount = 8
             if loadedTags.count < minimumViableTagCount {
                 let existingNames = Set(loadedTags.map { $0.name.lowercased() })
@@ -786,6 +988,17 @@ final class CorpusStore {
             } else {
                 fieldDefinitions = []
             }
+            // Brief N §2 — seed the bundled sample library on a genuinely fresh,
+            // empty install (guarded inside). Runs AFTER the default collections/
+            // tags above so it MERGES into them, then refreshes the in-memory
+            // corpus — so the substrate-mean recompute + unprocessed scan below
+            // see the seeded nodes.
+            await seedSampleLibraryIfNeeded()
+            // Brief V — one-line storage diagnostic (Release + DEBUG). `root=scratch`
+            // on a device means the launch carried `-SampleSeedDemo` (a preview of the
+            // throwaway container), NOT that the real corpus is gone.
+            let diag = await service.storageDiagnostic()
+            storageLog.notice("root=\(diag.kind, privacy: .public) path=\(diag.path, privacy: .public) nodes=\(self.nodes.count, privacy: .public) marker=\(self.sampleLibraryPresent ? "y" : "n", privacy: .public) fallback=\(diag.fallback ? "y" : "n", privacy: .public)")
             #if DEBUG
             // Stage 5.1 — headless objective verification hooks (DEBUG only,
             // launch-arg gated → zero cost in normal runs). `-FieldSelfTest`
@@ -808,12 +1021,203 @@ final class CorpusStore {
                 if ProcessInfo.processInfo.arguments.contains("-ShimmerSelfTest") {
                     NSLog("[ShimmerSelfTest] %@", ShimmerSelfTest.run())
                 }
+                // THE ENRICHMENT GATE — replays the four capture scenarios against
+                // the real predicate and reports FM calls per note, before vs after.
+                // Pure in-memory; no FM, no corpus access.
+                if ProcessInfo.processInfo.arguments.contains("-EnrichmentGateSelfTest") {
+                    NSLog("[EnrichmentGateSelfTest] %@", EnrichmentGateSelfTest.run())
+                }
                 // MAP-RELAYOUT GATE (ws-map-relayout). Pins the persist/restore
                 // decision logic so a re-introduced on-launch reform fails here
                 // instead of shipping quietly (the third resurrection).
                 if ProcessInfo.processInfo.arguments.contains("-TerritoryRestoreSelfTest") {
                     NSLog("[TerritoryRestoreSelfTest] %@", TerritoryLayoutRestoreSelfTest.run())
                 }
+                // SAMPLE LIBRARY (Brief N §2). Isolated end-to-end: seeds the bundle
+                // into a THROWAWAY temp dir, injects a fake user node, runs removal,
+                // and asserts the user node (and a tag it shares) survive while every
+                // seeded node/collection is gone. Never touches the real container.
+                if ProcessInfo.processInfo.arguments.contains("-SampleSeedSelfTest") {
+                    NSLog("[SampleSeedSelfTest] %@", SampleLibrarySeederSelfTest.run())
+                }
+                // Brief R Step 4 — READ-ONLY block-retrieval probe. Runs
+                // findRelevantBlocks for a fixed query over ALL node ids (corpus
+                // scope) and logs the top-3 (score, node id, title). Writes
+                // nothing. Needs blocks.json present + the BGE query embed (which
+                // needs .cpuOnly on the Simulator, same as the card bake).
+                if ProcessInfo.processInfo.arguments.contains("-AskMatchDiag") {
+                    let q = "How much did my Bolex cost?"
+                    let ids = nodes.map { $0.id }
+                    let matches = await blockEmbedding.findRelevantBlocks(query: q, candidateNodeIDs: ids, topK: 5)
+                    NSLog("[AskMatchDiag] query=%@ candidates=%d matches=%d", q, ids.count, matches.count)
+                    for m in matches {
+                        let title = nodes.first(where: { $0.id == m.nodeID })?.title ?? "?"
+                        let snip = String(m.block.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))
+                        NSLog("[AskMatchDiag] score=%.3f node=%@ title=%@ :: %@", m.score, m.nodeID, title, snip)
+                    }
+                    if matches.isEmpty { NSLog("[AskMatchDiag] NO MATCHES") }
+                }
+                // Brief S verify (S2/S3/S5) — READ-ONLY Librarian retrieval probe.
+                // Drives corpus-Ask retrieval WITHOUT the model: a two-turn Bolex
+                // exchange (S2 carry) then a named-entry pin (S3), so `log stream`
+                // over category "librarian" shows the candidate log. cpuOnly on the
+                // Simulator (same as the bake) for the BGE query embed.
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("-LibrarianRetrievalDiag") {
+                    let lib = LibrarianState()
+                    let chat1 = ChatSession()
+                    NSLog("[LibDiag] --- two-turn Bolex (S2 carry + stable [n]) ---")
+                    await lib.debugCorpusRetrieve(query: "How much did my Bolex cost?", store: self, chat: chat1)
+                    await lib.debugCorpusRetrieve(query: "But is that what I ultimately paid for it?", store: self, chat: chat1)
+                    let chat2 = ChatSession()
+                    NSLog("[LibDiag] --- named-entry pin (S3), stand-in title ---")
+                    await lib.debugCorpusRetrieve(query: "What can you tell me about my entry called \"The Kuleshov Effect\"?", store: self, chat: chat2)
+                    NSLog("[LibDiag] done")
+                }
+                // Brief U verify (READ-ONLY) — the sample/user SPLIT. Logs the node
+                // partition, which collections land in COLLECTIONS vs the sample
+                // region, and that the capture picker hides the sample's collections
+                // (a user note can't be filed into one). No mutation.
+                if ProcessInfo.processInfo.arguments.contains("-SampleSplitDiag") {
+                    let userCollections = collections.filter { !sampleCollectionIDs.contains($0.id) }.map { $0.id }
+                    let sampleCollections = collections.filter { sampleCollectionIDs.contains($0.id) }.map { $0.id }
+                    NSLog("[SplitDiag] total=%d userNodes=%d sampleNodes=%d", nodes.count, userNodes.count, sampleNodeIDs.count)
+                    NSLog("[SplitDiag] COLLECTIONS(non-sample)=[%@]", userCollections.joined(separator: ", "))
+                    NSLog("[SplitDiag] SAMPLE region collections=[%@]", sampleCollections.joined(separator: ", "))
+                    let priority = priorityNodes.filter { isSample($0.id) }.count
+                    let recents = userNodes.filter { isSample($0.id) }.count
+                    NSLog("[SplitDiag] sample nodes leaking into Priority=%d Recents/userNodes=%d (expect 0/0)", priority, recents)
+                    NSLog("[SplitDiag] every collection picker hides %d sample collection(s) → a user note can't be filed into one", sampleCollectionIDs.count)
+                }
+                // Brief W1 verify (READ-ONLY, no query embed) — derive provenance for
+                // every seeded block from its real itemID and log the non-`note` ones
+                // (with domain) + a histogram, so the item-kind → provenance mapping is
+                // observable without needing cpuOnly BGE on the Simulator.
+                if ProcessInfo.processInfo.arguments.contains("-ProvenanceDiag") {
+                    var hist: [String: Int] = [:]
+                    for node in nodes {
+                        guard let index = await blockIndex(forNodeID: node.id) else { continue }
+                        for block in index.blocks {
+                            let (kind, domain) = node.blockProvenance(forItemID: block.itemID)
+                            hist[kind.rawValue, default: 0] += 1
+                            if kind != .note {
+                                NSLog("[ProvDiag] %@ — %@ (%@) :: %@", node.title, kind.rawValue,
+                                      domain ?? "-", String(block.text.prefix(48)))
+                            }
+                        }
+                    }
+                    NSLog("[ProvDiag] histogram=%@", "\(hist.sorted { $0.key < $1.key })")
+                    // Brief AA3 — CARD-level (whole-node) provenance, no blocks needed.
+                    // Verifies `cardProvenance` labels saved-article nodes as collected
+                    // (incl. the sample's `link_items[].url` shape, not just `item.url`).
+                    var cardHist: [String: Int] = [:]
+                    for node in nodes {
+                        let (kind, domain) = node.cardProvenance()
+                        cardHist[kind.rawValue, default: 0] += 1
+                        if kind != .note {
+                            NSLog("[ProvDiag] CARD %@ — %@ (%@)", node.title, kind.rawValue, domain ?? "-")
+                        }
+                    }
+                    NSLog("[ProvDiag] CARD histogram=%@", "\(cardHist.sorted { $0.key < $1.key })")
+                }
+                // Brief W3 verify — the ONE shared citation pattern `\[(\d{1,2})\]`
+                // (chip parser == inline superscript styler). `[237]`/`[12a]` must
+                // yield NO indices (→ plain text, no chip, no superscript); `[2] [3]`
+                // and `[12]` are chips.
+                if ProcessInfo.processInfo.arguments.contains("-CitationRegexDiag") {
+                    func idx(_ s: String) -> String { "\(CitationReference.citedIndices(in: s).sorted())" }
+                    NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
+                          idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
+                }
+                // Brief Y Part E verify — search-index coverage + the technology
+                // question over the USER's corpus (Corpus scope). The candidate list
+                // settles whether Brief W's single-source answer was a PARTIAL INDEX
+                // (coverage < total) or RANKING (coverage full, list still lopsided).
+                // Needs cpuOnly for the BGE query embed on the Simulator.
+                if #available(iOS 17.0, *),
+                   ProcessInfo.processInfo.arguments.contains("-IndexDiag") {
+                    await refreshBlockIndexCoverage()
+                    let cov = blockIndexCoverage
+                    NSLog("[IndexDiag] coverage current=%d total=%d v%d | userNodes=%d sampleNodes=%d",
+                          cov?.current ?? -1, cov?.total ?? -1, BlockEmbeddingService.currentEmbedderVersion,
+                          userNodes.count, sampleNodeIDs.count)
+                    let lib = LibrarianState()
+                    let chat = ChatSession()
+                    NSLog("[IndexDiag] --- 'What are my thoughts on technology?' (Corpus scope) ---")
+                    await lib.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat)
+                    NSLog("[IndexDiag] done")
+                }
+                // Brief AA1 verify — MEASURE the card floor. For 4 broad + 4 narrow
+                // probes over the USER's corpus room (Corpus scope), score every card
+                // (floor: -1 = unfloored) and log the distribution: query-vector norm
+                // (positive control — a ~0 norm means the Sim returned a ZERO embed and
+                // the numbers are meaningless), count, top, and how many cards clear a
+                // ladder of candidate floors. Broad probes also dump their top 25 titles
+                // so "relevant" is eyeball-checkable. Read the log, pick the floor where
+                // broad keep ≥ 20 and narrow keep ≤ 8, then bake `cardRelevanceFloor`.
+                if ProcessInfo.processInfo.arguments.contains("-CardFloorDiag") {
+                    let ladder: [Float] = [0.45, 0.48, 0.50, 0.52, 0.54, 0.56, 0.58, 0.60]
+                    let broad = ["What are my thoughts on technology?",
+                                 "What are my thoughts on film?",
+                                 "What is AirPad?",
+                                 "What have I written about Spanish?"]
+                    let narrow = ["How much did I spend on my Bolex camera?",
+                                  "What is the Kuleshov Effect?",
+                                  "What did I do on New Year's Eve?",
+                                  "What are my notes about my father?"]
+                    func probe(_ q: String, kind: String, dumpTop: Bool) async {
+                        let qvec = await CardEmbeddingService.shared.embed(q) ?? []
+                        var norm: Float = 0; for x in qvec { norm += x * x }; norm = norm.squareRoot()
+                        let all = await cardMatches(query: q, scope: .corpus, floor: -1, queryVector: qvec)
+                        let scores = all.map { $0.score }.sorted(by: >)
+                        func atLeast(_ t: Float) -> Int { scores.filter { $0 >= t }.count }
+                        let counts = ladder.map { "\(String(format: "%.2f", $0)):\(atLeast($0))" }.joined(separator: " ")
+                        let p50 = scores.isEmpty ? 0 : scores[scores.count / 2]
+                        NSLog("[CardFloor] %@ q=\"%@\" qnorm=%.3f scored=%d top=%.3f p50=%.3f | %@",
+                              kind, q, norm, scores.count, scores.first ?? 0, p50, counts)
+                        if dumpTop {
+                            for m in all.prefix(25) {
+                                let title = nodes.first { $0.id == m.nodeID }?.title ?? "?"
+                                NSLog("[CardFloor]   %.3f  %@", m.score, title)
+                            }
+                        }
+                    }
+                    NSLog("[CardFloor] === BROAD (target: keep >= 20 relevant) ===")
+                    for q in broad { await probe(q, kind: "BROAD", dumpTop: true) }
+                    NSLog("[CardFloor] === NARROW (target: keep <= 8) ===")
+                    for q in narrow { await probe(q, kind: "NARROW", dumpTop: false) }
+                    NSLog("[CardFloor] done")
+                }
+                // Brief AA verify — drive the FULL survey pipeline (shape + cards +
+                // assembly + S5 log) for the five verify scenarios, WITHOUT the model.
+                // The per-turn candidate list lands in the `librarian` Logger category
+                // (`turn N · shape=…`); the `[SurveyDiag]` markers below (NSLog) label
+                // each scenario. Read #1–#4 from the -CorpusFixture launch and #5 from a
+                // FRESH-SEED launch (`-SampleSeedDemo`, where Corpus == the sample).
+                // Needs -EmbedCPUOnly on the Simulator.
+                if ProcessInfo.processInfo.arguments.contains("-SurveyRetrievalDiag") {
+                    let sampleScope: CanvasScope = .nodeIDs(sampleNodeIDs)
+                    // #1 technology (Corpus) then #4 turn 2 carry, same lib/chat.
+                    let lib1 = LibrarianState(); let chat1 = ChatSession(); lib1.selectedScope = .corpus
+                    NSLog("[SurveyDiag] --- #1 technology (Corpus) — expect shape=survey, many cards ---")
+                    await lib1.debugCorpusRetrieve(query: "What are my thoughts on technology?", store: self, chat: chat1)
+                    NSLog("[SurveyDiag] --- #4 turn2 'which of those are about AI?' (carry — numbers must hold) ---")
+                    await lib1.debugCorpusRetrieve(query: "Which of those are about AI?", store: self, chat: chat1)
+                    // #2 Bolex (Sample canvas).
+                    let lib2 = LibrarianState(); let chat2 = ChatSession(); lib2.selectedScope = sampleScope
+                    NSLog("[SurveyDiag] --- #2 Bolex (Sample) — expect shape=lookup, passages lead ---")
+                    await lib2.debugCorpusRetrieve(query: "How much did I spend on my Bolex camera?", store: self, chat: chat2)
+                    // #3 Post-Workout Relief pin (Sample canvas).
+                    let lib3 = LibrarianState(); let chat3 = ChatSession(); lib3.selectedScope = sampleScope
+                    NSLog("[SurveyDiag] --- #3 'Post-Workout Relief' pin (Sample) — expect pin wins, short card list ---")
+                    await lib3.debugCorpusRetrieve(query: "What can you tell me about my entry called \"Post-Workout Relief\"?", store: self, chat: chat3)
+                    // #5 Valarie/film (Corpus) — meaningful only on a FRESH SEED.
+                    let lib5 = LibrarianState(); let chat5 = ChatSession(); lib5.selectedScope = .corpus
+                    NSLog("[SurveyDiag] --- #5 'what does Valarie write about film?' (Corpus) — read on FRESH SEED ---")
+                    await lib5.debugCorpusRetrieve(query: "What does Valarie write about film?", store: self, chat: chat5)
+                    NSLog("[SurveyDiag] done")
+                }
+                #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag
                 // overlap + BGE-micro cosine calibration). Writes NOTHING to the corpus.
@@ -907,6 +1311,95 @@ final class CorpusStore {
         await scanForUnprocessedNodes()
     }
 
+    // MARK: - Sample library (Brief N §2)
+
+    /// Seed the bundled sample library on a genuinely fresh, empty install. No-op
+    /// otherwise (marker already present, or the corpus already has nodes — so an
+    /// existing user, including T's dev corpus, is never seeded over). The file
+    /// copy runs OFF the main actor (detached); afterward the in-memory corpus is
+    /// refreshed so the rest of `load()` sees the seeded nodes.
+    func seedSampleLibraryIfNeeded() async {
+        guard let root = await service.containerRootURL() else { return }
+        guard nodes.isEmpty,
+              let bundle = SampleLibrarySeeder.bundledLibraryURL(),
+              SampleLibrarySeeder.shouldSeed(containerRoot: root) else {
+            applySampleManifest(SampleLibrarySeeder.loadManifest(containerRoot: root))
+            return
+        }
+        let start = Date()
+        do {
+            let manifest = try await Task.detached(priority: .userInitiated) {
+                try SampleLibrarySeeder.seed(containerRoot: root, bundleRoot: bundle)
+            }.value
+            await refreshCorpusFromDisk()
+            applySampleManifest(manifest)
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            print("[SampleSeed] seeded \(manifest.nodeIDs.count) node(s), \(manifest.collectionIDs.count) collection(s) in \(ms)ms")
+        } catch {
+            print("[SampleSeed] seed error: \(error)")
+        }
+    }
+
+    /// Brief U Step 3 — add the sample library ON DEMAND (Settings), over a corpus
+    /// that already has the user's own nodes. Distinct from `seedSampleLibraryIfNeeded`
+    /// (the launch auto-seed, gated on an EMPTY corpus): this bypasses that gate but
+    /// still refuses to double-seed (marker present). The seeder merges by id, so a
+    /// user's own collections/tags are untouched and the manifest records only what
+    /// was newly written. Reconcilers are re-armed so the added nodes' catalog/block
+    /// indexes update this session — the baked card.json/blocks.json ride along, so
+    /// retrieval works immediately and the reconciler pass is a fast fingerprint refresh.
+    func addSampleLibrary() async {
+        guard let root = await service.containerRootURL() else { return }
+        guard !SampleLibrarySeeder.markerExists(containerRoot: root),
+              let bundle = SampleLibrarySeeder.bundledLibraryURL() else { return }
+        do {
+            let manifest = try await Task.detached(priority: .userInitiated) {
+                try SampleLibrarySeeder.seed(containerRoot: root, bundleRoot: bundle)
+            }.value
+            await refreshCorpusFromDisk()
+            applySampleManifest(manifest)
+            print("[SampleSeed] on-demand seeded \(manifest.nodeIDs.count) node(s), \(manifest.collectionIDs.count) collection(s)")
+            armCatalogBackfill()
+            if #available(iOS 17.0, *) { armBlockBackfill() }
+        } catch {
+            print("[SampleSeed] on-demand seed error: \(error)")
+        }
+    }
+
+    /// Remove the seeded sample library — every seeded node + its collection, plus
+    /// any seeded tag/field-def/chat no SURVIVING node references. Nodes are deleted
+    /// only by recorded id, so a user's own nodes are never touched; safe after the
+    /// user has added their own notes.
+    func removeSampleLibrary() async {
+        guard let root = await service.containerRootURL() else { return }
+        do {
+            let removed = try await Task.detached(priority: .userInitiated) {
+                try SampleLibrarySeeder.remove(containerRoot: root)
+            }.value
+            await refreshCorpusFromDisk()
+            applySampleManifest(SampleLibrarySeeder.loadManifest(containerRoot: root))
+            if let removed { print("[SampleSeed] removed \(removed.nodeIDs.count) seeded node(s)") }
+        } catch {
+            print("[SampleSeed] remove error: \(error)")
+        }
+    }
+
+    /// Re-read nodes / tags / collections / field definitions from disk into the
+    /// live store (after a seed or removal). Chats reload lazily via ChatStore.
+    private func refreshCorpusFromDisk() async {
+        do {
+            let loaded = try await service.loadAllNodes()
+            var normalized = loaded
+            for i in normalized.indices { Self.normalizeAtomicsToFront(&normalized[i]) }
+            nodes = normalized.sorted { $0.createdAt > $1.createdAt }
+            tags = try await service.loadTags()
+            if let c = try await service.loadCollections() { collections = c }
+            fieldDefinitions = (try await service.loadFieldDefinitions())?.definitions ?? []
+        } catch {
+            print("[SampleSeed] corpus refresh error: \(error)")
+        }
+    }
+
     // MARK: - Add new nodes
 
     /// Saves an audio file, then saves the node. Use this for voice captures.
@@ -951,9 +1444,10 @@ final class CorpusStore {
     /// the in-memory copy immediately (for same-session restores) and writes the
     /// file off-actor, fire-and-forget: a write failure just means the next launch
     /// re-forms (harmless), so it never blocks the interaction clock.
-    func persistTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot) {
-        territoryLayout = snapshot
-        Task { try? await service.saveTerritoryLayout(snapshot) }
+    func persistTerritoryLayout(_ snapshot: TerritoryLayoutSnapshot, for scope: CanvasScope) {
+        territoryLayouts[scope.key] = snapshot
+        let dict = territoryLayouts
+        Task { try? await service.saveTerritoryLayouts(dict) }
     }
 
     /// Creates a new link node from a URL and kicks off the OG-fetch + AI
@@ -1434,12 +1928,77 @@ final class CorpusStore {
         }
     }
 
+    /// THE ENRICHMENT GATE, bound to this store's freshness key.
+    ///
+    /// ★ ONE QUESTION, TWO ASKERS. The eager pass (`scheduleEnrichment`) and Done
+    /// (`enrichIfNeeded`, called from the capture sheet) both come through here. They
+    /// used to disagree by construction — the eager pass had an inline predicate and
+    /// Done had none at all, calling `processNodeWithAI` unconditionally — which is
+    /// how Done came to redo two FM calls the eager pass had already made.
+    ///
+    /// The `moment` is the ONLY thing that differs between them, and it changes only
+    /// the substrate half. See `EnrichmentGate.Moment`.
+    func enrichmentNeeds(for node: Node, at moment: EnrichmentGate.Moment) -> EnrichmentGate.Needs {
+        let substratePresent = !((node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            || (node.folksonomy?.isEmpty ?? true))
+        return EnrichmentGate.needs(proposals: node.proposals,
+                                    titleSource: node.titleSource,
+                                    summarySource: node.summarySource,
+                                    substrateIsPresent: substratePresent,
+                                    substrateContentHash: node.substrateContentHash,
+                                    contentHash: cardContentHash(for: node),
+                                    at: moment)
+    }
+
+    /// COMMIT-TIME enrichment — what Done calls instead of `processNodeWithAI`.
+    ///
+    /// ★ Done used to call `processNodeWithAI` directly, with every default and no
+    /// gate at all: two FM calls, unconditionally, however much of the work the eager
+    /// pass had already finished 500 ms earlier. This is that call site asking the
+    /// same question every other path asks, at `.committed` — where the substrate half
+    /// becomes "are you STALE?" rather than "are you MISSING?", because this is the
+    /// text that will be persisted, embedded and placed.
+    ///
+    /// ★ It supersedes any debounced eager pass rather than racing it. Both read the
+    /// node fresh and both would see pre-enrichment state if they overlapped, so both
+    /// would do the same work — the exact duplication being removed. Done always has
+    /// the newer content, so it wins.
+    func enrichIfNeeded(nodeID: String, at moment: EnrichmentGate.Moment = .committed) async {
+        enrichmentTasks[nodeID]?.cancel()
+        enrichmentTasks[nodeID] = nil
+        guard let node = nodes.first(where: { $0.id == nodeID }) else { return }
+        let needs = enrichmentNeeds(for: node, at: moment)
+        guard needs.any else {
+            print("[Enrich] commit skip node=\(nodeID) — already current for this content")
+            await markAIWorkSettled(nodeID: nodeID)
+            return
+        }
+        print("[Enrich] commit firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate)")
+        await processNodeWithAI(nodeID: nodeID,
+                                needsAuthorship: needs.authorship,
+                                needsSubstrate: needs.substrate)
+    }
+
+    /// `needsAIProcessing` means "no AI pass has ever run on this node" and is read
+    /// in exactly one place: `scanForUnprocessedNodes`, at launch, to pick up nodes
+    /// captured via the share extension. It used to be cleared as a side effect of
+    /// `processNodeWithAI` completing.
+    ///
+    /// ★ Now that the gate can decide NO pass is needed, "the work completed" and
+    /// "the work is settled" have come apart: a node whose gate says there is nothing
+    /// to do would keep the flag set and be reprocessed on every cold launch. Deciding
+    /// no work is needed is a conclusion, not an omission — record it.
+    private func markAIWorkSettled(nodeID: String) async {
+        guard let node = nodes.first(where: { $0.id == nodeID }), node.needsAIProcessing else { return }
+        await mutateNode(id: nodeID) { $0.needsAIProcessing = false }
+    }
+
     /// Debounced automatic enrichment for a single node. Coalesces rapid text
     /// commits (cancel + re-arm), then re-reads the node FRESH at fire time and
-    /// only enriches when it's still un-enriched (empty title = fill-empty rule)
-    /// and actually has content — so it never races the commit or overwrites an
-    /// authored/edited note. Per-node only; never corpus-wide analysis (stays
-    /// decoupled from the Analyze/idle territory pass). Quiet: no tag sheet.
+    /// only enriches when the gate says there is still work to do — so it never
+    /// races the commit or overwrites an authored/edited note. Per-node only; never
+    /// corpus-wide analysis (stays decoupled from the Analyze/idle territory pass).
+    /// Quiet: no tag sheet.
     func scheduleEnrichment(nodeID: String) {
         bug17Log.notice("SCHEDULED node=\(nodeID, privacy: .public)")
         enrichmentTasks[nodeID]?.cancel()
@@ -1456,40 +2015,41 @@ final class CorpusStore {
             // THE LEVER — Stage 1 (ws-lever.md § C4). The old single `needs`
             // boolean did TWO unrelated jobs — "this node needs authored fields"
             // and "this node needs substrate computed" — governed by different
-            // rules. Severed here so THE SENTENCE governs only the authorship half.
+            // rules. Severed so THE SENTENCE governs only the authorship half.
             //
             // ★ THE SENTENCE (the rule a user could predict, stated in code so the
             // gate can't drift from it — if the gate and the sentence ever
             // disagree, the gate is wrong):
             //   "AirPad proposes titles, summaries, and tags for anything you've
             //    left blank, and never changes what you've written."
-            // `needsAuthorship` is the "left blank" half. (The tags clause has no
-            // producer on the default path yet — ws-lever.md § THE TAG PRODUCER,
-            // its own arc — so Stage 1 proposes title + summary only; the sentence
-            // names tags because the rule, not this stage, is what it states.)
-            let needsAuthorship = title.isEmpty || summary.isEmpty
-            // Substrate computation is unconditional and NEVER user-governed
-            // (hybrid-authorship.md § SCOPING CORRECTION) — this half stays exactly
-            // the ws-card-catalog gate, only renamed. The per-field
-            // titleSource/summarySource gates inside processNodeWithAI still
-            // protect user-authored text; a fully filled node makes both false, so
-            // steady state doesn't re-fire.
-            let needsSubstrate = (node.substrateSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                || (node.folksonomy?.isEmpty ?? true)
-            // Firing condition UNCHANGED — same set of nodes fire as before the
-            // split (the old `needs` was `title.isEmpty || summary.isEmpty ||
-            // substrateMissing`, exactly `needsAuthorship || needsSubstrate`).
-            let needs = needsAuthorship || needsSubstrate
-            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs && !content.isEmpty)")
-            guard needs, !content.isEmpty else {
-                print("[Enrich] skip node=\(nodeID) needs=\(needs) contentLen=\(content.count)")
+            //
+            // ★★ 2026-09-16 — the predicate MOVED to `EnrichmentGate`, and the
+            // authorship half changed meaning. It used to be `title.isEmpty ||
+            // summary.isEmpty`, which under posture `.propose` is stuck TRUE forever
+            // (the FM never writes those fields — it records an offer), so this task
+            // re-fired two FM calls at every 500 ms pause for the whole time a note
+            // was being written. "Left blank" is now read as "not yet OFFERED or
+            // ACCEPTED, for this content" — see `EnrichmentGate` for the full note.
+            // Same sentence; the gate finally asks it correctly.
+            //
+            // `.composing`: the substrate half asks only "are you MISSING?", so a
+            // note being written doesn't re-derive its substrate at every pause.
+            // Done asks the staleness question instead (`.committed`).
+            let needs = self.enrichmentNeeds(for: node, at: .composing)
+            bug17Log.notice("GATE node=\(nodeID, privacy: .public) needs=\(needs.any) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) titleEmpty=\(title.isEmpty) summaryEmpty=\(summary.isEmpty) contentLen=\(content.count) titleSource=\(String(describing: node.titleSource), privacy: .public) summarySource=\(String(describing: node.summarySource), privacy: .public) → fire=\(needs.any && !content.isEmpty)")
+            guard needs.any, !content.isEmpty else {
+                // A gate that says "nothing needed" is a CONCLUSION about this node,
+                // so settle the launch-sweep flag. (Empty content is not a conclusion
+                // — there is simply nothing to look at yet — so it keeps the flag.)
+                if !needs.any { await self.markAIWorkSettled(nodeID: nodeID) }
+                print("[Enrich] skip node=\(nodeID) needs=\(needs.any) contentLen=\(content.count)")
                 return
             }
-            print("[Enrich] firing node=\(nodeID) needsAuthorship=\(needsAuthorship) needsSubstrate=\(needsSubstrate) contentLen=\(content.count)")
+            print("[Enrich] firing node=\(nodeID) needsAuthorship=\(needs.authorship) needsSubstrate=\(needs.substrate) contentLen=\(content.count)")
             await self.processNodeWithAI(nodeID: nodeID,
                                          suppressTagSheet: true,
-                                         needsAuthorship: needsAuthorship,
-                                         needsSubstrate: needsSubstrate)
+                                         needsAuthorship: needs.authorship,
+                                         needsSubstrate: needs.substrate)
         }
     }
 
@@ -1815,9 +2375,26 @@ final class CorpusStore {
               fresh.embeddingVersion < CardEmbeddingService.currentEmbeddingVersion,
               fresh.gist == current.gist else { return }
         fresh.embedding = vector
+        fresh.embeddingBasis = .cardGist
         fresh.embeddingVersion = CardEmbeddingService.currentEmbeddingVersion
         fresh.updatedAt = Date()
         await saveCard(fresh)
+        // ★ The map's language basis is the CARD-GIST cache, and it is warmed once per session — so
+        // a node captured after launch was invisible to it and its re-drift reported `no-vector`.
+        // Admit on write, at the one point the vector comes into existence. No-ops while the cache
+        // is cold (see `admitCardVector`).
+        //
+        // ★★ THE RE-DRIFT FIRES HERE, not on the substrate write. The substrate vector lands at t3
+        // (the FM pass); the CARD vector — what the map actually reads — is built at t4, after the
+        // 500ms card debounce. A re-drift wired to the substrate write asked the cache before the
+        // card existed and always logged `no-vector`. Admission is the one event that means "the map
+        // can now see this node," so it is what re-drifts. Only when the vector truly entered the
+        // warm cache (admit == true) — a cold-cache admission places nothing and the cold-start warm
+        // re-form will handle it.
+        if let node = nodes.first(where: { $0.id == nodeID }),
+           SubstrateLayoutService.shared.admitCardVector(vector, for: node) {
+            cardVectorAdmitted = nodeID
+        }
     }
 
     /// Debounced per-node card write-through: refresh derivation then embed.
@@ -1927,6 +2504,134 @@ final class CorpusStore {
         lastCatalogBackfillDuration = duration
         bug16Log.notice("CatalogBackfill END built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration), privacy: .public)s")
         print("[CatalogBackfill] built=\(built) skippedNoGist=\(skippedNoGist) reEmbedded=\(reEmbedded) total=\(ids.count) dur=\(String(format: "%.1f", duration))s")
+    }
+
+    // MARK: - Brief R — block-index reconciler (mirror of the catalog backfill)
+
+    private static let udBlockFingerprintKey = "com.airpad.blockindex.fingerprint"
+
+    /// Arm the one-shot block-index reconciler off the launch path — the exact
+    /// shape as `armCatalogBackfill`: ~5s delay, detached/off-main, fingerprint-
+    /// gated so an unchanged corpus does zero work. Builds `blocks.json` for text
+    /// nodes on a corpus the store never wrote through (the seeded sample, whose
+    /// missing block index left corpus-Ask retrieval empty).
+    private func armBlockBackfill() {
+        blockBackfillTask?.cancel()
+        blockBackfillTask = Task.detached(priority: .background) { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, !Task.isCancelled else { return }
+            guard #available(iOS 17.0, *) else { return }
+            let pairs = await self.backfillFingerprintPairs()
+            let fingerprint = CorpusStore.blockFingerprint(pairs)
+            if fingerprint == CorpusStore.loadBlockFingerprint() {
+                bug16Log.notice("BlockBackfill SKIP — fingerprint unchanged (\(pairs.count, privacy: .public) nodes)")
+                return
+            }
+            await self.backfillBlockIndex()
+        }
+    }
+
+    /// Block-index fingerprint: same (id, updatedAt) body as the catalog
+    /// fingerprint, but salted with the BLOCK embedder version and stored under
+    /// its OWN key — so a block-version bump forces one re-scan without touching
+    /// the catalog signature, and vice versa.
+    @available(iOS 17.0, *)
+    nonisolated static func blockFingerprint(_ pairs: [(id: String, updatedAt: Date)]) -> String {
+        let body = pairs
+            .sorted { $0.id < $1.id }
+            .map { "\($0.id)|\($0.updatedAt.timeIntervalSince1970)" }
+            .joined(separator: ";")
+        let salted = "bv\(BlockEmbeddingService.currentEmbedderVersion);\(body)"
+        let digest = SHA256.hash(data: Data(salted.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+    nonisolated static func loadBlockFingerprint() -> String? {
+        UserDefaults.standard.string(forKey: udBlockFingerprintKey)
+    }
+    nonisolated static func storeBlockFingerprint(_ fingerprint: String) {
+        UserDefaults.standard.set(fingerprint, forKey: udBlockFingerprintKey)
+    }
+
+    /// One-shot reconciler: rebuild `blocks.json` for every node whose index is
+    /// MISSING or STALE (chunk sourceHashes drifted or embedder-version behind);
+    /// skip nodes with no text; yield between nodes as the catalog backfill does;
+    /// record the fingerprint only on a complete pass. `rebuild` is idempotent
+    /// (reuses fresh blocks by (itemID, sourceHash) at the current version), so
+    /// it re-embeds only the blocks that actually changed. Never touches
+    /// `saveAndEnqueue`/`enqueueRebuild` or the Librarian.
+    @available(iOS 17.0, *)
+    // MARK: - Brief Y Part E — search-index coverage dial (Settings)
+
+    /// True while the block reconciler is running (launch pass OR a foreground
+    /// "Rebuild now"). Drives the Settings row's "rebuilding…" state. Observable.
+    private(set) var blockIndexRebuilding = false
+    /// (nodes with a current index, nodes with text). nil until first computed.
+    /// "no text" nodes are excluded from `total` (they carry no searchable blocks).
+    private(set) var blockIndexCoverage: (current: Int, total: Int)? = nil
+
+    /// Coverage tally for the Settings dial: for every node WITH text, is its block
+    /// index present + current at the live embedder version? I/O-heavy (loads each
+    /// sidecar), so it runs off the render path — the Settings row calls it on appear
+    /// and after a rebuild, never per-frame.
+    @available(iOS 17.0, *)
+    func refreshBlockIndexCoverage() async {
+        let snapshot = nodes
+        var total = 0, current = 0
+        for node in snapshot {
+            let specs = BlockChunker.chunk(node)
+            if specs.isEmpty { continue }          // no text → not indexable, excluded
+            total += 1
+            if await blockIndexIsFresh(node, specs: specs) { current += 1 }
+        }
+        blockIndexCoverage = (current, total)
+    }
+
+    /// Foreground "Rebuild now" — the same reconciler, same 40ms pacing, run to
+    /// completion with the coverage refreshed after. Safe to tap repeatedly (a
+    /// fresh index rebuilds nothing).
+    @available(iOS 17.0, *)
+    func rebuildBlockIndexNow() async {
+        await backfillBlockIndex()
+        await refreshBlockIndexCoverage()
+    }
+
+    func backfillBlockIndex() async {
+        blockIndexRebuilding = true
+        defer { blockIndexRebuilding = false }
+        let start = Date()
+        let snapshot = nodes
+        var rebuilt = 0, skippedNoText = 0, fresh = 0
+        bug16Log.notice("BlockBackfill START total=\(snapshot.count)")
+        for node in snapshot {
+            if Task.isCancelled { break }
+            let specs = BlockChunker.chunk(node)
+            if specs.isEmpty { skippedNoText += 1; continue }
+            if await blockIndexIsFresh(node, specs: specs) { fresh += 1; continue }
+            await blockEmbedding.rebuild(node: node)
+            rebuilt += 1
+            try? await Task.sleep(nanoseconds: 40_000_000)
+        }
+        if !Task.isCancelled {
+            CorpusStore.storeBlockFingerprint(
+                CorpusStore.blockFingerprint(nodes.map { (id: $0.id, updatedAt: $0.updatedAt) })
+            )
+        }
+        let dur = Date().timeIntervalSince(start)
+        bug16Log.notice("BlockBackfill END rebuilt=\(rebuilt) skippedNoText=\(skippedNoText) fresh=\(fresh) total=\(snapshot.count) dur=\(String(format: "%.1f", dur), privacy: .public)s")
+        print("[BlockBackfill] rebuilt=\(rebuilt) skippedNoText=\(skippedNoText) fresh=\(fresh) total=\(snapshot.count) dur=\(String(format: "%.1f", dur))s")
+    }
+
+    /// True when the on-disk index already covers exactly the current chunk specs
+    /// at the current embedder version — nothing to rebuild. Missing index or any
+    /// drift ⇒ false (rebuild).
+    @available(iOS 17.0, *)
+    private func blockIndexIsFresh(_ node: Node, specs: [BlockChunkSpec]) async -> Bool {
+        guard let index = try? await service.loadBlockIndex(forNodeID: node.id) else { return false }
+        let want = Set(specs.map { "\($0.itemID)|\($0.sourceHash)" })
+        let have = Set(index.blocks
+            .filter { $0.embedderVersion == BlockEmbeddingService.currentEmbedderVersion }
+            .map { "\($0.itemID)|\($0.sourceHash)" })
+        return !want.isEmpty && want == have
     }
 
     /// Dev readout: catalog coverage across the live corpus. Loads each sidecar,
@@ -4664,8 +5369,10 @@ final class CorpusStore {
 
     /// Nodes in the Priority set, in manual order (`order` asc, `addedAt` asc
     /// tiebreak). Empty when nothing is prioritized → the Dashboard hides the row.
+    /// Brief U — derived from `userNodes`, so a seeded sample's nodes never show in
+    /// the Dashboard Priority row (Priority is a Dashboard-only signal).
     var priorityNodes: [Node] {
-        nodes.filter { $0.priority != nil }
+        userNodes.filter { $0.priority != nil }
             .sorted {
                 let a = $0.priority!, b = $1.priority!
                 return a.order != b.order ? a.order < b.order : a.addedAt < b.addedAt
@@ -4938,6 +5645,15 @@ final class CorpusStore {
 
         let currentTags = tags
         let aiSvc = AIService()
+        // ★ The freshness key for anything this pass produces: a hash of the content
+        // the model is actually GIVEN on this call. Captured from `node` (the entry
+        // read) BEFORE any FM work — deliberately not from the fresh re-read taken
+        // afterwards. If the user types during the multi-second FM window, the
+        // proposal that comes back genuinely describes the OLDER text, so it must be
+        // stamped with the older hash and read as stale on the next pass. Stamping
+        // the current hash would freeze a proposal that no longer matches the note.
+        // (Same key the card catalog uses — one notion of "the content moved".)
+        let promptContentHash = cardContentHash(for: node)
 
         // SB126 Stage 2 — corpus-aware tagging path. Behind a feature flag so
         // legacy processNode stays bit-identical until validation phases A–G
@@ -4955,74 +5671,106 @@ final class CorpusStore {
         } else {
             useCorpusAware = false
         }
-        let nodeEmbedding: [Float]? = useCorpusAware ? computeNodeEmbedding(for: node) : nil
-        let aiOutcome: NodeAIOutcome
-        bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
-        if useCorpusAware {
-            if #available(iOS 26.0, *) {
-                let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
-                let tagDigests = topTagsForProcessNode(N: 12)
-                let vocabulary = currentTags.map { $0.name }
-                print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
-                aiOutcome = await aiSvc.processNodeCorpusAware(
-                    node: node,
-                    neighborhoodDigests: neighborhoodDigests,
-                    tagDigests: tagDigests,
-                    fullVocabulary: vocabulary,
-                    authoredOnly: authoredOnly
-                )
+        // ★★ WHICH GATE GOVERNS WHAT — read this before adding a third.
+        // There are TWO overlapping controls here, and the fact that one of them sat
+        // unread for a whole arc is how the eager pass came to re-run both FM calls at
+        // every typing pause (2026-09-16). Stated plainly so the next reader doesn't
+        // have to reconstruct it:
+        //
+        //   `needsAuthorship` / `needsSubstrate`  — SHOULD this work happen at all?
+        //       Answered by `EnrichmentGate` from the node's own state (has an offer
+        //       already been made for this content; is the substrate still current).
+        //       Both default TRUE, so every caller that doesn't ask the gate keeps
+        //       exactly its old behaviour.
+        //
+        //   `aspects`  — WHICH authored fields may this pass touch?
+        //       The tray's per-row "Suggest another" passes a SINGLE aspect so
+        //       regenerating a title can't overwrite the summary (T, 2026-08-14), and
+        //       a single aspect also withholds the substrate so the tag tiers hold
+        //       still. It is a SCOPE, never a should-we.
+        //
+        // They compose; they do not substitute for each other. `needsAuthorship` says
+        // whether to call the model, `aspects` says what the answer is allowed to
+        // touch. A pass with `needsAuthorship: false` makes no authorship FM call and
+        // records no proposal, whatever `aspects` says.
+        let nodeEmbedding: [Float]? = (needsAuthorship && useCorpusAware) ? computeNodeEmbedding(for: node) : nil
+        let result: NodeAIOutput?
+        if needsAuthorship {
+            let aiOutcome: NodeAIOutcome
+            bug17Log.notice("FM-RAN node=\(nodeID, privacy: .public) path=\(useCorpusAware ? "corpusAware" : "legacy", privacy: .public) suppressTagSheet=\(suppressTagSheet)")
+            if useCorpusAware {
+                if #available(iOS 26.0, *) {
+                    let neighborhoodDigests = prefilterNeighborhoods(for: node, nodeEmbedding: nodeEmbedding, K: 5)
+                    let tagDigests = topTagsForProcessNode(N: 12)
+                    let vocabulary = currentTags.map { $0.name }
+                    print("[AI][SB126] Corpus-aware path for \(nodeID): \(neighborhoodDigests.count) neighborhoods, \(tagDigests.count) tag digests")
+                    aiOutcome = await aiSvc.processNodeCorpusAware(
+                        node: node,
+                        neighborhoodDigests: neighborhoodDigests,
+                        tagDigests: tagDigests,
+                        fullVocabulary: vocabulary,
+                        authoredOnly: authoredOnly
+                    )
+                } else {
+                    // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
+                    // the compiler sees a definite assignment without the FM-only call on the floor.
+                    aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
+                }
             } else {
-                // Unreachable: useCorpusAware is false pre-iOS-26 (set above). Present only so
-                // the compiler sees a definite assignment without the FM-only call on the floor.
                 aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
             }
-        } else {
-            aiOutcome = await aiSvc.processNode(node, tagVocabulary: currentTags, authoredOnly: authoredOnly)
-        }
-        // F3 — a failed authorship call no longer collapses into a bare nil: the
-        // reason travels back so the tray can say which one it was.
-        let result: NodeAIOutput
-        switch aiOutcome {
-        case .success(let r):
-            result = r
-            bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
-        case .failure(let reason):
-            bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
-            // Fallback title from raw content so the node isn't blank on FM
-            // failure. Race-safe read-modify-write; never touches `.items`.
-            //
-            // THE LEVER — B1 (2026-08-05, T's ruling): the blank-title fill is
-            // POSTURE-GATED. Under `.automatic` the SYSTEM is the author, so a rough
-            // first-40-chars title beats a nameless node — today's behaviour,
-            // unchanged. Under `.propose` / `.off` the promise is that a field the
-            // user hasn't authored stays BLANK until they pull the lever, so a
-            // refusal must NOT stamp an unrequested mid-content fragment (it merely
-            // copies the note's own text up into its title — it duplicates, it does
-            // not degrade gracefully). A blank title reads as a deliberate
-            // "Untitled" at every list / grid / recents / search surface and as a
-            // content-preview label on the canvas — the SAME resting state a
-            // *successful* `.propose` capture already has (success proposes, never
-            // writes), so failure now matches success instead of contradicting the
-            // posture.
-            // ★ `"Photo"` / `"Voice note"` are STRUCTURAL media placeholders, not an
-            // enrichment fill of a blank field — they upgrade regardless of posture,
-            // exactly as before.
-            await mutateNode(id: nodeID) { n in
-                let fallback = n.items.compactMap { item -> String? in
-                    switch item.type {
-                    case .text:          return item.content
-                    case .audio, .video: return item.transcript
-                    case .link:          return item.title ?? item.url
-                    case .image, .document, .imageVideo, .rating, .field, .chats: return nil
+            // F3 — a failed authorship call no longer collapses into a bare nil: the
+            // reason travels back so the tray can say which one it was.
+            switch aiOutcome {
+            case .success(let r):
+                result = r
+                bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) ok summaryLen=\(r.summary.count) titleLen=\(r.title.count)")
+            case .failure(let reason):
+                bug17Log.notice("FM-RETURNED node=\(nodeID, privacy: .public) FAILED reason=\(String(describing: reason), privacy: .public)")
+                // Fallback title from raw content so the node isn't blank on FM
+                // failure. Race-safe read-modify-write; never touches `.items`.
+                //
+                // THE LEVER — B1 (2026-08-05, T's ruling): the blank-title fill is
+                // POSTURE-GATED. Under `.automatic` the SYSTEM is the author, so a rough
+                // first-40-chars title beats a nameless node — today's behaviour,
+                // unchanged. Under `.propose` / `.off` the promise is that a field the
+                // user hasn't authored stays BLANK until they pull the lever, so a
+                // refusal must NOT stamp an unrequested mid-content fragment (it merely
+                // copies the note's own text up into its title — it duplicates, it does
+                // not degrade gracefully). A blank title reads as a deliberate
+                // "Untitled" at every list / grid / recents / search surface and as a
+                // content-preview label on the canvas — the SAME resting state a
+                // *successful* `.propose` capture already has (success proposes, never
+                // writes), so failure now matches success instead of contradicting the
+                // posture.
+                // ★ `"Photo"` / `"Voice note"` are STRUCTURAL media placeholders, not an
+                // enrichment fill of a blank field — they upgrade regardless of posture,
+                // exactly as before.
+                await mutateNode(id: nodeID) { n in
+                    let fallback = n.items.compactMap { item -> String? in
+                        switch item.type {
+                        case .text:          return item.content
+                        case .audio, .video: return item.transcript
+                        case .link:          return item.title ?? item.url
+                        case .image, .document, .imageVideo, .rating, .field, .chats: return nil
+                        }
+                    }.first(where: { !$0.isEmpty })
+                    let mayFillBlank = n.title.isEmpty && AuthorshipPosture.current == .automatic
+                    if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
+                        n.title = String(fallback.prefix(40))
                     }
-                }.first(where: { !$0.isEmpty })
-                let mayFillBlank = n.title.isEmpty && AuthorshipPosture.current == .automatic
-                if let fallback, mayFillBlank || n.title == "Photo" || n.title == "Voice note" {
-                    n.title = String(fallback.prefix(40))
+                    n.needsAIProcessing = false
                 }
-                n.needsAIProcessing = false
+                return reason
             }
-            return reason
+        } else {
+            // The gate found a proposal already recorded against this exact content
+            // (or the field is user-authored / accepted), so there is nothing to ask
+            // the model for. No FM call, no proposal recorded — the existing one is
+            // still the current answer.
+            result = nil
+            bug17Log.notice("FM-SKIPPED node=\(nodeID, privacy: .public) half=authorship reason=already-offered-for-this-content")
+            print("[AI] skip authorship FM for \(nodeID) — already offered for this content")
         }
 
         // ws-card-catalog Change A — the FM/substrate write is the worst clobber
@@ -5039,10 +5787,20 @@ final class CorpusStore {
         // another") must NOT disturb the tags, so skip it when only one aspect was asked
         // for. Capture/enrichment callers use the default full set → unchanged.
         let regeneratesAllAuthorship = aspects.contains(.title) && aspects.contains(.summary)
-        if FeatureFlags.substrateOnCapture, regeneratesAllAuthorship {
+        // Three conditions, three different jobs — see WHICH GATE GOVERNS WHAT above:
+        //   substrateOnCapture      — is the feature on at all?
+        //   needsSubstrate          — is the existing substrate missing or stale?
+        //   regeneratesAllAuthorship— is this a full pass, or a focused per-aspect
+        //                             regenerate that must leave the tag tiers alone?
+        var substrateDidRun = false
+        if FeatureFlags.substrateOnCapture, needsSubstrate, regeneratesAllAuthorship {
             // SB139 Stage 1 — one FM call → summary + folksonomy, then three
-            // NLContextualEmbedding vectors. Mutates only substrate fields.
+            // BGE vectors. Mutates only substrate fields.
             await runSubstratePipeline(on: &working, aiSvc: aiSvc)
+            substrateDidRun = true
+        } else if FeatureFlags.substrateOnCapture, !needsSubstrate {
+            bug17Log.notice("FM-SKIPPED node=\(nodeID, privacy: .public) half=substrate reason=current-for-this-content")
+            print("[AI] skip substrate FM for \(nodeID) — current for this content")
         }
 
         await mutateNode(id: nodeID) { n in
@@ -5066,28 +5824,34 @@ final class CorpusStore {
             // Only the requested aspect(s) are recorded/written — so a per-row
             // regenerate can't overwrite the sibling field (T's 2026-08-14 ruling). The
             // model produced both; the non-requested one is discarded.
-            if aspects.contains(.title),
-               n.recordProposal(kind: .title, text: result.title,
-                                currentSource: n.titleSource,
-                                sourceEmbedding: sourceEmbedding,
-                                posture: posture, generatedAt: generatedAt,
-                                solicited: solicited) {
-                n.title = result.title
-                n.titleSource = .model
-            }
-            if aspects.contains(.summary),
-               n.recordProposal(kind: .summary, text: result.summary,
-                                currentSource: n.summarySource,
-                                sourceEmbedding: sourceEmbedding,
-                                posture: posture, generatedAt: generatedAt,
-                                solicited: solicited) {
-                n.summary = result.summary
-                n.summarySource = .model
+            // `result` is nil when the gate skipped the authorship call: no new answer,
+            // so nothing to record and the proposal already on the node stands.
+            if let result {
+                if aspects.contains(.title),
+                   n.recordProposal(kind: .title, text: result.title,
+                                    currentSource: n.titleSource,
+                                    sourceEmbedding: sourceEmbedding,
+                                    sourceContentHash: promptContentHash,
+                                    posture: posture, generatedAt: generatedAt,
+                                    solicited: solicited) {
+                    n.title = result.title
+                    n.titleSource = .model
+                }
+                if aspects.contains(.summary),
+                   n.recordProposal(kind: .summary, text: result.summary,
+                                    currentSource: n.summarySource,
+                                    sourceEmbedding: sourceEmbedding,
+                                    sourceContentHash: promptContentHash,
+                                    posture: posture, generatedAt: generatedAt,
+                                    solicited: solicited) {
+                    n.summary = result.summary
+                    n.summarySource = .model
+                }
             }
             // SB126 Stage 2 — deterministic-prefilter embedding + FM neighborhood
             // guess. No-ops on the legacy path. (mood/domain/tags no longer
             // applied — step 1.)
-            if useCorpusAware {
+            if useCorpusAware, let result {
                 if let nodeEmbedding {
                     n.contentEmbedding = nodeEmbedding
                 }
@@ -5098,15 +5862,23 @@ final class CorpusStore {
             }
             // SB139 Stage 1 — copy the substrate outputs computed on `working`
             // onto the fresh node (the only fields runSubstratePipeline authors).
-            if FeatureFlags.substrateOnCapture {
+            // ★ Gated on `substrateDidRun`, not just the feature flag: when the pipeline
+            // was skipped, `working` is a plain re-read and copying its substrate back
+            // is at best a no-op and at worst clobbers a substrate another task wrote
+            // during this call — the ws-card-catalog Change A hazard, one level down.
+            if substrateDidRun {
                 n.substrateSummary = working.substrateSummary
                 n.folksonomy = working.folksonomy
                 n.summaryEmbedding = working.summaryEmbedding
                 n.folksonomyEmbedding = working.folksonomyEmbedding
                 n.contextualContentEmbedding = working.contextualContentEmbedding
+                n.summaryEmbeddingBasis = working.summaryEmbeddingBasis
+                n.folksonomyEmbeddingBasis = working.folksonomyEmbeddingBasis
+                n.contextualContentEmbeddingBasis = working.contextualContentEmbeddingBasis
                 n.embeddingVersion = working.embeddingVersion
                 n.embeddingFailureReason = working.embeddingFailureReason
                 n.fmErrorDetail = working.fmErrorDetail
+                n.substrateContentHash = working.substrateContentHash
             }
             n.needsAIProcessing = false
         }
@@ -5115,6 +5887,11 @@ final class CorpusStore {
         // (summarySource `.user`, even empty, blocks the FM summary — 3876.)
         // tagsEmitted is always NO: the pendingTagSuggestions emission was
         // removed in ws-card-catalog step 1 (see the comment just below).
+        // ★ Re-placement is NOT fired here. The map reads the CARD-gist vector, which is built ~500ms
+        // later by `embedCardIfNeeded`; the substrate vector this pass writes is a different space
+        // the map no longer reads. Re-drift fires at card admission (`cardVectorAdmitted`), the one
+        // moment the cache actually holds the node — see `embedCardIfNeeded`.
+
         if let after = nodes.first(where: { $0.id == nodeID }) {
             bug17Log.notice("WRITE node=\(nodeID, privacy: .public) summaryLen=\(after.summary.count) summarySource=\(String(describing: after.summarySource), privacy: .public) titleLen=\(after.title.count) titleSource=\(String(describing: after.titleSource), privacy: .public) tagsEmitted=NO proposals=\(after.proposals?.count ?? 0)")
         }
@@ -5417,6 +6194,11 @@ final class CorpusStore {
         let raw = extractNodeContent(node)
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         node.embeddingVersion = SubstrateService.currentEmbeddingVersion
+        // ★ Stamp the freshness key ONCE, here, before either exit — both the thin
+        // path and the full path describe exactly this content. Presence of a
+        // substrate says "there is one"; this says "it is still about THIS text",
+        // which is the question Done asks (`EnrichmentGate.Moment.committed`).
+        node.substrateContentHash = cardContentHash(for: node)
 
         // Thin content path — skip FM, but still try to embed whatever text
         // exists so similarity has at least the content channel to fall back on.
@@ -5427,10 +6209,12 @@ final class CorpusStore {
             node.folksonomy = nil
             node.summaryEmbedding = nil
             node.folksonomyEmbedding = nil
-            if loaded, !trimmed.isEmpty, let v = substrate.embed(trimmed) {
+            if loaded, !trimmed.isEmpty, let v = await substrate.embed(trimmed) {
                 node.contextualContentEmbedding = v
+                node.contextualContentEmbeddingBasis = .content
             } else {
                 node.contextualContentEmbedding = nil
+                node.contextualContentEmbeddingBasis = nil
             }
             return
         }
@@ -5464,6 +6248,9 @@ final class CorpusStore {
             node.summaryEmbedding = nil
             node.folksonomyEmbedding = nil
             node.contextualContentEmbedding = nil
+            node.summaryEmbeddingBasis = nil
+            node.folksonomyEmbeddingBasis = nil
+            node.contextualContentEmbeddingBasis = nil
             return
         }
 
@@ -5473,16 +6260,24 @@ final class CorpusStore {
         // geography. Content embedding is intentionally not populated here
         // — the prior raw-content path is what we're replacing.
         if failureReason == "guardrail_refused" {
-            let fallback = substrate.legacyFallbackEmbeddings(for: node)
+            let fallback = await substrate.legacyFallbackEmbeddings(for: node)
             node.summaryEmbedding = fallback.summary
             node.folksonomyEmbedding = fallback.folksonomy
             node.contextualContentEmbedding = nil
+            node.summaryEmbeddingBasis = fallback.summary != nil ? .summary : nil
+            node.folksonomyEmbeddingBasis = fallback.folksonomy != nil ? .folksonomy : nil
+            node.contextualContentEmbeddingBasis = nil
         } else {
-            node.summaryEmbedding = producedSummary.flatMap { substrate.embed($0) }
-            node.folksonomyEmbedding = producedFolksonomy
-                .map { $0.joined(separator: ", ") }
-                .flatMap { $0.isEmpty ? nil : substrate.embed($0) }
-            node.contextualContentEmbedding = trimmed.isEmpty ? nil : substrate.embed(trimmed)
+            node.summaryEmbedding = await producedSummary.asyncFlatMap { await substrate.embed($0) }
+            let folksonomyText = producedFolksonomy?.joined(separator: ", ")
+            node.folksonomyEmbedding = await (folksonomyText?.isEmpty == false ? folksonomyText : nil)
+                .asyncFlatMap { await substrate.embed($0) }
+            node.contextualContentEmbedding = trimmed.isEmpty ? nil : await substrate.embed(trimmed)
+            // ★ Tag each channel with the space it was written in. Same embedder now, but DIFFERENT
+            // channels — which is the distinction dimension can no longer make.
+            node.summaryEmbeddingBasis = node.summaryEmbedding != nil ? .summary : nil
+            node.folksonomyEmbeddingBasis = node.folksonomyEmbedding != nil ? .folksonomy : nil
+            node.contextualContentEmbeddingBasis = node.contextualContentEmbedding != nil ? .content : nil
         }
         node.embeddingFailureReason = failureReason
         node.fmErrorDetail = fmErrorDetail
@@ -5558,10 +6353,13 @@ final class CorpusStore {
         var processed = 0
         for (idx, node) in pending.enumerated() {
             guard var working = nodes.first(where: { $0.id == node.id }) else { continue }
-            let fallback = substrate.legacyFallbackEmbeddings(for: working)
+            let fallback = await substrate.legacyFallbackEmbeddings(for: working)
             working.summaryEmbedding = fallback.summary
             working.folksonomyEmbedding = fallback.folksonomy
             working.contextualContentEmbedding = nil
+            working.summaryEmbeddingBasis = fallback.summary != nil ? .summary : nil
+            working.folksonomyEmbeddingBasis = fallback.folksonomy != nil ? .folksonomy : nil
+            working.contextualContentEmbeddingBasis = nil
             // Preserve `embedding_failure_reason = "guardrail_refused"` as
             // historical provenance — the diagnostic export needs it to
             // group the population for hypothesis-3 validation.
@@ -5833,8 +6631,9 @@ final class CorpusStore {
     /// the new meta-node landing in `alreadyConnectedPairs`).
     @available(iOS 17.0, *)
     private func refreshSubstrateThreadCandidates() {
+        // Brief Z R2 — threads over the corpus ROOM (the sample is a guest).
         let suggestions = SubstrateThreadService.candidates(
-            in: nodes,
+            in: corpusRoomNodes,
             dismissedPairKeys: dismissedThreadPairKeys
         )
         // Cap the visible queue. Brief calls for one-at-rest; we keep a
@@ -6167,6 +6966,9 @@ final class CorpusStore {
             }
         }
         nodes.removeAll { ids.contains($0.id) }
+        // Absence from the card cache means "excluded from language gravity", so a deleted node's
+        // vector left behind would keep voting on territory centroids.
+        SubstrateLayoutService.shared.evictCardVectors(forNodeIDs: ids)
 
         // Filter dangling NodeID references on remaining nodes. Source-node
         // `threads[]` carries meta-node IDs (set bidirectionally in pullThread);
@@ -6425,7 +7227,7 @@ final class CorpusStore {
         // A wipe must not restore stale Map geography on the next launch. The
         // signature would no longer match an empty corpus anyway, but clear it
         // eagerly so the artifact can't outlive the data it described.
-        territoryLayout = nil
+        territoryLayouts.removeAll()
         reviewQueue = []
         canvasNeedsSync = UUID()
     }
@@ -6510,9 +7312,9 @@ final class CorpusStore {
     /// Generate or refresh Über-node clusters if needed.
     /// Called automatically after node additions when invalidation threshold is met.
     func refreshUberNodeClusters() {
-        // Compute current fingerprint
+        // Compute current fingerprint. Brief Z R2 — Über over the corpus ROOM.
         let service = UberNodeService()
-        let currentFingerprint = service.corpusHash(from: nodes)
+        let currentFingerprint = service.corpusHash(from: corpusRoomNodes)
 
         // Check if cache exists and is still valid
         if let cache = uberNodeCache,
@@ -6520,8 +7322,8 @@ final class CorpusStore {
             return  // Cache is still fresh
         }
 
-        // Generate new clusters
-        uberNodeCache = service.generateClusters(from: nodes)
+        // Generate new clusters (over the room).
+        uberNodeCache = service.generateClusters(from: corpusRoomNodes)
 
         if let cache = uberNodeCache {
             print("[UberNode] Generated \(cache.clusters.count) clusters from \(nodes.count) nodes")
@@ -6676,7 +7478,7 @@ final class CorpusStore {
     /// gate inside `refreshNeighborhoods()` still applies, so this never
     /// double-computes.
     private func scheduleInitialNeighborhoodRefresh() {
-        let currentFingerprint = NeighborhoodService().corpusFingerprint(from: nodes)
+        let currentFingerprint = NeighborhoodService().corpusFingerprint(from: corpusRoomNodes)
         if let cache = neighborhoodCache,
            !cache.shouldInvalidate(currentFingerprint: currentFingerprint) {
             refreshNeighborhoods()
@@ -6695,9 +7497,12 @@ final class CorpusStore {
     /// Generate or refresh neighborhoods if needed.
     /// Called automatically after node additions when invalidation threshold is met.
     func refreshNeighborhoods() {
-        // Compute current fingerprint
+        // Compute current fingerprint. Brief Z R2/Z3 — neighborhoods over the corpus
+        // ROOM, so adding/removing the sample can't reshape the user's neighborhoods
+        // (the per-node vector is the ABSOLUTE card-gist embedding, so the same room
+        // set yields the same partition regardless of what else is on disk).
         let service = NeighborhoodService()
-        let currentFingerprint = service.corpusFingerprint(from: nodes)
+        let currentFingerprint = service.corpusFingerprint(from: corpusRoomNodes)
 
         // Check if cache exists and is still valid
         if let cache = neighborhoodCache,
@@ -6721,9 +7526,9 @@ final class CorpusStore {
         // is the same content until the upsert iteration overwrites it.
         let priorNeighborhoodSnapshot = corpusIndex.neighborhoods
 
-        // Generate new neighborhoods
+        // Generate new neighborhoods (over the room).
         neighborhoodCache = service.generateNeighborhoods(
-            from: nodes,
+            from: corpusRoomNodes,
             layoutPositions: canvasLayout.positions,
             previousMembers: previousMembers
         )
@@ -6882,22 +7687,24 @@ final class CorpusStore {
     /// Regenerates the corpus summary via FM if missing or if the node count has drifted by 20+
     /// since the last summary. If the model is unavailable, leaves the existing summary in place.
     private func refreshCorpusSummaryIfNeeded() async {
+        // Brief Z R2 — the corpus summary describes the user's ROOM, not the sample.
+        let room = corpusRoomNodes
         let prevCount = corpusIndex.summary?.nodeCount ?? 0
-        let needsRefresh = corpusIndex.summary == nil || abs(nodes.count - prevCount) >= 20
+        let needsRefresh = corpusIndex.summary == nil || abs(room.count - prevCount) >= 20
         guard needsRefresh else { return }
         guard #available(iOS 26.0, *) else { return }
         let aiSvc = AIService()
         let cutoff = Calendar.current.date(byAdding: .day, value: -14, to: Date()) ?? Date.distantPast
-        let recentCaptureCount = nodes.reduce(into: 0) { acc, node in
+        let recentCaptureCount = room.reduce(into: 0) { acc, node in
             if node.createdAt >= cutoff { acc += 1 }
         }
         guard let result = await aiSvc.generateCorpusSummary(
             index: corpusIndex,
-            nodeCount: nodes.count,
+            nodeCount: room.count,
             recentCaptureCount: recentCaptureCount
         ) else { return }
         let summary = CorpusSummary(
-            nodeCount: nodes.count,
+            nodeCount: room.count,
             tagCount: corpusIndex.tags.count,
             neighborhoodCount: corpusIndex.neighborhoods.count,
             dominantThemes: result.dominantThemes,
@@ -7160,7 +7967,14 @@ final class CorpusStore {
     /// Cosine similarity for two equal-length [Float] vectors. Returns 0 for
     /// degenerate inputs (mismatched length or zero magnitude) — the caller
     /// treats those as "no signal" and falls back to the lexical path.
+    /// ★ Was a silent 0 on mismatch. Retrieval-shaped (node vector vs collection description), so
+    /// the embedder must match; the channel deliberately need not.
     private func cosine(_ a: [Float], _ b: [Float]) -> Double {
+        if a.count != b.count, !a.isEmpty, !b.isEmpty {
+            VectorBasisGuard.requireSameEmbedder(.inferred(dimension: a.count, channel: "node"),
+                                                 .inferred(dimension: b.count, channel: "description"),
+                                                 site: "CorpusStore.cosine")
+        }
         guard !a.isEmpty, a.count == b.count else { return 0 }
         var dot: Double = 0
         var na: Double = 0

@@ -1,0 +1,79 @@
+{
+  "collection_ids": [
+    "people"
+  ],
+  "connections": [],
+  "created_at": "2026-05-30T13:26:00Z",
+  "entry_schema_version": 4,
+  "id": "3677BCE3-D2F4-5AF6-ABB9-C92541E2DD06",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-05-30T13:26:00Z",
+      "field": {
+        "definition_id": "fd_how_met"
+      },
+      "id": "E41CFCAA-7E36-59DC-9E06-0E08BF7ABC9E",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-05-30T13:26:00Z",
+      "field": {
+        "definition_id": "fd_last_spoke",
+        "value": {
+          "date": {
+            "_0": "2026-09-04T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "1E4650A7-41E4-56B7-B335-B89DB2E939FD",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-05-30T13:26:00Z",
+      "field": {
+        "definition_id": "fd_into",
+        "value": {
+          "text": {
+            "_0": "being right about it later"
+          }
+        }
+      },
+      "id": "76A6E764-B1EC-56E7-BD70-55ADC19034A2",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-05-30T13:26:00Z",
+      "field": {
+        "definition_id": "fd_note",
+        "value": {
+          "text": {
+            "_0": "she reframes a setback into a lesson in about four minutes"
+          }
+        }
+      },
+      "id": "97EAB862-0919-5A79-B91E-6C580271C79B",
+      "type": "field"
+    },
+    {
+      "content": "I've started timing how long it takes her to turn bad news into proof she\nwas right, and it's steadying, somehow. She means well at a volume I find\nhard to be near for more than a weekend.",
+      "created_at": "2026-05-30T13:26:00Z",
+      "id": "169D20BB-D100-527F-8870-F8FB29F025E9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Turns any setback into proof she was right",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "Mom",
+  "updated_at": "2026-05-30T13:26:00Z"
+}

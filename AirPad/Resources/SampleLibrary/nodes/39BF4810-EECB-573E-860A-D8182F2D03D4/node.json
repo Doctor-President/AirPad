@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-09-13T16:07:00Z",
+  "entry_schema_version": 4,
+  "id": "39BF4810-EECB-573E-860A-D8182F2D03D4",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Ideas, unsorted:\n- [ ] the same nine shots, different order, see if it changes\n- [ ] something with the card catalogue drawers\n- [ ] ask Sid if she'd shoot",
+      "created_at": "2026-09-13T16:07:00Z",
+      "id": "ABDB0A61-FDEE-5A37-B392-6E996611F56C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Unsorted next ideas: re-order the nine shots, the card-catalogue drawers, ask Sid",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "film"
+  ],
+  "threads": [],
+  "title": "after the short film",
+  "updated_at": "2026-09-13T16:07:00Z"
+}

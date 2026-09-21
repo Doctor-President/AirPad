@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2026-06-14T15:58:00Z",
+  "entry_schema_version": 4,
+  "id": "2C0E679D-4273-5421-A30A-8A6A33D02502",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "You cannot describe a colour to someone who has not seen it. You can give\nthem the wavelength, the objects, the associations — and none of it\ntransmits. It is the cleanest example I know of a thing that is\ncompletely real and completely unshareable.",
+      "created_at": "2026-06-14T15:58:00Z",
+      "id": "EE30BD60-843A-5645-8AEE-302F01E82AFC",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "wavelength and analogy still fail to transmit a colour",
+  "tag_sources": {
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "language"
+  ],
+  "threads": [],
+  "title": "On the impossibility of describing a colour",
+  "updated_at": "2026-06-14T15:58:00Z"
+}

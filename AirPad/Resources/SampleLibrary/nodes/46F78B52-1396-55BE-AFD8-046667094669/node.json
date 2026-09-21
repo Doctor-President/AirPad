@@ -1,0 +1,53 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-02-03T15:48:00Z",
+  "entry_schema_version": 4,
+  "id": "46F78B52-1396-55BE-AFD8-046667094669",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Wild in the Ethiopian highlands, cultivated in Yemen by the 15th century,\nwhere Sufi orders drank it to stay awake through night prayer. Out\nthrough Mocha, into Cairo and Istanbul, and the coffeehouse arrives with\nit — which is the part that interests me. The drink travelled as\ninfrastructure for a kind of room.",
+      "created_at": "2026-02-03T15:48:00Z",
+      "id": "A1CB0AB3-2920-5145-8D32-CF9A103E7BB6",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-02-03T15:48:00Z",
+      "id": "E11B52D7-11BD-56E4-A0B9-7761DB424E8C",
+      "link_items": [
+        {
+          "captured_at": "2026-02-03T15:48:00Z",
+          "id": "183616AB-8CA1-572B-BABE-5C46922FEAD0",
+          "site_name": "Wikipedia",
+          "title": "History of coffee",
+          "url": "https://en.wikipedia.org/wiki/History_of_coffee"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Yemen to Cairo and Istanbul, the coffeehouse travelling with the drink",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    },
+    "origin": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "origin",
+    "archives"
+  ],
+  "threads": [],
+  "title": "How coffee got out of Ethiopia",
+  "updated_at": "2026-02-03T15:48:00Z"
+}

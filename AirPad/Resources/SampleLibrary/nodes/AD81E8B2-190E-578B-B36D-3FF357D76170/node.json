@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-05-19T17:12:00Z",
+  "entry_schema_version": 4,
+  "id": "AD81E8B2-190E-578B-B36D-3FF357D76170",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Spring-wound, no batteries, built in Switzerland to survive being dropped\nby someone's grandfather. Runs about 28 seconds per wind.\n\nThe constraint is the appeal. You cannot ramble on 28 seconds.",
+      "created_at": "2026-05-19T17:12:00Z",
+      "id": "45079D3F-0001-5DCB-BA26-98395F029185",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Spring-wound Swiss 16mm camera, 28 seconds a wind, constraint as appeal",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "Bolex H16",
+  "updated_at": "2026-05-19T17:12:00Z"
+}

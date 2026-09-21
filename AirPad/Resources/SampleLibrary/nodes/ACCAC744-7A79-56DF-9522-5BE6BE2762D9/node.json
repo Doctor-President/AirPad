@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-07-15T18:23:00Z",
+  "entry_schema_version": 4,
+  "id": "ACCAC744-7A79-56DF-9522-5BE6BE2762D9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Shot twenty-eight seconds of the kitchen window. Have no idea if anything\nis on it. Won't know for two weeks.\n\nForgot what it's like to not immediately know.",
+      "created_at": "2026-07-15T18:23:00Z",
+      "id": "BED844B0-B616-55BB-A1A4-0D4EEF93FEA9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "28 seconds of the kitchen window, then a two-week wait to know anything",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "first roll",
+  "updated_at": "2026-07-15T18:23:00Z"
+}

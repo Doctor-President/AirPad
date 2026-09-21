@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-09-04T21:52:00Z",
+  "entry_schema_version": 4,
+  "id": "38249F96-720C-54A7-8790-4E1A6984C8C3",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Mara texted about dates. Didn't mention him. The not-mentioning is\nitself a negotiation and we both know it.\n\nI have until roughly the end of October to decide whether I'm a person\nwho goes.",
+      "created_at": "2026-09-04T21:52:00Z",
+      "id": "53944CF5-7CE3-5ADC-B579-793751F4EDB0",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-09-04T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Thanksgiving looms again and the unspoken question returns",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "it's November again soon",
+  "updated_at": "2026-09-04T21:52:00Z"
+}

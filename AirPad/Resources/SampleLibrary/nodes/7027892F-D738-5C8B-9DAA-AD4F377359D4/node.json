@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2025-11-18T22:14:00Z",
+  "entry_schema_version": 4,
+  "id": "7027892F-D738-5C8B-9DAA-AD4F377359D4",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "She led with \"don't be weird about it.\" Which tells you she already knew.\nHe's coming. Mom's fine with it — Mom is *delighted* with it, because Gary\nwill be there and she gets to be the one who landed on her feet. It's a\nperformance and Dad is the prop. I'm not a prop. I just haven't figured\nout how to say that in a way that doesn't make me the problem.",
+      "created_at": "2025-11-18T22:14:00Z",
+      "id": "D4E199E5-3FA5-5608-9FC8-E36D806964D6",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2025-11-18T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "The estranged father's Thanksgiving attendance, relayed by a sister's call",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "Mara called about Thanksgiving",
+  "updated_at": "2025-11-18T22:14:00Z"
+}

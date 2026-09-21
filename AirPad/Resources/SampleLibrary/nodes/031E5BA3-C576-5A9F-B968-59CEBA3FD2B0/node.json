@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-03-21T14:12:00Z",
+  "entry_schema_version": 4,
+  "id": "031E5BA3-C576-5A9F-B968-59CEBA3FD2B0",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Distilled water makes terrible coffee — you need dissolved minerals for\nthe extraction to happen at all. Magnesium pulls fruit, calcium pulls\nbody, too much bicarbonate flattens acidity into cardboard.\n\nChicago tap is moderately hard, which is apparently lucky.",
+      "created_at": "2026-03-21T14:12:00Z",
+      "id": "5A46E41B-079B-5AE6-8645-2EFE026CB47F",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Minerals drive extraction; Chicago's moderately hard tap helps",
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
+  "threads": [],
+  "title": "Water is ~98% of it",
+  "updated_at": "2026-03-21T14:12:00Z"
+}

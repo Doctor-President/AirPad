@@ -536,6 +536,13 @@ final class ChatSession {
         messages.append(Message(role: .assistant, text: text))
     }
 
+    /// Headless verification hook (Brief S) — inject a user turn, simulating a
+    /// committed turn so `LibrarianState.debugCorpusRetrieve` can exercise the S2
+    /// carry across successive calls without invoking the model.
+    func debugAppendUser(_ text: String) {
+        messages.append(Message(role: .user, text: text))
+    }
+
     /// Headless verification hook (BUG 36) — inject a user turn + a PARTIAL
     /// assistant turn (the stream dropped mid-answer) so `-Screen` can shoot the
     /// calm "Stopped early / Continue" affordance — NOT a red failure banner —

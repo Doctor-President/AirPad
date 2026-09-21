@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-06-30T19:38:00Z",
+  "entry_schema_version": 4,
+  "id": "BEC4F107-4AB6-56E5-A81F-AA2D603DE6D1",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Not this year. Not next, probably. But I want to be able to be there\nwithout translating, which means the studying has a destination now and\nnot just a reason.",
+      "created_at": "2026-06-30T19:38:00Z",
+      "id": "2B10CFB5-C8EF-5C6C-8C5B-54D9C1876CD7",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Provence as the study's destination: to be there without translating.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "Provence, eventually",
+  "updated_at": "2026-06-30T19:38:00Z"
+}

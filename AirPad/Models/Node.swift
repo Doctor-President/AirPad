@@ -271,6 +271,13 @@ struct Node: Codable, Identifiable, Hashable {
     /// Embedding of the node's extracted content. Used as the fallback channel
     /// when summary or folksonomy are missing (guardrail refusal). Stored raw.
     var contextualContentEmbedding: [Float]?
+    /// ★ WHICH SPACE each substrate vector lives in (embedder + channel). Absent on corpora written
+    /// before 2026-09-16, where the basis is inferred from the dimension instead — see
+    /// `VectorBasis.inferred`. Tagged explicitly on every write from the migration onward, because
+    /// once every channel is BGE-384 the dimension can no longer tell two spaces apart.
+    var summaryEmbeddingBasis: VectorBasis?
+    var folksonomyEmbeddingBasis: VectorBasis?
+    var contextualContentEmbeddingBasis: VectorBasis?
     /// Substrate embedder/call-shape version. 0 = substrate never processed
     /// this node. 1 = `NLContextualEmbedding(.english)` mean-pooled, summary +
     /// folksonomy via `processSubstrate`. Bump when the embedder or call
@@ -286,6 +293,18 @@ struct Node: Codable, Identifiable, Hashable {
     /// can tune the guardrail-vs-other classifier against observed strings.
     /// Cleared on every other outcome (success, guardrail, thin, embedder).
     var fmErrorDetail: FMErrorDetail?
+    /// ★ THE SUBSTRATE FRESHNESS KEY — the content hash (`CorpusStore
+    /// .cardContentHash`, the card catalog's own key) the substrate above was last
+    /// computed against.
+    ///
+    /// Presence answers "is there a substrate?"; this answers "does it still
+    /// describe THIS text?" — a different question, and the one Done needs. Without
+    /// it a summary derived three paragraphs ago silently becomes the node's
+    /// persisted meaning, because `substrateSummary != nil` reads as "current".
+    ///
+    /// Nil for a substrate computed before this field existed: read as stale once,
+    /// re-derived, stamped. Self-healing, no migration.
+    var substrateContentHash: String?
 
     // MARK: - SB139 Stage 4 substrate layout
     //
@@ -436,9 +455,13 @@ struct Node: Codable, Identifiable, Hashable {
         case summaryEmbedding = "summary_embedding"
         case folksonomyEmbedding = "folksonomy_embedding"
         case contextualContentEmbedding = "contextual_content_embedding"
+        case summaryEmbeddingBasis = "summary_embedding_basis"
+        case folksonomyEmbeddingBasis = "folksonomy_embedding_basis"
+        case contextualContentEmbeddingBasis = "contextual_content_embedding_basis"
         case embeddingVersion = "embedding_version"
         case embeddingFailureReason = "embedding_failure_reason"
         case fmErrorDetail = "fm_error_detail"
+        case substrateContentHash = "substrate_content_hash"
         case substrateCoord2D = "substrate_coord_2d"
         case substrateLayoutVersion = "substrate_layout_version"
         case entrySchemaVersion = "entry_schema_version"
@@ -488,9 +511,13 @@ struct Node: Codable, Identifiable, Hashable {
         summaryEmbedding: [Float]? = nil,
         folksonomyEmbedding: [Float]? = nil,
         contextualContentEmbedding: [Float]? = nil,
+        summaryEmbeddingBasis: VectorBasis? = nil,
+        folksonomyEmbeddingBasis: VectorBasis? = nil,
+        contextualContentEmbeddingBasis: VectorBasis? = nil,
         embeddingVersion: Int = 0,
         embeddingFailureReason: String? = nil,
         fmErrorDetail: FMErrorDetail? = nil,
+        substrateContentHash: String? = nil,
         substrateCoord2D: SubstrateCoord2D? = nil,
         substrateLayoutVersion: Int = 0,
         entrySchemaVersion: Int = 0,
@@ -533,9 +560,13 @@ struct Node: Codable, Identifiable, Hashable {
         self.summaryEmbedding            = summaryEmbedding
         self.folksonomyEmbedding         = folksonomyEmbedding
         self.contextualContentEmbedding  = contextualContentEmbedding
+        self.summaryEmbeddingBasis           = summaryEmbeddingBasis
+        self.folksonomyEmbeddingBasis        = folksonomyEmbeddingBasis
+        self.contextualContentEmbeddingBasis = contextualContentEmbeddingBasis
         self.embeddingVersion            = embeddingVersion
         self.embeddingFailureReason      = embeddingFailureReason
         self.fmErrorDetail               = fmErrorDetail
+        self.substrateContentHash        = substrateContentHash
         self.substrateCoord2D            = substrateCoord2D
         self.substrateLayoutVersion      = substrateLayoutVersion
         self.entrySchemaVersion          = entrySchemaVersion
@@ -585,9 +616,13 @@ extension Node {
         summaryEmbedding           = try c.decodeIfPresent([Float].self,  forKey: .summaryEmbedding)
         folksonomyEmbedding        = try c.decodeIfPresent([Float].self,  forKey: .folksonomyEmbedding)
         contextualContentEmbedding = try c.decodeIfPresent([Float].self,  forKey: .contextualContentEmbedding)
+        summaryEmbeddingBasis           = try c.decodeIfPresent(VectorBasis.self, forKey: .summaryEmbeddingBasis)
+        folksonomyEmbeddingBasis        = try c.decodeIfPresent(VectorBasis.self, forKey: .folksonomyEmbeddingBasis)
+        contextualContentEmbeddingBasis = try c.decodeIfPresent(VectorBasis.self, forKey: .contextualContentEmbeddingBasis)
         embeddingVersion           = try c.decodeIfPresent(Int.self,      forKey: .embeddingVersion) ?? 0
         embeddingFailureReason     = try c.decodeIfPresent(String.self,   forKey: .embeddingFailureReason)
         fmErrorDetail              = try c.decodeIfPresent(FMErrorDetail.self, forKey: .fmErrorDetail)
+        substrateContentHash       = try c.decodeIfPresent(String.self,   forKey: .substrateContentHash)
         substrateCoord2D           = try c.decodeIfPresent(SubstrateCoord2D.self, forKey: .substrateCoord2D)
         substrateLayoutVersion     = try c.decodeIfPresent(Int.self,      forKey: .substrateLayoutVersion) ?? 0
         entrySchemaVersion         = try c.decodeIfPresent(Int.self,      forKey: .entrySchemaVersion) ?? 0
@@ -625,4 +660,83 @@ extension Node {
 struct NodeLocation: Codable, Equatable {
     let latitude: Double
     let longitude: Double
+}
+
+extension Node {
+    /// Brief W1 — where a retrieval block's text CAME FROM, so the Librarian can
+    /// tell what the user WROTE from what they SAVED (a 4,500-word Wikipedia article
+    /// chunked like a note must not be quoted back as the user's own thoughts).
+    enum BlockProvenance: String, Sendable {
+        case note          // typed / dictated text (.text, .audio, .video)
+        case savedLink     // a link item with captured page/OG text
+        case document      // pasted / imported document
+        case imageText     // OCR / image description
+    }
+
+    /// Resolve a block's provenance from its `itemID` (which may be a `NodeItem.id`
+    /// OR a sub-item id — `LinkItem` / `DocumentItem` / `GalleryItem` — per
+    /// `BlockChunker`'s granularity). Returns the kind + a bare domain for saved
+    /// links. Unknown ids fall back to `.note` (treat as the user's own).
+    func blockProvenance(forItemID itemID: String) -> (kind: BlockProvenance, domain: String?) {
+        for item in items {
+            if item.id == itemID {
+                switch item.type {
+                case .text, .audio, .video:   return (.note, nil)
+                case .link:                   return (.savedLink, Self.linkDomain(item.url))
+                case .document:               return (.document, nil)
+                case .image, .imageVideo:     return (.imageText, nil)
+                case .rating, .field, .chats: return (.note, nil)
+                }
+            }
+            if let link = item.linkItems?.first(where: { $0.id == itemID }) {
+                return (.savedLink, Self.linkDomain(link.url))
+            }
+            if item.documentItems?.contains(where: { $0.id == itemID }) == true {
+                return (.document, nil)
+            }
+            if item.mediaItems?.contains(where: { $0.id == itemID }) == true {
+                return (.imageText, nil)
+            }
+        }
+        return (.note, nil)
+    }
+
+    /// Brief AA3 — node-level provenance for the node's CARD (its whole-node gist),
+    /// the W1 analogue of `blockProvenance` one granularity up. The gist summarises
+    /// the entire node, so the NOTES survey list must not quote a saved article's
+    /// gist back as the user's own words. Rule (measured against T's corpus: 40 of
+    /// 224 user notes carry a link with a resolvable domain): a link with a real
+    /// domain marks the card a saved article — this leans COLLECTED for mixed
+    /// note+link nodes, the safe W1 direction — else a document / image node is
+    /// labelled as such, otherwise it is the user's own note. A link whose URL yields
+    /// no domain (a stripped/placeholder link on an otherwise-typed note) does NOT
+    /// downgrade it: the card stays the user's own.
+    func cardProvenance() -> (kind: BlockProvenance, domain: String?) {
+        for item in items where item.type == .link {
+            // The URL may sit on the item (T's captured links) OR inside its
+            // `linkItems` sub-array (the sample library's saved articles — the item's
+            // own `url` is nil there). Mirror `blockProvenance`, which reads both.
+            if let domain = Self.linkDomain(item.url) { return (.savedLink, domain) }
+            if let sub = item.linkItems?.compactMap({ Self.linkDomain($0.url) }).first {
+                return (.savedLink, sub)
+            }
+        }
+        for item in items {
+            switch item.type {
+            case .document:            return (.document, nil)
+            case .image, .imageVideo:  return (.imageText, nil)
+            default:                   continue
+            }
+        }
+        return (.note, nil)
+    }
+
+    /// Bare registrable domain (no scheme, no `www.`) for a link's provenance label.
+    static func linkDomain(_ urlString: String?) -> String? {
+        guard let s = urlString?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !s.isEmpty else { return nil }
+        let withScheme = s.contains("://") ? s : "https://\(s)"
+        guard let host = URL(string: withScheme)?.host else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
 }

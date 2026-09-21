@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-01-08T11:37:00Z",
+  "entry_schema_version": 4,
+  "id": "EF18C6CA-6914-52CF-8409-780B3C814D79",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Decaf done with water and carbon instead of solvent — they pull the\ncaffeine out with a saturated green-coffee extract so the flavour\ncompounds have nowhere to go.\n\nMentioning it because I'd assumed decaf was chemically violent and that\nwas lazy of me.",
+      "created_at": "2026-01-08T11:37:00Z",
+      "id": "FA7402D6-F0D4-5D79-8B77-7BFF55942CB9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Solvent-free decaf using a saturated green-coffee extract",
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
+  "threads": [],
+  "title": "swiss water",
+  "updated_at": "2026-01-08T11:37:00Z"
+}

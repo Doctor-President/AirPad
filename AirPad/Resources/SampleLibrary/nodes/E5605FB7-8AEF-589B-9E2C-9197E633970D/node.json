@@ -1,0 +1,37 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-02-16T05:41:00Z",
+  "entry_schema_version": 4,
+  "id": "E5605FB7-8AEF-589B-9E2C-9197E633970D",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Something enormous behind the treeline, watching, and the feeling is entirely benign. I remember thinking \"oh, it's fine\" and being surprised at myself. Woke up calm, which never happens with this kind of dream.",
+      "created_at": "2026-02-16T05:41:00Z",
+      "id": "E82FB4B9-C8A4-58D4-A9AA-052E77EFECA3",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-02-16T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A benign presence behind the treeline, calm on waking",
+  "tag_sources": {
+    "horror": {
+      "source": "user"
+    },
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep",
+    "horror"
+  ],
+  "threads": [],
+  "title": "A dream about being watched by something kind",
+  "updated_at": "2026-02-16T05:41:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-07-27T21:10:00Z",
+  "entry_schema_version": 4,
+  "id": "4AE6C2AE-37E4-5B69-841D-A459B1E11621",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Came back from Quebec wanting it and made a sad Chicago approximation with\nthe wrong cheese. Curds are the whole thing and you can't fake them. Still\nate all of it standing at the counter.",
+      "created_at": "2026-07-27T21:10:00Z",
+      "id": "054AA11A-F0BD-5C78-A0BC-AD9C9BE3018C",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Sad Chicago approximation after Quebec; the curds can't be faked",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking",
+    "french"
+  ],
+  "threads": [],
+  "title": "poutine, unofficially",
+  "updated_at": "2026-07-27T21:10:00Z"
+}

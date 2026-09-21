@@ -1,11 +1,15 @@
 import Foundation
-import NaturalLanguage
 
 /// SB139 Stage 1 — Semantic substrate.
 ///
-/// Owns the `NLContextualEmbedding(.english)` instance, mean-pools token
-/// vectors, caches per-channel corpus means, and exposes the pair-similarity
-/// blend used by Stage 2 thread candidates and the dev inspect view.
+/// Caches per-channel corpus means and exposes the pair-similarity blend used by Stage 2 thread
+/// candidates and the dev inspect view.
+///
+/// ★ EMBEDDER MIGRATED 2026-09-16: this service no longer owns an `NLContextualEmbedding(.english)`.
+/// All three substrate channels are embedded by **BGE-micro (384-d)** via `CardEmbeddingService`,
+/// the same embedder the catalog cards and block sidecars already used. Before this, the substrate
+/// wrote 512-d NLContextual vectors while cards wrote 384-d BGE — two spaces in one corpus, with
+/// both writing `embeddingVersion = 1`. Vectors are now tagged with a `VectorBasis` at write time.
 ///
 /// **Storage decision:** vectors are stored RAW on `Node`. Mean-centering is
 /// applied at read time inside `pairSimilarity`. Rationale: the corpus mean
@@ -19,18 +23,20 @@ import NaturalLanguage
 /// (`N = 20`) is a starting heuristic — calibrate against real-corpus growth
 /// patterns once Stage 2 surfaces threads. Tuning is on the SB139 defer list.
 ///
-/// **Embedder version:** `currentEmbeddingVersion = 1` corresponds to
-/// `NLContextualEmbedding(.english)` mean-pooled, summary + folksonomy
-/// generated via `AIService.processSubstrate`. Any change to embedder, prompt
-/// shape, or pooling strategy bumps this so backfills can find stale vectors.
+/// **Embedder version:** `currentEmbeddingVersion = 2` = BGE-micro 384-d, summary + folksonomy via
+/// `AIService.processSubstrate`. (v1 was NLContextual 512-d — the version ALSO used by
+/// `CardEmbeddingService` to mean something else entirely, which is why the authoritative signal is
+/// now `VectorBasis`, not this integer. The bump exists so a backfill can still find v1 vectors.)
 @available(iOS 17.0, *)
 @MainActor
 final class SubstrateService {
 
     // MARK: - Constants
 
-    /// SB139 v1 = NLContextualEmbedding mean-pooled + processSubstrate prompt.
-    static let currentEmbeddingVersion: Int = 1
+    /// v1 = NLContextual 512-d (retired). **v2 = BGE-micro 384-d** + processSubstrate prompt.
+    /// ★ Not a basis identifier — see `VectorBasis`, which is. This integer only answers
+    /// "is this vector stale?", never "which space is it in?".
+    static let currentEmbeddingVersion: Int = 2
 
     /// Skip the FM call below this character threshold; mark `thin_content`.
     static let thinContentThreshold: Int = 20
@@ -51,77 +57,34 @@ final class SubstrateService {
 
     // MARK: - Embedder lifecycle
 
-    private var embedder: NLContextualEmbedding?
-    private var loadedDimension: Int = 0
-    private var loadAttempted = false
     private var loadSucceeded = false
 
-    /// Lazy-load the embedder. Returns false if assets aren't available yet.
-    /// First call may trigger an asset download via `requestAssets()`.
+    /// Probe that BGE can actually produce a vector. `CardEmbeddingService` lazy-loads its Core ML
+    /// model on first `embed`, so "loaded" is only knowable by embedding something — one tiny
+    /// string, once per process. Returning false routes the caller to `embedder_error`, exactly as
+    /// the NLContextual asset-request failure used to.
     @discardableResult
     func ensureLoaded() async -> Bool {
         if loadSucceeded { return true }
-        if loadAttempted && !loadSucceeded { return false }
-        loadAttempted = true
-
-        guard let e = NLContextualEmbedding(language: .english) else {
-            print("[Substrate] NLContextualEmbedding init failed")
-            return false
-        }
-        if !e.hasAvailableAssets {
-            print("[Substrate] Requesting NLContextualEmbedding assets…")
-            do {
-                let result = try await e.requestAssets()
-                print("[Substrate] requestAssets result: \(result.rawValue)")
-            } catch {
-                print("[Substrate] requestAssets error: \(error)")
-                return false
-            }
-        }
-        do {
-            try e.load()
-            self.embedder = e
-            self.loadedDimension = e.dimension
-            self.loadSucceeded = true
-            print("[Substrate] NLContextualEmbedding loaded: dim=\(e.dimension) maxLen=\(e.maximumSequenceLength)")
-            return true
-        } catch {
-            print("[Substrate] NLContextualEmbedding load error: \(error)")
-            return false
-        }
+        loadSucceeded = await CardEmbeddingService.shared.embed("ok") != nil
+        if !loadSucceeded { print("[Substrate] BGE embedder unavailable — no substrate vectors") }
+        return loadSucceeded
     }
 
     var isLoaded: Bool { loadSucceeded }
-    var dimension: Int { loadedDimension }
+    /// BGE-micro emits a fixed 384-d unit vector.
+    var dimension: Int { 384 }
 
     // MARK: - Embedding
 
-    /// Mean-pool token vectors from `NLContextualEmbedding`. Returns nil for
-    /// empty input, embedder unavailable, or zero-token results. Vectors are
-    /// returned as `[Float]` (matching `Node` field types) but pooling is
-    /// done in `Double` for numerical stability.
-    func embed(_ text: String) -> [Float]? {
-        guard loadSucceeded, let e = embedder else { return nil }
+    /// Embed one substrate channel with BGE-micro (384-d, unit-normalised in-graph).
+    /// `async` because the embedder is an actor with a lazily-loaded Core ML model.
+    /// Returns nil for empty input or an unavailable embedder.
+    func embed(_ text: String) async -> [Float]? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let truncated = trimmed.count > maxEmbedChars ? String(trimmed.prefix(maxEmbedChars)) : trimmed
-        do {
-            let result = try e.embeddingResult(for: truncated, language: .english)
-            let dim = e.dimension
-            var sum = [Double](repeating: 0, count: dim)
-            var tokens = 0
-            result.enumerateTokenVectors(in: truncated.startIndex..<truncated.endIndex) { vec, _ in
-                for i in 0..<min(dim, vec.count) { sum[i] += vec[i] }
-                tokens += 1
-                return true
-            }
-            guard tokens > 0 else { return nil }
-            let inv = 1.0 / Double(tokens)
-            return sum.map { Float($0 * inv) }
-        } catch {
-            print("[Substrate] embeddingResult error: \(error)")
-            return nil
-        }
+        return await CardEmbeddingService.shared.embed(truncated)
     }
 
     // MARK: - Legacy-FM fallback embeddings
@@ -146,17 +109,17 @@ final class SubstrateService {
     /// absent (no legacy summary AND no title for summary; no user tags
     /// for folksonomy). `pairSimilarity`'s summary-only / folksonomy-only
     /// branches handle asymmetric coverage downstream.
-    func legacyFallbackEmbeddings(for node: Node) -> (summary: [Float]?, folksonomy: [Float]?) {
+    func legacyFallbackEmbeddings(for node: Node) async -> (summary: [Float]?, folksonomy: [Float]?) {
         guard loadSucceeded else { return (nil, nil) }
 
         let trimmedLegacySummary = node.summary.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedTitle = node.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let summaryText = trimmedLegacySummary.isEmpty ? trimmedTitle : trimmedLegacySummary
-        let summaryVec = summaryText.isEmpty ? nil : embed(summaryText)
+        let summaryVec = summaryText.isEmpty ? nil : await embed(summaryText)
 
         let userTags = node.tags.filter { node.tagSources[$0]?.source == .user }
         let folksonomyText = userTags.joined(separator: ", ")
-        let folksonomyVec = folksonomyText.isEmpty ? nil : embed(folksonomyText)
+        let folksonomyVec = folksonomyText.isEmpty ? nil : await embed(folksonomyText)
 
         return (summaryVec, folksonomyVec)
     }

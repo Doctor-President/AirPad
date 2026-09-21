@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "workshop"
+  ],
+  "connections": [],
+  "created_at": "2026-08-08T14:56:00Z",
+  "entry_schema_version": 4,
+  "id": "15644DF8-EC0D-5F21-89FF-6D2BF8935692",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "- [ ] door, left open, hallway light\n- [ ] hand setting down a cup\n- [ ] road, wrong time of day\n- [ ] someone from behind, not turning\n- [ ] the window (have it)\n- [ ] stairs from the bottom\n- [ ] a chair\n- [ ] curtain, no wind\n- [ ] the door again, closed\n\nNothing frightening in any of them. That is the point.",
+      "created_at": "2026-08-08T14:56:00Z",
+      "id": "00E9EE3A-2981-55B5-9CCA-AC4A56C503BB",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A checklist of nine deliberately unfrightening shots for a Kuleshov cut",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "projects",
+    "kuleshov"
+  ],
+  "threads": [],
+  "title": "nine shots",
+  "updated_at": "2026-08-08T14:56:00Z"
+}

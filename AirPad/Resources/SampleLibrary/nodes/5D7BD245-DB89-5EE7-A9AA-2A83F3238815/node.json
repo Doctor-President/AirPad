@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-08-29T16:47:00Z",
+  "entry_schema_version": 4,
+  "id": "5D7BD245-DB89-5EE7-A9AA-2A83F3238815",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Reading about how things get kept.\n\nIt started as the canon question and it hasn't stayed there — it's the\nAlexandria thing, and the nitrate thing, and the Ethiopian thing, and it\nis obviously also the acquisitions budget, which I did not notice for\nabout six months.\n\nThe pattern: nothing survives because it was best. It survives because\nsomebody could afford to keep copying it, and thought it was worth the\ntrouble, and wasn't interrupted.",
+      "created_at": "2026-08-29T16:47:00Z",
+      "id": "C041C6FB-FC59-5196-94E4-7DA077327CEC",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Naming the through-line: nothing survives because it was best",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "archives": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "what I've actually been doing for ten months",
+  "updated_at": "2026-08-29T16:47:00Z"
+}

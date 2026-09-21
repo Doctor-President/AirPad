@@ -680,6 +680,10 @@ final class CorpusPhysicsScene: SKScene {
         // ★ item 2: orbs OVERLAP because the physics bodies are STATIC (isDynamic=false → no collision
         // resolution at all); separation is ONLY this PBD, and its gap was fixed. Dialing it wider
         // pushes amplified orbs apart (the real lever — a body-radius sync would do nothing here).
+        // Separation gap: a flat constant added to radA+radB. Brief J re-based it on the orbs
+        // (`max(radA,radB) × k`); T dialled k to 0 on device — LESS push read better, because the PBD
+        // shoves orbs off the resting positions the territory layout computed. So the ×radius term was
+        // removed and the floor baked as `breathingGap` (6.0, Brief L). minDist = radA + radB + gap.
         let gap = AnnulusTuning.breathingGap
         for _ in 0..<max(0, AnnulusTuning.relaxPasses) {
             for i in 0..<ids.count {
@@ -2148,11 +2152,21 @@ final class CorpusPhysicsScene: SKScene {
         guard let sprite = nodeSprites[nodeID] else { return }
         let targetPosition = storedPosition(for: nodeID)
 
-        // Check if position has changed (within tolerance)
-        let dx = sprite.position.x - targetPosition.x
-        let dy = sprite.position.y - targetPosition.y
-        let distance = sqrt(dx * dx + dy * dy)
-        let positionChanged = distance > 5  // 5pt tolerance
+        // ★ Animate a move ONLY when the LAYOUT actually moved this node — its RESTING TARGET changed
+        // since the last sync — NOT when the sprite merely sits away from rest. The viewport annulus
+        // deliberately holds band orbs off their resting home (`applyBandRelaxation`), so measuring
+        // the LIVE sprite position against the target reported "out of place" for every band orb on
+        // every `syncNodes`, easing it back to rest over 1.5s while the band loop pulled it out again
+        // — the "pucker" T saw on Analyze (and, before it became colour-only, on an appearance flip).
+        // A held sprite is exactly where the annulus wants it; it is not out of place. `syncNodes`
+        // sets `positionMap` (the new target) BEFORE this loop and calls `captureRestingState` (which
+        // overwrites `nodeRestingPositions`) AFTER it, so here `nodeRestingPositions[nodeID]` still
+        // holds the PREVIOUS target — compare the two. Unchanged ⇒ the band loop already governs this
+        // sprite; leave it alone. This protects every `syncScene` caller, not just Analyze.
+        let previousResting = nodeRestingPositions[nodeID]
+        let rdx = (previousResting?.x ?? targetPosition.x) - targetPosition.x
+        let rdy = (previousResting?.y ?? targetPosition.y) - targetPosition.y
+        let restingMoved = previousResting == nil || sqrt(rdx * rdx + rdy * rdy) > 5  // 5pt tolerance
 
         // Check if radius has changed
         var radiusChanged = false
@@ -2166,10 +2180,10 @@ final class CorpusPhysicsScene: SKScene {
             }
         }
 
-        guard positionChanged || radiusChanged else { return }
+        guard restingMoved || radiusChanged else { return }
 
-        // Animate position if changed
-        if positionChanged {
+        // Animate position if the resting target moved.
+        if restingMoved {
             let move = SKAction.move(to: targetPosition, duration: 1.5)
             move.timingMode = .easeOut
             sprite.run(move, withKey: "algorithmicLayout")
@@ -3232,8 +3246,9 @@ final class CorpusPhysicsScene: SKScene {
         static let onset: CGFloat = 3.00
         static let rampWidth: CGFloat = 1.50
         static let radius: CGFloat = 300
-        static let breathingGap: CGFloat = 8.923   // T device-final 2026-09-14 (`separation: orbGap`),
-                                                  // see Ops/reference/tuner-state-accepted.md (was 30)
+        static let breathingGap: CGFloat = 6.0     // T device-final 2026-09-17 (dialled floor; k=0 — the
+                                                  // ×radius term was dialled to nothing and removed),
+                                                  // see Ops/reference/tuner-state-accepted.md (was 8.923, was 30)
         static let relaxPasses: Int = 8
         static let relaxLerp: CGFloat = 0.22       // damped approach to the relaxed target
         static let hapticOn: Bool = true
@@ -3546,10 +3561,23 @@ final class CorpusPhysicsScene: SKScene {
             // SpriteKit uses y-up from center. Flip Y.
             return CGPoint(x: pos.x, y: -pos.y)
         }
-        return CGPoint(
-            x: CGFloat.random(in: -60...60),
-            y: CGFloat.random(in: -60...60)
-        )
+        // No layout yet (cold start, before territories have formed). Return a DETERMINISTIC,
+        // spread-out position — NOT the old ±60 random, which piled every node within 60pt of the
+        // origin as a single overlapping blob (the 2026-09-17 launch-blocker first-run experience).
+        // FNV-1a over the id, then a splitmix64 finalizer so the bits fully avalanche (raw FNV left
+        // sequential ids — e.g. the sample library's — clustered on an arc); high bits → angle, mid
+        // bits → sqrt-radius over a 40…300pt disc. Even, non-overlapping scatter (min pairwise
+        // spacing ~120pt for adjacent ids) that the real territory form then gently eases off.
+        // Deterministic (not per-process-random) so a node never jitters between syncScene passes.
+        var h: UInt64 = 14695981039346656037   // FNV-1a offset basis
+        for byte in nodeID.utf8 { h = (h ^ UInt64(byte)) &* 1099511628211 }
+        var z = h
+        z = (z ^ (z >> 30)) &* 0xbf58476d1ce4e5b9
+        z = (z ^ (z >> 27)) &* 0x94d049bb133111eb
+        z = z ^ (z >> 31)
+        let angle = Double((z >> 40) & 0xFFFFFF) / 16777215.0 * 2 * .pi
+        let radius = 40 + sqrt(Double((z >> 16) & 0xFFFFFF) / 16777215.0) * 260
+        return CGPoint(x: CGFloat(cos(angle) * radius), y: CGFloat(sin(angle) * radius))
     }
 
     // MARK: - Touch handling

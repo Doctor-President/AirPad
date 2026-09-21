@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2025-12-06T22:38:00Z",
+  "entry_schema_version": 4,
+  "id": "C9AD998E-6CD6-5F9A-8550-9F9A925D523C",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Mom told the story again at the phone-call level of detail — the one\nwhere she's magnanimous and everyone agrees. I don't think she's lying. I\nthink she's built a room she can live in and she keeps inviting me into\nit, and I keep saying the furniture's wrong.",
+      "created_at": "2025-12-06T22:38:00Z",
+      "id": "F180D184-5C6A-57EF-8CF7-9A0BA26F27FB",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2025-12-06T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Mom retells a flattering, sanitized account of the family",
+  "tag_sources": {
+    "family": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "family"
+  ],
+  "threads": [],
+  "title": "mom's version",
+  "updated_at": "2025-12-06T22:38:00Z"
+}

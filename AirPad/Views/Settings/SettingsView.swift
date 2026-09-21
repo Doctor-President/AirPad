@@ -21,6 +21,8 @@ struct SettingsView: View {
 
     // SB126 Stage 2 — bound to the same key FeatureFlags.useCorpusAwareTagging reads.
     @AppStorage("ff.useCorpusAwareTagging") private var useCorpusAwareTagging = false
+    // ★ Brief J §2 — one-shot "Copy all tuner state" result (keys copied), TEMP.
+    @State private var tunerExportStatus = ""
 
     // Librarian c7 — standing system-prompt prefix injected on every Librarian
     // query. Same key LibrarianState reads, so edits here take effect on the
@@ -43,6 +45,7 @@ struct SettingsView: View {
     @State private var showImportIdeas = false
     @State private var showReviewQueue = false
     @State private var showClearConfirmation = false
+    @State private var showRemoveSampleConfirmation = false
 
     // Local on-device model (ws-local-model Stage 1). Settings surface + plumbing only —
     // this does NOT change any generation path yet (AIService / ModelRouter untouched).
@@ -630,6 +633,20 @@ struct SettingsView: View {
             .tint(.orange)
             .padding(.horizontal, 16)
 
+            // ★ Brief L §1 — orb-separation dials retired: T ruled floor = 6. The value is baked into
+            // `AnnulusTuning.breathingGap` and the ×radius term is deleted; the sliders/toggle are gone
+            // and their persisted keys are purged in AirPadApp.
+
+            // ★ Brief K §2 — one-shot export of EVERY app-domain UserDefaults key (not a prefix
+            // allow-list — that can't find a key we didn't anticipate). Values only. T pastes it back.
+            Button {
+                tunerExportStatus = SettingsView.copyAllTunerState()
+            } label: {
+                Text(tunerExportStatus.isEmpty ? "Copy all tuner state → clipboard" : tunerExportStatus)
+                    .font(.caption2).foregroundStyle(.orange.opacity(0.6))
+            }
+            .padding(.horizontal, 16)
+
             // SB139 Stage 1 — hidden long-press opens the substrate dev
             // inspect view. Label is faint on purpose; this surface is for
             // Thomas debugging the substrate, not for end users.
@@ -655,6 +672,24 @@ struct SettingsView: View {
             }
         }
         #endif
+    }
+
+    /// ★ Brief K §2 — export EVERY app-domain UserDefaults key (excluding Apple's NS*/Apple*/com.apple.*
+    /// system keys) to the pasteboard. A prefix allow-list can't surface a key we didn't anticipate —
+    /// which is exactly the `count=1` result we're chasing — so dump the whole domain. Values only, no
+    /// node content (UserDefaults holds config/dials, not corpus prose). TEMP — removable in one commit.
+    static func copyAllTunerState() -> String {
+        let all = UserDefaults.standard.dictionaryRepresentation()
+        let keys = all.keys
+            .filter { k in !(k.hasPrefix("NS") || k.hasPrefix("Apple") || k.hasPrefix("com.apple.")) }
+            .sorted()
+        var lines = ["===== AirPad TUNER — DIALED STATE (all app UserDefaults keys) =====",
+                     "(keys NOT listed are still at their code seed default)"]
+        for k in keys { lines.append("\(k) = \(String(describing: all[k] ?? ""))") }
+        lines.append("count=\(keys.count)")
+        lines.append("===== END =====")
+        UIPasteboard.general.string = lines.joined(separator: "\n")
+        return "Copied \(keys.count) keys to clipboard"
     }
     #endif
 
@@ -730,10 +765,47 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             sectionHeader("Corpus")
 
+            // Brief Z R3 — counts are the user's ROOM; the sample gets its own line.
             HStack(spacing: 16) {
-                statBox(value: "\(store.nodes.count)", label: "Nodes")
+                statBox(value: "\(store.corpusRoomNodes.count)", label: "Nodes")
                 statBox(value: "\(store.tags.count)", label: "Tags")
-                statBox(value: "\(store.nodes.filter { $0.isMeta }.count)", label: "Threads")
+                statBox(value: "\(store.corpusRoomNodes.filter { $0.isMeta }.count)", label: "Threads")
+            }
+            if store.sampleLibraryPresent {
+                Text("Sample library: \(store.sampleNodeIDs.count) nodes")
+                    .font(.footnote)
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            }
+
+            // Brief Y Part E — search-index coverage dial. Reads the block-reconciler
+            // tally (nodes with a current index / nodes with text; no-text nodes
+            // excluded) + the embedder version, shows "rebuilding…" while the
+            // reconciler runs, and offers a foreground "Rebuild now" (same pacing).
+            if #available(iOS 17.0, *) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                    if store.blockIndexRebuilding {
+                        Text("Search index · rebuilding…")
+                    } else if let cov = store.blockIndexCoverage {
+                        Text("Search index · \(cov.current)/\(cov.total) nodes current · v\(BlockEmbeddingService.currentEmbedderVersion)")
+                    } else {
+                        Text("Search index · checking…")
+                    }
+                    Spacer()
+                    Button("Rebuild now") {
+                        Task { await store.rebuildBlockIndexNow() }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .disabled(store.blockIndexRebuilding)
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.6))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(AppearancePalette.ink.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .task { await store.refreshBlockIndexCoverage() }
             }
 
             Button {
@@ -777,6 +849,44 @@ struct SettingsView: View {
                 }
             } message: {
                 Text("This will permanently delete all nodes and cannot be undone.")
+            }
+
+            // Brief U Step 3 — add OR remove the bundled sample library on demand.
+            // "Remove" (marker present) deletes exactly what was seeded, keyed to the
+            // manifest, leaving the user's own notes untouched. "Add" (marker absent)
+            // seeds it over the user's existing corpus — so T can have the sample
+            // beside his real corpus without a fresh install. Always shown; the
+            // launch auto-seed gate (empty corpus + no marker) is unchanged.
+            Button {
+                if store.sampleLibraryPresent {
+                    showRemoveSampleConfirmation = true
+                } else {
+                    Task { await store.addSampleLibrary() }
+                }
+            } label: {
+                HStack {
+                    Image(systemName: store.sampleLibraryPresent
+                          ? "sparkles.rectangle.stack" : "sparkles.rectangle.stack.fill")
+                    Text(store.sampleLibraryPresent ? "Remove sample library" : "Add sample library")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.5))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(AppearancePalette.ink.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .confirmationDialog(
+                "Remove sample library?",
+                isPresented: $showRemoveSampleConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Remove", role: .destructive) {
+                    Task { await store.removeSampleLibrary() }
+                }
+            } message: {
+                Text("Removes the bundled sample notes and their collection. Your own notes are not affected.")
             }
         }
     }

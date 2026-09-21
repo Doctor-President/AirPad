@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-02-05T13:19:00Z",
+  "entry_schema_version": 4,
+  "id": "6A276C33-FF7A-599D-802C-8068DB389BE2",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The pleasure is not power. It is watching a hundred tiny things do\nexactly what they were asked to do, correctly, without supervision.\n\nI think this is the same pleasure as a well-run reference desk and I am\nonly half joking.",
+      "created_at": "2026-02-05T13:19:00Z",
+      "id": "68DE745D-612A-5EE3-A93D-8EB5141DC524",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Many tiny things doing their jobs well, unsupervised",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games",
+    "library"
+  ],
+  "threads": [],
+  "title": "Pikmin, and small competent creatures",
+  "updated_at": "2026-02-05T13:19:00Z"
+}

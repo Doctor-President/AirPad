@@ -1,0 +1,93 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2025-11-30T08:42:00Z",
+  "entry_schema_version": 4,
+  "id": "BC42683E-949C-578A-ACB0-1D808C7DFC28",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2025-11-30T08:42:00Z",
+      "id": "372AA875-DA83-5FA3-8FC6-3D60DCB082B3",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "created_at": "2025-11-30T08:42:00Z",
+      "field": {
+        "definition_id": "fd_roaster",
+        "value": {
+          "text": {
+            "_0": "Metric"
+          }
+        }
+      },
+      "id": "96698F6C-D15F-5665-8EB2-FD547932228F",
+      "type": "field"
+    },
+    {
+      "created_at": "2025-11-30T08:42:00Z",
+      "field": {
+        "definition_id": "fd_origin",
+        "value": {
+          "text": {
+            "_0": "Guji, Ethiopia"
+          }
+        }
+      },
+      "id": "BBFFB250-A42A-5434-A105-58A21E8BD07A",
+      "type": "field"
+    },
+    {
+      "created_at": "2025-11-30T08:42:00Z",
+      "field": {
+        "definition_id": "fd_process",
+        "value": {
+          "text": {
+            "_0": "Natural"
+          }
+        }
+      },
+      "id": "FECEF908-C119-5C38-BAA3-B13A6F996109",
+      "type": "field"
+    },
+    {
+      "created_at": "2025-11-30T08:42:00Z",
+      "field": {
+        "definition_id": "fd_roast_date",
+        "value": {
+          "date": {
+            "_0": "2025-11-24T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "8AA88C32-61AA-57F5-BBA7-DC7080CF8716",
+      "type": "field"
+    },
+    {
+      "content": "Blueberry thing everyone promises and almost nothing delivers. Actually\ndelivers. Gone in nine days.",
+      "created_at": "2025-11-30T08:42:00Z",
+      "id": "36BF3C78-29CC-5E98-9920-D15E3DCA48E4",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Natural Guji from Metric that finally lands the blueberry note",
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee"
+  ],
+  "threads": [],
+  "title": "Metric — Ethiopia Guji",
+  "updated_at": "2025-11-30T08:42:00Z"
+}

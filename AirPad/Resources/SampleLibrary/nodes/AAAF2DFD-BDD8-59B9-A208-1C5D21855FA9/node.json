@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-05-06T22:47:00Z",
+  "entry_schema_version": 4,
+  "id": "AAAF2DFD-BDD8-59B9-A208-1C5D21855FA9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "there's a specific tiredness that only happens after being useful. I\ndon't get it from the desk. I got it Saturday moving boxes for four\nhours.",
+      "created_at": "2026-05-06T22:47:00Z",
+      "id": "851D9DFE-A03F-5A14-83EF-6F2C60A5731D",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "physical usefulness yields a tiredness desk work never gives",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "the good kind of tired",
+  "updated_at": "2026-05-06T22:47:00Z"
+}

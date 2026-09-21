@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-03-15T22:41:00Z",
+  "entry_schema_version": 4,
+  "id": "614994D0-D487-5BA9-8E39-7AA3A0E6EB3E",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Read about it. Apparently it's common on trains specifically — something\nabout not being able to leave. Knowing the mechanism helps about 15%.",
+      "created_at": "2026-03-15T22:41:00Z",
+      "id": "E1E6355A-CF9B-5390-A6F7-DCE1209E6576",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-03-15T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Train panic is common; knowing that helps only slightly",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "after",
+  "updated_at": "2026-03-15T22:41:00Z"
+}

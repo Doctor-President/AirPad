@@ -1,0 +1,57 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-01-12T18:42:00Z",
+  "entry_schema_version": 4,
+  "id": "2528BB6B-82ED-50CE-B2E1-367CF0E8A5F5",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The one I can make without thinking, which is the only kind of cooking I\nreliably do. Onion, carrot, a bay leaf, the bag of red lentils that's\nalways in the cabinet. Twenty minutes and it forgives everything.",
+      "created_at": "2026-01-12T18:42:00Z",
+      "id": "E6AE7B99-6829-5912-B0EA-20BCC576FAC9",
+      "type": "text"
+    },
+    {
+      "content": "**Feb 2** — cut the water by half a cup and put the lemon in at the end\ninstead of the middle. That was the whole problem for a year.",
+      "created_at": "2026-02-02T19:15:00Z",
+      "id": "EFD0142D-6E70-577B-AA10-AA9E8E92508B",
+      "type": "text"
+    },
+    {
+      "content": "**Mar 9** — did it with the good olive oil. Better, but not better enough\nto keep buying the good olive oil for a Tuesday.",
+      "created_at": "2026-03-09T20:05:00Z",
+      "id": "5740CD12-29EA-560A-9656-7A663C20812A",
+      "type": "text"
+    },
+    {
+      "created_at": "2026-01-12T18:42:00Z",
+      "id": "53F05A11-DF7F-565E-8343-F2762383D2A6",
+      "link_items": [
+        {
+          "captured_at": "2026-01-12T18:42:00Z",
+          "id": "4BACEDF5-8768-5ABC-8CE5-909752BE5180",
+          "site_name": "Wikibooks",
+          "title": "Cookbook: Red Lentil Soup",
+          "url": "https://en.wikibooks.org/wiki/Cookbook:Red_Lentil_Soup"
+        }
+      ],
+      "type": "link"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Twenty-minute forgiving default, refined over two accretion passes",
+  "tag_sources": {
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking"
+  ],
+  "threads": [],
+  "title": "red lentil soup, the base",
+  "updated_at": "2026-03-09T20:05:00Z"
+}

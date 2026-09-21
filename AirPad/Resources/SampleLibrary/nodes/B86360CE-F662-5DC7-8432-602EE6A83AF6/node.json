@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2026-04-22T02:19:00Z",
+  "entry_schema_version": 4,
+  "id": "B86360CE-F662-5DC7-8432-602EE6A83AF6",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "ankle, knee. slow. I'm annoyed about paperwork",
+      "created_at": "2026-04-22T02:19:00Z",
+      "id": "43F488EC-F396-5745-862E-C6523725C983",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-04-22T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Water climbing a familiar room while paperwork frets on",
+  "tag_sources": {
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep"
+  ],
+  "threads": [],
+  "title": "water rising in a room I know",
+  "updated_at": "2026-04-22T02:19:00Z"
+}

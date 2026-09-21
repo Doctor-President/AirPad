@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-03-23T10:44:00Z",
+  "entry_schema_version": 4,
+  "id": "99BF2287-C03F-532B-8C8F-F232A7FF9B20",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Every one of them disagrees with you about something they actually care\nabout, and will leave over it. That is the whole trick — the writing\nisn't better than other games, the *stakes of the relationship* are, and\nthat makes the writing land harder than it should.",
+      "created_at": "2026-03-23T10:44:00Z",
+      "id": "EA2891B1-9995-5680-9091-70D81C2414A4",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Companions who will leave make the relationship stakes real",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "companions that feel authored",
+  "updated_at": "2026-03-23T10:44:00Z"
+}

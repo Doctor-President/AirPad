@@ -1,0 +1,40 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-09-02T16:40:00Z",
+  "entry_schema_version": 4,
+  "id": "0539DE1C-FB29-52A0-AA23-8CD284310BD0",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-09-02T16:40:00Z",
+      "id": "160CEC93-2585-595D-ACB0-2A7B83DECA3E",
+      "rating": {
+        "scale": 5,
+        "value": 4
+      },
+      "type": "rating"
+    },
+    {
+      "content": "Most prints just rot — the studios didn't keep them because nobody thought\nthey'd matter, and now half of early cinema is gone. Filed that feeling\naway; it's the same one I have about half my job.",
+      "created_at": "2026-09-02T16:40:00Z",
+      "id": "97B5489F-DF60-5863-A689-591D13A5E4D6",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "How most prints rot away, echoing an access-and-neglect worry",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film"
+  ],
+  "threads": [],
+  "title": "doc on film preservation",
+  "updated_at": "2026-09-02T16:40:00Z"
+}

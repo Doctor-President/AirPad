@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-06-22T14:15:00Z",
+  "entry_schema_version": 4,
+  "id": "5588CAA3-71A5-5D15-AAAF-BD372F02662E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The hot Chicago kind, not the pickle-jar kind. Didn't make it — bought it\nfrom the place on Harlem and want to remember which place. This is a note\nto myself disguised as a recipe.",
+      "created_at": "2026-06-22T14:15:00Z",
+      "id": "4119F51F-FFDC-53FB-A74C-7D68CE219CC9",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The hot Chicago kind, bought on Harlem; a note to remember where",
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    },
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking",
+    "chicago"
+  ],
+  "threads": [],
+  "title": "giardiniera",
+  "updated_at": "2026-06-22T14:15:00Z"
+}

@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-01-03T22:52:00Z",
+  "entry_schema_version": 4,
+  "id": "2339B4EB-C5CC-5F87-B052-F56E68378D61",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "— finish something\n— French past the point where it's a hobby\n— stop treating my own apartment like a waiting room\n— see one movie a week in an actual theater",
+      "created_at": "2026-01-03T22:52:00Z",
+      "id": "9620A37F-92E7-5BD7-8728-B05C9621EFC3",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-01-03T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A list of New Year intentions for work, French, and film",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "things I want to be true this year",
+  "updated_at": "2026-01-03T22:52:00Z"
+}

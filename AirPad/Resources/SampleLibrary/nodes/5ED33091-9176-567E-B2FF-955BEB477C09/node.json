@@ -1,0 +1,37 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-08-05T22:33:00Z",
+  "entry_schema_version": 4,
+  "id": "5ED33091-9176-567E-B2FF-955BEB477C09",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Ten million to five. They halved what we spend on *books*. And CPD's line\nwent up.\n\nLinda said \"well, everybody's tightening.\" Everybody is not tightening,\nLinda.",
+      "created_at": "2026-08-05T22:33:00Z",
+      "id": "22B927CE-8F78-550F-A7EE-CCD7C4CEFCFB",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-08-05T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "The library book budget is halved while surveillance spending rises",
+  "tag_sources": {
+    "budget": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "budget"
+  ],
+  "threads": [],
+  "title": "Half",
+  "updated_at": "2026-08-05T22:33:00Z"
+}

@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "definitions": [
+    {
+      "id": "fd_roaster",
+      "display_name": "Roaster",
+      "kind": "text",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_origin",
+      "display_name": "Origin",
+      "kind": "text",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_process",
+      "display_name": "Process",
+      "kind": "text",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_roast_date",
+      "display_name": "Roast date",
+      "kind": "date",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_how_met",
+      "display_name": "How we met",
+      "kind": "text",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_last_spoke",
+      "display_name": "Last spoke",
+      "kind": "date",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_into",
+      "display_name": "Into",
+      "kind": "text",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    },
+    {
+      "id": "fd_note",
+      "display_name": "Note to self",
+      "kind": "text",
+      "config": {
+        "range_enabled": false,
+        "date_has_time": false
+      }
+    }
+  ]
+}

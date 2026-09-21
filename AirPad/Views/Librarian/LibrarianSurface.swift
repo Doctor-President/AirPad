@@ -162,7 +162,7 @@ struct LibrarianSurface: View {
     private var panelSuppressed: Bool {
         if router.isCapturing { return true }
         switch router.entryMode {
-        case .canvas, .collectionCanvas:
+        case .canvas, .collectionCanvas, .sampleCanvas:
             return false
         case .quikCapture:
             return true
@@ -813,10 +813,14 @@ struct LibrarianSurface: View {
             // gap (tunable) and let the transcript extend up into it.
             Color.clear.frame(height: isViewingActiveChat ? cctTopGap : 62)
 
-            // Scope-chip row removed (FIX 2). Scope still defaults from
-            // the host context via `seedScopeFromHostIfNeeded`; only the
-            // UI row is gone. `scopeChipRow` is left defined for a
-            // separate dead-code cleanup pass.
+            // Brief W2 — scope-chip row RESTORED (T, 2026-09-20): the current Ask
+            // scope must be READABLE on screen — "Corpus", a collection, or "Sample
+            // library" when opened from the sample canvas. Hidden while viewing an
+            // active chat (the Ask field, whose scope this is, is suppressed then).
+            if !isViewingActiveChat {
+                scopeChipRow(librarian: librarian)
+                    .padding(.bottom, 8)
+            }
 
             // Perf gate. Below the p=0.4 crossing the chrome is fully
             // invisible (PeekFadeLayer opacity = 0 until p=0.5) and the
@@ -1972,17 +1976,32 @@ struct LibrarianSurface: View {
                         librarian: librarian
                     )
                 }
+                // Brief W2 — the seeded sample is a SEPARATE room, shown as one
+                // "Sample library" scope (its node set), so the chip is readable and
+                // highlighted when the Librarian was opened from the sample canvas.
+                if store.sampleLibraryPresent {
+                    scopeChip(
+                        scope: .nodeIDs(store.sampleNodeIDs),
+                        label: "Sample library",
+                        librarian: librarian
+                    )
+                }
             }
             .padding(.horizontal, 16)
         }
     }
 
+    /// Brief U/W — the user's OWN collections for the scope row (the sample's
+    /// collections are represented by the single "Sample library" chip, not listed
+    /// individually), most-recently-used first.
     private var userCollectionsByLastUsed: [NodeCollection] {
-        store.collections.sorted { a, b in
-            let aDate = store.collectionLastUsedAt[a.id] ?? .distantPast
-            let bDate = store.collectionLastUsedAt[b.id] ?? .distantPast
-            return aDate > bDate
-        }
+        store.collections
+            .filter { !store.sampleCollectionIDs.contains($0.id) }
+            .sorted { a, b in
+                let aDate = store.collectionLastUsedAt[a.id] ?? .distantPast
+                let bDate = store.collectionLastUsedAt[b.id] ?? .distantPast
+                return aDate > bDate
+            }
     }
 
     @ViewBuilder

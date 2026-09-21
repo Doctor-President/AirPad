@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-04-27T19:03:00Z",
+  "entry_schema_version": 4,
+  "id": "6868C5C8-DF8E-5F4A-BA7A-6F706997C0B0",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "I want the weight of consequence and I want to see everything. These are\nnot compatible and I keep pretending the tension is the game's fault.",
+      "created_at": "2026-04-27T19:03:00Z",
+      "id": "12B425DE-E73F-59AA-9CA7-EFE145AF60E5",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Wanting consequence and seeing everything are incompatible desires",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "the save scummer's dilemma",
+  "updated_at": "2026-04-27T19:03:00Z"
+}

@@ -1,0 +1,39 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-01-31T13:56:00Z",
+  "entry_schema_version": 4,
+  "id": "F8FA9719-1E2D-53DD-A199-E8748D5BB925",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The films that survive are the films someone decided to restore. That\ndecision is made by a small number of people with particular taste, and\nthen forty years later we call the result \"the canon\" as though it\nprecipitated out of the air.\n\nSame mechanism as the acquisitions budget. Same mechanism as everything.",
+      "created_at": "2026-01-31T13:56:00Z",
+      "id": "CAC178DB-47F8-534F-A05A-428314A1E1BB",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Canon is curated taste, same gatekeeping as an acquisitions budget",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "archives": {
+      "source": "user"
+    },
+    "film": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "archives",
+    "access"
+  ],
+  "threads": [],
+  "title": "A note on the Criterion problem",
+  "updated_at": "2026-01-31T13:56:00Z"
+}

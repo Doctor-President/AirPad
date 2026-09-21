@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "media"
+  ],
+  "connections": [],
+  "created_at": "2026-03-18T13:50:00Z",
+  "entry_schema_version": 4,
+  "id": "CCC4E4B4-8DE1-54F1-83A2-C7F76A13E71B",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "A running list, mostly folk-horror and the anthropology it steals from.\nNo hurry, no order.\n\n- [ ] *The Golden Bough* (the abridged one, I'm not a masochist)\n- [ ] *Ring* — the novel, not the films\n- [ ] whatever Shirley Jackson I haven't\n- [ ] the one about the Wicker Man that Sid keeps mentioning",
+      "created_at": "2026-03-18T13:50:00Z",
+      "id": "E27E4502-5B55-5274-907B-6E2E6808C47D",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Running to-read list of folk-horror and the anthropology behind it",
+  "tag_sources": {
+    "aster": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "horror",
+    "aster"
+  ],
+  "threads": [],
+  "title": "to read after the Aster thing",
+  "updated_at": "2026-03-18T13:50:00Z"
+}

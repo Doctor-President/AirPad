@@ -1,0 +1,37 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-05-24T23:15:00Z",
+  "entry_schema_version": 4,
+  "id": "76A2573B-09EA-5AA9-A4AB-2F20D88E4724",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "I have been looking at the same three listings for a week, which is not\nresearch, it's rehearsal.\n\nThe suspicious part: I notice I want the camera more on the days the desk\nis bad. That could mean it's an escape hatch and I should be careful. Or\nit could mean it's the thing I'd rather be doing and I've been calling\nthat a red flag because wanting something plainly embarrasses me.\n\nNine hundred dollars. I have talked myself out of smaller things for\nworse reasons.",
+      "created_at": "2026-05-24T23:15:00Z",
+      "id": "F27622E8-1E52-5D55-BB5C-40F6470B8F6E",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-05-24T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "Whether wanting a camera is escape or genuine desire",
+  "tag_sources": {
+    "money": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "projects",
+    "money"
+  ],
+  "threads": [],
+  "title": "wanting it",
+  "updated_at": "2026-05-24T23:15:00Z"
+}

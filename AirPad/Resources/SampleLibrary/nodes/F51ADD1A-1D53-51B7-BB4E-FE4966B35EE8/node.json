@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-09-11T16:09:00Z",
+  "entry_schema_version": 4,
+  "id": "F51ADD1A-1D53-51B7-BB4E-FE4966B35EE8",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Can read a menu, a headline, about half of a Wikipedia article. Cannot\nhold a conversation at speed.\n\nWhich is roughly what ten months should buy and I keep expecting it to be\nmore.",
+      "created_at": "2026-09-11T16:09:00Z",
+      "id": "068684BF-8ADC-5B5C-BC05-385C2842D238",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Ten months buys reading a menu and half a Wikipedia article, not speech.",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "ten months in",
+  "updated_at": "2026-09-11T16:09:00Z"
+}

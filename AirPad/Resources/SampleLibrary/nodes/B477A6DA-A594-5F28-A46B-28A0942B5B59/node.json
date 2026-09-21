@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2026-07-10T14:53:00Z",
+  "entry_schema_version": 4,
+  "id": "B477A6DA-A594-5F28-A46B-28A0942B5B59",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "He's been coming for eleven years. Reads the papers back to front, all\nof them, then leaves at 4:30. Knows every staff name.\n\nNobody could tell you a single thing about his life outside and that's\ncorrect — he doesn't owe us that to sit down.",
+      "created_at": "2026-07-10T14:53:00Z",
+      "id": "7E43B83A-43D4-58EB-B2D3-0669C8C2CC66",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Eleven years of reading the papers, owing no one an explanation",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "the regular in 2",
+  "updated_at": "2026-07-10T14:53:00Z"
+}

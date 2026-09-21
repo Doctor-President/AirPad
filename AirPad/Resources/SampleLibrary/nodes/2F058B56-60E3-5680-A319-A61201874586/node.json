@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-04-28T23:02:00Z",
+  "entry_schema_version": 4,
+  "id": "2F058B56-60E3-5680-A319-A61201874586",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Sid texted a photo of her hand, bleeding, captioned \"worth it.\" I looked\nat it too long.\n\nI don't know what I am. I know that when she talks I don't do the thing\nwhere I shrink a little. That's new. I don't know if that's attraction or\njust relief, and I'm not sure the difference matters as much as I was\nraised to think it does.",
+      "created_at": "2026-04-28T23:02:00Z",
+      "id": "5C2A72BA-0E44-5202-84FA-B12873863524",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-04-28T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "New feelings for Sid and what they might mean",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "Considering whether I could",
+  "updated_at": "2026-04-28T23:02:00Z"
+}

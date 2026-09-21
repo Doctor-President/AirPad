@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "dream-log"
+  ],
+  "connections": [],
+  "created_at": "2025-11-22T05:12:00Z",
+  "entry_schema_version": 4,
+  "id": "1C50F092-1E92-5E74-9268-AAB1F624D8EB",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "elevator goes 3 then 5. I know there's a fourth. everyone very polite about it. keep pressing",
+      "created_at": "2025-11-22T05:12:00Z",
+      "id": "AD1BFB58-28BB-5543-BE00-CB9EBF42532F",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2025-11-22T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A hotel elevator skipping a fourth floor that surely exists",
+  "tag_sources": {
+    "sleep": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "sleep"
+  ],
+  "threads": [],
+  "title": "hotel with no fourth floor",
+  "updated_at": "2025-11-22T05:12:00Z"
+}

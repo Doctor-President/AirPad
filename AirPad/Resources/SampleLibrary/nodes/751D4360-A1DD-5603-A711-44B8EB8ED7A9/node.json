@@ -1,0 +1,23 @@
+{
+  "collection_ids": [],
+  "connections": [],
+  "created_at": "2026-04-03T12:41:00Z",
+  "entry_schema_version": 4,
+  "id": "751D4360-A1DD-5603-A711-44B8EB8ED7A9",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "a door that says PUSH and opens toward you is a small daily humiliation\ndelivered by a stranger who is now dead",
+      "created_at": "2026-04-03T12:41:00Z",
+      "id": "32274352-BEE8-5E80-B15F-A8369DF47A02",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "a mislabelled PUSH door is a dead designer's small insult",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "PUSH",
+  "updated_at": "2026-04-03T12:41:00Z"
+}

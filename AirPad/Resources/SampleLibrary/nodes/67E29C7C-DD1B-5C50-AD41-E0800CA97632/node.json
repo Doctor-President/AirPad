@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-06-24T15:48:00Z",
+  "entry_schema_version": 4,
+  "id": "67E29C7C-DD1B-5C50-AD41-E0800CA97632",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "They were critics first — they wrote about films for years before they\nmade any, which is why the films argue. Then the argument won, the\ntechniques became the vocabulary, and a jump cut stopped meaning anything\nbecause everything had one.\n\nA style only says something while it is still a choice.",
+      "created_at": "2026-06-24T15:48:00Z",
+      "id": "11AFF6A6-82C3-5F0F-9F0C-D1C8B104C0FA",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Critics-turned-directors won until the jump cut lost all meaning",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "newwave": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "newwave"
+  ],
+  "threads": [],
+  "title": "Why the New Wave mattered and then didn't",
+  "updated_at": "2026-06-24T15:48:00Z"
+}

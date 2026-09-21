@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-05-12T11:29:00Z",
+  "entry_schema_version": 4,
+  "id": "7114B2FD-AFD2-5874-A068-41FCB0EC09D5",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "16mm has roughly four times the negative area, so it resolves properly\nand you can actually project it. 8mm is cheaper per minute and has the\ngrain structure everyone actually wants when they say they want film.\n\nStock is the real constraint either way — fewer emulsions every year, and\nthe processing labs are down to a handful.",
+      "created_at": "2026-05-12T11:29:00Z",
+      "id": "80F1A682-5639-5AB4-96C1-77D38485ED93",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Negative area, cost and grain compared; stock is the real constraint",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "projects": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "projects"
+  ],
+  "threads": [],
+  "title": "8mm vs 16mm, practically",
+  "updated_at": "2026-05-12T11:29:00Z"
+}

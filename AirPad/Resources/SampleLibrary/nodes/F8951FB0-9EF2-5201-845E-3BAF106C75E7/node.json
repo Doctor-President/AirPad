@@ -1,0 +1,31 @@
+{
+  "collection_ids": [
+    "games"
+  ],
+  "connections": [],
+  "created_at": "2026-04-15T14:31:00Z",
+  "entry_schema_version": 4,
+  "id": "F8951FB0-9EF2-5201-845E-3BAF106C75E7",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The people who unlock every ending are not thorough. They are refusing to\nhave chosen.\n\nA decision you can undo is not a decision, it is a preview. And if you\nsee all four endings then the game has no ending — it has a catalogue,\nand you were a tourist in something that was asking you to commit.\n\nI say this as someone with eleven saves.",
+      "created_at": "2026-04-15T14:31:00Z",
+      "id": "8BCF155E-F142-5680-9AA7-B4762D531711",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Unlocking every ending is refusing to commit to one",
+  "tag_sources": {
+    "games": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "games"
+  ],
+  "threads": [],
+  "title": "On completionism as a way of avoiding the decision",
+  "updated_at": "2026-04-15T14:31:00Z"
+}

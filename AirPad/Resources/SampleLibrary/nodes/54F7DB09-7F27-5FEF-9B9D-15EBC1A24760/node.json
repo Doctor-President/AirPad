@@ -1,0 +1,41 @@
+{
+  "collection_ids": [
+    "recipes"
+  ],
+  "connections": [],
+  "created_at": "2026-05-15T18:05:00Z",
+  "entry_schema_version": 4,
+  "id": "54F7DB09-7F27-5FEF-9B9D-15EBC1A24760",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Put cold brew concentrate in a pot of chili on a dare from myself. It works —\nnot coffee-flavoured, just deeper, like the pot has been going longer than\nit has.",
+      "created_at": "2026-05-15T18:05:00Z",
+      "id": "2DF8C25C-BE09-5159-8993-0C7D3107AB36",
+      "type": "text"
+    },
+    {
+      "content": "**Jun 8** — did it again with a spoon of cocoa too. Better. Writing this\ndown before I forget the ratio again like last time.",
+      "created_at": "2026-06-08T19:20:00Z",
+      "id": "288BCB5D-F7AC-5723-8CB6-F4CEE4ABABA3",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Cold brew concentrate deepens the pot; cocoa added second pass",
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    },
+    "cooking": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "cooking",
+    "coffee"
+  ],
+  "threads": [],
+  "title": "coffee in the chili",
+  "updated_at": "2026-06-08T19:20:00Z"
+}

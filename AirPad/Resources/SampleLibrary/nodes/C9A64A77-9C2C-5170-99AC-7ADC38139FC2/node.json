@@ -1,0 +1,27 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-03-08T22:07:00Z",
+  "entry_schema_version": 4,
+  "id": "C9A64A77-9C2C-5170-99AC-7ADC38139FC2",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Blue Line, between Damen and Division. Couldn't get a breath in. A woman\nasked if I was okay and I said yes in a voice that clearly said no and\nshe sat back down, which honestly I appreciated.\n\nEmbarrassed all day. Still am. Writing it down so it's somewhere other\nthan my chest.",
+      "created_at": "2026-03-08T22:07:00Z",
+      "id": "FDA1D446-4F69-570D-A9FF-0FB0E10C66C6",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-03-08T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "A panic attack on the Blue Line and a stranger's kindness",
+  "tag_sources": {},
+  "tags": [],
+  "threads": [],
+  "title": "the train thing",
+  "updated_at": "2026-03-08T22:07:00Z"
+}

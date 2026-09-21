@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-06-09T18:47:00Z",
+  "entry_schema_version": 4,
+  "id": "0451E332-E467-5F1E-8036-D48230773787",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Different extraction entirely — time instead of heat, so you get almost\nno acid and none of the volatile aromatics. It's not a version of the\ndrink. It's a different drink that happens to share a bean.\n\nPeople who say they don't like coffee often like cold brew, which should\nhave told me something years ago.",
+      "created_at": "2026-06-09T18:47:00Z",
+      "id": "1FD82B00-FFF7-5CBE-9685-239C75D96261",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Time-not-heat extraction yields a different, low-acid drink",
+  "tag_sources": {
+    "brewing": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "brewing"
+  ],
+  "threads": [],
+  "title": "cold brew isn't cold coffee",
+  "updated_at": "2026-06-09T18:47:00Z"
+}

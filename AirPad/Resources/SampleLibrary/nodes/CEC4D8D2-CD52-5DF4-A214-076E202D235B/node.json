@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "learning"
+  ],
+  "connections": [],
+  "created_at": "2026-06-07T16:09:00Z",
+  "entry_schema_version": 4,
+  "id": "CEC4D8D2-CD52-5DF4-A214-076E202D235B",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "The word for a gap in a manuscript where the material is damaged. Not an\nabsence — a *named* absence, marked, so you know something was there.\n\nWe should have this for more things.",
+      "created_at": "2026-06-07T16:09:00Z",
+      "id": "960DA7DE-29EC-5F4F-A237-A936C95AD4DD",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The term for a named, marked gap in a damaged manuscript",
+  "tag_sources": {
+    "archives": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "archives",
+    "language"
+  ],
+  "threads": [],
+  "title": "lacuna",
+  "updated_at": "2026-06-07T16:09:00Z"
+}

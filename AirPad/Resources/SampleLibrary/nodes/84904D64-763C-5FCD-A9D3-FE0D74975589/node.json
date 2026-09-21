@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "library"
+  ],
+  "connections": [],
+  "created_at": "2025-11-19T16:12:00Z",
+  "entry_schema_version": 4,
+  "id": "84904D64-763C-5FCD-A9D3-FE0D74975589",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Between four and six it stops being a library and becomes the only warm\npublic room within a mile that doesn't require a purchase.\n\nNobody planned this. It's just true every day.",
+      "created_at": "2025-11-19T16:12:00Z",
+      "id": "ADE5C000-90BE-566F-9010-FE8D049679C2",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Between four and six the library is the only free warm room around",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "the 4pm shift",
+  "updated_at": "2025-11-19T16:12:00Z"
+}

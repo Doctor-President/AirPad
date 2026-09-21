@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-05-18T16:34:00Z",
+  "entry_schema_version": 4,
+  "id": "CF3100BA-680A-56CE-8CAE-332FDFFFAE4F",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Arabic *qahwa* → Turkish *kahve* → Dutch *koffie* → coffee. The Arabic\nword originally meant something closer to wine, or to a thing that\nsuppresses appetite.\n\nSo the word arrived before the drink did, wearing someone else's meaning.",
+      "created_at": "2026-05-18T16:34:00Z",
+      "id": "737B6571-38E0-5F17-A38A-A81AD3AC0056",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The word travelled Arabic to English, once meaning wine",
+  "tag_sources": {
+    "coffee": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "language"
+  ],
+  "threads": [],
+  "title": "qahwa",
+  "updated_at": "2026-05-18T16:34:00Z"
+}

@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "french"
+  ],
+  "connections": [],
+  "created_at": "2026-04-08T08:20:00Z",
+  "entry_schema_version": 4,
+  "id": "7593B2D3-56F2-5BED-BEF3-56AB656ABBCC",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Packed. Terrified. Have been studying for five months and can order\ncoffee.",
+      "created_at": "2026-04-08T08:20:00Z",
+      "id": "909C1AC6-F19A-5433-A986-B1A21288AA87",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "Leaving for Québec after five months of study, able to order coffee.",
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    },
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french",
+    "chicago"
+  ],
+  "threads": [],
+  "title": "four days in Québec — before",
+  "updated_at": "2026-04-08T08:20:00Z"
+}

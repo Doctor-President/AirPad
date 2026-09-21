@@ -1,0 +1,43 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-06-11T20:39:00Z",
+  "entry_schema_version": 4,
+  "id": "7863799C-D120-5201-9621-99CC1325DE0E",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "Watched it twice in a week, the second time knowing, and the second\nviewing is a different film with the same footage. Kuleshov at feature\nlength.",
+      "created_at": "2026-06-11T20:39:00Z",
+      "id": "594427E8-D2DD-5915-961B-2E7FAF933D88",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A second knowing viewing becomes a different film — Kuleshov at length",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "horror": {
+      "source": "user"
+    },
+    "korean": {
+      "source": "user"
+    },
+    "kuleshov": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "horror",
+    "korean",
+    "kuleshov"
+  ],
+  "threads": [],
+  "title": "A Tale of Two Sisters",
+  "updated_at": "2026-06-11T20:39:00Z"
+}

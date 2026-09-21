@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "quick-thoughts"
+  ],
+  "connections": [],
+  "created_at": "2026-09-09T16:44:00Z",
+  "entry_schema_version": 4,
+  "id": "27682ABC-7DAA-5997-86CC-2C75AD28D6E4",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "we lit every public building in the country with the one light that makes\neverybody look ill, and then decided public buildings feel\ninstitutional",
+      "created_at": "2026-09-09T16:44:00Z",
+      "id": "5CE818FD-7EB2-5437-B58B-90F2FE25862B",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "unflattering fluorescent light then blamed for feeling institutional",
+  "tag_sources": {
+    "access": {
+      "source": "user"
+    },
+    "library": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "library",
+    "access"
+  ],
+  "threads": [],
+  "title": "fluorescents",
+  "updated_at": "2026-09-09T16:44:00Z"
+}

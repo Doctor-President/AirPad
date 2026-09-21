@@ -43,12 +43,12 @@ enum ProposalSelfTest {
             ran += 1
             var node = makeNode(title: "", summary: "", content: "a node with real content")
             _ = node.recordProposal(kind: .title, text: "A Fresh Title", currentSource: nil,
-                                    sourceEmbedding: vec, posture: .automatic, generatedAt: date0)
+                                    sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic, generatedAt: date0)
             _ = node.recordProposal(kind: .summary, text: "A fresh summary.", currentSource: nil,
-                                    sourceEmbedding: vec, posture: .automatic, generatedAt: date0)
+                                    sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic, generatedAt: date0)
             // `.tags` exercises the kind-generic mechanism (no live producer yet).
             _ = node.recordProposal(kind: .tags, text: "alpha, beta", currentSource: nil,
-                                    sourceEmbedding: vec, posture: .automatic, generatedAt: date0)
+                                    sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic, generatedAt: date0)
             let kinds = Set((node.proposals ?? []).map { $0.kind })
             if node.proposals?.count != 3 {
                 failures.append("1: expected 3 proposals, got \(node.proposals?.count ?? 0)")
@@ -63,7 +63,7 @@ enum ProposalSelfTest {
             ran += 1
             var node = makeNode(title: "", summary: "", content: "content")
             _ = node.recordProposal(kind: .summary, text: "keep me", currentSource: nil,
-                                    sourceEmbedding: vec, posture: .automatic, generatedAt: date0)
+                                    sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic, generatedAt: date0)
             do {
                 let data = try JSONEncoder.airPad.encode(node)
                 let back = try JSONDecoder.airPad.decode(Node.self, from: data)
@@ -108,7 +108,7 @@ enum ProposalSelfTest {
                                 summarySource: .user)
             let shouldWrite = node.recordProposal(kind: .summary, text: "the model's idea",
                                                   currentSource: node.summarySource,
-                                                  sourceEmbedding: vec, posture: .automatic,
+                                                  sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic,
                                                   generatedAt: date0)
             if shouldWrite { failures.append("4: a .user summary must not be written") }
             if (node.proposals ?? []).contains(where: { $0.kind == .summary }) {
@@ -121,9 +121,9 @@ enum ProposalSelfTest {
             ran += 1
             var node = makeNode(title: "", summary: "", content: "content")
             _ = node.recordProposal(kind: .title, text: "First", currentSource: nil,
-                                    sourceEmbedding: vec, posture: .automatic, generatedAt: date0)
+                                    sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic, generatedAt: date0)
             _ = node.recordProposal(kind: .title, text: "Second", currentSource: .model,
-                                    sourceEmbedding: vec, posture: .automatic, generatedAt: date0)
+                                    sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic, generatedAt: date0)
             let titles = (node.proposals ?? []).filter { $0.kind == .title }
             if titles.count != 1 { failures.append("5: expected 1 title proposal after regen, got \(titles.count)") }
             if titles.first?.text != "Second" { failures.append("5: regen did not replace text (got \(titles.first?.text ?? "nil"))") }
@@ -136,7 +136,7 @@ enum ProposalSelfTest {
             var auto = makeNode(title: "", summary: "", content: "content")
             let write = auto.recordProposal(kind: .summary, text: "written summary",
                                             currentSource: auto.summarySource,
-                                            sourceEmbedding: vec, posture: .automatic,
+                                            sourceEmbedding: vec, sourceContentHash: nil, posture: .automatic,
                                             generatedAt: date0)
             if !write { failures.append("6: .automatic must report write=true") }
             if write { auto.summary = "written summary"; auto.summarySource = .model }   // mirror the call site
@@ -148,7 +148,7 @@ enum ProposalSelfTest {
             var prop = makeNode(title: "", summary: "", content: "content")
             let writeP = prop.recordProposal(kind: .summary, text: "proposed only",
                                              currentSource: prop.summarySource,
-                                             sourceEmbedding: vec, posture: .propose,
+                                             sourceEmbedding: vec, sourceContentHash: nil, posture: .propose,
                                              generatedAt: date0)
             if writeP { failures.append("6: .propose must report write=false") }
             if !(prop.proposals ?? []).contains(where: { $0.kind == .summary }) {
@@ -165,7 +165,7 @@ enum ProposalSelfTest {
             // unsolicited on a `.user` title → no record, nothing surfaced.
             var u = makeNode(title: "my title", summary: "", content: "content", titleSource: .user)
             let wU = u.recordProposal(kind: .title, text: "model title", currentSource: u.titleSource,
-                                      sourceEmbedding: vec, posture: .propose, generatedAt: date0,
+                                      sourceEmbedding: vec, sourceContentHash: nil, posture: .propose, generatedAt: date0,
                                       solicited: false)
             if wU { failures.append("7: unsolicited .user must report write=false") }
             if (u.proposals ?? []).contains(where: { $0.kind == .title }) {
@@ -175,7 +175,7 @@ enum ProposalSelfTest {
             // and STILL no write.
             var s = makeNode(title: "my title", summary: "", content: "content", titleSource: .user)
             let wS = s.recordProposal(kind: .title, text: "asked-for title", currentSource: s.titleSource,
-                                      sourceEmbedding: vec, posture: .propose, generatedAt: date0,
+                                      sourceEmbedding: vec, sourceContentHash: nil, posture: .propose, generatedAt: date0,
                                       solicited: true)
             if wS { failures.append("7: solicited must NEVER bypass the write (report false)") }
             let sp = s.proposals?.first { $0.kind == .title }
@@ -188,7 +188,7 @@ enum ProposalSelfTest {
             // record while nil, then the field becomes `.user`.
             var e = makeNode(title: "", summary: "", content: "content")
             _ = e.recordProposal(kind: .title, text: "auto title", currentSource: e.titleSource,
-                                 sourceEmbedding: vec, posture: .propose, generatedAt: date0)
+                                 sourceEmbedding: vec, sourceContentHash: nil, posture: .propose, generatedAt: date0)
             e.titleSource = .user   // user then writes their own → authored
             if e.surfacedProposal(kind: .title) != nil {
                 failures.append("7: an unsolicited proposal on a now-.user field must stay hidden (§ C3)")

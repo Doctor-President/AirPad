@@ -1,0 +1,97 @@
+{
+  "collection_ids": [
+    "coffee"
+  ],
+  "connections": [],
+  "created_at": "2026-01-22T13:20:00Z",
+  "entry_schema_version": 4,
+  "id": "B24662AC-ADA1-5916-9B82-27D7122204A8",
+  "is_meta": false,
+  "items": [
+    {
+      "created_at": "2026-01-22T13:20:00Z",
+      "id": "D213903E-60B1-59B8-BEDA-705183B4E67C",
+      "rating": {
+        "scale": 5,
+        "value": 3
+      },
+      "type": "rating"
+    },
+    {
+      "created_at": "2026-01-22T13:20:00Z",
+      "field": {
+        "definition_id": "fd_roaster",
+        "value": {
+          "text": {
+            "_0": "Intelligentsia"
+          }
+        }
+      },
+      "id": "3CF2979C-4D6A-5E91-BD9B-65757BB65517",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-01-22T13:20:00Z",
+      "field": {
+        "definition_id": "fd_origin",
+        "value": {
+          "text": {
+            "_0": "Blend"
+          }
+        }
+      },
+      "id": "3C9B8821-A7A8-5D96-89DD-4F9FE63BD0C5",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-01-22T13:20:00Z",
+      "field": {
+        "definition_id": "fd_process",
+        "value": {
+          "text": {
+            "_0": "Washed"
+          }
+        }
+      },
+      "id": "DC499091-4E4E-5912-A6F9-F316E5482AD6",
+      "type": "field"
+    },
+    {
+      "created_at": "2026-01-22T13:20:00Z",
+      "field": {
+        "definition_id": "fd_roast_date",
+        "value": {
+          "date": {
+            "_0": "2026-01-17T00:00:00Z",
+            "hasTime": false
+          }
+        }
+      },
+      "id": "DBAAADD3-A771-57DE-AB55-FA44A2A59D1D",
+      "type": "field"
+    },
+    {
+      "content": "The espresso blend everybody in this city has an opinion about. It's\nfine. It's genuinely fine. I think you had to be here in 2008.",
+      "created_at": "2026-01-22T13:20:00Z",
+      "id": "2C6C65F5-C154-560A-AF25-6E17AFD65A8A",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "The city's default espresso blend, fine but coasting on 2008",
+  "tag_sources": {
+    "chicago": {
+      "source": "user"
+    },
+    "coffee": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "coffee",
+    "chicago"
+  ],
+  "threads": [],
+  "title": "Intelligentsia — Black Cat",
+  "updated_at": "2026-01-22T13:20:00Z"
+}

@@ -1,0 +1,33 @@
+{
+  "collection_ids": [
+    "diary"
+  ],
+  "connections": [],
+  "created_at": "2026-04-11T21:58:00Z",
+  "entry_schema_version": 4,
+  "id": "8ACAD702-6BCF-533C-9F2B-C08C9BE33B35",
+  "is_journal_entry": false,
+  "is_meta": false,
+  "items": [
+    {
+      "content": "My French held for about nine minutes at a time and then collapsed. Twice\nsomeone switched to English for me and I felt it as a small loss, which\nI'm choosing to read as motivation.\n\nThe thing nobody tells you: it isn't the vocabulary. It's that they're\ndoing something different with the sentence than I am. I'm assembling;\nthey're already somewhere.",
+      "created_at": "2026-04-11T21:58:00Z",
+      "id": "A1C93E1A-9662-5DF4-9640-37A86EDECF3E",
+      "type": "text"
+    }
+  ],
+  "journal_date": "2026-04-11T00:00:00Z",
+  "needs_ai_processing": false,
+  "summary": "French faltering abroad reveals a structural gap, not vocabulary",
+  "tag_sources": {
+    "french": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "french"
+  ],
+  "threads": [],
+  "title": "Notes from four days in Quebec City",
+  "updated_at": "2026-04-11T21:58:00Z"
+}

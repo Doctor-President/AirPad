@@ -1,0 +1,35 @@
+{
+  "collection_ids": [
+    "film"
+  ],
+  "connections": [],
+  "created_at": "2026-02-22T19:05:00Z",
+  "entry_schema_version": 4,
+  "id": "209798D1-0581-5DAF-B57C-43EE2DD20DB4",
+  "is_meta": false,
+  "items": [
+    {
+      "content": "A dubbed performance is two people. We have no word for what that is.",
+      "created_at": "2026-02-22T19:05:00Z",
+      "id": "22DF03B5-BD6B-57FE-A43E-3522D0239900",
+      "type": "text"
+    }
+  ],
+  "needs_ai_processing": false,
+  "summary": "A dubbed performance fuses two people we have no word for",
+  "tag_sources": {
+    "film": {
+      "source": "user"
+    },
+    "language": {
+      "source": "user"
+    }
+  },
+  "tags": [
+    "film",
+    "language"
+  ],
+  "threads": [],
+  "title": "dubbing",
+  "updated_at": "2026-02-22T19:05:00Z"
+}

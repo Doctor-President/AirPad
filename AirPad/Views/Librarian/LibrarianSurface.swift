@@ -258,16 +258,20 @@ struct LibrarianSurface: View {
                         .allowsHitTesting(fieldOpacity > 0.01)
                 }
 
-                // Brief AG3 — first-run callout, over the raised sheet only.
+            }
+            // Brief AG3 / AH3 — first-run callout over the raised sheet. Read the chip
+            // anchors (mode / model) so `librarian.mode` / `.model` can ring them; the
+            // AG callouts (intro / sample) carry no targets and just centre the card.
+            .overlayPreferenceValue(FirstRunCalloutTargetsKey.self) { anchors in
                 if let key = activeCallout {
                     FirstRunCalloutOverlay(
                         key: key,
+                        targetAnchors: anchors,
                         onAction: { question in sendCalloutQuestion(question, librarian: librarian) },
                         onDismiss: { finishLibrarianCallout(key) }
                     )
                     .id(key)
                 }
-
             }
         }
         .onAppear {
@@ -407,6 +411,7 @@ struct LibrarianSurface: View {
             // Brief AG3 — first raise of the sheet in a room → its callout, one beat after present.
             // Dropping back to peek / hidden while it's up counts as the dismiss.
             if newState == .half || newState == .full {
+                reconcileChatRoom(librarian: librarian)   // AH2 — new room → new chat (before the callout picks intro/sample)
                 scheduleLibrarianCallout()
             } else {
                 calloutTask?.cancel()
@@ -1385,9 +1390,19 @@ struct LibrarianSurface: View {
                     ModelPillRow(
                         catalog: HostCatalog.shared,
                         thinkEnabled: Binding(get: { librarian.thinkEnabled }, set: { librarian.thinkEnabled = $0 }),
-                        onTapModel: { showModelPicker = true },
+                        onTapModel: {
+                            // AH3 — the FIRST model-chip tap teaches (coach-mark) instead
+                            // of opening the picker (a sheet would cover the callout); the
+                            // next tap opens it. Once shown, always opens.
+                            if !FirstRunCalloutKey.librarianModel.hasShown, activeCallout == nil {
+                                activeCallout = .librarianModel
+                            } else {
+                                showModelPicker = true
+                            }
+                        },
                         includePrivate: false
                     )
+                    .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
                 } else {
                     activeModelLabelView(librarian: librarian) // FM / Ollama: the plain label (unchanged)
                     Spacer(minLength: 0)
@@ -1438,24 +1453,33 @@ struct LibrarianSurface: View {
         }
     }
 
-    /// ★ Private ↔ Corpus mode pill. Default is Private (model's own knowledge,
-    /// no retrieval); Corpus turns on notes-grounded answering with [n] citations.
-    /// Legibility requirement (T is colourblind): the active state reads by SHAPE +
-    /// LABEL + ICON, never colour alone — the two modes use different SF Symbols
-    /// (`lock.fill` vs `books.vertical.fill`), different words, and Corpus adds a
-    /// visible stroke + heavier fill so the "on" state is unmistakable in grayscale.
-    /// Reuses the panel's `AppearancePalette.ink` chrome so it works in both modes.
+    /// ★ General ↔ Library mode pill (Brief AH1: was "Private"→General; privacy is a
+    /// whole-app property, so this axis is named for WHAT the Librarian reads).
+    /// General = the model's own knowledge (+ the web once a search key exists), no
+    /// retrieval; Library turns on entry-grounded answering with [n] citations.
+    /// Legibility (T is colourblind): the state reads by SHAPE + LABEL + ICON, never
+    /// colour — different SF Symbols (`globe` vs `books.vertical.fill`), different
+    /// words, and Library adds a stroke + heavier fill so "on" is unmistakable in
+    /// grayscale. AH4: the icon + label crossfade on toggle (spring; Reduce Motion →
+    /// instant). AH3: the first tap surfaces the `librarian.mode` coach-mark.
     @ViewBuilder
     private func corpusModeToggle(librarian: LibrarianState) -> some View {
         let on = librarian.corpusAware
         Button {
             librarian.corpusAware.toggle()   // stored + persisted (didSet → UserDefaults)
+            // AH3 — teach the toggle the first time it's used (once). The morph above
+            // still plays; the coach-mark's ring pulses once (AH4).
+            if !FirstRunCalloutKey.librarianMode.hasShown, activeCallout == nil {
+                activeCallout = .librarianMode
+            }
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: on ? "books.vertical.fill" : "lock.fill")
+                Image(systemName: on ? "books.vertical.fill" : "globe")
                     .font(.system(size: 11, weight: .semibold))
-                Text(on ? "Library" : "Private")
+                    .contentTransition(.symbolEffect(.replace))
+                Text(on ? "Library" : "General")
                     .font(.system(size: 12, weight: .semibold))
+                    .contentTransition(.opacity)
             }
             .foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))
             .padding(.horizontal, 11)
@@ -1464,14 +1488,17 @@ struct LibrarianSurface: View {
                 Capsule().fill(AppearancePalette.ink.opacity(on ? 0.12 : 0.05))
             )
             .overlay(
-                // Stroke ONLY in Corpus mode — a grayscale-legible shape cue for "on".
+                // Stroke ONLY in Library mode — a grayscale-legible shape cue for "on".
                 Capsule().strokeBorder(AppearancePalette.ink.opacity(on ? 0.28 : 0), lineWidth: 1)
             )
             .contentShape(Capsule())
+            // AH4 — one-shot crossfade of icon + label; Reduce Motion swaps instantly.
+            .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.75), value: on)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(on ? "Library mode" : "Private mode")
-        .accessibilityHint("Toggles whether answers read and cite your entries")
+        .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModeChip)
+        .accessibilityLabel(on ? "Library mode" : "General mode")
+        .accessibilityHint("General mode — answers from the model; Library mode — reads and cites your entries.")
     }
 
     /// ★ Read-only active-model indicator — declares WHICH model will answer the
@@ -2086,6 +2113,24 @@ struct LibrarianSurface: View {
         guard librarian.lastSeededHostKey != key else { return }
         librarian.selectedScope = hostScope
         librarian.lastSeededHostKey = key
+    }
+
+    /// Brief AH2 — a chat belongs to the room it was started in. Called when the sheet
+    /// is RAISED (not on bare canvas navigation): if the live chat's room differs from
+    /// the room the Librarian is now open in, start a fresh chat (the outgoing one is
+    /// already persisted in Chats, tagged with its room). A nil room = an unstamped
+    /// chat (fresh launch / never opened here) → adopt this room. Same room → resume.
+    /// Because the carried candidate list is keyed to the chat id, a fresh chat can
+    /// never inherit the previous room's candidates.
+    private func reconcileChatRoom(librarian: LibrarianState) {
+        let roomLabel = scopeRoomText(hostScope)
+        if router.chat.room == nil {
+            router.chat.room = roomLabel
+        } else if router.chat.room != roomLabel {
+            router.chat.reset()          // flushes the outgoing chat, keeping its room tag
+            router.chat.room = roomLabel
+            isViewingActiveChat = false  // land on the composer, not the prior transcript
+        }
     }
 
     // MARK: - Animations

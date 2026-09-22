@@ -197,10 +197,23 @@ struct ChatsListView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
-            Text(preview(for: chat))
-                .font(.system(size: 13))
-                .foregroundStyle(AppearancePalette.ink.opacity(0.55))
-                .lineLimit(1)
+            HStack(spacing: 6) {
+                // Brief AH2 — the room the chat belongs to (labelling only, not a filter).
+                if let room = chat.room, !room.isEmpty {
+                    Text(room)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(AppearancePalette.ink.opacity(0.06)))
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+                Text(preview(for: chat))
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppearancePalette.ink.opacity(0.55))
+                    .lineLimit(1)
+            }
         }
         .padding(.vertical, 6)
         .contentShape(Rectangle())

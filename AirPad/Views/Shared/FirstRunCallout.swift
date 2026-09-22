@@ -17,6 +17,8 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
     case mapIntro        = "map.intro"
     case librarianIntro  = "librarian.intro"
     case librarianSample = "librarian.sample"
+    case librarianMode   = "librarian.mode"   // Brief AH3 — first tap of the mode chip
+    case librarianModel  = "librarian.model"  // Brief AH3 — first tap of the model chip
 
     var id: String { rawValue }
 
@@ -50,7 +52,7 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
         case .librarianIntro:
             return FirstRunCalloutContent(
                 headline: "Librarian",
-                body: ["Private stays on your phone. Library reads your entries and cites them."]
+                body: ["**Library** reads your entries and cites them. **General** answers from the model — and the web, once you've added a search key."]
             )
         case .librarianSample:
             return FirstRunCalloutContent(
@@ -60,12 +62,26 @@ enum FirstRunCalloutKey: String, CaseIterable, Identifiable {
                           "What can you tell me about my entry called \"Silent Hill 2's fog\"?",
                           "How did coffee spread out of Ethiopia?"]
             )
+        case .librarianMode:
+            // A terse coach-mark — no headline, one line (Brief AH3).
+            return FirstRunCalloutContent(
+                headline: nil,
+                body: ["Switch anytime. Library cites your entries; General doesn't read them."],
+                targets: [FirstRunCalloutTargetID.librarianModeChip]
+            )
+        case .librarianModel:
+            return FirstRunCalloutContent(
+                headline: nil,
+                body: ["Choose who answers — on your phone, or on your Mac with the Host."],
+                targets: [FirstRunCalloutTargetID.librarianModelChip]
+            )
         }
     }
 }
 
 struct FirstRunCalloutContent {
-    var headline: String
+    /// nil for terse coach-marks (`librarian.mode` / `.model`) — body-only, one line.
+    var headline: String?
     /// Paragraphs. Markdown `**bold**` is honoured (the control names in `view.buttons`).
     var body: [String]
     var targets: [String] = []
@@ -77,6 +93,8 @@ struct FirstRunCalloutContent {
 enum FirstRunCalloutTargetID {
     static let viewButton    = "view"
     static let captureButton = "capture"
+    static let librarianModeChip  = "librarian.mode.chip"   // Brief AH3
+    static let librarianModelChip = "librarian.model.chip"  // Brief AH3
 }
 
 struct FirstRunCalloutTargetsKey: PreferenceKey {
@@ -117,6 +135,10 @@ struct FirstRunCalloutOverlay: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
     @State private var dismissing = false
+    /// Brief AH4 — `librarian.mode`'s ring pulses ONCE (1.0→1.06→1.0, ~600 ms) then
+    /// stops. No looping anywhere. Other callouts keep a static ring.
+    @State private var ringPulse: CGFloat = 1.0
+    private var pulsesRing: Bool { key == .librarianMode }
 
     /// Dim ≤ 12 % (Brief AG3). Black at 0.10 — not a new colour token, an opacity scrim.
     private static let dimOpacity: Double = 0.10
@@ -154,6 +176,13 @@ struct FirstRunCalloutOverlay: View {
                 withAnimation(.easeOut(duration: 0.25)) { shown = true }
             } else {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.86)) { shown = true }
+                // AH4 — one-shot ring pulse (up then back), never a loop.
+                if pulsesRing {
+                    withAnimation(.easeInOut(duration: 0.3)) { ringPulse = 1.06 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        withAnimation(.easeInOut(duration: 0.3)) { ringPulse = 1.0 }
+                    }
+                }
             }
         }
     }
@@ -162,9 +191,11 @@ struct FirstRunCalloutOverlay: View {
         VStack(alignment: .leading, spacing: 14) {
             // One readable block for VoiceOver; double-tap dismisses (the sighted "tap anywhere").
             VStack(alignment: .leading, spacing: 10) {
-                Text(content.headline)
-                    .font(.custom("Fraunces72pt-Bold", size: 22, relativeTo: .title3))
-                    .foregroundStyle(AppearancePalette.ink)
+                if let headline = content.headline {
+                    Text(headline)
+                        .font(.custom("Fraunces72pt-Bold", size: 22, relativeTo: .title3))
+                        .foregroundStyle(AppearancePalette.ink)
+                }
                 ForEach(Array(content.body.enumerated()), id: \.offset) { _, paragraph in
                     Text((try? AttributedString(markdown: paragraph)) ?? AttributedString(paragraph))
                         .font(.custom("SourceSerif4-Regular", size: 17, relativeTo: .body))
@@ -216,6 +247,7 @@ struct FirstRunCalloutOverlay: View {
         return RoundedRectangle(cornerRadius: min(r.width, r.height) / 2, style: .continuous)
             .strokeBorder(AppearancePalette.ink.opacity(0.8), lineWidth: 2.5)
             .frame(width: r.width, height: r.height)
+            .scaleEffect(ringPulse)
             .position(x: r.midX, y: r.midY)
             .accessibilityHidden(true)
     }
@@ -247,11 +279,26 @@ struct CalloutGalleryView: View {
         ZStack {
             AppearancePalette.bgBase.ignoresSafeArea()
 
-            // View + Capture stubs, stacked bottom-right exactly like the canvas chrome, so the
-            // `view.buttons` callout's rings have real anchors to draw around.
+            // Brief AH — `-CalloutGallery chip.modes` shows the mode chip in BOTH states
+            // (General globe / Library books) with no overlay, for the rename screenshot.
+            if key == "chip.modes" {
+                VStack(spacing: 18) {
+                    galleryModeChip(on: false)   // General
+                    galleryModeChip(on: true)    // Library
+                }
+            }
+
+            // Composer-like pill row (bottom-left) + View/Capture stack (bottom-right), so
+            // every callout's rings land on a faithful anchor. Hidden in the chip.modes shot.
             VStack {
                 Spacer()
-                HStack {
+                HStack(alignment: .bottom) {
+                    HStack(spacing: 8) {
+                        galleryModeChip(on: false)
+                            .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModeChip)
+                        galleryModelChip()
+                            .firstRunCalloutTarget(FirstRunCalloutTargetID.librarianModelChip)
+                    }
                     Spacer()
                     VStack(spacing: 10) {
                         calloutButtonStub(systemName: "map")
@@ -259,10 +306,11 @@ struct CalloutGalleryView: View {
                         calloutButtonStub(systemName: "plus")
                             .firstRunCalloutTarget(FirstRunCalloutTargetID.captureButton)
                     }
-                    .padding(.trailing, 20)
-                    .padding(.bottom, 44)
                 }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 44)
             }
+            .opacity(key == "chip.modes" ? 0 : 1)
         }
         .overlayPreferenceValue(FirstRunCalloutTargetsKey.self) { anchors in
             if let k = calloutKey, !dismissed {
@@ -281,6 +329,31 @@ struct CalloutGalleryView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
             )
+    }
+
+    /// Matches `LibrarianSurface.corpusModeToggle` (Brief AH1 icon + labels) so the
+    /// screenshot previews the real chip. General = globe; Library = books + stroke.
+    private func galleryModeChip(on: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: on ? "books.vertical.fill" : "globe")
+                .font(.system(size: 11, weight: .semibold))
+            Text(on ? "Library" : "General")
+                .font(.system(size: 12, weight: .semibold))
+        }
+        .foregroundStyle(AppearancePalette.ink.opacity(on ? 0.9 : 0.55))
+        .padding(.horizontal, 11)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(AppearancePalette.ink.opacity(on ? 0.12 : 0.05)))
+        .overlay(Capsule().strokeBorder(AppearancePalette.ink.opacity(on ? 0.28 : 0), lineWidth: 1))
+    }
+
+    /// Matches `LibrarianSurface.activeModelLabelView` — the read-only model indicator.
+    private func galleryModelChip() -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "cpu").font(.system(size: 9, weight: .semibold))
+            Text("qwen3:8b").font(.system(size: 11, weight: .medium))
+        }
+        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
     }
 }
 #endif

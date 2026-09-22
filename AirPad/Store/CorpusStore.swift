@@ -1355,6 +1355,22 @@ final class CorpusStore {
                     expect(reply?.text.contains("Brave Search key") == true, "reply names the missing Brave key")
                     NSLog("[WebKeyDiag] done")
                 }
+                // Brief AH2 verify — carry-forward is keyed to the chat id, so a NEW chat
+                // (what a room change starts) begins with an EMPTY candidate carry:
+                // candidates can never cross rooms. Seed a carry for chat A, then read it
+                // back for A (carries) and for a fresh chat B (empty). Pure logic.
+                if ProcessInfo.processInfo.arguments.contains("-RoomChatDiag") {
+                    func expect(_ cond: Bool, _ label: String) {
+                        NSLog("[RoomChatDiag] %@ %@", cond ? "PASS" : "FAIL", label)
+                    }
+                    let lib = LibrarianState()
+                    let chatA = UUID()
+                    let chatB = UUID()
+                    lib.debugSeedCarry(count: 5, chatID: chatA)
+                    expect(lib.debugCarriedCount(forChatID: chatA) == 5, "same chat keeps its carry (5)")
+                    expect(lib.debugCarriedCount(forChatID: chatB) == 0, "a NEW chat (new room) starts with empty carry")
+                    NSLog("[RoomChatDiag] done")
+                }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag

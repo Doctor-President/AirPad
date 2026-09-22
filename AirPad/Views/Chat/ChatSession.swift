@@ -262,7 +262,11 @@ final class ChatSession {
                     }
                 }
             }
-            let streamed = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Brief AD — a reasoning model routes its thoughts to the `reasoning`
+            // channel (→ `.thinking`), but one that instead dumps `<think>…</think>`
+            // INTO the answer must not have that chain-of-thought rendered — or its
+            // `[n]` parsed as a citation. Strip it before citation processing.
+            let streamed = Self.stripThinkTags(streamingText).trimmingCharacters(in: .whitespacesAndNewlines)
             // Brief AB3 — STRIP any `[n]` whose index isn't a candidate this turn
             // (a hallucinated marker: the empty-library branch passes no candidates,
             // and a small model still fabricates [1]-[5]). Without this the renderer
@@ -597,14 +601,37 @@ final class ChatSession {
     /// raw upstream HTML (a Cloudflare 530 body is a full HTML page) in the
     /// banner. Reached only when NOTHING streamed — a mid-stream drop that
     /// already has partial text is kept as a partial turn (no banner), see send().
+    /// Brief AD — remove a literal `<think>…</think>` block (and a dangling unclosed
+    /// `<think>` tail) a model emitted inline in the ANSWER channel, so the
+    /// chain-of-thought is never rendered and its `[n]` never parsed as a citation.
+    /// No-op on the Host path (reasoning rides its own channel) and on plain answers.
+    static func stripThinkTags(_ s: String) -> String {
+        var out = s.replacingOccurrences(of: #"(?is)<think>.*?</think>"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(of: #"(?is)<think>.*$"#, with: "", options: .regularExpression)
+        return out.replacingOccurrences(of: "</think>", with: "")
+    }
+
     static func humanError(for error: Error) -> String {
+        // Brief AD2 — "offline or asleep" is ONLY for a genuine COULDN'T-CONNECT: no
+        // route, connection refused, DNS/tunnel failure to establish. Anything AFTER a
+        // successful connect — an HTTP status, a protocol error, a timeout, a
+        // mid-flight drop — says what it actually is (the Thinking-On bug was every
+        // such failure being mislabelled "offline" while the Mac was awake and the
+        // Host running).
         let offline = "Your computer appears to be offline or asleep. Make sure the AirPad Host is running on it, then try again."
 
         if let urlError = error as? URLError {
             switch urlError.code {
-            case .networkConnectionLost, .notConnectedToInternet, .cannotConnectToHost,
-                 .cannotFindHost, .dnsLookupFailed, .timedOut, .secureConnectionFailed:
+            case .notConnectedToInternet, .cannotConnectToHost, .cannotFindHost,
+                 .dnsLookupFailed, .secureConnectionFailed:
+                // Couldn't reach/establish a connection at all → genuinely offline.
                 return offline
+            case .timedOut:
+                // Connected, but no (first) token in time — a slow/stuck model, NOT offline.
+                return "The Host didn’t respond in time. The model may be loading or thinking — try again."
+            case .networkConnectionLost:
+                // Established then dropped before the answer — a mid-flight drop, not asleep.
+                return "The connection to the Host dropped before it answered. Try again."
             default:
                 // A URLError we don't specifically classify — its own description
                 // is already human (and never HTML).
@@ -618,25 +645,18 @@ final class ChatSession {
                 // Couldn't reach the endpoint at all — same human meaning.
                 return offline
             case .ollamaHTTPError(_, let status, let body):
-                // 530 (Cloudflare: origin unreachable — tunnel down / Mac asleep)
-                // and the 502/503/504 gateway family read, to a person, as "the
-                // computer isn't answering."
-                if status == 530 || (502...504).contains(status) { return offline }
-                // 409 model_not_loaded (Hands-on, nothing resident) and any Host refusal that
-                // carries a composed {message, action}: surface the HOST'S OWN words VERBATIM —
-                // never invent phone-side copy for a Host refusal, never show Ollama text.
+                // AD2 — a Host refusal envelope wins (its own verbatim, action-named copy).
                 if let refusal = Self.hostRefusal(body) {
-                    // The Host's message is self-contained (the copy rule: every error names its own
-                    // action). The `action` field is a BUTTON LABEL, not text to append — appending it
-                    // duplicated the instruction ("…Load a model, then ask again. Load a model").
                     return refusal.message
                 }
-                // Any other HTTP error: show the status, but strip the body FIRST
-                // so a raw HTML error page can never reach the banner (#3).
+                // Any other HTTP status shows WHAT IT IS (AD2), never "offline" — 530 /
+                // 502-504 included. Strip the body first so a raw HTML page (#3) can't
+                // reach the banner; show only its first meaningful line.
                 let clean = Self.sanitizedErrorBody(body)
-                return clean.isEmpty
-                    ? "Your computer's model returned an error (HTTP \(status))."
-                    : "Your computer's model returned an error (HTTP \(status)): \(clean)"
+                let firstLine = clean.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+                return firstLine.isEmpty
+                    ? "The Host returned an error (\(status))."
+                    : "The Host returned an error (\(status)): \(firstLine)"
             default:
                 return routerError.errorDescription ?? offline
             }

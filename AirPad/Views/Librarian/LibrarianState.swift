@@ -735,6 +735,16 @@ final class LibrarianState {
         _ = await corpusCandidates(query: query, store: store, chat: chat)
         chat.debugAppendUser(query)
     }
+
+    /// Brief AC5 — the numbered candidate list (number → nodeID) for a single-turn
+    /// query at `scope`, so `-PinResolveDiag` can map a transcript's `[n]` citations
+    /// to the sample node the answer cited. No model, no carry (fresh chat).
+    func debugNumberedCandidates(query: String, scope: CanvasScope, store: CorpusStore) async -> [(number: Int, nodeID: String)] {
+        corpusAware = true
+        selectedScope = scope
+        let (candidates, _) = await corpusCandidates(query: query, store: store, chat: ChatSession())
+        return candidates.map { ($0.number, $0.nodeID) }
+    }
     #endif
 
     // MARK: - Brief W1 — passage provenance (note vs collected source)

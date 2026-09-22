@@ -57,6 +57,8 @@ struct SettingsView: View {
     @AppStorage(ModelRouter.useLocalEnrichmentKey) private var useLocalEnrichment = false
     @State private var isTestingLocal = false
     @State private var localTestOutput = ""
+    // AC2 — "Copy Librarian log" confirmation flash.
+    @State private var librarianLogCopied = false
     #if DEBUG
     // Dev diagnostics — SubstrateInspectView carries a DESTRUCTIVE "Reset cluster
     // registry"; it must not be reachable in a shipping build. DEBUG-gated
@@ -182,12 +184,46 @@ struct SettingsView: View {
 
             personalPromptField
 
+            librarianLogRow
+
             localModelSubsection
 
             hostPairingRow
         }
         .sheet(isPresented: $showPairingQR, onDismiss: { hostPairing = HostPairing.load() }) {
             HostPairingSheet()
+        }
+    }
+
+    // MARK: - Brief AC2 — Copy Librarian log (device diagnosis, no Mac needed)
+    /// Puts the last 10 corpus-Ask S5 records (scope · empty · shape · per-candidate
+    /// rows) on the clipboard. os_log isn't readable on TestFlight, so this is the
+    /// on-device channel for "a Librarian answer looked wrong — what did retrieval do?"
+    private var librarianLogRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                let log = LibrarianState.recentCandidateLog
+                UIPasteboard.general.string = log.isEmpty
+                    ? "(no Librarian corpus-Ask turns yet this session)"
+                    : log.joined(separator: "\n\n")
+                librarianLogCopied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { librarianLogCopied = false }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: librarianLogCopied ? "checkmark" : "doc.on.clipboard")
+                    Text(librarianLogCopied ? "Copied" : "Copy Librarian log")
+                        .font(.subheadline.weight(.medium))
+                }
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+                .background(AppearancePalette.ink.opacity(0.09))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            Text("The last 10 corpus-Ask retrievals (scope, whether empty, shape, candidate rows). Paste it when a Librarian answer looks wrong.")
+                .font(.caption2)
+                .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
     }
 

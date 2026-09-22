@@ -549,6 +549,13 @@ final class LibrarianState {
     /// candidate). Subsystem/category per the brief; logs in DEBUG and Release.
     private static let candidateLog = Logger(subsystem: "com.doctorpresident.airpad", category: "librarian")
 
+    /// AC2 — the last 10 S5 turn records (scope, empty, shape, per-candidate rows),
+    /// kept IN MEMORY so Settings → "Copy Librarian log" can put them on the
+    /// clipboard. RELEASE-visible (T diagnoses on TestFlight, where os_log isn't
+    /// readable — [[testflight-print-dead-channel]]), so no `#if DEBUG`.
+    private(set) static var recentCandidateLog: [String] = []
+    private static let recentCandidateLogCap = 10
+
     /// Live Ask entry — retrieval-INFORMED, NO mode routing (Part 2). ALWAYS
     /// retrieves and hands the top passages to the model under ONE honest-framing
     /// prompt ("these came from your notes by similarity search and may not be
@@ -1236,7 +1243,13 @@ final class LibrarianState {
                 lines.append("  [card]    \(cardLogLine(for: c, store: store)) · \(score) · \(c.origin.rawValue)")
             }
         }
-        candidateLog.log("\(lines.joined(separator: "\n"), privacy: .public)")
+        let record = lines.joined(separator: "\n")
+        candidateLog.log("\(record, privacy: .public)")
+        // AC2 — retain for "Copy Librarian log" (cap at the last N turns).
+        recentCandidateLog.append(record)
+        if recentCandidateLog.count > recentCandidateLogCap {
+            recentCandidateLog.removeFirst(recentCandidateLog.count - recentCandidateLogCap)
+        }
     }
 
     // ws-card-catalog Ask hybrid — the old grounded pipeline (executeQuery →

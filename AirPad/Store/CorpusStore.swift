@@ -1327,6 +1327,34 @@ final class CorpusStore {
                     NSLog("[ThinkBanner] stripThink → '%@' | cited=%@", stripped, "\(CitationReference.citedIndices(in: stripped).sorted())")
                     NSLog("[ThinkBanner] done")
                 }
+                // Brief AF3 verify — the app-owned no-key web-search state, headless:
+                // (1) the search-intent matcher fires on the brief's five cues and NOT on
+                // an ordinary question; (2) with no Brave key, the no-key notice adds a
+                // user turn + ONE assistant line carrying the Settings link, makes NO
+                // model call, and leaves the session idle. Pure logic — no network.
+                if ProcessInfo.processInfo.arguments.contains("-WebSearchKeyDiag") {
+                    func expect(_ cond: Bool, _ label: String) {
+                        NSLog("[WebKeyDiag] %@ %@", cond ? "PASS" : "FAIL", label)
+                    }
+                    let positives = ["search for the news", "can you look up the weather",
+                                     "what's the latest on the election", "today's news please",
+                                     "what's the current bitcoin price"]
+                    let negatives = ["explain photosynthesis", "write me a haiku about rain",
+                                     "what is 2 + 2"]
+                    for q in positives { expect(LibrarianState.looksLikeSearchIntent(q), "intent+ \(q)") }
+                    for q in negatives { expect(!LibrarianState.looksLikeSearchIntent(q), "intent- \(q)") }
+                    NSLog("[WebKeyDiag] hasKey=%@ (expect false on a fresh sim)", "\(WebSearchBackend.hasKey)")
+                    let cs = ChatSession()
+                    cs.appendWebSearchKeyNotice(userText: "search for today's headlines")
+                    expect(cs.messages.count == 2, "notice adds exactly user+assistant (no model turn)")
+                    expect(cs.isStreaming == false, "session stays idle (no model call)")
+                    expect(cs.messages.first?.role == .user, "first turn is the user's query")
+                    let reply = cs.messages.last
+                    expect(reply?.role == .assistant, "second turn is the app reply")
+                    expect(reply?.text.contains("airpad-settings://websearch") == true, "reply carries the Settings tap link")
+                    expect(reply?.text.contains("Brave Search key") == true, "reply names the missing Brave key")
+                    NSLog("[WebKeyDiag] done")
+                }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag

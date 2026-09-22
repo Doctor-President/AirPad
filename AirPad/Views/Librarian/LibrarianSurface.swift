@@ -73,6 +73,9 @@ struct LibrarianSurface: View {
     /// STATE 2 — routes the "no model for chat" notice into Settings (same pattern as the
     /// lever's capability-boundary banner: CanvasChrome / DashboardView / LeverTray).
     @State private var showSettings = false
+    /// Brief AF3 — which row Settings should scroll to on open (nil = top, today's
+    /// behavior). Set to `.webSearch` by the no-Brave-key notice's tap.
+    @State private var settingsAnchor: SettingsView.Anchor? = nil
     @FocusState private var isInputFocused: Bool
     /// Live measured height of the Ask field (grows with wrapped lines). Drives
     /// the Messages-style corner: `min(height/2, singleLineHeight/2)` — a PILL at
@@ -863,6 +866,12 @@ struct LibrarianSurface: View {
                     session: router.chat,
                     showsComposer: false,
                     onOpenNode: openNode,
+                    onOpenWebSearchSettings: {
+                        // Brief AF3 — the no-key notice's tap opens Settings scrolled to
+                        // the Web-search row (same sheet the capability boundary uses).
+                        settingsAnchor = .webSearch
+                        showSettings = true
+                    },
                     topFadeFraction: cctTopFade,
                     bottomFadeFraction: cctBottomFade,
                     onScrollTopOffset: { chatScrollTopOffset = $0 }
@@ -970,7 +979,9 @@ struct LibrarianSurface: View {
         .sheet(isPresented: $showingLibrarianPinSheet) {
             PinChatSheet(chatID: router.chat.id).environment(store)
         }
-        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showSettings, onDismiss: { settingsAnchor = nil }) {
+            SettingsView(initialAnchor: settingsAnchor)
+        }
     }
 
     /// Field-agnostic keyboard dismiss (Move 2 fix-pass B). Lifted out

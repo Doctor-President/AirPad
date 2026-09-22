@@ -2,6 +2,14 @@ import SwiftUI
 
 struct SettingsView: View {
 
+    /// Brief AF3 — a row Settings can open scrolled-to. `.webSearch` is set when the
+    /// Librarian's no-Brave-key notice is tapped. Extend as more deep-links appear.
+    enum Anchor: Hashable { case webSearch }
+
+    /// Which row to scroll to on open (nil = top, today's behavior). Default keeps every
+    /// existing `SettingsView()` call site unchanged.
+    var initialAnchor: Anchor? = nil
+
     @Environment(CorpusStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -68,6 +76,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 32) {
                     aiModelSection
@@ -104,6 +113,14 @@ struct SettingsView: View {
                     .fontWeight(.semibold)
                 }
             }
+            // Brief AF3 — open scrolled to the requested row. Deferred a beat so the
+            // layout exists before we scroll (a bare onAppear scroll no-ops otherwise).
+            .task {
+                guard let anchor = initialAnchor else { return }
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                withAnimation { proxy.scrollTo(anchor, anchor: .top) }
+            }
+            }
         }
         .presentationBackground(AppearancePalette.bgBase)
         .onAppear { loadKeys() }
@@ -125,7 +142,19 @@ struct SettingsView: View {
                 // key: with one, the Brave Search API is used; without one, web search is
                 // unavailable (no keyless fallback). Same BYO-key model as the frontier
                 // providers above and the Ollama endpoint below.
-                apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
+                // Brief AF3 — carries the "what Brave is / why a card" copy + a signup
+                // link, and `.id(Anchor.webSearch)` so the Librarian no-key notice can
+                // open Settings scrolled here.
+                VStack(alignment: .leading, spacing: 6) {
+                    apiKeyField(label: "Brave Search API key", placeholder: "BSA...", text: $braveSearchKey)
+                    Text("Web search uses Brave's Search API. Brave gives a monthly credit that covers normal use, but needs an account with a card on file. Paste your key here.")
+                        .font(.caption)
+                        .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+                    Link("Get a Brave Search API key", destination: URL(string: "https://brave.com/search/api/")!)
+                        .font(.caption.weight(.semibold))
+                        .tint(Color(hexString: "E8820A"))
+                }
+                .id(Anchor.webSearch)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Ollama / LM Studio endpoint")

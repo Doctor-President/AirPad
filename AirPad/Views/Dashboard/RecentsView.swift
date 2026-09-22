@@ -434,10 +434,10 @@ struct PriorityView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Spacer()
-            Text("No priority nodes")
+            Text("No priority entries")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
-            Text("Flag a node as Priority from its ••• menu.")
+            Text("Flag an entry as Priority from its ••• menu.")
                 .font(.system(size: 14))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
             Spacer()

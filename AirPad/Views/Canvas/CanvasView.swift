@@ -483,6 +483,30 @@ struct CanvasView: View {
                 // against the new palette in one pass.
                 flipMapColorsForAppearance()
             }
+            // Brief AG3 — publish "the Map has settled" for the first-run callouts.
+            .onChange(of: mapSettledForCallouts, initial: true) { _, settled in
+                router.mapSettled = settled
+            }
+            .task(id: mapContentRevealed) {
+                // Fallback so a territory that stays provisional can never strand the callouts.
+                guard mapContentRevealed else { return }
+                try? await Task.sleep(for: .seconds(3))
+                if !Task.isCancelled { mapSettleFallback = true }
+            }
+            .onDisappear {
+                router.mapSettled = false
+                mapSettleFallback = false
+            }
+    }
+
+    /// Brief AG3 — settled = first frame rendered and, when the Map is in territory mode, the
+    /// card-basis territories formed (not the provisional cold-start pass). 3 s fallback.
+    @State private var mapSettleFallback = false
+    private var mapSettledForCallouts: Bool {
+        guard mapContentRevealed else { return false }
+        if mapSettleFallback { return true }
+        guard !store.canvasAnchorTags.isEmpty || hasUserCollections else { return true }
+        return territory.map { !$0.provisional } ?? false
     }
 
     // Body observers are split across two computed properties purely to keep

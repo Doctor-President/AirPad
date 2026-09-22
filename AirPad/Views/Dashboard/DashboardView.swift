@@ -101,7 +101,7 @@ struct DashboardView: View {
         let userNodes = store.userNodes
         let corpus = NodeCollection(
             id: NodeCollection.corpusID,
-            name: "Corpus",
+            name: "Library",
             nodeCount: userNodes.count,
             lastEntryAt: userNodes.map(\.createdAt).max()
         )
@@ -146,7 +146,7 @@ struct DashboardView: View {
         let sampleNodes = store.nodes.filter { store.isSample($0.id) }
         return NodeCollection(
             id: NodeCollection.sampleScopeID,
-            name: "Corpus",
+            name: "Library",
             nodeCount: sampleNodes.count,
             lastEntryAt: sampleNodes.map(\.createdAt).max()
         )
@@ -246,7 +246,7 @@ struct DashboardView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: { _ in
-                Text("Nodes will remain in your corpus.")
+                Text("Its entries stay in your library.")
             }
         }
     }
@@ -454,7 +454,7 @@ struct DashboardView: View {
             }
         }
         .confirmationDialog(
-            "Remove the sample library?",
+            "Remove the Sample Library?",
             isPresented: $showRemoveSampleConfirmation,
             titleVisibility: .visible
         ) {
@@ -463,7 +463,7 @@ struct DashboardView: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("Your own notes are kept.")
+            Text("Your own entries are kept.")
         }
     }
 
@@ -478,7 +478,7 @@ struct DashboardView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
                     .frame(width: 28)
-                Text("Sample library")
+                Text("Sample Library")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
                 Spacer()
@@ -503,7 +503,7 @@ struct DashboardView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
                     .frame(width: 28)
-                Text("Sample library")
+                Text("Sample Library")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink)
                 Spacer()
@@ -524,7 +524,7 @@ struct DashboardView: View {
             showRemoveSampleConfirmation = true
         } label: {
             HStack(spacing: 12) {
-                Text("Remove sample library")
+                Text("Remove Sample Library")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 Spacer()
@@ -732,7 +732,7 @@ private struct CollectionRow: View {
     }
 
     private var subtitle: String {
-        let count = "\(collection.nodeCount) " + (collection.nodeCount == 1 ? "node" : "nodes")
+        let count = "\(collection.nodeCount) " + (collection.nodeCount == 1 ? "entry" : "entries")
         guard let last = collection.lastEntryAt else { return count }
         return count + " · " + relativeTime(last)
     }

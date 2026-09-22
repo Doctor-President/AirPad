@@ -46,7 +46,7 @@ struct EditMapSheet: View {
                 } header: {
                     Text("Gravity — signal weights")
                 } footer: {
-                    Text("Collection / Anchor / Meaning decide a node's territory (argmax) and border lean. Backlink then pulls it toward its linked nodes — capped, so territory law still wins. Each node's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-node shade otherwise.")
+                    Text("Collection / Anchor / Meaning decide an entry's territory (argmax) and border lean. Backlink then pulls it toward its linked entries — capped, so territory law still wins. Each entry's tint is a shade of its territory family — brighter = more recent when varied by recency, a stable per-entry shade otherwise.")
                         .font(.caption).foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
 
@@ -55,7 +55,7 @@ struct EditMapSheet: View {
                         .font(.footnote)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                 } footer: {
-                    Text("Promote tags to spatial territories on the Map. Nodes gather in their territory; a node with no anchor tag lands near the nearest one.")
+                    Text("Promote tags to spatial territories on the Map. Entries gather in their territory; an entry with no anchor tag lands near the nearest one.")
                         .font(.caption)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }

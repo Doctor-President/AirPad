@@ -20,7 +20,7 @@ struct ImportIdeasSheet: View {
                     // Text editor area
                     ZStack(alignment: .topLeading) {
                         if text.isEmpty {
-                            Text("Paste any text — notes, bullet lists, multi-paragraph writing…")
+                            Text("Paste any text — bullet lists, multi-paragraph writing…")
                                 .font(.body)
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
                                 .padding(.horizontal, 4)
@@ -43,7 +43,7 @@ struct ImportIdeasSheet: View {
                     // Live preview line
                     HStack(spacing: 8) {
                         if detectedCount == 0 {
-                            Text("No ideas detected yet")
+                            Text("No entries detected yet")
                                 .font(.subheadline)
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.35))
                         } else if willTruncate {
@@ -57,7 +57,7 @@ struct ImportIdeasSheet: View {
                             Image(systemName: "checkmark.circle")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(.green.opacity(0.8))
-                            Text("\(detectedCount) idea\(detectedCount == 1 ? "" : "s") detected")
+                            Text("\(detectedCount) \(detectedCount == 1 ? "entry" : "entries") detected")
                                 .font(.subheadline)
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.65))
                         }
@@ -69,7 +69,7 @@ struct ImportIdeasSheet: View {
                 }
                 .dismissKeyboardOnTapOutside()
             }
-            .navigationTitle("Import Ideas")
+            .navigationTitle("Import Entries")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {

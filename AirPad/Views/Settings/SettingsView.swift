@@ -67,6 +67,8 @@ struct SettingsView: View {
     @State private var localTestOutput = ""
     // AC2 — "Copy Librarian log" confirmation flash.
     @State private var librarianLogCopied = false
+    /// Brief AG3 — "Reset first-time tips" confirmation flash.
+    @State private var tipsReset = false
     #if DEBUG
     // Dev diagnostics — SubstrateInspectView carries a DESTRUCTIVE "Reset cluster
     // registry"; it must not be reachable in a shipping build. DEBUG-gated
@@ -233,7 +235,7 @@ struct SettingsView: View {
             Button {
                 let log = LibrarianState.recentCandidateLog
                 UIPasteboard.general.string = log.isEmpty
-                    ? "(no Librarian corpus-Ask turns yet this session)"
+                    ? "(no Librarian Library-mode turns yet this session)"
                     : log.joined(separator: "\n\n")
                 librarianLogCopied = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { librarianLogCopied = false }
@@ -250,7 +252,7 @@ struct SettingsView: View {
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            Text("The last 10 corpus-Ask retrievals (scope, whether empty, shape, candidate rows). Paste it when a Librarian answer looks wrong.")
+            Text("The last 10 Library-mode retrievals (scope, whether empty, shape, candidate rows). Paste it when a Librarian answer looks wrong.")
                 .font(.caption2)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
@@ -325,11 +327,11 @@ struct SettingsView: View {
                     // state, and the caption stays honest in both settings (T is colorblind).
                     Toggle(isOn: $useLocalEnrichment) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Use for note enrichment")
+                            Text("Use for entry enrichment")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.85))
                             Text(useLocalEnrichment
-                                 ? "New note titles, summaries, and tags use the private model."
+                                 ? "New entry titles, summaries, and tags use the private model."
                                  : "Apple Intelligence is still doing the thinking. Turn on to use the private model.")
                                 .font(.caption2)
                                 .foregroundStyle(AppearancePalette.ink.opacity(0.45))
@@ -519,7 +521,7 @@ struct SettingsView: View {
                     Text("GPS location on capture")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(AppearancePalette.ink)
-                    Text("Attaches your location to newly captured nodes")
+                    Text("Attaches your location to newly captured entries")
                         .font(.caption)
                         .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                 }
@@ -550,7 +552,7 @@ struct SettingsView: View {
             sectionHeader("Tags")
 
             if store.tags.isEmpty {
-                Text("No tags yet — AI will suggest them as you capture ideas.")
+                Text("No tags yet — AI will suggest them as you capture entries.")
                     .font(.caption)
                     .foregroundStyle(AppearancePalette.ink.opacity(0.35))
             } else {
@@ -608,7 +610,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "square.and.arrow.down")
-                    Text("Import ideas")
+                    Text("Import entries")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.75))
@@ -622,7 +624,7 @@ struct SettingsView: View {
                 ImportIdeasSheet()
             }
 
-            Text("Paste a block of text or share a .txt / .md file — each paragraph becomes a node.")
+            Text("Paste a block of text or share a .txt / .md file — each paragraph becomes an entry.")
                 .font(.caption)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
@@ -639,7 +641,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "tray.and.arrow.down")
-                    Text("Flagged ideas")
+                    Text("Flagged entries")
                     Spacer()
                     if store.reviewQueue.isEmpty {
                         Text("Clear")
@@ -667,7 +669,7 @@ struct SettingsView: View {
                 ReviewQueueSheet()
             }
 
-            Text("Ideas that didn't pass the quality gate during import. Promote or discard — nothing is lost.")
+            Text("Entries that didn't pass the quality gate during import. Promote or discard — nothing is lost.")
                 .font(.caption)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.3))
         }
@@ -828,16 +830,16 @@ struct SettingsView: View {
 
     private var corpusSection: some View {
         VStack(alignment: .leading, spacing: 16) {
-            sectionHeader("Corpus")
+            sectionHeader("Library")
 
             // Brief Z R3 — counts are the user's ROOM; the sample gets its own line.
             HStack(spacing: 16) {
-                statBox(value: "\(store.corpusRoomNodes.count)", label: "Nodes")
+                statBox(value: "\(store.corpusRoomNodes.count)", label: "Entries")
                 statBox(value: "\(store.tags.count)", label: "Tags")
                 statBox(value: "\(store.corpusRoomNodes.filter { $0.isMeta }.count)", label: "Threads")
             }
             if store.sampleLibraryPresent {
-                Text("Sample library: \(store.sampleNodeIDs.count) nodes")
+                Text("Sample Library: \(store.sampleNodeIDs.count) entries")
                     .font(.footnote)
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
             }
@@ -853,7 +855,7 @@ struct SettingsView: View {
                     if store.blockIndexRebuilding {
                         Text("Search index · rebuilding…")
                     } else if let cov = store.blockIndexCoverage {
-                        Text("Search index · \(cov.current)/\(cov.total) nodes current · v\(BlockEmbeddingService.currentEmbedderVersion)")
+                        Text("Search index · \(cov.current)/\(cov.total) entries current · v\(BlockEmbeddingService.currentEmbedderVersion)")
                     } else {
                         Text("Search index · checking…")
                     }
@@ -878,7 +880,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "square.and.arrow.up")
-                    Text("Export corpus")
+                    Text("Export library")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
@@ -894,7 +896,7 @@ struct SettingsView: View {
             } label: {
                 HStack {
                     Image(systemName: "trash")
-                    Text("Clear all nodes")
+                    Text("Clear all entries")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(.red.opacity(0.75))
@@ -905,7 +907,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .confirmationDialog(
-                "Clear all nodes?",
+                "Clear all entries?",
                 isPresented: $showClearConfirmation,
                 titleVisibility: .visible
             ) {
@@ -913,7 +915,7 @@ struct SettingsView: View {
                     Task { await store.clearAllData() }
                 }
             } message: {
-                Text("This will permanently delete all nodes and cannot be undone.")
+                Text("This will permanently delete all entries and cannot be undone.")
             }
 
             // Brief U Step 3 — add OR remove the bundled sample library on demand.
@@ -932,7 +934,7 @@ struct SettingsView: View {
                 HStack {
                     Image(systemName: store.sampleLibraryPresent
                           ? "sparkles.rectangle.stack" : "sparkles.rectangle.stack.fill")
-                    Text(store.sampleLibraryPresent ? "Remove sample library" : "Add sample library")
+                    Text(store.sampleLibraryPresent ? "Remove Sample Library" : "Add Sample Library")
                 }
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.5))
@@ -943,7 +945,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .confirmationDialog(
-                "Remove sample library?",
+                "Remove Sample Library?",
                 isPresented: $showRemoveSampleConfirmation,
                 titleVisibility: .visible
             ) {
@@ -951,7 +953,7 @@ struct SettingsView: View {
                     Task { await store.removeSampleLibrary() }
                 }
             } message: {
-                Text("Removes the bundled sample notes and their collection. Your own notes are not affected.")
+                Text("Removes the bundled sample entries and their collections. Your own entries are not affected.")
             }
         }
     }
@@ -982,6 +984,24 @@ struct SettingsView: View {
             Text("It works around you. Not the other way around.")
                 .font(.caption)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
+            // Brief AG3 — bring back every first-run callout (each shows again on its surface).
+            Button {
+                FirstRunCalloutKey.resetAll()
+                tipsReset = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { tipsReset = false }
+            } label: {
+                HStack {
+                    Image(systemName: tipsReset ? "checkmark" : "lightbulb")
+                    Text(tipsReset ? "First-time tips will show again" : "Reset first-time tips")
+                }
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(AppearancePalette.ink.opacity(0.75))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(AppearancePalette.ink.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
             if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
                let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String {
                 Text("Version \(version) (\(build))")

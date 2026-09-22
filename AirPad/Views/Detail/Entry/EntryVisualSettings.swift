@@ -145,8 +145,8 @@ final class EntryVisualSettings {
 
         var label: String {
             switch self {
-            case .nodeTitle:        return "Node title"
-            case .nodeSummary:      return "Node summary"
+            case .nodeTitle:        return "Entry title"
+            case .nodeSummary:      return "Entry summary"
             case .sectionTitle:     return "Section title"
             case .sectionTimestamp: return "Section timestamp"
             }

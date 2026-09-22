@@ -62,6 +62,10 @@ struct AirPadApp: App {
                 // Light-mode convergence — REAL production surface over a seeded
                 // real store (not a fixture), reached via `-Screen <name>`.
                 DebugScreenHost(screen: screen)
+            } else if let callout = UserDefaults.standard.string(forKey: "CalloutGallery"), !callout.isEmpty {
+                // Brief AG verify — one first-run callout over a neutral ground, for
+                // headless screenshots in both appearances (`-CalloutGallery view.buttons`).
+                CalloutGalleryView(key: callout)
             } else if let spine = UserDefaults.standard.string(forKey: "SPINEGATE"), !spine.isEmpty {
                 // SPIKE v3 (spike-entry-spine) — THROWAWAY render gate fixture.
                 // `-SPINEGATE notes|edge|gallery` renders fixed entry states (no

@@ -58,7 +58,7 @@ struct ChatView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(AppearancePalette.ink)
                 }
-                .accessibilityLabel(isPinned ? "Change pinned node" : "Pin chat to a node")
+                .accessibilityLabel(isPinned ? "Change pinned entry" : "Pin chat to an entry")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {

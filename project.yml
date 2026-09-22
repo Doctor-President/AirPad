@@ -236,10 +236,10 @@ targets:
             NSUbiquitousContainerIsDocumentScopePublic: true
             NSUbiquitousContainerName: AirPad
             NSUbiquitousContainerSupportedFolderLevels: Any
-        NSMicrophoneUsageDescription: "AirPad needs microphone access to record voice notes."
-        NSSpeechRecognitionUsageDescription: "AirPad uses speech recognition to transcribe your voice notes."
-        NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as ideas."
-        NSPhotoLibraryUsageDescription: "AirPad can add photos from your library to an idea."
+        NSMicrophoneUsageDescription: "AirPad needs microphone access to record voice memos."
+        NSSpeechRecognitionUsageDescription: "AirPad uses speech recognition to transcribe your voice memos."
+        NSCameraUsageDescription: "AirPad uses the camera to capture photos and videos as entries."
+        NSPhotoLibraryUsageDescription: "AirPad can add photos from your photo library to an entry."
         NSLocalNetworkUsageDescription: "AirPad needs local network access to reach the Ollama or LM Studio endpoint you configured in Settings. Only used for queries you initiate."
         # ATS exception for user-configured local-AI endpoints. NSAllowsLocalNetworking
         # is too narrow — it only covers .local / link-local / unqualified hostnames,

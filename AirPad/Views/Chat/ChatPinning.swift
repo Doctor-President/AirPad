@@ -122,8 +122,8 @@ struct PinChatSheet: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(AppearancePalette.bgBase)
-            .searchable(text: $query, prompt: "Pin to node")
-            .navigationTitle("Pin chat to a node")
+            .searchable(text: $query, prompt: "Pin to entry")
+            .navigationTitle("Pin chat to an entry")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

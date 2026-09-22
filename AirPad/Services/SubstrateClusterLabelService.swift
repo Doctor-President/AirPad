@@ -297,7 +297,7 @@ final class SubstrateClusterLabelService {
             .prefix(maxHonestTopTags)
             .map { $0.key }
         if dominant.isEmpty {
-            return "Mixed (\(nodeIDs.count) notes)"
+            return "Mixed (\(nodeIDs.count) entries)"
         }
         return dominant.joined(separator: " · ")
     }

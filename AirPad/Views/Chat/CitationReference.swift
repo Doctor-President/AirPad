@@ -69,5 +69,28 @@ enum CitationReference {
         return out
     }
 
+    /// Brief AB3 — remove every `[n]` whose index is NOT in `valid` (a hallucinated
+    /// marker with no candidate behind it), so it never renders as a superscript or
+    /// a chip. Valid markers are left for `styleInlineMarkers`. Absorbs one space
+    /// before a removed token so "foo [9] bar" reads "foo bar". Applied at commit
+    /// time in `ChatSession.send`, so it covers every turn (the empty-library branch
+    /// passes an empty `valid` set → all markers stripped).
+    static func stripInvalidMarkers(in text: String, valid: Set<Int>) -> String {
+        let ns = text as NSString
+        let matches = markerRegex.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else { return text }
+        var out = ns
+        for m in matches.reversed() {
+            guard m.numberOfRanges > 1, let n = Int(ns.substring(with: m.range(at: 1))) else { continue }
+            if valid.contains(n) { continue }
+            var r = m.range
+            if r.location > 0, out.substring(with: NSRange(location: r.location - 1, length: 1)) == " " {
+                r = NSRange(location: r.location - 1, length: r.length + 1)
+            }
+            out = out.replacingCharacters(in: r, with: "") as NSString
+        }
+        return out as String
+    }
+
     private static let markerRegex = try! NSRegularExpression(pattern: #"\[(\d{1,2})\]"#)
 }

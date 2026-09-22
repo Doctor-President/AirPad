@@ -262,7 +262,13 @@ final class ChatSession {
                     }
                 }
             }
-            let finalText = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let streamed = streamingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Brief AB3 — STRIP any `[n]` whose index isn't a candidate this turn
+            // (a hallucinated marker: the empty-library branch passes no candidates,
+            // and a small model still fabricates [1]-[5]). Without this the renderer
+            // draws orphan superscripts with no chip behind them (T's build-B report).
+            let validIndices = Set((citations ?? []).map { $0.index })
+            let finalText = CitationReference.stripInvalidMarkers(in: streamed, valid: validIndices)
             if !finalText.isEmpty {
                 // Keep ONLY the sources the answer actually cited inline ([n]).
                 // Retrieval hands over candidates; a passage becomes a citation

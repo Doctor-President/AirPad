@@ -610,27 +610,30 @@ final class LibrarianState {
 
         // ★ Corpus mode (corpusAware == true). Build the numbered candidate list
         // (Brief S: S2 query augmentation + carry, S3 pinning, S5 log), then send.
-        let candidates = await corpusCandidates(query: query, store: store, chat: chat)
+        let (candidates, empty) = await corpusCandidates(query: query, store: store, chat: chat)
 
-        let modelText: String
-        if candidates.isEmpty {
-            // No worthwhile passages — hand the model the bare question. The
-            // honest-framing system prompt still says "answer normally," no refusal.
-            modelText = query
-        } else {
-            let context = buildAskContext(candidates: candidates, store: store)
-            modelText = """
-            Some of your notes were retrieved by similarity search — they may or may not be relevant to the question:
-
-            \(context)
-
-            Question: \(query)
-            """
+        if empty {
+            // Brief AB3 — nothing in THIS ROOM matched (no candidates, or a survey
+            // with < 3 cards and no passages, no pin). Do NOT dress up general
+            // knowledge as an answer from the notes: send the bare question under the
+            // honest empty-library prompt, with NO candidates → no [n] instruction, no
+            // chips. `ChatSession.send` strips any hallucinated [n] (empty valid set).
+            await chat.send(displayText: query, modelText: query,
+                            systemPrompt: emptyLibrarySystemPrompt, citations: nil)
+            return
         }
 
+        let context = buildAskContext(candidates: candidates, store: store)
+        let modelText = """
+        Some of your notes were retrieved by similarity search — they may or may not be relevant to the question:
+
+        \(context)
+
+        Question: \(query)
+        """
         // Candidate sources for THIS turn; `ChatSession.send` filters these down to
         // the [n] the model actually cited before committing the message.
-        let chips = candidates.isEmpty ? nil : Self.citationChips(from: candidates, store: store)
+        let chips = Self.citationChips(from: candidates, store: store)
         await chat.send(displayText: query, modelText: modelText, systemPrompt: askSystemPrompt, citations: chips)
     }
 
@@ -639,7 +642,7 @@ final class LibrarianState {
     /// candidates carry forward with stable numbers. S3: a named entry's passages
     /// pin to the front (non-pinned passages must then clear 0.70). S5: log it.
     /// Mutates the carry state; the caller builds the prompt + chips and sends.
-    private func corpusCandidates(query: String, store: CorpusStore, chat: ChatSession) async -> [NumberedCandidate] {
+    private func corpusCandidates(query: String, store: CorpusStore, chat: ChatSession) async -> (candidates: [NumberedCandidate], empty: Bool) {
         // S2 — retrieval query = current question + the previous USER turn in this
         // chat (first turn: bare question), so a follow-up keeps its subject.
         let previousUserTurn = chat.messages.last { $0.role == .user }?.text
@@ -699,10 +702,20 @@ final class LibrarianState {
         carriedCandidates = candidates
         carriedChatID = chat.id
 
+        // Brief AB3 — "empty" = nothing in this room meaningfully matched: no
+        // candidates at all, OR a SURVEY that surfaced < 3 cards and no passages (and
+        // no pin). The caller sends the honest empty-library prompt instead of
+        // dressing up a thin/absent match as an answer.
+        let passageCount = candidates.filter { !$0.isCard }.count
+        let cardCount = candidates.count - passageCount
+        let pinned = candidates.contains { $0.origin == .pinned }
+        let empty = candidates.isEmpty
+            || (!pinned && passageCount == 0 && cardCount < 3 && verdict.shape == .survey)
+
         // S5 — candidate log (turn index = user turns so far + this one).
         let turnIndex = chat.messages.filter { $0.role == .user }.count + 1
-        Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, shape: verdict, store: store)
-        return candidates
+        Self.logCandidates(turnIndex: turnIndex, query: retrievalQuery, candidates: candidates, shape: verdict, scope: selectedScope, empty: empty, store: store)
+        return (candidates, empty)
     }
 
     #if DEBUG
@@ -1183,15 +1196,33 @@ final class LibrarianState {
         return out
     }
 
-    /// S5 — one os_log record per corpus-mode turn: turn index, the query sent to
+    /// AB1 — the resolved room label for the S5 log: the scope case AND which room
+    /// it actually searched (a `.corpus` scope silently resolves to the USER room
+    /// once a sample is seeded, which is exactly the Brief AB miss). `[…]` marks a
+    /// sample-owned scope so a room-crossing search is visible at a glance.
+    static func scopeLabel(_ scope: CanvasScope, store: CorpusStore) -> String {
+        switch scope {
+        case .corpus:
+            let room = (store.sampleLibraryPresent && !store.userNodes.isEmpty) ? "user" : "sample"
+            return "corpus→\(room):\(store.corpusRoomNodes.count)"
+        case .collection(let id):
+            let kind = store.sampleCollectionIDs.contains(id) ? "sample" : "user"
+            return "collection:\(id)[\(kind)]"
+        case .nodeIDs(let ids):
+            let kind = (ids == store.sampleNodeIDs) ? "sample" : "adhoc"
+            return "nodeIDs:\(ids.count)[\(kind)]"
+        }
+    }
+
+    /// S5 — one os_log record per corpus-mode turn: scope + shape, the query sent to
     /// the embedder, then each candidate as "n · nodeTitle · score · origin".
-    private static func logCandidates(turnIndex: Int, query: String, candidates: [NumberedCandidate], shape: ShapeVerdict, store: CorpusStore) {
+    private static func logCandidates(turnIndex: Int, query: String, candidates: [NumberedCandidate], shape: ShapeVerdict, scope: CanvasScope, empty: Bool, store: CorpusStore) {
         var lines: [String] = []
         let distinct = Set(candidates.map { $0.nodeID }).count
         let cardCount = candidates.filter { $0.isCard }.count
         let passageCount = candidates.count - cardCount
-        // AA4 — shape verdict per turn + the passage/card split.
-        lines.append("turn \(turnIndex) · shape=\(shape.shape.rawValue) top=\(String(format: "%.2f", shape.topPassage)) dup=\(shape.topNodeDup) own=\(shape.dupOwnNote) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s) (\(passageCount)p/\(cardCount)c) · \(distinct) node(s)")
+        // AA4 + AB1/AB3 — scope (resolved room) + shape verdict + empty flag + split.
+        lines.append("turn \(turnIndex) · scope=\(scopeLabel(scope, store: store)) · shape=\(shape.shape.rawValue) top=\(String(format: "%.2f", shape.topPassage)) dup=\(shape.topNodeDup) own=\(shape.dupOwnNote) · empty=\(empty) · query=\"\(query.replacingOccurrences(of: "\n", with: " ⏎ "))\" · \(candidates.count) candidate(s) (\(passageCount)p/\(cardCount)c) · \(distinct) node(s)")
         var perNode: [String: Int] = [:]   // Brief Z R4 — the k/3 running count per node (passages only)
         for c in candidates {
             let score = String(format: "%.3f", c.score)
@@ -1231,6 +1262,15 @@ final class LibrarianState {
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
         let base = "You are a reflective AI that helps someone think across their OWN notes. Two labelled sections may appear below the question: NOTES ON THIS TOPIC lists the user's notes related to the topic (one line each), and PASSAGES are excerpts. They were pulled by similarity search and MAY OR MAY NOT be relevant. For broad questions about what the user thinks or has, synthesise across NOTES and cite them; for specific facts, answer from PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered notes and passages. Ignore items that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect notes the question did not ask about. If a note distinguishes an estimate from an actual figure, say which. Notes or passages marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their notes and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        return personalVoicePrefix + base
+    }
+
+    /// Brief AB3 — empty-library prompt: corpus mode found NOTHING in this room
+    /// (no candidates, or a survey with < 3 cards and no passages). Say so plainly
+    /// instead of answering from general knowledge and hallucinating citations. No
+    /// `[n]` instruction — there is nothing to cite. Keeps the personal-voice tone.
+    private var emptyLibrarySystemPrompt: String {
+        let base = "You are a reflective AI that helps someone think across their OWN notes. No notes in this library match the question. Say so plainly in one sentence. Do not cite anything and do not answer from general knowledge unless the user asks you to."
         return personalVoicePrefix + base
     }
 

@@ -37,16 +37,24 @@ enum CitationReference {
             let token = ns.substring(with: match.range)          // "[2]" or "[1, 2, 7]"
             guard let range = attr.range(of: token) else { break }
             // AC1 — one superscript per index in the bracket (deepseek writes
-            // `[1, 2, 7]`), hair-space separated, each linked to its own citation.
-            // The replacement carries no `[`, so the next `firstMatch` advances.
+            // `[1, 2, 7]`), each linked to its own citation. AE3 — a thin space
+            // separates adjacent numerals so consecutive markers never fuse: between
+            // indices of one bracket, AND before a token that abuts a prior citation
+            // numeral (`[25][26]` → "2526" → "²⁵ ²⁶"). The replacement carries no `[`,
+            // so the next `firstMatch` advances.
+            func separator() -> AttributedString {
+                var sep = AttributedString("\u{2009}")   // thin space
+                sep.font = ChatTypography.inlineCitationSuperscript
+                sep.baselineOffset = ChatTypography.inlineCitationBaselineOffset
+                return sep
+            }
             var replacement = AttributedString("")
+            if match.range.location > 0,
+               ns.substring(with: NSRange(location: match.range.location - 1, length: 1)).first?.isNumber == true {
+                replacement.append(separator())   // AE3 — abuts the previous marker
+            }
             for (i, n) in indices(inToken: token).enumerated() {
-                if i > 0 {
-                    var sep = AttributedString("\u{2009}")   // thin space between stacked numerals
-                    sep.font = ChatTypography.inlineCitationSuperscript
-                    sep.baselineOffset = ChatTypography.inlineCitationBaselineOffset
-                    replacement.append(sep)
-                }
+                if i > 0 { replacement.append(separator()) }
                 var sup = AttributedString("\(n)")
                 sup.font = ChatTypography.inlineCitationSuperscript
                 sup.baselineOffset = ChatTypography.inlineCitationBaselineOffset

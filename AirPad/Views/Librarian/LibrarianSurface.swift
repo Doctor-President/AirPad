@@ -306,6 +306,19 @@ struct LibrarianSurface: View {
                     "Two good SpongeBob video essays: [Full Fat Videos on YouTube](https://www.youtube.com/playlist?list=PLfabricated9x8y7z) and one at https://example.com/spongebob-essay-fake — see [1] for the source I used."
                 )
             }
+            // Brief AE — `-ScrollDemo YES` (committed) / `-ScrollDemoStreaming YES`
+            // (in-flight) inject a long reply + thought process + adjacent citations so
+            // `-Screen` can shoot the scroll/thought-process/citation layout.
+            if UserDefaults.standard.bool(forKey: "ScrollDemo") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                router.chat.debugScrollDemo(streaming: false)
+            }
+            if UserDefaults.standard.bool(forKey: "ScrollDemoStreaming") {
+                isViewingActiveChat = true
+                panelModel.expandToFull(animated: false)
+                router.chat.debugScrollDemo(streaming: true)
+            }
             // `-PartialTurnTest YES` — inject a user turn + a PARTIAL assistant turn
             // (BUG 36: the stream dropped mid-answer) so `-Screen` can confirm the calm
             // "Stopped early / Continue" affordance renders on the dropped turn — NOT a

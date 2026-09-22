@@ -546,6 +546,32 @@ final class ChatSession {
         messages.append(Message(role: .assistant, text: text))
     }
 
+    /// Brief AE — inject a long reply + a thought process + adjacent citations so
+    /// `-Screen` can shoot the scroll/thought-process/citation layout. `streaming`
+    /// leaves the turn in-flight (thought process at the HEAD, tail streaming below);
+    /// otherwise a committed turn (thought process stays at the head, above sources).
+    func debugScrollDemo(streaming: Bool) {
+        let thinking = "The user wants a broad synthesis across their film notes. Let me gather them — Kuleshov, the jump cut, the New Wave, horror as montage — and group by theme before writing.\nThere are many; I'll lead with the montage thread."
+        var body = (1...40).map { "Line \($0): a full sentence of the answer about montage, constraint, and the New Wave — long enough to wrap across the width and fill the reply." }
+            .joined(separator: "\n")
+        body += "\n\nThe montage argument recurs across your notes [1][2], and the New Wave ties into horror [3, 4]."
+        messages.append(Message(role: .user, text: "Summarise everything I've written about film, in detail."))
+        if streaming {
+            streamingThinking = thinking
+            streamingText = body
+            isStreaming = true
+        } else {
+            streamingThinking = thinking   // retained → renders at the committed bubble's head (AE2)
+            let cites = [
+                Message.Citation(index: 1, nodeID: "demo-1", title: "The Kuleshov Effect", snippet: "meaning lives in the gap between shots"),
+                Message.Citation(index: 2, nodeID: "demo-2", title: "Breathless and the jump cut", snippet: "cut for length, not effect"),
+                Message.Citation(index: 3, nodeID: "demo-3", title: "Why the New Wave mattered", snippet: "critics first, then filmmakers"),
+                Message.Citation(index: 4, nodeID: "demo-4", title: "Hereditary is a grief film", snippet: "the cult is the mechanism"),
+            ]
+            messages.append(Message(role: .assistant, text: body, citations: cites))
+        }
+    }
+
     /// Headless verification hook (Brief S) — inject a user turn, simulating a
     /// committed turn so `LibrarianState.debugCorpusRetrieve` can exercise the S2
     /// carry across successive calls without invoking the model.

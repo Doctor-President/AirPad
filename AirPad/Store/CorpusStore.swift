@@ -1143,6 +1143,12 @@ final class CorpusStore {
                           CitationReference.stripInvalidMarkers(in: "Generic [1][2][3][4][5] answer.", valid: []))
                     NSLog("[CitRegex-AC1] strip {1,3} of 'x [1, 9, 3] y' → '%@'",
                           CitationReference.stripInvalidMarkers(in: "x [1, 9, 3] y", valid: [1, 3]))
+                    // Brief AE3 — adjacent markers get a thin separator (␟ marks U+2009).
+                    // "[25][26]" (fused) and "[25, 26]" (list) both → "25␟26".
+                    var ae3 = AttributedString("x [25][26] y [25, 26] z")
+                    CitationReference.styleInlineMarkers(in: &ae3)
+                    NSLog("[CitRegex-AE3] styled='%@'",
+                          String(ae3.characters).replacingOccurrences(of: "\u{2009}", with: "␟"))
                 }
                 // Brief Y Part E verify — search-index coverage + the technology
                 // question over the USER's corpus (Corpus scope). The candidate list

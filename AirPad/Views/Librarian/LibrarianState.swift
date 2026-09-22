@@ -761,6 +761,22 @@ final class LibrarianState {
         let (candidates, _) = await corpusCandidates(query: query, store: store, chat: ChatSession())
         return candidates.map { ($0.number, $0.nodeID) }
     }
+
+    /// Brief AH2 verify — the carry-forward gate is keyed to the chat id, so the
+    /// candidate list a NEW chat sees on its first turn is empty (a room change starts
+    /// a new chat → candidates never cross rooms). Seed a carry for one chat id, then
+    /// read it back for the same id (carries) and a different id (empty). No retrieval.
+    func debugSeedCarry(count: Int, chatID: UUID) {
+        carriedCandidates = (0..<count).map {
+            NumberedCandidate(number: $0 + 1,
+                              payload: .card(CardMatch(nodeID: "seed-\($0)", gist: "g", score: 0.9)),
+                              origin: .carried)
+        }
+        carriedChatID = chatID
+    }
+    func debugCarriedCount(forChatID id: UUID) -> Int {
+        (carriedChatID == id ? carriedCandidates : []).count
+    }
     #endif
 
     // MARK: - Brief W1 — passage provenance (note vs collected source)

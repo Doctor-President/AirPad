@@ -19,6 +19,11 @@ struct Chat: Identifiable, Codable, Hashable {
     let createdAt: Date
     var updatedAt: Date
     var messages: [ChatSession.Message]
+    /// Brief AH2 — the room the chat was started in, as a display label ("Your
+    /// library" / "Sample Library" / a collection name). A chat never changes room;
+    /// the Chats list shows this as secondary text. Optional + synthesized Codable →
+    /// legacy chats decode with `room == nil` (no tag shown).
+    var room: String? = nil
 }
 
 /// Persistence layer for the clean Chat lane. Mirrors the

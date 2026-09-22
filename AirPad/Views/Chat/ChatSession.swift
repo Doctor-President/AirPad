@@ -98,6 +98,13 @@ final class ChatSession {
     /// list (step 2) can group by day. Reset on `reset()`.
     var createdAt: Date = Date()
 
+    /// Brief AH2 — the room this chat belongs to (display label: "Your library" /
+    /// "Sample Library" / a collection name). Stamped by the Librarian when a chat
+    /// starts/switches rooms; persisted into the `Chat` record and restored. A chat
+    /// never changes room, so the carried candidate list (keyed to the chat id) can
+    /// never cross rooms. `nil` = the generic chat lane (ChatView / Chats-list "New").
+    var room: String? = nil
+
     /// Permanent transcript. Each completed turn appends one user message
     /// then one assistant message; `streamingText` is the in-flight tail
     /// that hasn't been committed yet.
@@ -960,6 +967,7 @@ final class ChatSession {
         lastError = nil
         id = UUID()
         createdAt = Date()
+        room = nil   // AH2 — a fresh chat has no room until a host stamps it
         // A fresh chat must not be replaced by the most-recent record
         // on the next ChatView appearance — mark restore consumed.
         didRestore = true
@@ -985,6 +993,7 @@ final class ChatSession {
         id = chat.id
         createdAt = chat.createdAt
         messages = chat.messages
+        room = chat.room   // AH2 — the opened chat carries its room tag
         streamingText = ""
         pendingUser = nil
         isStreaming = false
@@ -1039,13 +1048,15 @@ final class ChatSession {
         Self.persistedActiveChatID = id.uuidString
         let snapshotID = id
         let snapshotCreatedAt = createdAt
+        let snapshotRoom = room
         Task {
             let chat = Chat(
                 id: snapshotID,
                 title: Self.truncationTitle(from: snapshotMessages),
                 createdAt: snapshotCreatedAt,
                 updatedAt: Date(),
-                messages: snapshotMessages
+                messages: snapshotMessages,
+                room: snapshotRoom
             )
             store.upsert(chat)
             await store.save()
@@ -1070,6 +1081,7 @@ final class ChatSession {
         id = chat.id
         createdAt = chat.createdAt
         messages = chat.messages
+        room = chat.room   // AH2 — the resumed chat keeps its room tag
     }
 
     /// Header / list display title. Reads the stored title from

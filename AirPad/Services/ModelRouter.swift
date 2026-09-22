@@ -854,6 +854,30 @@ enum ModelRouter {
     /// translates Ollama's native `tool_calls` back into `delta.tool_calls`). It does NOT opt into
     /// BUG 36 hold/resume (no requestID): an agentic turn is short and the loop owns retries, so the
     /// one-shot hold path (`streamHost`) stays byte-for-byte untouched.
+    /// Brief AF2 — THE synthesis-502 fix. The Host forwards the working set RAW to
+    /// Ollama's NATIVE `/api/chat`, which rejects OpenAI-shape tool_calls whose
+    /// `function.arguments` is a JSON STRING (measured: HTTP 400 "cannot unmarshal
+    /// string into ToolCallFunctionArguments" → Host 502 → Cloudflare HTML — exactly
+    /// the device banner). The first call has no tool history so it passes; the
+    /// SYNTHESIS call echoes the assistant tool_call back and 400s. Normalise
+    /// `arguments` (string → object) for the native endpoint. The direct `/v1` path
+    /// (`streamAgentTurn`) leaves it a string, which OpenAI-compat wants.
+    static func nativizeToolMessages(_ messages: [[String: Any]]) -> [[String: Any]] {
+        messages.map { m in
+            guard let calls = m["tool_calls"] as? [[String: Any]] else { return m }
+            var out = m
+            out["tool_calls"] = calls.map { call -> [String: Any] in
+                var c = call
+                if var fn = c["function"] as? [String: Any], let argStr = fn["arguments"] as? String {
+                    fn["arguments"] = (try? JSONSerialization.jsonObject(with: Data(argStr.utf8))) ?? [String: Any]()
+                    c["function"] = fn
+                }
+                return c
+            }
+            return out
+        }
+    }
+
     static func streamHostAgentTurn(
         pairing: HostPairing,
         messages: [[String: Any]],
@@ -869,7 +893,7 @@ enum ModelRouter {
         } else {
             model = try await firstHostModel(pairing: pairing)
         }
-        var body: [String: Any] = ["model": model, "stream": true, "think": false, "messages": messages]
+        var body: [String: Any] = ["model": model, "stream": true, "think": false, "messages": Self.nativizeToolMessages(messages)]
         if let tools { body["tools"] = tools }
         let plaintext = try JSONSerialization.data(withJSONObject: body)
         let (envelope, session) = try HostE2E.sealRequest(master: pairing.master, hostStaticPub: hpk, plaintext: plaintext)
@@ -1323,7 +1347,9 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
     /// highlight tags → stripped via the shared HTML helpers.
     private func braveSearch(_ query: String) async -> (links: [ToolLink], rateLimited: Bool) {
         var comps = URLComponents(string: "https://api.search.brave.com/res/v1/web/search")
-        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "8")]
+        // Brief AF2 (a) — top 5 (was 8): a smaller synthesis payload → faster first
+        // token → the tunnel can't time the upstream out mid-answer.
+        comps?.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "count", value: "5")]
         guard let url = comps?.url else { return ([], false) }
         var req = URLRequest(url: url)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -1361,11 +1387,13 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let web = json["web"] as? [String: Any],
               let results = web["results"] as? [[String: Any]] else { return [] }
-        return results.prefix(8).compactMap { r -> ToolLink? in
+        // Brief AF2 (a) — cap at 5 results, snippet ≤ 300 chars, never a page body.
+        return results.prefix(5).compactMap { r -> ToolLink? in
             guard let title = r["title"] as? String, let urlStr = r["url"] as? String, !urlStr.isEmpty else { return nil }
             let cleanTitle = WebReadability.decodeEntities(WebReadability.stripTags(title)).trimmingCharacters(in: .whitespacesAndNewlines)
-            let snippet = (r["description"] as? String).map {
-                WebReadability.decodeEntities(WebReadability.stripTags($0)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let snippet = (r["description"] as? String).map { raw -> String in
+                let clean = WebReadability.decodeEntities(WebReadability.stripTags(raw)).trimmingCharacters(in: .whitespacesAndNewlines)
+                return clean.count > 300 ? String(clean.prefix(300)) + "…" : clean
             }
             guard !cleanTitle.isEmpty else { return nil }
             return ToolLink(title: cleanTitle, url: urlStr, snippet: snippet)
@@ -1379,6 +1407,18 @@ final class BraveSearchToolExecutor: ToolExecutor, @unchecked Sendable {
 /// and never knows which backend it got.
 enum WebSearchBackend {
     static let keychainKey = "braveSearchAPIKey"
+
+    /// Brief AF1/AF3 — is a usable Brave key configured? The caller (LibrarianState)
+    /// reads this BEFORE composing a turn so it can withhold the tool entirely (declare
+    /// nothing, say nothing) when there's no key, rather than letting the model call a
+    /// tool that can only report "unavailable". Mirrors `make()`'s key resolution so the
+    /// two can't disagree (the DEBUG test-key overrides both).
+    static var hasKey: Bool {
+        #if DEBUG
+        if let k = UserDefaults.standard.string(forKey: "BraveTestKey"), !k.isEmpty { return true }
+        #endif
+        return !((KeychainHelper.load(key: keychainKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
 
     static func make() -> ToolExecutor {
         #if DEBUG

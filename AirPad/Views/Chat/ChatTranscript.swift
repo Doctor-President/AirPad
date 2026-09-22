@@ -33,6 +33,11 @@ struct ChatTranscript: View {
     /// ChatView leaves it nil so citations only expand/collapse. Both renderings
     /// route through this ONE closure.
     var onOpenNode: ((String) -> Void)? = nil
+    /// Brief AF3 — the app-owned no-key web-search notice embeds an
+    /// `airpad-settings://websearch` link; the host supplies this to open Settings on
+    /// the Web-search row. nil for hosts that don't present Settings (ChatView) — the
+    /// link then falls through harmlessly.
+    var onOpenWebSearchSettings: (() -> Void)? = nil
     /// #1-followup (chat chrome reclaim) — scroll-edge fade lengths as fractions
     /// of the transcript height. Bottom defaults to the shipped 0.06 (the old
     /// hardcoded 0.94 stop); top defaults to 0 (no top fade) so other hosts
@@ -323,6 +328,12 @@ struct ChatTranscript: View {
             // onOpenNode (same closure the footer circles use). Non-citation
             // links fall through to the system handler.
             .environment(\.openURL, OpenURLAction { url in
+                // Brief AF3 — the no-key web-search notice's tap: open Settings on the
+                // Web-search row. Checked before citations (distinct scheme).
+                if url.scheme == "airpad-settings", url.host == "websearch" {
+                    onOpenWebSearchSettings?()
+                    return .handled
+                }
                 if let n = CitationReference.index(from: url),
                    let cite = message.citations?.first(where: { $0.index == n }) {
                     // Web citation → open the real scraped URL; corpus citation →

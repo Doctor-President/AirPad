@@ -598,20 +598,36 @@ final class LibrarianState {
             case .ollama, .host: toolCapable = true
             default: toolCapable = false
             }
-            if toolCapable {
-                // Tool loop steers with the tool-aware prompt (real date + "trust the
-                // live results, don't hedge") — NOT the plain private prompt, which
-                // told the model to answer "from your own knowledge" (the bug).
-                // `WebSearchBackend.make()` picks Brave when the user set a key, else an
-                // "unavailable — needs a Brave key" stub the model relays to the user (no
-                // keyless fallback) — the loop is agnostic to which.
-                await chat.sendWithTools(displayText: query,
-                                         systemPrompt: toolChatSystemPrompt,
-                                         executor: WebSearchBackend.make())
-            } else {
+            guard toolCapable else {
+                // FM (no tool API) → plain private chat, exactly as before.
                 await chat.send(displayText: query, modelText: query,
                                 systemPrompt: privateSystemPrompt, citations: nil)
+                return
             }
+
+            // Brief AF1 + AF3 — the APP owns the no-key state, not the model. With NO
+            // Brave key there is no working web tool, so we must NOT declare it or hint
+            // at it (AF1: "declare nothing, say nothing about search"):
+            //   • a search-intent message → the app answers in ONE line pointing at
+            //     Settings, and NO model call is made (AF3);
+            //   • any other message → a plain private chat with the tool-free prompt,
+            //     so the model never advertises a capability it can't use.
+            guard WebSearchBackend.hasKey else {
+                if Self.looksLikeSearchIntent(query) {
+                    chat.appendWebSearchKeyNotice(userText: query)
+                } else {
+                    await chat.send(displayText: query, modelText: query,
+                                    systemPrompt: privateSystemPrompt, citations: nil)
+                }
+                return
+            }
+
+            // Key present → the agentic tool loop. It steers with the tool-aware prompt
+            // (real date + "trust the live results, don't hedge") — NOT the plain private
+            // prompt, which told the model to answer "from your own knowledge" (the bug).
+            await chat.sendWithTools(displayText: query,
+                                     systemPrompt: toolChatSystemPrompt,
+                                     executor: WebSearchBackend.make())
             return
         }
 
@@ -1322,9 +1338,10 @@ final class LibrarianState {
         df.dateFormat = "EEEE, MMMM d, yyyy"
         let today = df.string(from: Date())
         let base = """
-        You are a helpful, direct, concise assistant with LIVE web tools (web_search, fetch_url). \
-        Today's real date is \(today). When a question needs current, local, or factual information, \
-        call the tools.
+        You are a helpful, direct, concise assistant. You can search the web with the web_search tool \
+        when the user asks for current information or explicitly asks you to search (and fetch_url reads \
+        a page you found). Today's real date is \(today). When a question needs current, local, or \
+        factual information, call the tools.
 
         CRITICAL — how to use tool results: any tool results already present in this conversation were \
         fetched JUST NOW. They are live, current, and authoritative. Answer FROM those results, not from \
@@ -1346,6 +1363,18 @@ final class LibrarianState {
     /// (with today's real date injected) so STEP 0 can SEE the corrected context.
     var debugToolSystemPrompt: String { toolChatSystemPrompt }
     #endif
+
+    /// Brief AF3 — a deliberately SIMPLE search-intent match (not an NLP classifier):
+    /// does this message read as a request to search the live web? Used ONLY in the
+    /// no-Brave-key state to decide between the app's one-line "add a key" reply and a
+    /// silent plain-chat turn. False positives are cheap (the user is told how to enable
+    /// search); the phrases are the brief's five, matched case-insensitively as whole
+    /// substrings. `static` + `internal` so the AF3 unit test can exercise it directly.
+    static func looksLikeSearchIntent(_ query: String) -> Bool {
+        let q = query.lowercased()
+        let cues = ["search", "look up", "latest", "today's news", "current"]
+        return cues.contains { q.contains($0) }
+    }
 
     /// ★ Corpus-grounding toggle (default FALSE = private chat). Stored so the
     /// surface pill re-renders on flip (observation-tracked), and persisted via

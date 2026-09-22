@@ -1,0 +1,158 @@
+[
+  {
+    "id": "5A11B1E0-0000-4000-8000-000000000001",
+    "title": "What do I have on learning French?",
+    "createdAt": "2026-09-22T15:03:00Z",
+    "updatedAt": "2026-09-22T15:03:00Z",
+    "messages": [
+      {
+        "id": "5A11B1E0-0000-4000-8000-0000000000A1",
+        "role": "user",
+        "text": "What do I have on learning French?"
+      },
+      {
+        "id": "5A11B1E0-0000-4000-8000-0000000000A2",
+        "role": "assistant",
+        "text": "You have a multifaceted approach to learning French, blending structured study with immersive experiences and reflective insights. From your notes, you emphasize the importance of not relying on manuals, as seen in the game *Tunic*, where learning a language requires active engagement without predefined instructions [9]. You also highlight the role of media, such as watching films with French subtitles, which you note drops comprehension but preserves dialogue as sound and rhythm [13], [15]. This aligns with your observation that understanding a language often begins through exposure before comprehension [3].\n\nYour notes reveal a deep appreciation for the nuances of French, such as its articles (*le, la, les*) which you describe as making grammatical abstractions explicit, contrasting with English [12]. You've also explored emotional and cultural connections, like using Françoise Hardy's music for its authentic, melancholic tone [11] and planning a trip to Quebec to experience French immersion without translation [14], [20].\n\nAdditionally, you've engaged with practical challenges, such as tutoring French [2] and reflecting on how language gaps can reveal structural issues [13]. Your methods often involve metaphorical or experiential learning, like the *soupe à l'oignon* approach, where the process itself is central [7], and you've even documented learning through filmmaking with a Bolex H16 [15].\n\nOverall, your approach prioritizes immersion, rhythm, and emotional resonance over rote memorization, with a focus on understanding the language's subtleties and cultural context.",
+        "citations": [
+          {
+            "index": 2,
+            "nodeID": "760CFDD3-C096-5373-8B15-B6CA1919FB76",
+            "title": "side hustle options, ranked",
+            "snippet": "Estate-sale cataloguing wins as the one hustle that isn't monetising a love"
+          },
+          {
+            "index": 3,
+            "nodeID": "73BC35B9-93EA-5D3F-AD36-2E8912432AA0",
+            "title": "On watching films in a language you are learning",
+            "snippet": "French subtitles drop comprehension but restore dialogue as sound"
+          },
+          {
+            "index": 7,
+            "nodeID": "117B63AA-C373-5998-9D2F-E1ACAF7A3737",
+            "title": "soupe à l'oignon",
+            "snippet": "A French-study attempt where the onions are the whole event"
+          },
+          {
+            "index": 9,
+            "nodeID": "EE0A2B3E-1905-5F82-96CD-D4BC7B4887F3",
+            "title": "Tunic",
+            "snippet": "A game about not reading the manual, half of it a language to learn"
+          },
+          {
+            "index": 11,
+            "nodeID": "6F13C689-039E-5ECD-84DC-EF0E8F39E48A",
+            "title": "Françoise Hardy, all spring",
+            "snippet": "French-listening practice that stayed on for its exact register of sad"
+          },
+          {
+            "index": 12,
+            "nodeID": "D9965FC5-BAB4-5206-ABB4-4495988575A8",
+            "title": "how the article works",
+            "snippet": "French articles make abstraction grammatical; English drops and hopes."
+          },
+          {
+            "index": 13,
+            "nodeID": "8ACAD702-6BCF-533C-9F2B-C08C9BE33B35",
+            "title": "Notes from four days in Quebec City",
+            "snippet": "French faltering abroad reveals a structural gap, not vocabulary"
+          },
+          {
+            "index": 14,
+            "nodeID": "BEC4F107-4AB6-56E5-A81F-AA2D603DE6D1",
+            "title": "Provence, eventually",
+            "snippet": "Provence as the study's destination: to be there without translating."
+          },
+          {
+            "index": 15,
+            "nodeID": "54732B9F-04AA-5ADB-90B5-22CD81ED8EAE",
+            "title": "Bolex H16 — mine",
+            "snippet": "Buying, loading, and learning a 1956 Bolex H16 over three months"
+          },
+          {
+            "index": 20,
+            "nodeID": "7593B2D3-56F2-5BED-BEF3-56AB656ABBCC",
+            "title": "four days in Québec — before",
+            "snippet": "Leaving for Québec after five months of study, able to order coffee."
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "5A11B1E0-0000-4000-8000-000000000002",
+    "title": "Silent Hill 2's fog",
+    "createdAt": "2026-09-22T15:02:00Z",
+    "updatedAt": "2026-09-22T15:02:00Z",
+    "messages": [
+      {
+        "id": "5A11B1E0-0000-4000-8000-0000000000B1",
+        "role": "user",
+        "text": "What can you tell me about my entry called \"Silent Hill 2's fog\"?"
+      },
+      {
+        "id": "5A11B1E0-0000-4000-8000-0000000000B2",
+        "role": "assistant",
+        "text": "Based on the provided notes and passages, here's what can be shared about your entry \"Silent Hill 2's fog\":\n\n- Your notes explain that the fog in Silent Hill 2 is constrained by a draw-distance limitation [1], and the game's atmosphere is built entirely on this fog [2].\n\nThe entry appears to focus on the technical and atmospheric aspects of the fog, likely referencing gameplay mechanics or narrative design. If you have additional details or collected sources related to this topic, they would help clarify further.",
+        "citations": [
+          {
+            "index": 1,
+            "nodeID": "127D1E55-F5D8-513B-BC90-22DC4DCEBD59",
+            "title": "Silent Hill 2's fog",
+            "snippet": "A draw-distance limit became the entire atmosphere; constraint first"
+          },
+          {
+            "index": 2,
+            "nodeID": "127D1E55-F5D8-513B-BC90-22DC4DCEBD59",
+            "title": "Silent Hill 2's fog",
+            "snippet": "A draw-distance limit became the entire atmosphere; constraint first"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "5A11B1E0-0000-4000-8000-000000000003",
+    "title": "How did coffee spread out of Ethiopia?",
+    "createdAt": "2026-09-22T15:01:00Z",
+    "updatedAt": "2026-09-22T15:01:00Z",
+    "messages": [
+      {
+        "id": "5A11B1E0-0000-4000-8000-0000000000C1",
+        "role": "user",
+        "text": "How did coffee spread out of Ethiopia?"
+      },
+      {
+        "id": "5A11B1E0-0000-4000-8000-0000000000C2",
+        "role": "assistant",
+        "text": "Based on your notes and the retrieved passages, coffee spread out of Ethiopia primarily through trade routes, moving from Yemen to Cairo and Istanbul, where the coffeehouse culture developed. This is reflected in your saved article from Wikipedia, which highlights the historical journey of coffee as a key factor in its dissemination [1]. Your own notes on this topic ([7]) align with this, emphasizing the role of infrastructure and cultural exchange in its spread [2], [3].",
+        "citations": [
+          {
+            "index": 1,
+            "nodeID": "46F78B52-1396-55BE-AFD8-046667094669",
+            "title": "How coffee got out of Ethiopia",
+            "snippet": "Yemen to Cairo and Istanbul, the coffeehouse travelling with the drink"
+          },
+          {
+            "index": 2,
+            "nodeID": "46F78B52-1396-55BE-AFD8-046667094669",
+            "title": "How coffee got out of Ethiopia",
+            "snippet": "Yemen to Cairo and Istanbul, the coffeehouse travelling with the drink"
+          },
+          {
+            "index": 3,
+            "nodeID": "46F78B52-1396-55BE-AFD8-046667094669",
+            "title": "How coffee got out of Ethiopia",
+            "snippet": "Yemen to Cairo and Istanbul, the coffeehouse travelling with the drink"
+          },
+          {
+            "index": 7,
+            "nodeID": "46F78B52-1396-55BE-AFD8-046667094669",
+            "title": "How coffee got out of Ethiopia",
+            "snippet": "Yemen to Cairo and Istanbul, the coffeehouse travelling with the drink"
+          }
+        ]
+      }
+    ]
+  }
+]

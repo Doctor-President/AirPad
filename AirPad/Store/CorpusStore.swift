@@ -1286,6 +1286,41 @@ final class CorpusStore {
                     await f.debugCorpusRetrieve(query: "What is my thinking on technology?", store: self, chat: cf)
                     NSLog("[ScopeRepro] done")
                 }
+                // Brief AC5 — resolve the pinned transcripts' [n] citations to sample
+                // node ids: run each question at scope=nodeIDs(sample) and log
+                // number → nodeID · title. Cross-check the French numbering against T's
+                // device chip list; map 10/17 + Silent Hill + coffee by position.
+                if ProcessInfo.processInfo.arguments.contains("-PinResolveDiag") {
+                    let scope: CanvasScope = .nodeIDs(sampleNodeIDs)
+                    let qs = ["What do I have on learning French?",
+                              "What can you tell me about my entry called \"Silent Hill 2's fog\"?",
+                              "How did coffee spread out of Ethiopia?"]
+                    for q in qs {
+                        let lib = LibrarianState()
+                        let cands = await lib.debugNumberedCandidates(query: q, scope: scope, store: self)
+                        NSLog("[PinResolve] === %@ (%d cand) ===", q, cands.count)
+                        for (n, id) in cands {
+                            let title = nodes.first { $0.id == id }?.title ?? "?"
+                            NSLog("[PinResolve]   [%d] %@ :: %@", n, id, title)
+                        }
+                    }
+                    NSLog("[PinResolve] done")
+                }
+                // Brief AD2 verify — the banner classifier: a genuine can't-connect →
+                // "offline"; a timeout / mid-flight drop / HTTP status → its OWN message
+                // (never "offline"). Plus the AD `<think>` strip (CoT never a citation).
+                if ProcessInfo.processInfo.arguments.contains("-ThinkBannerDiag") {
+                    func banner(_ e: Error) -> String { ChatSession.humanError(for: e) }
+                    NSLog("[ThinkBanner] cannotConnectToHost → %@", banner(URLError(.cannotConnectToHost)))
+                    NSLog("[ThinkBanner] notConnectedToInternet → %@", banner(URLError(.notConnectedToInternet)))
+                    NSLog("[ThinkBanner] timedOut → %@", banner(URLError(.timedOut)))
+                    NSLog("[ThinkBanner] networkConnectionLost → %@", banner(URLError(.networkConnectionLost)))
+                    NSLog("[ThinkBanner] HTTP 500 → %@", banner(ModelRouter.RouterError.ollamaHTTPError(path: "v1/chat/completions", status: 500, body: "internal error\n<html>oops</html>")))
+                    NSLog("[ThinkBanner] HTTP 530 → %@", banner(ModelRouter.RouterError.ollamaHTTPError(path: "v1/chat/completions", status: 530, body: "<!DOCTYPE html><title>error</title>")))
+                    let stripped = ChatSession.stripThinkTags("<think>secret reasoning citing [9]</think>The real answer [1].")
+                    NSLog("[ThinkBanner] stripThink → '%@' | cited=%@", stripped, "\(CitationReference.citedIndices(in: stripped).sorted())")
+                    NSLog("[ThinkBanner] done")
+                }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic
                 // (folksonomy coverage / recurrence / long tail / fragmentation / tag

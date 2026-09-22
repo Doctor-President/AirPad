@@ -701,33 +701,58 @@ extension Node {
         return (.note, nil)
     }
 
-    /// Brief AA3 — node-level provenance for the node's CARD (its whole-node gist),
-    /// the W1 analogue of `blockProvenance` one granularity up. The gist summarises
-    /// the entire node, so the NOTES survey list must not quote a saved article's
-    /// gist back as the user's own words. Rule (measured against T's corpus: 40 of
-    /// 224 user notes carry a link with a resolvable domain): a link with a real
-    /// domain marks the card a saved article — this leans COLLECTED for mixed
-    /// note+link nodes, the safe W1 direction — else a document / image node is
-    /// labelled as such, otherwise it is the user's own note. A link whose URL yields
-    /// no domain (a stripped/placeholder link on an otherwise-typed note) does NOT
-    /// downgrade it: the card stays the user's own.
+    /// Brief AC3 — node-level provenance for the node's CARD (its whole-node gist).
+    /// A card is a COLLECTED source (savedLink / document / imageText) ONLY when
+    /// captured content DOMINATES the node — i.e. the node has no typed item at all
+    /// (a pure clip), OR the captured body is ≥ 50 % of the node's text. Otherwise a
+    /// typed note that merely CONTAINS a link (e.g. "Bolex H16 — mine") is the user's
+    /// own → `note`. "Captured body" = a link's `snapshotText`/`description`, a
+    /// document's `extractedText`, an image's OCR `description` — NOT titles/URLs
+    /// (chrome). Measured against both corpora (2026-09-22): T's real saved articles
+    /// carry a large `snapshotText` (Schema 31k chars → savedLink), while the sample
+    /// library's "saved articles" AND "Bolex H16 — mine" are typed reflections with a
+    /// bare title-only link (captured body ≈ 0 → note). ★ This DELIBERATELY flips the
+    /// sample's 13 to `note` — the AA-era "any domain link → savedLink" over-labelled
+    /// (T: "it is Valarie's own note containing a link"). The W1 danger (quoting a
+    /// collected article as the user's own) doesn't apply when the collected body is
+    /// ~0 and the node IS the user's words.
     func cardProvenance() -> (kind: BlockProvenance, domain: String?) {
-        for item in items where item.type == .link {
-            // The URL may sit on the item (T's captured links) OR inside its
-            // `linkItems` sub-array (the sample library's saved articles — the item's
-            // own `url` is nil there). Mirror `blockProvenance`, which reads both.
-            if let domain = Self.linkDomain(item.url) { return (.savedLink, domain) }
-            if let sub = item.linkItems?.compactMap({ Self.linkDomain($0.url) }).first {
-                return (.savedLink, sub)
-            }
-        }
+        var typedLen = 0
+        var collectedLen = 0
+        var linkDomain: String? = nil
+        var hasDocument = false
+        var hasImage = false
         for item in items {
             switch item.type {
-            case .document:            return (.document, nil)
-            case .image, .imageVideo:  return (.imageText, nil)
-            default:                   continue
+            case .text:
+                typedLen += (item.content ?? "").count
+            case .audio, .video:
+                typedLen += (item.transcript ?? "").count
+            case .link:
+                if linkDomain == nil, let d = Self.linkDomain(item.url) { linkDomain = d }
+                for li in (item.linkItems ?? []) {
+                    if linkDomain == nil, let d = Self.linkDomain(li.url) { linkDomain = d }
+                    collectedLen += (li.snapshotText ?? "").count + (li.description ?? "").count
+                }
+            case .document:
+                hasDocument = true
+                for doc in (item.documentItems ?? []) { collectedLen += (doc.extractedText ?? "").count }
+            case .image, .imageVideo:
+                hasImage = true
+                collectedLen += (item.description ?? "").count
+            case .rating, .field, .chats:
+                break
             }
         }
+        // No collected item at all → the user's own note.
+        guard linkDomain != nil || hasDocument || hasImage else { return (.note, nil) }
+        // Collected only wins when it DOMINATES: no typed text, or ≥ 50 % of the text.
+        let total = typedLen + collectedLen
+        let dominates = typedLen == 0 || (total > 0 && Double(collectedLen) >= 0.5 * Double(total))
+        guard dominates else { return (.note, nil) }
+        if let d = linkDomain { return (.savedLink, d) }
+        if hasDocument { return (.document, nil) }
+        if hasImage { return (.imageText, nil) }
         return (.note, nil)
     }
 

@@ -74,6 +74,36 @@ enum SampleLibrarySeederSelfTest {
                                       from: Data(contentsOf: root.appendingPathComponent("field_definitions.json")))
             check(!defs.definitions.isEmpty, "field definitions merged (\(defs.definitions.count))")
 
+            // --- Brief AC5 — pinned chats seed, and every citation resolves to a
+            //     seeded node (so a chip opens a real node on a fresh install) ---
+            let bundleChatCount: Int = {
+                guard let d = try? Data(contentsOf: bundle.appendingPathComponent("chats.json")),
+                      let cs = try? dec.decode([Chat].self, from: d) else { return 0 }
+                return cs.count
+            }()
+            check(bundleChatCount > 0, "bundle has pinned chats (\(bundleChatCount))")
+            check(manifest.chatIDs.count == bundleChatCount,
+                  "seeded all bundle chats (\(manifest.chatIDs.count)/\(bundleChatCount))")
+            let seededChats = (try? dec.decode([Chat].self,
+                from: Data(contentsOf: root.appendingPathComponent("chats.json")))) ?? []
+            check(Set(manifest.chatIDs).isSubset(of: Set(seededChats.map { $0.id.uuidString })),
+                  "seeded chats present in chats.json")
+            let seededNodeSet = Set(manifest.nodeIDs)
+            let citedNodes = seededChats
+                .flatMap { $0.messages.flatMap { $0.citations ?? [] } }
+                .compactMap { $0.nodeID }
+            check(!citedNodes.isEmpty, "pinned chats carry citations (\(citedNodes.count))")
+            check(citedNodes.allSatisfy { seededNodeSet.contains($0) },
+                  "every pinned-chat citation resolves to a seeded node")
+
+            // Inject a USER chat that must SURVIVE removal (parallels the user node).
+            let userChatID = UUID()
+            var chatsWithUser = seededChats
+            chatsWithUser.append(Chat(id: userChatID, title: "My chat",
+                                      createdAt: Date(), updatedAt: Date(), messages: []))
+            try enc.encode(chatsWithUser)
+                .write(to: root.appendingPathComponent("chats.json"), options: .atomic)
+
             // --- inject a USER node that SHARES a seeded tag ("coffee") ---
             let userID = "0BE0FACE-0000-4000-8000-000000000009"
             let userNode = Node(id: userID, createdAt: Date(), updatedAt: Date(),
@@ -93,6 +123,13 @@ enum SampleLibrarySeederSelfTest {
             check(!manifest.nodeIDs.contains { inRoot($0, "blocks.json") }, "seeded blocks.json removed with their dirs")
             check(!manifest.nodeIDs.contains { inRoot($0, "card.json") }, "seeded card.json removed with their dirs")
             check(!SampleLibrarySeeder.markerExists(containerRoot: root), "marker deleted")
+
+            // Brief AC5 — Remove deletes the seeded (pinned) chats; the USER chat survives.
+            let chatsAfter = (try? dec.decode([Chat].self,
+                from: Data(contentsOf: root.appendingPathComponent("chats.json")))) ?? []
+            let idsAfter = Set(chatsAfter.map { $0.id.uuidString })
+            check(!manifest.chatIDs.contains { idsAfter.contains($0) }, "seeded pinned chats removed on Remove")
+            check(idsAfter.contains(userChatID.uuidString), "USER chat survives removal")
 
             // tag guard: "coffee" KEPT (user node uses it); an unreferenced seeded tag REMOVED.
             let namesAfter = Set((try dec.decode([Tag].self,

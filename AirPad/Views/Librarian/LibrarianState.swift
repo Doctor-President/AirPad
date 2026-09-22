@@ -779,7 +779,7 @@ final class LibrarianState {
     /// are named so the model won't attribute them to the user.
     private static func provenanceLabel(_ kind: Node.BlockProvenance) -> String {
         switch kind {
-        case .note:      return "your note"
+        case .note:      return "your entry"
         case .savedLink: return "saved article"
         case .document:  return "document"
         case .imageText: return "image text"
@@ -789,7 +789,7 @@ final class LibrarianState {
     /// Chip secondary-line prefix — lowercase, no icon (the source list shows it too).
     private static func provenanceChipPrefix(_ kind: Node.BlockProvenance) -> String {
         switch kind {
-        case .note:      return "note"
+        case .note:      return "entry"
         case .savedLink: return "saved article"
         case .document:  return "document"
         case .imageText: return "image text"
@@ -1024,12 +1024,12 @@ final class LibrarianState {
     private func scopeDisplayName(_ scope: CanvasScope, store: CorpusStore) -> String {
         switch scope {
         case .corpus:
-            return "Corpus"
+            return "Your library"
         case .collection(let id):
             if id == NodeCollection.journalID { return "Journal" }
             return store.collections.first { $0.id == id }?.name ?? "Collection"
         case .nodeIDs:
-            return "Sample library"
+            return "Sample Library"
         }
     }
 
@@ -1300,7 +1300,7 @@ final class LibrarianState {
     /// renders citations as chips below the answer, so an in-text list
     /// is a duplicate the user never asked for.
     private var askSystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN notes. Two labelled sections may appear below the question: NOTES ON THIS TOPIC lists the user's notes related to the topic (one line each), and PASSAGES are excerpts. They were pulled by similarity search and MAY OR MAY NOT be relevant. For broad questions about what the user thinks or has, synthesise across NOTES and cite them; for specific facts, answer from PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered notes and passages. Ignore items that don't help and answer normally from your own knowledge. Never say the notes don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect notes the question did not ask about. If a note distinguishes an estimate from an actual figure, say which. Notes or passages marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their notes and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
+        let base = "You are a reflective AI that helps someone think across their OWN entries. Two labelled sections may appear below the question: ENTRIES ON THIS TOPIC lists the user's entries related to the topic (one line each), and PASSAGES are excerpts. They were pulled by similarity search and MAY OR MAY NOT be relevant. For broad questions about what the user thinks or has, synthesise across ENTRIES and cite them; for specific facts, answer from PASSAGES. Treat anything that genuinely helps as authoritative about the user's own world — if a passage defines a term, use THEIR definition over a generic one — and cite it inline with bracket numbers like [1] [2] matching the numbered entries and passages. Ignore items that don't help and answer normally from your own knowledge. Never say the entries don't contain the answer and never refuse for lack of a matching passage — just answer the question directly. Be specific, concise, and never generic. Cite only items you actually used. Do not connect entries the question did not ask about. If an entry distinguishes an estimate from an actual figure, say which. Entries or passages marked saved article, document, or image text are things the user collected, not their own words. For questions about the user's own views, answer from their entries and refer to collected sources as such. Do not append a References, Sources, or Citations section — AirPad renders citations separately. End your reply at the end of the prose answer."
         return personalVoicePrefix + base
     }
 
@@ -1309,7 +1309,7 @@ final class LibrarianState {
     /// instead of answering from general knowledge and hallucinating citations. No
     /// `[n]` instruction — there is nothing to cite. Keeps the personal-voice tone.
     private var emptyLibrarySystemPrompt: String {
-        let base = "You are a reflective AI that helps someone think across their OWN notes. No notes in this library match the question. Say so plainly in one sentence. Do not cite anything and do not answer from general knowledge unless the user asks you to."
+        let base = "You are a reflective AI that helps someone think across their OWN entries. No entries in this library match the question. Say so plainly in one sentence. Do not cite anything and do not answer from general knowledge unless the user asks you to."
         return personalVoicePrefix + base
     }
 
@@ -1462,7 +1462,7 @@ final class LibrarianState {
         var sections: [String] = []
         if !cards.isEmpty {
             let lines = cards.map { Self.cardContextLine(for: $0, store: store) }.joined(separator: "\n")
-            sections.append("NOTES ON THIS TOPIC:\n\(lines)")
+            sections.append("ENTRIES ON THIS TOPIC:\n\(lines)")
         }
         if !passages.isEmpty {
             let blocks = passages.compactMap { c -> String? in
@@ -1575,7 +1575,7 @@ final class LibrarianState {
     /// `askSystemPrompt` because the model is doing summarization,
     /// not reflection — different shape, different stopping criteria.
     private var compactionSystemPrompt: String {
-        "You are a precise summarizer. Given a conversation between a user and an AI assistant that helps them think across their notes, produce a single dense paragraph capturing the substantive content: what was asked, what was found or concluded, and any threads still open. Specific, not generic. Output only the paragraph — no preface, no header, no trailing meta."
+        "You are a precise summarizer. Given a conversation between a user and an AI assistant that helps them think across their entries, produce a single dense paragraph capturing the substantive content: what was asked, what was found or concluded, and any threads still open. Specific, not generic. Output only the paragraph — no preface, no header, no trailing meta."
     }
 
 }

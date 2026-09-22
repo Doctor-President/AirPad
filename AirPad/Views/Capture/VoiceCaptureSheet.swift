@@ -391,7 +391,7 @@ private struct PermissionDeniedView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(AppearancePalette.ink.opacity(0.4))
 
-            Text("Microphone or speech recognition access is required for voice notes.")
+            Text("Microphone or speech recognition access is required for voice memos.")
                 .font(.body)
                 .foregroundStyle(AppearancePalette.ink.opacity(0.7))
                 .multilineTextAlignment(.center)

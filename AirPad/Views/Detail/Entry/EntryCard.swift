@@ -393,7 +393,7 @@ struct EntryCard: View {
             Button("Delete", role: .destructive) { performDelete() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the entry from the node. Can't be undone.")
+            Text("This removes the item from the entry. Can't be undone.")
         }
     }
 

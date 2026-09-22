@@ -241,6 +241,7 @@
 		B65ED43BBCC3BFD9FFC1621F /* iCloudDriveService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53FC4639F271D87E7E8A7A1 /* iCloudDriveService.swift */; };
 		B6E91361A5615460B83EB3B6 /* EnrichmentGateSelfTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC2397AFB193E7A4EF7411E4 /* EnrichmentGateSelfTest.swift */; };
 		B73EA7AE6A764D173EA47BD8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 688537782A3AA4A7F0B436F9 /* CollectionView.swift */; };
+		B74D1E72B7F50E6DCB15A59C /* FirstRunCallout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A96FFE17D3D32F62010C786 /* FirstRunCallout.swift */; };
 		B78F13EB665DF210C06FFD17 /* NodeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F9189D5677C65F12E2D47F /* NodeDetailView.swift */; };
 		B89E54905807D32F850BF944 /* BlockChunker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34AC513418FD53025E45C9B6 /* BlockChunker.swift */; };
 		B9CDAD910A082B35B8407337 /* MediaEntryChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47A0CAFA204942881B2074E6 /* MediaEntryChrome.swift */; };
@@ -454,6 +455,7 @@
 		586FC4429B40614A3F7EBDC6 /* TagPillRail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TagPillRail.swift; sourceTree = "<group>"; };
 		592EF17AD51166EAA3E577F2 /* CanvasScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanvasScope.swift; sourceTree = "<group>"; };
 		5A7FA11AA44164C72396196B /* SubstrateSelfTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubstrateSelfTest.swift; sourceTree = "<group>"; };
+		5A96FFE17D3D32F62010C786 /* FirstRunCallout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstRunCallout.swift; sourceTree = "<group>"; };
 		5ACF91AFE4B56A560100046E /* BackgroundGridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundGridView.swift; sourceTree = "<group>"; };
 		5B3AEF4D4309C19AB2068A9E /* AirPadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AirPadApp.swift; sourceTree = "<group>"; };
 		5CA786FE73ACBE100B4FAA56 /* HoldDragRepro.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldDragRepro.swift; sourceTree = "<group>"; };
@@ -1182,6 +1184,7 @@
 				B29B3F0F3BBB31D0715043DC /* BlobFieldView.swift */,
 				90F7805935A064BDC856B051 /* CaptureButtonLabel.swift */,
 				2D22141DDFC181FE31634680 /* CaretMeasure.swift */,
+				5A96FFE17D3D32F62010C786 /* FirstRunCallout.swift */,
 				8D3B404567771D9D41AB6936 /* FMFailureBanner.swift */,
 				E1CA7EBB8E00D6EB0B60EBCE /* KeyboardDismissModifier.swift */,
 				497A2D223E494E948D445DFF /* NodeGradientBackground.swift */,
@@ -1527,6 +1530,7 @@
 				3EAA7FF97CF618DCA595A383 /* FieldValueFormatter.swift in Sources */,
 				BBA0C41339806A487FD74C7C /* FieldValueSelfTest.swift in Sources */,
 				55858A9A690EA3D459DE82E9 /* FilterState.swift in Sources */,
+				B74D1E72B7F50E6DCB15A59C /* FirstRunCallout.swift in Sources */,
 				71FA4FF948901041E16802D4 /* FolksonomyDiagnostic.swift in Sources */,
 				9DE472F3C0CC2C7696196323 /* GalleryBody.swift in Sources */,
 				348CAEC8BA9B796ECC63C1B0 /* GalleryFullscreenViewer.swift in Sources */,

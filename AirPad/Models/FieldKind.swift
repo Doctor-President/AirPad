@@ -55,7 +55,7 @@ extension FieldKind {
         case .vocabulary:    return "Vocabulary"
         case .boolean:       return "Yes / No"
         case .url:           return "Link"
-        case .nodeReference: return "Node reference"
+        case .nodeReference: return "Entry reference"
         }
     }
 

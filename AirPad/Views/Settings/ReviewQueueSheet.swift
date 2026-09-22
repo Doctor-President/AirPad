@@ -38,7 +38,7 @@ struct ReviewQueueSheet: View {
                     ReviewBlockRow(block: block)
                 }
             } header: {
-                Text("\(store.reviewQueue.count) idea\(store.reviewQueue.count == 1 ? "" : "s") waiting")
+                Text("\(store.reviewQueue.count) \(store.reviewQueue.count == 1 ? "entry" : "entries") waiting")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.4))
                     .textCase(nil)
@@ -87,7 +87,7 @@ private struct ReviewBlockRow: View {
                 Button {
                     Task { await store.promoteRejectedBlock(block) }
                 } label: {
-                    Text("Add as node")
+                    Text("Add as entry")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(AppearancePalette.ink)
                         .padding(.horizontal, 12)

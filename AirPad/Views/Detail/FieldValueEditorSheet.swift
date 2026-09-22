@@ -80,7 +80,7 @@ struct FieldValueEditorSheet: View {
                     if item.field?.value != nil {
                         Button("Clear value", role: .destructive) { commitClear() }
                     }
-                    Button("Remove field from this note", role: .destructive) { commitRemove() }
+                    Button("Remove field from this entry", role: .destructive) { commitRemove() }
                 }
             }
             .navigationTitle(definition.displayName)
@@ -159,11 +159,11 @@ struct FieldValueEditorSheet: View {
             }
         case .nodeReference:
             HStack {
-                Text("Node")
+                Text("Entry")
                 Spacer()
                 Text(referencedTitle ?? "None").foregroundStyle(.secondary).lineLimit(1)
             }
-            Button("Choose a node") { showNodePicker = true }
+            Button("Choose an entry") { showNodePicker = true }
         case .boolean:
             EmptyView()   // boolean is direct-manip in the cell — never routed here
         }

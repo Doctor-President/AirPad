@@ -81,7 +81,7 @@ struct CaptureChromeBar<Leading: View>: View {
             Button("Delete", role: .destructive) { onDiscard() }
             Button("Keep editing", role: .cancel) {}
         } message: {
-            Text("Your note and anything you've added will be deleted. This can't be undone.")
+            Text("Your entry and anything you've added will be deleted. This can't be undone.")
         }
     }
 

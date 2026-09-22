@@ -270,7 +270,7 @@ struct NodeDetailView: View {
             if let node {
                 content(node: node)
             } else {
-                Text("Node not found")
+                Text("Entry not found")
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.black)
@@ -303,15 +303,15 @@ struct NodeDetailView: View {
             isPresented: $showPromoteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Promote to true node", role: .destructive) {
+            Button("Promote to entry", role: .destructive) {
                 Task { await store.promoteMetaNode(nodeID: nodeID) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This makes it a permanent part of your corpus. Can't be undone.")
+            Text("This makes it a permanent part of your library. Can't be undone.")
         }
         .confirmationDialog(
-            "Delete this node?",
+            "Delete this entry?",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -323,7 +323,7 @@ struct NodeDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will permanently delete the node and all its items. Can't be undone.")
+            Text("This will permanently delete the entry and all its items. Can't be undone.")
         }
         .sheet(item: $captureMode) { mode in
             switch mode {
@@ -2150,7 +2150,7 @@ private struct MetaNodeBanner: View {
             HStack(spacing: 6) {
                 Text("✦")
                     .foregroundStyle(.purple.opacity(0.8))
-                Text("Thread node")
+                Text("Thread")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(AppearancePalette.ink.opacity(0.5))
                     .textCase(.uppercase)
@@ -2180,7 +2180,7 @@ private struct MetaNodeBanner: View {
             Button {
                 showPromoteConfirmation = true
             } label: {
-                Text("Promote to true node")
+                Text("Promote to entry")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.purple)
                     .frame(maxWidth: .infinity)

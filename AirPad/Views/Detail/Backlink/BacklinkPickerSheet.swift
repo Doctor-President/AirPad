@@ -74,8 +74,8 @@ struct BacklinkPickerSheet: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(AppearancePalette.bgBase.ignoresSafeArea())
-            .searchable(text: $searchText, prompt: "Search nodes")
-            .navigationTitle(onPick == nil ? "Backlink to…" : "Reference a node…")
+            .searchable(text: $searchText, prompt: "Search entries")
+            .navigationTitle(onPick == nil ? "Backlink to…" : "Reference an entry…")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -125,7 +125,7 @@ private struct BacklinkTargetPicker: View {
     var body: some View {
         List {
             if sourceConnectionCount >= 20 {
-                Text("This node already has \(sourceConnectionCount) connections. Adding more is fine — just getting dense.")
+                Text("This entry already has \(sourceConnectionCount) connections. Adding more is fine — just getting dense.")
                     .font(.footnote)
                     .foregroundStyle(.orange)
                     .listRowBackground(Color.orange.opacity(0.10))

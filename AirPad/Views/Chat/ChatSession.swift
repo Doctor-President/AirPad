@@ -497,13 +497,32 @@ final class ChatSession {
                 await send(displayText: displayText, modelText: displayText, systemPrompt: systemPrompt)
                 return
             }
-            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            // Brief AF2 — route the agentic error through the SAME honest banner as the
+            // plain path (AD2). Previously this used the raw errorDescription, which
+            // leaked a Cloudflare 502 HTML page verbatim into the banner.
+            lastError = Self.humanError(for: error)
         }
 
         streamingText = ""
         isStreaming = false
         flush()
         scheduleTitleGenerationIfNeeded()
+    }
+
+    /// Brief AF3 — the app-owned no-key state. When the user asks to search the web but
+    /// no Brave key is configured, the APP answers in one line and NO model is invoked:
+    /// the turn shows the user's message + a single assistant line whose tap opens
+    /// Settings → Web search (`airpad-settings://websearch`, intercepted by
+    /// `ChatTranscript`'s `openURL`). Persisted like any turn so it survives a resume.
+    func appendWebSearchKeyNotice(userText: String) {
+        let text = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isStreaming else { return }
+        lastError = nil
+        messages.append(Message(role: .user, text: text))
+        messages.append(Message(role: .assistant,
+            text: "Web search needs a Brave Search key. [Add one in Settings → Web search.](airpad-settings://websearch)"))
+        pendingUser = nil
+        flush()
     }
 
     /// Append a collapsible activity row for one completed tool call.
@@ -675,9 +694,15 @@ final class ChatSession {
                 if let refusal = Self.hostRefusal(body) {
                     return refusal.message
                 }
-                // Any other HTTP status shows WHAT IT IS (AD2), never "offline" — 530 /
-                // 502-504 included. Strip the body first so a raw HTML page (#3) can't
-                // reach the banner; show only its first meaningful line.
+                // Brief AF2 — a gateway status whose body is an HTML page is the TUNNEL
+                // (Cloudflare), not the Host app: the Mac took too long on the upstream.
+                // Name that plainly rather than dumping the error page.
+                let bodyIsHTML = body.range(of: "<[a-zA-Z!/]", options: .regularExpression) != nil
+                if bodyIsHTML && [502, 503, 504, 530].contains(status) {
+                    return "The Host's tunnel returned \(status) — the Mac took too long to answer. Try again."
+                }
+                // Any other HTTP status shows WHAT IT IS (AD2), never "offline". Strip the
+                // body first so a raw HTML page (#3) can't reach the banner; first line only.
                 let clean = Self.sanitizedErrorBody(body)
                 let firstLine = clean.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
                 return firstLine.isEmpty

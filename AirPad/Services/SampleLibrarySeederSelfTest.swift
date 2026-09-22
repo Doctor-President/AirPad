@@ -74,27 +74,32 @@ enum SampleLibrarySeederSelfTest {
                                       from: Data(contentsOf: root.appendingPathComponent("field_definitions.json")))
             check(!defs.definitions.isEmpty, "field definitions merged (\(defs.definitions.count))")
 
-            // --- Brief AC5 — pinned chats seed, and every citation resolves to a
-            //     seeded node (so a chip opens a real node on a fresh install) ---
+            // --- Brief AF5 — pinned chats were DROPPED (T's ruling): the bundle ships
+            //     no chats.json, so a fresh seed reports chatIDs == 0. The seeder's chat
+            //     CAPABILITY stays exercised below (a user chat is injected and must
+            //     survive removal). When bundle chats ever return, the citation-resolution
+            //     invariant (a chip opens a real node) is re-checked under the guard. ---
             let bundleChatCount: Int = {
                 guard let d = try? Data(contentsOf: bundle.appendingPathComponent("chats.json")),
                       let cs = try? dec.decode([Chat].self, from: d) else { return 0 }
                 return cs.count
             }()
-            check(bundleChatCount > 0, "bundle has pinned chats (\(bundleChatCount))")
+            check(bundleChatCount == 0, "no bundled pinned chats (Brief AF5 removed them)")
             check(manifest.chatIDs.count == bundleChatCount,
-                  "seeded all bundle chats (\(manifest.chatIDs.count)/\(bundleChatCount))")
+                  "seeded chat count matches bundle (\(manifest.chatIDs.count)/\(bundleChatCount))")
             let seededChats = (try? dec.decode([Chat].self,
                 from: Data(contentsOf: root.appendingPathComponent("chats.json")))) ?? []
             check(Set(manifest.chatIDs).isSubset(of: Set(seededChats.map { $0.id.uuidString })),
                   "seeded chats present in chats.json")
-            let seededNodeSet = Set(manifest.nodeIDs)
-            let citedNodes = seededChats
-                .flatMap { $0.messages.flatMap { $0.citations ?? [] } }
-                .compactMap { $0.nodeID }
-            check(!citedNodes.isEmpty, "pinned chats carry citations (\(citedNodes.count))")
-            check(citedNodes.allSatisfy { seededNodeSet.contains($0) },
-                  "every pinned-chat citation resolves to a seeded node")
+            if bundleChatCount > 0 {
+                let seededNodeSet = Set(manifest.nodeIDs)
+                let citedNodes = seededChats
+                    .flatMap { $0.messages.flatMap { $0.citations ?? [] } }
+                    .compactMap { $0.nodeID }
+                check(!citedNodes.isEmpty, "pinned chats carry citations (\(citedNodes.count))")
+                check(citedNodes.allSatisfy { seededNodeSet.contains($0) },
+                      "every pinned-chat citation resolves to a seeded node")
+            }
 
             // Inject a USER chat that must SURVIVE removal (parallels the user node).
             let userChatID = UUID()

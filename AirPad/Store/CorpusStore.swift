@@ -802,14 +802,19 @@ final class CorpusStore {
         var matches = Self.diversifyByNode(
             await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: candidateIDs, topK: pool),
             perNode: Self.maxBlocksPerNode, limit: topK)
-        // Only a COLLECTION miss retries at the corpus (the sample canvas stays in
-        // the sample); the retry uses the same room rule as `.corpus` above.
-        if case .collection = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
-            let corpusMatches = Self.diversifyByNode(
-                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: corpusAskCandidateIDs, topK: pool),
+        // A COLLECTION miss broadens to the collection's OWN ROOM — never crossing
+        // rooms. Brief AB: the old retry always fell back to the USER corpus, so a
+        // SAMPLE-collection miss (common on a seeded install, where the sample has no
+        // block sidecars) searched the user's notes instead — the room-crossing leak
+        // T hit. A sample collection now broadens to the sample; a user collection to
+        // the user corpus. `.nodeIDs` (the sample canvas) still never retries.
+        if case .collection(let cid) = scope, (matches.first?.score ?? 0) < Self.minRelevanceScore {
+            let retryIDs = sampleCollectionIDs.contains(cid) ? Array(sampleNodeIDs) : corpusAskCandidateIDs
+            let retryMatches = Self.diversifyByNode(
+                await blockEmbedding.findRelevantBlocks(queryVector: qvec, candidateNodeIDs: retryIDs, topK: pool),
                 perNode: Self.maxBlocksPerNode, limit: topK)
-            if (corpusMatches.first?.score ?? 0) >= Self.minRelevanceScore {
-                matches = corpusMatches
+            if (retryMatches.first?.score ?? 0) >= Self.minRelevanceScore {
+                matches = retryMatches
             }
         }
         return matches
@@ -1128,6 +1133,12 @@ final class CorpusStore {
                     func idx(_ s: String) -> String { "\(CitationReference.citedIndices(in: s).sorted())" }
                     NSLog("[CitRegex] [237]=%@ [12a]=%@ [2] [3]=%@ [12]=%@ [2][3][7]=%@",
                           idx("x [237] y"), idx("z [12a] z"), idx("a [2] b [3]"), idx("n [12] n"), idx("r [2][3][7]"))
+                    // Brief AB3 verify #4 — a marker whose index isn't a candidate is
+                    // stripped; the empty branch (valid = {}) strips ALL markers.
+                    NSLog("[CitRegex] strip valid={1,3} of 'See [1] and [9] plus [3].' → '%@'",
+                          CitationReference.stripInvalidMarkers(in: "See [1] and [9] plus [3].", valid: [1, 3]))
+                    NSLog("[CitRegex] strip valid={} of 'Generic [1][2][3][4][5] answer.' → '%@'",
+                          CitationReference.stripInvalidMarkers(in: "Generic [1][2][3][4][5] answer.", valid: []))
                 }
                 // Brief Y Part E verify — search-index coverage + the technology
                 // question over the USER's corpus (Corpus scope). The candidate list
@@ -1216,6 +1227,52 @@ final class CorpusStore {
                     NSLog("[SurveyDiag] --- #5 'what does Valarie write about film?' (Corpus) — read on FRESH SEED ---")
                     await lib5.debugCorpusRetrieve(query: "What does Valarie write about film?", store: self, chat: chat5)
                     NSLog("[SurveyDiag] done")
+                }
+                // Brief AB1 — REPRODUCE the sample-room miss + log the resolved scope
+                // per turn. The Librarian sheet seeds `selectedScope` from the host
+                // (`ContentView.hostScope`): sampleCanvas → .nodeIDs(sample);
+                // canvas/dashboard/entry → .corpus; collectionCanvas(id) → .collection(id).
+                // The bug T hit in the SAMPLE room: a scope of `.corpus` resolves to the
+                // USER room once a sample is seeded, and a SAMPLE-collection miss retries
+                // into the USER corpus. This runs the French question at each and the S5
+                // log now prints `scope=…` (the resolved room). Needs -EmbedCPUOnly.
+                if ProcessInfo.processInfo.arguments.contains("-ScopeReproDiag") {
+                    let q = "What do I have on learning French?"
+                    NSLog("[ScopeRepro] hostScope: sampleCanvas→nodeIDs:%d · canvas/dashboard/entry→corpus(→%@ room) · collectionCanvas(id)→collection:id",
+                          sampleNodeIDs.count, (sampleLibraryPresent && !userNodes.isEmpty) ? "user" : "sample")
+                    // A) .corpus — what the Dashboard / user canvas / entry open with. On a
+                    // seeded install with user notes this IS the user room → the French MISS.
+                    let a = LibrarianState(); let ca = ChatSession(); a.selectedScope = .corpus
+                    NSLog("[ScopeRepro] --- A) scope=.corpus (Dashboard/canvas/entry default) — expect USER room, French MISS ---")
+                    await a.debugCorpusRetrieve(query: q, store: self, chat: ca)
+                    // B) .nodeIDs(sample) — what the SAMPLE canvas opens with. Correct room.
+                    let b = LibrarianState(); let cb = ChatSession(); b.selectedScope = .nodeIDs(sampleNodeIDs)
+                    NSLog("[ScopeRepro] --- B) scope=.nodeIDs(sample) (sampleCanvas default) — expect sample French cards ---")
+                    await b.debugCorpusRetrieve(query: q, store: self, chat: cb)
+                    // C) a SAMPLE collection — observe the collection-miss retry. If the
+                    // sample's passages are absent (device: no blocks.json / BUG 41) the
+                    // <0.60 miss retries into the USER corpus (a room crossing). On the
+                    // fixture the sample HAS blocks, so this shows the non-leaking case.
+                    if let fr = collections.first(where: { sampleCollectionIDs.contains($0.id) && $0.name.lowercased().contains("french") }) {
+                        let c = LibrarianState(); let cc = ChatSession(); c.selectedScope = .collection(fr.id)
+                        NSLog("[ScopeRepro] --- C) scope=.collection(%@)[sample] — watch for a retry into the USER corpus ---", fr.id)
+                        await c.debugCorpusRetrieve(query: q, store: self, chat: cc)
+                    } else {
+                        NSLog("[ScopeRepro] (no sample French collection found for C)")
+                    }
+                    // D) AB3 empty branch over a LARGE room — BGE anisotropy floods
+                    // ≥floor cards for any string, so a 224-note corpus is NOT empty by
+                    // the count rule (expect empty=false; the scope fix, not the empty
+                    // prompt, is what fixes a wrong-room miss).
+                    let d = LibrarianState(); let cd = ChatSession(); d.selectedScope = .corpus
+                    NSLog("[ScopeRepro] --- D) gibberish over .corpus (224) — expect empty=FALSE (anisotropy floods cards) ---")
+                    await d.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: cd)
+                    // E) AB3 empty branch positive control — a genuinely SMALL room
+                    // (2 nodes) + off-topic query → < 3 cards, no passages → empty=TRUE.
+                    let e = LibrarianState(); let ce = ChatSession(); e.selectedScope = .nodeIDs(Set(sampleNodeIDs.prefix(2)))
+                    NSLog("[ScopeRepro] --- E) gibberish over a 2-node room — expect empty=TRUE ---")
+                    await e.debugCorpusRetrieve(query: "xzqf plorktangle vurnbelsplat quomby", store: self, chat: ce)
+                    NSLog("[ScopeRepro] done")
                 }
                 #endif
                 // THE TAG PRODUCER — Step 0 (ws-lever.md). READ-ONLY corpus diagnostic

@@ -813,12 +813,14 @@ struct LibrarianSurface: View {
             // gap (tunable) and let the transcript extend up into it.
             Color.clear.frame(height: isViewingActiveChat ? cctTopGap : 62)
 
-            // Brief W2 — scope-chip row RESTORED (T, 2026-09-20): the current Ask
-            // scope must be READABLE on screen — "Corpus", a collection, or "Sample
-            // library" when opened from the sample canvas. Hidden while viewing an
-            // active chat (the Ask field, whose scope this is, is suppressed then).
+            // Brief AB2 — the scope-chip row is DELETED (T, 2026-09-21): a "Corpus"
+            // chip default-selected the USER room while the user stood in the sample
+            // (the Brief AB miss), it was a UI T rejected months ago, and it fought
+            // the sheet's swipe gesture. Scope is now set ONCE from the room when the
+            // sheet opens (`seedScopeFromHostIfNeeded`) and cannot change inside the
+            // sheet. All that remains is a NON-interactive READABLE label of the room.
             if !isViewingActiveChat {
-                scopeChipRow(librarian: librarian)
+                scopeRoomLabel(librarian: librarian)
                     .padding(.bottom, 8)
             }
 
@@ -1957,68 +1959,35 @@ struct LibrarianSurface: View {
     // MARK: - Research mode (c8)
 
 
-    // MARK: - Scope chips
+    // MARK: - Scope (read-only room label — Brief AB2; the chip row is deleted)
 
-    /// Horizontal chip row above the input. Tap selects a scope; the
-    /// selection is the source of truth for retrieval (Navigate + Ask).
-    /// Order mirrors `CollectionPillRail`: Corpus and Journal first
-    /// (system slices), then user collections most-recently-used first.
+    /// Brief AB2 — the read-only room label that REPLACED the scope-chip row. Plain
+    /// secondary text, no chip styling, no tap target, no gesture conflict — it only
+    /// tells the user which room the Ask will search. The room is `selectedScope`,
+    /// set once from the host when the sheet opened (`seedScopeFromHostIfNeeded`).
     @ViewBuilder
-    private func scopeChipRow(librarian: LibrarianState) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                scopeChip(scope: .corpus, label: "Corpus", librarian: librarian)
-                scopeChip(scope: .collection(NodeCollection.journalID), label: "Journal", librarian: librarian)
-                ForEach(userCollectionsByLastUsed, id: \.id) { collection in
-                    scopeChip(
-                        scope: .collection(collection.id),
-                        label: collection.name,
-                        librarian: librarian
-                    )
-                }
-                // Brief W2 — the seeded sample is a SEPARATE room, shown as one
-                // "Sample library" scope (its node set), so the chip is readable and
-                // highlighted when the Librarian was opened from the sample canvas.
-                if store.sampleLibraryPresent {
-                    scopeChip(
-                        scope: .nodeIDs(store.sampleNodeIDs),
-                        label: "Sample library",
-                        librarian: librarian
-                    )
-                }
-            }
+    private func scopeRoomLabel(librarian: LibrarianState) -> some View {
+        Text(scopeRoomText(librarian.selectedScope))
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(AppearancePalette.ink.opacity(0.45))
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
-        }
+            .accessibilityLabel("Searching \(scopeRoomText(librarian.selectedScope))")
+        // Deliberately NOT a Button — non-interactive by design (Brief AB2).
     }
 
-    /// Brief U/W — the user's OWN collections for the scope row (the sample's
-    /// collections are represented by the single "Sample library" chip, not listed
-    /// individually), most-recently-used first.
-    private var userCollectionsByLastUsed: [NodeCollection] {
-        store.collections
-            .filter { !store.sampleCollectionIDs.contains($0.id) }
-            .sorted { a, b in
-                let aDate = store.collectionLastUsedAt[a.id] ?? .distantPast
-                let bDate = store.collectionLastUsedAt[b.id] ?? .distantPast
-                return aDate > bDate
-            }
-    }
-
-    @ViewBuilder
-    private func scopeChip(scope: CanvasScope, label: String, librarian: LibrarianState) -> some View {
-        let isSelected = librarian.selectedScope == scope
-        Button {
-            librarian.selectedScope = scope
-        } label: {
-            Text(label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(isSelected ? .black : AppearancePalette.ink.opacity(0.7))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(isSelected ? Color.white : AppearancePalette.ink.opacity(0.08))
-                .clipShape(Capsule())
+    /// Brief AB2 — the room's human label: "Your notes" (user corpus) / "Sample
+    /// library" / "Journal" / a collection's name.
+    private func scopeRoomText(_ scope: CanvasScope) -> String {
+        switch scope {
+        case .corpus:
+            return "Your notes"
+        case .collection(let id):
+            if id == NodeCollection.journalID { return "Journal" }
+            return store.collections.first { $0.id == id }?.name ?? "Collection"
+        case .nodeIDs(let ids):
+            return ids == store.sampleNodeIDs ? "Sample library" : "Selected notes"
         }
-        .buttonStyle(.plain)
     }
 
     /// Seeds `selectedScope` from the host the first time the surface

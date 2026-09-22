@@ -131,23 +131,19 @@ struct ChatTranscript: View {
                         bubble(for: message)
                             .id(message.id)
                     }
-                    if !session.streamingThinking.isEmpty {
-                        // The reasoning-model thought process of the LATEST turn — ephemeral
-                        // (never persisted); shimmers while it streams, static once the answer begins.
+                    if session.isStreaming && !session.streamingThinking.isEmpty {
+                        // Brief AE2 — while streaming, the thought process renders at the
+                        // HEAD of the reply (before the answer tail). On completion it
+                        // moves INTO the committed assistant bubble's top (same position),
+                        // so it never jumps below the answer/sources.
                         ThoughtProcessBlock(session: session)
                             .id("__thought_process__")
                     }
                     if session.isStreaming {
-                        // Isolated: the ONLY reader of streamingText. Owns the
-                        // pinned-only stream-follow. Its own id is the follow
-                        // anchor.
-                        StreamingTail(
-                            session: session,
-                            proxy: proxy,
-                            anchor: Self.tailAnchor,
-                            isPinned: { isPinnedToBottom }
-                        )
-                        .id(Self.tailAnchor)
+                        // Isolated: the ONLY reader of streamingText. Its own id is the ↓
+                        // jump anchor (Brief AE1 — no automatic follow-scroll).
+                        StreamingTail(session: session)
+                            .id(Self.tailAnchor)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -255,6 +251,17 @@ struct ChatTranscript: View {
         }
     }
 
+    /// Brief AE2 — the latest turn's ephemeral thought process renders inside its
+    /// (now-committed) assistant bubble, at the top. True only for the LAST message
+    /// once streaming has ended and thinking was captured; on the next send
+    /// `streamingThinking` resets and this prior turn's panel disappears (ephemeral).
+    private func showsCompletedThoughtProcess(_ message: ChatSession.Message) -> Bool {
+        message.role == .assistant
+            && !session.isStreaming
+            && message.id == session.messages.last?.id
+            && !session.streamingThinking.isEmpty
+    }
+
     @ViewBuilder
     private func bubble(for message: ChatSession.Message) -> some View {
         switch message.role {
@@ -285,6 +292,14 @@ struct ChatTranscript: View {
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 10) {
+                // Brief AE2 — the just-completed turn's thought process stays at the
+                // HEAD of the reply (above the answer), the same place it streamed;
+                // it does NOT relocate below the sources. Ephemeral `streamingThinking`
+                // is retained until the next send, and `ThoughtProcessBlock` reads it
+                // statically (isStreaming == false → collapsed one-line header).
+                if showsCompletedThoughtProcess(message) {
+                    ThoughtProcessBlock(session: session)
+                }
                 // Block-laid-out markdown. Full width minus a 40pt right
                 // gutter (the block VStack is greedy — its bullet rows use
                 // maxWidth:.infinity — so it takes an explicit frame + trailing
@@ -628,13 +643,12 @@ struct ChatTranscript: View {
 /// layout the settled bubble does — parsed from `revealedText + pendingText` in
 /// `commit()` and held in `@State` — so nothing reflows when the stream ends.
 ///
-/// Owns the pinned-only follow-scroll, driven on commit (chunk cadence).
+/// Brief AE1 — the tail NO LONGER follow-scrolls. The reader owns the position:
+/// the only programmatic scroll per exchange is the send→question-to-top; content
+/// appends below the fold without moving anything above it, and the ↓ affordance is
+/// the sole way to jump to the newest text.
 private struct StreamingTail: View {
     let session: ChatSession
-    let proxy: ScrollViewProxy
-    let anchor: String
-    /// LIVE read of the pinned state at commit time (not a captured Bool).
-    let isPinned: () -> Bool
 
     /// Fully faded-in text (opacity 1); never re-animated.
     @State private var revealedText: String = ""
@@ -762,9 +776,8 @@ private struct StreamingTail: View {
                 pendingOpacity = 1
             }
         }
-        if isPinned() {
-            proxy.scrollTo(anchor, anchor: .bottom)
-        }
+        // Brief AE1 — NO follow-scroll on chunk. The tail grows downward below the
+        // fold; the reader stays put and taps ↓ to jump to the newest text.
     }
 }
 

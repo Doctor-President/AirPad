@@ -707,6 +707,20 @@ enum ModelRouter {
     private static let hostUserAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
+    /// Brief AD2 — session for the Host STREAM. `timeoutIntervalForRequest` is the
+    /// IDLE (between-bytes) timeout: with Thinking ON a reasoning model can take a
+    /// while to emit its first token, and a buffered hop could withhold bytes, so
+    /// allow 90 s (≥ 60 s) before declaring the connection dead — vs `URLSession.shared`'s
+    /// 60 s default. Each streamed chunk resets it, so a long answer never trips it;
+    /// `timeoutIntervalForResource` caps the whole turn generously.
+    private static let hostStreamSession: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 90
+        cfg.timeoutIntervalForResource = 3600
+        cfg.waitsForConnectivity = false   // a genuine no-route must fail fast → honest "offline"
+        return URLSession(configuration: cfg)
+    }()
+
     /// Discover the model to name in a chat request: the Host's FILTERED /v1/models over the tunnel.
     private static func firstHostModel(pairing: HostPairing) async throws -> String {
         guard let url = pairing.modelsURL else { throw RouterError.ollamaBadEndpoint(pairing.tunnelURL) }
@@ -799,7 +813,7 @@ enum ModelRouter {
         request.httpBody = try JSONEncoder().encode(envelope)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await URLSession.shared.bytes(for: request) }
+        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
         catch { throw RouterError.ollamaTransport(error.localizedDescription) }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
@@ -868,7 +882,7 @@ enum ModelRouter {
         request.httpBody = try JSONEncoder().encode(envelope)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await URLSession.shared.bytes(for: request) }
+        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
         catch { throw RouterError.ollamaTransport(error.localizedDescription) }
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             var data = Data()
@@ -985,7 +999,7 @@ enum ModelRouter {
         request.httpBody = try JSONEncoder().encode(envelope)
 
         let (bytes, response): (URLSession.AsyncBytes, URLResponse)
-        do { (bytes, response) = try await URLSession.shared.bytes(for: request) }
+        do { (bytes, response) = try await hostStreamSession.bytes(for: request) }
         catch { throw RouterError.ollamaTransport(error.localizedDescription) }
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
